@@ -6,6 +6,15 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import type { Message } from "./adapters/types";
 import { loadProviderConfigs, modelRegistry } from "./adapters/registry";
+import { executeChatTurn } from "./chat/engine";
+import { resolveLocalSlashCommand, resolveSlashSkillPrompt } from "./chat/skills";
+import {
+  CHAT_SESSIONS_STORAGE_KEY,
+  createChatSession as createStoredChatSession,
+  formatUsageLabel,
+  getInitialChatSessions as getStoredInitialChatSessions,
+} from "./chat/storage";
+import type { ChatExecutionResult, ChatSession } from "./chat/types";
 import TitleBar from "./components/TitleBar";
 import ModelSelector from "./components/ModelSelector";
 import ChatMessage from "./components/ChatMessage";
@@ -20,14 +29,6 @@ type CharacterModel = "hiyori" | "natori";
 type MenuOpenMode = "hover" | "click";
 type MinimizeBehavior = "taskbar" | "compact";
 type WindowPositionMode = "center" | "remember";
-type ChatSession = {
-  id: string;
-  title: string;
-  messages: Message[];
-  pinned?: boolean;
-  createdAt: number;
-  updatedAt: number;
-};
 type BasicSettings = {
   menuOpenMode: MenuOpenMode;
   autoLaunch: boolean;
@@ -74,7 +75,6 @@ const MAIN_POSITION_STORAGE_KEY = "omni_main_position";
 const MAIN_VIEW_STORAGE_KEY = "omni_main_view";
 const CURRENT_MODEL_STORAGE_KEY = "omni_current_model";
 const THEME_MODE_STORAGE_KEY = "omni_theme_mode";
-const CHAT_SESSIONS_STORAGE_KEY = "omni_chat_sessions";
 const MIN_CHARACTER_SCALE = 0.45;
 const MAX_CHARACTER_SCALE = 4.2;
 const COMPACT_MENU_CLOSE_DELAY_MS = 160;
@@ -110,13 +110,6 @@ const EXTERNAL_CHAT_ENTRIES = [
   { id: "poe", title: "Poe", description: "打开 Poe 聊天界面", url: "https://poe.com/", kind: "external" },
 ] as const;
 const CHAT_WINDOW_SIZE = { width: 1200, height: 820 };
-const USAGE_PREFERENCES_STORAGE_KEY = "omni_usage_preferences";
-const DEFAULT_USAGE_PREFERENCES = {
-  enableStreaming: true,
-  enableVisionInput: true,
-  temperature: 0.7,
-  maxOutputTokens: 4096,
-};
 const EMPTY_CHAT_PROMPTS = [
   "帮我总结这段内容的重点",
   "把这个问题拆成可执行步骤",
@@ -131,31 +124,8 @@ function isCharacterPointerInHitArea(element: HTMLElement, clientX: number, clie
   return relativeX >= 0.38 && relativeX <= 0.66 && relativeY >= 0.04 && relativeY <= 0.98;
 }
 
-function getUsagePreferences() {
-  try {
-    return {
-      ...DEFAULT_USAGE_PREFERENCES,
-      ...JSON.parse(localStorage.getItem(USAGE_PREFERENCES_STORAGE_KEY) || "{}"),
-    };
-  } catch {
-    return DEFAULT_USAGE_PREFERENCES;
-  }
-}
-
 function createChatSession(messages: Message[] = []): ChatSession {
-  const now = Date.now();
-  const id =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `chat-${now}-${Math.random().toString(16).slice(2)}`;
-
-  return {
-    id,
-    title: getChatSessionTitle(messages),
-    messages,
-    createdAt: now,
-    updatedAt: now,
-  };
+  return createStoredChatSession(messages);
 }
 
 function getChatSessionTitle(messages: Message[]) {
@@ -166,16 +136,7 @@ function getChatSessionTitle(messages: Message[]) {
 }
 
 function getInitialChatSessions(): ChatSession[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as ChatSession[]) : [];
-    const validSessions = parsed.filter((session) => session?.id && Array.isArray(session.messages));
-    return validSessions;
-  } catch {
-    return [];
-  }
+  return getStoredInitialChatSessions();
 }
 
 function getChatSessionGroupLabel(updatedAt: number) {
@@ -571,10 +532,11 @@ function App() {
   const [openChatMenu, setOpenChatMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [, setRegistryVersion] = useState(0);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const characterDragTimerRef = useRef<number | null>(null);
   const isCharacterDraggingRef = useRef(false);
+  const lastRunIdRef = useRef(0);
 
   const effectiveCompactScale = compactAppearance === "character" ? characterScale * CHARACTER_SCALE_BASELINE : 1;
   const isCharacterAppearance = compactAppearance === "character";
@@ -650,7 +612,12 @@ function App() {
 
   useEffect(() => {
     if (isCompactWindow) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messages]);
 
   useEffect(() => {
@@ -1082,15 +1049,9 @@ function App() {
       setIsCompactReplyLoading(true);
       setCompactReply(null);
 
-      const registeredProviders = modelRegistry.getRegisteredProviders();
-      if (registeredProviders.length === 0) {
-        throw new Error("请先配置至少一个提供方");
-      }
-
-      const response = await modelRegistry.chat({
-        messages: [{ role: "user", content: draft }],
+      const response = await executeChatTurn({
         model: resolvedModel,
-        stream: false,
+        messages: [{ role: "user", content: draft }],
       });
 
       setCompactReply({
@@ -1144,96 +1105,138 @@ function App() {
     setIsCharacterModelOpen(false);
   }, []);
 
-  const handleSend = useCallback(
-    async (content: string, images?: string[]) => {
-      if (isLoading) return;
+  const applyUsageToSession = useCallback((sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => {
+    const now = Date.now();
+    setChatSessions((sessions) =>
+      sessions.map((session) => {
+        if (session.id !== sessionId) return session;
+        return {
+          ...session,
+          title: getChatSessionTitle(conversationMessages),
+          updatedAt: now,
+          usage: {
+            requestCount: session.usage.requestCount + 1,
+            promptTokens: session.usage.promptTokens + result.usage.promptTokens,
+            completionTokens: session.usage.completionTokens + result.usage.completionTokens,
+            totalTokens: session.usage.totalTokens + result.usage.totalTokens,
+            totalCostUsd: session.usage.totalCostUsd + result.costUsd,
+            lastModel: result.model,
+            lastUsedAt: now,
+            hasEstimatedUsage: session.usage.hasEstimatedUsage || result.estimated,
+          },
+        };
+      })
+    );
+  }, []);
 
-      const userMessage: Message = { role: "user", content, images };
-      const newMessages = [...messages, userMessage];
-      if (!activeChatId) {
-        const nextSession = createChatSession(newMessages);
+  const runConversationTurn = useCallback(
+    async (
+      conversationMessages: Message[],
+      options: { sessionId?: string | null; createSession?: boolean } = {}
+    ) => {
+      let sessionId = options.sessionId ?? activeChatId;
+      if (!sessionId && options.createSession) {
+        const nextSession = createChatSession(conversationMessages);
+        sessionId = nextSession.id;
         setActiveChatId(nextSession.id);
         setChatSessions((sessions) => [nextSession, ...sessions]);
       }
-      setMessages([...newMessages, { role: "assistant", content: "" }]);
+
+      const runId = lastRunIdRef.current + 1;
+      lastRunIdRef.current = runId;
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      setMessages([...conversationMessages, { role: "assistant", content: "" }]);
       setError(null);
       setIsLoading(true);
 
       try {
-        const registeredProviders = modelRegistry.getRegisteredProviders();
-        if (registeredProviders.length === 0) {
-          throw new Error("请先配置至少一个提供方");
+        const result = await executeChatTurn({
+          model: currentModel,
+          messages: conversationMessages,
+          signal: abortController.signal,
+          onChunk: (chunk) => {
+            if (runId !== lastRunIdRef.current || abortController.signal.aborted) return;
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+              if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  content: updated[lastIdx].content + chunk,
+                };
+              }
+              return updated;
+            });
+          },
+        });
+
+        if (runId !== lastRunIdRef.current) {
+          return sessionId;
         }
 
-        const adapter = modelRegistry.getAdapterForModel(currentModel);
-        if (!adapter) {
-          throw new Error(`模型 "${currentModel}" 对应的提供方还未配置`);
+        setMessages([...conversationMessages, { role: "assistant", content: result.content }]);
+        if (sessionId) {
+          applyUsageToSession(sessionId, result, conversationMessages);
         }
 
-        const modelConfig = modelRegistry.getModelConfig(currentModel);
-        if (images?.length && (!modelConfig?.supportsVision || !getUsagePreferences().enableVisionInput)) {
-          throw new Error("当前模型或使用偏好不允许图片输入");
+        return sessionId;
+      } catch (err: any) {
+        if (runId !== lastRunIdRef.current) {
+          return sessionId;
         }
 
-        const systemMessage: Message = {
-          role: "system",
-          content: "You are Omni, a helpful, knowledgeable AI assistant. Be concise and clear. Use markdown when useful.",
-        };
-
-        const preferences = getUsagePreferences();
-        const requestMessages = [systemMessage, ...newMessages];
-        const shouldStream = Boolean(modelConfig?.supportsStreaming && preferences.enableStreaming);
-
-        if (shouldStream) {
-          await modelRegistry.chatStream(
-            {
-              messages: requestMessages,
-              model: currentModel,
-              temperature: preferences.temperature,
-              maxTokens: preferences.maxOutputTokens,
-              stream: true,
-            },
-            (chunk) => {
-              if (chunk.done) return;
-              setMessages((prev) => {
-                const updated = [...prev];
-                const lastIdx = updated.length - 1;
-                if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-                  updated[lastIdx] = {
-                    ...updated[lastIdx],
-                    content: updated[lastIdx].content + chunk.content,
-                  };
-                }
-                return updated;
-              });
-            }
-          );
-        } else {
-          const response = await modelRegistry.chat({
-            messages: requestMessages,
-            model: currentModel,
-            temperature: preferences.temperature,
-            maxTokens: preferences.maxOutputTokens,
-            stream: false,
-          });
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastIdx = updated.length - 1;
-            if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-              updated[lastIdx] = { ...updated[lastIdx], content: response.content };
-            }
-            return updated;
-          });
+        if (err instanceof DOMException && err.name === "AbortError") {
+          setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+          return sessionId;
         }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "鏈煡閿欒";
+
+        const errorMessage = err instanceof Error ? err.message : "未知错误";
         setError(errorMessage);
-        setMessages((prev) => prev.slice(0, -1));
+        setMessages(conversationMessages);
+        return sessionId;
       } finally {
-        setIsLoading(false);
+        if (runId === lastRunIdRef.current) {
+          abortControllerRef.current = null;
+          setIsLoading(false);
+        }
       }
     },
-    [activeChatId, currentModel, isLoading, messages]
+    [activeChatId, applyUsageToSession, currentModel]
+  );
+
+  const handleSend = useCallback(
+    async (content: string, images?: string[]) => {
+      if (isLoading) return;
+      const localCommand = resolveLocalSlashCommand(content);
+      if (localCommand && (!images || images.length === 0)) {
+        if (localCommand.command === "/new") {
+          setActiveChatId(null);
+          setMessages([]);
+          setError(null);
+          setOpenChatMenu(null);
+          setEditingMessageIndex(null);
+          return;
+        }
+        if (localCommand.command === "/clear") {
+          setMessages([]);
+          setError(null);
+          setEditingMessageIndex(null);
+          return;
+        }
+        if (localCommand.command === "/settings") {
+          setView("settings");
+          return;
+        }
+      }
+
+      const resolved = resolveSlashSkillPrompt(content);
+      const resolvedUserMessage: Message = { role: "user", content: resolved.content, images };
+      const nextMessages = [...messages, resolvedUserMessage];
+      await runConversationTurn(nextMessages, { sessionId: activeChatId, createSession: true });
+    },
+    [activeChatId, isLoading, messages, runConversationTurn]
   );
 
   const handleStop = useCallback(() => {
@@ -1275,85 +1278,9 @@ function App() {
         { ...targetMessage, content: content.trim() },
       ];
       setEditingMessageIndex(null);
-      setMessages([...conversationMessages, { role: "assistant", content: "" }]);
-      setError(null);
-      setIsLoading(true);
-
-      try {
-        const registeredProviders = modelRegistry.getRegisteredProviders();
-        if (registeredProviders.length === 0) {
-          throw new Error("请先配置至少一个提供方");
-        }
-
-        const adapter = modelRegistry.getAdapterForModel(currentModel);
-        if (!adapter) {
-          throw new Error(`模型 "${currentModel}" 对应的提供方还未配置`);
-        }
-
-        const modelConfig = modelRegistry.getModelConfig(currentModel);
-        const hasImages = conversationMessages.some((message) => message.images?.length);
-        if (hasImages && (!modelConfig?.supportsVision || !getUsagePreferences().enableVisionInput)) {
-          throw new Error("当前模型或使用偏好不允许图片输入");
-        }
-
-        const systemMessage: Message = {
-          role: "system",
-          content: "You are Omni, a helpful, knowledgeable AI assistant. Be concise and clear. Use markdown when useful.",
-        };
-        const preferences = getUsagePreferences();
-        const requestMessages = [systemMessage, ...conversationMessages];
-        const shouldStream = Boolean(modelConfig?.supportsStreaming && preferences.enableStreaming);
-
-        if (shouldStream) {
-          await modelRegistry.chatStream(
-            {
-              messages: requestMessages,
-              model: currentModel,
-              temperature: preferences.temperature,
-              maxTokens: preferences.maxOutputTokens,
-              stream: true,
-            },
-            (chunk) => {
-              if (chunk.done) return;
-              setMessages((prev) => {
-                const updated = [...prev];
-                const lastIdx = updated.length - 1;
-                if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-                  updated[lastIdx] = {
-                    ...updated[lastIdx],
-                    content: updated[lastIdx].content + chunk.content,
-                  };
-                }
-                return updated;
-              });
-            }
-          );
-        } else {
-          const response = await modelRegistry.chat({
-            messages: requestMessages,
-            model: currentModel,
-            temperature: preferences.temperature,
-            maxTokens: preferences.maxOutputTokens,
-            stream: false,
-          });
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastIdx = updated.length - 1;
-            if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-              updated[lastIdx] = { ...updated[lastIdx], content: response.content };
-            }
-            return updated;
-          });
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "未知错误";
-        setError(errorMessage);
-        setMessages(conversationMessages);
-      } finally {
-        setIsLoading(false);
-      }
+      await runConversationTurn(conversationMessages, { sessionId: activeChatId });
     },
-    [currentModel, isLoading, messages]
+    [activeChatId, isLoading, messages, runConversationTurn]
   );
 
   const handleRegenerateMessage = useCallback(
@@ -1364,86 +1291,9 @@ function App() {
 
       const conversationMessages = messages.slice(0, messageIndex);
       if (!conversationMessages.some((message) => message.role === "user")) return;
-
-      setMessages([...conversationMessages, { role: "assistant", content: "" }]);
-      setError(null);
-      setIsLoading(true);
-
-      try {
-        const registeredProviders = modelRegistry.getRegisteredProviders();
-        if (registeredProviders.length === 0) {
-          throw new Error("请先配置至少一个提供方");
-        }
-
-        const adapter = modelRegistry.getAdapterForModel(currentModel);
-        if (!adapter) {
-          throw new Error(`模型 "${currentModel}" 对应的提供方还未配置`);
-        }
-
-        const modelConfig = modelRegistry.getModelConfig(currentModel);
-        const hasImages = conversationMessages.some((message) => message.images?.length);
-        if (hasImages && (!modelConfig?.supportsVision || !getUsagePreferences().enableVisionInput)) {
-          throw new Error("当前模型或使用偏好不允许图片输入");
-        }
-
-        const systemMessage: Message = {
-          role: "system",
-          content: "You are Omni, a helpful, knowledgeable AI assistant. Be concise and clear. Use markdown when useful.",
-        };
-        const preferences = getUsagePreferences();
-        const requestMessages = [systemMessage, ...conversationMessages];
-        const shouldStream = Boolean(modelConfig?.supportsStreaming && preferences.enableStreaming);
-
-        if (shouldStream) {
-          await modelRegistry.chatStream(
-            {
-              messages: requestMessages,
-              model: currentModel,
-              temperature: preferences.temperature,
-              maxTokens: preferences.maxOutputTokens,
-              stream: true,
-            },
-            (chunk) => {
-              if (chunk.done) return;
-              setMessages((prev) => {
-                const updated = [...prev];
-                const lastIdx = updated.length - 1;
-                if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-                  updated[lastIdx] = {
-                    ...updated[lastIdx],
-                    content: updated[lastIdx].content + chunk.content,
-                  };
-                }
-                return updated;
-              });
-            }
-          );
-        } else {
-          const response = await modelRegistry.chat({
-            messages: requestMessages,
-            model: currentModel,
-            temperature: preferences.temperature,
-            maxTokens: preferences.maxOutputTokens,
-            stream: false,
-          });
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastIdx = updated.length - 1;
-            if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-              updated[lastIdx] = { ...updated[lastIdx], content: response.content };
-            }
-            return updated;
-          });
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "未知错误";
-        setError(errorMessage);
-        setMessages(conversationMessages);
-      } finally {
-        setIsLoading(false);
-      }
+      await runConversationTurn(conversationMessages, { sessionId: activeChatId });
     },
-    [currentModel, isLoading, messages]
+    [activeChatId, isLoading, messages, runConversationTurn]
   );
 
   const handleClearChat = useCallback(() => {
@@ -1687,6 +1537,10 @@ function App() {
 
     return Array.from(groups.entries()).map(([label, sessions]) => ({ label, sessions }));
   }, [chatSessions]);
+  const activeSession = useMemo(
+    () => chatSessions.find((session) => session.id === activeChatId) ?? null,
+    [activeChatId, chatSessions]
+  );
   const lastMessage = messages[messages.length - 1];
   const isStreaming = isLoading && lastMessage?.role === "assistant";
 
@@ -2192,6 +2046,7 @@ function App() {
                         }}
                       >
                         <span className="chat-history-panel__title">{session.title}</span>
+                        <span className="chat-history-panel__meta">{formatUsageLabel(session.usage)}</span>
                       </button>
                       <button
                         type="button"
@@ -2235,7 +2090,14 @@ function App() {
           </aside>
           <main className="main-chat-pane">
           <div className="main-chat-toolbar">
-            <ModelSelector currentModel={currentModel} onModelChange={handleModelChange} />
+            <div className="main-chat-toolbar__session">
+              <ModelSelector currentModel={currentModel} onModelChange={handleModelChange} />
+              {activeSession && (
+                <div className="main-chat-toolbar__usage">
+                  <span>{formatUsageLabel(activeSession.usage)}</span>
+                </div>
+              )}
+            </div>
             <div className="main-chat-toolbar__actions">
               {messages.length > 0 && (
                 <button
@@ -2273,7 +2135,7 @@ function App() {
             </div>
           </div>
 
-          <div className="main-chat-scroll hide-scrollbar">
+          <div ref={messagesScrollRef} className="main-chat-scroll hide-scrollbar">
             {!hasModels && messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full text-center px-6">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-400 to-indigo-600 flex items-center justify-center mb-4 shadow-lg shadow-violet-500/30">
@@ -2344,7 +2206,6 @@ function App() {
               </div>
             )}
 
-            <div ref={messagesEndRef} />
           </div>
 
           <ChatInput

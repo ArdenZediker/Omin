@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { buildSlashDraft, getMatchingSlashSuggestions } from "../chat/skills";
 
 interface ChatInputProps {
   onSend: (content: string, images?: string[]) => void;
@@ -14,6 +15,7 @@ export default function ChatInput({ onSend, isLoading, onStop, focusSignal, draf
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const matchedSuggestions = getMatchingSlashSuggestions(input);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -74,6 +76,29 @@ export default function ChatInput({ onSend, isLoading, onStop, focusSignal, draf
 
   return (
     <div className="chat-composer">
+      {matchedSuggestions.length > 0 && (
+        <div className="chat-composer__skills">
+          {matchedSuggestions.map((suggestion) => (
+            <button
+              key={`${suggestion.kind}-${suggestion.id}`}
+              type="button"
+              className="chat-composer__skill"
+              onClick={() => {
+                setInput(buildSlashDraft(suggestion));
+                textareaRef.current?.focus();
+              }}
+            >
+              <span className="chat-composer__skill-command">{suggestion.command}</span>
+              <span className="chat-composer__skill-title">{suggestion.title}</span>
+              <span className={`chat-composer__skill-badge ${suggestion.kind === "local" ? "chat-composer__skill-badge--local" : ""}`}>
+                {suggestion.kind === "local" ? "Local" : "Skill"}
+              </span>
+              <span className="chat-composer__skill-description">{suggestion.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {images.length > 0 && (
         <div className="chat-composer__attachments">
           {images.map((img, i) => (
