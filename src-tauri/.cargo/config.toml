@@ -1,0 +1,15 @@
+# rsproxy.cn - 字节跳动维护的国内 Rust 镜像，支持 sparse 协议
+# 全局配置文件: ~/.cargo/config.toml
+# 项目级配置文件: <project>/.cargo/config.toml（优先级更高）
+
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[registry]
+protocol = "sparse"
+
+[net]
+git-fetch-with-cli = true

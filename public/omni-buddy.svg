@@ -1,0 +1,37 @@
+<svg width="180" height="220" viewBox="0 0 180 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="buddy-hair" x1="42" y1="26" x2="122" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9DD3FF"/>
+      <stop offset="0.48" stop-color="#5C8CFF"/>
+      <stop offset="1" stop-color="#7B4BFF"/>
+    </linearGradient>
+    <linearGradient id="buddy-body" x1="62" y1="104" x2="118" y2="194" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A9C2FF"/>
+      <stop offset="0.45" stop-color="#7198FF"/>
+      <stop offset="1" stop-color="#6D4EF5"/>
+    </linearGradient>
+    <radialGradient id="buddy-core" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(90 76) rotate(90) scale(13)">
+      <stop offset="0" stop-color="#E7FAFF"/>
+      <stop offset="1" stop-color="#79D5FF"/>
+    </radialGradient>
+  </defs>
+
+  <ellipse cx="92" cy="202" rx="34" ry="10" fill="#0F142880" />
+
+  <path d="M50 72C50 47.7 69.7 28 94 28C118.3 28 138 47.7 138 72C138 96.3 118.3 116 94 116H78C62.5 116 50 103.5 50 88V72Z" fill="url(#buddy-hair)"/>
+  <path d="M64 82C64 57.7 81.7 40 106 40C130.3 40 146 57.7 146 82C146 106.3 126.3 126 102 126H92C76.5 126 64 113.5 64 98V82Z" fill="url(#buddy-hair)" opacity="0.42"/>
+
+  <path d="M72 100C72 91.16 79.16 84 88 84H102C110.84 84 118 91.16 118 100V110C118 118.84 110.84 126 102 126H88C79.16 126 72 118.84 72 110V100Z" fill="#FFF8F3"/>
+  <circle cx="82.5" cy="104.5" r="4.5" fill="#17233F"/>
+  <circle cx="107.5" cy="104.5" r="4.5" fill="#17233F"/>
+  <path d="M84 118C87 121 91 122.5 95.5 122.5C100 122.5 103.5 121 106.5 118" stroke="#F19AAC" stroke-width="4" stroke-linecap="round"/>
+
+  <path d="M61 136C61 122.75 71.75 112 85 112H99C112.25 112 123 122.75 123 136V152C123 174.09 105.09 192 83 192H81C69.95 192 61 183.05 61 172V136Z" fill="url(#buddy-body)"/>
+  <path d="M122 144L139 129C145.5 123.5 155 128 155 136.5V169.5C155 178 145.5 182.5 139 177L122 162V144Z" fill="#EAF2FF"/>
+  <path d="M75 144L58 129C51.5 123.5 42 128 42 136.5V169.5C42 178 51.5 182.5 58 177L75 162V144Z" fill="#EAF2FF"/>
+
+  <circle cx="90" cy="76" r="13" fill="url(#buddy-core)"/>
+  <circle cx="90" cy="76" r="7" fill="#13203D"/>
+  <path d="M96 63C101.5 66.5 105 72.6 105 79.5C105 89.17 97.17 97 87.5 97C79.4 97 72.58 91.5 70.61 84" stroke="#2FD0C6" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="99" cy="66" r="4.5" fill="#2FD0C6"/>
+</svg>

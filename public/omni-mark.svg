@@ -1,0 +1,45 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="omni-orbit" x1="24" y1="20" x2="104" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B8CFF"/>
+      <stop offset="0.55" stop-color="#3576FF"/>
+      <stop offset="1" stop-color="#15C7B8"/>
+    </linearGradient>
+    <linearGradient id="omni-core" x1="46" y1="42" x2="82" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#141B34"/>
+      <stop offset="1" stop-color="#0B1022"/>
+    </linearGradient>
+    <radialGradient id="omni-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(64 64) rotate(90) scale(52)">
+      <stop offset="0.55" stop-color="#49A6FF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#49A6FF" stop-opacity="0.18"/>
+    </radialGradient>
+    <filter id="omni-shadow" x="8" y="8" width="112" height="112" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="8"/>
+      <feGaussianBlur stdDeviation="8"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.067 0 0 0 0 0.102 0 0 0 0 0.194 0 0 0 0.25 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <circle cx="64" cy="64" r="52" fill="url(#omni-glow)"/>
+
+  <g filter="url(#omni-shadow)">
+    <path
+      d="M96.95 39.84C87.6 24.71 69.09 18.03 52.34 23.72C33.46 30.13 22.78 50.01 28.52 68.81C34.26 87.61 54.24 98.21 73.12 91.8C86.02 87.42 95.27 77.09 98.33 64.89"
+      stroke="url(#omni-orbit)"
+      stroke-width="13"
+      stroke-linecap="round"
+    />
+
+    <circle cx="86.5" cy="35.5" r="8.5" fill="#15C7B8"/>
+    <circle cx="86.5" cy="35.5" r="3.25" fill="#E8FFFB"/>
+
+    <circle cx="64" cy="64" r="23" fill="url(#omni-core)"/>
+    <circle cx="64" cy="64" r="11.5" fill="url(#omni-orbit)"/>
+    <circle cx="64" cy="64" r="4.5" fill="#EAF4FF"/>
+  </g>
+</svg>
