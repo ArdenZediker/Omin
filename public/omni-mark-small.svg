@@ -1,0 +1,34 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="orb-bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(39 34) rotate(47.3) scale(80.3317)">
+      <stop offset="0" stop-color="#DDF0FF"/>
+      <stop offset="0.34" stop-color="#93B5FF"/>
+      <stop offset="0.66" stop-color="#5C63F2"/>
+      <stop offset="1" stop-color="#241A73"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="31" y1="28" x2="96" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7FBFF" stop-opacity="0.96"/>
+      <stop offset="0.52" stop-color="#C9DCFF" stop-opacity="0.94"/>
+      <stop offset="1" stop-color="#8FE8DC" stop-opacity="0.92"/>
+    </linearGradient>
+    <radialGradient id="core" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(63.5 64) rotate(90) scale(14)">
+      <stop offset="0" stop-color="#F9FCFF"/>
+      <stop offset="1" stop-color="#C7D9FF"/>
+    </radialGradient>
+  </defs>
+
+  <circle cx="64" cy="64" r="56" fill="url(#orb-bg)"/>
+  <circle cx="64" cy="64" r="55.5" stroke="rgba(255,255,255,0.28)" stroke-opacity="0.28"/>
+  <path
+    d="M88.9 39.9C82.17 31.94 71.24 27 59.15 27C39.74 27 24 42.74 24 62.15C24 81.56 39.74 97.3 59.15 97.3C71.46 97.3 82.54 91 88.8 80.73"
+    stroke="url(#ring)"
+    stroke-width="11.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="88.7" cy="39.7" r="7.4" fill="#7AF0D4"/>
+  <circle cx="88.7" cy="39.7" r="3.1" fill="#F6FFFC"/>
+  <circle cx="63.5" cy="64" r="16.5" fill="#132042" fill-opacity="0.82"/>
+  <circle cx="63.5" cy="64" r="8.5" fill="url(#core)"/>
+  <path d="M36 26C43 18.8 52.8 14.5 63.6 14.5" stroke="rgba(255,255,255,0.38)" stroke-opacity="0.38" stroke-width="5.2" stroke-linecap="round"/>
+</svg>
