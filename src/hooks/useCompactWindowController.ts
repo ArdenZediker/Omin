@@ -34,7 +34,7 @@ const appWindow = getCurrentWindow();
 const COMPACT_MENU_HEIGHT = 280;
 const COMPACT_MENU_EDGE_PADDING = 8;
 const COMPACT_MENU_WIDTH = 200;
-const COMPACT_MENU_GAP = 12;
+const COMPACT_MENU_GAP = 6;
 const COMPACT_MENU_SUBMENU_WIDTH = 176;
 const COMPACT_MENU_TREE_FOOTPRINT = COMPACT_MENU_WIDTH + COMPACT_MENU_SUBMENU_WIDTH + COMPACT_MENU_GAP * 2;
 
@@ -124,6 +124,21 @@ export function useCompactWindowController({
   const characterDragTimerRef = useRef<number | null>(null);
   const isCharacterDraggingRef = useRef(false);
   const compactFollowMonitorRef = useRef<string | null>(null);
+  const compactInternalMoveRef = useRef(false);
+  const compactInteractionUntilRef = useRef(0);
+
+  const markCompactInteraction = useCallback(() => {
+    compactInteractionUntilRef.current = Date.now() + 900;
+  }, []);
+
+  const raiseCompactWindow = useCallback(async () => {
+    if (!isCompactWindow) {
+      return;
+    }
+
+    await appWindow.setAlwaysOnTop(true);
+    await appWindow.show();
+  }, [isCompactWindow]);
 
   const resolveCompactMenuSide = useCallback(async (anchorX?: number, anchorY?: number) => {
     if (!isCompactWindow) {
@@ -237,6 +252,10 @@ export function useCompactWindowController({
     let cancelled = false;
     const syncCompactMonitor = async () => {
       try {
+        if (Date.now() <= compactInteractionUntilRef.current) {
+          return;
+        }
+
         const isVisible = await appWindow.isVisible();
         if (!isVisible) {
           return;
@@ -292,13 +311,16 @@ export function useCompactWindowController({
       return;
     }
 
+    void raiseCompactWindow();
+
     let unlisten: (() => void) | undefined;
     void appWindow
       .onFocusChanged(({ payload }) => {
         if (payload) {
-          void appWindow.setAlwaysOnTop(true);
+          void raiseCompactWindow();
           return;
         }
+        void raiseCompactWindow();
         resetCompactFloatingUi();
       })
       .then((fn) => {
@@ -308,7 +330,7 @@ export function useCompactWindowController({
     return () => {
       unlisten?.();
     };
-  }, [isCompactWindow, resetCompactFloatingUi]);
+  }, [isCompactWindow, raiseCompactWindow, resetCompactFloatingUi]);
 
   useEffect(() => {
     if (!isCompactWindow) {
@@ -328,7 +350,11 @@ export function useCompactWindowController({
       if (compactMenuSide === "left") {
         const nextX = Math.round(currentPosition.x + currentSize.width - targetSize.width);
         if (nextX !== Math.round(currentPosition.x)) {
+          compactInternalMoveRef.current = true;
           await appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y)));
+          window.setTimeout(() => {
+            compactInternalMoveRef.current = false;
+          }, 120);
         }
       }
       await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
@@ -353,6 +379,9 @@ export function useCompactWindowController({
     let unlisten: (() => void) | undefined;
     void appWindow
       .onMoved(async (event) => {
+        if (compactInternalMoveRef.current) {
+          return;
+        }
         const scaleFactor = await appWindow.scaleFactor();
         const pos = event.payload.toLogical(scaleFactor);
         persistCompactPosition({ x: Math.round(pos.x), y: Math.round(pos.y) });
@@ -671,6 +700,8 @@ export function useCompactWindowController({
 
   const handleCompactDrag = useCallback(
     async (event: React.MouseEvent<HTMLDivElement>) => {
+      markCompactInteraction();
+      void raiseCompactWindow();
       const target = event.target as HTMLElement;
       if (isCharacterMenuPinned && !target.closest(".compact-menu") && !target.closest(".compact-menu-anchor")) {
         setIsCharacterMenuPinned(false);
@@ -703,6 +734,8 @@ export function useCompactWindowController({
     [
       compactAppearance,
       isCharacterMenuPinned,
+      markCompactInteraction,
+      raiseCompactWindow,
       setCompactReply,
       setIsCharacterMenuPinned,
       setIsCharacterModelOpen,
@@ -714,6 +747,8 @@ export function useCompactWindowController({
   );
 
   const openCompactMenu = useCallback(async (anchorClientX?: number, anchorClientY?: number) => {
+    markCompactInteraction();
+    await raiseCompactWindow();
     if (compactMenuOpeningRef.current || isCompactMenuOpen) {
       return;
     }
@@ -760,6 +795,8 @@ export function useCompactWindowController({
     resolveCompactMenuPosition,
     isCompactMenuOpen,
     isCompactQueryOpen,
+    markCompactInteraction,
+    raiseCompactWindow,
     setIsCharacterMenuPinned,
     setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
