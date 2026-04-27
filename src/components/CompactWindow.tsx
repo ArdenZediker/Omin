@@ -29,6 +29,7 @@ type CompactWindowProps = {
   isCompactReplyLoading: boolean;
   isCharacterModelOpen: boolean;
   compactMenuSide: "left" | "right";
+  compactSubmenuSide: "left" | "right";
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   characterModelOptions: Array<{ id: CharacterModel; title: string; description: string }>;
@@ -87,6 +88,7 @@ export default function CompactWindow({
   isCompactReplyLoading,
   omniSmallIconSrc,
   compactMenuSide,
+  compactSubmenuSide,
   onCharacterContextMenu,
   onCharacterModelChange,
   onCharacterPointerDown,
@@ -249,6 +251,7 @@ export default function CompactWindow({
                 isCompactAppearanceOpen={isCompactAppearanceOpen}
                 isCompactModelOpen={isCompactModelOpen}
                 compactMenuSide={compactMenuSide}
+                compactSubmenuSide={compactSubmenuSide}
                 followCursorScreen={basicSettings.followCursorScreen}
                 onCharacterModelChange={onCharacterModelChange}
                 onCompactAppearanceChange={onCompactAppearanceChange}
