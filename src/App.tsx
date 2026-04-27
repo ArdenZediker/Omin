@@ -58,6 +58,7 @@ function App() {
     closeCompactMenus,
     compactAppearance,
     compactMenuSide,
+    compactSubmenuSide,
     compactQuery,
     compactReply,
     isCharacterMenuPinned,
@@ -76,6 +77,7 @@ function App() {
     setCompactQuery,
     setCompactReply,
     setCompactMenuSide,
+    setCompactSubmenuSide,
     setIsCharacterMenuPinned,
     setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
@@ -232,6 +234,7 @@ function App() {
     closeCompactMenus,
     compactAppearance,
     compactMenuSide,
+    compactSubmenuSide,
     compactQuery,
     compactReply,
     compactSize,
@@ -254,6 +257,7 @@ function App() {
     setCompactQuery,
     setCompactReply,
     setCompactMenuSide,
+    setCompactSubmenuSide,
     setCurrentModel,
     setIsCharacterMenuPinned,
     setIsCharacterModelOpen,
@@ -351,6 +355,7 @@ function App() {
         isCompactMenuOpen={isCompactMenuOpen}
         isCompactModelOpen={isCompactModelOpen}
         compactMenuSide={compactMenuSide}
+        compactSubmenuSide={compactSubmenuSide}
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
         omniSmallIconSrc={omniSmallIconSrc}

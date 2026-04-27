@@ -54,6 +54,7 @@ type CompactMenuProps = {
   isCompactAppearanceOpen: boolean;
   isCompactModelOpen: boolean;
   compactMenuSide: "left" | "right";
+  compactSubmenuSide: "left" | "right";
   followCursorScreen: boolean;
   onCharacterModelChange: (model: CharacterModel) => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
@@ -89,6 +90,7 @@ export default function CompactMenu({
   isCompactAppearanceOpen,
   isCompactModelOpen,
   compactMenuSide,
+  compactSubmenuSide,
   followCursorScreen,
   onCharacterModelChange,
   onCompactAppearanceChange,
@@ -227,7 +229,7 @@ export default function CompactMenu({
 
       {isCompactModelOpen && (
         <div
-          className={`compact-submenu compact-submenu--${compactMenuSide} animate-fade-in`}
+          className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(true);
             onSetIsCompactAppearanceOpen(false);
@@ -269,7 +271,7 @@ export default function CompactMenu({
 
       {isCompactAppearanceOpen && (
         <div
-          className={`compact-submenu compact-submenu--${compactMenuSide} animate-fade-in`}
+          className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(true);
@@ -329,7 +331,7 @@ export default function CompactMenu({
 
       {isCompactAppearanceOpen && isCharacterModelOpen && (
         <div
-          className={`compact-submenu compact-submenu--${compactMenuSide} animate-fade-in`}
+          className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCharacterModelOpen(true);
