@@ -1,4 +1,4 @@
-// Omni - Ollama Adapter (Local Models)
+// Omni - Ollama 适配器（本地模型）
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 
 const OLLAMA_MODELS: ModelConfig[] = [
@@ -110,7 +110,7 @@ export class OllamaAdapter implements ModelAdapter {
             onChunk({ content: "", done: true, model });
           }
         } catch {
-          // Skip
+          // 跳过
         }
       }
     }

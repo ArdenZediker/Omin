@@ -1,4 +1,4 @@
-// Omni - Claude Adapter
+// Omni - Claude 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 
 const CLAUDE_MODELS: ModelConfig[] = [
@@ -20,7 +20,7 @@ export class ClaudeAdapter implements ModelAdapter {
   }
 
   private buildMessages(request: ChatRequest) {
-    // Claude requires separate system message
+    // Claude 需要单独的系统消息
     const systemMsg = request.messages.find((m) => m.role === "system");
     const chatMsgs = request.messages.filter((m) => m.role !== "system");
 
@@ -140,7 +140,7 @@ export class ClaudeAdapter implements ModelAdapter {
             onChunk({ content: "", done: true, model });
           }
         } catch {
-          // Skip
+          // 跳过
         }
       }
     }

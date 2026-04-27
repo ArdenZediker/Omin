@@ -58,14 +58,14 @@ export async function executeChatTurn(options: {
 
   const adapter = modelRegistry.getAdapterForModel(model);
   if (!adapter) {
-    throw new Error(`模型 "${model}" 对应的提供方还未配置`);
+    throw new Error(`模型 "${model}" 对应的提供方尚未配置`);
   }
 
   const modelConfig = modelRegistry.getModelConfig(model);
   const preferences = getUsagePreferences();
   const hasImages = messages.some((message) => (message.images?.length ?? 0) > 0);
   if (hasImages && (!modelConfig?.supportsVision || !preferences.enableVisionInput)) {
-    throw new Error("当前模型或使用偏好不允许图片输入");
+    throw new Error("当前模型或偏好设置不允许图片输入");
   }
 
   const requestMessages: Message[] = [{ role: "system", content: systemPrompt }, ...messages];

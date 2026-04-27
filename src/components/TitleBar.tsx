@@ -20,11 +20,13 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
     };
 
     void syncMaximizedState();
-    void appWindow.onResized(() => {
-      void syncMaximizedState();
-    }).then((unlisten) => {
-      unlistenResize = unlisten;
-    });
+    void appWindow
+      .onResized(() => {
+        void syncMaximizedState();
+      })
+      .then((unlisten) => {
+        unlistenResize = unlisten;
+      });
 
     return () => {
       unlistenResize?.();
@@ -69,10 +71,7 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
   };
 
   return (
-    <div
-      className="flex items-center justify-between h-9 px-3 drag-region select-none shrink-0"
-      onMouseDown={handleDragStart}
-    >
+    <div className="flex items-center justify-between h-9 px-3 drag-region select-none shrink-0" onMouseDown={handleDragStart}>
       <div className="flex items-center gap-2">
         <img src={omniIconSrc} alt="Omni" className="w-4 h-4" />
         <span className="text-xs font-semibold text-white/80 tracking-wider">OMNI</span>
@@ -99,9 +98,19 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
         >
           <svg className="w-3 h-3 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             {isMaximized ? (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"
+              />
             ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"
+              />
             )}
           </svg>
         </button>
