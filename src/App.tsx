@@ -9,12 +9,14 @@ import MainChatView from "./components/MainChatView";
 import CompactWindow from "./components/CompactWindow";
 import {
   CHARACTER_SCALE_BASELINE,
+  BASIC_SETTINGS_STORAGE_KEY,
   CURRENT_MODEL_STORAGE_KEY,
   EMPTY_CHAT_PROMPTS,
   omniIconSrc,
   omniSmallIconSrc,
 } from "./app/constants";
 import type { BasicSettings, ViewMode } from "./app/types";
+import { saveBasicSettings } from "./app/settingsStore";
 import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getStoredMainView, isCharacterPointerInHitArea } from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
@@ -55,6 +57,7 @@ function App() {
     closeCompactMenuPanels,
     closeCompactMenus,
     compactAppearance,
+    compactMenuSide,
     compactQuery,
     compactReply,
     isCharacterMenuPinned,
@@ -72,6 +75,7 @@ function App() {
     setCompactAppearance,
     setCompactQuery,
     setCompactReply,
+    setCompactMenuSide,
     setIsCharacterMenuPinned,
     setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
@@ -160,6 +164,14 @@ function App() {
     localStorage.setItem(CURRENT_MODEL_STORAGE_KEY, modelId);
   }, []);
 
+  const updateBasicSettings = useCallback((patch: Partial<BasicSettings>) => {
+    setBasicSettings((current) => {
+      const next = { ...current, ...patch };
+      saveBasicSettings(BASIC_SETTINGS_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
   const {
     editingMessageIndex,
     error,
@@ -215,11 +227,11 @@ function App() {
 
   const compactController = useCompactWindowController({
     basicSettings,
-    characterPanelSide,
     clearCompactReply,
     closeCompactMenuPanels,
     closeCompactMenus,
     compactAppearance,
+    compactMenuSide,
     compactQuery,
     compactReply,
     compactSize,
@@ -241,6 +253,7 @@ function App() {
     setCompactAppearance,
     setCompactQuery,
     setCompactReply,
+    setCompactMenuSide,
     setCurrentModel,
     setIsCharacterMenuPinned,
     setIsCharacterModelOpen,
@@ -332,10 +345,12 @@ function App() {
         isCharacterAppearance={isCharacterAppearance}
         isCharacterDragging={compactController.isCharacterDragging}
         isCharacterHorizontalPanelOpen={isCharacterHorizontalPanelOpen}
+        isCharacterMenuPinned={isCharacterMenuPinned}
         isCharacterModelOpen={isCharacterModelOpen}
         isCompactAppearanceOpen={isCompactAppearanceOpen}
         isCompactMenuOpen={isCompactMenuOpen}
         isCompactModelOpen={isCompactModelOpen}
+        compactMenuSide={compactMenuSide}
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
         omniSmallIconSrc={omniSmallIconSrc}
@@ -358,6 +373,7 @@ function App() {
         onSetCharacterMenuPinned={setIsCharacterMenuPinned}
         onSetCompactQuery={setCompactQuery}
         onSetCompactReply={setCompactReply}
+        onUpdateBasicSettings={updateBasicSettings}
         onSetIsCharacterModelOpen={setIsCharacterModelOpen}
         onSetIsCompactAppearanceOpen={setIsCompactAppearanceOpen}
         onSetIsCompactMenuOpen={setIsCompactMenuOpen}

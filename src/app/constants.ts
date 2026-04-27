@@ -58,13 +58,20 @@ export const CHARACTER_MODEL_OPTIONS: Array<{ id: CharacterModel; title: string;
 ];
 
 export const EXTERNAL_CHAT_ENTRIES: ExternalChatEntry[] = [
-  { id: "omni", title: "Omni", description: "打开 Omni 主界面", kind: "main" },
-  { id: "openai", title: "ChatGPT", description: "打开 OpenAI 官方聊天界面", url: "https://chatgpt.com/", kind: "external" },
-  { id: "claude", title: "Claude", description: "打开 Anthropic 官方聊天界面", url: "https://claude.ai/", kind: "external" },
-  { id: "gemini", title: "Gemini", description: "打开 Google 官方聊天界面", url: "https://gemini.google.com/app", kind: "external" },
-  { id: "deepseek", title: "DeepSeek", description: "打开 DeepSeek 官方聊天界面", url: "https://chat.deepseek.com/", kind: "external" },
-  { id: "copilot", title: "Copilot", description: "打开 Microsoft Copilot 聊天界面", url: "https://copilot.microsoft.com/", kind: "external" },
-  { id: "poe", title: "Poe", description: "打开 Poe 聊天界面", url: "https://poe.com/", kind: "external" },
+  { id: "omni", title: "Omni", description: "打开 Omni 主界面", group: "common", kind: "main", icon: "omni" },
+  { id: "openai", title: "ChatGPT", description: "打开 OpenAI 官方聊天界面", group: "common", url: "https://chatgpt.com/", kind: "external", icon: "chatgpt" },
+  { id: "poe", title: "PoeChat", description: "打开 Poe 聊天界面", group: "common", url: "https://poe.com/", kind: "external", icon: "poe" },
+  { id: "gemini", title: "Gemini", description: "打开 Google 官方聊天界面", group: "common", url: "https://gemini.google.com/app", kind: "external", icon: "gemini" },
+  { id: "copilot", title: "Copilot", description: "打开 Microsoft Copilot 聊天界面", group: "common", url: "https://copilot.microsoft.com/", kind: "external", icon: "copilot" },
+  { id: "claude", title: "Claude", description: "打开 Anthropic 官方聊天界面", group: "common", url: "https://claude.ai/", kind: "external", icon: "claude" },
+  { id: "iflytekcloud", title: "讯飞星火", description: "打开讯飞星火官方聊天界面", group: "domestic", url: "https://xinghuo.xfyun.cn/", kind: "external", icon: "iflytekcloud" },
+  { id: "zhipu", title: "智谱清言", description: "打开智谱清言官方聊天界面", group: "domestic", url: "https://chatglm.cn/", kind: "external", icon: "zhipu" },
+  { id: "metaso", title: "秘塔搜索", description: "打开秘塔 AI 搜索", group: "domestic", url: "https://metaso.cn/", kind: "external", icon: "metaso" },
+  { id: "baichuan", title: "百川大模型", description: "打开百川大模型官方界面", group: "domestic", url: "https://platform.baichuan-ai.com/", kind: "external", icon: "baichuan" },
+  { id: "qwen", title: "通义千问", description: "打开 Qwen Chat", group: "domestic", url: "https://chat.qwen.ai/", kind: "external", icon: "qwen" },
+  { id: "yuanbao", title: "腾讯元宝", description: "打开腾讯元宝官方界面", group: "domestic", url: "https://yuanbao.tencent.com/AI", kind: "external", icon: "yuanbao" },
+  { id: "doubao", title: "抖音豆包", description: "打开豆包官方界面", group: "domestic", url: "https://www.doubao.com/", kind: "external", icon: "doubao" },
+  { id: "deepseek", title: "DeepSeek", description: "打开 DeepSeek 官方聊天界面", group: "domestic", url: "https://chat.deepseek.com/", kind: "external", icon: "deepseek" },
 ];
 
 export const CHAT_WINDOW_SIZE = { width: 1200, height: 820 };

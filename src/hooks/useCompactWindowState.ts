@@ -41,6 +41,7 @@ export function useCompactWindowState() {
   const [isCompactAppearanceOpen, setIsCompactAppearanceOpen] = useState(false);
   const [isCharacterModelOpen, setIsCharacterModelOpen] = useState(false);
   const [isCharacterMenuPinned, setIsCharacterMenuPinned] = useState(false);
+  const [compactMenuSide, setCompactMenuSide] = useState<"left" | "right">("right");
   const [characterMenuPosition, setCharacterMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [characterPanelSide, setCharacterPanelSide] = useState<"left" | "right">("left");
   const [isCompactQueryOpen, setIsCompactQueryOpen] = useState(false);
@@ -76,7 +77,6 @@ export function useCompactWindowState() {
     setIsCompactModelOpen(false);
     setIsCompactAppearanceOpen(false);
     setIsCharacterModelOpen(false);
-    setCharacterMenuPosition(null);
   }, []);
 
   const closeCompactMenus = useCallback(() => {
@@ -117,6 +117,7 @@ export function useCompactWindowState() {
     isCompactAppearanceOpen,
     isCompactMenuOpen,
     isCompactModelOpen,
+    compactMenuSide,
     isCompactQueryOpen,
     isCompactReplyLoading,
     resetCompactFloatingUi,
@@ -127,6 +128,7 @@ export function useCompactWindowState() {
     setCompactAppearance,
     setCompactQuery,
     setCompactReply,
+    setCompactMenuSide,
     setIsCharacterMenuPinned,
     setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,

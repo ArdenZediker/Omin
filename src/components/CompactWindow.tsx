@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, Dispatch, MouseEvent, SetStateAction, WheelEvent } from "react";
 import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindowState";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
 import Live2DCharacter from "./Live2DCharacter";
@@ -13,6 +13,7 @@ type CompactWindowProps = {
   characterPanelSide: "left" | "right";
   characterScale: number;
   compactAppearance: CompactAppearance;
+  isCharacterMenuPinned: boolean;
   compactQuery: string;
   compactReply: CompactReply | null;
   compactSize: { width: number; height: number };
@@ -27,34 +28,36 @@ type CompactWindowProps = {
   isCompactQueryOpen: boolean;
   isCompactReplyLoading: boolean;
   isCharacterModelOpen: boolean;
+  compactMenuSide: "left" | "right";
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   characterModelOptions: Array<{ id: CharacterModel; title: string; description: string }>;
-  onCharacterContextMenu: (e: React.MouseEvent<HTMLDivElement>) => void | Promise<void>;
+  onCharacterContextMenu: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
   onCharacterModelChange: (model: CharacterModel) => void;
-  onCharacterPointerDown: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onCharacterPointerDown: (e: MouseEvent<HTMLButtonElement>) => void;
   onCharacterPointerUp: () => void;
   onCloseCompactMenu: () => void;
   onCloseCompactMenuNow: () => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
-  onCompactDrag: (e: React.MouseEvent<HTMLDivElement>) => void | Promise<void>;
+  onCompactDrag: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
   onCompactQuerySubmit: (openMain?: boolean) => void | Promise<void>;
   onCompactScaleReset: () => void;
-  onCompactWheel: (e: React.WheelEvent<HTMLDivElement>) => void;
-  onOpenCompactMenu: () => void;
+  onCompactWheel: (e: WheelEvent<HTMLDivElement>) => void;
+  onOpenCompactMenu: (clientX?: number, clientY?: number) => void | Promise<void>;
   onOpenCompactQuery: () => void | Promise<void>;
   onOpenExternalChat: (entry: ExternalChatEntry) => void | Promise<void>;
   onOpenSettingsFromCompact: () => void | Promise<void>;
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
-  onSetCharacterMenuPinned: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetCompactQuery: React.Dispatch<React.SetStateAction<string>>;
-  onSetCompactReply: React.Dispatch<React.SetStateAction<CompactReply | null>>;
-  onSetIsCharacterModelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCompactAppearanceOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCompactMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCompactModelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCompactQueryOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCompactReplyLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  onSetCharacterMenuPinned: Dispatch<SetStateAction<boolean>>;
+  onSetCompactQuery: Dispatch<SetStateAction<string>>;
+  onSetCompactReply: Dispatch<SetStateAction<CompactReply | null>>;
+  onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
+  onSetIsCharacterModelOpen: Dispatch<SetStateAction<boolean>>;
+  onSetIsCompactAppearanceOpen: Dispatch<SetStateAction<boolean>>;
+  onSetIsCompactMenuOpen: Dispatch<SetStateAction<boolean>>;
+  onSetIsCompactModelOpen: Dispatch<SetStateAction<boolean>>;
+  onSetIsCompactQueryOpen: Dispatch<SetStateAction<boolean>>;
+  onSetIsCompactReplyLoading: Dispatch<SetStateAction<boolean>>;
   onToggleMainFromCompact: () => void | Promise<void>;
 };
 
@@ -67,6 +70,7 @@ export default function CompactWindow({
   characterPanelSide,
   characterScale,
   compactAppearance,
+  isCharacterMenuPinned,
   compactQuery,
   compactReply,
   compactSize,
@@ -82,6 +86,7 @@ export default function CompactWindow({
   isCompactQueryOpen,
   isCompactReplyLoading,
   omniSmallIconSrc,
+  compactMenuSide,
   onCharacterContextMenu,
   onCharacterModelChange,
   onCharacterPointerDown,
@@ -101,6 +106,7 @@ export default function CompactWindow({
   onSetCharacterMenuPinned,
   onSetCompactQuery,
   onSetCompactReply,
+  onUpdateBasicSettings,
   onSetIsCharacterModelOpen,
   onSetIsCompactAppearanceOpen,
   onSetIsCompactMenuOpen,
@@ -114,28 +120,42 @@ export default function CompactWindow({
     onSetIsCompactReplyLoading(false);
   };
 
+  const resolveAnchorEdge = (target: HTMLElement) => {
+    const anchor = target.querySelector<HTMLElement>(".compact-menu-anchor");
+    if (!anchor) {
+      return null;
+    }
+
+    const rect = anchor.getBoundingClientRect();
+    return {
+      // 取按钮内部偏右的锚点，避免贴近双屏分界线时误判到另一块屏幕。
+      x: rect.left + rect.width * 0.62,
+      y: rect.top + rect.height / 2,
+    };
+  };
+
   return (
     <div
       className={`compact-shell drag-region ${
         isCharacterHorizontalPanelOpen && characterPanelSide === "left" ? "compact-shell--reply-left" : ""
-      }`}
+      } ${isCompactMenuOpen && !isCharacterMenuPinned && compactMenuSide === "left" ? "compact-shell--menu-left" : ""}`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
+        const isInsideFloatingPanel = Boolean(
+          target.closest(".compact-query") || target.closest(".compact-reply") || target.closest(".compact-menu") || target.closest(".compact-submenu")
+        );
+        const hasFloatingPanel = Boolean(isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply);
+
+        if (hasFloatingPanel && !isInsideFloatingPanel) {
+          e.preventDefault();
+          e.stopPropagation();
+          onCloseCompactMenuNow();
+          onSetIsCompactQueryOpen(false);
+          closeReply();
+          return;
+        }
+
         if (isCharacterAppearance) {
-          const isInsideFloatingPanel = Boolean(
-            target.closest(".compact-query") ||
-              target.closest(".compact-reply") ||
-              target.closest(".compact-menu") ||
-              target.closest(".compact-submenu")
-          );
-          const hasFloatingPanel = Boolean(isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply);
-          if (hasFloatingPanel && !isInsideFloatingPanel) {
-            e.preventDefault();
-            e.stopPropagation();
-            onCloseCompactMenuNow();
-            onSetIsCompactQueryOpen(false);
-            closeReply();
-          }
           return;
         }
         if (!target.closest(".compact-hover-zone") && !target.closest(".compact-query") && !target.closest(".compact-reply")) {
@@ -147,14 +167,22 @@ export default function CompactWindow({
     >
       <div
         className={`compact-hover-zone ${isCharacterAppearance ? "compact-hover-zone--character" : ""}`}
-        onMouseEnter={!isCharacterAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "hover" ? onOpenCompactMenu : undefined}
+        onMouseEnter={
+          !isCharacterAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
+            ? (e) => {
+                const anchor = resolveAnchorEdge(e.currentTarget);
+                void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
+              }
+            : undefined
+        }
         onMouseLeave={!isCharacterAppearance && !isCompactQueryOpen ? onCloseCompactMenu : undefined}
         onClick={
           !isCharacterAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "click"
             ? (e) => {
                 const target = e.target as HTMLElement;
                 if (!target.closest("button")) {
-                  onOpenCompactMenu();
+                  const anchor = resolveAnchorEdge(e.currentTarget);
+                  void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
                 }
               }
             : undefined
@@ -210,7 +238,7 @@ export default function CompactWindow({
             {isCompactMenuOpen && (
               <CompactMenu
                 appearanceOptions={appearanceOptions}
-                characterMenuPosition={characterMenuPosition}
+                characterMenuPosition={isCharacterMenuPinned ? characterMenuPosition : null}
                 characterModel={characterModel}
                 characterModelOptions={characterModelOptions}
                 characterScale={characterScale}
@@ -220,11 +248,14 @@ export default function CompactWindow({
                 isCharacterModelOpen={isCharacterModelOpen}
                 isCompactAppearanceOpen={isCompactAppearanceOpen}
                 isCompactModelOpen={isCompactModelOpen}
+                compactMenuSide={compactMenuSide}
+                followCursorScreen={basicSettings.followCursorScreen}
                 onCharacterModelChange={onCharacterModelChange}
                 onCompactAppearanceChange={onCompactAppearanceChange}
                 onOpenExternalChat={onOpenExternalChat}
                 onOpenSettingsFromCompact={onOpenSettingsFromCompact}
                 onScaleReset={onCompactScaleReset}
+                onUpdateBasicSettings={onUpdateBasicSettings}
                 onSetCharacterMenuPinned={onSetCharacterMenuPinned}
                 onSetIsCharacterModelOpen={onSetIsCharacterModelOpen}
                 onSetIsCompactAppearanceOpen={onSetIsCompactAppearanceOpen}
