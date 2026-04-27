@@ -57,7 +57,10 @@ type UseCompactWindowControllerArgs = {
   effectiveCompactScale: number;
   isCharacterAppearance: boolean;
   isCharacterMenuPinned: boolean;
+  isCharacterModelOpen: boolean;
+  isCompactAppearanceOpen: boolean;
   isCompactMenuOpen: boolean;
+  isCompactModelOpen: boolean;
   isCompactQueryOpen: boolean;
   isCompactReplyLoading: boolean;
   isCompactWindow: boolean;
@@ -98,7 +101,10 @@ export function useCompactWindowController({
   effectiveCompactScale,
   isCharacterAppearance,
   isCharacterMenuPinned,
+  isCharacterModelOpen,
+  isCompactAppearanceOpen,
   isCompactMenuOpen,
+  isCompactModelOpen,
   isCompactQueryOpen,
   isCompactReplyLoading,
   isCompactWindow,
@@ -346,11 +352,44 @@ export function useCompactWindowController({
   }, [isCompactWindow, raiseCompactWindow, resetCompactFloatingUi]);
 
   useEffect(() => {
+    if (!isCompactWindow || !basicSettings.showCompactBall) {
+      return;
+    }
+
+    let cancelled = false;
+    const ensureTopmost = async () => {
+      try {
+        if (cancelled) {
+          return;
+        }
+        const isVisible = await appWindow.isVisible();
+        if (!isVisible) {
+          return;
+        }
+        await appWindow.setAlwaysOnTop(true);
+      } catch {
+        // 忽略置顶恢复失败
+      }
+    };
+
+    void ensureTopmost();
+    const timer = window.setInterval(() => {
+      void ensureTopmost();
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [basicSettings.showCompactBall, isCompactWindow]);
+
+  useEffect(() => {
     if (!isCompactWindow) {
       return;
     }
 
     const targetSize = compactViewportSize ?? compactSize;
+    const isCompactSubmenuOpen = isCompactMenuOpen && (isCompactModelOpen || isCompactAppearanceOpen || isCharacterModelOpen);
     void (async () => {
       const scaleFactor = await appWindow.scaleFactor();
       const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
@@ -360,7 +399,7 @@ export function useCompactWindowController({
         return;
       }
 
-      if (compactMenuSide === "left" || compactSubmenuSide === "left") {
+      if (compactMenuSide === "left" || (isCompactSubmenuOpen && compactSubmenuSide === "left")) {
         const nextX = Math.round(currentPosition.x + currentSize.width - targetSize.width);
         if (nextX !== Math.round(currentPosition.x)) {
           compactInternalMoveRef.current = true;
@@ -371,6 +410,7 @@ export function useCompactWindowController({
         }
       }
       await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
+      await appWindow.setAlwaysOnTop(true);
     })();
   }, [
     compactReply,
@@ -378,8 +418,11 @@ export function useCompactWindowController({
     compactViewportSize,
     compactMenuSide,
     compactSubmenuSide,
+    isCharacterModelOpen,
     isCharacterAppearance,
+    isCompactAppearanceOpen,
     isCompactMenuOpen,
+    isCompactModelOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
