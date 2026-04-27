@@ -67,7 +67,7 @@ export const EXTERNAL_CHAT_ENTRIES: ExternalChatEntry[] = [
   { id: "iflytekcloud", title: "讯飞星火", description: "打开讯飞星火官方聊天界面", group: "domestic", url: "https://xinghuo.xfyun.cn/", kind: "external", icon: "iflytekcloud" },
   { id: "zhipu", title: "智谱清言", description: "打开智谱清言官方聊天界面", group: "domestic", url: "https://chatglm.cn/", kind: "external", icon: "zhipu" },
   { id: "metaso", title: "秘塔搜索", description: "打开秘塔 AI 搜索", group: "domestic", url: "https://metaso.cn/", kind: "external", icon: "metaso" },
-  { id: "baichuan", title: "百川大模型", description: "打开百川大模型官方界面", group: "domestic", url: "https://platform.baichuan-ai.com/", kind: "external", icon: "baichuan" },
+  { id: "baichuan", title: "百川大模型", description: "打开百川大模型官网界面", group: "domestic", url: "https://platform.baichuan-ai.com/", kind: "external", icon: "baichuan" },
   { id: "qwen", title: "通义千问", description: "打开 Qwen Chat", group: "domestic", url: "https://chat.qwen.ai/", kind: "external", icon: "qwen" },
   { id: "yuanbao", title: "腾讯元宝", description: "打开腾讯元宝官方界面", group: "domestic", url: "https://yuanbao.tencent.com/AI", kind: "external", icon: "yuanbao" },
   { id: "doubao", title: "抖音豆包", description: "打开豆包官方界面", group: "domestic", url: "https://www.doubao.com/", kind: "external", icon: "doubao" },
