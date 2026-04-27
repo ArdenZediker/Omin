@@ -1281,6 +1281,57 @@ body,
   transition: background 120ms ease, color 120ms ease;
 }
 
+.compact-menu__item-main {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-menu__leading-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.compact-menu__icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  display: block;
+  stroke-width: 2;
+}
+
+.compact-menu__entry {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-menu__group + .compact-menu__group {
+  margin-top: 8px;
+}
+
+.compact-menu__group-label {
+  padding: 3px 6px 5px;
+  color: rgba(71, 85, 105, 0.68);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.compact-menu__entry-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  display: block;
+}
+
 .compact-menu__item:hover,
 .compact-menu__item--active {
   background: rgba(99, 102, 241, 0.12);
@@ -1291,6 +1342,48 @@ body,
   font-weight: 500;
 }
 
+.compact-menu__item--toggle {
+  font-weight: 500;
+}
+
+.compact-menu__toggle-main {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-menu__check {
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(71, 85, 105, 0.42);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: #2563eb;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.compact-menu__check-icon {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.4;
+}
+
+.compact-menu__check--checked {
+  border-color: rgba(37, 99, 235, 0.65);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.compact-menu__toggle-meta {
+  font-size: 10px;
+  color: rgba(71, 85, 105, 0.68);
+}
+
 .compact-menu__meta {
   font-size: 10px;
   color: rgba(71, 85, 105, 0.68);
@@ -1299,6 +1392,13 @@ body,
 .compact-menu__arrow {
   font-size: 14px;
   line-height: 1;
+  color: rgba(71, 85, 105, 0.7);
+}
+
+.compact-menu__arrow-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
   color: rgba(71, 85, 105, 0.7);
 }
 
@@ -1617,7 +1717,7 @@ body,
 
 .compact-menu__item--settings {
   margin-top: 8px;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
   border-radius: 10px;
   font-weight: 700;
@@ -1649,23 +1749,6 @@ body,
   height: 14px;
   flex: 0 0 auto;
   color: #ffffff;
-  opacity: 1;
-}
-
-.compact-menu__item--settings > span {
-  font-size: 0;
-}
-
-.compact-menu__item--settings > span::after {
-  content: "设置";
-  font-size: 12px;
-}
-
-.compact-menu__item--settings > span::after {
-  content: "设置";
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
   opacity: 1;
 }
 
