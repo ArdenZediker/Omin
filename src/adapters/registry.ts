@@ -1,5 +1,5 @@
-// Omni - Model Registry & Dispatcher
-// Central hub for managing all AI model adapters
+// Omni - 模型注册与调度器
+// 负责集中管理所有 AI 模型适配器
 
 import type { ModelAdapter, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, ModelConfig, CustomModelConfig } from "./types";
 import { OpenAIAdapter } from "./openai";
@@ -27,15 +27,15 @@ const ADAPTER_MAP: Record<string, AdapterConstructor> = {
 class ModelRegistry {
   private adapters: Map<string, ModelAdapter> = new Map();
   private configs: Map<string, ProviderConfig> = new Map();
-  private customModels: Map<string, CustomModelConfig[]> = new Map(); // provider -> custom models
+  private customModels: Map<string, CustomModelConfig[]> = new Map(); // 提供方 -> 自定义模型
   private currentModel: string = "gpt-4o";
 
-  // Register a provider with its config
+  // 注册提供方及其配置
   registerProvider(provider: string, config: ProviderConfig): void {
     const AdapterClass = ADAPTER_MAP[provider] || OpenAIAdapter;
     this.configs.set(provider, config);
     this.adapters.set(provider, new AdapterClass(config));
-    // Store custom models if provided
+    // 如果提供了自定义模型，则保存起来
     if (config.customModels && config.customModels.length > 0) {
       this.customModels.set(provider, config.customModels);
     } else {
@@ -43,21 +43,21 @@ class ModelRegistry {
     }
   }
 
-  // Remove a provider
+  // 移除提供方
   unregisterProvider(provider: string): void {
     this.adapters.delete(provider);
     this.configs.delete(provider);
     this.customModels.delete(provider);
   }
 
-  // Add a custom model to a provider
+  // 为提供方添加自定义模型
   addCustomModel(provider: string, model: CustomModelConfig): void {
     const models = this.customModels.get(provider) || [];
-    // Avoid duplicate IDs
+    // 避免重复 ID
     if (!models.find((m) => m.id === model.id)) {
       models.push(model);
       this.customModels.set(provider, models);
-      // Also update the stored config
+      // 同步更新已保存的配置
       const config = this.configs.get(provider);
       if (config) {
         config.customModels = models;
@@ -65,31 +65,31 @@ class ModelRegistry {
     }
   }
 
-  // Remove a custom model from a provider
+  // 从提供方移除自定义模型
   removeCustomModel(provider: string, modelId: string): void {
     const models = this.customModels.get(provider) || [];
     const filtered = models.filter((m) => m.id !== modelId);
     this.customModels.set(provider, filtered);
-    // Also update the stored config
+    // 同步更新已保存的配置
     const config = this.configs.get(provider);
     if (config) {
       config.customModels = filtered;
     }
   }
 
-  // Get custom models for a provider
+  // 获取某个提供方的自定义模型
   getCustomModels(provider: string): CustomModelConfig[] {
     return this.customModels.get(provider) || [];
   }
 
-  // Get adapter for a specific model
+  // 获取指定模型对应的适配器
   getAdapterForModel(modelId: string): ModelAdapter | null {
     const modelConfig = this.getModelConfig(modelId);
     if (!modelConfig) return null;
     return this.adapters.get(modelConfig.provider) || null;
   }
 
-  // Get all available models (custom model list first; built-ins are fallback only)
+  // 获取全部可用模型（自定义模型优先，内置模型仅作兜底）
   getAvailableModels(): ModelConfig[] {
     const registered = Array.from(this.adapters.keys());
     const custom: ModelConfig[] = [];
@@ -116,12 +116,12 @@ class ModelRegistry {
     return BUILTIN_MODELS.filter((m) => registered.includes(m.provider));
   }
 
-  // Get model config
+  // 获取模型配置
   getModelConfig(modelId: string): ModelConfig | undefined {
-    // Check built-in first
+    // 先检查内置模型
     const builtin = BUILTIN_MODELS.find((m) => m.id === modelId);
     if (builtin) return builtin;
-    // Check custom models
+    // 再检查自定义模型
     for (const [provider, models] of this.customModels.entries()) {
       const found = models.find((m) => m.id === modelId);
       if (found) {
@@ -139,17 +139,17 @@ class ModelRegistry {
     return undefined;
   }
 
-  // Set current model
+  // 设置当前模型
   setCurrentModel(modelId: string): void {
     this.currentModel = modelId;
   }
 
-  // Get current model
+  // 获取当前模型
   getCurrentModel(): string {
     return this.currentModel;
   }
 
-  // Send a chat message using the current or specified model
+  // 使用当前模型或指定模型发送聊天消息
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const model = request.model || this.currentModel;
     const modelConfig = this.getModelConfig(model);
@@ -160,7 +160,7 @@ class ModelRegistry {
     return adapter.chat({ ...request, model: modelConfig.requestModelId || model });
   }
 
-  // Stream a chat message
+  // 流式发送聊天消息
   async chatStream(
     request: ChatRequest,
     onChunk: (chunk: StreamChunk) => void
@@ -174,24 +174,24 @@ class ModelRegistry {
     return adapter.chatStream({ ...request, model: modelConfig.requestModelId || model }, onChunk);
   }
 
-  // Validate a provider's credentials
+  // 验证提供方凭据
   async validateProvider(provider: string): Promise<boolean> {
     const adapter = this.adapters.get(provider);
     if (!adapter) return false;
     return adapter.validate();
   }
 
-  // Get all registered providers
+  // 获取所有已注册提供方
   getRegisteredProviders(): string[] {
     return Array.from(this.adapters.keys());
   }
 
-  // Check if a provider is registered
+  // 检查某个提供方是否已注册
   isProviderRegistered(provider: string): boolean {
     return this.adapters.has(provider);
   }
 
-  // Get provider config (without API key for security)
+  // 获取提供方配置（不包含 API Key，避免泄露）
   getProviderConfig(provider: string): { name?: string; baseUrl?: string; hasApiKey: boolean } | null {
     const config = this.configs.get(provider);
     if (!config) return null;
@@ -199,17 +199,17 @@ class ModelRegistry {
   }
 }
 
-// Singleton instance
+// 单例实例
 export const modelRegistry = new ModelRegistry();
 
-// Persist/restore config to localStorage
+// 持久化配置到 localStorage，并支持恢复
 const STORAGE_KEY = "omni_provider_configs";
 const CURRENT_MODEL_STORAGE_KEY = "omni_current_model";
 
 export function saveProviderConfigs(): void {
   const data: Record<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> = {};
   modelRegistry.getRegisteredProviders().forEach((provider) => {
-    // We need the raw config for saving - access through private map
+    // 保存时需要原始配置，直接访问私有映射
     const rawConfig = (modelRegistry as unknown as { configs: Map<string, ProviderConfig> }).configs.get(provider);
     if (rawConfig) {
       data[provider] = { apiKey: rawConfig.apiKey, baseUrl: rawConfig.baseUrl, name: rawConfig.name, customModels: rawConfig.customModels };
@@ -244,6 +244,6 @@ export function loadProviderConfigs(): void {
       modelRegistry.setCurrentModel(availableModels[0].id);
     }
   } catch {
-    // Ignore parse errors
+    // 忽略解析错误
   }
 }

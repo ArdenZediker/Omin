@@ -1,10 +1,10 @@
-// Omni - Multi-Model Adapter Layer
-// Unified interface for all AI model providers
+// Omni - 多模型适配层
+// 为所有 AI 模型提供统一接口
 
 export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
-  images?: string[]; // base64 encoded images
+  images?: string[]; // base64 编码图片
 }
 
 export interface ModelConfig {
@@ -41,7 +41,7 @@ export interface StreamChunk {
   model: string;
 }
 
-// Abstract adapter interface
+// 适配器抽象接口
 export interface ModelAdapter {
   readonly provider: string;
   readonly models: ModelConfig[];
@@ -53,7 +53,7 @@ export interface ModelAdapter {
   validate(): Promise<boolean>;
 }
 
-// Provider configuration
+// 提供方配置
 export interface ProviderConfig {
   apiKey: string;
   baseUrl?: string;
@@ -62,7 +62,7 @@ export interface ProviderConfig {
   customModels?: CustomModelConfig[];
 }
 
-// Custom model configuration (for relay/proxy providers)
+// 自定义模型配置（用于中转 / 代理类提供方）
 export interface CustomModelConfig {
   id: string;
   name: string;
@@ -72,42 +72,42 @@ export interface CustomModelConfig {
   requestModelId?: string;
 }
 
-// All built-in models
+// 所有内置模型
 export const BUILTIN_MODELS: ModelConfig[] = [
-  // OpenAI
+  // OpenAI 模型
   { id: "gpt-4o", name: "GPT-4o", provider: "openai", maxTokens: 128000, supportsVision: true, supportsStreaming: true },
   { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", maxTokens: 128000, supportsVision: true, supportsStreaming: true },
   { id: "o1", name: "o1", provider: "openai", maxTokens: 200000, supportsVision: true, supportsStreaming: false },
   { id: "o3-mini", name: "o3 Mini", provider: "openai", maxTokens: 200000, supportsVision: false, supportsStreaming: true },
-  // Claude
+  // Claude 模型
   { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, supportsVision: true, supportsStreaming: true },
   { id: "claude-opus-4-20250514", name: "Claude Opus 4", provider: "claude", maxTokens: 200000, supportsVision: true, supportsStreaming: true },
-  // Gemini
+  // Gemini 模型
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "gemini", maxTokens: 1048576, supportsVision: true, supportsStreaming: true },
   { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "gemini", maxTokens: 1048576, supportsVision: true, supportsStreaming: true },
-  // Ollama (local)
+  // Ollama（本地模型）
   { id: "llama3", name: "Llama 3 (Local)", provider: "ollama", maxTokens: 8192, supportsVision: false, supportsStreaming: true },
   { id: "llava", name: "LLaVA (Local)", provider: "ollama", maxTokens: 4096, supportsVision: true, supportsStreaming: true },
-  // DeepSeek
+  // DeepSeek 模型
   { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, supportsVision: false, supportsStreaming: true },
   { id: "deepseek-reasoner", name: "DeepSeek R1", provider: "deepseek", maxTokens: 65536, supportsVision: false, supportsStreaming: true },
-  // OpenRouter (OpenAI-compatible)
+  // OpenRouter（兼容 OpenAI）
   { id: "openai/gpt-4o", name: "GPT-4o", provider: "openrouter", maxTokens: 128000, supportsVision: true, supportsStreaming: true },
   { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "openrouter", maxTokens: 200000, supportsVision: true, supportsStreaming: true },
   { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "openrouter", maxTokens: 1048576, supportsVision: true, supportsStreaming: true },
-  // Moonshot / Kimi (OpenAI-compatible)
+  // Moonshot / Kimi（兼容 OpenAI）
   { id: "moonshot-v1-8k", name: "Moonshot v1 8K", provider: "moonshot", maxTokens: 8192, supportsVision: false, supportsStreaming: true },
   { id: "moonshot-v1-32k", name: "Moonshot v1 32K", provider: "moonshot", maxTokens: 32768, supportsVision: false, supportsStreaming: true },
   { id: "moonshot-v1-128k", name: "Moonshot v1 128K", provider: "moonshot", maxTokens: 128000, supportsVision: false, supportsStreaming: true },
-  // SiliconFlow (OpenAI-compatible)
+  // SiliconFlow（兼容 OpenAI）
   { id: "deepseek-ai/DeepSeek-V3", name: "DeepSeek V3", provider: "siliconflow", maxTokens: 65536, supportsVision: false, supportsStreaming: true },
   { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1", provider: "siliconflow", maxTokens: 65536, supportsVision: false, supportsStreaming: true },
   { id: "Qwen/Qwen2.5-72B-Instruct", name: "Qwen2.5 72B", provider: "siliconflow", maxTokens: 32768, supportsVision: false, supportsStreaming: true },
-  // Alibaba Bailian / DashScope compatible mode
+  // 阿里百炼 / DashScope 兼容模式
   { id: "qwen-plus", name: "Qwen Plus", provider: "dashscope", maxTokens: 131072, supportsVision: false, supportsStreaming: true },
   { id: "qwen-max", name: "Qwen Max", provider: "dashscope", maxTokens: 32768, supportsVision: false, supportsStreaming: true },
   { id: "qwen-vl-plus", name: "Qwen VL Plus", provider: "dashscope", maxTokens: 32768, supportsVision: true, supportsStreaming: true },
-  // Zhipu GLM (OpenAI-compatible)
+  // 智谱 GLM（兼容 OpenAI）
   { id: "glm-4-plus", name: "GLM-4 Plus", provider: "zhipu", maxTokens: 128000, supportsVision: false, supportsStreaming: true },
   { id: "glm-4-flash", name: "GLM-4 Flash", provider: "zhipu", maxTokens: 128000, supportsVision: false, supportsStreaming: true },
   { id: "glm-4v-plus", name: "GLM-4V Plus", provider: "zhipu", maxTokens: 8192, supportsVision: true, supportsStreaming: true },

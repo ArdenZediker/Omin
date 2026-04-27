@@ -86,7 +86,7 @@ export default function Live2DCharacter({ width, height, model }: Live2DCharacte
     try {
       modelRef.current?.motion?.(motionName);
     } catch {
-      // Ignore unsupported motion names from individual models.
+      // 忽略个别模型不支持的动作名。
     }
   };
 

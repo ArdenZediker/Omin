@@ -7,40 +7,44 @@ export type LocalSlashCommand = {
   description: string;
 };
 
+export type ResolvedLocalSlashCommand = LocalSlashCommand & {
+  args: string;
+};
+
 export const PROMPT_SLASH_SKILLS: SlashSkill[] = [
   {
     id: "summarize",
     command: "/summarize",
     title: "总结",
-    description: "提炼重点、结论和待办",
+    description: "总结重点、结论和后续行动",
     promptPrefix: "请总结下面的内容，输出重点、结论和后续行动建议：\n\n",
   },
   {
     id: "translate",
     command: "/translate",
     title: "翻译",
-    description: "翻译为更自然的中文",
+    description: "翻译成自然、准确的中文",
     promptPrefix: "请把下面的内容翻译成自然、准确的中文：\n\n",
   },
   {
     id: "rewrite",
     command: "/rewrite",
     title: "改写",
-    description: "润色成更专业清晰的表达",
+    description: "改写为更清晰、更专业的表达",
     promptPrefix: "请在不改变原意的前提下，重写下面的内容，让它更专业、清晰、简洁：\n\n",
   },
   {
     id: "explain",
     command: "/explain",
     title: "解释",
-    description: "解释概念、代码或报错",
+    description: "解释概念、代码或报错内容",
     promptPrefix: "请解释下面的内容，并补充关键背景与注意事项：\n\n",
   },
   {
     id: "compare",
     command: "/compare",
     title: "对比",
-    description: "比较两种方案的优劣",
+    description: "对比方案并说明取舍",
     promptPrefix: "请对比下面提到的方案，输出优点、缺点、适用场景和建议：\n\n",
   },
 ];
@@ -50,19 +54,37 @@ export const LOCAL_SLASH_COMMANDS: LocalSlashCommand[] = [
     id: "new",
     command: "/new",
     title: "新对话",
-    description: "立即开始一个空白会话",
+    description: "新建一个空白对话",
   },
   {
     id: "clear",
     command: "/clear",
     title: "清空消息",
-    description: "清空当前消息区内容",
+    description: "清空当前对话中的消息",
   },
   {
     id: "settings",
     command: "/settings",
     title: "打开设置",
-    description: "切到设置页面",
+    description: "打开设置页面",
+  },
+  {
+    id: "model",
+    command: "/model",
+    title: "切换模型",
+    description: "按模型 ID 或名称切换模型",
+  },
+  {
+    id: "rename",
+    command: "/rename",
+    title: "重命名对话",
+    description: "重命名当前对话",
+  },
+  {
+    id: "pin",
+    command: "/pin",
+    title: "置顶对话",
+    description: "置顶或取消置顶当前对话",
   },
 ];
 
@@ -76,12 +98,19 @@ export function getMatchingSlashSuggestions(input: string): SlashSuggestion[] {
     return [];
   }
 
+  const query = normalized.slice(1);
   const matches = <T extends { id: string; command: string; title: string; description: string }>(
     items: T[],
     kind: SlashSuggestion["kind"]
   ) =>
     items
-      .filter((item) => item.command.startsWith(normalized) || item.title.toLowerCase().includes(normalized.slice(1)))
+      .filter((item) => {
+        return (
+          item.command.startsWith(normalized) ||
+          item.title.toLowerCase().includes(query) ||
+          item.description.toLowerCase().includes(query)
+        );
+      })
       .map((item) => ({ kind, ...item }) as SlashSuggestion);
 
   return [...matches(LOCAL_SLASH_COMMANDS, "local"), ...matches(PROMPT_SLASH_SKILLS, "skill")];
@@ -110,14 +139,20 @@ export function resolveSlashSkillPrompt(input: string): { content: string; skill
   };
 }
 
-export function resolveLocalSlashCommand(input: string): LocalSlashCommand | null {
+export function resolveLocalSlashCommand(input: string): ResolvedLocalSlashCommand | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith("/")) {
     return null;
   }
 
-  const [command] = trimmed.split(/\s+/);
-  return LOCAL_SLASH_COMMANDS.find((item) => item.command === command.toLowerCase()) ?? null;
+  const [command, ...rest] = trimmed.split(/\s+/);
+  const definition = LOCAL_SLASH_COMMANDS.find((item) => item.command === command.toLowerCase());
+  if (!definition) return null;
+
+  return {
+    ...definition,
+    args: rest.join(" ").trim(),
+  };
 }
 
 export function buildSlashDraft(suggestion: { command: string }) {

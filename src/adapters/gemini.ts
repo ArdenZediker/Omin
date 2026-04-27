@@ -1,4 +1,4 @@
-// Omni - Gemini Adapter
+// Omni - Gemini 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 
 const GEMINI_MODELS: ModelConfig[] = [
@@ -130,7 +130,7 @@ export class GeminiAdapter implements ModelAdapter {
             onChunk({ content: text, done: false, model: request.model });
           }
         } catch {
-          // Skip
+          // 跳过
         }
       }
     }

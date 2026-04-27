@@ -1,4 +1,4 @@
-// Omni - OpenAI Adapter
+// Omni - OpenAI 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 
 const OPENAI_MODELS: ModelConfig[] = [
@@ -126,7 +126,7 @@ export class OpenAIAdapter implements ModelAdapter {
             onChunk({ content: delta, done: false, model });
           }
         } catch {
-          // Skip malformed chunks
+          // 跳过格式异常的块
         }
       }
     }

@@ -1,4 +1,4 @@
-// Omni - DeepSeek Adapter
+// Omni - DeepSeek 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 
 const DEEPSEEK_MODELS: ModelConfig[] = [
@@ -106,7 +106,7 @@ export class DeepSeekAdapter implements ModelAdapter {
             onChunk({ content: delta, done: false, model });
           }
         } catch {
-          // Skip
+          // 跳过
         }
       }
     }

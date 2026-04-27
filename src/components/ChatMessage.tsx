@@ -1,4 +1,3 @@
-// Omni - Chat Message Component
 import { useEffect, useRef, useState } from "react";
 import type { Message } from "../adapters/types";
 
@@ -140,13 +139,7 @@ export default function ChatMessage({
 
 function MessageActionButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      className="message-action-button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-    >
+    <button type="button" className="message-action-button" title={label} aria-label={label} onClick={onClick}>
       <span className="sr-only">{label}</span>
       <span className="h-4 w-4">{children}</span>
     </button>
@@ -167,7 +160,6 @@ function ThinkingIndicator() {
   );
 }
 
-// Simple markdown renderer (can be replaced with a library later)
 function renderMarkdown(text: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
   const lines = text.split("\n");
@@ -188,17 +180,15 @@ function renderMarkdown(text: string): React.ReactNode {
         inCodeBlock = false;
       } else {
         inCodeBlock = true;
-        // Language hint from ```lang is stored but not used yet
       }
       continue;
     }
 
     if (inCodeBlock) {
-      codeContent += line + "\n";
+      codeContent += `${line}\n`;
       continue;
     }
 
-    // Headers
     if (line.startsWith("### ")) {
       parts.push(<h3 key={i}>{line.slice(4)}</h3>);
     } else if (line.startsWith("## ")) {
