@@ -1223,12 +1223,12 @@ body,
 
 .compact-menu:not(.compact-menu--cursor).compact-menu--left {
   left: auto;
-  right: calc(100% + 12px);
+  right: calc(100% - 20px);
   transform: none;
 }
 
 .compact-menu:not(.compact-menu--cursor).compact-menu--right {
-  left: calc(100% + 12px);
+  left: calc(100% + 6px);
   right: auto;
   transform: none;
 }
@@ -1247,7 +1247,7 @@ body,
 .compact-submenu {
   position: absolute;
   top: 0;
-  left: calc(100% + 12px);
+  left: calc(100% + 6px);
   min-width: 176px;
   padding: 8px;
   border-radius: 16px;
@@ -1265,11 +1265,11 @@ body,
 
 .compact-submenu--left {
   left: auto;
-  right: calc(100% + 12px);
+  right: calc(100% - 20px);
 }
 
 .compact-submenu--right {
-  left: calc(100% + 12px);
+  left: calc(100% + 6px);
   right: auto;
 }
 
