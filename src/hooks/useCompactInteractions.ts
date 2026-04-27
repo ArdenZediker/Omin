@@ -33,7 +33,6 @@ type UseCompactInteractionsArgs = {
   openInternalChatWindow: (entry: ExternalChatEntry & { kind: "external"; url: string }) => Promise<void>;
   resolveCharacterPanelSideFallback: () => Promise<"left" | "right">;
   restoreMainWindow: (focusInput?: boolean) => Promise<void>;
-  setCharacterMenuPosition: (value: { x: number; y: number } | null) => void;
   setCharacterModel: React.Dispatch<React.SetStateAction<CharacterModel>>;
   setCharacterPanelSide: React.Dispatch<React.SetStateAction<"left" | "right">>;
   setCharacterScale: React.Dispatch<React.SetStateAction<number>>;
@@ -72,7 +71,6 @@ export function useCompactInteractions(args: UseCompactInteractionsArgs) {
     openInternalChatWindow,
     resolveCharacterPanelSideFallback,
     restoreMainWindow,
-    setCharacterMenuPosition,
     setCharacterModel,
     setCharacterPanelSide,
     setCharacterScale,
@@ -91,33 +89,18 @@ export function useCompactInteractions(args: UseCompactInteractionsArgs) {
 
   const closeCompactMenus = useCallback(() => {
     setIsCharacterMenuPinned(false);
-    setCharacterMenuPosition(null);
     setIsCompactMenuOpen(false);
     setIsCompactModelOpen(false);
     setIsCompactAppearanceOpen(false);
     setIsCharacterModelOpen(false);
-  }, [
-    setCharacterMenuPosition,
-    setIsCharacterMenuPinned,
-    setIsCharacterModelOpen,
-    setIsCompactAppearanceOpen,
-    setIsCompactMenuOpen,
-    setIsCompactModelOpen,
-  ]);
+  }, [setIsCharacterMenuPinned, setIsCharacterModelOpen, setIsCompactAppearanceOpen, setIsCompactMenuOpen, setIsCompactModelOpen]);
 
   const closeCompactMenuPanels = useCallback(() => {
     setIsCompactMenuOpen(false);
     setIsCompactModelOpen(false);
     setIsCompactAppearanceOpen(false);
     setIsCharacterModelOpen(false);
-    setCharacterMenuPosition(null);
-  }, [
-    setCharacterMenuPosition,
-    setIsCharacterModelOpen,
-    setIsCompactAppearanceOpen,
-    setIsCompactMenuOpen,
-    setIsCompactModelOpen,
-  ]);
+  }, [setIsCharacterModelOpen, setIsCompactAppearanceOpen, setIsCompactMenuOpen, setIsCompactModelOpen]);
 
   const handleOpenSettingsFromCompact = useCallback(async () => {
     closeCompactMenus();

@@ -22,8 +22,25 @@ export type ExternalChatEntry = {
   id: string;
   title: string;
   description: string;
+  group: "common" | "domestic";
   kind: "main" | "external";
   url?: string;
+  icon:
+    | "omni"
+    | "chatgpt"
+    | "claude"
+    | "gemini"
+    | "deepseek"
+    | "copilot"
+    | "poe"
+    | "spark"
+    | "zhipu"
+    | "metaso"
+    | "baichuan"
+    | "qwen"
+    | "yuanbao"
+    | "doubao"
+    | "iflytekcloud";
 };
 
 export type CompactReply = {

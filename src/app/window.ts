@@ -96,6 +96,24 @@ export async function moveCompactWindowToMonitor(
   persistCompactPosition(nextPosition);
 }
 
+export async function clampCompactWindowToMonitor(
+  targetWindow: ReturnType<typeof getCurrentWindow>,
+  monitor: Monitor,
+  size: { width: number; height: number }
+) {
+  const scaleFactor = await targetWindow.scaleFactor();
+  const currentPosition = (await targetWindow.outerPosition()).toLogical(scaleFactor);
+  const monitorScale = monitor.scaleFactor || scaleFactor || 1;
+  const workAreaLeft = monitor.workArea.position.x / monitorScale;
+  const workAreaRight = (monitor.workArea.position.x + monitor.workArea.size.width) / monitorScale;
+  const maxX = Math.max(workAreaLeft, workAreaRight - size.width);
+  const nextX = Math.min(maxX, Math.max(workAreaLeft, currentPosition.x));
+
+  if (Math.round(nextX) !== Math.round(currentPosition.x)) {
+    await targetWindow.setPosition(new LogicalPosition(Math.round(nextX), Math.round(currentPosition.y)));
+  }
+}
+
 export function getStoredMainPosition() {
   if (typeof window === "undefined") return null;
   try {

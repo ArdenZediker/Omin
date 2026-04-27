@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
@@ -31,14 +31,24 @@ import {
 } from "../app/window";
 
 const appWindow = getCurrentWindow();
+const COMPACT_MENU_HEIGHT = 280;
+const COMPACT_MENU_EDGE_PADDING = 8;
+const COMPACT_MENU_WIDTH = 200;
+const COMPACT_MENU_GAP = 12;
+const COMPACT_MENU_SUBMENU_WIDTH = 176;
+const COMPACT_MENU_TREE_FOOTPRINT = COMPACT_MENU_WIDTH + COMPACT_MENU_SUBMENU_WIDTH + COMPACT_MENU_GAP * 2;
+
+function clampToRange(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
-  characterPanelSide: "left" | "right";
   clearCompactReply: () => void;
   closeCompactMenuPanels: () => void;
   closeCompactMenus: () => void;
   compactAppearance: CompactAppearance;
+  compactMenuSide: "left" | "right";
   compactQuery: string;
   compactReply: CompactReply | null;
   compactSize: { width: number; height: number };
@@ -60,6 +70,7 @@ type UseCompactWindowControllerArgs = {
   setCompactAppearance: React.Dispatch<React.SetStateAction<CompactAppearance>>;
   setCompactQuery: React.Dispatch<React.SetStateAction<string>>;
   setCompactReply: React.Dispatch<React.SetStateAction<CompactReply | null>>;
+  setCompactMenuSide: React.Dispatch<React.SetStateAction<"left" | "right">>;
   setCurrentModel: React.Dispatch<React.SetStateAction<string>>;
   setIsCharacterMenuPinned: React.Dispatch<React.SetStateAction<boolean>>;
   setIsCharacterModelOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -72,11 +83,11 @@ type UseCompactWindowControllerArgs = {
 
 export function useCompactWindowController({
   basicSettings,
-  characterPanelSide,
   clearCompactReply,
   closeCompactMenuPanels,
   closeCompactMenus,
   compactAppearance,
+  compactMenuSide,
   compactQuery,
   compactReply,
   compactSize,
@@ -98,6 +109,7 @@ export function useCompactWindowController({
   setCompactAppearance,
   setCompactQuery,
   setCompactReply,
+  setCompactMenuSide,
   setCurrentModel,
   setIsCharacterMenuPinned,
   setIsCharacterModelOpen,
@@ -108,9 +120,90 @@ export function useCompactWindowController({
   setIsCompactReplyLoading,
 }: UseCompactWindowControllerArgs) {
   const compactMenuCloseTimerRef = useRef<number | null>(null);
+  const compactMenuOpeningRef = useRef(false);
   const characterDragTimerRef = useRef<number | null>(null);
   const isCharacterDraggingRef = useRef(false);
   const compactFollowMonitorRef = useRef<string | null>(null);
+
+  const resolveCompactMenuSide = useCallback(async (anchorX?: number, anchorY?: number) => {
+    if (!isCompactWindow) {
+      return "right" as const;
+    }
+
+    const scaleFactor = await appWindow.scaleFactor();
+    const currentPosition = await appWindow.outerPosition();
+    const currentSize = await appWindow.outerSize();
+    const pointer = Number.isFinite(anchorX) && Number.isFinite(anchorY) ? null : await cursorPosition().catch(() => null);
+    const anchorPhysicalX = Number.isFinite(anchorX)
+      ? currentPosition.x + Number(anchorX) * scaleFactor
+      : pointer
+        ? pointer.x
+        : currentPosition.x + currentSize.width / 2;
+    const anchorPhysicalY = Number.isFinite(anchorY)
+      ? currentPosition.y + Number(anchorY) * scaleFactor
+      : pointer
+        ? pointer.y
+        : currentPosition.y + currentSize.height / 2;
+    const monitor = (await monitorFromPoint(Math.round(anchorPhysicalX), Math.round(anchorPhysicalY))) ?? (await currentMonitor());
+    const monitorScale = monitor?.scaleFactor || scaleFactor || 1;
+    const workAreaLeft = monitor ? monitor.workArea.position.x : 0;
+    const workAreaRight = monitor
+      ? monitor.workArea.position.x + monitor.workArea.size.width
+      : Number(window.screen.availWidth || window.screen.width || 0) * monitorScale;
+    const leftSpace = Math.max(0, (anchorPhysicalX - workAreaLeft) / monitorScale);
+    const rightSpace = Math.max(0, (workAreaRight - anchorPhysicalX) / monitorScale);
+    const menuFootprint = COMPACT_MENU_TREE_FOOTPRINT;
+
+    if (rightSpace < menuFootprint && leftSpace > rightSpace) {
+      return "left" as const;
+    }
+    if (leftSpace < menuFootprint && rightSpace > leftSpace) {
+      return "right" as const;
+    }
+
+    return leftSpace >= rightSpace ? "left" as const : "right" as const;
+  }, [isCompactWindow]);
+
+  const resolveCompactMenuPosition = useCallback(
+    async (anchorX: number, anchorY: number, side: "left" | "right") => {
+      const scaleFactor = await appWindow.scaleFactor();
+      const windowSize = (await appWindow.outerSize()).toLogical(scaleFactor);
+      const viewportWidth = compactViewportSize?.width ?? windowSize.width;
+      const viewportHeight = compactViewportSize?.height ?? windowSize.height;
+      const minLeft =
+        side === "left"
+          ? COMPACT_MENU_SUBMENU_WIDTH + COMPACT_MENU_GAP + COMPACT_MENU_EDGE_PADDING
+          : COMPACT_MENU_EDGE_PADDING;
+      const maxLeft =
+        side === "right"
+          ? Math.max(
+              COMPACT_MENU_EDGE_PADDING,
+              viewportWidth -
+                COMPACT_MENU_WIDTH -
+                COMPACT_MENU_SUBMENU_WIDTH -
+                COMPACT_MENU_GAP -
+                COMPACT_MENU_EDGE_PADDING
+            )
+          : Math.max(minLeft, viewportWidth - COMPACT_MENU_WIDTH - COMPACT_MENU_EDGE_PADDING);
+      const minTop = COMPACT_MENU_EDGE_PADDING;
+      const maxTop = Math.max(
+        minTop,
+        viewportHeight - COMPACT_MENU_HEIGHT - COMPACT_MENU_EDGE_PADDING
+      );
+
+      return {
+        x: Math.round(
+          clampToRange(
+            side === "left" ? anchorX - COMPACT_MENU_WIDTH - COMPACT_MENU_GAP : anchorX + COMPACT_MENU_GAP,
+            minLeft,
+            maxLeft
+          )
+        ),
+        y: Math.round(clampToRange(anchorY - 16, minTop, maxTop)),
+      };
+    },
+    [compactViewportSize]
+  );
 
   useEffect(() => {
     if (!isCompactWindow || basicSettings.showCompactBall) {
@@ -135,7 +228,9 @@ export function useCompactWindowController({
       !isCharacterMenuPinned;
 
     if (!canFollowCursorScreen) {
-      compactFollowMonitorRef.current = null;
+      if (!basicSettings.followCursorScreen || !basicSettings.showCompactBall) {
+        compactFollowMonitorRef.current = null;
+      }
       return;
     }
 
@@ -222,25 +317,33 @@ export function useCompactWindowController({
 
     const targetSize = compactViewportSize ?? compactSize;
     void (async () => {
+      const scaleFactor = await appWindow.scaleFactor();
+      const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+      const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
       if (isCharacterAppearance) {
-        const scaleFactor = await appWindow.scaleFactor();
-        const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
-        const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
-        const anchorRight = characterPanelSide === "left";
-        const nextX = anchorRight
-          ? Math.round(currentPosition.x + currentSize.width - targetSize.width)
-          : Math.round(currentPosition.x);
-
-        await Promise.all([
-          appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y))),
-          appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height)),
-        ]);
+        await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
         return;
       }
 
+      if (compactMenuSide === "left") {
+        const nextX = Math.round(currentPosition.x + currentSize.width - targetSize.width);
+        if (nextX !== Math.round(currentPosition.x)) {
+          await appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y)));
+        }
+      }
       await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
     })();
-  }, [characterPanelSide, compactSize, compactViewportSize, isCharacterAppearance, isCompactWindow]);
+  }, [
+    compactReply,
+    compactSize,
+    compactViewportSize,
+    compactMenuSide,
+    isCharacterAppearance,
+    isCompactMenuOpen,
+    isCompactQueryOpen,
+    isCompactReplyLoading,
+    isCompactWindow,
+  ]);
 
   useEffect(() => {
     if (!isCompactWindow) {
@@ -610,27 +713,59 @@ export function useCompactWindowController({
     ]
   );
 
-  const openCompactMenu = useCallback(() => {
+  const openCompactMenu = useCallback(async (anchorClientX?: number, anchorClientY?: number) => {
+    if (compactMenuOpeningRef.current || isCompactMenuOpen) {
+      return;
+    }
+
+    compactMenuOpeningRef.current = true;
     if (compactMenuCloseTimerRef.current !== null) {
       window.clearTimeout(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
     }
-    if (isCompactQueryOpen) {
-      return;
+    try {
+      if (isCompactQueryOpen) {
+        return;
+      }
+      const scaleFactor = await appWindow.scaleFactor();
+      const windowPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+      const fallbackSize = await appWindow.outerSize().then((size) => size.toLogical(scaleFactor));
+      const pointer = await cursorPosition().catch(() => null);
+      const anchorX =
+        typeof anchorClientX === "number"
+          ? anchorClientX
+          : pointer
+            ? pointer.x / scaleFactor - windowPosition.x
+            : Math.max(0, fallbackSize.width / 2);
+      const anchorY =
+        typeof anchorClientY === "number"
+          ? anchorClientY
+          : pointer
+            ? pointer.y / scaleFactor - windowPosition.y
+            : Math.max(0, fallbackSize.height / 2);
+      const nextSide = await resolveCompactMenuSide(anchorX, anchorY);
+      setCompactMenuSide(nextSide);
+      setCharacterMenuPosition(await resolveCompactMenuPosition(anchorX, anchorY, nextSide));
+      setIsCompactMenuOpen(true);
+      setIsCompactModelOpen(false);
+      setIsCompactAppearanceOpen(false);
+      setIsCharacterModelOpen(false);
+      setIsCharacterMenuPinned(false);
+      setIsCompactQueryOpen(false);
+    } finally {
+      compactMenuOpeningRef.current = false;
     }
-    setIsCompactMenuOpen(true);
-    setIsCompactModelOpen(false);
-    setIsCompactAppearanceOpen(false);
-    setIsCharacterModelOpen(false);
-    setIsCharacterMenuPinned(false);
-    setIsCompactQueryOpen(false);
   }, [
+    resolveCompactMenuSide,
+    resolveCompactMenuPosition,
+    isCompactMenuOpen,
     isCompactQueryOpen,
     setIsCharacterMenuPinned,
     setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
     setIsCompactMenuOpen,
     setIsCompactModelOpen,
+    setCompactMenuSide,
     setIsCompactQueryOpen,
   ]);
 
@@ -648,23 +783,14 @@ export function useCompactWindowController({
         compactMenuCloseTimerRef.current = null;
       }
 
-      const nextSide = await resolveCharacterPanelSide();
-      setCharacterPanelSide(nextSide);
-      const scaleFactor = await appWindow.scaleFactor();
-      const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
-      const expandedSize = getExpandedCompactViewportSizeForAppearance(compactAppearance, effectiveCompactScale, {
-        includeReply: false,
-        includeHorizontalPanel: false,
-      });
-      const expandedDelta = Math.max(0, expandedSize.width - currentSize.width);
-      const menuWidth = 176;
-      const menuHeight = 260;
-      const futureMouseX = nextSide === "left" ? event.clientX + expandedDelta : event.clientX;
+      const nextCharacterPanelSide = await resolveCharacterPanelSide();
+      setCharacterPanelSide(nextCharacterPanelSide);
 
-      setCharacterMenuPosition({
-        x: Math.max(8, Math.min(futureMouseX, expandedSize.width - menuWidth - 8)),
-        y: Math.max(8, Math.min(event.clientY, Math.max(window.innerHeight, expandedSize.height) - menuHeight - 8)),
-      });
+      const nextCompactMenuSide = await resolveCompactMenuSide(event.clientX, event.clientY);
+      const menuPosition = await resolveCompactMenuPosition(event.clientX, event.clientY, nextCompactMenuSide);
+
+      setCompactMenuSide(nextCompactMenuSide);
+      setCharacterMenuPosition(menuPosition);
       setIsCompactMenuOpen(true);
       setIsCompactModelOpen(false);
       setIsCompactAppearanceOpen(false);
@@ -673,9 +799,8 @@ export function useCompactWindowController({
       setIsCompactQueryOpen(false);
     },
     [
-      compactAppearance,
-      effectiveCompactScale,
       resolveCharacterPanelSide,
+      resolveCompactMenuSide,
       setCharacterMenuPosition,
       setCharacterPanelSide,
       setIsCharacterMenuPinned,
@@ -684,6 +809,7 @@ export function useCompactWindowController({
       setIsCompactMenuOpen,
       setIsCompactModelOpen,
       setIsCompactQueryOpen,
+      setCompactMenuSide,
     ]
   );
 

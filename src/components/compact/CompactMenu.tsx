@@ -1,34 +1,26 @@
+import type { Dispatch, ReactNode, SetStateAction } from "react";
+import type { BasicSettings, ExternalChatEntry } from "../../app/types";
 import type { CharacterModel, CompactAppearance } from "../../hooks/useCompactWindowState";
-import type { ExternalChatEntry } from "../../app/types";
-import type { BasicSettings } from "../../app/types";
 import { omniSmallIconSrc } from "../../app/constants";
-import {
-  Check,
-  ChevronRight,
-  MessageSquareMore,
-  MousePointer2,
-  Palette,
-  RotateCcw,
-  Settings2,
-} from "lucide-react";
-import openaiLogoSrc from "@lobehub/icons-static-svg/icons/openai.svg?url";
+import { Check, ChevronRight, MessageSquareMore, Palette, RotateCcw, Settings2 } from "lucide-react";
 import anthropicLogoSrc from "@lobehub/icons-static-svg/icons/claude.svg?url";
-import geminiLogoSrc from "@lobehub/icons-static-svg/icons/gemini.svg?url";
-import deepseekLogoSrc from "@lobehub/icons-static-svg/icons/deepseek.svg?url";
-import copilotLogoSrc from "@lobehub/icons-static-svg/icons/copilot.svg?url";
-import poeLogoSrc from "@lobehub/icons-static-svg/icons/poe.svg?url";
-import sparkLogoSrc from "@lobehub/icons-static-svg/icons/spark.svg?url";
-import zhipuLogoSrc from "@lobehub/icons-static-svg/icons/zhipu.svg?url";
 import baichuanLogoSrc from "@lobehub/icons-static-svg/icons/baichuan.svg?url";
-import qwenLogoSrc from "@lobehub/icons-static-svg/icons/qwen.svg?url";
-import yuanbaoLogoSrc from "@lobehub/icons-static-svg/icons/yuanbao.svg?url";
+import chatgptLogoSrc from "@lobehub/icons-static-svg/icons/openai.svg?url";
+import copilotLogoSrc from "@lobehub/icons-static-svg/icons/copilot.svg?url";
+import deepseekLogoSrc from "@lobehub/icons-static-svg/icons/deepseek.svg?url";
 import doubaoLogoSrc from "@lobehub/icons-static-svg/icons/doubao.svg?url";
+import geminiLogoSrc from "@lobehub/icons-static-svg/icons/gemini.svg?url";
 import iflytekcloudLogoSrc from "@lobehub/icons-static-svg/icons/iflytekcloud.svg?url";
+import poeLogoSrc from "@lobehub/icons-static-svg/icons/poe.svg?url";
+import qwenLogoSrc from "@lobehub/icons-static-svg/icons/qwen.svg?url";
 import searchApiLogoSrc from "@lobehub/icons-static-svg/icons/searchapi.svg?url";
+import sparkLogoSrc from "@lobehub/icons-static-svg/icons/spark.svg?url";
+import yuanbaoLogoSrc from "@lobehub/icons-static-svg/icons/yuanbao.svg?url";
+import zhipuLogoSrc from "@lobehub/icons-static-svg/icons/zhipu.svg?url";
 
 const EXTERNAL_CHAT_ICON_MAP = {
   omni: omniSmallIconSrc,
-  chatgpt: openaiLogoSrc,
+  chatgpt: chatgptLogoSrc,
   claude: anthropicLogoSrc,
   gemini: geminiLogoSrc,
   deepseek: deepseekLogoSrc,
@@ -61,6 +53,7 @@ type CompactMenuProps = {
   isCharacterModelOpen: boolean;
   isCompactAppearanceOpen: boolean;
   isCompactModelOpen: boolean;
+  compactMenuSide: "left" | "right";
   followCursorScreen: boolean;
   onCharacterModelChange: (model: CharacterModel) => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
@@ -68,18 +61,14 @@ type CompactMenuProps = {
   onOpenSettingsFromCompact: () => void | Promise<void>;
   onScaleReset: () => void;
   onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
-  onSetCharacterMenuPinned: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCharacterModelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCompactAppearanceOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCompactMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onSetIsCompactModelOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  onSetCharacterMenuPinned: Dispatch<SetStateAction<boolean>>;
+  onSetIsCharacterModelOpen: Dispatch<SetStateAction<boolean>>;
+  onSetIsCompactAppearanceOpen: Dispatch<SetStateAction<boolean>>;
+  onSetIsCompactMenuOpen: Dispatch<SetStateAction<boolean>>;
+  onSetIsCompactModelOpen: Dispatch<SetStateAction<boolean>>;
 };
 
-function MenuLeadingIcon({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function MenuLeadingIcon({ children }: { children: ReactNode }) {
   return (
     <span className="compact-menu__leading-icon" aria-hidden="true">
       {children}
@@ -99,6 +88,7 @@ export default function CompactMenu({
   isCharacterModelOpen,
   isCompactAppearanceOpen,
   isCompactModelOpen,
+  compactMenuSide,
   followCursorScreen,
   onCharacterModelChange,
   onCompactAppearanceChange,
@@ -112,10 +102,21 @@ export default function CompactMenu({
   onSetIsCompactMenuOpen,
   onSetIsCompactModelOpen,
 }: CompactMenuProps) {
+  const menuPositionStyle =
+    characterMenuPosition && typeof window !== "undefined"
+      ? {
+          position: "fixed" as const,
+          left: Math.max(8, characterMenuPosition.x),
+          top: Math.max(8, characterMenuPosition.y),
+        }
+      : undefined;
+
   return (
     <div
-      className={`compact-menu animate-fade-in ${isCharacterAppearance && characterMenuPosition ? "compact-menu--cursor" : ""}`}
-      style={isCharacterAppearance && characterMenuPosition ? { left: characterMenuPosition.x, top: characterMenuPosition.y } : undefined}
+      className={`compact-menu animate-fade-in compact-menu--${compactMenuSide} ${
+        characterMenuPosition ? "compact-menu--cursor" : ""
+      }`}
+      style={menuPositionStyle}
     >
       <div className="compact-menu__section">
         <button
@@ -136,6 +137,7 @@ export default function CompactMenu({
           </span>
           <ChevronRight className="compact-menu__arrow-icon" aria-hidden="true" />
         </button>
+
         <button
           type="button"
           className="compact-menu__item compact-menu__item--branch"
@@ -155,9 +157,11 @@ export default function CompactMenu({
           <ChevronRight className="compact-menu__arrow-icon" aria-hidden="true" />
         </button>
 
+        <div className="compact-menu__divider" aria-hidden="true" />
+
         <button
           type="button"
-          className="compact-menu__item compact-menu__item--toggle"
+          className="compact-menu__item compact-menu__item--toggle compact-menu__item--toggle-only"
           onMouseDown={(e) => e.stopPropagation()}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
@@ -170,15 +174,11 @@ export default function CompactMenu({
           aria-pressed={followCursorScreen}
         >
           <span className="compact-menu__item-main">
-            <MenuLeadingIcon>
-              <MousePointer2 className="compact-menu__icon" />
-            </MenuLeadingIcon>
             <span className={`compact-menu__check ${followCursorScreen ? "compact-menu__check--checked" : ""}`} aria-hidden="true">
               {followCursorScreen ? <Check className="compact-menu__check-icon" /> : null}
             </span>
             <span>鼠标随航</span>
           </span>
-          <span className="compact-menu__toggle-meta">{followCursorScreen ? "已开启" : "已关闭"}</span>
         </button>
 
         {isCharacterAppearance && (
@@ -227,7 +227,7 @@ export default function CompactMenu({
 
       {isCompactModelOpen && (
         <div
-          className="compact-submenu animate-fade-in"
+          className={`compact-submenu compact-submenu--${compactMenuSide} animate-fade-in`}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(true);
             onSetIsCompactAppearanceOpen(false);
@@ -269,7 +269,7 @@ export default function CompactMenu({
 
       {isCompactAppearanceOpen && (
         <div
-          className="compact-submenu animate-fade-in"
+          className={`compact-submenu compact-submenu--${compactMenuSide} animate-fade-in`}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(true);
@@ -329,8 +329,7 @@ export default function CompactMenu({
 
       {isCompactAppearanceOpen && isCharacterModelOpen && (
         <div
-          className="compact-submenu animate-fade-in"
-          style={{ left: "calc(100% + 192px)" }}
+          className={`compact-submenu compact-submenu--${compactMenuSide} animate-fade-in`}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCharacterModelOpen(true);
