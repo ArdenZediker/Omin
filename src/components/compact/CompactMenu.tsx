@@ -1,4 +1,4 @@
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+﻿import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { BasicSettings, ExternalChatEntry } from "../../app/types";
 import type { CharacterModel, CompactAppearance } from "../../hooks/useCompactWindowState";
 import { omniSmallIconSrc } from "../../app/constants";
@@ -260,7 +260,6 @@ export default function CompactMenu({
                       <img className="compact-menu__entry-icon" src={EXTERNAL_CHAT_ICON_MAP[entry.icon]} alt="" aria-hidden="true" />
                       <span>{entry.title}</span>
                     </span>
-                    <span className="compact-menu__meta">{entry.kind === "main" ? "主界面" : "应用内打开"}</span>
                   </button>
                 ))}
               </div>
@@ -280,35 +279,59 @@ export default function CompactMenu({
           <div className="compact-menu__label">外观设置</div>
           {appearanceOptions.map((option) =>
             option.id === "character" ? (
-              <button
-                key={option.id}
-                type="button"
-                className={`compact-menu__item compact-menu__item--branch ${
-                  compactAppearance === option.id ? "compact-menu__item--active" : ""
-                }`}
-                onMouseDown={(e) => e.stopPropagation()}
-                onMouseEnter={() => {
-                  onSetIsCompactModelOpen(false);
-                  onSetIsCharacterModelOpen(true);
-                }}
-                onClick={() => {
-                  if (compactAppearance !== "character") {
-                    onCompactAppearanceChange("character");
-                    window.setTimeout(() => {
-                      onSetIsCompactMenuOpen(true);
-                      onSetIsCompactAppearanceOpen(true);
+              <div key={option.id} className="compact-menu__branch">
+                <button
+                  type="button"
+                  className={`compact-menu__item compact-menu__item--branch ${
+                    compactAppearance === option.id ? "compact-menu__item--active" : ""
+                  }`}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onMouseEnter={() => {
+                    onSetIsCompactModelOpen(false);
+                    onSetIsCharacterModelOpen(true);
+                  }}
+                  onClick={() => {
+                    if (compactAppearance !== "character") {
+                      onCompactAppearanceChange("character");
+                      window.setTimeout(() => {
+                        onSetIsCompactMenuOpen(true);
+                        onSetIsCompactAppearanceOpen(true);
+                        onSetIsCharacterModelOpen(true);
+                        onSetCharacterMenuPinned(true);
+                      }, 0);
+                      return;
+                    }
+                    onSetIsCharacterModelOpen(true);
+                  }}
+                >
+                  <span>{option.title}</span>
+                  <ChevronRight className="compact-menu__arrow-icon" aria-hidden="true" />
+                </button>
+
+                {isCharacterModelOpen && (
+                  <div
+                    className={`compact-submenu compact-submenu--${compactSubmenuSide} compact-submenu--nested animate-fade-in`}
+                    onMouseEnter={() => {
+                      onSetIsCompactModelOpen(false);
                       onSetIsCharacterModelOpen(true);
-                      onSetCharacterMenuPinned(true);
-                    }, 0);
-                    return;
-                  }
-                  onSetIsCharacterModelOpen(true);
-                }}
-              >
-                <span>{option.title}</span>
-                <span className="compact-menu__meta">{option.description}</span>
-                <ChevronRight className="compact-menu__arrow-icon" aria-hidden="true" />
-              </button>
+                      onSetIsCompactAppearanceOpen(true);
+                    }}
+                  >
+                    <div className="compact-menu__label">角色模型</div>
+                    {characterModelOptions.map((modelOption) => (
+                      <button
+                        key={modelOption.id}
+                        type="button"
+                        className={`compact-menu__item ${characterModel === modelOption.id ? "compact-menu__item--active" : ""}`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => onCharacterModelChange(modelOption.id)}
+                      >
+                        <span>{modelOption.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
               <button
                 key={option.id}
@@ -322,37 +345,12 @@ export default function CompactMenu({
                 onClick={() => onCompactAppearanceChange(option.id)}
               >
                 <span>{option.title}</span>
-                <span className="compact-menu__meta">{option.description}</span>
               </button>
             )
           )}
         </div>
       )}
 
-      {isCompactAppearanceOpen && isCharacterModelOpen && (
-        <div
-          className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
-          onMouseEnter={() => {
-            onSetIsCompactModelOpen(false);
-            onSetIsCharacterModelOpen(true);
-            onSetIsCompactAppearanceOpen(true);
-          }}
-        >
-          <div className="compact-menu__label">角色模型</div>
-          {characterModelOptions.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className={`compact-menu__item ${characterModel === option.id ? "compact-menu__item--active" : ""}`}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={() => onCharacterModelChange(option.id)}
-            >
-              <span>{option.title}</span>
-              <span className="compact-menu__meta">{option.description}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
