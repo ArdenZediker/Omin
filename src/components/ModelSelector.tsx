@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Eye } from "lucide-react";
 import { BUILTIN_MODELS, type ModelConfig } from "../adapters/types";
 import { modelRegistry } from "../adapters/registry";
 
@@ -49,8 +50,8 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
   }, {});
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
@@ -60,20 +61,12 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
   }, []);
 
   if (models.length === 0) {
-    return (
-      <div className="model-selector-empty">
-        未配置模型
-      </div>
-    );
+    return <div className="model-selector-empty">未配置模型</div>;
   }
 
   return (
     <div className="model-selector" ref={dropdownRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="model-selector__trigger"
-        type="button"
-      >
+      <button onClick={() => setIsOpen(!isOpen)} className="model-selector__trigger" type="button">
         {currentConfig && (
           <div
             className={`w-2 h-2 rounded-full ${
@@ -86,26 +79,17 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
           />
         )}
         <span>{currentConfig?.name || currentModel}</span>
-        <svg
-          className={`model-selector__chevron ${isOpen ? "model-selector__chevron--open" : ""}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <ChevronDown className={`model-selector__chevron ${isOpen ? "model-selector__chevron--open" : ""}`} strokeWidth={2} />
       </button>
 
       {isOpen && (
         <div className="model-selector__dropdown animate-fade-in">
           {Object.entries(grouped).map(([provider, providerModels]) => (
             <div key={provider}>
-              <div className="model-selector__group-label">
-                {PROVIDER_LABELS[provider] || provider}
-              </div>
+              <div className="model-selector__group-label">{PROVIDER_LABELS[provider] || provider}</div>
 
               {providerModels.map((model) => {
-                const isCustom = !BUILTIN_MODELS.find((b) => b.id === model.id);
+                const isCustom = !BUILTIN_MODELS.find((builtInModel) => builtInModel.id === model.id);
                 const connectionStatus = getModelConnectionStatus(model.id);
                 return (
                   <button
@@ -128,34 +112,9 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
                     />
                     <span>{model.name}</span>
 
-                    {isCustom && (
-                      <span className="model-selector__badge">
-                        Custom
-                      </span>
-                    )}
+                    {isCustom && <span className="model-selector__badge">Custom</span>}
 
-                    {model.supportsVision && (
-                      <svg
-                        className="model-selector__vision"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        aria-label="Vision supported"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                      </svg>
-                    )}
+                    {model.supportsVision && <Eye className="model-selector__vision" aria-label="支持视觉" strokeWidth={1.5} />}
                   </button>
                 );
               })}

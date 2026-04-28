@@ -370,6 +370,8 @@ function App() {
         onCloseCompactMenuNow={compactController.closeCompactMenuNow}
         onCompactAppearanceChange={compactController.handleCompactAppearanceChange}
         onCompactDrag={compactController.handleCompactDrag}
+        onCompactPointerMove={compactController.handleCompactPointerMove}
+        onCompactPointerUp={compactController.handleCompactPointerUp}
         onCompactQuerySubmit={compactController.handleCompactQuerySubmit}
         onCompactScaleReset={compactController.handleCompactScaleReset}
         onCompactWheel={compactController.handleCompactWheel}

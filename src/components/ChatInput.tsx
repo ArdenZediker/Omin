@@ -1,5 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { buildSlashDraft, getMatchingSlashSuggestions } from "../chat/skills";
+import {
+  ArrowRight,
+  Bot,
+  CirclePlus,
+  Eraser,
+  GitCompare,
+  Languages,
+  ListCollapse,
+  MessageCircleQuestion,
+  Pencil,
+  PencilLine,
+  Pin,
+  Settings,
+  Square,
+  X,
+} from "lucide-react";
+import { buildSlashDraft, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 
 interface ChatInputProps {
   onSend: (content: string, images?: string[]) => void;
@@ -11,22 +27,30 @@ interface ChatInputProps {
   draftSignal?: number;
 }
 
-function CommandIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true">
-      <path d="M7 5L3 10L7 15" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M13 5L17 10L13 15" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+const LOCAL_COMMAND_ICON_MAP: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
+  new: CirclePlus,
+  clear: Eraser,
+  settings: Settings,
+  model: Bot,
+  rename: Pencil,
+  pin: Pin,
+};
 
-function SkillIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true">
-      <path d="M10 3L16 6.5V13.5L10 17L4 13.5V6.5L10 3Z" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M10 6.5L13 8.2V11.8L10 13.5L7 11.8V8.2L10 6.5Z" strokeWidth="1.4" strokeLinejoin="round" />
-    </svg>
-  );
+const SKILL_ICON_MAP: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
+  summarize: ListCollapse,
+  translate: Languages,
+  rewrite: PencilLine,
+  explain: MessageCircleQuestion,
+  compare: GitCompare,
+};
+
+function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
+  const Icon =
+    suggestion.kind === "local"
+      ? (LOCAL_COMMAND_ICON_MAP[suggestion.id] ?? CirclePlus)
+      : (SKILL_ICON_MAP[suggestion.id] ?? MessageCircleQuestion);
+
+  return <Icon size={16} strokeWidth={1.8} />;
 }
 
 export default function ChatInput({
@@ -74,23 +98,23 @@ export default function ChatInput({
     setImages([]);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       handleSubmit();
     }
   };
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
+  const handlePaste = (event: React.ClipboardEvent) => {
+    const items = event.clipboardData.items;
     for (const item of items) {
       if (item.type.startsWith("image/")) {
-        e.preventDefault();
+        event.preventDefault();
         const blob = item.getAsFile();
         if (blob) {
           const reader = new FileReader();
-          reader.onload = (ev) => {
-            const result = ev.target?.result as string;
+          reader.onload = (readerEvent) => {
+            const result = readerEvent.target?.result as string;
             setImages((prev) => [...prev, result]);
           };
           reader.readAsDataURL(blob);
@@ -118,7 +142,7 @@ export default function ChatInput({
                   }}
                 >
                   <span className="chat-composer__skill-icon" aria-hidden="true">
-                    <CommandIcon />
+                    <SuggestionIcon suggestion={suggestion} />
                   </span>
                   <span className="chat-composer__skill-command">{suggestion.command}</span>
                   <span className="chat-composer__skill-description">{suggestion.description}</span>
@@ -141,7 +165,7 @@ export default function ChatInput({
                   }}
                 >
                   <span className="chat-composer__skill-icon" aria-hidden="true">
-                    <SkillIcon />
+                    <SuggestionIcon suggestion={suggestion} />
                   </span>
                   <span className="chat-composer__skill-command">{suggestion.command}</span>
                   <span className="chat-composer__skill-description">{suggestion.description}</span>
@@ -154,16 +178,16 @@ export default function ChatInput({
 
       {images.length > 0 && (
         <div className="chat-composer__attachments">
-          {images.map((img, i) => (
-            <div key={i} className="relative group">
+          {images.map((img, index) => (
+            <div key={index} className="relative group">
               <img src={img} alt="图片附件" className="w-12 h-12 rounded-lg object-cover border border-white/10" />
               <button
-                onClick={() => setImages((prev) => prev.filter((_, idx) => idx !== i))}
-                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500/80 text-white flex items-center justify-center text-[8px] opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => setImages((prev) => prev.filter((_, imageIndex) => imageIndex !== index))}
+                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                 title="移除图片"
                 type="button"
               >
-                ×
+                <X size={10} strokeWidth={2.2} />
               </button>
             </div>
           ))}
@@ -175,7 +199,7 @@ export default function ChatInput({
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder="请输入消息…（输入 / 查看命令，Enter 发送，Shift+Enter 换行）"
@@ -187,15 +211,11 @@ export default function ChatInput({
 
         {isLoading ? (
           <button onClick={onStop} className="chat-composer__send chat-composer__send--stop" title="停止生成" type="button">
-            <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
-              <rect x="6" y="6" width="12" height="12" rx="1" />
-            </svg>
+            <Square className="w-4 h-4 text-red-400" fill="currentColor" strokeWidth={1.8} />
           </button>
         ) : (
           <button onClick={handleSubmit} disabled={!input.trim() && images.length === 0} className="chat-composer__send" title="发送消息" type="button">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
+            <ArrowRight className="w-4 h-4 text-white" strokeWidth={2} />
           </button>
         )}
       </div>

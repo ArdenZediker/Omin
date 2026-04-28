@@ -1,4 +1,5 @@
 import type { CSSProperties, Dispatch, MouseEvent, SetStateAction, WheelEvent } from "react";
+import { Search } from "lucide-react";
 import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindowState";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
 import Live2DCharacter from "./Live2DCharacter";
@@ -41,6 +42,8 @@ type CompactWindowProps = {
   onCloseCompactMenuNow: () => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
   onCompactDrag: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
+  onCompactPointerMove: (e: MouseEvent<HTMLDivElement>) => void;
+  onCompactPointerUp: () => void;
   onCompactQuerySubmit: (openMain?: boolean) => void | Promise<void>;
   onCompactScaleReset: () => void;
   onCompactWheel: (e: WheelEvent<HTMLDivElement>) => void;
@@ -97,6 +100,8 @@ export default function CompactWindow({
   onCloseCompactMenuNow,
   onCompactAppearanceChange,
   onCompactDrag,
+  onCompactPointerMove,
+  onCompactPointerUp,
   onCompactQuerySubmit,
   onCompactScaleReset,
   onCompactWheel,
@@ -138,7 +143,7 @@ export default function CompactWindow({
 
   return (
     <div
-      className={`compact-shell drag-region ${
+      className={`compact-shell ${
         isCharacterHorizontalPanelOpen && characterPanelSide === "left" ? "compact-shell--reply-left" : ""
       } ${isCompactMenuOpen && !isCharacterMenuPinned && compactMenuSide === "left" ? "compact-shell--menu-left" : ""}`}
       onMouseDownCapture={(e) => {
@@ -165,6 +170,9 @@ export default function CompactWindow({
         }
       }}
       onMouseDown={onCompactDrag}
+      onMouseMove={onCompactPointerMove}
+      onMouseUp={onCompactPointerUp}
+      onMouseLeave={onCompactPointerUp}
       onWheel={onCompactWheel}
     >
       <div
@@ -194,7 +202,7 @@ export default function CompactWindow({
           <div className="compact-menu-anchor no-drag" onContextMenu={isCharacterAppearance ? onCharacterContextMenu : undefined}>
             <button
               type="button"
-              className={`compact-button compact-button--brand ${isCharacterAppearance ? "compact-button--character" : ""}`}
+              className={`compact-button compact-button--brand no-drag ${isCharacterAppearance ? "compact-button--character" : ""}`}
               onMouseDown={isCharacterAppearance ? onCharacterPointerDown : (e) => e.stopPropagation()}
               onMouseMove={
                 isCharacterAppearance
@@ -297,10 +305,7 @@ export default function CompactWindow({
               }}
               aria-label="打开查询"
             >
-              <svg className="compact-button__search" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <circle cx="11" cy="11" r="6.5" strokeWidth="1.8" />
-                <path d="M16 16L21 21" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
+              <Search className="compact-button__search" strokeWidth={1.8} />
             </button>
           )}
         </div>

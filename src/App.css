@@ -626,6 +626,9 @@ body,
   max-width: 980px;
   margin: 0 auto 10px;
   padding: 10px 12px;
+  max-height: min(320px, 42vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--omni-panel-border);
   border-radius: 18px;
   background: color-mix(in srgb, var(--omni-panel-bg) 96%, var(--omni-soft-bg));

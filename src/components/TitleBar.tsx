@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Maximize2, Minimize2, Minus, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface TitleBarProps {
@@ -33,8 +34,8 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
     };
   }, [appWindow]);
 
-  const handleMinimize = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
+  const handleMinimize = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     if (minimizeBehavior === "compact") {
       await onMinimizeToCompact();
       return;
@@ -43,13 +44,13 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
     await appWindow.minimize();
   };
 
-  const handleClose = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
+  const handleClose = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     await onMinimizeToCompact();
   };
 
-  const handleToggleMaximize = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
+  const handleToggleMaximize = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     const nextIsMaximized = !(await appWindow.isMaximized());
     if (nextIsMaximized) {
       await appWindow.maximize();
@@ -59,13 +60,13 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
     setIsMaximized(nextIsMaximized);
   };
 
-  const handleDragStart = async (e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
+  const handleDragStart = async (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
     if (target.closest(".no-drag")) {
       return;
     }
 
-    if (e.button === 0) {
+    if (event.button === 0) {
       await appWindow.startDragging();
     }
   };
@@ -80,50 +81,34 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
       <div className="flex items-center gap-1 no-drag">
         <button
           onClick={handleMinimize}
-          onMouseDown={(e) => e.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
           className="w-5 h-5 rounded-md hover:bg-white/10 transition-colors flex items-center justify-center"
           title={minimizeBehavior === "compact" ? "收起到悬浮球" : "最小化到任务栏"}
           type="button"
         >
-          <svg className="w-3 h-3 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-          </svg>
+          <Minus className="w-3 h-3 text-white/50" strokeWidth={2} />
         </button>
         <button
           onClick={handleToggleMaximize}
-          onMouseDown={(e) => e.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
           className="w-5 h-5 rounded-md hover:bg-white/10 transition-colors flex items-center justify-center"
           title={isMaximized ? "还原" : "最大化"}
           type="button"
         >
-          <svg className="w-3 h-3 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            {isMaximized ? (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"
-              />
-            ) : (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"
-              />
-            )}
-          </svg>
+          {isMaximized ? (
+            <Minimize2 className="w-3 h-3 text-white/50" strokeWidth={2} />
+          ) : (
+            <Maximize2 className="w-3 h-3 text-white/50" strokeWidth={2} />
+          )}
         </button>
         <button
           onClick={handleClose}
-          onMouseDown={(e) => e.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
           className="w-5 h-5 rounded-md hover:bg-red-500/15 transition-colors flex items-center justify-center"
           title="关闭到悬浮球"
           type="button"
         >
-          <svg className="w-3 h-3 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X className="w-3 h-3 text-white/50" strokeWidth={2} />
         </button>
       </div>
     </div>
