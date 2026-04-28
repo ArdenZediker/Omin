@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Copy, Pencil, RefreshCw } from "lucide-react";
 import type { Message } from "../adapters/types";
 
 interface ChatMessageProps {
@@ -87,11 +88,11 @@ export default function ChatMessage({
         <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-gradient-to-br from-violet-500/80 to-indigo-600/80 text-white/95 text-sm">
           {message.images && message.images.length > 0 && (
             <div className="flex gap-1 mb-1.5">
-              {message.images.map((img, i) => (
+              {message.images.map((img, imageIndex) => (
                 <img
-                  key={i}
+                  key={imageIndex}
                   src={img.startsWith("data:") ? img : `data:image/png;base64,${img}`}
-                  alt="attached"
+                  alt="图片附件"
                   className="w-16 h-16 rounded-lg object-cover"
                 />
               ))}
@@ -109,26 +110,15 @@ export default function ChatMessage({
       {!isStreaming && !isEditing && (
         <div className={`mt-1.5 flex items-center gap-1.5 ${isUser ? "justify-end" : "justify-start"}`}>
           <MessageActionButton label="复制" onClick={() => onCopy?.(message)}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-              <rect x="8" y="8" width="11" height="11" rx="2" strokeWidth="1.7" />
-              <path d="M5 15V7a2 2 0 0 1 2-2h8" strokeWidth="1.7" strokeLinecap="round" />
-            </svg>
+            <Copy size={16} strokeWidth={1.8} />
           </MessageActionButton>
           {isUser ? (
             <MessageActionButton label="重新编辑" onClick={() => onEdit?.(index)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                <path d="M4 20h4.5L19 9.5 14.5 5 4 15.5V20Z" strokeWidth="1.7" strokeLinejoin="round" />
-                <path d="m13.5 6 4.5 4.5" strokeWidth="1.7" strokeLinecap="round" />
-              </svg>
+              <Pencil size={16} strokeWidth={1.8} />
             </MessageActionButton>
           ) : (
             <MessageActionButton label="重新生成" onClick={() => onRegenerate?.(index)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                <path d="M20 12a8 8 0 0 1-13.66 5.66" strokeWidth="1.7" strokeLinecap="round" />
-                <path d="M4 12A8 8 0 0 1 17.66 6.34" strokeWidth="1.7" strokeLinecap="round" />
-                <path d="M18 3v4h-4" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M6 21v-4h4" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <RefreshCw size={16} strokeWidth={1.8} />
             </MessageActionButton>
           )}
         </div>

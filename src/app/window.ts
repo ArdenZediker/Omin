@@ -1,4 +1,4 @@
-import { LogicalPosition, LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
+import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, SETTINGS_SIZE, THEME_MODE_STORAGE_KEY } from "./constants";
@@ -73,11 +73,43 @@ export function persistCompactPosition(position: { x: number; y: number }) {
 }
 
 export function getCompactAnchorPositionForMonitor(monitor: Monitor, size: { width: number; height: number }) {
-  const verticalRange = Math.max(0, monitor.workArea.size.height - size.height);
+  const workArea = getLogicalWorkArea(monitor);
+  const verticalRange = Math.max(0, workArea.height - size.height);
   const centerOffset = Math.round(verticalRange * 0.42);
   return {
-    x: Math.round(monitor.workArea.position.x + monitor.workArea.size.width - size.width - 24),
-    y: Math.round(monitor.workArea.position.y + centerOffset),
+    x: Math.round(workArea.left + workArea.width - size.width - 24),
+    y: Math.round(workArea.top + centerOffset),
+  };
+}
+
+function getLogicalWorkArea(monitor: Monitor) {
+  const scale = monitor.scaleFactor || 1;
+  return {
+    left: monitor.workArea.position.x / scale,
+    top: monitor.workArea.position.y / scale,
+    width: monitor.workArea.size.width / scale,
+    height: monitor.workArea.size.height / scale,
+  };
+}
+
+export function mapCompactPositionToMonitor(
+  position: { x: number; y: number },
+  sourceMonitor: Monitor,
+  targetMonitor: Monitor,
+  size: { width: number; height: number }
+) {
+  const source = getLogicalWorkArea(sourceMonitor);
+  const target = getLogicalWorkArea(targetMonitor);
+  const sourceRangeX = Math.max(1, source.width - size.width);
+  const sourceRangeY = Math.max(1, source.height - size.height);
+  const targetRangeX = Math.max(0, target.width - size.width);
+  const targetRangeY = Math.max(0, target.height - size.height);
+  const relativeX = Math.min(1, Math.max(0, (position.x - source.left) / sourceRangeX));
+  const relativeY = Math.min(1, Math.max(0, (position.y - source.top) / sourceRangeY));
+
+  return {
+    x: Math.round(target.left + targetRangeX * relativeX),
+    y: Math.round(target.top + targetRangeY * relativeY),
   };
 }
 
@@ -89,11 +121,21 @@ export async function getMonitorForCursor() {
 export async function moveCompactWindowToMonitor(
   targetWindow: ReturnType<typeof getCurrentWindow>,
   monitor: Monitor,
-  size: { width: number; height: number }
+  size: { width: number; height: number },
+  options?: {
+    sourceMonitor?: Monitor | null;
+    currentPosition?: { x: number; y: number } | null;
+    persistPosition?: boolean;
+  }
 ) {
-  const nextPosition = getCompactAnchorPositionForMonitor(monitor, size);
-  await targetWindow.setPosition(new PhysicalPosition(nextPosition.x, nextPosition.y));
-  persistCompactPosition(nextPosition);
+  const nextPosition =
+    options?.sourceMonitor && options?.currentPosition
+      ? mapCompactPositionToMonitor(options.currentPosition, options.sourceMonitor, monitor, size)
+      : getCompactAnchorPositionForMonitor(monitor, size);
+  await targetWindow.setPosition(new LogicalPosition(nextPosition.x, nextPosition.y));
+  if (options?.persistPosition !== false) {
+    persistCompactPosition(nextPosition);
+  }
 }
 
 export async function clampCompactWindowToMonitor(

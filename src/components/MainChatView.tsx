@@ -1,4 +1,5 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { ArrowRight, CirclePlus, MoreHorizontal, Pencil, Pin, Settings, Share2, Trash2 } from "lucide-react";
 import type { Message } from "../adapters/types";
 import type { ChatSession } from "../chat/types";
 import { formatUsageLabel } from "../chat/storage";
@@ -96,10 +97,7 @@ export default function MainChatView({
           className={`chat-history-panel__new ${!activeChatId && messages.length === 0 ? "chat-history-panel__new--active" : ""}`}
           onClick={onNewChat}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-            <circle cx="12" cy="12" r="7" strokeWidth="1.7" />
-            <path d="M12 8.5v7M8.5 12h7" strokeWidth="1.7" strokeLinecap="round" />
-          </svg>
+          <CirclePlus size={18} strokeWidth={1.7} />
           <span>新建对话</span>
         </button>
         <div className="chat-history-panel__list hide-scrollbar">
@@ -131,24 +129,24 @@ export default function MainChatView({
                     }}
                     aria-label="对话操作"
                   >
-                    ...
+                    <MoreHorizontal size={16} strokeWidth={1.8} />
                   </button>
                   {openChatMenu?.id === session.id && (
                     <div className="chat-history-panel__menu" style={{ left: openChatMenu.x, top: openChatMenu.y }}>
                       <button type="button" onClick={() => onRenameChat(session)}>
-                        <span>✎</span>
+                        <Pencil size={14} strokeWidth={1.8} />
                         <span>重命名</span>
                       </button>
                       <button type="button" onClick={() => onTogglePinChat(session)}>
-                        <span>⬆</span>
+                        <Pin size={14} strokeWidth={1.8} />
                         <span>{session.pinned ? "取消置顶" : "置顶"}</span>
                       </button>
                       <button type="button" onClick={() => void onShareChat(session)}>
-                        <span>↗</span>
+                        <Share2 size={14} strokeWidth={1.8} />
                         <span>分享</span>
                       </button>
                       <button type="button" className="chat-history-panel__menu-danger" onClick={() => onDeleteChat(session)}>
-                        <span>🗑</span>
+                        <Trash2 size={14} strokeWidth={1.8} />
                         <span>删除</span>
                       </button>
                     </div>
@@ -177,14 +175,7 @@ export default function MainChatView({
                 title="清空对话"
                 type="button"
               >
-                <svg className="w-3.5 h-3.5 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
+                <Trash2 className="w-3.5 h-3.5 text-white/30" strokeWidth={1.5} />
               </button>
             )}
             <button
@@ -193,15 +184,7 @@ export default function MainChatView({
               title="设置"
               type="button"
             >
-              <svg className="w-3.5 h-3.5 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+              <Settings className="w-3.5 h-3.5 text-white/30" strokeWidth={1.5} />
             </button>
           </div>
         </div>
@@ -237,22 +220,20 @@ export default function MainChatView({
                 {emptyChatPrompts.map((prompt) => (
                   <button key={prompt} type="button" onClick={() => onUseEmptyPrompt(prompt)}>
                     <span>{prompt}</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                      <path d="M5 12h13M13 6l6 6-6 6" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
+                    <ArrowRight size={16} strokeWidth={1.7} />
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {messages.map((msg, idx) => (
+          {messages.map((msg, index) => (
             <ChatMessage
-              key={idx}
+              key={index}
               message={msg}
-              index={idx}
-              isStreaming={isStreaming && idx === messages.length - 1}
-              isEditing={editingMessageIndex === idx}
+              index={index}
+              isStreaming={isStreaming && index === messages.length - 1}
+              isEditing={editingMessageIndex === index}
               onCopy={onCopyMessage}
               onEdit={onEditUserMessage}
               onCancelEdit={onCancelEditUserMessage}

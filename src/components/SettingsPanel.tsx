@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { Bot, Settings, X } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
@@ -299,7 +300,9 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
             }`}
           >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-[9px] font-semibold text-slate-600">B</span>
+            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+              <Settings size={13} strokeWidth={1.8} />
+            </span>
             基本设置
           </button>
           <button
@@ -311,8 +314,8 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
             }`}
           >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-violet-100 text-[9px] font-semibold text-violet-700">
-              AI
+            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-violet-100 text-violet-700">
+              <Bot size={13} strokeWidth={1.8} />
             </span>
             模型配置
           </button>
@@ -327,7 +330,8 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
               {section === "basic" ? "管理 Omni 的通用基础选项。" : "通过模型列表新增或编辑 OpenAI 兼容模型。"}
             </p>
           </div>
-          <button onClick={onClose} className="omni-settings-close flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" type="button">
+          <button onClick={onClose} className="omni-settings-close flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 text-[0px]" type="button" aria-label="关闭设置">
+            <X size={15} strokeWidth={1.9} />
             ×
           </button>
         </header>
