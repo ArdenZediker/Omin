@@ -4,10 +4,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface TitleBarProps {
   onMinimizeToCompact: () => void | Promise<void>;
+  inline?: boolean;
   minimizeBehavior?: "taskbar" | "compact";
 }
-
-const omniIconSrc = "/omni-mark-small.svg";
 
 function getSafeCurrentWindow() {
   try {
@@ -17,7 +16,7 @@ function getSafeCurrentWindow() {
   }
 }
 
-export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "taskbar" }: TitleBarProps) {
+export default function TitleBar({ onMinimizeToCompact, inline = false, minimizeBehavior = "taskbar" }: TitleBarProps) {
   const appWindow = getSafeCurrentWindow();
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -94,43 +93,38 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
   };
 
   return (
-    <div className="flex items-center justify-between h-9 px-3 drag-region select-none shrink-0" onMouseDown={handleDragStart}>
-      <div className="flex items-center gap-2">
-        <img src={omniIconSrc} alt="Omni" className="w-4 h-4" />
-        <span className="text-xs font-semibold text-white/80 tracking-wider">OMNI</span>
-      </div>
-
+    <div className={`omni-window-controls ${inline ? "omni-window-controls--inline" : "drag-region select-none"}`} onMouseDown={inline ? undefined : handleDragStart}>
       <div className="flex items-center gap-1 no-drag">
         <button
           onClick={handleMinimize}
           onMouseDown={(event) => event.stopPropagation()}
-          className="w-5 h-5 rounded-md hover:bg-white/10 transition-colors flex items-center justify-center"
+          className="omni-window-controls__button"
           title={minimizeBehavior === "compact" ? "收起到悬浮球" : "最小化到任务栏"}
           type="button"
         >
-          <Minus className="w-3 h-3 text-white/50" strokeWidth={2} />
+          <Minus className="omni-window-controls__icon" strokeWidth={1.7} />
         </button>
         <button
           onClick={handleToggleMaximize}
           onMouseDown={(event) => event.stopPropagation()}
-          className="w-5 h-5 rounded-md hover:bg-white/10 transition-colors flex items-center justify-center"
+          className="omni-window-controls__button"
           title={isMaximized ? "还原" : "最大化"}
           type="button"
         >
           {isMaximized ? (
-            <Minimize2 className="w-3 h-3 text-white/50" strokeWidth={2} />
+            <Minimize2 className="omni-window-controls__icon" strokeWidth={1.7} />
           ) : (
-            <Maximize2 className="w-3 h-3 text-white/50" strokeWidth={2} />
+            <Maximize2 className="omni-window-controls__icon" strokeWidth={1.7} />
           )}
         </button>
         <button
           onClick={handleClose}
           onMouseDown={(event) => event.stopPropagation()}
-          className="w-5 h-5 rounded-md hover:bg-red-500/15 transition-colors flex items-center justify-center"
+          className="omni-window-controls__button omni-window-controls__button--close"
           title="关闭到悬浮球"
           type="button"
         >
-          <X className="w-3 h-3 text-white/50" strokeWidth={2} />
+          <X className="omni-window-controls__icon" strokeWidth={1.7} />
         </button>
       </div>
     </div>
