@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Eye } from "lucide-react";
-import { BUILTIN_MODELS, type ModelConfig } from "../adapters/types";
 import { modelRegistry } from "../adapters/registry";
+import { BUILTIN_MODELS, type ModelConfig } from "../adapters/types";
 
 interface ModelSelectorProps {
   currentModel: string;
@@ -44,7 +44,9 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
   const currentStatus = currentConfig ? getModelConnectionStatus(currentConfig.id) : undefined;
 
   const grouped = models.reduce<Record<string, ModelConfig[]>>((acc, model) => {
-    if (!acc[model.provider]) acc[model.provider] = [];
+    if (!acc[model.provider]) {
+      acc[model.provider] = [];
+    }
     acc[model.provider].push(model);
     return acc;
   }, {});
@@ -91,6 +93,7 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
               {providerModels.map((model) => {
                 const isCustom = !BUILTIN_MODELS.find((builtInModel) => builtInModel.id === model.id);
                 const connectionStatus = getModelConnectionStatus(model.id);
+
                 return (
                   <button
                     key={model.id}

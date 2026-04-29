@@ -359,7 +359,6 @@ export async function showCompactWindow(
 
   await compactWindow.show();
   await compactWindow.setAlwaysOnTop(true);
-  await compactWindow.setFocus();
 }
 
 export async function openInternalChatWindow(entry: ExternalChatEntry) {

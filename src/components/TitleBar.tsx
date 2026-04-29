@@ -9,11 +9,23 @@ interface TitleBarProps {
 
 const omniIconSrc = "/omni-mark-small.svg";
 
+function getSafeCurrentWindow() {
+  try {
+    return getCurrentWindow();
+  } catch {
+    return null;
+  }
+}
+
 export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "taskbar" }: TitleBarProps) {
-  const appWindow = getCurrentWindow();
+  const appWindow = getSafeCurrentWindow();
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
+    if (!appWindow) {
+      return;
+    }
+
     let unlistenResize: (() => void) | undefined;
 
     const syncMaximizedState = async () => {
@@ -40,6 +52,9 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
       await onMinimizeToCompact();
       return;
     }
+    if (!appWindow) {
+      return;
+    }
     await appWindow.setSkipTaskbar(false);
     await appWindow.minimize();
   };
@@ -51,6 +66,9 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
 
   const handleToggleMaximize = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
+    if (!appWindow) {
+      return;
+    }
     const nextIsMaximized = !(await appWindow.isMaximized());
     if (nextIsMaximized) {
       await appWindow.maximize();
@@ -61,6 +79,10 @@ export default function TitleBar({ onMinimizeToCompact, minimizeBehavior = "task
   };
 
   const handleDragStart = async (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!appWindow) {
+      return;
+    }
+
     const target = event.target as HTMLElement;
     if (target.closest(".no-drag")) {
       return;
