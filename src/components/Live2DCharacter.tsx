@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 type Live2DCharacterProps = {
   width: number;
   height: number;
-  model: "hiyori" | "natori";
+  model: "hiyori";
 };
 
 declare global {

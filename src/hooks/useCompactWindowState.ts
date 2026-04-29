@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 export type CompactAppearance = "default" | "compact" | "large" | "character";
-export type CharacterModel = "hiyori" | "natori";
+export type CharacterModel = "hiyori";
 
 export const COMPACT_APPEARANCE_STORAGE_KEY = "omni_compact_appearance";
 export const CHARACTER_SCALE_STORAGE_KEY = "omni_character_scale";
@@ -27,9 +27,7 @@ export function getInitialCharacterScale(): number {
 }
 
 export function getInitialCharacterModel(): CharacterModel {
-  if (typeof window === "undefined") return "hiyori";
-  const saved = localStorage.getItem(CHARACTER_MODEL_STORAGE_KEY);
-  return saved === "natori" ? "natori" : "hiyori";
+  return "hiyori";
 }
 
 export function useCompactWindowState() {
