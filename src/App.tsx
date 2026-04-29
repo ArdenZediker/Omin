@@ -403,7 +403,6 @@ function App() {
 
   return (
     <div className="app-shell glass flex flex-col h-screen w-screen overflow-hidden">
-      <TitleBar onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />
       {view === "chat" ? (
         <MainChatView
           activeChatId={activeChatId}
@@ -424,6 +423,7 @@ function App() {
           messagesScrollRef={messagesScrollRef}
           omniIconSrc={omniIconSrc}
           openChatMenu={openChatMenu}
+          windowControls={<TitleBar inline onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />}
           onCancelEditUserMessage={handleCancelEditUserMessage}
           onClearChat={handleClearChat}
           onCopyMessage={handleCopyMessage}
@@ -444,7 +444,10 @@ function App() {
           onUseEmptyPrompt={handleUseEmptyPrompt}
         />
       ) : (
-        <SettingsPanel onClose={() => setView("chat")} onModelChange={handleModelChange} />
+        <>
+          <TitleBar onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />
+          <SettingsPanel onClose={() => setView("chat")} onModelChange={handleModelChange} />
+        </>
       )}
     </div>
   );

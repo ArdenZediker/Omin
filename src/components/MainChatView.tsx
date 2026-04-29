@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { CSSProperties, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import {
   ArrowRight,
   CirclePlus,
@@ -48,6 +48,7 @@ type MainChatViewProps = {
   messagesScrollRef: RefObject<HTMLDivElement | null>;
   omniIconSrc: string;
   openChatMenu: { id: string; x: number; y: number } | null;
+  windowControls?: ReactNode;
   onCancelEditUserMessage: () => void;
   onClearChat: () => void;
   onCopyMessage: (message: Message) => void | Promise<void>;
@@ -97,6 +98,7 @@ export default function MainChatView({
   messagesScrollRef,
   omniIconSrc,
   openChatMenu,
+  windowControls,
   onCancelEditUserMessage,
   onClearChat,
   onCopyMessage,
@@ -117,13 +119,17 @@ export default function MainChatView({
   onUseEmptyPrompt,
 }: MainChatViewProps) {
   const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
+  const [composerElement, setComposerElement] = useState<HTMLDivElement | null>(null);
   const [isTopicPanelAutoCollapsed, setIsTopicPanelAutoCollapsed] = useState(false);
   const [topicPanelManualVisible, setTopicPanelManualVisible] = useState<boolean | null>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
+
   const recommendedPrompts = emptyChatPrompts.slice(0, 4);
   const latestSessions = groupedChatSessions.flatMap((group) => group.sessions).slice(0, 6);
   const currentTopicTitle = activeSession?.title || "随便聊聊";
   const defaultTopicPanelVisible = !isTopicPanelAutoCollapsed;
   const isTopicPanelVisible = topicPanelManualVisible ?? defaultTopicPanelVisible;
+
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
 
@@ -139,6 +145,28 @@ export default function MainChatView({
   }, [isTopicPanelVisible, topicPanelManualVisible]);
 
   useEffect(() => {
+    if (!composerElement) {
+      return;
+    }
+
+    const updateComposerHeight = () => {
+      setComposerHeight(composerElement.getBoundingClientRect().height || 0);
+    };
+
+    updateComposerHeight();
+
+    const observer = new ResizeObserver(() => {
+      updateComposerHeight();
+    });
+
+    observer.observe(composerElement);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [composerElement]);
+
+  useEffect(() => {
     if (!workspaceElement) {
       return;
     }
@@ -147,7 +175,6 @@ export default function MainChatView({
       const nextWorkspaceWidth = workspaceElement.getBoundingClientRect().width || 0;
       const nextEstimatedPaneWidth = Math.max(0, nextWorkspaceWidth - TOPIC_PANEL_WIDTH);
       const nextEstimatedPaneRatio = nextWorkspaceWidth > 0 ? nextEstimatedPaneWidth / nextWorkspaceWidth : 1;
-
       setIsTopicPanelAutoCollapsed(nextEstimatedPaneRatio < TOPIC_PANEL_AUTO_COLLAPSE_RATIO);
     };
 
@@ -176,7 +203,6 @@ export default function MainChatView({
       if (frameId) {
         cancelAnimationFrame(frameId);
       }
-
       observer.disconnect();
       window.removeEventListener("resize", scheduleUpdate);
     };
@@ -188,6 +214,7 @@ export default function MainChatView({
         <button type="button" className="main-chat-nav__brand" title="Omni">
           <img src={omniIconSrc} alt="Omni" />
         </button>
+
         <div className="main-chat-nav__items">
           <button type="button" className="main-chat-nav__item main-chat-nav__item--active" title="聊天">
             <MessageSquare size={18} strokeWidth={1.9} />
@@ -199,6 +226,7 @@ export default function MainChatView({
             <FolderOpen size={18} strokeWidth={1.9} />
           </button>
         </div>
+
         <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom" title="设置" onClick={onSettingsOpen}>
           <Settings size={18} strokeWidth={1.9} />
         </button>
@@ -247,6 +275,7 @@ export default function MainChatView({
                     <span className="chat-history-panel__title">{session.title}</span>
                     <span className="chat-history-panel__meta">{formatUsageLabel(session.usage)}</span>
                   </button>
+
                   <button
                     type="button"
                     className="chat-history-panel__more"
@@ -261,6 +290,7 @@ export default function MainChatView({
                   >
                     <MoreHorizontal size={16} strokeWidth={1.8} />
                   </button>
+
                   {openChatMenu?.id === session.id && (
                     <div className="chat-history-panel__menu" style={{ left: openChatMenu.x, top: openChatMenu.y }}>
                       <button type="button" onClick={() => onRenameChat(session)}>
@@ -288,8 +318,12 @@ export default function MainChatView({
         </div>
       </aside>
 
-      <section ref={setWorkspaceElement} className="main-chat-workspace">
-        <header className="main-chat-header">
+      <section
+        ref={setWorkspaceElement}
+        className="main-chat-workspace"
+        style={{ "--composer-height": `${composerHeight}px` } as CSSProperties}
+      >
+        <header className="main-chat-header drag-region">
           <div className="main-chat-toolbar">
             <div className="main-chat-toolbar__session main-chat-toolbar__session--hero">
               <div className="main-chat-toolbar__assistant">
@@ -302,7 +336,9 @@ export default function MainChatView({
                 </div>
               </div>
 
-              <ModelSelector currentModel={currentModel} onModelChange={onModelChange} />
+              <div className="no-drag">
+                <ModelSelector currentModel={currentModel} onModelChange={onModelChange} />
+              </div>
 
               {activeSession && (
                 <div className="main-chat-toolbar__usage">
@@ -311,12 +347,13 @@ export default function MainChatView({
               )}
             </div>
 
-            <div className="main-chat-toolbar__actions">
+            <div className="main-chat-toolbar__actions no-drag">
               {messages.length > 0 && (
                 <button onClick={onClearChat} className="main-chat-toolbar__icon-button" title="清空对话" type="button">
                   <Trash2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
                 </button>
               )}
+
               <button
                 className="main-chat-toolbar__icon-button"
                 title="分享会话"
@@ -330,6 +367,7 @@ export default function MainChatView({
               >
                 <Share2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
               </button>
+
               <button
                 type="button"
                 className="main-chat-toolbar__icon-button main-chat-toolbar__collapse-button"
@@ -339,32 +377,23 @@ export default function MainChatView({
                   setTopicPanelManualVisible((currentValue) => {
                     const currentVisible = currentValue ?? defaultTopicPanelVisible;
                     const nextVisible = !currentVisible;
-
                     return nextVisible === defaultTopicPanelVisible ? null : nextVisible;
                   })
                 }
               >
-                {isTopicPanelVisible ? <PanelRightClose className="main-chat-toolbar__icon" strokeWidth={1.7} /> : <PanelRightOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />}
+                {isTopicPanelVisible ? (
+                  <PanelRightClose className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                ) : (
+                  <PanelRightOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                )}
               </button>
-              <button onClick={onSettingsOpen} className="main-chat-toolbar__icon-button" title="设置" type="button">
-                <Settings className="main-chat-toolbar__icon" strokeWidth={1.7} />
-              </button>
+
+              {windowControls}
+
             </div>
           </div>
 
-          <div className="chat-topic-panel__header">
-            <div className="chat-topic-panel__title">
-              <span>话题 {latestSessions.length}</span>
-            </div>
-            <div className="chat-topic-panel__header-actions">
-              <button type="button" className="chat-topic-panel__icon-button" title="搜索话题">
-                <Search size={16} strokeWidth={1.8} />
-              </button>
-              <button type="button" className="chat-topic-panel__icon-button" title="更多操作">
-                <MoreHorizontal size={16} strokeWidth={1.8} />
-              </button>
-            </div>
-          </div>
+          <div className="chat-topic-panel__header" />
         </header>
 
         <main className="main-chat-pane">
@@ -434,19 +463,44 @@ export default function MainChatView({
             {error && <div className="main-chat-error animate-fade-in">{error}</div>}
           </div>
 
-          <ChatInput
-            onSend={onSend}
-            isLoading={isLoading}
-            onStop={onStop}
-            focusSignal={inputFocusKey}
-            draftValue={inputDraft}
-            draftImages={inputDraftImages}
-            draftSignal={inputDraftKey}
-          />
+          <div ref={setComposerElement}>
+            <ChatInput
+              onSend={onSend}
+              isLoading={isLoading}
+              onStop={onStop}
+              focusSignal={inputFocusKey}
+              draftValue={inputDraft}
+              draftImages={inputDraftImages}
+              draftSignal={inputDraftKey}
+            />
+          </div>
         </main>
 
         <aside className="chat-topic-panel">
           <div className="chat-topic-panel__body">
+            <div className="chat-topic-panel__toolbar">
+              <div className="chat-topic-panel__title">
+                <span>话题 {latestSessions.length}</span>
+              </div>
+              <div className="chat-topic-panel__header-actions">
+                <button type="button" className="chat-topic-panel__icon-button" title="搜索话题">
+                  <Search size={16} strokeWidth={1.8} />
+                </button>
+                <button type="button" className="chat-topic-panel__icon-button" title="更多操作">
+                  <MoreHorizontal size={16} strokeWidth={1.8} />
+                </button>
+              </div>
+            </div>
+
+            <div className="chat-topic-panel__filters">
+              <button type="button" className="chat-topic-panel__filter chat-topic-panel__filter--active">
+                默认话题
+              </button>
+              <button type="button" className="chat-topic-panel__filter">
+                临时
+              </button>
+            </div>
+
             <div className="chat-topic-panel__section">
               <div className="chat-topic-panel__section-title">当前会话</div>
               <div className="chat-topic-panel__active">
