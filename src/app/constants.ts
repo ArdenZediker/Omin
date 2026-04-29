@@ -54,7 +54,6 @@ export const COMPACT_APPEARANCE_OPTIONS: Array<{
 
 export const CHARACTER_MODEL_OPTIONS: Array<{ id: CharacterModel; title: string; description: string }> = [
   { id: "hiyori", title: "Hiyori", description: "春日风格" },
-  { id: "natori", title: "Natori", description: "名取风格" },
 ];
 
 export const EXTERNAL_CHAT_ENTRIES: ExternalChatEntry[] = [

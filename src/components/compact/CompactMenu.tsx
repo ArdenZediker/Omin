@@ -104,6 +104,7 @@ export default function CompactMenu({
   onSetIsCompactMenuOpen,
   onSetIsCompactModelOpen,
 }: CompactMenuProps) {
+  const hasMultipleCharacterModels = characterModelOptions.length > 1;
   const menuPositionStyle =
     characterMenuPosition && typeof window !== "undefined"
       ? {
@@ -229,7 +230,7 @@ export default function CompactMenu({
 
       {isCompactModelOpen && (
         <div
-          className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
+          className={`compact-submenu compact-submenu--fit compact-submenu--${compactSubmenuSide} animate-fade-in`}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(true);
             onSetIsCompactAppearanceOpen(false);
@@ -250,7 +251,7 @@ export default function CompactMenu({
                   <button
                     key={entry.id}
                     type="button"
-                    className="compact-menu__item"
+                    className="compact-menu__item compact-menu__item--submenu"
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={() => {
                       void onOpenExternalChat(entry);
@@ -270,19 +271,18 @@ export default function CompactMenu({
 
       {isCompactAppearanceOpen && (
         <div
-          className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
+          className={`compact-submenu compact-submenu--fit compact-submenu--${compactSubmenuSide} animate-fade-in`}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(true);
           }}
         >
-          <div className="compact-menu__label">外观设置</div>
           {appearanceOptions.map((option) =>
-            option.id === "character" ? (
+            option.id === "character" && hasMultipleCharacterModels ? (
               <div key={option.id} className="compact-menu__branch">
                 <button
                   type="button"
-                  className={`compact-menu__item compact-menu__item--branch ${
+                  className={`compact-menu__item compact-menu__item--submenu compact-menu__item--branch ${
                     compactAppearance === option.id ? "compact-menu__item--active" : ""
                   }`}
                   onMouseDown={(e) => e.stopPropagation()}
@@ -310,7 +310,7 @@ export default function CompactMenu({
 
                 {isCharacterModelOpen && (
                   <div
-                    className={`compact-submenu compact-submenu--${compactSubmenuSide} compact-submenu--nested animate-fade-in`}
+                    className={`compact-submenu compact-submenu--fit compact-submenu--${compactSubmenuSide} compact-submenu--nested animate-fade-in`}
                     onMouseEnter={() => {
                       onSetIsCompactModelOpen(false);
                       onSetIsCharacterModelOpen(true);
@@ -322,7 +322,9 @@ export default function CompactMenu({
                       <button
                         key={modelOption.id}
                         type="button"
-                        className={`compact-menu__item ${characterModel === modelOption.id ? "compact-menu__item--active" : ""}`}
+                        className={`compact-menu__item compact-menu__item--submenu ${
+                          characterModel === modelOption.id ? "compact-menu__item--active" : ""
+                        }`}
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={() => onCharacterModelChange(modelOption.id)}
                       >
@@ -336,7 +338,9 @@ export default function CompactMenu({
               <button
                 key={option.id}
                 type="button"
-                className={`compact-menu__item ${compactAppearance === option.id ? "compact-menu__item--active" : ""}`}
+                className={`compact-menu__item compact-menu__item--submenu compact-menu__item--simple ${
+                  compactAppearance === option.id ? "compact-menu__item--active" : ""
+                }`}
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseEnter={() => {
                   onSetIsCompactModelOpen(false);
