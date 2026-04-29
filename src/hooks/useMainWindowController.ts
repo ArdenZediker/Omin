@@ -27,7 +27,15 @@ import {
 } from "../app/window";
 import type { Message } from "../adapters/types";
 
-const appWindow = getCurrentWindow();
+function getSafeCurrentWindow() {
+  try {
+    return getCurrentWindow();
+  } catch {
+    return null;
+  }
+}
+
+const appWindow = getSafeCurrentWindow();
 
 type UseMainWindowControllerArgs = {
   basicSettings: BasicSettings;
@@ -84,11 +92,13 @@ export function useMainWindowController({
   }, []);
 
   useEffect(() => {
-    void (isCompactWindow ? applyCompactWindowChrome(appWindow) : applyExpandedWindowChrome(appWindow));
+    if (appWindow) {
+      void (isCompactWindow ? applyCompactWindowChrome(appWindow) : applyExpandedWindowChrome(appWindow));
+    }
     loadProviderConfigs();
     setCurrentModel(modelRegistry.getCurrentModel());
 
-    if (!isCompactWindow) {
+    if (!isCompactWindow && appWindow) {
       const initialBasicSettings = getBasicSettings();
       if (initialBasicSettings.showCompactBall) {
         const storedAppearance = localStorage.getItem("omni_compact_appearance");
@@ -109,7 +119,7 @@ export function useMainWindowController({
   }, [isCompactWindow, setCurrentModel]);
 
   useEffect(() => {
-    if (isCompactWindow) {
+    if (isCompactWindow || !appWindow) {
       return;
     }
 
@@ -124,7 +134,7 @@ export function useMainWindowController({
   }, [isCompactWindow, setBasicSettings]);
 
   useEffect(() => {
-    if (isCompactWindow) {
+    if (isCompactWindow || !appWindow) {
       return;
     }
 
@@ -137,13 +147,14 @@ export function useMainWindowController({
   }, [isCompactWindow, messages, messagesScrollRef]);
 
   useEffect(() => {
-    if (isCompactWindow) {
+    if (isCompactWindow || !appWindow) {
       return;
     }
+    const win = appWindow;
 
     localStorage.setItem(MAIN_VIEW_STORAGE_KEY, view);
     const targetSize = getMainWindowSizeForView(view);
-    void resizeWindow(appWindow, targetSize.width, targetSize.height);
+    void resizeWindow(win, targetSize.width, targetSize.height);
   }, [
     basicSettings.mainWindowHeight,
     basicSettings.mainWindowWidth,
@@ -154,16 +165,17 @@ export function useMainWindowController({
   ]);
 
   useEffect(() => {
-    if (isCompactWindow) {
+    if (isCompactWindow || !appWindow) {
       return;
     }
+    const win = appWindow;
 
     let focusCleanup: (() => void) | undefined;
     let draftCleanup: (() => void) | undefined;
     let settingsCleanup: (() => void) | undefined;
     let moveCleanup: (() => void) | undefined;
 
-    void appWindow
+    void win
       .listen("omni-focus-input", () => {
         setInputFocusKey((value) => value + 1);
       })
@@ -171,7 +183,7 @@ export function useMainWindowController({
         focusCleanup = unlisten;
       });
 
-    void appWindow
+    void win
       .listen("omni-set-draft", (event) => {
         const payload = event.payload as { draft?: string; images?: string[] } | null;
         setInputDraft(payload?.draft ?? "");
@@ -182,7 +194,7 @@ export function useMainWindowController({
         draftCleanup = unlisten;
       });
 
-    void appWindow
+    void win
       .listen("omni-open-settings", () => {
         setView("settings");
       })
@@ -190,9 +202,9 @@ export function useMainWindowController({
         settingsCleanup = unlisten;
       });
 
-    void appWindow
+    void win
       .onMoved(async (event) => {
-        const scaleFactor = await appWindow.scaleFactor();
+        const scaleFactor = await win.scaleFactor();
         const pos = event.payload.toLogical(scaleFactor);
         persistMainPosition({ x: Math.round(pos.x), y: Math.round(pos.y) });
       })
@@ -277,7 +289,9 @@ export function useMainWindowController({
     if (basicSettings.showCompactBall) {
       await showCompactWindow(compactAppearance, effectiveCompactScale, COMPACT_WINDOW_LABEL);
     }
-    await appWindow.hide();
+    if (appWindow) {
+      await appWindow.hide();
+    }
   }, [basicSettings.showCompactBall, compactAppearance, effectiveCompactScale]);
 
   const handleRestoreMain = useCallback(async (focusInput = false) => {

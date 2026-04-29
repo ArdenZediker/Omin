@@ -92,7 +92,10 @@ export default function ChatInput({
   }, [draftImages, draftSignal, draftValue]);
 
   const handleSubmit = () => {
-    if ((!input.trim() && images.length === 0) || isLoading) return;
+    if ((!input.trim() && images.length === 0) || isLoading) {
+      return;
+    }
+
     onSend(input.trim(), images.length > 0 ? images : undefined);
     setInput("");
     setImages([]);
@@ -202,7 +205,7 @@ export default function ChatInput({
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="请输入消息…（输入 / 查看命令，Enter 发送，Shift+Enter 换行）"
+            placeholder="输入消息……（输入 / 查看命令，Enter 发送，Shift+Enter 换行）"
             className="chat-composer__textarea hide-scrollbar"
             rows={1}
             disabled={isLoading}

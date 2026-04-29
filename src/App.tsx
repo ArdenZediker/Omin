@@ -29,8 +29,16 @@ import {
 } from "./hooks/useCompactWindowState";
 import "./App.css";
 
-const appWindow = getCurrentWindow();
-const isCompactWindow = appWindow.label === "compact";
+function getSafeCurrentWindow() {
+  try {
+    return getCurrentWindow();
+  } catch {
+    return null;
+  }
+}
+
+const appWindow = getSafeCurrentWindow();
+const isCompactWindow = appWindow?.label === "compact";
 
 function App() {
   const {
@@ -370,8 +378,6 @@ function App() {
         onCloseCompactMenuNow={compactController.closeCompactMenuNow}
         onCompactAppearanceChange={compactController.handleCompactAppearanceChange}
         onCompactDrag={compactController.handleCompactDrag}
-        onCompactPointerMove={compactController.handleCompactPointerMove}
-        onCompactPointerUp={compactController.handleCompactPointerUp}
         onCompactQuerySubmit={compactController.handleCompactQuerySubmit}
         onCompactScaleReset={compactController.handleCompactScaleReset}
         onCompactWheel={compactController.handleCompactWheel}
