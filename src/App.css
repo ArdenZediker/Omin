@@ -1788,11 +1788,18 @@ body,
 }
 
 .chat-topic-panel__group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 0 2px;
   color: var(--omni-app-muted);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.chat-topic-panel__group-title svg {
+  flex: 0 0 auto;
 }
 
 .chat-topic-panel__empty {
@@ -2121,6 +2128,32 @@ body,
   flex: 1;
   flex-direction: column;
   gap: 0;
+}
+
+.chat-topic-panel__badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--omni-app-text) 6%, transparent);
+  color: var(--omni-app-muted);
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.chat-topic-panel__badge:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 10%, transparent);
+  color: var(--omni-app-text);
+}
+
+.chat-topic-panel__badge--active {
+  color: #2563eb;
+}
+
+.chat-topic-panel__badge--active:hover {
+  color: #1d4ed8;
 }
 
 .chat-topic-panel__pin {

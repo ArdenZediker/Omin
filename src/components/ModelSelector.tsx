@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Eye } from "lucide-react";
 import { modelRegistry } from "../adapters/registry";
 import { BUILTIN_MODELS, type ModelConfig } from "../adapters/types";
+import { readSqliteBackedJson } from "../app/sqliteStorage";
 
 interface ModelSelectorProps {
   currentModel: string;
@@ -28,7 +29,7 @@ const MODEL_CONNECTION_STATUS_KEY = "omni_model_connection_status";
 
 function getModelConnectionStatus(modelId: string) {
   try {
-    const status = JSON.parse(localStorage.getItem(MODEL_CONNECTION_STATUS_KEY) || "{}") as Record<string, boolean>;
+    const status = readSqliteBackedJson<Record<string, boolean>>(MODEL_CONNECTION_STATUS_KEY, {});
     return status[modelId];
   } catch {
     return undefined;

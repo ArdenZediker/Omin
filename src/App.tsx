@@ -17,6 +17,7 @@ import {
 } from "./app/constants";
 import type { BasicSettings, ViewMode } from "./app/types";
 import { saveBasicSettings } from "./app/settingsStore";
+import { saveSqliteBackedValue } from "./app/sqliteStorage";
 import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getStoredMainView, isCharacterPointerInHitArea } from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
@@ -180,7 +181,7 @@ function App() {
       return modelId;
     });
     modelRegistry.setCurrentModel(modelId);
-    localStorage.setItem(CURRENT_MODEL_STORAGE_KEY, modelId);
+    saveSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY, modelId);
   }, []);
 
   const updateBasicSettings = useCallback((patch: Partial<BasicSettings>) => {
@@ -343,6 +344,10 @@ function App() {
     toggleFavoriteChatSession(session.id);
   }, [toggleFavoriteChatSession]);
 
+  const handleTogglePinChat = useCallback((session: { id: string }) => {
+    togglePinnedChatSession(session.id);
+  }, [togglePinnedChatSession]);
+
   const handleShareChat = useCallback(async (session: { messages: Message[] }) => {
     const text = session.messages.map((message) => `${message.role}: ${message.content}`).join("\n\n");
     if (text) {
@@ -470,6 +475,7 @@ function App() {
           onStop={handleStop}
           onSubmitEditedUserMessage={handleSubmitEditedUserMessage}
           onToggleFavoriteChat={handleToggleFavoriteChat}
+          onTogglePinChat={handleTogglePinChat}
           onUseEmptyPrompt={handleUseEmptyPrompt}
         />
       ) : (

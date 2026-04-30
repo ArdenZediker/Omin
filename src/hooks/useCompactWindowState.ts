@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 
 export type CompactAppearance = "default" | "compact" | "large" | "character";
 export type CharacterModel = "hiyori";
@@ -16,13 +17,13 @@ export function clampCharacterScale(value: number) {
 
 export function getInitialCompactAppearance(): CompactAppearance {
   if (typeof window === "undefined") return "default";
-  const saved = localStorage.getItem(COMPACT_APPEARANCE_STORAGE_KEY);
+  const saved = readSqliteBackedValue(COMPACT_APPEARANCE_STORAGE_KEY);
   return saved === "compact" || saved === "large" || saved === "character" ? saved : "default";
 }
 
 export function getInitialCharacterScale(): number {
   if (typeof window === "undefined") return 1;
-  const saved = Number(localStorage.getItem(CHARACTER_SCALE_STORAGE_KEY) || "1");
+  const saved = Number(readSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY) || "1");
   return Number.isFinite(saved) ? clampCharacterScale(saved) : 1;
 }
 
@@ -60,15 +61,15 @@ export function useCompactWindowState() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(COMPACT_APPEARANCE_STORAGE_KEY, compactAppearance);
+    saveSqliteBackedValue(COMPACT_APPEARANCE_STORAGE_KEY, compactAppearance);
   }, [compactAppearance]);
 
   useEffect(() => {
-    localStorage.setItem(CHARACTER_SCALE_STORAGE_KEY, String(characterScale));
+    saveSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY, String(characterScale));
   }, [characterScale]);
 
   useEffect(() => {
-    localStorage.setItem(CHARACTER_MODEL_STORAGE_KEY, characterModel);
+    saveSqliteBackedValue(CHARACTER_MODEL_STORAGE_KEY, characterModel);
   }, [characterModel]);
 
   const closeCompactMenuPanels = useCallback(() => {

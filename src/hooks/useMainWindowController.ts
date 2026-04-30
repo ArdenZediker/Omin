@@ -7,11 +7,13 @@ import {
   BASIC_SETTINGS_STORAGE_KEY,
   CHARACTER_SCALE_BASELINE,
   COMPACT_WINDOW_LABEL,
+  CURRENT_MODEL_STORAGE_KEY,
   MAIN_VIEW_STORAGE_KEY,
   THEME_MODE_STORAGE_KEY,
   UNSET_SHORTCUT,
 } from "../app/constants";
 import type { BasicSettings, ViewMode } from "../app/types";
+import { bootstrapSqliteStorage, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { CHARACTER_SCALE_STORAGE_KEY, type CompactAppearance } from "./useCompactWindowState";
 import {
   applyCompactWindowChrome,
@@ -75,7 +77,28 @@ export function useMainWindowController({
   onModelChange,
 }: UseMainWindowControllerArgs) {
   useEffect(() => {
-    applyThemeFromStorage();
+    let cancelled = false;
+
+    void bootstrapSqliteStorage([
+      THEME_MODE_STORAGE_KEY,
+      BASIC_SETTINGS_STORAGE_KEY,
+      MAIN_VIEW_STORAGE_KEY,
+      "omni_compact_appearance",
+      CHARACTER_SCALE_STORAGE_KEY,
+      "omni_character_model",
+      "omni_provider_configs",
+      CURRENT_MODEL_STORAGE_KEY,
+      "omni_model_connection_status",
+      "omni_basic_settings",
+      "omni_compact_position",
+      "omni_main_position",
+    ]).then(() => {
+      if (cancelled) return;
+      applyThemeFromStorage();
+      loadProviderConfigs();
+      setCurrentModel(modelRegistry.getCurrentModel());
+    });
+
     const onThemeStorage = (event: StorageEvent) => {
       if (!event.key || event.key === THEME_MODE_STORAGE_KEY) {
         applyThemeFromStorage();
@@ -86,6 +109,7 @@ export function useMainWindowController({
     window.addEventListener("storage", onThemeStorage);
     media.addEventListener("change", onSystemThemeChange);
     return () => {
+      cancelled = true;
       window.removeEventListener("storage", onThemeStorage);
       media.removeEventListener("change", onSystemThemeChange);
     };
@@ -95,18 +119,15 @@ export function useMainWindowController({
     if (appWindow) {
       void (isCompactWindow ? applyCompactWindowChrome(appWindow) : applyExpandedWindowChrome(appWindow));
     }
-    loadProviderConfigs();
-    setCurrentModel(modelRegistry.getCurrentModel());
-
     if (!isCompactWindow && appWindow) {
       const initialBasicSettings = getBasicSettings();
       if (initialBasicSettings.showCompactBall) {
-        const storedAppearance = localStorage.getItem("omni_compact_appearance");
+        const storedAppearance = readSqliteBackedValue("omni_compact_appearance");
         const appearance: CompactAppearance =
           storedAppearance === "compact" || storedAppearance === "large" || storedAppearance === "character"
             ? storedAppearance
             : "default";
-        const storedScale = Number(localStorage.getItem(CHARACTER_SCALE_STORAGE_KEY) || "1");
+        const storedScale = Number(readSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY) || "1");
         const scale = Number.isFinite(storedScale) ? storedScale : 1;
         void showCompactWindow(
           appearance,
@@ -152,7 +173,7 @@ export function useMainWindowController({
     }
     const win = appWindow;
 
-    localStorage.setItem(MAIN_VIEW_STORAGE_KEY, view);
+    saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, view);
     const targetSize = getMainWindowSizeForView(view);
     void resizeWindow(win, targetSize.width, targetSize.height);
   }, [
@@ -234,7 +255,7 @@ export function useMainWindowController({
       if (basicSettings.openMainShortcut !== UNSET_SHORTCUT && shortcut === basicSettings.openMainShortcut) {
         event.preventDefault();
         setView("chat");
-        localStorage.setItem(MAIN_VIEW_STORAGE_KEY, "chat");
+        saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, "chat");
         void restoreMainWindow(false);
         return;
       }
@@ -267,7 +288,7 @@ export function useMainWindowController({
 
     let registered = false;
     void register(basicSettings.openMainShortcut, () => {
-      localStorage.setItem(MAIN_VIEW_STORAGE_KEY, "chat");
+      saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, "chat");
       setView("chat");
       void restoreMainWindow(false);
     })

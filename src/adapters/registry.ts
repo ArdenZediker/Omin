@@ -8,6 +8,7 @@ import { GeminiAdapter } from "./gemini";
 import { OllamaAdapter } from "./ollama";
 import { DeepSeekAdapter } from "./deepseek";
 import { BUILTIN_MODELS } from "./types";
+import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 
 type AdapterConstructor = new (config: ProviderConfig) => ModelAdapter;
 
@@ -204,7 +205,7 @@ export const modelRegistry = new ModelRegistry();
 
 // 持久化配置到 localStorage，并支持恢复
 const STORAGE_KEY = "omni_provider_configs";
-const CURRENT_MODEL_STORAGE_KEY = "omni_current_model";
+export const CURRENT_MODEL_STORAGE_KEY = "omni_current_model";
 
 export function saveProviderConfigs(): void {
   const data: Record<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> = {};
@@ -215,13 +216,13 @@ export function saveProviderConfigs(): void {
       data[provider] = { apiKey: rawConfig.apiKey, baseUrl: rawConfig.baseUrl, name: rawConfig.name, customModels: rawConfig.customModels };
     }
   });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  localStorage.setItem(CURRENT_MODEL_STORAGE_KEY, modelRegistry.getCurrentModel());
+  saveSqliteBackedValue(STORAGE_KEY, JSON.stringify(data));
+  saveSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY, modelRegistry.getCurrentModel());
 }
 
 export function loadProviderConfigs(): void {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readSqliteBackedValue(STORAGE_KEY);
     if (raw) {
       const data = JSON.parse(raw) as Record<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }>;
       for (const [provider, config] of Object.entries(data)) {
@@ -236,7 +237,7 @@ export function loadProviderConfigs(): void {
       }
     }
 
-    const savedCurrentModel = localStorage.getItem(CURRENT_MODEL_STORAGE_KEY);
+    const savedCurrentModel = readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY);
     const availableModels = modelRegistry.getAvailableModels();
     if (savedCurrentModel && availableModels.some((model) => model.id === savedCurrentModel)) {
       modelRegistry.setCurrentModel(savedCurrentModel);

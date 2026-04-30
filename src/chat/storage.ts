@@ -1,5 +1,6 @@
 import type { Message } from "../adapters/types";
 import type { AssistantProfile, ChatSession, ChatUsagePreferences, ChatUsageStats } from "./types";
+import { readSqliteBackedJson, readSqliteBackedValue } from "../app/sqliteStorage";
 
 export const CHAT_SESSIONS_STORAGE_KEY = "omni_chat_sessions";
 export const CHAT_ASSISTANTS_STORAGE_KEY = "omni_chat_assistants";
@@ -85,14 +86,7 @@ export function createCustomAssistant(input?: Partial<AssistantProfile>): Assist
 }
 
 export function getUsagePreferences(): ChatUsagePreferences {
-  try {
-    return {
-      ...DEFAULT_USAGE_PREFERENCES,
-      ...JSON.parse(localStorage.getItem(USAGE_PREFERENCES_STORAGE_KEY) || "{}"),
-    };
-  } catch {
-    return DEFAULT_USAGE_PREFERENCES;
-  }
+  return readSqliteBackedJson(USAGE_PREFERENCES_STORAGE_KEY, DEFAULT_USAGE_PREFERENCES);
 }
 
 export function getChatSessionTitle(messages: Message[]) {
@@ -118,6 +112,14 @@ export function createChatSession(messages: Message[] = [], assistantId = DEFAUL
     updatedAt: now,
     usage: createEmptyUsageStats(),
   };
+}
+
+export function serializeAssistantsSnapshot(assistants: AssistantProfile[]) {
+  return JSON.stringify(assistants);
+}
+
+export function serializeChatSessionsSnapshot(sessions: ChatSession[]) {
+  return JSON.stringify(sessions);
 }
 
 function normalizeUsageStats(input: Partial<ChatUsageStats> | undefined): ChatUsageStats {
@@ -170,11 +172,8 @@ function normalizeSession(
   };
 }
 
-export function getInitialAssistants(): AssistantProfile[] {
-  if (typeof window === "undefined") return [createDefaultAssistant()];
-
+export function parseAssistantsSnapshot(raw: string | null | undefined): AssistantProfile[] {
   try {
-    const raw = localStorage.getItem(CHAT_ASSISTANTS_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as Array<Partial<AssistantProfile>>) : [];
     const normalized = parsed
       .filter((assistant): assistant is Partial<AssistantProfile> & Pick<AssistantProfile, "id" | "title" | "kind"> => {
@@ -192,11 +191,8 @@ export function getInitialAssistants(): AssistantProfile[] {
   }
 }
 
-export function getInitialChatSessions(): ChatSession[] {
-  if (typeof window === "undefined") return [];
-
+export function parseChatSessionsSnapshot(raw: string | null | undefined): ChatSession[] {
   try {
-    const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as Array<Partial<ChatSession>>) : [];
     return parsed
       .filter((session): session is Partial<ChatSession> & Pick<ChatSession, "id" | "messages"> => {
@@ -206,6 +202,16 @@ export function getInitialChatSessions(): ChatSession[] {
   } catch {
     return [];
   }
+}
+
+export function getInitialAssistants(): AssistantProfile[] {
+  if (typeof window === "undefined") return [createDefaultAssistant()];
+  return parseAssistantsSnapshot(readSqliteBackedValue(CHAT_ASSISTANTS_STORAGE_KEY));
+}
+
+export function getInitialChatSessions(): ChatSession[] {
+  if (typeof window === "undefined") return [];
+  return parseChatSessionsSnapshot(readSqliteBackedValue(CHAT_SESSIONS_STORAGE_KEY));
 }
 
 export function getChatSessionGroupLabel(updatedAt: number) {

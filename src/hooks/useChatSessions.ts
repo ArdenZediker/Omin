@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Message } from "../adapters/types";
 import {
-  CHAT_ASSISTANTS_STORAGE_KEY,
-  CHAT_SESSIONS_STORAGE_KEY,
   createChatSession,
   createCustomAssistant,
   DEFAULT_ASSISTANT_ID,
@@ -11,6 +9,7 @@ import {
   getInitialAssistants,
   getInitialChatSessions,
 } from "../chat/storage";
+import { loadPersistedChatState, savePersistedChatState } from "../chat/persistence";
 import type { AssistantProfile, ChatExecutionResult, ChatSession } from "../chat/types";
 
 type UseChatSessionsOptions = {
@@ -38,6 +37,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const [activeAssistantId, setActiveAssistantId] = useState<string>(initialState.activeAssistantId);
   const [activeChatId, setActiveChatId] = useState<string | null>(initialState.activeChatId);
   const [messages, setMessages] = useState<Message[]>(initialState.messages);
+  const [isStorageHydrated, setIsStorageHydrated] = useState(!persist);
 
   useEffect(() => {
     if (!persist || !activeChatId) return;
@@ -59,13 +59,41 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   useEffect(() => {
     if (!persist) return;
-    localStorage.setItem(CHAT_ASSISTANTS_STORAGE_KEY, JSON.stringify(assistants));
-  }, [assistants, persist]);
+
+    let cancelled = false;
+
+    void loadPersistedChatState().then(({ assistants: nextAssistants, sessions: nextSessions }) => {
+      if (cancelled) return;
+
+      const nextActiveAssistantId = nextAssistants.find((assistant) => assistant.id === activeAssistantId)?.id
+        ?? nextAssistants[0]?.id
+        ?? DEFAULT_ASSISTANT_ID;
+      const nextActiveSession =
+        nextSessions.find((session) => session.id === activeChatId && session.assistantId === nextActiveAssistantId)
+        ?? nextSessions.find((session) => session.assistantId === nextActiveAssistantId)
+        ?? null;
+
+      setAssistants(nextAssistants);
+      setChatSessions(nextSessions);
+      setActiveAssistantId(nextActiveAssistantId);
+      setActiveChatId(nextActiveSession?.id ?? null);
+      setMessages(nextActiveSession?.messages ?? []);
+      setIsStorageHydrated(true);
+    }).catch(() => {
+      if (!cancelled) {
+        setIsStorageHydrated(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [persist]);
 
   useEffect(() => {
-    if (!persist) return;
-    localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(chatSessions));
-  }, [chatSessions, persist]);
+    if (!persist || !isStorageHydrated) return;
+    void savePersistedChatState(assistants, chatSessions);
+  }, [assistants, chatSessions, isStorageHydrated, persist]);
 
   const activeAssistant = useMemo(
     () => assistants.find((assistant) => assistant.id === activeAssistantId) ?? assistants[0] ?? null,

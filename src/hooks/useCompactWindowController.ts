@@ -3,6 +3,7 @@ import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint } fr
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
+import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { executeChatTurn } from "../chat/engine";
 import {
   CHARACTER_MODEL_OPTIONS,
@@ -542,7 +543,7 @@ export function useCompactWindowController({
 
   const handleOpenSettingsFromCompact = useCallback(async () => {
     closeCompactMenus();
-    localStorage.setItem(MAIN_VIEW_STORAGE_KEY, "settings");
+    saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, "settings");
     await restoreMainWindow(false);
     const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
     await mainWindow?.emit("omni-open-settings");
@@ -680,7 +681,7 @@ export function useCompactWindowController({
       }
 
       loadProviderConfigs();
-      const savedModel = localStorage.getItem(CURRENT_MODEL_STORAGE_KEY);
+      const savedModel = readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY);
       const resolvedModel =
         savedModel && modelRegistry.getModelConfig(savedModel) ? savedModel : modelRegistry.getCurrentModel();
       modelRegistry.setCurrentModel(resolvedModel);

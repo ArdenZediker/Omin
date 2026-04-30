@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
+  Pin,
   Search,
   Settings,
   Share2,
@@ -84,6 +85,7 @@ type MainChatViewProps = {
   onStop: () => void;
   onSubmitEditedUserMessage: (messageIndex: number, content: string) => void | Promise<void>;
   onToggleFavoriteChat: (session: ChatSession) => void;
+  onTogglePinChat: (session: ChatSession) => void;
   onUseEmptyPrompt: (prompt: string) => void;
 };
 
@@ -116,6 +118,19 @@ const TOPIC_PANEL_AUTO_COLLAPSE_RATIO = 2 / 3;
 
 function normalizeSearchText(value: string) {
   return value.toLocaleLowerCase().replace(/\s+/g, "");
+}
+
+function renderTopicGroupLabel(label: string) {
+  if (label === "置顶") {
+    return (
+      <>
+        <Pin size={11} strokeWidth={2} />
+        <span>置顶话题</span>
+      </>
+    );
+  }
+
+  return <span>{label}</span>;
 }
 
 export default function MainChatView({
@@ -159,6 +174,7 @@ export default function MainChatView({
   onStop,
   onSubmitEditedUserMessage,
   onToggleFavoriteChat,
+  onTogglePinChat,
   onUseEmptyPrompt,
 }: MainChatViewProps) {
   const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
@@ -782,7 +798,7 @@ export default function MainChatView({
                 <div className="chat-topic-panel__group-list">
                   {filteredTopicGroups.map((group) => (
                     <div key={group.label} className="chat-topic-panel__group">
-                      <div className="chat-topic-panel__group-title">{group.label}</div>
+                      <div className="chat-topic-panel__group-title">{renderTopicGroupLabel(group.label)}</div>
                       <div className="chat-topic-panel__list">
                         {group.sessions.map((session) => (
                           <button
@@ -794,6 +810,26 @@ export default function MainChatView({
                             <MessageSquare size={13} strokeWidth={1.9} className="chat-topic-panel__item-icon" />
                             <span className="chat-topic-panel__item-copy">
                               <span className="chat-topic-panel__item-title">{session.title}</span>
+                            </span>
+                            <span
+                              className={`chat-topic-panel__badge ${session.pinned ? "chat-topic-panel__badge--active" : ""}`}
+                              title={session.pinned ? "取消置顶" : "置顶话题"}
+                              aria-label={session.pinned ? "取消置顶" : "置顶话题"}
+                              role="button"
+                              tabIndex={0}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onTogglePinChat(session);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  onTogglePinChat(session);
+                                }
+                              }}
+                            >
+                              <Pin size={11} strokeWidth={2} />
                             </span>
                             <span
                               className={`chat-topic-panel__pin ${session.favorite ? "chat-topic-panel__pin--active" : ""}`}
@@ -833,6 +869,26 @@ export default function MainChatView({
                       <MessageSquare size={13} strokeWidth={1.9} className="chat-topic-panel__item-icon" />
                       <span className="chat-topic-panel__item-copy">
                         <span className="chat-topic-panel__item-title">{session.title}</span>
+                      </span>
+                      <span
+                        className={`chat-topic-panel__badge ${session.pinned ? "chat-topic-panel__badge--active" : ""}`}
+                        title={session.pinned ? "取消置顶" : "置顶话题"}
+                        aria-label={session.pinned ? "取消置顶" : "置顶话题"}
+                        role="button"
+                        tabIndex={0}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onTogglePinChat(session);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onTogglePinChat(session);
+                          }
+                        }}
+                      >
+                        <Pin size={11} strokeWidth={2} />
                       </span>
                       <span
                         className={`chat-topic-panel__pin ${session.favorite ? "chat-topic-panel__pin--active" : ""}`}
