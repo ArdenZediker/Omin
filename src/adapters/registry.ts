@@ -203,7 +203,7 @@ class ModelRegistry {
 // 单例实例
 export const modelRegistry = new ModelRegistry();
 
-// 持久化配置到 localStorage，并支持恢复
+// 持久化配置到统一存储层，并支持恢复
 const STORAGE_KEY = "omni_provider_configs";
 export const CURRENT_MODEL_STORAGE_KEY = "omni_current_model";
 
