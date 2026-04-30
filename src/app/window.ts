@@ -4,6 +4,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, SETTINGS_SIZE, THEME_MODE_STORAGE_KEY } from "./constants";
 import type { BasicSettings, ExternalChatEntry, ViewMode } from "./types";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
+import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
 
 export function isCharacterPointerInHitArea(element: HTMLElement, clientX: number, clientY: number) {
   const rect = element.getBoundingClientRect();
@@ -14,11 +15,7 @@ export function isCharacterPointerInHitArea(element: HTMLElement, clientX: numbe
 
 export function getBasicSettings(): BasicSettings {
   if (typeof window === "undefined") return DEFAULT_BASIC_SETTINGS;
-  try {
-    return { ...DEFAULT_BASIC_SETTINGS, ...JSON.parse(localStorage.getItem("omni_basic_settings") || "{}") };
-  } catch {
-    return DEFAULT_BASIC_SETTINGS;
-  }
+  return readSqliteBackedJson("omni_basic_settings", DEFAULT_BASIC_SETTINGS);
 }
 
 export function clampWindowSize(value: number, fallback: number, min: number, max: number) {
@@ -38,7 +35,7 @@ export function normalizeShortcutKey(event: KeyboardEvent) {
 
 export function applyThemeFromStorage() {
   if (typeof window === "undefined") return;
-  const saved = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+  const saved = readSqliteBackedValue(THEME_MODE_STORAGE_KEY);
   const mode = saved === "dark" || saved === "light" ? saved : "auto";
   const resolved = mode === "auto" ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : mode;
   document.documentElement.dataset.omniThemeMode = mode;
@@ -48,7 +45,7 @@ export function applyThemeFromStorage() {
 export function getStoredCompactPosition() {
   if (typeof window === "undefined") return null;
   try {
-    const saved = localStorage.getItem(COMPACT_POSITION_STORAGE_KEY);
+    const saved = readSqliteBackedValue(COMPACT_POSITION_STORAGE_KEY);
     if (!saved) return null;
     const parsed = JSON.parse(saved) as { x?: number; y?: number };
     const { x, y } = parsed;
@@ -63,7 +60,7 @@ export function getStoredCompactPosition() {
 
 export function persistCompactPosition(position: { x: number; y: number }) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(
+  saveSqliteBackedValue(
     COMPACT_POSITION_STORAGE_KEY,
     JSON.stringify({
       x: Math.round(position.x),
@@ -159,7 +156,7 @@ export async function clampCompactWindowToMonitor(
 export function getStoredMainPosition() {
   if (typeof window === "undefined") return null;
   try {
-    const saved = localStorage.getItem(MAIN_POSITION_STORAGE_KEY);
+    const saved = readSqliteBackedValue(MAIN_POSITION_STORAGE_KEY);
     if (!saved) return null;
     const parsed = JSON.parse(saved) as { x?: number; y?: number };
     const { x, y } = parsed;
@@ -174,7 +171,7 @@ export function getStoredMainPosition() {
 
 export function persistMainPosition(position: { x: number; y: number }) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(
+  saveSqliteBackedValue(
     MAIN_POSITION_STORAGE_KEY,
     JSON.stringify({
       x: Math.round(position.x),
@@ -185,7 +182,7 @@ export function persistMainPosition(position: { x: number; y: number }) {
 
 export function getStoredMainView(): ViewMode {
   if (typeof window === "undefined") return "chat";
-  return localStorage.getItem(MAIN_VIEW_STORAGE_KEY) === "settings" ? "settings" : "chat";
+  return readSqliteBackedValue(MAIN_VIEW_STORAGE_KEY) === "settings" ? "settings" : "chat";
 }
 
 export function getMainWindowSizeForView(viewMode: ViewMode) {

@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { currentMonitor, type Window } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import type { Message } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { executeChatTurn } from "../chat/engine";
@@ -104,7 +105,7 @@ export function useCompactInteractions(args: UseCompactInteractionsArgs) {
 
   const handleOpenSettingsFromCompact = useCallback(async () => {
     closeCompactMenus();
-    localStorage.setItem("omni_main_view", "settings");
+    saveSqliteBackedValue("omni_main_view", "settings");
     await restoreMainWindow(false);
     const mainWindow = await WebviewWindow.getByLabel(mainWindowLabel);
     await mainWindow?.emit("omni-open-settings");
@@ -203,7 +204,7 @@ export function useCompactInteractions(args: UseCompactInteractionsArgs) {
     if (!draft) return;
 
     loadProviderConfigs();
-    const savedModel = localStorage.getItem(currentModelStorageKey);
+    const savedModel = readSqliteBackedValue(currentModelStorageKey);
     const resolvedModel =
       savedModel && modelRegistry.getModelConfig(savedModel) ? savedModel : modelRegistry.getCurrentModel();
     modelRegistry.setCurrentModel(resolvedModel);
