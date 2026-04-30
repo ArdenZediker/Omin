@@ -6,18 +6,25 @@ import {
   Eraser,
   GitCompare,
   Languages,
+  LibraryBig,
   ListCollapse,
   MessageCircleQuestion,
+  Paperclip,
   Pencil,
   PencilLine,
   Pin,
   Settings,
   Square,
+  TimerReset,
   X,
 } from "lucide-react";
 import { buildSlashDraft, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 
 interface ChatInputProps {
+  canStartNewTopic?: boolean;
+  hasConversation?: boolean;
+  usageLabel?: string | null;
+  onStartNewTopic?: () => void;
   onSend: (content: string, images?: string[]) => void;
   isLoading: boolean;
   onStop: () => void;
@@ -54,6 +61,10 @@ function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
 }
 
 export default function ChatInput({
+  canStartNewTopic = false,
+  hasConversation = false,
+  usageLabel,
+  onStartNewTopic,
   onSend,
   isLoading,
   onStop,
@@ -73,7 +84,7 @@ export default function ChatInput({
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = "auto";
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 280)}px`;
     }
   }, [input]);
 
@@ -197,30 +208,77 @@ export default function ChatInput({
         </div>
       )}
 
-      <div className="chat-composer__row">
-        <div className="chat-composer__input-wrap">
+      <div className="chat-composer__panel">
+        <div className="chat-composer__toolbar">
+          <div className="chat-composer__toolbar-group">
+            <button type="button" className="chat-composer__tool-button" title="模型工具">
+              <Bot size={16} strokeWidth={1.8} />
+            </button>
+            <button type="button" className="chat-composer__tool-button" title="上传附件">
+              <Paperclip size={16} strokeWidth={1.8} />
+            </button>
+            <button type="button" className="chat-composer__tool-button" title="知识库">
+              <LibraryBig size={16} strokeWidth={1.8} />
+            </button>
+            <button type="button" className="chat-composer__tool-button" title="计时器">
+              <TimerReset size={16} strokeWidth={1.8} />
+            </button>
+          </div>
+          <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
+          <div className="chat-composer__toolbar-group chat-composer__toolbar-group--right">
+            <button type="button" className="chat-composer__tool-button" title="布局">
+              <CirclePlus size={16} strokeWidth={1.8} />
+            </button>
+            <button type="button" className="chat-composer__tool-button" title="展开">
+              <ArrowRight size={16} strokeWidth={1.8} className="chat-composer__tool-button-arrow" />
+            </button>
+          </div>
+        </div>
+
+        <div className="chat-composer__editor">
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="输入消息……（输入 / 查看命令，Enter 发送，Shift+Enter 换行）"
+            placeholder="输入聊天内容..."
             className="chat-composer__textarea hide-scrollbar"
             rows={1}
             disabled={isLoading}
           />
         </div>
 
-        {isLoading ? (
-          <button onClick={onStop} className="chat-composer__send chat-composer__send--stop" title="停止生成" type="button">
-            <Square className="w-4 h-4 text-red-400" fill="currentColor" strokeWidth={1.8} />
-          </button>
-        ) : (
-          <button onClick={handleSubmit} disabled={!input.trim() && images.length === 0} className="chat-composer__send" title="发送消息" type="button">
-            <ArrowRight className="w-4 h-4 text-white" strokeWidth={2} />
-          </button>
-        )}
+        <div className="chat-composer__footer">
+          <div className="chat-composer__footer-hint">↵ 发送 / ⇧ ↵ 换行</div>
+          <div className="chat-composer__footer-actions">
+            {canStartNewTopic && hasConversation ? (
+              <button
+                type="button"
+                className="chat-composer__aux-button chat-composer__aux-button--topic"
+                title="开启新话题"
+                onClick={onStartNewTopic}
+              >
+                <CirclePlus size={16} strokeWidth={1.8} />
+                <span>新话题</span>
+              </button>
+            ) : (
+              <button type="button" className="chat-composer__aux-button" title="工具箱">
+                <LibraryBig size={16} strokeWidth={1.8} />
+              </button>
+            )}
+            {isLoading ? (
+              <button onClick={onStop} className="chat-composer__submit chat-composer__submit--stop" title="停止生成" type="button">
+                <Square className="w-4 h-4" fill="currentColor" strokeWidth={1.8} />
+              </button>
+            ) : (
+              <button onClick={handleSubmit} disabled={!input.trim() && images.length === 0} className="chat-composer__submit" title="发送消息" type="button">
+                <span>发送</span>
+                <ArrowRight className="chat-composer__submit-icon" strokeWidth={2} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,8 +1,31 @@
 import type { Message } from "../adapters/types";
-import type { ChatSession, ChatUsagePreferences, ChatUsageStats } from "./types";
+import type { AssistantProfile, ChatSession, ChatUsagePreferences, ChatUsageStats } from "./types";
 
 export const CHAT_SESSIONS_STORAGE_KEY = "omni_chat_sessions";
+export const CHAT_ASSISTANTS_STORAGE_KEY = "omni_chat_assistants";
 export const USAGE_PREFERENCES_STORAGE_KEY = "omni_usage_preferences";
+export const DEFAULT_ASSISTANT_ID = "assistant-basic-chat";
+export const DEFAULT_ASSISTANT_TOOL_IDS = [
+  "new",
+  "clear",
+  "settings",
+  "rename",
+  "pin",
+  "model",
+  "search_sessions",
+  "read_session",
+  "list_files",
+  "read_file",
+  "search_files",
+  "analyze_files",
+];
+export const DEFAULT_ASSISTANT_SKILL_IDS = [
+  "summarize",
+  "translate",
+  "rewrite",
+  "explain",
+  "compare",
+];
 
 export const DEFAULT_USAGE_PREFERENCES: ChatUsagePreferences = {
   enableStreaming: true,
@@ -24,6 +47,43 @@ export function createEmptyUsageStats(): ChatUsageStats {
   };
 }
 
+export function createDefaultAssistant(): AssistantProfile {
+  const now = Date.now();
+  return {
+    id: DEFAULT_ASSISTANT_ID,
+    kind: "basic",
+    title: "基础聊天",
+    description: "通用问答与基础对话入口",
+    defaultModelId: null,
+    systemPrompt: "",
+    allowedToolIds: [...DEFAULT_ASSISTANT_TOOL_IDS],
+    allowedSkillIds: [...DEFAULT_ASSISTANT_SKILL_IDS],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function createCustomAssistant(input?: Partial<AssistantProfile>): AssistantProfile {
+  const now = Date.now();
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? `assistant-${crypto.randomUUID()}`
+      : `assistant-${now}-${Math.random().toString(16).slice(2)}`;
+
+  return {
+    id,
+    kind: "custom",
+    title: input?.title?.trim() || "自定义助手",
+    description: input?.description?.trim() || "可配置系统提示词、模型和工具权限",
+    systemPrompt: input?.systemPrompt ?? "",
+    defaultModelId: input?.defaultModelId ?? null,
+    allowedToolIds: input?.allowedToolIds?.length ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
+    allowedSkillIds: input?.allowedSkillIds?.length ? [...input.allowedSkillIds] : [...DEFAULT_ASSISTANT_SKILL_IDS],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 export function getUsagePreferences(): ChatUsagePreferences {
   try {
     return {
@@ -42,7 +102,7 @@ export function getChatSessionTitle(messages: Message[]) {
   return content.length > 18 ? `${content.slice(0, 18)}...` : content;
 }
 
-export function createChatSession(messages: Message[] = []): ChatSession {
+export function createChatSession(messages: Message[] = [], assistantId = DEFAULT_ASSISTANT_ID): ChatSession {
   const now = Date.now();
   const id =
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -51,6 +111,7 @@ export function createChatSession(messages: Message[] = []): ChatSession {
 
   return {
     id,
+    assistantId,
     title: getChatSessionTitle(messages),
     messages,
     createdAt: now,
@@ -66,19 +127,69 @@ function normalizeUsageStats(input: Partial<ChatUsageStats> | undefined): ChatUs
   };
 }
 
-function normalizeSession(input: Partial<ChatSession> & Pick<ChatSession, "id" | "messages">): ChatSession {
+function normalizeAssistant(input: Partial<AssistantProfile> & Pick<AssistantProfile, "id" | "title" | "kind">): AssistantProfile {
   const createdAt = typeof input.createdAt === "number" ? input.createdAt : Date.now();
   const updatedAt = typeof input.updatedAt === "number" ? input.updatedAt : createdAt;
 
   return {
     id: input.id,
+    kind: input.kind,
+    title: input.title.trim() || (input.kind === "basic" ? "基础聊天" : "自定义助手"),
+    description:
+      typeof input.description === "string" && input.description.trim()
+        ? input.description
+        : input.kind === "basic"
+          ? "通用问答与基础对话入口"
+          : "可配置系统提示词、模型和工具权限",
+    systemPrompt: typeof input.systemPrompt === "string" ? input.systemPrompt : "",
+    defaultModelId: input.defaultModelId ?? null,
+    allowedToolIds: Array.isArray(input.allowedToolIds) && input.allowedToolIds.length > 0 ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
+    allowedSkillIds: Array.isArray(input.allowedSkillIds) && input.allowedSkillIds.length > 0 ? [...input.allowedSkillIds] : [...DEFAULT_ASSISTANT_SKILL_IDS],
+    createdAt,
+    updatedAt,
+  };
+}
+
+function normalizeSession(
+  input: Partial<ChatSession> & Pick<ChatSession, "id" | "messages">,
+  fallbackAssistantId = DEFAULT_ASSISTANT_ID
+): ChatSession {
+  const createdAt = typeof input.createdAt === "number" ? input.createdAt : Date.now();
+  const updatedAt = typeof input.updatedAt === "number" ? input.updatedAt : createdAt;
+
+  return {
+    id: input.id,
+    assistantId: typeof input.assistantId === "string" && input.assistantId.trim() ? input.assistantId : fallbackAssistantId,
     title: typeof input.title === "string" && input.title.trim() ? input.title : getChatSessionTitle(input.messages),
     messages: input.messages,
     pinned: Boolean(input.pinned),
+    favorite: Boolean(input.favorite),
     createdAt,
     updatedAt,
     usage: normalizeUsageStats(input.usage),
   };
+}
+
+export function getInitialAssistants(): AssistantProfile[] {
+  if (typeof window === "undefined") return [createDefaultAssistant()];
+
+  try {
+    const raw = localStorage.getItem(CHAT_ASSISTANTS_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Array<Partial<AssistantProfile>>) : [];
+    const normalized = parsed
+      .filter((assistant): assistant is Partial<AssistantProfile> & Pick<AssistantProfile, "id" | "title" | "kind"> => {
+        return typeof assistant?.id === "string" && typeof assistant?.title === "string" && (assistant.kind === "basic" || assistant.kind === "custom");
+      })
+      .map(normalizeAssistant);
+
+    if (!normalized.some((assistant) => assistant.id === DEFAULT_ASSISTANT_ID)) {
+      normalized.unshift(createDefaultAssistant());
+    }
+
+    return normalized;
+  } catch {
+    return [createDefaultAssistant()];
+  }
 }
 
 export function getInitialChatSessions(): ChatSession[] {
@@ -91,7 +202,7 @@ export function getInitialChatSessions(): ChatSession[] {
       .filter((session): session is Partial<ChatSession> & Pick<ChatSession, "id" | "messages"> => {
         return typeof session?.id === "string" && Array.isArray(session.messages);
       })
-      .map(normalizeSession);
+      .map((session) => normalizeSession(session));
   } catch {
     return [];
   }
@@ -106,8 +217,8 @@ export function getChatSessionGroupLabel(updatedAt: number) {
 
   if (dayDiff <= 0) return "今天";
   if (dayDiff === 1) return "昨天";
-  if (dayDiff <= 7) return "7 天内";
-  if (dayDiff <= 30) return "30 天内";
+  if (dayDiff <= 7) return "7天内";
+  if (dayDiff <= 30) return "30天内";
   return "更早";
 }
 

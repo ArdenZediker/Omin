@@ -18,11 +18,28 @@ export type ChatUsageStats = {
   hasEstimatedUsage: boolean;
 };
 
+export type AssistantKind = "basic" | "custom";
+
+export type AssistantProfile = {
+  id: string;
+  kind: AssistantKind;
+  title: string;
+  description: string;
+  systemPrompt?: string;
+  defaultModelId?: string | null;
+  allowedToolIds: string[];
+  allowedSkillIds: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type ChatSession = {
   id: string;
+  assistantId: string;
   title: string;
   messages: Message[];
   pinned?: boolean;
+  favorite?: boolean;
   createdAt: number;
   updatedAt: number;
   usage: ChatUsageStats;

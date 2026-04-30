@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Message } from "./adapters/types";
@@ -42,18 +42,27 @@ const isCompactWindow = appWindow?.label === "compact";
 
 function App() {
   const {
+    activeAssistant,
+    activeAssistantId,
     activeChatId,
     activeSession,
     applyUsageToSession,
+    assistants,
+    createCustomAssistantProfile,
     createSessionFromMessages,
     deleteChatSession,
+    getChatSessionById,
     groupedChatSessions,
     messages,
     renameChatSession,
+    selectAssistant,
     selectChatSession,
+    searchChatSessions,
     setActiveChatId,
     setMessages,
+    toggleFavoriteChatSession,
     togglePinnedChatSession,
+    updateAssistantProfile,
   } = useChatSessions({ persist: !isCompactWindow });
 
   const {
@@ -195,10 +204,12 @@ function App() {
     handleSubmitEditedUserMessage,
     handleUseEmptyPrompt,
     isLoading,
+    latestTaskResult,
     setEditingMessageIndex,
     setError,
   } = useChatRuntime({
     activeChatId,
+    activeAssistant,
     availableModels,
     applyUsageToSession,
     createSessionFromMessages,
@@ -206,6 +217,8 @@ function App() {
     handleModelChange,
     messages,
     renameChatSession,
+    getChatSessionById,
+    searchChatSessions,
     setActiveChatId,
     setInputDraft,
     setInputDraftImages,
@@ -215,6 +228,19 @@ function App() {
     setView,
     togglePinnedChatSession,
   });
+
+  useEffect(() => {
+    if (!activeAssistant?.defaultModelId) {
+      return;
+    }
+    if (!availableModels.some((model) => model.id === activeAssistant.defaultModelId)) {
+      return;
+    }
+    if (currentModel === activeAssistant.defaultModelId) {
+      return;
+    }
+    handleModelChange(activeAssistant.defaultModelId);
+  }, [activeAssistant?.defaultModelId, availableModels, currentModel, handleModelChange]);
 
   const { handleOpenCompact, handleRestoreMain } = useMainWindowController({
     basicSettings,
@@ -313,13 +339,9 @@ function App() {
     [renameChatSession]
   );
 
-  const handleTogglePinChat = useCallback(
-    (session: { id: string }) => {
-      togglePinnedChatSession(session.id);
-      setOpenChatMenu(null);
-    },
-    [togglePinnedChatSession]
-  );
+  const handleToggleFavoriteChat = useCallback((session: { id: string }) => {
+    toggleFavoriteChatSession(session.id);
+  }, [toggleFavoriteChatSession]);
 
   const handleShareChat = useCallback(async (session: { messages: Message[] }) => {
     const text = session.messages.map((message) => `${message.role}: ${message.content}`).join("\n\n");
@@ -405,8 +427,11 @@ function App() {
     <div className="app-shell glass flex flex-col h-screen w-screen overflow-hidden">
       {view === "chat" ? (
         <MainChatView
+          activeAssistant={activeAssistant}
+          activeAssistantId={activeAssistantId}
           activeChatId={activeChatId}
           activeSession={activeSession}
+          assistants={assistants}
           currentModel={currentModel}
           editingMessageIndex={editingMessageIndex}
           emptyChatPrompts={EMPTY_CHAT_PROMPTS}
@@ -419,6 +444,7 @@ function App() {
           inputFocusKey={inputFocusKey}
           isLoading={isLoading}
           isStreaming={isStreaming}
+          latestTaskResult={latestTaskResult}
           messages={messages}
           messagesScrollRef={messagesScrollRef}
           omniIconSrc={omniIconSrc}
@@ -431,16 +457,19 @@ function App() {
           onEditUserMessage={handleEditUserMessage}
           onModelChange={handleModelChange}
           onNewChat={handleNewChat}
+          onCreateCustomAssistant={createCustomAssistantProfile}
           onRegenerateMessage={handleRegenerateMessage}
           onRenameChat={handleRenameChat}
+          onSelectAssistant={selectAssistant}
           onSelectChat={handleSelectChat}
+          onUpdateAssistantProfile={updateAssistantProfile}
           onSend={handleSend}
           onSetOpenChatMenu={setOpenChatMenu}
           onSettingsOpen={() => setView("settings")}
           onShareChat={handleShareChat}
           onStop={handleStop}
           onSubmitEditedUserMessage={handleSubmitEditedUserMessage}
-          onTogglePinChat={handleTogglePinChat}
+          onToggleFavoriteChat={handleToggleFavoriteChat}
           onUseEmptyPrompt={handleUseEmptyPrompt}
         />
       ) : (

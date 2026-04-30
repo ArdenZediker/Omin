@@ -1,17 +1,29 @@
 import { useCallback, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { Message, ModelConfig } from "../adapters/types";
-import { executeChatTurn } from "../chat/engine";
-import { resolveLocalSlashCommand, resolveSlashSkillPrompt } from "../chat/skills";
+import { executeInputTask, executeTask } from "../chat/taskExecutor";
+import { ToolRegistry } from "../chat/toolRegistry";
+import type { TaskExecutionResult } from "../chat/taskTypes";
+import type { AssistantProfile, ChatExecutionResult } from "../chat/types";
+
+type SessionLite = {
+  id: string;
+  title: string;
+  messages: Message[];
+};
 
 type UseChatRuntimeArgs = {
   activeChatId: string | null;
+  activeAssistant: AssistantProfile | null;
   availableModels: ModelConfig[];
-  applyUsageToSession: (sessionId: string, result: Awaited<ReturnType<typeof executeChatTurn>>, conversationMessages: Message[]) => void;
+  applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
   createSessionFromMessages: (conversationMessages: Message[]) => { id: string };
   currentModel: string;
+  getChatSessionById: (sessionId: string) => SessionLite | null;
   handleModelChange: (modelId: string) => void;
   messages: Message[];
   renameChatSession: (sessionId: string, title: string) => boolean;
+  searchChatSessions: (query: string) => SessionLite[];
   setActiveChatId: React.Dispatch<React.SetStateAction<string | null>>;
   setInputDraft: React.Dispatch<React.SetStateAction<string>>;
   setInputDraftImages: React.Dispatch<React.SetStateAction<string[]>>;
@@ -24,13 +36,16 @@ type UseChatRuntimeArgs = {
 
 export function useChatRuntime({
   activeChatId,
+  activeAssistant,
   availableModels,
   applyUsageToSession,
   createSessionFromMessages,
   currentModel,
+  getChatSessionById,
   handleModelChange,
   messages,
   renameChatSession,
+  searchChatSessions,
   setActiveChatId,
   setInputDraft,
   setInputDraftImages,
@@ -43,8 +58,43 @@ export function useChatRuntime({
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [latestTaskResult, setLatestTaskResult] = useState<TaskExecutionResult | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastRunIdRef = useRef(0);
+  const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
+  const toolRegistryRef = useRef<ToolRegistry | null>(null);
+
+  const executionModel =
+    activeAssistant?.defaultModelId && availableModels.some((model) => model.id === activeAssistant.defaultModelId)
+      ? activeAssistant.defaultModelId
+      : currentModel;
+  const assistantSystemPrompt = activeAssistant?.systemPrompt?.trim() ? activeAssistant.systemPrompt.trim() : undefined;
+
+  const finishTaskResult = useCallback(
+    (taskResult: TaskExecutionResult, sessionId: string | null | undefined, fallbackMessages: Message[]) => {
+      lastTaskResultRef.current = taskResult;
+      setLatestTaskResult(taskResult);
+
+      const conversationMessages = taskResult.conversationMessages ?? fallbackMessages;
+
+      if (taskResult.finalResult) {
+        setMessages([...conversationMessages, { role: "assistant", content: taskResult.finalResult.content }]);
+        if (sessionId) {
+          applyUsageToSession(sessionId, taskResult.finalResult, conversationMessages);
+        }
+        return;
+      }
+
+      if (taskResult.toolResult?.outputText) {
+        setMessages([...conversationMessages, { role: "assistant", content: taskResult.toolResult.outputText }]);
+      }
+
+      if (taskResult.status === "failed") {
+        setError(taskResult.error || "任务执行失败");
+      }
+    },
+    [applyUsageToSession, setMessages]
+  );
 
   const runConversationTurn = useCallback(
     async (conversationMessages: Message[], options: { sessionId?: string | null; createSession?: boolean } = {}) => {
@@ -64,10 +114,11 @@ export function useChatRuntime({
       setIsLoading(true);
 
       try {
-        const result = await executeChatTurn({
-          model: currentModel,
+        const taskResult = await executeTask({
+          model: executionModel,
           messages: conversationMessages,
           signal: abortController.signal,
+          systemPrompt: assistantSystemPrompt,
           onChunk: (chunk) => {
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
@@ -87,23 +138,29 @@ export function useChatRuntime({
           return sessionId;
         }
 
-        setMessages([...conversationMessages, { role: "assistant", content: result.content }]);
-        if (sessionId) {
-          applyUsageToSession(sessionId, result, conversationMessages);
-        }
-
-        return sessionId;
-      } catch (error) {
-        if (runId !== lastRunIdRef.current) {
-          return sessionId;
-        }
-        if (error instanceof DOMException && error.name === "AbortError") {
+        if (!taskResult.finalResult && taskResult.status === "aborted") {
           setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
           return sessionId;
         }
 
-        const errorMessage = error instanceof Error ? error.message : "未知错误";
-        setError(errorMessage);
+        if (!taskResult.finalResult && !taskResult.toolResult?.outputText) {
+          setError(taskResult.error || "任务执行失败");
+          setMessages(conversationMessages);
+          return sessionId;
+        }
+
+        finishTaskResult(taskResult, sessionId, conversationMessages);
+        return sessionId;
+      } catch (runError) {
+        if (runId !== lastRunIdRef.current) {
+          return sessionId;
+        }
+        if (runError instanceof DOMException && runError.name === "AbortError") {
+          setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+          return sessionId;
+        }
+
+        setError(runError instanceof Error ? runError.message : "未知错误");
         setMessages(conversationMessages);
         return sessionId;
       } finally {
@@ -113,7 +170,255 @@ export function useChatRuntime({
         }
       }
     },
-    [activeChatId, applyUsageToSession, createSessionFromMessages, currentModel, setMessages]
+    [activeChatId, assistantSystemPrompt, createSessionFromMessages, executionModel, finishTaskResult, setMessages]
+  );
+
+  const executeTool = useCallback(
+    async (command: { command: string; args: string }) => {
+      if (!toolRegistryRef.current) {
+        const registry = new ToolRegistry();
+
+        registry.register({
+          id: "new",
+          command: "/new",
+          title: "新对话",
+          execute: async () => {
+            setActiveChatId(null);
+            setMessages([]);
+            setError(null);
+            setOpenChatMenu(null);
+            setEditingMessageIndex(null);
+            return { ok: true };
+          },
+        });
+
+        registry.register({
+          id: "clear",
+          command: "/clear",
+          title: "清空消息",
+          execute: async () => {
+            setMessages([]);
+            setError(null);
+            setEditingMessageIndex(null);
+            return { ok: true };
+          },
+        });
+
+        registry.register({
+          id: "settings",
+          command: "/settings",
+          title: "打开设置",
+          execute: async () => {
+            setView("settings");
+            return { ok: true };
+          },
+        });
+
+        registry.register({
+          id: "rename",
+          command: "/rename",
+          title: "重命名对话",
+          execute: async (resolvedCommand, context) => {
+            if (!context.activeChatId) return { ok: false, error: "当前没有可重命名的会话" };
+            if (!resolvedCommand.args) return { ok: false, error: "用法: /rename 新标题" };
+            renameChatSession(context.activeChatId, resolvedCommand.args);
+            setError(null);
+            setOpenChatMenu(null);
+            return { ok: true };
+          },
+        });
+
+        registry.register({
+          id: "pin",
+          command: "/pin",
+          title: "置顶对话",
+          execute: async (_, context) => {
+            if (!context.activeChatId) return { ok: false, error: "当前没有可置顶的会话" };
+            togglePinnedChatSession(context.activeChatId);
+            setError(null);
+            setOpenChatMenu(null);
+            return { ok: true };
+          },
+        });
+
+        registry.register({
+          id: "model",
+          command: "/model",
+          title: "切换模型",
+          execute: async (resolvedCommand) => {
+            const query = resolvedCommand.args.trim().toLowerCase();
+            if (!query) return { ok: false, error: "用法: /model 模型 ID 或名称" };
+
+            const matchedModel =
+              availableModels.find((model) => model.id.toLowerCase() === query || model.name.toLowerCase() === query) ??
+              availableModels.find((model) => model.id.toLowerCase().includes(query) || model.name.toLowerCase().includes(query));
+
+            if (!matchedModel) return { ok: false, error: `未找到匹配模型: ${resolvedCommand.args}` };
+
+            handleModelChange(matchedModel.id);
+            setError(null);
+            return { ok: true };
+          },
+        });
+
+        registry.register({
+          id: "search_sessions",
+          command: "/search_sessions",
+          title: "搜索会话",
+          execute: async (resolvedCommand, context) => {
+            const query = resolvedCommand.args.trim();
+            if (!query) return { ok: false, error: "用法: /search_sessions 关键词" };
+
+            const matchedSessions = searchChatSessions(query);
+            if (matchedSessions.length === 0) {
+              return { ok: true, outputText: `未找到包含“${query}”的会话。`, data: [] };
+            }
+
+            const lines = matchedSessions.slice(0, 8).map((session, index) => {
+              const marker = context.activeChatId === session.id ? " [当前]" : "";
+              return `${index + 1}. ${session.title}${marker} | id=${session.id} | ${session.messages.length} 条消息`;
+            });
+
+            return {
+              ok: true,
+              outputText: [`找到 ${matchedSessions.length} 个相关会话：`, ...lines].join("\n"),
+              data: matchedSessions.map((session) => ({ id: session.id, title: session.title })),
+            };
+          },
+        });
+
+        registry.register({
+          id: "read_session",
+          command: "/read_session",
+          title: "读取会话",
+          execute: async (resolvedCommand) => {
+            const sessionId = resolvedCommand.args.trim();
+            if (!sessionId) return { ok: false, error: "用法: /read_session 会话ID" };
+            const session = getChatSessionById(sessionId);
+            if (!session) return { ok: false, error: `未找到会话: ${sessionId}` };
+
+            const preview = session.messages
+              .slice(-8)
+              .map((message, index) => {
+                const content = message.content.trim() || "[空内容]";
+                const clipped = content.length > 120 ? `${content.slice(0, 117)}...` : content;
+                return `${index + 1}. ${message.role}: ${clipped}`;
+              })
+              .join("\n");
+
+            return {
+              ok: true,
+              outputText: [`会话：${session.title}`, `ID：${session.id}`, `消息数：${session.messages.length}`, "", preview].join("\n"),
+              data: { id: session.id, title: session.title, messageCount: session.messages.length },
+            };
+          },
+        });
+
+        registry.register({
+          id: "list_files",
+          command: "/list_files",
+          title: "列出文件",
+          execute: async (resolvedCommand) => {
+            const query = resolvedCommand.args.trim();
+            const entries = await invoke<Array<{ path: string; is_dir: boolean }>>("list_workspace_files", {
+              query: query || null,
+              limit: 80,
+            });
+
+            if (entries.length === 0) {
+              return {
+                ok: true,
+                outputText: query ? `未找到包含“${query}”的文件。` : "当前工作区没有可列出的文件。",
+                data: [],
+              };
+            }
+
+            const lines = entries.slice(0, 20).map((entry, index) => `${index + 1}. ${entry.is_dir ? "[DIR]" : "[FILE]"} ${entry.path}`);
+            return { ok: true, outputText: [`找到 ${entries.length} 个条目：`, ...lines].join("\n"), data: entries };
+          },
+        });
+
+        registry.register({
+          id: "read_file",
+          command: "/read_file",
+          title: "读取文件",
+          execute: async (resolvedCommand) => {
+            const relativePath = resolvedCommand.args.trim();
+            if (!relativePath) return { ok: false, error: "用法: /read_file 相对路径" };
+
+            const content = await invoke<string>("read_workspace_file", {
+              path: relativePath,
+              maxChars: 6000,
+            });
+
+            return {
+              ok: true,
+              outputText: [`文件：${relativePath}`, "", content].join("\n"),
+              data: { path: relativePath },
+            };
+          },
+        });
+
+        registry.register({
+          id: "search_files",
+          command: "/search_files",
+          title: "搜索文件",
+          execute: async (resolvedCommand) => {
+            const query = resolvedCommand.args.trim();
+            if (!query) return { ok: false, error: "用法: /search_files 关键词" };
+
+            const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>("search_workspace_files", {
+              query,
+              limit: 50,
+            });
+
+            if (matches.length === 0) {
+              return { ok: true, outputText: `未找到包含“${query}”的文件内容。`, data: [] };
+            }
+
+            const lines = matches.slice(0, 20).map((match, index) => `${index + 1}. ${match.path}:${match.line_number} ${match.line_preview}`);
+            return { ok: true, outputText: [`找到 ${matches.length} 条相关内容：`, ...lines].join("\n"), data: matches };
+          },
+        });
+
+        registry.register({
+          id: "analyze_files",
+          command: "/analyze_files",
+          title: "分析文件",
+          execute: async () => ({ ok: true }),
+        });
+
+        toolRegistryRef.current = registry;
+      }
+
+      const tool = toolRegistryRef.current.get(command.command);
+      if (!tool) {
+        return { ok: false, error: `暂不支持命令: ${command.command}` };
+      }
+
+      if (activeAssistant && !activeAssistant.allowedToolIds.includes(tool.id)) {
+        return { ok: false, error: `当前助手未启用工具: ${tool.title}` };
+      }
+
+      return toolRegistryRef.current.execute(command as never, {
+        activeChatId,
+        chatSessions: searchChatSessions(""),
+      });
+    },
+    [
+      activeAssistant,
+      activeChatId,
+      availableModels,
+      getChatSessionById,
+      handleModelChange,
+      renameChatSession,
+      searchChatSessions,
+      setActiveChatId,
+      setMessages,
+      setOpenChatMenu,
+      setView,
+      togglePinnedChatSession,
+    ]
   );
 
   const handleSend = useCallback(
@@ -122,88 +427,92 @@ export function useChatRuntime({
         return;
       }
 
-      const localCommand = resolveLocalSlashCommand(content);
-      if (localCommand && (!images || images.length === 0)) {
-        if (localCommand.command === "/new") {
-          setActiveChatId(null);
-          setMessages([]);
-          setError(null);
-          setOpenChatMenu(null);
-          setEditingMessageIndex(null);
+      const runId = lastRunIdRef.current + 1;
+      lastRunIdRef.current = runId;
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+      setError(null);
+      setIsLoading(true);
+
+      try {
+        let sessionId = activeChatId;
+        let conversationMessagesForTask = messages;
+        const taskResult = await executeInputTask({
+          input: content,
+          images,
+          currentMessages: messages,
+          model: executionModel,
+          onPrepareConversation: (preparedMessages) => {
+            conversationMessagesForTask = preparedMessages;
+            if (!sessionId) {
+              const nextSession = createSessionFromMessages(preparedMessages);
+              sessionId = nextSession.id;
+            }
+            setMessages([...preparedMessages, { role: "assistant", content: "" }]);
+          },
+          signal: abortController.signal,
+          systemPrompt: assistantSystemPrompt,
+          onChunk: (chunk) => {
+            if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
+              return;
+            }
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+              if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
+                updated[lastIdx] = { ...updated[lastIdx], content: updated[lastIdx].content + chunk };
+              }
+              return updated;
+            });
+          },
+          executeTool,
+        });
+
+        if (runId !== lastRunIdRef.current) {
           return;
         }
-        if (localCommand.command === "/clear") {
-          setMessages([]);
-          setError(null);
-          setEditingMessageIndex(null);
+
+        if (taskResult.intent === "local_command") {
+          lastTaskResultRef.current = taskResult;
+          setLatestTaskResult(taskResult);
+          if (taskResult.status === "failed") {
+            setError(taskResult.error || "工具执行失败");
+          }
+          if (taskResult.toolResult?.outputText) {
+            setMessages([...messages, { role: "assistant", content: taskResult.toolResult.outputText }]);
+          }
           return;
         }
-        if (localCommand.command === "/settings") {
-          setView("settings");
+
+        const conversationMessages = taskResult.conversationMessages ?? conversationMessagesForTask;
+        if (!taskResult.finalResult) {
+          if (taskResult.status === "aborted") {
+            setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+            return;
+          }
+
+          setError(taskResult.error || "任务执行失败");
+          setMessages(conversationMessages);
           return;
         }
-        if (localCommand.command === "/rename") {
-          if (!activeChatId) {
-            setError("当前没有可重命名的会话");
-            return;
-          }
-          if (!localCommand.args) {
-            setError("用法: /rename 新标题");
-            return;
-          }
-          renameChatSession(activeChatId, localCommand.args);
-          setError(null);
-          setOpenChatMenu(null);
+
+        finishTaskResult(taskResult, sessionId, conversationMessages);
+      } catch (sendError) {
+        if (runId !== lastRunIdRef.current) {
           return;
         }
-        if (localCommand.command === "/pin") {
-          if (!activeChatId) {
-            setError("当前没有可置顶的会话");
-            return;
-          }
-          togglePinnedChatSession(activeChatId);
-          setError(null);
-          setOpenChatMenu(null);
+        if (sendError instanceof DOMException && sendError.name === "AbortError") {
           return;
         }
-        if (localCommand.command === "/model") {
-          const query = localCommand.args.trim().toLowerCase();
-          if (!query) {
-            setError("用法: /model 模型 ID 或名称");
-            return;
-          }
-          const matchedModel =
-            availableModels.find((model) => model.id.toLowerCase() === query || model.name.toLowerCase() === query) ??
-            availableModels.find((model) => model.id.toLowerCase().includes(query) || model.name.toLowerCase().includes(query));
-          if (!matchedModel) {
-            setError(`未找到匹配模型: ${localCommand.args}`);
-            return;
-          }
-          handleModelChange(matchedModel.id);
-          setError(null);
-          return;
+        setError(sendError instanceof Error ? sendError.message : "未知错误");
+      } finally {
+        if (runId === lastRunIdRef.current) {
+          abortControllerRef.current = null;
+          setIsLoading(false);
         }
       }
-
-      const resolved = resolveSlashSkillPrompt(content);
-      const resolvedUserMessage: Message = { role: "user", content: resolved.content, images };
-      const nextMessages = [...messages, resolvedUserMessage];
-      await runConversationTurn(nextMessages, { sessionId: activeChatId, createSession: true });
     },
-    [
-      activeChatId,
-      availableModels,
-      handleModelChange,
-      isLoading,
-      messages,
-      renameChatSession,
-      runConversationTurn,
-      setActiveChatId,
-      setMessages,
-      setOpenChatMenu,
-      setView,
-      togglePinnedChatSession,
-    ]
+    [activeAssistant, activeChatId, assistantSystemPrompt, createSessionFromMessages, executeTool, executionModel, finishTaskResult, isLoading, messages, setMessages]
   );
 
   const handleStop = useCallback(() => {
@@ -304,6 +613,8 @@ export function useChatRuntime({
     handleSubmitEditedUserMessage,
     handleUseEmptyPrompt,
     isLoading,
+    latestTaskResult,
+    lastTaskResultRef,
     runConversationTurn,
     setEditingMessageIndex,
     setError,

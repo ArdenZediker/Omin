@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Message } from "../adapters/types";
 import {
+  CHAT_ASSISTANTS_STORAGE_KEY,
   CHAT_SESSIONS_STORAGE_KEY,
   createChatSession,
+  createCustomAssistant,
+  DEFAULT_ASSISTANT_ID,
   getChatSessionGroupLabel,
   getChatSessionTitle,
+  getInitialAssistants,
   getInitialChatSessions,
 } from "../chat/storage";
-import type { ChatExecutionResult, ChatSession } from "../chat/types";
+import type { AssistantProfile, ChatExecutionResult, ChatSession } from "../chat/types";
 
 type UseChatSessionsOptions = {
   persist: boolean;
@@ -15,21 +19,28 @@ type UseChatSessionsOptions = {
 
 export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const [initialState] = useState(() => {
+    const initialAssistants = getInitialAssistants();
     const initialSessions = getInitialChatSessions();
+    const initialAssistantId = initialAssistants[0]?.id ?? DEFAULT_ASSISTANT_ID;
+    const initialSession = initialSessions.find((session) => session.assistantId === initialAssistantId) ?? null;
+
     return {
+      assistants: initialAssistants,
       sessions: initialSessions,
-      activeChatId: initialSessions[0]?.id ?? null,
-      messages: initialSessions[0]?.messages ?? [],
+      activeAssistantId: initialAssistantId,
+      activeChatId: initialSession?.id ?? null,
+      messages: initialSession?.messages ?? [],
     };
   });
 
+  const [assistants, setAssistants] = useState<AssistantProfile[]>(initialState.assistants);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(initialState.sessions);
+  const [activeAssistantId, setActiveAssistantId] = useState<string>(initialState.activeAssistantId);
   const [activeChatId, setActiveChatId] = useState<string | null>(initialState.activeChatId);
   const [messages, setMessages] = useState<Message[]>(initialState.messages);
 
   useEffect(() => {
-    if (!persist) return;
-    if (!activeChatId) return;
+    if (!persist || !activeChatId) return;
 
     const now = Date.now();
     setChatSessions((sessions) =>
@@ -48,8 +59,28 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   useEffect(() => {
     if (!persist) return;
+    localStorage.setItem(CHAT_ASSISTANTS_STORAGE_KEY, JSON.stringify(assistants));
+  }, [assistants, persist]);
+
+  useEffect(() => {
+    if (!persist) return;
     localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(chatSessions));
   }, [chatSessions, persist]);
+
+  const activeAssistant = useMemo(
+    () => assistants.find((assistant) => assistant.id === activeAssistantId) ?? assistants[0] ?? null,
+    [activeAssistantId, assistants]
+  );
+
+  const assistantSessions = useMemo(
+    () => chatSessions.filter((session) => session.assistantId === activeAssistantId),
+    [activeAssistantId, chatSessions]
+  );
+
+  const activeSession = useMemo(
+    () => chatSessions.find((session) => session.id === activeChatId) ?? null,
+    [activeChatId, chatSessions]
+  );
 
   const applyUsageToSession = useCallback((sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => {
     const now = Date.now();
@@ -75,11 +106,65 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     );
   }, []);
 
-  const createSessionFromMessages = useCallback((conversationMessages: Message[]) => {
-    const nextSession = createChatSession(conversationMessages);
-    setActiveChatId(nextSession.id);
-    setChatSessions((sessions) => [nextSession, ...sessions]);
-    return nextSession;
+  const createSessionFromMessages = useCallback(
+    (conversationMessages: Message[]) => {
+      const nextSession = createChatSession(conversationMessages, activeAssistantId);
+      setActiveChatId(nextSession.id);
+      setChatSessions((sessions) => [nextSession, ...sessions]);
+      return nextSession;
+    },
+    [activeAssistantId]
+  );
+
+  const selectAssistant = useCallback(
+    (assistantId: string) => {
+      setActiveAssistantId(assistantId);
+      const latestSession = [...chatSessions]
+        .filter((session) => session.assistantId === assistantId)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+
+      setActiveChatId(latestSession?.id ?? null);
+      setMessages(latestSession?.messages ?? []);
+    },
+    [chatSessions]
+  );
+
+  const createCustomAssistantProfile = useCallback((title?: string) => {
+    const nextAssistant = createCustomAssistant({
+      title: title?.trim() || "自定义助手",
+    });
+
+    setAssistants((current) => [...current, nextAssistant]);
+    setActiveAssistantId(nextAssistant.id);
+    setActiveChatId(null);
+    setMessages([]);
+    return nextAssistant;
+  }, []);
+
+  const updateAssistantProfile = useCallback((assistantId: string, patch: Partial<AssistantProfile>) => {
+    let updatedAssistant: AssistantProfile | null = null;
+    const now = Date.now();
+
+    setAssistants((current) =>
+      current.map((assistant) => {
+        if (assistant.id !== assistantId) {
+          return assistant;
+        }
+
+        updatedAssistant = {
+          ...assistant,
+          ...patch,
+          title: typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : assistant.title,
+          description:
+            typeof patch.description === "string" && patch.description.trim() ? patch.description.trim() : assistant.description,
+          updatedAt: now,
+        };
+
+        return updatedAssistant;
+      })
+    );
+
+    return updatedAssistant;
   }, []);
 
   const resetActiveChat = useCallback(() => {
@@ -91,6 +176,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     (sessionId: string) => {
       const session = chatSessions.find((item) => item.id === sessionId);
       if (!session) return null;
+      setActiveAssistantId(session.assistantId);
       setActiveChatId(session.id);
       setMessages(session.messages);
       return session;
@@ -119,6 +205,18 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     return nextPinned;
   }, []);
 
+  const toggleFavoriteChatSession = useCallback((sessionId: string) => {
+    let nextFavorite = false;
+    setChatSessions((sessions) =>
+      sessions.map((session) => {
+        if (session.id !== sessionId) return session;
+        nextFavorite = !session.favorite;
+        return { ...session, favorite: nextFavorite };
+      })
+    );
+    return nextFavorite;
+  }, []);
+
   const deleteChatSession = useCallback(
     (sessionId: string) => {
       setChatSessions((sessions) => sessions.filter((session) => session.id !== sessionId));
@@ -132,7 +230,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const groupedChatSessions = useMemo(() => {
     const groups = new Map<string, ChatSession[]>();
-    [...chatSessions]
+    [...assistantSessions]
       .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt)
       .forEach((session) => {
         const label = session.pinned ? "置顶" : getChatSessionGroupLabel(session.updatedAt);
@@ -142,28 +240,58 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       });
 
     return Array.from(groups.entries()).map(([label, sessions]) => ({ label, sessions }));
-  }, [chatSessions]);
+  }, [assistantSessions]);
 
-  const activeSession = useMemo(
-    () => chatSessions.find((session) => session.id === activeChatId) ?? null,
-    [activeChatId, chatSessions]
+  const searchChatSessions = useCallback(
+    (query: string) => {
+      const normalizedQuery = query.trim().toLowerCase();
+      const scope = chatSessions;
+      if (!normalizedQuery) {
+        return scope;
+      }
+
+      return scope.filter((session) => {
+        if (session.title.toLowerCase().includes(normalizedQuery)) {
+          return true;
+        }
+        return session.messages.some((message) => message.content.toLowerCase().includes(normalizedQuery));
+      });
+    },
+    [chatSessions]
+  );
+
+  const getChatSessionById = useCallback(
+    (sessionId: string) => chatSessions.find((session) => session.id === sessionId) ?? null,
+    [chatSessions]
   );
 
   return {
+    activeAssistant,
+    activeAssistantId,
     activeChatId,
     activeSession,
     applyUsageToSession,
+    assistantSessions,
+    assistants,
     chatSessions,
+    createCustomAssistantProfile,
     createSessionFromMessages,
     deleteChatSession,
+    getChatSessionById,
     groupedChatSessions,
     messages,
     renameChatSession,
     resetActiveChat,
+    searchChatSessions,
+    selectAssistant,
     selectChatSession,
+    setActiveAssistantId,
     setActiveChatId,
+    setAssistants,
     setChatSessions,
     setMessages,
+    toggleFavoriteChatSession,
     togglePinnedChatSession,
+    updateAssistantProfile,
   };
 }
