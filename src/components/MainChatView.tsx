@@ -359,7 +359,7 @@ export default function MainChatView({
           <div className="chat-history-panel__assistant-section">
             <div className="chat-history-panel__section-head">
               <span>自定义助手</span>
-              <button type="button" className="chat-history-panel__section-action" onClick={onCreateCustomAssistant} title="鏂板鍔╂墜">
+              <button type="button" className="chat-history-panel__section-action" onClick={onCreateCustomAssistant} title="新增助手">
                 <UserRoundPlus size={14} strokeWidth={1.8} />
               </button>
             </div>
@@ -390,7 +390,7 @@ export default function MainChatView({
           {activeAssistant?.kind === "custom" && (
             <div className="chat-history-panel__assistant-section">
               <div className="chat-history-panel__section-head">
-                <span>鍔╂墜閰嶇疆</span>
+                <span>助手配置</span>
               </div>
               <div className="chat-history-panel__assistant-form">
                 <label className="chat-history-panel__assistant-field">
@@ -428,7 +428,7 @@ export default function MainChatView({
                   />
                 </label>
                 <div className="chat-history-panel__assistant-field">
-                  <span>宸ュ叿鏉冮檺</span>
+                  <span>工具权限</span>
                   <div className="chat-history-panel__tool-permissions">
                     {ASSISTANT_TOOL_OPTIONS.map((tool) => {
                       const checked = activeAssistant.allowedToolIds.includes(tool.id);

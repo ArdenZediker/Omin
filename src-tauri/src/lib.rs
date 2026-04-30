@@ -106,6 +106,20 @@ fn current_timestamp_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn run_database_migrations(connection: &Connection) -> Result<(), String> {
+    let version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|err| err.to_string())?;
+
+    if version < 1 {
+        connection
+            .execute_batch("PRAGMA user_version = 1;")
+            .map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
+}
+
 fn sqlite_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
     fs::create_dir_all(&app_data_dir).map_err(|err| err.to_string())?;
@@ -175,9 +189,8 @@ fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> 
         );
         "#,
     ).map_err(|err| err.to_string())?;
-    connection
-        .execute_batch("PRAGMA user_version = 1;")
-        .map_err(|err| err.to_string())?;
+    run_database_migrations(&connection)?;
+    ensure_storage_migrations(&connection)?;
     Ok(connection)
 }
 
@@ -573,6 +586,58 @@ fn save_structured_chat_storage(
     Ok(())
 }
 
+fn migrate_legacy_chat_kv_to_structured(connection: &Connection) -> Result<(), String> {
+    if has_structured_chat_storage(connection)? {
+        return Ok(());
+    }
+
+    let assistants_json = read_kv(connection, "chat_assistants")?;
+    let sessions_json = read_kv(connection, "chat_sessions")?;
+
+    if assistants_json.is_none() && sessions_json.is_none() {
+        return Ok(());
+    }
+
+    save_structured_chat_storage(
+        connection,
+        assistants_json.as_deref().unwrap_or("[]"),
+        sessions_json.as_deref().unwrap_or("[]"),
+    )
+}
+
+fn migrate_legacy_app_kv_to_structured(connection: &Connection) -> Result<(), String> {
+    let known_keys = [
+        "omni_theme_mode",
+        "omni_basic_settings",
+        "omni_main_view",
+        "omni_compact_position",
+        "omni_main_position",
+        "omni_provider_configs",
+        "omni_current_model",
+        "omni_model_connection_status",
+        "omni_compact_appearance",
+        "omni_character_scale",
+        "omni_character_model",
+    ];
+
+    for key in known_keys {
+        if read_structured_app_value(connection, key)?.is_some() {
+            continue;
+        }
+        if let Some(value) = read_kv(connection, key)? {
+            write_structured_app_value(connection, key, &value)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_storage_migrations(connection: &Connection) -> Result<(), String> {
+    migrate_legacy_chat_kv_to_structured(connection)?;
+    migrate_legacy_app_kv_to_structured(connection)?;
+    Ok(())
+}
+
 fn normalize_relative_path(input: &str) -> Result<PathBuf, String> {
     let candidate = PathBuf::from(input);
     if candidate.is_absolute() {
@@ -770,24 +835,9 @@ fn load_chat_storage(
         return load_structured_chat_storage(&connection);
     }
 
-    let mut assistants_json = read_kv(&connection, "chat_assistants")?;
-    let mut sessions_json = read_kv(&connection, "chat_sessions")?;
-
-    if assistants_json.is_none() {
-        if let Some(value) = legacy_assistants_json.filter(|value| !value.trim().is_empty()) {
-            assistants_json = Some(value);
-        }
-    }
-
-    if sessions_json.is_none() {
-        if let Some(value) = legacy_sessions_json.filter(|value| !value.trim().is_empty()) {
-            sessions_json = Some(value);
-        }
-    }
-
     let payload = ChatStoragePayload {
-        assistants_json,
-        sessions_json,
+        assistants_json: legacy_assistants_json.filter(|value| !value.trim().is_empty()),
+        sessions_json: legacy_sessions_json.filter(|value| !value.trim().is_empty()),
     };
 
     if payload.assistants_json.is_some() || payload.sessions_json.is_some() {
@@ -825,9 +875,6 @@ fn load_app_kv(
 
     for key in keys {
         let mut value = read_structured_app_value(&connection, &key)?;
-        if value.is_none() {
-            value = read_kv(&connection, &key)?;
-        }
         if value.is_none() {
             if let Some(legacy_value) = legacy_entries.get(&key).filter(|value| !value.trim().is_empty()) {
                 write_structured_app_value(&connection, &key, legacy_value)?;
