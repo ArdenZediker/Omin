@@ -1,4 +1,4 @@
-import type { Message } from "../adapters/types";
+﻿import type { Message } from "../adapters/types";
 import type { AssistantProfile, ChatSession, ChatUsagePreferences, ChatUsageStats } from "./types";
 import { readSqliteBackedJson, readSqliteBackedValue } from "../app/sqliteStorage";
 
@@ -55,6 +55,8 @@ export function createDefaultAssistant(): AssistantProfile {
     kind: "basic",
     title: "基础聊天",
     description: "通用问答与基础对话入口",
+    avatarType: "emoji",
+    avatarValue: "emoji:1F989",
     defaultModelId: null,
     systemPrompt: "",
     allowedToolIds: [...DEFAULT_ASSISTANT_TOOL_IDS],
@@ -75,7 +77,9 @@ export function createCustomAssistant(input?: Partial<AssistantProfile>): Assist
     id,
     kind: "custom",
     title: input?.title?.trim() || "自定义助手",
-    description: input?.description?.trim() || "可配置系统提示词、模型和工具权限",
+    description: input?.description?.trim() || "可配置角色设定、模型和工具权限",
+    avatarType: input?.avatarType ?? "emoji",
+    avatarValue: input?.avatarValue ?? "emoji:1F916",
     systemPrompt: input?.systemPrompt ?? "",
     defaultModelId: input?.defaultModelId ?? null,
     allowedToolIds: input?.allowedToolIds?.length ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
@@ -142,7 +146,14 @@ function normalizeAssistant(input: Partial<AssistantProfile> & Pick<AssistantPro
         ? input.description
         : input.kind === "basic"
           ? "通用问答与基础对话入口"
-          : "可配置系统提示词、模型和工具权限",
+          : "可配置角色设定、模型和工具权限",
+    avatarType: input.avatarType === "image" ? "image" : "emoji",
+    avatarValue:
+      typeof input.avatarValue === "string" && input.avatarValue.trim()
+        ? input.avatarValue
+        : input.kind === "basic"
+          ? "emoji:1F989"
+          : "emoji:1F916",
     systemPrompt: typeof input.systemPrompt === "string" ? input.systemPrompt : "",
     defaultModelId: input.defaultModelId ?? null,
     allowedToolIds: Array.isArray(input.allowedToolIds) && input.allowedToolIds.length > 0 ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
@@ -234,7 +245,7 @@ export function formatUsageLabel(usage: ChatUsageStats) {
   }
 
   const tokenLabel = usage.totalTokens >= 1000 ? `${(usage.totalTokens / 1000).toFixed(1)}k tokens` : `${usage.totalTokens} tokens`;
-  const costLabel = usage.totalCostUsd > 0 ? ` · $${usage.totalCostUsd.toFixed(4)}` : "";
-  const estimatedLabel = usage.hasEstimatedUsage ? " · 估算" : "";
+  const costLabel = usage.totalCostUsd > 0 ? ` 路 $${usage.totalCostUsd.toFixed(4)}` : "";
+  const estimatedLabel = usage.hasEstimatedUsage ? " 路 浼扮畻" : "";
   return `${tokenLabel}${costLabel}${estimatedLabel}`;
 }
