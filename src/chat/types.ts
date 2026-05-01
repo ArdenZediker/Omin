@@ -25,6 +25,8 @@ export type AssistantProfile = {
   kind: AssistantKind;
   title: string;
   description: string;
+  avatarType?: "emoji" | "image";
+  avatarValue?: string;
   systemPrompt?: string;
   defaultModelId?: string | null;
   allowedToolIds: string[];
