@@ -48,6 +48,7 @@ type SessionGroup = {
 };
 
 type TopicGroupingMode = "time" | "flat";
+type SidePanelTab = "topics" | "memory" | "automation" | "tasks";
 
 type TopicDeleteConfirmState = {
   title: string;
@@ -149,6 +150,23 @@ function renderTopicGroupLabel(label: string) {
   }
 
   return <span>{label}</span>;
+}
+
+function formatTaskStatusLabel(status: string) {
+  switch (status) {
+    case "running":
+      return "进行中";
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "失败";
+    case "aborted":
+      return "已中止";
+    case "pending":
+      return "等待中";
+    default:
+      return status;
+  }
 }
 
 function findPresetMetaByAssistant(assistant: AssistantProfile | null) {
@@ -258,6 +276,7 @@ export default function MainChatView({
   const [topicSearchQuery, setTopicSearchQuery] = useState("");
   const [topicMenuOpen, setTopicMenuOpen] = useState(false);
   const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
+  const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
   const [topicDeleteConfirm, setTopicDeleteConfirm] = useState<TopicDeleteConfirmState>(null);
   const [assistantSearchQuery, setAssistantSearchQuery] = useState("");
   const [assistantMenuOpen, setAssistantMenuOpen] = useState(false);
@@ -310,6 +329,14 @@ export default function MainChatView({
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
+  const activeSubtaskCards = latestTaskResult?.plan.childTaskIds?.map((childTaskId) => {
+    const isActive = latestTaskResult.plan.metadata?.activeChildTaskId === childTaskId;
+    return {
+      id: childTaskId,
+      title: formatChildTaskLabel(childTaskId),
+      status: isActive ? "running" : "queued",
+    };
+  }) ?? [];
   const normalizedAssistantSearchQuery = normalizeSearchText(assistantSearchQuery);
   const isBasicAssistantVisible = Boolean(
     basicAssistant &&
@@ -427,6 +454,12 @@ export default function MainChatView({
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [assistantAvatarPanelOpen]);
+
+  useEffect(() => {
+    if (latestTaskResult) {
+      setSidePanelTab("tasks");
+    }
+  }, [latestTaskResult?.taskId]);
 
   const resolveAvatarCategoryIcon = (category: AvatarCategoryManifest["icon"]) => {
     switch (category) {
@@ -1110,6 +1143,36 @@ export default function MainChatView({
                 {error && <div className="main-chat-error animate-fade-in">{error}</div>}
               </div>
 
+              {latestTaskResult && (
+                <div className="main-chat-task-board">
+                  <div className="main-chat-task-board__head">
+                    <div className="main-chat-task-board__title">
+                      <strong>{latestTaskResult.plan.goal}</strong>
+                      <span>{formatTaskStatusLabel(latestTaskResult.status)} · {latestTaskResult.intent}</span>
+                    </div>
+                    <span className={`main-chat-task-board__status main-chat-task-board__status--${latestTaskResult.status}`}>
+                      {formatTaskStatusLabel(latestTaskResult.status)}
+                    </span>
+                  </div>
+                  {activeSubtaskCards.length > 0 && (
+                    <div className="main-chat-task-board__subtasks">
+                      {activeSubtaskCards.map((task) => (
+                        <div key={task.id} className="main-chat-task-board__subtask">
+                          <strong>{task.title}</strong>
+                          <span>{formatTaskStatusLabel(task.status)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {taskAggregateSummary && (
+                    <div className="main-chat-task-board__summary">
+                      <strong>聚合结果</strong>
+                      <span>{taskAggregateSummary.text}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div ref={setComposerElement}>
                 <ChatInput
                   canStartNewTopic={activeAssistant?.kind === "basic"}
@@ -1132,148 +1195,12 @@ export default function MainChatView({
 
         {!isAssistantSettingsMode && <aside className="chat-topic-panel">
           <div className="chat-topic-panel__body">
-            {latestTaskResult && (
-              <div className="chat-topic-panel__section chat-topic-panel__section--task">
-                <div className="chat-topic-panel__section-title">当前任务</div>
-                <div className="chat-topic-panel__task">
-                  <div className="chat-topic-panel__task-head">
-                    <strong>{latestTaskResult.plan.goal}</strong>
-                    <span className={`chat-topic-panel__task-status chat-topic-panel__task-status--${latestTaskResult.status}`}>
-                      {latestTaskResult.status}
-                    </span>
-                  </div>
-                  <div className="chat-topic-panel__task-meta">
-                    <span>{latestTaskResult.intent}</span>
-                    <span>{latestTaskResult.plan.model}</span>
-                  </div>
-                  {(latestTaskResult.plan.parentTaskId || latestTaskResult.plan.childTaskIds?.length || latestTaskResult.plan.delegatedTo) && (
-                    <div className="chat-topic-panel__task-links">
-                      {latestTaskResult.plan.parentTaskId && (
-                        <div className="chat-topic-panel__task-link-row">
-                          <span className="chat-topic-panel__task-link-label">parent</span>
-                          <span className="chat-topic-panel__task-link-value">{latestTaskResult.plan.parentTaskId}</span>
-                        </div>
-                      )}
-                      {latestTaskResult.plan.delegatedTo && (
-                        <div className="chat-topic-panel__task-link-row">
-                          <span className="chat-topic-panel__task-link-label">delegate</span>
-                          <span className="chat-topic-panel__task-link-value">{latestTaskResult.plan.delegatedTo}</span>
-                        </div>
-                      )}
-                      {latestTaskResult.plan.childTaskIds?.length ? (
-                        <div className="chat-topic-panel__task-children">
-                          {latestTaskResult.plan.childTaskIds.map((childTaskId) => {
-                            const isActive = latestTaskResult.plan.metadata?.activeChildTaskId === childTaskId;
-                            return (
-                              <span key={childTaskId} className={`chat-topic-panel__task-child ${isActive ? "chat-topic-panel__task-child--active" : ""}`}>
-                                {childTaskId}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-                  <div className="chat-topic-panel__task-steps">
-                    {latestTaskResult.plan.steps.map((step) => (
-                      <div key={step.id} className="chat-topic-panel__task-step">
-                        <span className="chat-topic-panel__task-step-title">{step.title}</span>
-                        <span className={`chat-topic-panel__task-step-status chat-topic-panel__task-step-status--${step.status}`}>{step.status}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {latestTaskResult.plan.childTaskIds?.length ? (
-                    <div className="chat-topic-panel__task-subtasks">
-                      <div className="chat-topic-panel__task-subtasks-title">子任务</div>
-                      {latestTaskResult.plan.childTaskIds.map((childTaskId) => {
-                        const isActive = latestTaskResult.plan.metadata?.activeChildTaskId === childTaskId;
-                        const childTitle = formatChildTaskLabel(childTaskId);
-                        return (
-                          <div key={childTaskId} className="chat-topic-panel__task-step">
-                            <span className="chat-topic-panel__task-step-title">
-                              <span className="chat-topic-panel__task-step-badge">{childTitle}</span>
-                              <span className="chat-topic-panel__task-step-id">{childTaskId}</span>
-                            </span>
-                            <span className={`chat-topic-panel__task-step-status ${isActive ? "chat-topic-panel__task-step-status--completed" : ""}`}>
-                              {isActive ? "running" : "queued"}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                  {taskAggregateSummary && (
-                    <div className="chat-topic-panel__task-aggregate">
-                      <strong>聚合结果</strong>
-                      <span>
-                        {taskAggregateSummary.childCount > 0 ? `共 ${taskAggregateSummary.childCount} 个子任务 · ` : ""}
-                        {taskAggregateSummary.text}
-                      </span>
-                    </div>
-                  )}
-                  {latestTaskResult.trace.length > 0 && (
-                    <button
-                      type="button"
-                      className="chat-topic-panel__inline-action"
-                      onClick={() => setIsTaskTraceExpanded((current) => !current)}
-                    >
-                      {isTaskTraceExpanded ? "收起过程" : "展开过程"}
-                    </button>
-                  )}
-                  {latestTaskResult.trace.length > 0 && isTaskTraceExpanded && (
-                    <div className="chat-topic-panel__task-trace">
-                      {latestTaskResult.trace.map((entry, index) => (
-                        <div key={`${entry.at}-${index}`} className="chat-topic-panel__task-trace-item">
-                          <span className="chat-topic-panel__task-trace-stage">{entry.stage}</span>
-                          <span className="chat-topic-panel__task-trace-message">{entry.message}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {taskRuntimeState.history.length > 1 && (
-              <div className="chat-topic-panel__section">
-                <div className="chat-topic-panel__section-title">
-                  <History size={13} strokeWidth={2} />
-                  <span>任务历史</span>
-                </div>
-                <div className="chat-topic-panel__group-list">
-                  {taskRuntimeState.history.slice(1, 6).map((task) => (
-                    <div key={task.taskId} className="chat-topic-panel__task">
-                      <div className="chat-topic-panel__task-head">
-                        <strong>{task.plan.goal}</strong>
-                        <span className={`chat-topic-panel__task-status chat-topic-panel__task-status--${task.status}`}>{task.status}</span>
-                      </div>
-                      <div className="chat-topic-panel__task-meta">
-                        <span>{task.intent}</span>
-                        <span>{task.plan.model}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className="chat-topic-panel__toolbar">
               <div className="chat-topic-panel__title">
                 <Hash size={14} strokeWidth={2} />
-                <span>话题 {allTopicSessions.length}</span>
+                <span>工作台</span>
               </div>
               <div className="chat-topic-panel__header-actions">
-                <button
-                  type="button"
-                  className={`chat-topic-panel__icon-button ${topicSearchOpen ? "chat-topic-panel__icon-button--active" : ""}`}
-                  title="搜索话题"
-                  onClick={() => {
-                    setTopicMenuOpen(false);
-                    setTopicSearchOpen((current) => !current);
-                  }}
-                >
-                  <Search size={16} strokeWidth={1.8} />
-                </button>
                 <button
                   ref={topicMenuButtonRef}
                   type="button"
@@ -1289,7 +1216,14 @@ export default function MainChatView({
               </div>
             </div>
 
-            {topicSearchOpen && (
+            <div className="chat-topic-panel__tabs">
+              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "topics" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("topics")}>话题</button>
+              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "tasks" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("tasks")}>任务</button>
+              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "automation" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("automation")}>自动化</button>
+              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "memory" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("memory")}>记忆</button>
+            </div>
+
+            {sidePanelTab === "topics" && topicSearchOpen && (
               <div className="chat-topic-panel__search">
                 <Search size={14} strokeWidth={1.8} />
                 <input
@@ -1301,7 +1235,7 @@ export default function MainChatView({
               </div>
             )}
 
-            {topicMenuOpen && (
+            {sidePanelTab === "topics" && topicMenuOpen && (
               <div ref={topicMenuRef} className="chat-topic-panel__menu">
                 <button
                   type="button"
@@ -1345,7 +1279,7 @@ export default function MainChatView({
               </div>
             )}
 
-            <div className="chat-topic-panel__section">
+            {sidePanelTab === "memory" && <div className="chat-topic-panel__section">
               <div className="chat-topic-panel__section-title">
                 <Star size={13} strokeWidth={2} />
                 <span>记忆与摘要</span>
@@ -1420,9 +1354,9 @@ export default function MainChatView({
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
 
-            <div className="chat-topic-panel__section">
+            {sidePanelTab === "automation" && <div className="chat-topic-panel__section">
               <div className="chat-topic-panel__section-title">
                 <TimerReset size={13} strokeWidth={2} />
                 <span>自动化任务</span>
@@ -1549,9 +1483,9 @@ export default function MainChatView({
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
 
-            <div className="chat-topic-panel__section">
+            {sidePanelTab === "topics" && <div className="chat-topic-panel__section">
               <div className="chat-topic-panel__section-title">
                 <MessageSquare size={13} strokeWidth={2} />
                 <span>当前话题</span>
@@ -1562,9 +1496,9 @@ export default function MainChatView({
                   <span>{currentTopicTitle}</span>
                 </div>
               </div>
-            </div>
+            </div>}
 
-            <div className="chat-topic-panel__section">
+            {sidePanelTab === "topics" && <div className="chat-topic-panel__section">
               <div className="chat-topic-panel__section-title">
                 <History size={13} strokeWidth={2} />
                 <span>最近话题</span>
@@ -1691,7 +1625,100 @@ export default function MainChatView({
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
+
+            {sidePanelTab === "tasks" && (
+              <>
+                {latestTaskResult && (
+                  <div className="chat-topic-panel__section chat-topic-panel__section--task">
+                    <div className="chat-topic-panel__section-title">当前任务</div>
+                    <div className="chat-topic-panel__task">
+                      <div className="chat-topic-panel__task-head">
+                        <strong>{latestTaskResult.plan.goal}</strong>
+                        <span className={`chat-topic-panel__task-status chat-topic-panel__task-status--${latestTaskResult.status}`}>
+                          {latestTaskResult.status}
+                        </span>
+                      </div>
+                      <div className="chat-topic-panel__task-meta">
+                        <span>{latestTaskResult.intent}</span>
+                        <span>{latestTaskResult.plan.model}</span>
+                      </div>
+                      {taskAggregateSummary && (
+                        <div className="chat-topic-panel__task-aggregate">
+                          <strong>聚合结果</strong>
+                          <span>
+                            {taskAggregateSummary.childCount > 0 ? `共 ${taskAggregateSummary.childCount} 个子任务 · ` : ""}
+                            {taskAggregateSummary.text}
+                          </span>
+                        </div>
+                      )}
+                      {latestTaskResult.plan.childTaskIds?.length ? (
+                        <div className="chat-topic-panel__task-subtasks">
+                          <div className="chat-topic-panel__task-subtasks-title">子任务</div>
+                          {latestTaskResult.plan.childTaskIds.map((childTaskId) => {
+                            const isActive = latestTaskResult.plan.metadata?.activeChildTaskId === childTaskId;
+                            const childTitle = formatChildTaskLabel(childTaskId);
+                            return (
+                              <div key={childTaskId} className="chat-topic-panel__task-step">
+                                <span className="chat-topic-panel__task-step-title">
+                                  <span className="chat-topic-panel__task-step-badge">{childTitle}</span>
+                                  <span className="chat-topic-panel__task-step-id">{childTaskId}</span>
+                                </span>
+                                <span className={`chat-topic-panel__task-step-status ${isActive ? "chat-topic-panel__task-step-status--completed" : ""}`}>
+                                  {isActive ? "running" : "queued"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {latestTaskResult.trace.length > 0 && (
+                        <button
+                          type="button"
+                          className="chat-topic-panel__inline-action"
+                          onClick={() => setIsTaskTraceExpanded((current) => !current)}
+                        >
+                          {isTaskTraceExpanded ? "收起过程" : "展开过程"}
+                        </button>
+                      )}
+                      {latestTaskResult.trace.length > 0 && isTaskTraceExpanded && (
+                        <div className="chat-topic-panel__task-trace">
+                          {latestTaskResult.trace.map((entry, index) => (
+                            <div key={`${entry.at}-${index}`} className="chat-topic-panel__task-trace-item">
+                              <span className="chat-topic-panel__task-trace-stage">{entry.stage}</span>
+                              <span className="chat-topic-panel__task-trace-message">{entry.message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {taskRuntimeState.history.length > 1 && (
+                  <div className="chat-topic-panel__section">
+                    <div className="chat-topic-panel__section-title">
+                      <History size={13} strokeWidth={2} />
+                      <span>任务历史</span>
+                    </div>
+                    <div className="chat-topic-panel__group-list">
+                      {taskRuntimeState.history.slice(1, 6).map((task) => (
+                        <div key={task.taskId} className="chat-topic-panel__task">
+                          <div className="chat-topic-panel__task-head">
+                            <strong>{task.plan.goal}</strong>
+                            <span className={`chat-topic-panel__task-status chat-topic-panel__task-status--${task.status}`}>{task.status}</span>
+                          </div>
+                          <div className="chat-topic-panel__task-meta">
+                            <span>{task.intent}</span>
+                            <span>{task.plan.model}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </aside>}
       </section>
