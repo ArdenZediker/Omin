@@ -391,12 +391,41 @@ body,
 }
 
 .main-chat-toolbar__assistant-tag {
+  border: 0;
   border-radius: 999px;
   padding: 2px 8px;
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
   color: var(--omni-app-text);
   font-size: 10px;
   line-height: 1.6;
+  cursor: pointer;
+}
+
+.main-chat-toolbar__assistant-panel {
+  margin-top: 8px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--omni-panel-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.main-chat-toolbar__assistant-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.main-chat-toolbar__assistant-panel-row strong {
+  flex: 0 0 auto;
+  color: var(--omni-app-text);
+}
+
+.main-chat-toolbar__assistant-panel-row span {
+  color: var(--omni-app-muted);
 }
 
 .main-chat-toolbar__usage {
@@ -2909,6 +2938,62 @@ body,
 
 .chat-topic-panel__task-trace-message {
   color: var(--omni-app-text);
+}
+
+.chat-topic-panel__task-trace {
+  background: color-mix(in srgb, var(--omni-panel-bg) 92%, transparent);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.chat-topic-panel__task-aggregate {
+  margin-top: 8px;
+  border: 1px dashed var(--omni-panel-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-topic-panel__task-aggregate strong {
+  color: var(--omni-app-text);
+  font-size: 11px;
+}
+
+.chat-topic-panel__task-aggregate span {
+  color: var(--omni-app-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.chat-topic-panel__task-subtasks {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-topic-panel__task-subtasks-title {
+  color: var(--omni-app-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.chat-topic-panel__task-step-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 1px 7px;
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+  margin-right: 6px;
+}
+
+.chat-topic-panel__task-step-id {
+  color: var(--omni-app-muted);
+  font-size: 10px;
 }
 
 .chat-topic-panel__active {
