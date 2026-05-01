@@ -166,6 +166,34 @@ function formatTaskRunTime(timestamp?: number | null) {
   });
 }
 
+function buildTaskAggregateSummary(task: TaskExecutionResult) {
+  const childCount = task.plan.childTaskIds?.length ?? 0;
+  const lastTrace = task.trace.slice(-2).map((entry) => entry.message).join(" · ");
+  if (childCount <= 0 && !lastTrace) return null;
+  return {
+    childCount,
+    text: lastTrace || "已拆分并执行子任务",
+  };
+}
+
+function formatChildTaskLabel(childTaskId: string) {
+  const kind = childTaskId.split(":").slice(-2, -1)[0] ?? "task";
+  switch (kind) {
+    case "search":
+      return "搜索整理";
+    case "file_analysis":
+      return "文件分析";
+    case "content_draft":
+      return "内容草拟";
+    case "read":
+      return "读取文件";
+    case "summarize":
+      return "总结结果";
+    default:
+      return kind;
+  }
+}
+
 function renderAssistantAvatar(assistant: AssistantProfile | null, seed = 0) {
   return <img src={resolveAssistantAvatarImageSrc(assistant, seed)} alt="" className="chat-history-panel__assistant-image" />;
 }
@@ -240,7 +268,9 @@ export default function MainChatView({
   const [customAssistantsCollapsed, setCustomAssistantsCollapsed] = useState(false);
   const [expandedMemoryIds, setExpandedMemoryIds] = useState<string[]>([]);
   const [expandedSummaryIds, setExpandedSummaryIds] = useState<string[]>([]);
+  const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
   const [showScheduledTaskForm, setShowScheduledTaskForm] = useState(false);
+  const [showAssistantCapabilityDetails, setShowAssistantCapabilityDetails] = useState(false);
   const [scheduledTaskTitleDraft, setScheduledTaskTitleDraft] = useState("");
   const [scheduledTaskPromptDraft, setScheduledTaskPromptDraft] = useState("");
   const [scheduledTaskCronDraft, setScheduledTaskCronDraft] = useState("0 9 * * *");
@@ -279,6 +309,7 @@ export default function MainChatView({
   const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
+  const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
   const normalizedAssistantSearchQuery = normalizeSearchText(assistantSearchQuery);
   const isBasicAssistantVisible = Boolean(
     basicAssistant &&
@@ -599,9 +630,35 @@ export default function MainChatView({
                   <span>{isAssistantSettingsMode ? "在中间区域配置当前自定义助手" : activeAssistant?.description || "开始新一轮思考、问答或执行任务"}</span>
                   {!isAssistantSettingsMode && (
                     <div className="main-chat-toolbar__assistant-tags">
-                      {activeAssistantPresetMeta && <span className="main-chat-toolbar__assistant-tag">{activeAssistantPresetMeta.label}</span>}
-                      <span className="main-chat-toolbar__assistant-tag">{activeToolCount} 个工具</span>
-                      <span className="main-chat-toolbar__assistant-tag">{activeSkillCount} 个技能</span>
+                      {activeAssistantPresetMeta && (
+                        <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
+                          {activeAssistantPresetMeta.label}
+                        </button>
+                      )}
+                      <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
+                        {activeToolCount} 个工具
+                      </button>
+                      <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
+                        {activeSkillCount} 个技能
+                      </button>
+                    </div>
+                  )}
+                  {!isAssistantSettingsMode && showAssistantCapabilityDetails && (
+                    <div className="main-chat-toolbar__assistant-panel">
+                      {activeAssistantPresetMeta ? (
+                        <div className="main-chat-toolbar__assistant-panel-row">
+                          <strong>来源预设</strong>
+                          <span>{activeAssistantPresetMeta.label} · {activeAssistantPresetMeta.hint}</span>
+                        </div>
+                      ) : null}
+                      <div className="main-chat-toolbar__assistant-panel-row">
+                        <strong>工具能力</strong>
+                        <span>{activeToolCount} 项已启用</span>
+                      </div>
+                      <div className="main-chat-toolbar__assistant-panel-row">
+                        <strong>技能能力</strong>
+                        <span>{activeSkillCount} 项已启用</span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1126,13 +1183,17 @@ export default function MainChatView({
                     ))}
                   </div>
                   {latestTaskResult.plan.childTaskIds?.length ? (
-                    <div className="chat-topic-panel__task-steps">
+                    <div className="chat-topic-panel__task-subtasks">
+                      <div className="chat-topic-panel__task-subtasks-title">子任务</div>
                       {latestTaskResult.plan.childTaskIds.map((childTaskId) => {
                         const isActive = latestTaskResult.plan.metadata?.activeChildTaskId === childTaskId;
-                        const childTitle = childTaskId.split(":").slice(-2).join(" / ");
+                        const childTitle = formatChildTaskLabel(childTaskId);
                         return (
                           <div key={childTaskId} className="chat-topic-panel__task-step">
-                            <span className="chat-topic-panel__task-step-title">{childTitle}</span>
+                            <span className="chat-topic-panel__task-step-title">
+                              <span className="chat-topic-panel__task-step-badge">{childTitle}</span>
+                              <span className="chat-topic-panel__task-step-id">{childTaskId}</span>
+                            </span>
                             <span className={`chat-topic-panel__task-step-status ${isActive ? "chat-topic-panel__task-step-status--completed" : ""}`}>
                               {isActive ? "running" : "queued"}
                             </span>
@@ -1141,7 +1202,25 @@ export default function MainChatView({
                       })}
                     </div>
                   ) : null}
+                  {taskAggregateSummary && (
+                    <div className="chat-topic-panel__task-aggregate">
+                      <strong>聚合结果</strong>
+                      <span>
+                        {taskAggregateSummary.childCount > 0 ? `共 ${taskAggregateSummary.childCount} 个子任务 · ` : ""}
+                        {taskAggregateSummary.text}
+                      </span>
+                    </div>
+                  )}
                   {latestTaskResult.trace.length > 0 && (
+                    <button
+                      type="button"
+                      className="chat-topic-panel__inline-action"
+                      onClick={() => setIsTaskTraceExpanded((current) => !current)}
+                    >
+                      {isTaskTraceExpanded ? "收起过程" : "展开过程"}
+                    </button>
+                  )}
+                  {latestTaskResult.trace.length > 0 && isTaskTraceExpanded && (
                     <div className="chat-topic-panel__task-trace">
                       {latestTaskResult.trace.map((entry, index) => (
                         <div key={`${entry.at}-${index}`} className="chat-topic-panel__task-trace-item">
