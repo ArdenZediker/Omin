@@ -4,6 +4,22 @@ type AppStoragePayload = {
   entries: Record<string, string>;
 };
 
+export type ManifestStoragePayload = {
+  assistantPresetsJson?: string | null;
+  toolManifestsJson?: string | null;
+  skillManifestsJson?: string | null;
+};
+
+export type MemoryStoragePayload = {
+  assistantMemoriesJson?: string | null;
+  userPreferencesJson?: string | null;
+  sessionSummariesJson?: string | null;
+};
+
+export type AutomationStoragePayload = {
+  scheduledTasksJson?: string | null;
+};
+
 function canUseTauriInvoke() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -79,4 +95,53 @@ export function removeSqliteBackedValue(key: string) {
   void invoke("remove_app_kv", { key }).catch(() => {
     // 浏览器或异常环境继续保留 localStorage
   });
+}
+
+export async function loadManifestStorage() {
+  if (!canUseTauriInvoke()) {
+    return {
+      assistantPresetsJson: null,
+      toolManifestsJson: null,
+      skillManifestsJson: null,
+    } satisfies ManifestStoragePayload;
+  }
+
+  return invoke<ManifestStoragePayload>("load_manifest_storage_command");
+}
+
+export async function saveManifestStorage(payload: ManifestStoragePayload) {
+  if (!canUseTauriInvoke()) return;
+  await invoke("save_manifest_storage_command", payload);
+}
+
+export async function loadMemoryStorage() {
+  if (!canUseTauriInvoke()) {
+    return {
+      assistantMemoriesJson: null,
+      userPreferencesJson: null,
+      sessionSummariesJson: null,
+    } satisfies MemoryStoragePayload;
+  }
+
+  return invoke<MemoryStoragePayload>("load_memory_storage_command");
+}
+
+export async function saveMemoryStorage(payload: MemoryStoragePayload) {
+  if (!canUseTauriInvoke()) return;
+  await invoke("save_memory_storage_command", payload);
+}
+
+export async function loadAutomationStorage() {
+  if (!canUseTauriInvoke()) {
+    return {
+      scheduledTasksJson: null,
+    } satisfies AutomationStoragePayload;
+  }
+
+  return invoke<AutomationStoragePayload>("load_automation_storage_command");
+}
+
+export async function saveAutomationStorage(payload: AutomationStoragePayload) {
+  if (!canUseTauriInvoke()) return;
+  await invoke("save_automation_storage_command", payload);
 }

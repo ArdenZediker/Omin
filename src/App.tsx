@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Message } from "./adapters/types";
+import { buildDesktopRuntimeSnapshot } from "./app/runtimeSnapshot";
+import { createDesktopActions } from "./app/desktopActions";
 import { modelRegistry } from "./adapters/registry";
 import TitleBar from "./components/TitleBar";
 import SettingsPanel from "./components/SettingsPanel";
@@ -21,6 +23,7 @@ import { saveSqliteBackedValue } from "./app/sqliteStorage";
 import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getStoredMainView, isCharacterPointerInHitArea } from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
+import { useScheduledTasks } from "./hooks/useScheduledTasks";
 import { useMainWindowController } from "./hooks/useMainWindowController";
 import { useCompactWindowController } from "./hooks/useCompactWindowController";
 import {
@@ -53,6 +56,7 @@ function App() {
     createSessionFromMessages,
     deleteChatSession,
     getChatSessionById,
+    getRelatedContextForAssistant,
     groupedChatSessions,
     messages,
     renameChatSession,
@@ -60,7 +64,9 @@ function App() {
     selectChatSession,
     searchChatSessions,
     setActiveChatId,
+    setScheduledTasks,
     setMessages,
+    scheduledTasks,
     toggleFavoriteChatSession,
     togglePinnedChatSession,
     updateAssistantProfile,
@@ -206,6 +212,7 @@ function App() {
     handleUseEmptyPrompt,
     isLoading,
     latestTaskResult,
+    taskRuntimeState,
     setEditingMessageIndex,
     setError,
   } = useChatRuntime({
@@ -229,6 +236,15 @@ function App() {
     setView,
     togglePinnedChatSession,
   });
+
+  const runtimeSnapshot = useMemo(
+    () => buildDesktopRuntimeSnapshot({ activeAssistant, taskRuntimeState }),
+    [activeAssistant, taskRuntimeState]
+  );
+  const relatedContext = useMemo(
+    () => getRelatedContextForAssistant(activeSession?.title ?? ""),
+    [activeSession?.title, getRelatedContextForAssistant]
+  );
 
   useEffect(() => {
     if (!activeAssistant?.defaultModelId) {
@@ -368,6 +384,79 @@ function App() {
     [activeChatId, deleteChatSession, setEditingMessageIndex, setError]
   );
 
+  const desktopActions = useMemo(
+    () =>
+      createDesktopActions({
+        onNewChat: handleNewChat,
+        onRestoreMain: handleRestoreMain,
+        onNotify: async (title, body) => {
+          console.info("[scheduled-notify]", title, body);
+        },
+      }),
+    [handleNewChat, handleRestoreMain]
+  );
+
+  useScheduledTasks({
+    scheduledTasks,
+    setScheduledTasks,
+    desktopActions,
+  });
+
+  const handleToggleScheduledTask = useCallback((taskId: string) => {
+    setScheduledTasks((current) =>
+      current.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              enabled: !task.enabled,
+              updatedAt: Date.now(),
+            }
+          : task
+      )
+    );
+  }, [setScheduledTasks]);
+
+  const handleCreateScheduledTask = useCallback(
+    (input: { title: string; prompt: string; cron: string; target: "desktop" | "notification" | "session" }) => {
+      setScheduledTasks((current) => [
+        {
+          id: `scheduled_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          title: input.title,
+          prompt: input.prompt,
+          cron: input.cron,
+          target: input.target,
+          enabled: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          lastRunAt: null,
+        },
+        ...current,
+      ]);
+    },
+    [setScheduledTasks]
+  );
+
+  const handleUpdateScheduledTask = useCallback(
+    (taskId: string, patch: { title: string; prompt: string; cron: string; target: "desktop" | "notification" | "session" }) => {
+      setScheduledTasks((current) =>
+        current.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                ...patch,
+                updatedAt: Date.now(),
+              }
+            : task
+        )
+      );
+    },
+    [setScheduledTasks]
+  );
+
+  const handleDeleteScheduledTask = useCallback((taskId: string) => {
+    setScheduledTasks((current) => current.filter((task) => task.id !== taskId));
+  }, [setScheduledTasks]);
+
   if (isCompactWindow) {
     return (
       <CompactWindow
@@ -397,6 +486,7 @@ function App() {
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
         omniSmallIconSrc={omniSmallIconSrc}
+        runtimeSnapshot={runtimeSnapshot}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
         onCharacterModelChange={compactController.handleCharacterModelChange}
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
@@ -411,7 +501,8 @@ function App() {
         onOpenCompactMenu={compactController.openCompactMenu}
         onOpenCompactQuery={compactController.handleOpenCompactQuery}
         onOpenExternalChat={compactController.handleOpenExternalChat}
-        onOpenSettingsFromCompact={compactController.handleOpenSettingsFromCompact}
+        onOpenSettingsFromCompact={desktopActions.openSettings}
+        onOpenNewTopicFromCompact={desktopActions.openNewTopic}
         onPointerHitTest={isCharacterPointerInHitArea}
         onSetCharacterMenuPinned={setIsCharacterMenuPinned}
         onSetCompactQuery={setCompactQuery}
@@ -449,7 +540,10 @@ function App() {
           inputFocusKey={inputFocusKey}
           isLoading={isLoading}
           isStreaming={isStreaming}
+          relatedContext={relatedContext}
+          scheduledTasks={scheduledTasks}
           latestTaskResult={latestTaskResult}
+          taskRuntimeState={taskRuntimeState}
           messages={messages}
           messagesScrollRef={messagesScrollRef}
           omniIconSrc={omniIconSrc}
@@ -476,6 +570,10 @@ function App() {
           onSubmitEditedUserMessage={handleSubmitEditedUserMessage}
           onToggleFavoriteChat={handleToggleFavoriteChat}
           onTogglePinChat={handleTogglePinChat}
+          onToggleScheduledTask={handleToggleScheduledTask}
+          onCreateScheduledTask={handleCreateScheduledTask}
+          onUpdateScheduledTask={handleUpdateScheduledTask}
+          onDeleteScheduledTask={handleDeleteScheduledTask}
           onUseEmptyPrompt={handleUseEmptyPrompt}
         />
       ) : (

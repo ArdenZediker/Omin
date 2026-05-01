@@ -1,4 +1,5 @@
 import type { SlashSkill } from "./types";
+import { SKILL_MANIFESTS } from "../config/manifests/skills";
 
 export type ResolvedPromptSkill = {
   skill: SlashSkill;
@@ -48,4 +49,19 @@ export class PromptSkillRegistry {
       content: `${skill.promptPrefix ?? ""}${payload}`.trim(),
     };
   }
+}
+
+export function createPromptSkillRegistry() {
+  const registry = new PromptSkillRegistry();
+  for (const skill of SKILL_MANIFESTS) {
+    registry.register({
+      id: skill.id,
+      command: skill.command,
+      title: skill.title,
+      description: skill.description,
+      promptPrefix: skill.promptPrefix,
+      systemPrompt: skill.systemPrompt,
+    });
+  }
+  return registry;
 }

@@ -1,10 +1,24 @@
 ﻿import type { Message } from "../adapters/types";
-import type { AssistantProfile, ChatSession, ChatUsagePreferences, ChatUsageStats } from "./types";
+import type {
+  AssistantMemoryRecord,
+  AssistantProfile,
+  AssistantProfileDraft,
+  ChatSession,
+  ChatUsagePreferences,
+  ChatUsageStats,
+  ScheduledTaskRecord,
+  SessionSummaryRecord,
+  UserPreferenceRecord,
+} from "./types";
 import { readSqliteBackedJson, readSqliteBackedValue } from "../app/sqliteStorage";
 
 export const CHAT_SESSIONS_STORAGE_KEY = "omni_chat_sessions";
 export const CHAT_ASSISTANTS_STORAGE_KEY = "omni_chat_assistants";
 export const USAGE_PREFERENCES_STORAGE_KEY = "omni_usage_preferences";
+export const ASSISTANT_MEMORIES_STORAGE_KEY = "omni_assistant_memories";
+export const SESSION_SUMMARIES_STORAGE_KEY = "omni_session_summaries";
+export const USER_PREFERENCES_STORAGE_KEY = "omni_user_preferences";
+export const SCHEDULED_TASKS_STORAGE_KEY = "omni_scheduled_tasks";
 export const DEFAULT_ASSISTANT_ID = "assistant-basic-chat";
 export const DEFAULT_ASSISTANT_TOOL_IDS = [
   "new",
@@ -66,7 +80,7 @@ export function createDefaultAssistant(): AssistantProfile {
   };
 }
 
-export function createCustomAssistant(input?: Partial<AssistantProfile>): AssistantProfile {
+export function createCustomAssistant(input?: AssistantProfileDraft): AssistantProfile {
   const now = Date.now();
   const id =
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -76,6 +90,7 @@ export function createCustomAssistant(input?: Partial<AssistantProfile>): Assist
   return {
     id,
     kind: "custom",
+    sourcePresetId: input?.sourcePresetId ?? null,
     title: input?.title?.trim() || "自定义助手",
     description: input?.description?.trim() || "可配置角色设定、模型和工具权限",
     avatarType: input?.avatarType ?? "emoji",
@@ -126,6 +141,22 @@ export function serializeChatSessionsSnapshot(sessions: ChatSession[]) {
   return JSON.stringify(sessions);
 }
 
+export function serializeAssistantMemoriesSnapshot(memories: AssistantMemoryRecord[]) {
+  return JSON.stringify(memories);
+}
+
+export function serializeSessionSummariesSnapshot(summaries: SessionSummaryRecord[]) {
+  return JSON.stringify(summaries);
+}
+
+export function serializeUserPreferencesSnapshot(preferences: UserPreferenceRecord[]) {
+  return JSON.stringify(preferences);
+}
+
+export function serializeScheduledTasksSnapshot(tasks: ScheduledTaskRecord[]) {
+  return JSON.stringify(tasks);
+}
+
 function normalizeUsageStats(input: Partial<ChatUsageStats> | undefined): ChatUsageStats {
   return {
     ...createEmptyUsageStats(),
@@ -140,6 +171,7 @@ function normalizeAssistant(input: Partial<AssistantProfile> & Pick<AssistantPro
   return {
     id: input.id,
     kind: input.kind,
+    sourcePresetId: typeof input.sourcePresetId === "string" ? input.sourcePresetId : null,
     title: input.title.trim() || (input.kind === "basic" ? "基础聊天" : "自定义助手"),
     description:
       typeof input.description === "string" && input.description.trim()
@@ -215,6 +247,48 @@ export function parseChatSessionsSnapshot(raw: string | null | undefined): ChatS
   }
 }
 
+export function parseAssistantMemoriesSnapshot(raw: string | null | undefined): AssistantMemoryRecord[] {
+  try {
+    const parsed = raw ? (JSON.parse(raw) as AssistantMemoryRecord[]) : [];
+    return parsed.filter((item) => typeof item?.id === "string" && typeof item?.assistantId === "string" && typeof item?.content === "string");
+  } catch {
+    return [];
+  }
+}
+
+export function parseSessionSummariesSnapshot(raw: string | null | undefined): SessionSummaryRecord[] {
+  try {
+    const parsed = raw ? (JSON.parse(raw) as SessionSummaryRecord[]) : [];
+    return parsed.filter((item) => typeof item?.sessionId === "string" && typeof item?.assistantId === "string" && typeof item?.summary === "string");
+  } catch {
+    return [];
+  }
+}
+
+export function parseUserPreferencesSnapshot(raw: string | null | undefined): UserPreferenceRecord[] {
+  try {
+    const parsed = raw ? (JSON.parse(raw) as UserPreferenceRecord[]) : [];
+    return parsed.filter((item) => typeof item?.key === "string" && typeof item?.value === "string");
+  } catch {
+    return [];
+  }
+}
+
+export function parseScheduledTasksSnapshot(raw: string | null | undefined): ScheduledTaskRecord[] {
+  try {
+    const parsed = raw ? (JSON.parse(raw) as ScheduledTaskRecord[]) : [];
+    return parsed.filter(
+      (item) =>
+        typeof item?.id === "string" &&
+        typeof item?.title === "string" &&
+        typeof item?.prompt === "string" &&
+        typeof item?.cron === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function getInitialAssistants(): AssistantProfile[] {
   if (typeof window === "undefined") return [createDefaultAssistant()];
   return parseAssistantsSnapshot(readSqliteBackedValue(CHAT_ASSISTANTS_STORAGE_KEY));
@@ -223,6 +297,39 @@ export function getInitialAssistants(): AssistantProfile[] {
 export function getInitialChatSessions(): ChatSession[] {
   if (typeof window === "undefined") return [];
   return parseChatSessionsSnapshot(readSqliteBackedValue(CHAT_SESSIONS_STORAGE_KEY));
+}
+
+export function getInitialAssistantMemories(): AssistantMemoryRecord[] {
+  if (typeof window === "undefined") return [];
+  return parseAssistantMemoriesSnapshot(readSqliteBackedValue(ASSISTANT_MEMORIES_STORAGE_KEY));
+}
+
+export function getInitialSessionSummaries(): SessionSummaryRecord[] {
+  if (typeof window === "undefined") return [];
+  return parseSessionSummariesSnapshot(readSqliteBackedValue(SESSION_SUMMARIES_STORAGE_KEY));
+}
+
+export function getInitialUserPreferences(): UserPreferenceRecord[] {
+  if (typeof window === "undefined") return [];
+  return parseUserPreferencesSnapshot(readSqliteBackedValue(USER_PREFERENCES_STORAGE_KEY));
+}
+
+export function getInitialScheduledTasks(): ScheduledTaskRecord[] {
+  if (typeof window === "undefined") return [];
+  return parseScheduledTasksSnapshot(readSqliteBackedValue(SCHEDULED_TASKS_STORAGE_KEY));
+}
+
+export function searchSessionSummaries(summaries: SessionSummaryRecord[], query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return summaries;
+  return summaries.filter((item) => item.title.toLowerCase().includes(normalizedQuery) || item.summary.toLowerCase().includes(normalizedQuery));
+}
+
+export function searchAssistantMemories(memories: AssistantMemoryRecord[], assistantId: string, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const scoped = memories.filter((item) => item.assistantId === assistantId);
+  if (!normalizedQuery) return scoped;
+  return scoped.filter((item) => item.content.toLowerCase().includes(normalizedQuery));
 }
 
 export function getChatSessionGroupLabel(updatedAt: number) {

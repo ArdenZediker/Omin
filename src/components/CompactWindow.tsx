@@ -1,6 +1,7 @@
 import type { CSSProperties, Dispatch, MouseEvent, SetStateAction, WheelEvent } from "react";
-import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindowState";
+import type { DesktopRuntimeSnapshot } from "../app/runtimeSnapshot";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
+import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindowState";
 import Live2DCharacter from "./Live2DCharacter";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
@@ -33,6 +34,7 @@ type CompactWindowProps = {
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   characterModelOptions: Array<{ id: CharacterModel; title: string; description: string }>;
+  runtimeSnapshot: DesktopRuntimeSnapshot;
   onCharacterContextMenu: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
   onCharacterModelChange: (model: CharacterModel) => void;
   onCharacterPointerDown: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -48,6 +50,7 @@ type CompactWindowProps = {
   onOpenCompactQuery: () => void | Promise<void>;
   onOpenExternalChat: (entry: ExternalChatEntry) => void | Promise<void>;
   onOpenSettingsFromCompact: () => void | Promise<void>;
+  onOpenNewTopicFromCompact: () => void | Promise<void>;
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
   onSetCharacterMenuPinned: Dispatch<SetStateAction<boolean>>;
   onSetCompactQuery: Dispatch<SetStateAction<string>>;
@@ -87,6 +90,7 @@ export default function CompactWindow({
   isCompactQueryOpen,
   isCompactReplyLoading,
   omniSmallIconSrc,
+  runtimeSnapshot,
   compactMenuSide,
   compactSubmenuSide,
   onCharacterContextMenu,
@@ -104,6 +108,7 @@ export default function CompactWindow({
   onOpenCompactQuery,
   onOpenExternalChat,
   onOpenSettingsFromCompact,
+  onOpenNewTopicFromCompact,
   onPointerHitTest,
   onSetCharacterMenuPinned,
   onSetCompactQuery,
@@ -190,6 +195,13 @@ export default function CompactWindow({
         }
       >
         <div className={`compact-bar ${isCharacterAppearance ? "compact-bar--character" : ""}`} style={compactStyle}>
+          {!isCharacterAppearance && runtimeSnapshot.activeAssistantTitle && (
+            <div className="compact-bar__meta no-drag" title={runtimeSnapshot.activeTaskGoal ?? runtimeSnapshot.activeAssistantTitle}>
+              <strong>{runtimeSnapshot.activeAssistantTitle}</strong>
+              <span>{runtimeSnapshot.activeTaskGoal ?? `任务 ${runtimeSnapshot.taskCount}`}</span>
+            </div>
+          )}
+
           <div className="compact-menu-anchor no-drag" onContextMenu={isCharacterAppearance ? onCharacterContextMenu : undefined}>
             <button
               type="button"
@@ -211,13 +223,11 @@ export default function CompactWindow({
                     }
                   : undefined
               }
-              onClick={(e) => {
+              onClick={() => {
                 if (isCharacterAppearance) {
-                  const isInCharacterHitArea = onPointerHitTest(e.currentTarget, e.clientX, e.clientY);
-                  if (!isInCharacterHitArea || isCharacterDragging) {
+                  if (isCharacterDragging) {
                     return;
                   }
-                  void onOpenCompactQuery();
                   return;
                 }
                 void onToggleMainFromCompact();
@@ -225,12 +235,7 @@ export default function CompactWindow({
               aria-label="切换主界面"
             >
               {isCharacterAppearance ? (
-                <Live2DCharacter
-                  key={characterModel}
-                  width={Math.max(48, compactSize.width - 18)}
-                  height={Math.max(72, compactSize.height - 34)}
-                  model={characterModel}
-                />
+                <Live2DCharacter key={characterModel} width={Math.max(48, compactSize.width - 18)} height={Math.max(72, compactSize.height - 34)} model={characterModel} />
               ) : (
                 <img src={omniSmallIconSrc} alt="Omni" className="compact-button__icon" />
               )}
@@ -287,20 +292,35 @@ export default function CompactWindow({
           </div>
 
           {!isCharacterAppearance && !isCompactQueryOpen && (
-            <button
-              type="button"
-              className="compact-button compact-button--search-chip no-drag"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={() => {
-                void onOpenCompactQuery();
-              }}
-              aria-label="打开查询"
-            >
-              <svg className="compact-button__search" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <circle cx="11" cy="11" r="6.5" strokeWidth="1.8" />
-                <path d="M16 16L21 21" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            </button>
+            <div className="compact-bar__actions no-drag">
+              <button
+                type="button"
+                className="compact-button compact-button--search-chip"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => {
+                  void onOpenCompactQuery();
+                }}
+                aria-label="打开查询"
+                title="打开查询"
+              >
+                <svg className="compact-button__search" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <circle cx="11" cy="11" r="6.5" strokeWidth="1.8" />
+                  <path d="M16 16L21 21" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="compact-button compact-button--search-chip"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => {
+                  void onOpenNewTopicFromCompact();
+                }}
+                aria-label="新话题"
+                title="新话题"
+              >
+                +
+              </button>
+            </div>
           )}
         </div>
       </div>

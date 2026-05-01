@@ -1,9 +1,9 @@
 import type { Message } from "../adapters/types";
 import { executeChatTurn } from "./engine";
-import { PromptSkillRegistry } from "./promptSkillRegistry";
+import { createPromptSkillRegistry } from "./promptSkillRegistry";
 import { runTaskPlan } from "./taskRunner";
 import type { ResolvedLocalSlashCommand } from "./skills";
-import { PROMPT_SLASH_SKILLS, resolveLocalSlashCommand } from "./skills";
+import { resolveLocalSlashCommand } from "./skills";
 import type { TaskExecutionResult, TaskIntent, TaskPlan, TaskStep } from "./taskTypes";
 
 function createTaskId() {
@@ -21,11 +21,7 @@ function summarizeGoal(messages: Message[], fallback = "执行一轮聊天任务
 }
 
 function getPromptSkillRegistry() {
-  const registry = new PromptSkillRegistry();
-  for (const skill of PROMPT_SLASH_SKILLS) {
-    registry.register(skill);
-  }
-  return registry;
+  return createPromptSkillRegistry();
 }
 
 function createTaskPlan(options: {

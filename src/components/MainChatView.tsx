@@ -24,12 +24,20 @@ import {
   Share2,
   Sparkles,
   Star,
+  TimerReset,
   Trash2,
 } from "lucide-react";
 import type { Message } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { AssistantProfile, ChatSession } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
+import type { TaskRuntimeState } from "../chat/taskTypes";
+import { RECOMMENDED_ASSISTANT_PRESETS } from "../config/manifests/assistants";
+import { AVATAR_CATEGORIES, AVATAR_PRESETS } from "../config/manifests/avatars";
+import { filterAvatarPresets, getEmojiAssetSrc, resolveAssistantAvatarImageSrc, resolveAssistantAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
+import { ASSISTANT_SKILL_OPTIONS, SKILL_MANIFESTS } from "../config/manifests/skills";
+import { ASSISTANT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
+import type { AvatarCategoryManifest } from "../config/manifests/types";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import ModelSelector from "./ModelSelector";
@@ -65,7 +73,21 @@ type MainChatViewProps = {
   inputFocusKey: number;
   isLoading: boolean;
   isStreaming: boolean;
+  relatedContext: {
+    summaries: Array<{ sessionId: string; title: string; summary: string }>;
+    memories: Array<{ id: string; content: string; sourceSessionId?: string | null }>;
+  };
+  scheduledTasks: Array<{
+    id: string;
+    title: string;
+    prompt: string;
+    cron: string;
+    target: "desktop" | "notification" | "session";
+    enabled: boolean;
+    lastRunAt?: number | null;
+  }>;
   latestTaskResult: TaskExecutionResult | null;
+  taskRuntimeState: TaskRuntimeState;
   messages: Message[];
   messagesScrollRef: RefObject<HTMLDivElement | null>;
   omniIconSrc: string;
@@ -74,7 +96,17 @@ type MainChatViewProps = {
   onCancelEditUserMessage: () => void;
   onClearChat: () => void;
   onCopyMessage: (message: Message) => void | Promise<void>;
-  onCreateCustomAssistant: () => void;
+  onCreateCustomAssistant: (input?: {
+    sourcePresetId?: string | null;
+    title?: string;
+    description?: string;
+    systemPrompt?: string;
+    avatarType?: "emoji" | "image";
+    avatarValue?: string;
+    defaultModelId?: string | null;
+    allowedToolIds?: string[];
+    allowedSkillIds?: string[];
+  }) => void;
   onDeleteChat: (session: ChatSession) => void;
   onEditUserMessage: (messageIndex: number) => void;
   onModelChange: (modelId: string) => void;
@@ -92,211 +124,15 @@ type MainChatViewProps = {
   onSubmitEditedUserMessage: (messageIndex: number, content: string) => void | Promise<void>;
   onToggleFavoriteChat: (session: ChatSession) => void;
   onTogglePinChat: (session: ChatSession) => void;
+  onToggleScheduledTask: (taskId: string) => void;
+  onCreateScheduledTask: (input: { title: string; prompt: string; cron: string; target: "desktop" | "notification" | "session" }) => void;
+  onUpdateScheduledTask: (taskId: string, patch: { title: string; prompt: string; cron: string; target: "desktop" | "notification" | "session" }) => void;
+  onDeleteScheduledTask: (taskId: string) => void;
   onUseEmptyPrompt: (prompt: string) => void;
 };
 
-const RECOMMENDED_ASSISTANTS = [
-  { title: "方案梳理助手", description: "帮你拆解需求、整理方案并规划执行步骤。" },
-  { title: "代码排查助手", description: "适合定位报错、梳理链路和修复方向。" },
-  { title: "文案润色助手", description: "用于改写说明文档、PR 描述和提示词。" },
-  { title: "效率命令助手", description: "快速生成常用命令、脚本和操作建议。" },
-];
-
-const ASSISTANT_TOOL_OPTIONS = [
-  { id: "search_sessions", label: "搜索会话", description: "按标题或内容检索本地会话" },
-  { id: "read_session", label: "读取会话", description: "查看指定会话的上下文内容" },
-  { id: "list_files", label: "列出文件", description: "浏览当前工作区文件与目录" },
-  { id: "read_file", label: "读取文件", description: "读取文件正文用于分析或问答" },
-  { id: "search_files", label: "搜索文件", description: "按关键字搜索工作区内容" },
-  { id: "analyze_files", label: "分析文件", description: "组合搜索与阅读能力完成分析" },
-];
-
-const ASSISTANT_SKILL_OPTIONS = [
-  { id: "summarize", label: "总结", description: "提炼重点，输出简洁摘要" },
-  { id: "translate", label: "翻译", description: "在多语言之间转换内容" },
-  { id: "rewrite", label: "改写", description: "按语气或风格重写表达" },
-  { id: "explain", label: "解释", description: "解释概念、代码或流程" },
-  { id: "compare", label: "对比", description: "比较方案差异与优缺点" },
-];
-
 const TOPIC_PANEL_WIDTH = 272;
 const TOPIC_PANEL_AUTO_COLLAPSE_RATIO = 2 / 3;
-const AVATAR_CATEGORIES = [
-  { id: "recent", label: "常用", icon: History },
-  { id: "general", label: "通用", icon: Sparkles },
-  { id: "analysis", label: "分析", icon: Cpu },
-  { id: "creative", label: "创作", icon: PawPrint },
-];
-const AVATAR_LIBRARY = [
-  {
-    code: "1F916",
-    label: "默认助手",
-    category: "recent",
-    tone: "blue",
-    hint: "稳定通用",
-    prompt: "你是一名稳定、可靠的通用 AI 助手。优先准确理解用户意图，用简洁清晰的中文回答问题；当需求不明确时先补足关键信息，再给出可执行结果。",
-  },
-  {
-    code: "1F9E0",
-    label: "分析专家",
-    category: "recent",
-    tone: "violet",
-    hint: "结构拆解",
-    prompt: "你是一名分析型 AI 助手。面对复杂问题时，先拆解目标、约束和关键变量，再逐步推导出结论；输出强调结构、依据和可验证性。",
-  },
-  {
-    code: "1F4A1",
-    label: "灵感教练",
-    category: "recent",
-    tone: "amber",
-    hint: "创意发散",
-    prompt: "你是一名创意型 AI 助手。擅长围绕主题发散思路、提出新方向和可落地的表达方案；回答要有新意，但避免空泛和堆砌概念。",
-  },
-  {
-    code: "1F680",
-    label: "执行引擎",
-    category: "recent",
-    tone: "cyan",
-    hint: "结果推进",
-    prompt: "你是一名执行导向的 AI 助手。重点关注目标达成、步骤推进和结果交付；优先给出明确行动项、执行顺序、风险点和验收标准。",
-  },
-  {
-    code: "2728",
-    label: "通用顾问",
-    category: "general",
-    tone: "blue",
-    hint: "日常问答",
-    prompt: "你是一名通用顾问型 AI 助手。适合日常问答、资料整理和简单建议；回答保持平衡、清晰、易读，并尽量给出用户下一步可执行建议。",
-  },
-  {
-    code: "1F44D",
-    label: "效率助手",
-    category: "general",
-    tone: "green",
-    hint: "流程提速",
-    prompt: "你是一名效率优化 AI 助手。擅长把复杂事情转成更快执行的步骤、模板和清单；输出以节省时间、降低重复劳动为优先目标。",
-  },
-  {
-    code: "1F60A",
-    label: "陪聊助手",
-    category: "general",
-    tone: "pink",
-    hint: "轻松对话",
-    prompt: "你是一名自然、轻松的陪聊型 AI 助手。保持友好、自然和有边界感，善于顺着用户语境继续对话，同时避免过度表演和空洞安慰。",
-  },
-  {
-    code: "1F60E",
-    label: "产品经理",
-    category: "general",
-    tone: "slate",
-    hint: "需求梳理",
-    prompt: "你是一名产品经理型 AI 助手。擅长梳理需求、定义目标、识别边界、比较方案并给出取舍建议；输出偏结构化和决策导向。",
-  },
-  {
-    code: "1F914",
-    label: "问题拆解",
-    category: "analysis",
-    tone: "violet",
-    hint: "定位核心",
-    prompt: "你是一名问题拆解 AI 助手。接到任务后，先识别问题本质、根因和依赖关系，再给出分层分析；不要直接跳到结论，先把逻辑链路说明白。",
-  },
-  {
-    code: "1F3AF",
-    label: "目标规划",
-    category: "analysis",
-    tone: "red",
-    hint: "路径规划",
-    prompt: "你是一名目标规划 AI 助手。擅长围绕目标倒推阶段、里程碑和资源安排；回答要体现优先级、依赖关系、节奏控制和风险预案。",
-  },
-  {
-    code: "1F4BB",
-    label: "代码专家",
-    category: "analysis",
-    tone: "cyan",
-    hint: "技术实现",
-    prompt: "你是一名代码专家型 AI 助手。面对开发问题时，优先理解上下文、明确问题边界，再给出准确实现、修复建议或重构方案；避免泛泛而谈。",
-  },
-  {
-    code: "1F6E0-FE0F",
-    label: "排障助手",
-    category: "analysis",
-    tone: "amber",
-    hint: "故障修复",
-    prompt: "你是一名排障型 AI 助手。擅长根据现象定位原因、列出排查路径、缩小问题范围并提出修复方案；输出优先考虑诊断顺序和验证方法。",
-  },
-  {
-    code: "1F929",
-    label: "创意策划",
-    category: "creative",
-    tone: "pink",
-    hint: "主题提案",
-    prompt: "你是一名创意策划 AI 助手。擅长围绕主题输出概念、命名、故事线和表达形式；回答要兼顾新意、辨识度和执行可行性。",
-  },
-  {
-    code: "1F973",
-    label: "活动助手",
-    category: "creative",
-    tone: "orange",
-    hint: "方案包装",
-    prompt: "你是一名活动策划 AI 助手。适合产出活动主题、流程、亮点设计和传播卖点；输出既要有氛围感，也要能落到执行细节。",
-  },
-  {
-    code: "1F98A",
-    label: "品牌灵狐",
-    category: "creative",
-    tone: "orange",
-    hint: "风格表达",
-    prompt: "你是一名品牌表达 AI 助手。擅长统一语气、视觉方向、品牌个性和内容风格；输出要注重辨识度、一致性和传播感。",
-  },
-  {
-    code: "1F989",
-    label: "夜读猫头鹰",
-    category: "creative",
-    tone: "slate",
-    hint: "内容润色",
-    prompt: "你是一名内容润色 AI 助手。擅长改写文案、优化表达、提炼重点和统一语气；输出要更顺、更准、更有节奏感，但不能偏离原意。",
-  },
-];
-
-function getEmojiAssetSrc(code: string) {
-  return `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@master/color/svg/${code.trim().toUpperCase()}.svg`;
-}
-
-const LEGACY_AVATAR_CODE_MAP: Record<string, string> = {
-  "🦉": "1F989",
-  "😊": "1F60A",
-  "😀": "1F600",
-  "😄": "1F604",
-  "😁": "1F601",
-  "😎": "1F60E",
-  "🥳": "1F973",
-  "🤓": "1F913",
-  "😺": "1F63A",
-  "🐶": "1F436",
-  "🦊": "1F98A",
-  "🐼": "1F43C",
-  "🐸": "1F438",
-  "🤖": "1F916",
-  "👾": "1F47E",
-  "🎯": "1F3AF",
-  "⭐": "2B50",
-  "🔥": "1F525",
-  "🌈": "1F308",
-  "🍀": "1F340",
-  "🌸": "1F338",
-  "🍎": "1F34E",
-  "⚽": "26BD",
-  "🎵": "1F3B5",
-  "🚀": "1F680",
-};
-
-const CUSTOM_ASSISTANT_AVATAR_CODES = ["1F916", "1F9E0", "1F47E", "1F4A1", "1F680", "1F3AF"];
-
-function resolveEmojiAvatarCode(value?: string | null) {
-  if (!value) return null;
-  if (value.startsWith("emoji:")) return value.slice(6).trim().toUpperCase();
-  return LEGACY_AVATAR_CODE_MAP[value] ?? null;
-}
 
 function normalizeSearchText(value: string) {
   return value.toLocaleLowerCase().replace(/\s+/g, "");
@@ -315,30 +151,23 @@ function renderTopicGroupLabel(label: string) {
   return <span>{label}</span>;
 }
 
-function renderAssistantAvatar(assistant: AssistantProfile | null, seed = 0) {
-  const fallbackCode = assistant?.kind === "basic" ? "1F989" : CUSTOM_ASSISTANT_AVATAR_CODES[seed % CUSTOM_ASSISTANT_AVATAR_CODES.length];
-
-  if (!assistant) {
-    return <img src={getEmojiAssetSrc("1F989")} alt="" className="chat-history-panel__assistant-image" />;
-  }
-
-  if (assistant.avatarType === "image" && assistant.avatarValue) {
-    return <img src={assistant.avatarValue} alt="" className="chat-history-panel__assistant-image" />;
-  }
-
-  const avatarCode = resolveEmojiAvatarCode(assistant.avatarValue);
-  if (avatarCode) {
-    return <img src={getEmojiAssetSrc(avatarCode)} alt="" className="chat-history-panel__assistant-image" />;
-  }
-
-  return <img src={getEmojiAssetSrc(fallbackCode)} alt="" className="chat-history-panel__assistant-image" />;
+function findPresetMetaByAssistant(assistant: AssistantProfile | null) {
+  if (!assistant?.sourcePresetId) return null;
+  return AVATAR_PRESETS.find((preset) => preset.code === assistant.sourcePresetId) ?? null;
 }
 
-function resolveAssistantAvatarSeed(assistants: AssistantProfile[], assistantId: string | null) {
-  if (!assistantId) return 0;
-  const customAssistants = assistants.filter((assistant) => assistant.kind === "custom");
-  const index = customAssistants.findIndex((assistant) => assistant.id === assistantId);
-  return index >= 0 ? index : 0;
+function formatTaskRunTime(timestamp?: number | null) {
+  if (!timestamp) return "未执行";
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderAssistantAvatar(assistant: AssistantProfile | null, seed = 0) {
+  return <img src={resolveAssistantAvatarImageSrc(assistant, seed)} alt="" className="chat-history-panel__assistant-image" />;
 }
 
 export default function MainChatView({
@@ -359,7 +188,10 @@ export default function MainChatView({
   inputFocusKey,
   isLoading,
   isStreaming,
+  relatedContext,
+  scheduledTasks,
   latestTaskResult,
+  taskRuntimeState,
   messages,
   messagesScrollRef,
   omniIconSrc,
@@ -383,6 +215,10 @@ export default function MainChatView({
   onSubmitEditedUserMessage,
   onToggleFavoriteChat,
   onTogglePinChat,
+  onToggleScheduledTask,
+  onCreateScheduledTask,
+  onUpdateScheduledTask,
+  onDeleteScheduledTask,
   onUseEmptyPrompt,
 }: MainChatViewProps) {
   const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
@@ -402,6 +238,14 @@ export default function MainChatView({
   const [assistantAvatarSearchQuery, setAssistantAvatarSearchQuery] = useState("");
   const [assistantAvatarCategory, setAssistantAvatarCategory] = useState("recent");
   const [customAssistantsCollapsed, setCustomAssistantsCollapsed] = useState(false);
+  const [expandedMemoryIds, setExpandedMemoryIds] = useState<string[]>([]);
+  const [expandedSummaryIds, setExpandedSummaryIds] = useState<string[]>([]);
+  const [showScheduledTaskForm, setShowScheduledTaskForm] = useState(false);
+  const [scheduledTaskTitleDraft, setScheduledTaskTitleDraft] = useState("");
+  const [scheduledTaskPromptDraft, setScheduledTaskPromptDraft] = useState("");
+  const [scheduledTaskCronDraft, setScheduledTaskCronDraft] = useState("0 9 * * *");
+  const [scheduledTaskTargetDraft, setScheduledTaskTargetDraft] = useState<"desktop" | "notification" | "session">("desktop");
+  const [editingScheduledTaskId, setEditingScheduledTaskId] = useState<string | null>(null);
   const topicSearchInputRef = useRef<HTMLInputElement | null>(null);
   const topicMenuRef = useRef<HTMLDivElement | null>(null);
   const topicMenuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -430,6 +274,11 @@ export default function MainChatView({
   const basicAssistant = assistants.find((assistant) => assistant.kind === "basic") ?? null;
   const customAssistants = assistants.filter((assistant) => assistant.kind === "custom");
   const activeAssistantAvatarSeed = resolveAssistantAvatarSeed(assistants, activeAssistant?.id ?? null);
+  const activeAssistantPresetMeta = findPresetMetaByAssistant(activeAssistant);
+  const activeSkillCount = activeAssistant?.allowedSkillIds.length ?? 0;
+  const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
+  const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
+  const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const normalizedAssistantSearchQuery = normalizeSearchText(assistantSearchQuery);
   const isBasicAssistantVisible = Boolean(
     basicAssistant &&
@@ -440,12 +289,7 @@ export default function MainChatView({
     if (!normalizedAssistantSearchQuery) return true;
     return normalizeSearchText(`${assistant.title} ${assistant.description}`).includes(normalizedAssistantSearchQuery);
   });
-  const filteredAssistantAvatars = AVATAR_LIBRARY.filter((avatar) => {
-    const matchesCategory = assistantAvatarCategory === "recent" ? true : avatar.category === assistantAvatarCategory;
-    if (!matchesCategory) return false;
-    if (!assistantAvatarSearchQuery) return true;
-    return normalizeSearchText(`${avatar.code} ${avatar.label} ${avatar.category} ${avatar.tone} ${avatar.hint}`).includes(normalizeSearchText(assistantAvatarSearchQuery));
-  });
+  const filteredAssistantAvatars = filterAvatarPresets(AVATAR_PRESETS, assistantAvatarCategory, assistantAvatarSearchQuery);
   const isAssistantSettingsMode = Boolean(assistantSettingsId && activeAssistant?.kind === "custom");
   const [assistantTitleDraft, setAssistantTitleDraft] = useState(activeAssistant?.title ?? "");
   const [assistantDescriptionDraft, setAssistantDescriptionDraft] = useState(activeAssistant?.description ?? "");
@@ -552,6 +396,21 @@ export default function MainChatView({
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [assistantAvatarPanelOpen]);
+
+  const resolveAvatarCategoryIcon = (category: AvatarCategoryManifest["icon"]) => {
+    switch (category) {
+      case "history":
+        return History;
+      case "sparkles":
+        return Sparkles;
+      case "cpu":
+        return Cpu;
+      case "paw":
+        return PawPrint;
+      default:
+        return Sparkles;
+    }
+  };
 
   const handleDeleteSessions = (sessions: ChatSession[], title: string, message: string) => {
     if (sessions.length === 0) {
@@ -738,6 +597,13 @@ export default function MainChatView({
                 <div className="main-chat-toolbar__assistant-copy">
                   <strong>{isAssistantSettingsMode ? "助手设置" : currentTopicTitle}</strong>
                   <span>{isAssistantSettingsMode ? "在中间区域配置当前自定义助手" : activeAssistant?.description || "开始新一轮思考、问答或执行任务"}</span>
+                  {!isAssistantSettingsMode && (
+                    <div className="main-chat-toolbar__assistant-tags">
+                      {activeAssistantPresetMeta && <span className="main-chat-toolbar__assistant-tag">{activeAssistantPresetMeta.label}</span>}
+                      <span className="main-chat-toolbar__assistant-tag">{activeToolCount} 个工具</span>
+                      <span className="main-chat-toolbar__assistant-tag">{activeSkillCount} 个技能</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -811,6 +677,13 @@ export default function MainChatView({
                         <div className="omni-settings-dialog__setting-label">基础信息</div>
                         <div className="omni-settings-dialog__setting-hint">名称、描述和角色设定会决定这个助手在聊天中的定位与表现。</div>
                       </div>
+                      {activeAssistantPresetMeta && (
+                        <div className="omni-settings-dialog__preset-badge">
+                          <span>来源预设</span>
+                          <strong>{activeAssistantPresetMeta.label}</strong>
+                          <small>{activeAssistantPresetMeta.hint}</small>
+                        </div>
+                      )}
                       <div className="omni-settings-dialog__form-grid">
                         <label className="chat-topic-panel__field">
                           <span>名称</span>
@@ -872,7 +745,9 @@ export default function MainChatView({
                         {assistantAvatarPanelOpen && (
                           <div ref={assistantAvatarPanelRef} className="omni-settings-dialog__avatar-panel">
                             <div className="omni-settings-dialog__avatar-categories">
-                              {AVATAR_CATEGORIES.map((category) => (
+                              {AVATAR_CATEGORIES.map((category) => {
+                                const CategoryIcon = resolveAvatarCategoryIcon(category.icon);
+                                return (
                                 <button
                                   key={category.id}
                                   type="button"
@@ -880,10 +755,11 @@ export default function MainChatView({
                                   title={category.label}
                                   onClick={() => setAssistantAvatarCategory(category.id)}
                                 >
-                                  <category.icon size={14} strokeWidth={1.8} />
+                                  <CategoryIcon size={14} strokeWidth={1.8} />
                                   <span>{category.label}</span>
                                 </button>
-                              ))}
+                                );
+                              })}
                             </div>
                             <div className="omni-settings-dialog__avatar-search">
                               <Search size={14} strokeWidth={1.8} />
@@ -894,19 +770,24 @@ export default function MainChatView({
                               />
                             </div>
                             <div className="chat-history-panel__avatar-grid chat-history-panel__avatar-grid--detailed">
-                              {filteredAssistantAvatars.length > 0 ? (
-                                filteredAssistantAvatars.map((avatar) => (
+                            {filteredAssistantAvatars.length > 0 ? (
+                              filteredAssistantAvatars.map((avatar) => (
                                   <button
                                     key={avatar.code}
                                     type="button"
                                     className={`chat-history-panel__avatar-option chat-history-panel__avatar-option--detailed chat-history-panel__avatar-option--tone-${avatar.tone} ${activeAssistant.avatarType !== "image" && resolveEmojiAvatarCode(activeAssistant.avatarValue) === avatar.code ? "chat-history-panel__avatar-option--active" : ""}`}
                                     onClick={() => {
                                       onUpdateAssistantProfile(activeAssistant.id, {
+                                        sourcePresetId: avatar.code,
                                         avatarType: "emoji",
                                         avatarValue: `emoji:${avatar.code}`,
                                         systemPrompt: avatar.prompt,
+                                        allowedToolIds: avatar.allowedToolIds ?? activeAssistant.allowedToolIds,
+                                        allowedSkillIds: avatar.allowedSkillIds ?? activeAssistant.allowedSkillIds,
+                                        defaultModelId: avatar.defaultModelId ?? activeAssistant.defaultModelId ?? null,
                                       });
                                       setAssistantPromptDraft(avatar.prompt);
+                                      setAssistantModelDraft(avatar.defaultModelId ?? activeAssistant.defaultModelId ?? "");
                                       setAssistantAvatarPanelOpen(false);
                                     }}
                                     title={avatar.label}
@@ -935,6 +816,28 @@ export default function MainChatView({
                         )}
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="omni-settings-dialog__section">
+                  <div className="omni-settings-dialog__section-title">工具集模板</div>
+                  <div className="omni-settings-dialog__toggle-list">
+                    {TOOLSET_MANIFESTS.map((toolset) => (
+                      <button
+                        key={toolset.id}
+                        type="button"
+                        className="omni-settings-dialog__preset-card"
+                        onClick={() => {
+                          onUpdateAssistantProfile(activeAssistant.id, { allowedToolIds: toolset.toolIds });
+                        }}
+                      >
+                        <div className="omni-settings-dialog__toggle-copy">
+                          <strong>{toolset.title}</strong>
+                          <span>{toolset.description}</span>
+                        </div>
+                        <span className="omni-settings-dialog__preset-card-meta">{toolset.toolIds.length} 项工具</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -970,11 +873,17 @@ export default function MainChatView({
                   <div className="omni-settings-dialog__toggle-list">
                     {ASSISTANT_SKILL_OPTIONS.map((skill) => {
                       const checked = activeAssistant.allowedSkillIds.includes(skill.id);
+                      const supportedKinds = SKILL_MANIFESTS.find((item) => item.id === skill.id)?.supportedAssistantKinds ?? ["basic", "custom"];
+                      const supportLabel = supportedKinds.includes("basic") && supportedKinds.includes("custom")
+                        ? "基础 / 自定义助手"
+                        : supportedKinds.includes("basic")
+                          ? "基础聊天"
+                          : "自定义助手";
                       return (
                         <label key={skill.id} className="omni-settings-dialog__toggle-row">
                           <div className="omni-settings-dialog__toggle-copy">
                             <strong>{skill.label}</strong>
-                            <span>{skill.description}</span>
+                            <span>{skill.description} · 适用：{supportLabel}</span>
                           </div>
                           <input
                             type="checkbox"
@@ -1033,6 +942,36 @@ export default function MainChatView({
 
                 {hasModels && messages.length === 0 && (
                   <div className="empty-chat-state">
+                    {showContextRecallBanner && !isContextRecallBannerDismissed && (
+                      <div className="chat-recall-banner">
+                        <div className="chat-recall-banner__copy">
+                          <strong>已为当前会话准备相关上下文</strong>
+                          <span>
+                            {relatedContext.memories.length > 0 ? `召回 ${relatedContext.memories.length} 条记忆` : ""}
+                            {relatedContext.memories.length > 0 && relatedContext.summaries.length > 0 ? " · " : ""}
+                            {relatedContext.summaries.length > 0 ? `关联 ${relatedContext.summaries.length} 条摘要` : ""}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="chat-recall-banner__action"
+                          onClick={() => {
+                            setTopicPanelManualVisible(true);
+                            setExpandedMemoryIds(relatedContext.memories.map((memory) => memory.id));
+                            setExpandedSummaryIds(relatedContext.summaries.map((summary) => summary.sessionId));
+                          }}
+                        >
+                          查看内容
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-recall-banner__action"
+                          onClick={() => setIsContextRecallBannerDismissed(true)}
+                        >
+                          关闭
+                        </button>
+                      </div>
+                    )}
                     <div className="empty-chat-state__hero">
                       <div className="empty-chat-state__icon">
                         <img src={omniIconSrc} alt="Omni" />
@@ -1051,8 +990,43 @@ export default function MainChatView({
                             {index % 2 === 0 ? <Compass size={18} strokeWidth={1.8} /> : <Sparkles size={18} strokeWidth={1.8} />}
                           </div>
                           <div className="empty-chat-state__card-copy">
-                            <strong>{RECOMMENDED_ASSISTANTS[index]?.title || "快速开始"}</strong>
-                            <span>{RECOMMENDED_ASSISTANTS[index]?.description || prompt}</span>
+                            <strong>{RECOMMENDED_ASSISTANT_PRESETS[index]?.title || "快速开始"}</strong>
+                            <span>{RECOMMENDED_ASSISTANT_PRESETS[index]?.description || prompt}</span>
+                          </div>
+                          <ArrowRight size={16} strokeWidth={1.8} />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="empty-chat-state__subhead">
+                      <Sparkles size={14} strokeWidth={1.9} />
+                      <span>快速创建助手</span>
+                    </div>
+                    <div className="empty-chat-state__cards">
+                      {AVATAR_PRESETS.slice(0, 4).map((preset) => (
+                        <button
+                          key={preset.code}
+                          type="button"
+                          className="empty-chat-state__card"
+                          onClick={() =>
+                            onCreateCustomAssistant({
+                              sourcePresetId: preset.code,
+                              title: preset.label,
+                              description: preset.hint,
+                              systemPrompt: preset.prompt,
+                              avatarType: "emoji",
+                              avatarValue: `emoji:${preset.code}`,
+                              defaultModelId: preset.defaultModelId ?? null,
+                              allowedToolIds: preset.allowedToolIds,
+                              allowedSkillIds: preset.allowedSkillIds,
+                            })
+                          }
+                        >
+                          <div className="empty-chat-state__card-icon">
+                            <img src={getEmojiAssetSrc(preset.code)} alt={preset.label} className="chat-history-panel__avatar-option-image" />
+                          </div>
+                          <div className="empty-chat-state__card-copy">
+                            <strong>{preset.label}</strong>
+                            <span>{preset.hint}</span>
                           </div>
                           <ArrowRight size={16} strokeWidth={1.8} />
                         </button>
@@ -1151,6 +1125,22 @@ export default function MainChatView({
                       </div>
                     ))}
                   </div>
+                  {latestTaskResult.plan.childTaskIds?.length ? (
+                    <div className="chat-topic-panel__task-steps">
+                      {latestTaskResult.plan.childTaskIds.map((childTaskId) => {
+                        const isActive = latestTaskResult.plan.metadata?.activeChildTaskId === childTaskId;
+                        const childTitle = childTaskId.split(":").slice(-2).join(" / ");
+                        return (
+                          <div key={childTaskId} className="chat-topic-panel__task-step">
+                            <span className="chat-topic-panel__task-step-title">{childTitle}</span>
+                            <span className={`chat-topic-panel__task-step-status ${isActive ? "chat-topic-panel__task-step-status--completed" : ""}`}>
+                              {isActive ? "running" : "queued"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                   {latestTaskResult.trace.length > 0 && (
                     <div className="chat-topic-panel__task-trace">
                       {latestTaskResult.trace.map((entry, index) => (
@@ -1161,6 +1151,29 @@ export default function MainChatView({
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {taskRuntimeState.history.length > 1 && (
+              <div className="chat-topic-panel__section">
+                <div className="chat-topic-panel__section-title">
+                  <History size={13} strokeWidth={2} />
+                  <span>任务历史</span>
+                </div>
+                <div className="chat-topic-panel__group-list">
+                  {taskRuntimeState.history.slice(1, 6).map((task) => (
+                    <div key={task.taskId} className="chat-topic-panel__task">
+                      <div className="chat-topic-panel__task-head">
+                        <strong>{task.plan.goal}</strong>
+                        <span className={`chat-topic-panel__task-status chat-topic-panel__task-status--${task.status}`}>{task.status}</span>
+                      </div>
+                      <div className="chat-topic-panel__task-meta">
+                        <span>{task.intent}</span>
+                        <span>{task.plan.model}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -1252,6 +1265,212 @@ export default function MainChatView({
                 </button>
               </div>
             )}
+
+            <div className="chat-topic-panel__section">
+              <div className="chat-topic-panel__section-title">
+                <Star size={13} strokeWidth={2} />
+                <span>记忆与摘要</span>
+              </div>
+              {relatedContext.memories.length === 0 && relatedContext.summaries.length === 0 ? (
+                <div className="chat-topic-panel__empty">还没有相关记忆与摘要</div>
+              ) : (
+                <div className="chat-topic-panel__group-list">
+                  {relatedContext.memories.map((memory) => (
+                    <div key={memory.id} className="chat-topic-panel__task">
+                      <div className="chat-topic-panel__task-head">
+                        <strong>相关记忆</strong>
+                      </div>
+                      <div className="chat-topic-panel__task-meta">
+                        <span>{expandedMemoryIds.includes(memory.id) ? memory.content : `${memory.content.slice(0, 42)}${memory.content.length > 42 ? "..." : ""}`}</span>
+                      </div>
+                      {memory.content.length > 42 && (
+                        <button
+                          type="button"
+                          className="chat-topic-panel__inline-action"
+                          onClick={() =>
+                            setExpandedMemoryIds((current) =>
+                              current.includes(memory.id) ? current.filter((id) => id !== memory.id) : [...current, memory.id]
+                            )
+                          }
+                        >
+                          {expandedMemoryIds.includes(memory.id) ? "收起" : "展开"}
+                        </button>
+                      )}
+                      {memory.sourceSessionId && (
+                        <button
+                          type="button"
+                          className="chat-topic-panel__inline-action"
+                          onClick={() => onSelectChat(memory.sourceSessionId as string)}
+                        >
+                          查看话题
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {relatedContext.summaries.map((summary) => (
+                    <div key={summary.sessionId} className="chat-topic-panel__task">
+                      <div className="chat-topic-panel__task-head">
+                        <strong>{summary.title}</strong>
+                      </div>
+                      <div className="chat-topic-panel__task-meta">
+                        <span>{expandedSummaryIds.includes(summary.sessionId) ? summary.summary : `${summary.summary.slice(0, 48)}${summary.summary.length > 48 ? "..." : ""}`}</span>
+                      </div>
+                      {summary.summary.length > 48 && (
+                        <button
+                          type="button"
+                          className="chat-topic-panel__inline-action"
+                          onClick={() =>
+                            setExpandedSummaryIds((current) =>
+                              current.includes(summary.sessionId)
+                                ? current.filter((id) => id !== summary.sessionId)
+                                : [...current, summary.sessionId]
+                            )
+                          }
+                        >
+                          {expandedSummaryIds.includes(summary.sessionId) ? "收起" : "展开"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="chat-topic-panel__inline-action"
+                        onClick={() => onSelectChat(summary.sessionId)}
+                      >
+                        查看话题
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="chat-topic-panel__section">
+              <div className="chat-topic-panel__section-title">
+                <TimerReset size={13} strokeWidth={2} />
+                <span>自动化任务</span>
+              </div>
+              <button
+                type="button"
+                className="chat-topic-panel__inline-action"
+                onClick={() => {
+                  setEditingScheduledTaskId(null);
+                  setShowScheduledTaskForm((current) => !current);
+                }}
+              >
+                {showScheduledTaskForm ? "收起表单" : "新建任务"}
+              </button>
+              {showScheduledTaskForm && (
+                <div className="chat-topic-panel__task chat-topic-panel__task--form">
+                  <input
+                    className="chat-topic-panel__form-input"
+                    value={scheduledTaskTitleDraft}
+                    onChange={(event) => setScheduledTaskTitleDraft(event.target.value)}
+                    placeholder="任务名"
+                  />
+                  <textarea
+                    className="chat-topic-panel__form-textarea"
+                    value={scheduledTaskPromptDraft}
+                    onChange={(event) => setScheduledTaskPromptDraft(event.target.value)}
+                    placeholder="任务 prompt"
+                    rows={3}
+                  />
+                  <input
+                    className="chat-topic-panel__form-input"
+                    value={scheduledTaskCronDraft}
+                    onChange={(event) => setScheduledTaskCronDraft(event.target.value)}
+                    placeholder="cron 表达式"
+                  />
+                  <select
+                    className="chat-topic-panel__form-input"
+                    value={scheduledTaskTargetDraft}
+                    onChange={(event) => setScheduledTaskTargetDraft(event.target.value as "desktop" | "notification" | "session")}
+                  >
+                    <option value="desktop">桌面</option>
+                    <option value="notification">通知</option>
+                    <option value="session">会话</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="chat-topic-panel__inline-action"
+                    onClick={() => {
+                      if (!scheduledTaskTitleDraft.trim() || !scheduledTaskPromptDraft.trim() || !scheduledTaskCronDraft.trim()) {
+                        return;
+                      }
+                      if (editingScheduledTaskId) {
+                        onUpdateScheduledTask(editingScheduledTaskId, {
+                          title: scheduledTaskTitleDraft.trim(),
+                          prompt: scheduledTaskPromptDraft.trim(),
+                          cron: scheduledTaskCronDraft.trim(),
+                          target: scheduledTaskTargetDraft,
+                        });
+                      } else {
+                        onCreateScheduledTask({
+                          title: scheduledTaskTitleDraft.trim(),
+                          prompt: scheduledTaskPromptDraft.trim(),
+                          cron: scheduledTaskCronDraft.trim(),
+                          target: scheduledTaskTargetDraft,
+                        });
+                      }
+                      setScheduledTaskTitleDraft("");
+                      setScheduledTaskPromptDraft("");
+                      setScheduledTaskCronDraft("0 9 * * *");
+                      setScheduledTaskTargetDraft("desktop");
+                      setEditingScheduledTaskId(null);
+                      setShowScheduledTaskForm(false);
+                    }}
+                  >
+                    {editingScheduledTaskId ? "保存修改" : "保存任务"}
+                  </button>
+                </div>
+              )}
+              {scheduledTasks.length === 0 ? (
+                <div className="chat-topic-panel__empty">还没有自动化任务</div>
+              ) : (
+                <div className="chat-topic-panel__group-list">
+                  {scheduledTasks.slice(0, 5).map((task) => (
+                    <div key={task.id} className="chat-topic-panel__task">
+                      <div className="chat-topic-panel__task-head">
+                        <strong>{task.title}</strong>
+                        <span className={`chat-topic-panel__task-status ${task.enabled ? "chat-topic-panel__task-status--completed" : "chat-topic-panel__task-status--aborted"}`}>
+                          {task.enabled ? "enabled" : "disabled"}
+                        </span>
+                      </div>
+                      <div className="chat-topic-panel__task-meta">
+                        <span>{task.target}</span>
+                        <span>{formatTaskRunTime(task.lastRunAt)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="chat-topic-panel__inline-action"
+                        onClick={() => onToggleScheduledTask(task.id)}
+                      >
+                        {task.enabled ? "停用" : "启用"}
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-topic-panel__inline-action"
+                        onClick={() => {
+                          setEditingScheduledTaskId(task.id);
+                          setScheduledTaskTitleDraft(task.title);
+                          setScheduledTaskPromptDraft(task.prompt);
+                          setScheduledTaskCronDraft(task.cron);
+                          setScheduledTaskTargetDraft(task.target);
+                          setShowScheduledTaskForm(true);
+                        }}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-topic-panel__inline-action"
+                        onClick={() => onDeleteScheduledTask(task.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="chat-topic-panel__section">
               <div className="chat-topic-panel__section-title">

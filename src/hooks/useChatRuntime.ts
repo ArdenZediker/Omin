@@ -1,10 +1,12 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Message, ModelConfig } from "../adapters/types";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
+import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { ToolRegistry } from "../chat/toolRegistry";
-import type { TaskExecutionResult } from "../chat/taskTypes";
+import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { AssistantProfile, ChatExecutionResult } from "../chat/types";
+import { getToolManifestById } from "../config/manifests/tools";
 
 type SessionLite = {
   id: string;
@@ -34,6 +36,14 @@ type UseChatRuntimeArgs = {
   togglePinnedChatSession: (sessionId: string) => boolean;
 };
 
+function requireTool(id: string) {
+  const manifest = getToolManifestById(id);
+  if (!manifest?.command) {
+    throw new Error(`缺少工具定义: ${id}`);
+  }
+  return manifest as typeof manifest & { command: string };
+}
+
 export function useChatRuntime({
   activeChatId,
   activeAssistant,
@@ -59,6 +69,13 @@ export function useChatRuntime({
   const [isLoading, setIsLoading] = useState(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [latestTaskResult, setLatestTaskResult] = useState<TaskExecutionResult | null>(null);
+  const [taskRuntimeState, setTaskRuntimeState] = useState<TaskRuntimeState>(() => {
+    const history = getInitialTaskHistory();
+    return {
+      activeTask: history[0] ?? null,
+      history,
+    };
+  });
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastRunIdRef = useRef(0);
   const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
@@ -70,10 +87,18 @@ export function useChatRuntime({
       : currentModel;
   const assistantSystemPrompt = activeAssistant?.systemPrompt?.trim() ? activeAssistant.systemPrompt.trim() : undefined;
 
+  useEffect(() => {
+    saveTaskHistory(taskRuntimeState.history);
+  }, [taskRuntimeState.history]);
+
   const finishTaskResult = useCallback(
     (taskResult: TaskExecutionResult, sessionId: string | null | undefined, fallbackMessages: Message[]) => {
       lastTaskResultRef.current = taskResult;
       setLatestTaskResult(taskResult);
+      setTaskRuntimeState((current) => ({
+        activeTask: taskResult,
+        history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
+      }));
 
       const conversationMessages = taskResult.conversationMessages ?? fallbackMessages;
 
@@ -178,10 +203,23 @@ export function useChatRuntime({
       if (!toolRegistryRef.current) {
         const registry = new ToolRegistry();
 
+        const newTool = requireTool("new");
+        const clearTool = requireTool("clear");
+        const settingsTool = requireTool("settings");
+        const renameTool = requireTool("rename");
+        const pinTool = requireTool("pin");
+        const modelTool = requireTool("model");
+        const searchSessionsTool = requireTool("search_sessions");
+        const readSessionTool = requireTool("read_session");
+        const listFilesTool = requireTool("list_files");
+        const readFileTool = requireTool("read_file");
+        const searchFilesTool = requireTool("search_files");
+        const analyzeFilesTool = requireTool("analyze_files");
+
         registry.register({
-          id: "new",
-          command: "/new",
-          title: "新对话",
+          id: newTool.id,
+          command: newTool.command,
+          title: newTool.title,
           execute: async () => {
             setActiveChatId(null);
             setMessages([]);
@@ -193,9 +231,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "clear",
-          command: "/clear",
-          title: "清空消息",
+          id: clearTool.id,
+          command: clearTool.command,
+          title: clearTool.title,
           execute: async () => {
             setMessages([]);
             setError(null);
@@ -205,9 +243,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "settings",
-          command: "/settings",
-          title: "打开设置",
+          id: settingsTool.id,
+          command: settingsTool.command,
+          title: settingsTool.title,
           execute: async () => {
             setView("settings");
             return { ok: true };
@@ -215,9 +253,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "rename",
-          command: "/rename",
-          title: "重命名对话",
+          id: renameTool.id,
+          command: renameTool.command,
+          title: renameTool.title,
           execute: async (resolvedCommand, context) => {
             if (!context.activeChatId) return { ok: false, error: "当前没有可重命名的会话" };
             if (!resolvedCommand.args) return { ok: false, error: "用法: /rename 新标题" };
@@ -229,9 +267,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "pin",
-          command: "/pin",
-          title: "置顶对话",
+          id: pinTool.id,
+          command: pinTool.command,
+          title: pinTool.title,
           execute: async (_, context) => {
             if (!context.activeChatId) return { ok: false, error: "当前没有可置顶的会话" };
             togglePinnedChatSession(context.activeChatId);
@@ -242,9 +280,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "model",
-          command: "/model",
-          title: "切换模型",
+          id: modelTool.id,
+          command: modelTool.command,
+          title: modelTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim().toLowerCase();
             if (!query) return { ok: false, error: "用法: /model 模型 ID 或名称" };
@@ -262,9 +300,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "search_sessions",
-          command: "/search_sessions",
-          title: "搜索会话",
+          id: searchSessionsTool.id,
+          command: searchSessionsTool.command,
+          title: searchSessionsTool.title,
           execute: async (resolvedCommand, context) => {
             const query = resolvedCommand.args.trim();
             if (!query) return { ok: false, error: "用法: /search_sessions 关键词" };
@@ -288,9 +326,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "read_session",
-          command: "/read_session",
-          title: "读取会话",
+          id: readSessionTool.id,
+          command: readSessionTool.command,
+          title: readSessionTool.title,
           execute: async (resolvedCommand) => {
             const sessionId = resolvedCommand.args.trim();
             if (!sessionId) return { ok: false, error: "用法: /read_session 会话ID" };
@@ -315,9 +353,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "list_files",
-          command: "/list_files",
-          title: "列出文件",
+          id: listFilesTool.id,
+          command: listFilesTool.command,
+          title: listFilesTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim();
             const entries = await invoke<Array<{ path: string; is_dir: boolean }>>("list_workspace_files", {
@@ -339,9 +377,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "read_file",
-          command: "/read_file",
-          title: "读取文件",
+          id: readFileTool.id,
+          command: readFileTool.command,
+          title: readFileTool.title,
           execute: async (resolvedCommand) => {
             const relativePath = resolvedCommand.args.trim();
             if (!relativePath) return { ok: false, error: "用法: /read_file 相对路径" };
@@ -360,9 +398,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "search_files",
-          command: "/search_files",
-          title: "搜索文件",
+          id: searchFilesTool.id,
+          command: searchFilesTool.command,
+          title: searchFilesTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim();
             if (!query) return { ok: false, error: "用法: /search_files 关键词" };
@@ -382,9 +420,9 @@ export function useChatRuntime({
         });
 
         registry.register({
-          id: "analyze_files",
-          command: "/analyze_files",
-          title: "分析文件",
+          id: analyzeFilesTool.id,
+          command: analyzeFilesTool.command,
+          title: analyzeFilesTool.title,
           execute: async () => ({ ok: true }),
         });
 
@@ -475,6 +513,10 @@ export function useChatRuntime({
         if (taskResult.intent === "local_command") {
           lastTaskResultRef.current = taskResult;
           setLatestTaskResult(taskResult);
+          setTaskRuntimeState((current) => ({
+            activeTask: taskResult,
+            history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
+          }));
           if (taskResult.status === "failed") {
             setError(taskResult.error || "工具执行失败");
           }
@@ -614,6 +656,7 @@ export function useChatRuntime({
     handleUseEmptyPrompt,
     isLoading,
     latestTaskResult,
+    taskRuntimeState,
     lastTaskResultRef,
     runConversationTurn,
     setEditingMessageIndex,

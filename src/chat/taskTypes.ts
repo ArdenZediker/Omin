@@ -51,3 +51,27 @@ export type TaskExecutionResult = {
   toolResult?: ToolExecutionResult;
   error?: string;
 };
+
+export type TaskRuntimeState = {
+  activeTask: TaskExecutionResult | null;
+  history: TaskExecutionResult[];
+};
+
+export type SubAgentTaskKind = "search" | "file_analysis" | "content_draft";
+
+export type SubAgentTaskRecord = {
+  id: string;
+  parentTaskId: string;
+  kind: SubAgentTaskKind;
+  title: string;
+  payload: string;
+  status: "pending" | "running" | "completed" | "failed";
+  result?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type MultiAgentRuntimeState = {
+  tasks: SubAgentTaskRecord[];
+  aggregatedResult?: string;
+};
