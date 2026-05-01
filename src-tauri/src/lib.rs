@@ -35,6 +35,28 @@ struct ChatStoragePayload {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ManifestStoragePayload {
+    assistant_presets_json: Option<String>,
+    tool_manifests_json: Option<String>,
+    skill_manifests_json: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryStoragePayload {
+    assistant_memories_json: Option<String>,
+    user_preferences_json: Option<String>,
+    session_summaries_json: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutomationStoragePayload {
+    scheduled_tasks_json: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AppStoragePayload {
     entries: HashMap<String, String>,
 }
@@ -44,6 +66,7 @@ struct AppStoragePayload {
 struct DbAssistantProfile {
     id: String,
     kind: String,
+    source_preset_id: Option<String>,
     title: String,
     description: String,
     system_prompt: Option<String>,
@@ -81,6 +104,19 @@ struct DbChatSession {
     usage: DbChatUsageStats,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DbAssistantPresetRecord {
+    id: String,
+    title: String,
+    description: String,
+    avatar_code: Option<String>,
+    system_prompt: Option<String>,
+    default_model_id: Option<String>,
+    allowed_tool_ids: Vec<String>,
+    allowed_skill_ids: Vec<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DbProviderConfigRecord {
@@ -114,6 +150,12 @@ fn run_database_migrations(connection: &Connection) -> Result<(), String> {
     if version < 1 {
         connection
             .execute_batch("PRAGMA user_version = 1;")
+            .map_err(|err| err.to_string())?;
+    }
+
+    if version < 2 {
+        connection
+            .execute_batch("PRAGMA user_version = 2;")
             .map_err(|err| err.to_string())?;
     }
 
@@ -166,6 +208,7 @@ fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> 
         CREATE TABLE IF NOT EXISTS assistants (
           id TEXT PRIMARY KEY,
           kind TEXT NOT NULL,
+          source_preset_id TEXT,
           title TEXT NOT NULL,
           description TEXT NOT NULL,
           system_prompt TEXT,
@@ -173,6 +216,59 @@ fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> 
           allowed_tool_ids_json TEXT NOT NULL,
           allowed_skill_ids_json TEXT NOT NULL,
           created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS assistant_presets (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          avatar_code TEXT,
+          system_prompt TEXT,
+          default_model_id TEXT,
+          allowed_tool_ids_json TEXT NOT NULL,
+          allowed_skill_ids_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS tool_manifests (
+          id TEXT PRIMARY KEY,
+          payload_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS skill_manifests (
+          id TEXT PRIMARY KEY,
+          payload_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS assistant_memories (
+          id TEXT PRIMARY KEY,
+          assistant_id TEXT NOT NULL,
+          content TEXT NOT NULL,
+          source_session_id TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS user_preferences (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS session_summaries (
+          session_id TEXT PRIMARY KEY,
+          assistant_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS scheduled_tasks (
+          id TEXT PRIMARY KEY,
+          payload_json TEXT NOT NULL,
           updated_at INTEGER NOT NULL
         );
 
@@ -440,6 +536,7 @@ fn load_structured_chat_storage(connection: &Connection) -> Result<ChatStoragePa
         .prepare(
             r#"
             SELECT id, kind, title, description, system_prompt, default_model_id, allowed_tool_ids_json, allowed_skill_ids_json, created_at, updated_at
+            SELECT id, kind, source_preset_id, title, description, system_prompt, default_model_id, allowed_tool_ids_json, allowed_skill_ids_json, created_at, updated_at
             FROM assistants
             ORDER BY created_at ASC, id ASC
             "#,
@@ -448,20 +545,21 @@ fn load_structured_chat_storage(connection: &Connection) -> Result<ChatStoragePa
 
     let assistants = assistant_stmt
         .query_map([], |row| {
-            let allowed_tool_ids_json: String = row.get(6)?;
-            let allowed_skill_ids_json: String = row.get(7)?;
+            let allowed_tool_ids_json: String = row.get(7)?;
+            let allowed_skill_ids_json: String = row.get(8)?;
 
             Ok(DbAssistantProfile {
                 id: row.get(0)?,
                 kind: row.get(1)?,
-                title: row.get(2)?,
-                description: row.get(3)?,
-                system_prompt: row.get(4)?,
-                default_model_id: row.get(5)?,
+                source_preset_id: row.get(2)?,
+                title: row.get(3)?,
+                description: row.get(4)?,
+                system_prompt: row.get(5)?,
+                default_model_id: row.get(6)?,
                 allowed_tool_ids: serde_json::from_str(&allowed_tool_ids_json).unwrap_or_default(),
                 allowed_skill_ids: serde_json::from_str(&allowed_skill_ids_json).unwrap_or_default(),
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -531,9 +629,9 @@ fn save_structured_chat_storage(
             .prepare(
                 r#"
                 INSERT INTO assistants (
-                  id, kind, title, description, system_prompt, default_model_id,
+                  id, kind, source_preset_id, title, description, system_prompt, default_model_id,
                   allowed_tool_ids_json, allowed_skill_ids_json, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 "#,
             )
             .map_err(|err| err.to_string())?;
@@ -542,6 +640,7 @@ fn save_structured_chat_storage(
             stmt.execute(params![
                 assistant.id,
                 assistant.kind,
+                assistant.source_preset_id,
                 assistant.title,
                 assistant.description,
                 assistant.system_prompt,
@@ -583,6 +682,78 @@ fn save_structured_chat_storage(
     }
 
     tx.commit().map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn load_manifest_storage(connection: &Connection) -> Result<ManifestStoragePayload, String> {
+    let assistant_presets_json = read_simple_table_value(connection, "assistant_presets", "builtin")?;
+    let tool_manifests_json = read_simple_table_value(connection, "tool_manifests", "builtin")?;
+    let skill_manifests_json = read_simple_table_value(connection, "skill_manifests", "builtin")?;
+
+    Ok(ManifestStoragePayload {
+        assistant_presets_json,
+        tool_manifests_json,
+        skill_manifests_json,
+    })
+}
+
+fn save_manifest_storage(
+    connection: &Connection,
+    assistant_presets_json: Option<&str>,
+    tool_manifests_json: Option<&str>,
+    skill_manifests_json: Option<&str>,
+) -> Result<(), String> {
+    if let Some(value) = assistant_presets_json {
+        write_simple_table_value(connection, "assistant_presets", "builtin", value)?;
+    }
+    if let Some(value) = tool_manifests_json {
+        write_simple_table_value(connection, "tool_manifests", "builtin", value)?;
+    }
+    if let Some(value) = skill_manifests_json {
+        write_simple_table_value(connection, "skill_manifests", "builtin", value)?;
+    }
+    Ok(())
+}
+
+fn load_memory_storage(connection: &Connection) -> Result<MemoryStoragePayload, String> {
+    let assistant_memories_json = read_simple_table_value(connection, "assistant_memories", "builtin")?;
+    let user_preferences_json = read_simple_table_value(connection, "user_preferences", "builtin")?;
+    let session_summaries_json = read_simple_table_value(connection, "session_summaries", "builtin")?;
+
+    Ok(MemoryStoragePayload {
+        assistant_memories_json,
+        user_preferences_json,
+        session_summaries_json,
+    })
+}
+
+fn save_memory_storage(
+    connection: &Connection,
+    assistant_memories_json: Option<&str>,
+    user_preferences_json: Option<&str>,
+    session_summaries_json: Option<&str>,
+) -> Result<(), String> {
+    if let Some(value) = assistant_memories_json {
+        write_simple_table_value(connection, "assistant_memories", "builtin", value)?;
+    }
+    if let Some(value) = user_preferences_json {
+        write_simple_table_value(connection, "user_preferences", "builtin", value)?;
+    }
+    if let Some(value) = session_summaries_json {
+        write_simple_table_value(connection, "session_summaries", "builtin", value)?;
+    }
+    Ok(())
+}
+
+fn load_automation_storage(connection: &Connection) -> Result<AutomationStoragePayload, String> {
+    let scheduled_tasks_json = read_simple_table_value(connection, "scheduled_tasks", "builtin")?;
+    Ok(AutomationStoragePayload { scheduled_tasks_json })
+}
+
+fn save_automation_storage(connection: &Connection, scheduled_tasks_json: Option<&str>) -> Result<(), String> {
+    if let Some(value) = scheduled_tasks_json {
+        write_simple_table_value(connection, "scheduled_tasks", "builtin", value)?;
+    }
     Ok(())
 }
 
@@ -864,6 +1035,65 @@ fn save_chat_storage(
 }
 
 #[tauri::command]
+fn load_manifest_storage_command(app: tauri::AppHandle) -> Result<ManifestStoragePayload, String> {
+    let connection = open_sqlite_connection(&app)?;
+    load_manifest_storage(&connection)
+}
+
+#[tauri::command]
+fn save_manifest_storage_command(
+    app: tauri::AppHandle,
+    assistant_presets_json: Option<String>,
+    tool_manifests_json: Option<String>,
+    skill_manifests_json: Option<String>,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    save_manifest_storage(
+        &connection,
+        assistant_presets_json.as_deref(),
+        tool_manifests_json.as_deref(),
+        skill_manifests_json.as_deref(),
+    )
+}
+
+#[tauri::command]
+fn load_memory_storage_command(app: tauri::AppHandle) -> Result<MemoryStoragePayload, String> {
+    let connection = open_sqlite_connection(&app)?;
+    load_memory_storage(&connection)
+}
+
+#[tauri::command]
+fn save_memory_storage_command(
+    app: tauri::AppHandle,
+    assistant_memories_json: Option<String>,
+    user_preferences_json: Option<String>,
+    session_summaries_json: Option<String>,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    save_memory_storage(
+        &connection,
+        assistant_memories_json.as_deref(),
+        user_preferences_json.as_deref(),
+        session_summaries_json.as_deref(),
+    )
+}
+
+#[tauri::command]
+fn load_automation_storage_command(app: tauri::AppHandle) -> Result<AutomationStoragePayload, String> {
+    let connection = open_sqlite_connection(&app)?;
+    load_automation_storage(&connection)
+}
+
+#[tauri::command]
+fn save_automation_storage_command(
+    app: tauri::AppHandle,
+    scheduled_tasks_json: Option<String>,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    save_automation_storage(&connection, scheduled_tasks_json.as_deref())
+}
+
+#[tauri::command]
 fn load_app_kv(
     app: tauri::AppHandle,
     keys: Vec<String>,
@@ -951,6 +1181,12 @@ pub fn run() {
             search_workspace_files,
             load_chat_storage,
             save_chat_storage,
+            load_manifest_storage_command,
+            save_manifest_storage_command,
+            load_memory_storage_command,
+            save_memory_storage_command,
+            load_automation_storage_command,
+            save_automation_storage_command,
             load_app_kv,
             save_app_kv,
             remove_app_kv

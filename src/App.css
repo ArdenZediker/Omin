@@ -383,6 +383,22 @@ body,
   font-size: 11px;
 }
 
+.main-chat-toolbar__assistant-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.main-chat-toolbar__assistant-tag {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
 .main-chat-toolbar__usage {
   flex: 0 1 auto;
   min-width: 0;
@@ -1435,6 +1451,47 @@ body,
   font-weight: 700;
 }
 
+.chat-recall-banner {
+  width: 100%;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, #60a5fa 8%, var(--omni-panel-bg));
+}
+
+.chat-recall-banner__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-recall-banner__copy strong {
+  color: var(--omni-app-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chat-recall-banner__copy span {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+}
+
+.chat-recall-banner__action {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .empty-chat-state__cards {
   width: min(560px, 100%);
   display: grid;
@@ -2271,6 +2328,35 @@ body,
   gap: 4px;
 }
 
+.omni-settings-dialog__preset-badge {
+  min-height: 54px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 90%, var(--omni-soft-bg));
+}
+
+.omni-settings-dialog__preset-badge span {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.omni-settings-dialog__preset-badge strong {
+  color: var(--omni-app-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.omni-settings-dialog__preset-badge small {
+  margin-left: auto;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+}
+
 .omni-settings-dialog__setting-label {
   color: var(--omni-app-text);
   font-size: 13px;
@@ -2493,6 +2579,34 @@ body,
   gap: 12px;
 }
 
+.omni-settings-dialog__preset-card {
+  width: 100%;
+  min-height: 64px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.omni-settings-dialog__preset-card:hover {
+  border-color: color-mix(in srgb, #60a5fa 24%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-panel-bg) 92%, #60a5fa 4%);
+}
+
+.omni-settings-dialog__preset-card-meta {
+  flex: 0 0 auto;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .omni-settings-dialog__toggle-row {
   min-height: 60px;
   border: 1px solid var(--omni-panel-border);
@@ -2652,6 +2766,42 @@ body,
   gap: 6px;
   color: var(--omni-app-muted);
   font-size: 10px;
+}
+
+.chat-topic-panel__inline-action {
+  margin-top: 6px;
+  align-self: flex-start;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--omni-app-text) 7%, transparent);
+  color: var(--omni-app-text);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.chat-topic-panel__inline-action:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 12%, transparent);
+}
+
+.chat-topic-panel__task--form {
+  gap: 8px;
+}
+
+.chat-topic-panel__form-input,
+.chat-topic-panel__form-textarea {
+  width: 100%;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.chat-topic-panel__form-textarea {
+  resize: vertical;
 }
 
 .chat-topic-panel__task-links {
@@ -2982,6 +3132,39 @@ body,
     0 8px 22px rgba(15, 23, 42, 0.08),
     0 1px 2px rgba(15, 23, 42, 0.04),
     inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.compact-bar__meta {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: 8px;
+}
+
+.compact-bar__meta strong,
+.compact-bar__meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-bar__meta strong {
+  color: var(--omni-app-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.compact-bar__meta span {
+  color: var(--omni-app-muted);
+  font-size: 10px;
+}
+
+.compact-bar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .compact-bar--character {

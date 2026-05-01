@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Message } from "../adapters/types";
 import {
+  getInitialAssistantMemories,
   createChatSession,
   createCustomAssistant,
   DEFAULT_ASSISTANT_ID,
@@ -8,9 +9,24 @@ import {
   getChatSessionTitle,
   getInitialAssistants,
   getInitialChatSessions,
+  getInitialSessionSummaries,
+  getInitialScheduledTasks,
+  getInitialUserPreferences,
+  searchAssistantMemories,
+  searchSessionSummaries,
 } from "../chat/storage";
-import { loadPersistedChatState, savePersistedChatState } from "../chat/persistence";
-import type { AssistantProfile, ChatExecutionResult, ChatSession } from "../chat/types";
+import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
+import { savePersistedAutomationState } from "../chat/persistence";
+import type {
+  AssistantMemoryRecord,
+  AssistantProfile,
+  AssistantProfileDraft,
+  ChatExecutionResult,
+  ChatSession,
+  ScheduledTaskRecord,
+  SessionSummaryRecord,
+  UserPreferenceRecord,
+} from "../chat/types";
 
 type UseChatSessionsOptions = {
   persist: boolean;
@@ -26,6 +42,10 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     return {
       assistants: initialAssistants,
       sessions: initialSessions,
+      assistantMemories: getInitialAssistantMemories(),
+      sessionSummaries: getInitialSessionSummaries(),
+      scheduledTasks: getInitialScheduledTasks(),
+      userPreferences: getInitialUserPreferences(),
       activeAssistantId: initialAssistantId,
       activeChatId: initialSession?.id ?? null,
       messages: initialSession?.messages ?? [],
@@ -34,6 +54,10 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const [assistants, setAssistants] = useState<AssistantProfile[]>(initialState.assistants);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(initialState.sessions);
+  const [assistantMemories, setAssistantMemories] = useState<AssistantMemoryRecord[]>(initialState.assistantMemories);
+  const [sessionSummaries, setSessionSummaries] = useState<SessionSummaryRecord[]>(initialState.sessionSummaries);
+  const [scheduledTasks, setScheduledTasks] = useState<ScheduledTaskRecord[]>(initialState.scheduledTasks);
+  const [userPreferences, setUserPreferences] = useState<UserPreferenceRecord[]>(initialState.userPreferences);
   const [activeAssistantId, setActiveAssistantId] = useState<string>(initialState.activeAssistantId);
   const [activeChatId, setActiveChatId] = useState<string | null>(initialState.activeChatId);
   const [messages, setMessages] = useState<Message[]>(initialState.messages);
@@ -62,38 +86,45 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
     let cancelled = false;
 
-    void loadPersistedChatState().then(({ assistants: nextAssistants, sessions: nextSessions }) => {
-      if (cancelled) return;
+    void loadPersistedChatState()
+      .then(({ assistants: nextAssistants, sessions: nextSessions, assistantMemories: nextMemories, sessionSummaries: nextSummaries, userPreferences: nextPreferences, scheduledTasks: nextScheduledTasks }) => {
+        if (cancelled) return;
 
-      const nextActiveAssistantId = nextAssistants.find((assistant) => assistant.id === activeAssistantId)?.id
-        ?? nextAssistants[0]?.id
-        ?? DEFAULT_ASSISTANT_ID;
-      const nextActiveSession =
-        nextSessions.find((session) => session.id === activeChatId && session.assistantId === nextActiveAssistantId)
-        ?? nextSessions.find((session) => session.assistantId === nextActiveAssistantId)
-        ?? null;
+        const nextActiveAssistantId =
+          nextAssistants.find((assistant) => assistant.id === activeAssistantId)?.id ?? nextAssistants[0]?.id ?? DEFAULT_ASSISTANT_ID;
+        const nextActiveSession =
+          nextSessions.find((session) => session.id === activeChatId && session.assistantId === nextActiveAssistantId) ??
+          nextSessions.find((session) => session.assistantId === nextActiveAssistantId) ??
+          null;
 
-      setAssistants(nextAssistants);
-      setChatSessions(nextSessions);
-      setActiveAssistantId(nextActiveAssistantId);
-      setActiveChatId(nextActiveSession?.id ?? null);
-      setMessages(nextActiveSession?.messages ?? []);
-      setIsStorageHydrated(true);
-    }).catch(() => {
-      if (!cancelled) {
+        setAssistants(nextAssistants);
+        setChatSessions(nextSessions);
+        setAssistantMemories(nextMemories);
+        setSessionSummaries(nextSummaries);
+        setScheduledTasks(nextScheduledTasks);
+        setUserPreferences(nextPreferences);
+        setActiveAssistantId(nextActiveAssistantId);
+        setActiveChatId(nextActiveSession?.id ?? null);
+        setMessages(nextActiveSession?.messages ?? []);
         setIsStorageHydrated(true);
-      }
-    });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsStorageHydrated(true);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [persist]);
+  }, [persist, activeAssistantId, activeChatId]);
 
   useEffect(() => {
     if (!persist || !isStorageHydrated) return;
     void savePersistedChatState(assistants, chatSessions);
-  }, [assistants, chatSessions, isStorageHydrated, persist]);
+    void savePersistedMemoryState(assistantMemories, sessionSummaries, userPreferences);
+    void savePersistedAutomationState(scheduledTasks);
+  }, [assistants, chatSessions, assistantMemories, sessionSummaries, scheduledTasks, userPreferences, isStorageHydrated, persist]);
 
   const activeAssistant = useMemo(
     () => assistants.find((assistant) => assistant.id === activeAssistantId) ?? assistants[0] ?? null,
@@ -157,10 +188,13 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     [chatSessions]
   );
 
-  const createCustomAssistantProfile = useCallback((title?: string) => {
-    const nextAssistant = createCustomAssistant({
-      title: title?.trim() || "自定义助手",
-    });
+  const createCustomAssistantProfile = useCallback((input?: string | AssistantProfileDraft) => {
+    const nextInput: AssistantProfileDraft =
+      typeof input === "string"
+        ? { title: input.trim() || "自定义助手" }
+        : (input ?? {});
+
+    const nextAssistant = createCustomAssistant(nextInput);
 
     setAssistants((current) => [...current, nextAssistant]);
     setActiveAssistantId(nextAssistant.id);
@@ -183,8 +217,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
           ...assistant,
           ...patch,
           title: typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : assistant.title,
-          description:
-            typeof patch.description === "string" && patch.description.trim() ? patch.description.trim() : assistant.description,
+          description: typeof patch.description === "string" && patch.description.trim() ? patch.description.trim() : assistant.description,
           updatedAt: now,
         };
 
@@ -215,9 +248,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const renameChatSession = useCallback((sessionId: string, title: string) => {
     const nextTitle = title.trim();
     if (!nextTitle) return false;
-    setChatSessions((sessions) =>
-      sessions.map((session) => (session.id === sessionId ? { ...session, title: nextTitle } : session))
-    );
+    setChatSessions((sessions) => sessions.map((session) => (session.id === sessionId ? { ...session, title: nextTitle } : session)));
     return true;
   }, []);
 
@@ -288,9 +319,20 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     [chatSessions]
   );
 
-  const getChatSessionById = useCallback(
-    (sessionId: string) => chatSessions.find((session) => session.id === sessionId) ?? null,
-    [chatSessions]
+  const getChatSessionById = useCallback((sessionId: string) => chatSessions.find((session) => session.id === sessionId) ?? null, [chatSessions]);
+
+  const getRelatedContextForAssistant = useCallback(
+    (query: string) => {
+      const summaryMatches = searchSessionSummaries(sessionSummaries, query)
+        .filter((item) => item.assistantId === activeAssistantId)
+        .slice(0, 5);
+      const memoryMatches = searchAssistantMemories(assistantMemories, activeAssistantId, query).slice(0, 5);
+      return {
+        summaries: summaryMatches,
+        memories: memoryMatches,
+      };
+    },
+    [activeAssistantId, assistantMemories, sessionSummaries]
   );
 
   return {
@@ -306,18 +348,24 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     createSessionFromMessages,
     deleteChatSession,
     getChatSessionById,
+    getRelatedContextForAssistant,
     groupedChatSessions,
     messages,
     renameChatSession,
     resetActiveChat,
     searchChatSessions,
+    scheduledTasks,
     selectAssistant,
     selectChatSession,
     setActiveAssistantId,
     setActiveChatId,
     setAssistants,
+    setAssistantMemories,
     setChatSessions,
     setMessages,
+    setSessionSummaries,
+    setScheduledTasks,
+    setUserPreferences,
     toggleFavoriteChatSession,
     togglePinnedChatSession,
     updateAssistantProfile,

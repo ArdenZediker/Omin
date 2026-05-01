@@ -20,9 +20,22 @@ export type ChatUsageStats = {
 
 export type AssistantKind = "basic" | "custom";
 
+export type AssistantProfileDraft = {
+  sourcePresetId?: string | null;
+  title?: string;
+  description?: string;
+  avatarType?: "emoji" | "image";
+  avatarValue?: string;
+  systemPrompt?: string;
+  defaultModelId?: string | null;
+  allowedToolIds?: string[];
+  allowedSkillIds?: string[];
+};
+
 export type AssistantProfile = {
   id: string;
   kind: AssistantKind;
+  sourcePresetId?: string | null;
   title: string;
   description: string;
   avatarType?: "emoji" | "image";
@@ -31,6 +44,59 @@ export type AssistantProfile = {
   defaultModelId?: string | null;
   allowedToolIds: string[];
   allowedSkillIds: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AssistantPresetRecord = {
+  id: string;
+  title: string;
+  description: string;
+  avatarCode?: string | null;
+  systemPrompt?: string;
+  defaultModelId?: string | null;
+  allowedToolIds: string[];
+  allowedSkillIds: string[];
+};
+
+export type ManifestStorageSnapshot = {
+  assistantPresets: AssistantPresetRecord[];
+  toolManifests: Array<Record<string, unknown>>;
+  skillManifests: Array<Record<string, unknown>>;
+};
+
+export type SessionSummaryRecord = {
+  sessionId: string;
+  assistantId: string;
+  title: string;
+  summary: string;
+  updatedAt: number;
+};
+
+export type AssistantMemoryRecord = {
+  id: string;
+  assistantId: string;
+  content: string;
+  sourceSessionId?: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type UserPreferenceRecord = {
+  key: string;
+  value: string;
+  updatedAt: number;
+};
+
+export type ScheduledTaskRecord = {
+  id: string;
+  title: string;
+  prompt: string;
+  cron: string;
+  target: "desktop" | "notification" | "session";
+  sessionId?: string | null;
+  enabled: boolean;
+  lastRunAt?: number | null;
   createdAt: number;
   updatedAt: number;
 };
