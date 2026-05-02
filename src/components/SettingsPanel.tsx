@@ -332,7 +332,6 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
           </div>
           <button onClick={onClose} className="omni-settings-close flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 text-[0px]" type="button" aria-label="关闭设置">
             <X size={15} strokeWidth={1.9} />
-            ×
           </button>
         </header>
 
