@@ -95,8 +95,10 @@ export function useMainWindowController({
     ]).then(() => {
       if (cancelled) return;
       applyThemeFromStorage();
-      loadProviderConfigs();
-      setCurrentModel(modelRegistry.getCurrentModel());
+      void loadProviderConfigs().then(() => {
+        if (cancelled) return;
+        setCurrentModel(modelRegistry.getCurrentModel());
+      });
     });
 
     const onThemeStorage = (event: StorageEvent) => {
@@ -135,7 +137,6 @@ export function useMainWindowController({
           COMPACT_WINDOW_LABEL
         );
       }
-      void appWindow.hide();
     }
   }, [isCompactWindow, setCurrentModel]);
 

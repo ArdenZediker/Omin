@@ -199,17 +199,17 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
       if (valid === null) return;
       setTestResult(valid);
       if (rawId) {
-        saveModelConnectionStatus(`${id}:${rawId}`, valid);
+        await saveModelConnectionStatus(`${id}:${rawId}`, valid);
       }
       if (valid) {
-        saveProviderConfigs();
+        await saveProviderConfigs();
         setApiKey(MASK);
         setVersion((value) => value + 1);
       }
     } catch {
       setTestResult(false);
       if (id && rawId) {
-        saveModelConnectionStatus(`${id}:${rawId}`, false);
+        await saveModelConnectionStatus(`${id}:${rawId}`, false);
       }
     } finally {
       setTestingConnection(false);
@@ -234,7 +234,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
 
     setTestingConnection(false);
     setTestResult(valid);
-    saveModelConnectionStatus(`${id}:${rawId}`, valid);
+    await saveModelConnectionStatus(`${id}:${rawId}`, valid);
     if (!valid) return;
 
     if (editingModel) {
@@ -258,7 +258,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     };
 
     modelRegistry.addCustomModel(id, model);
-    saveProviderConfigs();
+    await saveProviderConfigs();
     onModelChange(model.id);
     setEditingModel(null);
     setIsModelFormOpen(false);
@@ -271,8 +271,8 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
 
   const removeModel = (endpointId: string, id: string) => {
     modelRegistry.removeCustomModel(endpointId, id);
-    removeModelConnectionStatus(id);
-    saveProviderConfigs();
+    void removeModelConnectionStatus(id);
+    void saveProviderConfigs();
     setVersion((value) => value + 1);
   };
 

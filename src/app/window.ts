@@ -258,7 +258,7 @@ export function getExpandedCompactViewportSizeForAppearance(
   const horizontalPanelWidth = options.includeHorizontalPanel ? COMPACT_MENU_PANEL_WIDTH : 0;
 
   return {
-    width: Math.max(baseExpanded.width, compactSize.width + horizontalPanelWidth),
+    width: Math.max(baseExpanded.width, compactSize.width + horizontalPanelWidth + 24),
     height: Math.max(baseExpanded.height, compactSize.height + COMPACT_MENU_PANEL_HEIGHT),
   };
 }

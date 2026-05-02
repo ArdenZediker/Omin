@@ -145,3 +145,27 @@ export async function saveAutomationStorage(payload: AutomationStoragePayload) {
   if (!canUseTauriInvoke()) return;
   await invoke("save_automation_storage_command", payload);
 }
+
+
+export async function loadAppKvEntries(keys: string[]) {
+  if (typeof window === "undefined" || keys.length === 0 || !canUseTauriInvoke()) {
+    return {} as Record<string, string>;
+  }
+
+  const payload = await invoke<AppStoragePayload>("load_app_kv", {
+    keys: Array.from(new Set(keys)),
+    legacyEntries: {},
+  });
+
+  return payload.entries;
+}
+
+export async function saveAppKvEntry(key: string, value: string) {
+  if (!canUseTauriInvoke()) return;
+  await invoke("save_app_kv", { key, value });
+}
+
+export async function removeAppKvEntry(key: string) {
+  if (!canUseTauriInvoke()) return;
+  await invoke("remove_app_kv", { key });
+}

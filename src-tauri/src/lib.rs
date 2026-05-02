@@ -1154,6 +1154,7 @@ fn toggle_main_window_visibility(app: &tauri::AppHandle) {
     if let Some(window) = main_window.as_ref() {
         let _ = window.show();
         let _ = window.set_focus();
+        let _ = window.unminimize();
     }
 }
 

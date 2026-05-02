@@ -30,6 +30,7 @@ import {
 import type { Message } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { AssistantProfile, ChatSession } from "../chat/types";
+import type { AssistantMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
 import { RECOMMENDED_ASSISTANT_PRESETS } from "../config/manifests/assistants";
@@ -212,6 +213,18 @@ function formatChildTaskLabel(childTaskId: string) {
   }
 }
 
+function formatMemoryScopeLabel(scope: AssistantMemoryScope) {
+  switch (scope) {
+    case "off":
+      return "不启用记忆";
+    case "session":
+      return "仅当前话题";
+    case "assistant":
+    default:
+      return "当前助手全局";
+  }
+}
+
 function renderAssistantAvatar(assistant: AssistantProfile | null, seed = 0) {
   return <img src={resolveAssistantAvatarImageSrc(assistant, seed)} alt="" className="chat-history-panel__assistant-image" />;
 }
@@ -326,15 +339,18 @@ export default function MainChatView({
   const activeAssistantPresetMeta = findPresetMetaByAssistant(activeAssistant);
   const activeSkillCount = activeAssistant?.allowedSkillIds.length ?? 0;
   const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
+  const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
   const activeSubtaskCards = latestTaskResult?.plan.childTaskIds?.map((childTaskId) => {
     const isActive = latestTaskResult.plan.metadata?.activeChildTaskId === childTaskId;
+    const delegatedTo = isActive ? String(latestTaskResult.plan.metadata?.delegatedTo ?? "") : "";
     return {
       id: childTaskId,
       title: formatChildTaskLabel(childTaskId),
       status: isActive ? "running" : "queued",
+      delegatedTo,
     };
   }) ?? [];
   const normalizedAssistantSearchQuery = normalizeSearchText(assistantSearchQuery);
@@ -674,6 +690,9 @@ export default function MainChatView({
                       <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
                         {activeSkillCount} 个技能
                       </button>
+                      <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
+                        {activeMemoryScopeLabel}
+                      </button>
                     </div>
                   )}
                   {!isAssistantSettingsMode && showAssistantCapabilityDetails && (
@@ -691,6 +710,10 @@ export default function MainChatView({
                       <div className="main-chat-toolbar__assistant-panel-row">
                         <strong>技能能力</strong>
                         <span>{activeSkillCount} 项已启用</span>
+                      </div>
+                      <div className="main-chat-toolbar__assistant-panel-row">
+                        <strong>记忆范围</strong>
+                        <span>{activeMemoryScopeLabel}</span>
                       </div>
                     </div>
                   )}
@@ -932,6 +955,63 @@ export default function MainChatView({
                 </div>
 
                 <div className="omni-settings-dialog__section">
+                  <div className="omni-settings-dialog__section-title">记忆策略</div>
+                  <div className="omni-settings-dialog__toggle-list">
+                    <label className="omni-settings-dialog__toggle-row">
+                      <div className="omni-settings-dialog__toggle-copy">
+                        <strong>记忆范围</strong>
+                        <span>控制这个助手能否读取历史记忆，以及召回的边界。</span>
+                      </div>
+                      <select
+                        className="omni-settings-dialog__select"
+                        value={activeAssistant.memoryScope}
+                        onChange={(event) =>
+                          onUpdateAssistantProfile(activeAssistant.id, {
+                            memoryScope: event.target.value as AssistantMemoryScope,
+                          })
+                        }
+                      >
+                        <option value="off">关闭记忆</option>
+                        <option value="session">仅当前话题</option>
+                        <option value="assistant">当前助手全局</option>
+                      </select>
+                    </label>
+
+                    <label className="omni-settings-dialog__toggle-row">
+                      <div className="omni-settings-dialog__toggle-copy">
+                        <strong>自动沉淀记忆</strong>
+                        <span>将稳定偏好、约束或长期信息保存到该助手的记忆库。</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={activeAssistant.autoSaveMemories}
+                        onChange={(event) =>
+                          onUpdateAssistantProfile(activeAssistant.id, {
+                            autoSaveMemories: event.target.checked,
+                          })
+                        }
+                      />
+                    </label>
+
+                    <label className="omni-settings-dialog__toggle-row">
+                      <div className="omni-settings-dialog__toggle-copy">
+                        <strong>自动沉淀摘要</strong>
+                        <span>把当前话题的阶段结论保存为摘要，供后续继续接力。</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={activeAssistant.autoSaveSummaries}
+                        onChange={(event) =>
+                          onUpdateAssistantProfile(activeAssistant.id, {
+                            autoSaveSummaries: event.target.checked,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="omni-settings-dialog__section">
                   <div className="omni-settings-dialog__section-title">工具权限</div>
                   <div className="omni-settings-dialog__toggle-list">
                     {ASSISTANT_TOOL_OPTIONS.map((tool) => {
@@ -1160,6 +1240,17 @@ export default function MainChatView({
                         <div key={task.id} className="main-chat-task-board__subtask">
                           <strong>{task.title}</strong>
                           <span>{formatTaskStatusLabel(task.status)}</span>
+                          {task.delegatedTo ? <small>{task.delegatedTo}</small> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {latestTaskResult.trace.length > 0 && (
+                    <div className="main-chat-task-board__trace">
+                      {latestTaskResult.trace.slice(-4).map((entry) => (
+                        <div key={`${entry.at}-${entry.message}`} className="main-chat-task-board__trace-item">
+                          <span>{formatTaskStatusLabel(latestTaskResult.status)}</span>
+                          <p>{entry.message}</p>
                         </div>
                       ))}
                     </div>
