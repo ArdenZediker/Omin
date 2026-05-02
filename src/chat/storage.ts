@@ -366,7 +366,7 @@ export function formatUsageLabel(usage: ChatUsageStats) {
   }
 
   const tokenLabel = usage.totalTokens >= 1000 ? `${(usage.totalTokens / 1000).toFixed(1)}k tokens` : `${usage.totalTokens} tokens`;
-  const costLabel = usage.totalCostUsd > 0 ? ` 路 $${usage.totalCostUsd.toFixed(4)}` : "";
-  const estimatedLabel = usage.hasEstimatedUsage ? " 路 浼扮畻" : "";
+  const costLabel = usage.totalCostUsd > 0 ? ` / $${usage.totalCostUsd.toFixed(4)}` : "";
+  const estimatedLabel = usage.hasEstimatedUsage ? " / 估算" : "";
   return `${tokenLabel}${costLabel}${estimatedLabel}`;
 }

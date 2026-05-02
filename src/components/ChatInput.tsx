@@ -250,7 +250,7 @@ export default function ChatInput({
         </div>
 
         <div className="chat-composer__footer">
-          <div className="chat-composer__footer-hint">↵ 发送 / ⇧ ↵ 换行</div>
+          <div className="chat-composer__footer-hint">↵ 发送 / Shift + ↵ 换行</div>
           <div className="chat-composer__footer-actions">
             {canStartNewTopic && hasConversation ? (
               <button
