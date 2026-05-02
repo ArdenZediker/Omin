@@ -28,6 +28,38 @@ import type {
   UserPreferenceRecord,
 } from "../chat/types";
 
+function createMemoryId() {
+  return `memory-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function buildSessionSummary(messages: Message[], assistantReply: string) {
+  const userTurns = messages.filter((message) => message.role === "user").map((message) => message.content.trim()).filter(Boolean);
+  const latestUser = userTurns[userTurns.length - 1] ?? "";
+  const latestAssistant = assistantReply.trim();
+  const summaryParts = [latestUser, latestAssistant].filter(Boolean);
+  const summary = summaryParts.join(" -> ");
+  if (!summary) {
+    return "";
+  }
+  return summary.length > 220 ? `${summary.slice(0, 217)}...` : summary;
+}
+
+function extractAssistantMemories(messages: Message[]) {
+  const memorySignals = ["记住", "偏好", "习惯", "以后", "默认", "总是", "不要", "优先", "我希望", "请用"];
+  const userMessages = messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content.trim())
+    .filter(Boolean);
+
+  const candidates = userMessages
+    .flatMap((content) => content.split(/[\n。；;]+/))
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 6 && item.length <= 120)
+    .filter((item) => memorySignals.some((signal) => item.includes(signal)));
+
+  return [...new Set(candidates)].slice(0, 3);
+}
+
 type UseChatSessionsOptions = {
   persist: boolean;
 };
@@ -323,16 +355,111 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const getRelatedContextForAssistant = useCallback(
     (query: string) => {
+      if (!activeAssistant) {
+        return {
+          summaries: [],
+          memories: [],
+        };
+      }
+
+      if (activeAssistant.memoryScope === "off") {
+        return {
+          summaries: [],
+          memories: [],
+        };
+      }
+
       const summaryMatches = searchSessionSummaries(sessionSummaries, query)
-        .filter((item) => item.assistantId === activeAssistantId)
+        .filter((item) => {
+          if (activeAssistant.memoryScope === "session") {
+            return item.sessionId === activeChatId;
+          }
+          return item.assistantId === activeAssistantId;
+        })
         .slice(0, 5);
-      const memoryMatches = searchAssistantMemories(assistantMemories, activeAssistantId, query).slice(0, 5);
+      const memoryMatches = searchAssistantMemories(assistantMemories, activeAssistantId, query)
+        .filter((item) => {
+          if (activeAssistant.memoryScope === "session") {
+            return item.sourceSessionId === activeChatId;
+          }
+          return true;
+        })
+        .slice(0, 5);
       return {
         summaries: summaryMatches,
         memories: memoryMatches,
       };
     },
-    [activeAssistantId, assistantMemories, sessionSummaries]
+    [activeAssistant, activeAssistantId, activeChatId, assistantMemories, sessionSummaries]
+  );
+
+  const commitAssistantMemory = useCallback(
+    (sessionId: string, conversationMessages: Message[], assistantReply: string) => {
+      const assistant = assistants.find((item) => item.id === activeAssistantId) ?? activeAssistant;
+      if (!assistant) {
+        return;
+      }
+
+      const now = Date.now();
+
+      if (assistant.autoSaveSummaries) {
+        const summary = buildSessionSummary(conversationMessages, assistantReply);
+        if (summary) {
+          setSessionSummaries((current) => {
+            const nextTitle = getChatSessionTitle(conversationMessages);
+            const existingIndex = current.findIndex((item) => item.sessionId === sessionId);
+            if (existingIndex >= 0) {
+              const next = [...current];
+              next[existingIndex] = {
+                ...next[existingIndex],
+                assistantId: assistant.id,
+                title: nextTitle,
+                summary,
+                updatedAt: now,
+              };
+              return next;
+            }
+
+            return [
+              {
+                sessionId,
+                assistantId: assistant.id,
+                title: nextTitle,
+                summary,
+                updatedAt: now,
+              },
+              ...current,
+            ].slice(0, 200);
+          });
+        }
+      }
+
+      if (assistant.autoSaveMemories) {
+        const memoryItems = extractAssistantMemories(conversationMessages);
+        if (memoryItems.length > 0) {
+          setAssistantMemories((current) => {
+            const existingKeys = new Set(current.filter((item) => item.assistantId === assistant.id).map((item) => item.content));
+            const additions = memoryItems
+              .filter((content) => !existingKeys.has(content))
+              .map((content) => ({
+                id: createMemoryId(),
+                assistantId: assistant.id,
+                content,
+                sourceSessionId: sessionId,
+                createdAt: now,
+                updatedAt: now,
+              }));
+
+            if (additions.length === 0) {
+              return current;
+            }
+
+            return [...additions, ...current].slice(0, 300);
+          });
+        }
+      }
+    },
+    [activeAssistant, activeAssistantId, assistants]
   );
 
   return {
@@ -344,6 +471,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     assistantSessions,
     assistants,
     chatSessions,
+    commitAssistantMemory,
     createCustomAssistantProfile,
     createSessionFromMessages,
     deleteChatSession,

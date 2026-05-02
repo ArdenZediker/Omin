@@ -1,5 +1,4 @@
 import type { CSSProperties, Dispatch, MouseEvent, SetStateAction, WheelEvent } from "react";
-import type { DesktopRuntimeSnapshot } from "../app/runtimeSnapshot";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
 import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindowState";
 import Live2DCharacter from "./Live2DCharacter";
@@ -34,12 +33,10 @@ type CompactWindowProps = {
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   characterModelOptions: Array<{ id: CharacterModel; title: string; description: string }>;
-  runtimeSnapshot: DesktopRuntimeSnapshot;
   onCharacterContextMenu: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
   onCharacterModelChange: (model: CharacterModel) => void;
   onCharacterPointerDown: (e: MouseEvent<HTMLButtonElement>) => void;
   onCharacterPointerUp: () => void;
-  onCloseCompactMenu: () => void;
   onCloseCompactMenuNow: () => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
   onCompactDrag: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
@@ -50,7 +47,6 @@ type CompactWindowProps = {
   onOpenCompactQuery: () => void | Promise<void>;
   onOpenExternalChat: (entry: ExternalChatEntry) => void | Promise<void>;
   onOpenSettingsFromCompact: () => void | Promise<void>;
-  onOpenNewTopicFromCompact: () => void | Promise<void>;
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
   onSetCharacterMenuPinned: Dispatch<SetStateAction<boolean>>;
   onSetCompactQuery: Dispatch<SetStateAction<string>>;
@@ -62,7 +58,6 @@ type CompactWindowProps = {
   onSetIsCompactModelOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactQueryOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactReplyLoading: Dispatch<SetStateAction<boolean>>;
-  onToggleMainFromCompact: () => void | Promise<void>;
 };
 
 export default function CompactWindow({
@@ -90,14 +85,12 @@ export default function CompactWindow({
   isCompactQueryOpen,
   isCompactReplyLoading,
   omniSmallIconSrc,
-  runtimeSnapshot,
   compactMenuSide,
   compactSubmenuSide,
   onCharacterContextMenu,
   onCharacterModelChange,
   onCharacterPointerDown,
   onCharacterPointerUp,
-  onCloseCompactMenu,
   onCloseCompactMenuNow,
   onCompactAppearanceChange,
   onCompactDrag,
@@ -108,7 +101,6 @@ export default function CompactWindow({
   onOpenCompactQuery,
   onOpenExternalChat,
   onOpenSettingsFromCompact,
-  onOpenNewTopicFromCompact,
   onPointerHitTest,
   onSetCharacterMenuPinned,
   onSetCompactQuery,
@@ -120,7 +112,6 @@ export default function CompactWindow({
   onSetIsCompactModelOpen,
   onSetIsCompactQueryOpen,
   onSetIsCompactReplyLoading,
-  onToggleMainFromCompact,
 }: CompactWindowProps) {
   const closeReply = () => {
     onSetCompactReply(null);
@@ -164,9 +155,6 @@ export default function CompactWindow({
         if (isCharacterAppearance) {
           return;
         }
-        if (!target.closest(".compact-hover-zone") && !target.closest(".compact-query") && !target.closest(".compact-reply")) {
-          onCloseCompactMenuNow();
-        }
       }}
       onMouseDown={onCompactDrag}
       onWheel={onCompactWheel}
@@ -181,7 +169,11 @@ export default function CompactWindow({
               }
             : undefined
         }
-        onMouseLeave={!isCharacterAppearance && !isCompactQueryOpen ? onCloseCompactMenu : undefined}
+        onMouseLeave={
+          !isCharacterAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
+            ? onCloseCompactMenuNow
+            : undefined
+        }
         onClick={
           !isCharacterAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "click"
             ? (e) => {
@@ -195,13 +187,6 @@ export default function CompactWindow({
         }
       >
         <div className={`compact-bar ${isCharacterAppearance ? "compact-bar--character" : ""}`} style={compactStyle}>
-          {!isCharacterAppearance && runtimeSnapshot.activeAssistantTitle && (
-            <div className="compact-bar__meta no-drag" title={runtimeSnapshot.activeTaskGoal ?? runtimeSnapshot.activeAssistantTitle}>
-              <strong>{runtimeSnapshot.activeAssistantTitle}</strong>
-              <span>{runtimeSnapshot.activeTaskGoal ?? `任务 ${runtimeSnapshot.taskCount}`}</span>
-            </div>
-          )}
-
           <div className="compact-menu-anchor no-drag" onContextMenu={isCharacterAppearance ? onCharacterContextMenu : undefined}>
             <button
               type="button"
@@ -223,14 +208,20 @@ export default function CompactWindow({
                     }
                   : undefined
               }
-              onClick={() => {
+              onClick={(event) => {
                 if (isCharacterAppearance) {
                   if (isCharacterDragging) {
                     return;
                   }
                   return;
                 }
-                void onToggleMainFromCompact();
+                event.stopPropagation();
+                if (isCompactMenuOpen) {
+                  onCloseCompactMenuNow();
+                  return;
+                }
+                const rect = event.currentTarget.getBoundingClientRect();
+                void onOpenCompactMenu(rect.left + rect.width / 2, rect.top + rect.height / 2);
               }}
               aria-label="切换主界面"
             >
@@ -308,18 +299,7 @@ export default function CompactWindow({
                   <path d="M16 16L21 21" strokeWidth="1.8" strokeLinecap="round" />
                 </svg>
               </button>
-              <button
-                type="button"
-                className="compact-button compact-button--search-chip"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={() => {
-                  void onOpenNewTopicFromCompact();
-                }}
-                aria-label="新话题"
-                title="新话题"
-              >
-                +
-              </button>
+
             </div>
           )}
         </div>

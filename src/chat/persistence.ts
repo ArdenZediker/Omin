@@ -48,6 +48,10 @@ type PersistedChatState = {
   scheduledTasks: ScheduledTaskRecord[];
 };
 
+function canUseTauriStorage() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 function getLegacyAssistantsJson() {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(CHAT_ASSISTANTS_STORAGE_KEY);
@@ -119,7 +123,7 @@ export async function savePersistedChatState(assistants: AssistantProfile[], ses
   const assistantsJson = serializeAssistantsSnapshot(assistants);
   const sessionsJson = serializeChatSessionsSnapshot(sessions);
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && !canUseTauriStorage()) {
     localStorage.setItem(CHAT_ASSISTANTS_STORAGE_KEY, assistantsJson);
     localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, sessionsJson);
   }
@@ -129,8 +133,15 @@ export async function savePersistedChatState(assistants: AssistantProfile[], ses
       assistantsJson,
       sessionsJson,
     });
+    if (typeof window !== "undefined" && canUseTauriStorage()) {
+      localStorage.removeItem(CHAT_ASSISTANTS_STORAGE_KEY);
+      localStorage.removeItem(CHAT_SESSIONS_STORAGE_KEY);
+    }
   } catch {
-    // 浏览器或异常环境继续保留 localStorage
+    if (typeof window !== "undefined") {
+      localStorage.setItem(CHAT_ASSISTANTS_STORAGE_KEY, assistantsJson);
+      localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, sessionsJson);
+    }
   }
 }
 
@@ -143,7 +154,7 @@ export async function savePersistedMemoryState(
   const sessionSummariesJson = serializeSessionSummariesSnapshot(sessionSummaries);
   const userPreferencesJson = serializeUserPreferencesSnapshot(userPreferences);
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && !canUseTauriStorage()) {
     localStorage.setItem(ASSISTANT_MEMORIES_STORAGE_KEY, assistantMemoriesJson);
     localStorage.setItem(SESSION_SUMMARIES_STORAGE_KEY, sessionSummariesJson);
     localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, userPreferencesJson);
@@ -155,15 +166,24 @@ export async function savePersistedMemoryState(
       sessionSummariesJson,
       userPreferencesJson,
     });
+    if (typeof window !== "undefined" && canUseTauriStorage()) {
+      localStorage.removeItem(ASSISTANT_MEMORIES_STORAGE_KEY);
+      localStorage.removeItem(SESSION_SUMMARIES_STORAGE_KEY);
+      localStorage.removeItem(USER_PREFERENCES_STORAGE_KEY);
+    }
   } catch {
-    // 浏览器或异常环境继续保留 localStorage
+    if (typeof window !== "undefined") {
+      localStorage.setItem(ASSISTANT_MEMORIES_STORAGE_KEY, assistantMemoriesJson);
+      localStorage.setItem(SESSION_SUMMARIES_STORAGE_KEY, sessionSummariesJson);
+      localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, userPreferencesJson);
+    }
   }
 }
 
 export async function savePersistedAutomationState(tasks: ScheduledTaskRecord[]) {
   const scheduledTasksJson = serializeScheduledTasksSnapshot(tasks);
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && !canUseTauriStorage()) {
     localStorage.setItem(SCHEDULED_TASKS_STORAGE_KEY, scheduledTasksJson);
   }
 
@@ -171,7 +191,13 @@ export async function savePersistedAutomationState(tasks: ScheduledTaskRecord[])
     await saveAutomationStorage({
       scheduledTasksJson,
     });
+    if (typeof window !== "undefined" && canUseTauriStorage()) {
+      localStorage.removeItem(SCHEDULED_TASKS_STORAGE_KEY);
+    }
   } catch {
-    // 浏览器或异常环境继续保留 localStorage
+    if (typeof window !== "undefined") {
+      localStorage.setItem(SCHEDULED_TASKS_STORAGE_KEY, scheduledTasksJson);
+    }
   }
 }
+

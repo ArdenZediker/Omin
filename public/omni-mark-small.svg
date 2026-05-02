@@ -1,34 +1,27 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <radialGradient id="node" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(38 34) rotate(60) scale(25)">
-      <stop offset="0" stop-color="#F4F7FF"/>
-      <stop offset="0.34" stop-color="#9A86FF"/>
-      <stop offset="0.68" stop-color="#5D6BFF"/>
-      <stop offset="1" stop-color="#62E5D5"/>
-    </radialGradient>
-    <linearGradient id="mark" x1="49" y1="42" x2="88" y2="86" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#EAF1FF"/>
-      <stop offset="0.58" stop-color="#96B8FF"/>
-      <stop offset="1" stop-color="#72E6D6"/>
+    <linearGradient id="orbit" x1="34" y1="24" x2="94" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C8FFF"/>
+      <stop offset="0.58" stop-color="#5C75FF"/>
+      <stop offset="1" stop-color="#63E3D5"/>
     </linearGradient>
+    <radialGradient id="core" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(64 64) rotate(90) scale(18)">
+      <stop offset="0" stop-color="#EAF4FF"/>
+      <stop offset="0.48" stop-color="#BBD2FF"/>
+      <stop offset="1" stop-color="#8DAFFF"/>
+    </radialGradient>
   </defs>
 
-  <circle cx="38" cy="34" r="13" fill="url(#node)"/>
-  <circle cx="31" cy="28" r="5" fill="#9E8CFF" opacity="0.82"/>
-  <circle cx="47" cy="40" r="4" fill="#6DE7D7" opacity="0.9"/>
+  <path
+    d="M89 42.5C83.8 35.6 74.8 31 64.8 31C48.9 31 36 43.9 36 59.8C36 75.7 48.9 88.6 64.8 88.6C79.6 88.6 91.8 77.5 93.5 63.2"
+    stroke="url(#orbit)"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
 
-  <path
-    d="M84 48C79.1 42.8 72.3 39.8 65 39.8C50.4 39.8 38.6 51.6 38.6 66.2C38.6 80.8 50.4 92.6 65 92.6C79.6 92.6 91.4 80.8 91.4 66.2"
-    stroke="url(#mark)"
-    stroke-width="9"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
-  <path
-    d="M61 57.5H77.5V74.5"
-    stroke="url(#mark)"
-    stroke-width="7"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
+  <circle cx="84.5" cy="38.5" r="7.5" fill="#67DDD2"/>
+  <circle cx="84.5" cy="38.5" r="3" fill="#F2FFFD"/>
+
+  <circle cx="64" cy="64" r="14" fill="url(#core)"/>
+  <circle cx="64" cy="64" r="5" fill="#F8FBFF"/>
 </svg>

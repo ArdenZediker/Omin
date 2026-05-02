@@ -1,5 +1,6 @@
 ﻿import type { Message } from "../adapters/types";
 import type {
+  AssistantMemoryScope,
   AssistantMemoryRecord,
   AssistantProfile,
   AssistantProfileDraft,
@@ -41,6 +42,7 @@ export const DEFAULT_ASSISTANT_SKILL_IDS = [
   "explain",
   "compare",
 ];
+export const DEFAULT_ASSISTANT_MEMORY_SCOPE: AssistantMemoryScope = "assistant";
 
 export const DEFAULT_USAGE_PREFERENCES: ChatUsagePreferences = {
   enableStreaming: true,
@@ -75,6 +77,9 @@ export function createDefaultAssistant(): AssistantProfile {
     systemPrompt: "",
     allowedToolIds: [...DEFAULT_ASSISTANT_TOOL_IDS],
     allowedSkillIds: [...DEFAULT_ASSISTANT_SKILL_IDS],
+    memoryScope: DEFAULT_ASSISTANT_MEMORY_SCOPE,
+    autoSaveMemories: true,
+    autoSaveSummaries: true,
     createdAt: now,
     updatedAt: now,
   };
@@ -99,6 +104,9 @@ export function createCustomAssistant(input?: AssistantProfileDraft): AssistantP
     defaultModelId: input?.defaultModelId ?? null,
     allowedToolIds: input?.allowedToolIds?.length ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
     allowedSkillIds: input?.allowedSkillIds?.length ? [...input.allowedSkillIds] : [...DEFAULT_ASSISTANT_SKILL_IDS],
+    memoryScope: input?.memoryScope ?? DEFAULT_ASSISTANT_MEMORY_SCOPE,
+    autoSaveMemories: input?.autoSaveMemories ?? true,
+    autoSaveSummaries: input?.autoSaveSummaries ?? true,
     createdAt: now,
     updatedAt: now,
   };
@@ -190,6 +198,12 @@ function normalizeAssistant(input: Partial<AssistantProfile> & Pick<AssistantPro
     defaultModelId: input.defaultModelId ?? null,
     allowedToolIds: Array.isArray(input.allowedToolIds) && input.allowedToolIds.length > 0 ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
     allowedSkillIds: Array.isArray(input.allowedSkillIds) && input.allowedSkillIds.length > 0 ? [...input.allowedSkillIds] : [...DEFAULT_ASSISTANT_SKILL_IDS],
+    memoryScope:
+      input.memoryScope === "off" || input.memoryScope === "session" || input.memoryScope === "assistant"
+        ? input.memoryScope
+        : DEFAULT_ASSISTANT_MEMORY_SCOPE,
+    autoSaveMemories: typeof input.autoSaveMemories === "boolean" ? input.autoSaveMemories : true,
+    autoSaveSummaries: typeof input.autoSaveSummaries === "boolean" ? input.autoSaveSummaries : true,
     createdAt,
     updatedAt,
   };

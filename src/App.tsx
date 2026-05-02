@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Message } from "./adapters/types";
-import { buildDesktopRuntimeSnapshot } from "./app/runtimeSnapshot";
 import { createDesktopActions } from "./app/desktopActions";
 import { modelRegistry } from "./adapters/registry";
 import TitleBar from "./components/TitleBar";
@@ -52,6 +51,7 @@ function App() {
     activeSession,
     applyUsageToSession,
     assistants,
+    commitAssistantMemory,
     createCustomAssistantProfile,
     createSessionFromMessages,
     deleteChatSession,
@@ -77,7 +77,6 @@ function App() {
     characterModel,
     characterPanelSide,
     characterScale,
-    clearCompactReply,
     closeCompactMenuPanels,
     closeCompactMenus,
     compactAppearance,
@@ -153,24 +152,24 @@ function App() {
   const isCharacterHorizontalPanelOpen = isCharacterAppearance && Boolean(isCompactMenuOpen || isCompactReplyLoading || compactReply);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
-      compactAppearance === "character" ? Math.max(26, Math.round(compactSize.width * 0.36)) : Math.max(28, compactSize.height - 30);
+      compactAppearance === "character" ? Math.max(26, Math.round(compactSize.width * 0.36)) : Math.max(30, compactSize.height - 24);
     const iconSize =
       compactAppearance === "character" ? Math.max(14, Math.round(buttonSize * 0.48)) : Math.max(14, Math.round(buttonSize * 0.5));
     const characterReplyGap = Math.min(108, Math.max(40, Math.round(compactSize.width * 0.3)));
+    const compactGap = compactAppearance === "character" ? Math.max(4, Math.round(compactSize.width * 0.04)) : 8;
+    const compactPadding =
+      compactAppearance === "character"
+        ? Math.max(3, Math.round(compactSize.width * 0.03))
+        : 8;
+    const inlineBarWidth = compactAppearance === "character" ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
 
     return {
-      "--compact-bar-width": `${Math.max(42, compactSize.width - 20)}px`,
-      "--compact-bar-height": `${Math.max(42, compactSize.height - 24)}px`,
+      "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
+      "--compact-bar-height": `${Math.max(54, buttonSize + compactPadding * 2)}px`,
       "--compact-button-size": `${buttonSize}px`,
       "--compact-button-icon-size": `${iconSize}px`,
-      "--compact-gap":
-        compactAppearance === "character"
-          ? `${Math.max(4, Math.round(compactSize.width * 0.04))}px`
-          : `${Math.max(8, Math.round(compactSize.width * 0.08))}px`,
-      "--compact-padding":
-        compactAppearance === "character"
-          ? `${Math.max(3, Math.round(compactSize.width * 0.03))}px`
-          : `${Math.max(6, Math.round(compactSize.height * 0.13))}px`,
+      "--compact-gap": `${compactGap}px`,
+      "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${Math.max(48, compactSize.width - 18)}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
     } as CSSProperties;
@@ -220,6 +219,7 @@ function App() {
     activeAssistant,
     availableModels,
     applyUsageToSession,
+    commitAssistantMemory,
     createSessionFromMessages,
     currentModel,
     handleModelChange,
@@ -237,10 +237,6 @@ function App() {
     togglePinnedChatSession,
   });
 
-  const runtimeSnapshot = useMemo(
-    () => buildDesktopRuntimeSnapshot({ activeAssistant, taskRuntimeState }),
-    [activeAssistant, taskRuntimeState]
-  );
   const relatedContext = useMemo(
     () => getRelatedContextForAssistant(activeSession?.title ?? ""),
     [activeSession?.title, getRelatedContextForAssistant]
@@ -280,7 +276,6 @@ function App() {
 
   const compactController = useCompactWindowController({
     basicSettings,
-    clearCompactReply,
     closeCompactMenuPanels,
     closeCompactMenus,
     compactAppearance,
@@ -486,12 +481,10 @@ function App() {
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
         omniSmallIconSrc={omniSmallIconSrc}
-        runtimeSnapshot={runtimeSnapshot}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
         onCharacterModelChange={compactController.handleCharacterModelChange}
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
         onCharacterPointerUp={compactController.handleCharacterPointerUp}
-        onCloseCompactMenu={compactController.closeCompactMenu}
         onCloseCompactMenuNow={compactController.closeCompactMenuNow}
         onCompactAppearanceChange={compactController.handleCompactAppearanceChange}
         onCompactDrag={compactController.handleCompactDrag}
@@ -502,7 +495,6 @@ function App() {
         onOpenCompactQuery={compactController.handleOpenCompactQuery}
         onOpenExternalChat={compactController.handleOpenExternalChat}
         onOpenSettingsFromCompact={desktopActions.openSettings}
-        onOpenNewTopicFromCompact={desktopActions.openNewTopic}
         onPointerHitTest={isCharacterPointerInHitArea}
         onSetCharacterMenuPinned={setIsCharacterMenuPinned}
         onSetCompactQuery={setCompactQuery}
@@ -514,7 +506,6 @@ function App() {
         onSetIsCompactModelOpen={setIsCompactModelOpen}
         onSetIsCompactQueryOpen={setIsCompactQueryOpen}
         onSetIsCompactReplyLoading={setIsCompactReplyLoading}
-        onToggleMainFromCompact={compactController.handleToggleMainFromCompact}
       />
     );
   }

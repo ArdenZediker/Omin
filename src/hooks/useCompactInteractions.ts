@@ -203,7 +203,7 @@ export function useCompactInteractions(args: UseCompactInteractionsArgs) {
     const draft = compactQuery.trim();
     if (!draft) return;
 
-    loadProviderConfigs();
+    await loadProviderConfigs();
     const savedModel = readSqliteBackedValue(currentModelStorageKey);
     const resolvedModel =
       savedModel && modelRegistry.getModelConfig(savedModel) ? savedModel : modelRegistry.getCurrentModel();

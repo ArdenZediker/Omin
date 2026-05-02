@@ -8,7 +8,7 @@ import { GeminiAdapter } from "./gemini";
 import { OllamaAdapter } from "./ollama";
 import { DeepSeekAdapter } from "./deepseek";
 import { BUILTIN_MODELS } from "./types";
-import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { loadAppKvEntries, saveAppKvEntry } from "../app/sqliteStorage";
 
 type AdapterConstructor = new (config: ProviderConfig) => ModelAdapter;
 
@@ -207,7 +207,7 @@ export const modelRegistry = new ModelRegistry();
 const STORAGE_KEY = "omni_provider_configs";
 export const CURRENT_MODEL_STORAGE_KEY = "omni_current_model";
 
-export function saveProviderConfigs(): void {
+export async function saveProviderConfigs(): Promise<void> {
   const data: Record<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> = {};
   modelRegistry.getRegisteredProviders().forEach((provider) => {
     // 保存时需要原始配置，直接访问私有映射
@@ -216,13 +216,14 @@ export function saveProviderConfigs(): void {
       data[provider] = { apiKey: rawConfig.apiKey, baseUrl: rawConfig.baseUrl, name: rawConfig.name, customModels: rawConfig.customModels };
     }
   });
-  saveSqliteBackedValue(STORAGE_KEY, JSON.stringify(data));
-  saveSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY, modelRegistry.getCurrentModel());
+  await saveAppKvEntry(STORAGE_KEY, JSON.stringify(data));
+  await saveAppKvEntry(CURRENT_MODEL_STORAGE_KEY, modelRegistry.getCurrentModel());
 }
 
-export function loadProviderConfigs(): void {
+export async function loadProviderConfigs(): Promise<void> {
   try {
-    const raw = readSqliteBackedValue(STORAGE_KEY);
+    const entries = await loadAppKvEntries([STORAGE_KEY, CURRENT_MODEL_STORAGE_KEY]);
+    const raw = entries[STORAGE_KEY];
     if (raw) {
       const data = JSON.parse(raw) as Record<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }>;
       for (const [provider, config] of Object.entries(data)) {
@@ -237,7 +238,7 @@ export function loadProviderConfigs(): void {
       }
     }
 
-    const savedCurrentModel = readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY);
+    const savedCurrentModel = entries[CURRENT_MODEL_STORAGE_KEY] ?? null;
     const availableModels = modelRegistry.getAvailableModels();
     if (savedCurrentModel && availableModels.some((model) => model.id === savedCurrentModel)) {
       modelRegistry.setCurrentModel(savedCurrentModel);

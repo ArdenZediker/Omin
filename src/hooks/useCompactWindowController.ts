@@ -44,7 +44,6 @@ function clampToRange(value: number, min: number, max: number) {
 
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
-  clearCompactReply: () => void;
   closeCompactMenuPanels: () => void;
   closeCompactMenus: () => void;
   compactAppearance: CompactAppearance;
@@ -88,7 +87,6 @@ type UseCompactWindowControllerArgs = {
 
 export function useCompactWindowController({
   basicSettings,
-  clearCompactReply,
   closeCompactMenuPanels,
   closeCompactMenus,
   compactAppearance,
@@ -491,39 +489,14 @@ export function useCompactWindowController({
       return;
     }
 
-    const isPointInsideInteractiveArea = (x: number, y: number) => {
-      const selectors = [".compact-bar", ".compact-menu", ".compact-submenu", ".compact-search-popover"];
-      const padding = 8;
-      return selectors.some((selector) =>
-        Array.from(document.querySelectorAll<HTMLElement>(selector)).some((element) => {
-          const rect = element.getBoundingClientRect();
-          return x >= rect.left - padding && x <= rect.right + padding && y >= rect.top - padding && y <= rect.bottom + padding;
-        })
-      );
-    };
-
-    const scheduleCloseIfOutside = (event: MouseEvent) => {
-      if (isPointInsideInteractiveArea(event.clientX, event.clientY)) {
-        if (compactMenuCloseTimerRef.current !== null) {
-          window.clearTimeout(compactMenuCloseTimerRef.current);
-          compactMenuCloseTimerRef.current = null;
-        }
-        return;
-      }
-      closeCompactMenu();
-    };
-
-    window.addEventListener("mousemove", scheduleCloseIfOutside);
-    window.addEventListener("mouseleave", closeCompactMenuNow);
-    window.addEventListener("blur", closeCompactMenuNow);
-    document.addEventListener("visibilitychange", closeCompactMenuNow);
+    const closeOnBlur = () => closeCompactMenuNow();
+    window.addEventListener("blur", closeOnBlur);
+    document.addEventListener("visibilitychange", closeOnBlur);
     return () => {
-      window.removeEventListener("mousemove", scheduleCloseIfOutside);
-      window.removeEventListener("mouseleave", closeCompactMenuNow);
-      window.removeEventListener("blur", closeCompactMenuNow);
-      document.removeEventListener("visibilitychange", closeCompactMenuNow);
+      window.removeEventListener("blur", closeOnBlur);
+      document.removeEventListener("visibilitychange", closeOnBlur);
     };
-  }, [closeCompactMenu, closeCompactMenuNow, isCharacterAppearance, isCharacterMenuPinned, isCompactMenuOpen, isCompactWindow]);
+  }, [closeCompactMenuNow, isCharacterAppearance, isCharacterMenuPinned, isCompactMenuOpen, isCompactWindow]);
 
   useEffect(() => {
     if (!isCompactWindow || !isCharacterMenuPinned || !isCompactMenuOpen) {
@@ -548,32 +521,6 @@ export function useCompactWindowController({
     const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
     await mainWindow?.emit("omni-open-settings");
   }, [closeCompactMenus]);
-
-  const handleToggleMainFromCompact = useCallback(async () => {
-    await appWindow.setAlwaysOnTop(true);
-    closeCompactMenus();
-    setIsCompactQueryOpen(false);
-    clearCompactReply();
-
-    const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
-    if (!mainWindow) {
-      await restoreMainWindow(false);
-      return;
-    }
-
-    try {
-      const isVisible = await mainWindow.isVisible();
-      const isMinimized = await mainWindow.isMinimized();
-      if (isVisible && !isMinimized) {
-        await mainWindow.hide();
-        return;
-      }
-    } catch {
-      // 忽略状态检查失败
-    }
-
-    await restoreMainWindow(false);
-  }, [clearCompactReply, closeCompactMenus, setIsCompactQueryOpen]);
 
   const resolveCharacterPanelSide = useCallback(async () => {
     if (!isCompactWindow || !isCharacterAppearance) {
@@ -680,7 +627,7 @@ export function useCompactWindowController({
         return;
       }
 
-      loadProviderConfigs();
+      await loadProviderConfigs();
       const savedModel = readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY);
       const resolvedModel =
         savedModel && modelRegistry.getModelConfig(savedModel) ? savedModel : modelRegistry.getCurrentModel();
@@ -927,7 +874,6 @@ export function useCompactWindowController({
     handleOpenCompactQuery,
     handleOpenExternalChat,
     handleOpenSettingsFromCompact,
-    handleToggleMainFromCompact,
     isCharacterDragging: isCharacterDraggingRef.current,
     openCompactMenu,
   };

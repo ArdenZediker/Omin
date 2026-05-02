@@ -19,6 +19,7 @@ type UseChatRuntimeArgs = {
   activeAssistant: AssistantProfile | null;
   availableModels: ModelConfig[];
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
+  commitAssistantMemory: (sessionId: string, conversationMessages: Message[], assistantReply: string) => void;
   createSessionFromMessages: (conversationMessages: Message[]) => { id: string };
   currentModel: string;
   getChatSessionById: (sessionId: string) => SessionLite | null;
@@ -49,6 +50,7 @@ export function useChatRuntime({
   activeAssistant,
   availableModels,
   applyUsageToSession,
+  commitAssistantMemory,
   createSessionFromMessages,
   currentModel,
   getChatSessionById,
@@ -69,12 +71,9 @@ export function useChatRuntime({
   const [isLoading, setIsLoading] = useState(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [latestTaskResult, setLatestTaskResult] = useState<TaskExecutionResult | null>(null);
-  const [taskRuntimeState, setTaskRuntimeState] = useState<TaskRuntimeState>(() => {
-    const history = getInitialTaskHistory();
-    return {
-      activeTask: history[0] ?? null,
-      history,
-    };
+  const [taskRuntimeState, setTaskRuntimeState] = useState<TaskRuntimeState>({
+    activeTask: null,
+    history: [],
   });
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastRunIdRef = useRef(0);
@@ -88,8 +87,24 @@ export function useChatRuntime({
   const assistantSystemPrompt = activeAssistant?.systemPrompt?.trim() ? activeAssistant.systemPrompt.trim() : undefined;
 
   useEffect(() => {
-    saveTaskHistory(taskRuntimeState.history);
+    void saveTaskHistory(taskRuntimeState.history);
   }, [taskRuntimeState.history]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getInitialTaskHistory().then((history) => {
+      if (cancelled) return;
+      setTaskRuntimeState({
+        activeTask: history[0] ?? null,
+        history,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const finishTaskResult = useCallback(
     (taskResult: TaskExecutionResult, sessionId: string | null | undefined, fallbackMessages: Message[]) => {
@@ -106,6 +121,7 @@ export function useChatRuntime({
         setMessages([...conversationMessages, { role: "assistant", content: taskResult.finalResult.content }]);
         if (sessionId) {
           applyUsageToSession(sessionId, taskResult.finalResult, conversationMessages);
+          commitAssistantMemory(sessionId, conversationMessages, taskResult.finalResult.content);
         }
         return;
       }
@@ -118,7 +134,7 @@ export function useChatRuntime({
         setError(taskResult.error || "任务执行失败");
       }
     },
-    [applyUsageToSession, setMessages]
+    [applyUsageToSession, commitAssistantMemory, setMessages]
   );
 
   const runConversationTurn = useCallback(

@@ -36,7 +36,7 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
 
 export const COMPACT_APPEARANCE_PRESETS: Record<CompactAppearance, { width: number; height: number }> = {
   default: { width: 120, height: 64 },
-  compact: { width: 104, height: 56 },
+  compact: { width: 108, height: 56 },
   large: { width: 136, height: 72 },
   character: { width: 86, height: 108 },
 };

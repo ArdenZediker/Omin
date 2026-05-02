@@ -20,6 +20,8 @@ export type ChatUsageStats = {
 
 export type AssistantKind = "basic" | "custom";
 
+export type AssistantMemoryScope = "off" | "session" | "assistant";
+
 export type AssistantProfileDraft = {
   sourcePresetId?: string | null;
   title?: string;
@@ -30,6 +32,9 @@ export type AssistantProfileDraft = {
   defaultModelId?: string | null;
   allowedToolIds?: string[];
   allowedSkillIds?: string[];
+  memoryScope?: AssistantMemoryScope;
+  autoSaveMemories?: boolean;
+  autoSaveSummaries?: boolean;
 };
 
 export type AssistantProfile = {
@@ -44,6 +49,9 @@ export type AssistantProfile = {
   defaultModelId?: string | null;
   allowedToolIds: string[];
   allowedSkillIds: string[];
+  memoryScope: AssistantMemoryScope;
+  autoSaveMemories: boolean;
+  autoSaveSummaries: boolean;
   createdAt: number;
   updatedAt: number;
 };
