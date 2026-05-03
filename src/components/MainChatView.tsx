@@ -521,6 +521,7 @@ export default function MainChatView({
     setTopicMenuOpen(false);
   };
 
+
   return (
     <div className={layoutClassName}>
       <aside className="main-chat-nav">
