@@ -72,9 +72,44 @@ export function createDefaultAssistant(): AssistantProfile {
     title: "基础聊天",
     description: "通用问答与基础对话入口",
     avatarType: "emoji",
-    avatarValue: "emoji:1F989",
+    avatarValue: "emoji:1F4AC",
     defaultModelId: null,
-    systemPrompt: "",
+    systemPrompt: `## 角色定位
+你是“基础聊天”助手，是这个产品里默认的通用对话入口。
+
+## 适用场景
+- 日常问答
+- 资料整理
+- 简单建议
+- 轻量交流
+- 不需要强角色风格的通用任务
+
+## 核心职责
+- 先准确理解用户想解决什么，再给回应。
+- 用最短路径帮助用户推进问题，而不是展示复杂能力。
+- 在没有必要时，不主动切换成专家式、创意式或品牌式表达。
+
+## 回答策略
+1. 如果问题清楚且简单，直接给结论。
+2. 如果问题有明显缺口，只补问最关键的 1 到 2 个点。
+3. 如果存在多个可行方向，给简短比较并附推荐。
+4. 如果用户只是想快速拿结果，先给结果，再补充原因。
+
+## 边界与禁忌
+- 不要把简单问题复杂化。
+- 不要长篇铺垫、空泛说教或堆砌概念。
+- 不要在不确定时装懂或编造事实。
+- 不要强行代入明显的人设语气。
+- 不要默认替用户做过度决策，只给建议与判断依据。
+
+## 输出要求
+- 使用中文。
+- 表达自然、直接、清楚。
+- 优先给可执行建议。
+- 需要结构时，用简短分点，不做过度展开。
+
+## 优先级
+准确 > 清楚 > 简洁 > 风格化`,
     allowedToolIds: [...DEFAULT_ASSISTANT_TOOL_IDS],
     allowedSkillIds: [...DEFAULT_ASSISTANT_SKILL_IDS],
     memoryScope: DEFAULT_ASSISTANT_MEMORY_SCOPE,
@@ -175,6 +210,7 @@ function normalizeUsageStats(input: Partial<ChatUsageStats> | undefined): ChatUs
 function normalizeAssistant(input: Partial<AssistantProfile> & Pick<AssistantProfile, "id" | "title" | "kind">): AssistantProfile {
   const createdAt = typeof input.createdAt === "number" ? input.createdAt : Date.now();
   const updatedAt = typeof input.updatedAt === "number" ? input.updatedAt : createdAt;
+  const defaultAssistant = createDefaultAssistant();
 
   return {
     id: input.id,
@@ -189,12 +225,17 @@ function normalizeAssistant(input: Partial<AssistantProfile> & Pick<AssistantPro
           : "可配置角色设定、模型和工具权限",
     avatarType: input.avatarType === "image" ? "image" : "emoji",
     avatarValue:
-      typeof input.avatarValue === "string" && input.avatarValue.trim()
+      input.kind === "basic"
+        ? defaultAssistant.avatarValue
+        : typeof input.avatarValue === "string" && input.avatarValue.trim()
         ? input.avatarValue
-        : input.kind === "basic"
-          ? "emoji:1F989"
-          : "emoji:1F916",
-    systemPrompt: typeof input.systemPrompt === "string" ? input.systemPrompt : "",
+        : "emoji:1F916",
+    systemPrompt:
+      input.kind === "basic"
+        ? defaultAssistant.systemPrompt
+        : typeof input.systemPrompt === "string"
+          ? input.systemPrompt
+          : "",
     defaultModelId: input.defaultModelId ?? null,
     allowedToolIds: Array.isArray(input.allowedToolIds) && input.allowedToolIds.length > 0 ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
     allowedSkillIds: Array.isArray(input.allowedSkillIds) && input.allowedSkillIds.length > 0 ? [...input.allowedSkillIds] : [...DEFAULT_ASSISTANT_SKILL_IDS],

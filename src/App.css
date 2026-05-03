@@ -639,10 +639,10 @@ body,
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 36px 20px;
+  padding: 18px 20px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   background: var(--omni-app-bg);
 }
 
@@ -2491,15 +2491,15 @@ body,
 .omni-settings-dialog__sections {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
   padding: 0;
 }
 
 .omni-settings-dialog__section {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px;
+  gap: 12px;
+  padding: 14px 16px;
   border: 1px solid var(--omni-panel-border);
   border-radius: 18px;
   background:
@@ -2515,21 +2515,22 @@ body,
 }
 
 .omni-settings-dialog__assistant-overview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 20px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
 }
 
 .omni-settings-dialog__assistant-form,
 .omni-settings-dialog__assistant-side {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .omni-settings-dialog__assistant-side {
-  padding: 16px;
+  width: 100%;
+  padding: 12px 14px;
   border: 1px solid var(--omni-panel-border);
   border-radius: 18px;
   background:
@@ -2599,7 +2600,7 @@ body,
 
 .omni-settings-dialog__avatar-hero {
   width: 100%;
-  min-height: 88px;
+  min-height: 96px;
   border: 1px solid var(--omni-panel-border);
   border-radius: 18px;
   display: flex;
@@ -2636,6 +2637,12 @@ body,
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.omni-settings-dialog__assistant-side .omni-settings-dialog__setting-hint {
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .omni-settings-dialog__avatar-hero-copy strong {
@@ -2789,15 +2796,28 @@ body,
   resize: vertical;
 }
 
-.omni-settings-dialog__toggle-list {
+.omni-settings-dialog__model-select {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
+}
+
+.omni-settings-dialog__model-select-meta {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.omni-settings-dialog__toggle-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .omni-settings-dialog__preset-card {
   width: 100%;
-  min-height: 64px;
+  min-height: 56px;
   border: 1px solid var(--omni-panel-border);
   border-radius: 14px;
   display: flex;
@@ -2824,7 +2844,7 @@ body,
 }
 
 .omni-settings-dialog__toggle-row {
-  min-height: 60px;
+  min-height: 54px;
   border: 1px solid var(--omni-panel-border);
   border-radius: 14px;
   display: flex;
@@ -2833,6 +2853,10 @@ body,
   gap: 16px;
   padding: 0 14px;
   background: var(--omni-panel-bg);
+}
+
+.omni-settings-dialog__assistant-form > .omni-settings-dialog__preset-badge {
+  max-width: 520px;
 }
 
 .omni-settings-dialog__toggle-copy strong {
@@ -4834,10 +4858,10 @@ body,
 
 @media (max-width: 1180px) {
   .omni-settings-dialog__assistant-overview {
-    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 
-  .omni-settings-dialog__assistant-side {
-    order: -1;
+  .omni-settings-dialog__toggle-list {
+    grid-template-columns: 1fr;
   }
 }
