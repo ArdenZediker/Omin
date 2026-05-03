@@ -3234,6 +3234,14 @@ body,
   color: #d97706;
 }
 
+.chat-topic-panel__pin--danger {
+  color: #ef4444;
+}
+
+.chat-topic-panel__pin--danger:hover {
+  color: #dc2626;
+}
+
 .chat-topic-panel__item:hover,
 .chat-topic-panel__item--active {
   background: color-mix(in srgb, var(--omni-app-text) 6%, transparent);
