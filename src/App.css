@@ -256,6 +256,10 @@ body,
   z-index: 12;
 }
 
+.main-chat-layout--assistant-settings .main-chat-workspace::before {
+  display: none;
+}
+
 .main-chat-header {
   position: relative;
   grid-column: 1 / -1;
@@ -287,6 +291,10 @@ body,
 }
 
 .main-chat-layout--topic-collapsed .main-chat-pane {
+  margin-right: 0;
+}
+
+.main-chat-layout--assistant-settings .main-chat-pane {
   margin-right: 0;
 }
 
@@ -2384,6 +2392,8 @@ body,
   flex-direction: column;
   gap: 12px;
   padding: 0;
+  width: min(1280px, 100%);
+  margin: 0 auto;
 }
 
 .omni-settings-dialog__section {
@@ -2417,6 +2427,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
 }
 
 .omni-settings-dialog__assistant-side {
@@ -2747,7 +2758,7 @@ body,
 }
 
 .omni-settings-dialog__assistant-form > .omni-settings-dialog__preset-badge {
-  max-width: 520px;
+  max-width: 760px;
 }
 
 .omni-settings-dialog__toggle-copy strong {
