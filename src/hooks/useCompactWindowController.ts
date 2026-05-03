@@ -391,7 +391,7 @@ export function useCompactWindowController({
       const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
       const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
       if (isCharacterAppearance) {
-        await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
+        await appWindow.setAlwaysOnTop(true);
         return;
       }
 
