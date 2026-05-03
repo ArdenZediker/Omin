@@ -133,6 +133,7 @@ export function createCustomAssistant(input?: AssistantProfileDraft): AssistantP
     sourcePresetId: input?.sourcePresetId ?? null,
     title: input?.title?.trim() || "自定义助手",
     description: input?.description?.trim() || "可配置角色设定、模型和工具权限",
+    groupName: typeof input?.groupName === "string" && input.groupName.trim() ? input.groupName.trim() : null,
     avatarType: input?.avatarType ?? "emoji",
     avatarValue: input?.avatarValue ?? "emoji:1F916",
     systemPrompt: input?.systemPrompt ?? "",
@@ -223,6 +224,12 @@ function normalizeAssistant(input: Partial<AssistantProfile> & Pick<AssistantPro
         : input.kind === "basic"
           ? "通用问答与基础对话入口"
           : "可配置角色设定、模型和工具权限",
+    groupName:
+      input.kind === "basic"
+        ? null
+        : typeof input.groupName === "string" && input.groupName.trim()
+        ? input.groupName.trim()
+        : null,
     avatarType: input.avatarType === "image" ? "image" : "emoji",
     avatarValue:
       input.kind === "basic"

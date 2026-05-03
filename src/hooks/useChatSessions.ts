@@ -250,6 +250,12 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
           ...patch,
           title: typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : assistant.title,
           description: typeof patch.description === "string" && patch.description.trim() ? patch.description.trim() : assistant.description,
+          groupName:
+            typeof patch.groupName === "string"
+              ? patch.groupName.trim() || null
+              : patch.groupName === null
+              ? null
+              : assistant.groupName ?? null,
           updatedAt: now,
         };
 
