@@ -2448,13 +2448,15 @@ body,
 }
 
 .omni-settings-dialog__preset-badge {
-  min-height: 54px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 0;
   border: 1px solid var(--omni-panel-border);
   border-radius: 14px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
+  gap: 8px;
+  padding: 10px 12px;
   background: color-mix(in srgb, var(--omni-panel-bg) 90%, var(--omni-soft-bg));
 }
 
@@ -2462,18 +2464,25 @@ body,
   color: var(--omni-app-muted);
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .omni-settings-dialog__preset-badge strong {
   color: var(--omni-app-text);
   font-size: 13px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .omni-settings-dialog__preset-badge small {
-  margin-left: auto;
+  margin-left: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-app-text) 6%, transparent);
   color: var(--omni-app-muted);
   font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .omni-settings-dialog__setting-label {
@@ -2497,11 +2506,13 @@ body,
 }
 
 .omni-settings-dialog__setting-control--avatar {
-  align-items: stretch;
+  align-items: flex-start;
 }
 
 .omni-settings-dialog__avatar-hero {
-  width: 100%;
+  width: auto;
+  min-width: 320px;
+  max-width: 520px;
   min-height: 96px;
   border: 1px solid var(--omni-panel-border);
   border-radius: 18px;
@@ -2665,7 +2676,8 @@ body,
 }
 
 .omni-settings-dialog__section .chat-topic-panel__field input,
-.omni-settings-dialog__section .chat-topic-panel__field textarea {
+.omni-settings-dialog__section .chat-topic-panel__field textarea,
+.omni-settings-dialog__section .chat-topic-panel__field select {
   display: block;
   width: 100%;
   min-width: 0;
@@ -2680,7 +2692,8 @@ body,
 }
 
 .omni-settings-dialog__section .chat-topic-panel__field input:focus,
-.omni-settings-dialog__section .chat-topic-panel__field textarea:focus {
+.omni-settings-dialog__section .chat-topic-panel__field textarea:focus,
+.omni-settings-dialog__section .chat-topic-panel__field select:focus {
   border-color: rgba(96, 165, 250, 0.42);
   box-shadow:
     0 0 0 3px rgba(96, 165, 250, 0.12),
@@ -2701,14 +2714,16 @@ body,
 .omni-settings-dialog__model-select {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .omni-settings-dialog__model-select-meta {
   color: var(--omni-app-muted);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.4;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .omni-settings-dialog__toggle-list {
@@ -2758,8 +2773,13 @@ body,
 }
 
 .omni-settings-dialog__assistant-form > .omni-settings-dialog__preset-badge {
+  align-self: flex-start;
+}
+
+.omni-settings-dialog__field--full {
   max-width: 760px;
 }
+
 
 .omni-settings-dialog__toggle-copy strong {
   color: var(--omni-app-text);
@@ -4725,7 +4745,8 @@ body,
 
 :root[data-omni-theme="dark"] .omni-settings-dialog__avatar-search,
 :root[data-omni-theme="dark"] .omni-settings-dialog__section .chat-topic-panel__field input,
-:root[data-omni-theme="dark"] .omni-settings-dialog__section .chat-topic-panel__field textarea {
+:root[data-omni-theme="dark"] .omni-settings-dialog__section .chat-topic-panel__field textarea,
+:root[data-omni-theme="dark"] .omni-settings-dialog__section .chat-topic-panel__field select {
   background: rgba(255, 255, 255, 0.03);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
