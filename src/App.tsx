@@ -519,6 +519,7 @@ function App() {
           activeChatId={activeChatId}
           activeSession={activeSession}
           assistants={assistants}
+          availableModels={availableModels}
           currentModel={currentModel}
           editingMessageIndex={editingMessageIndex}
           emptyChatPrompts={EMPTY_CHAT_PROMPTS}

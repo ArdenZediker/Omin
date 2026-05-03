@@ -28,6 +28,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Message } from "../adapters/types";
+import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { AssistantProfile, ChatSession } from "../chat/types";
 import type { AssistantMemoryScope } from "../chat/types";
@@ -63,6 +64,7 @@ type MainChatViewProps = {
   activeChatId: string | null;
   activeSession: ChatSession | null;
   assistants: AssistantProfile[];
+  availableModels: ModelConfig[];
   currentModel: string;
   editingMessageIndex: number | null;
   emptyChatPrompts: string[];
@@ -225,6 +227,42 @@ function formatMemoryScopeLabel(scope: AssistantMemoryScope) {
   }
 }
 
+function enhancePresetPromptIfNeeded(presetCode: string, prompt: string) {
+  if (presetCode !== "2728") {
+    return prompt;
+  }
+
+  return `## 角色定位
+你是通用顾问型 AI 助手，适合处理日常问答、资料整理、轻咨询和方向建议。
+
+## 核心职责
+- 帮用户把问题说明白、理清楚、做顺。
+- 提供平衡、稳健、易理解的建议。
+- 在信息不足时先补关键信息，不仓促下结论。
+
+## 行为要求
+- 优先理解用户真实目标，而不是只回答字面问题。
+- 多方案场景下，给出简短比较和推荐，不并列堆砌。
+- 如果用户只想快速拿结果，先给结论，再补说明。
+- 如果任务存在明显风险、前提不足或信息冲突，要主动指出。
+
+## 边界与禁忌
+- 不要为了显得聪明而过度延展问题。
+- 不要在不确定时装懂或编造事实。
+- 不要输出空泛安慰、套话或无执行价值的建议。
+- 不要把简单问题复杂化。
+
+## 澄清策略
+- 只有当缺少关键信息会影响结论时，才提出澄清问题。
+- 澄清问题尽量少，一次只问最关键的 1 到 2 个。
+
+## 输出风格
+- 使用中文。
+- 表达自然、克制、清楚。
+- 少空话，少套话。
+- 尽量给出用户下一步可以直接执行的建议。`;
+}
+
 function renderAssistantAvatar(assistant: AssistantProfile | null, seed = 0) {
   return <img src={resolveAssistantAvatarImageSrc(assistant, seed)} alt="" className="chat-history-panel__assistant-image" />;
 }
@@ -235,6 +273,7 @@ export default function MainChatView({
   activeChatId,
   activeSession,
   assistants,
+  availableModels,
   currentModel,
   editingMessageIndex,
   emptyChatPrompts,
@@ -369,6 +408,7 @@ export default function MainChatView({
   const [assistantDescriptionDraft, setAssistantDescriptionDraft] = useState(activeAssistant?.description ?? "");
   const [assistantPromptDraft, setAssistantPromptDraft] = useState(activeAssistant?.systemPrompt ?? "");
   const [assistantModelDraft, setAssistantModelDraft] = useState(activeAssistant?.defaultModelId ?? "");
+  const selectedAssistantModel = availableModels.find((model) => model.id === assistantModelDraft) ?? null;
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
     if (topicPanelManualVisible === true) classNames.push("main-chat-layout--topic-forced-open");
@@ -797,6 +837,101 @@ export default function MainChatView({
                           <small>{activeAssistantPresetMeta.hint}</small>
                         </div>
                       )}
+                      <div className="omni-settings-dialog__assistant-side">
+                        <div className="omni-settings-dialog__assistant-copy">
+                          <div className="omni-settings-dialog__setting-label">助手头像</div>
+                          <div className="omni-settings-dialog__setting-hint">头像会同步影响助手列表、当前助手头部和相关卡片展示。</div>
+                        </div>
+                        <div className="omni-settings-dialog__setting-control omni-settings-dialog__setting-control--avatar">
+                          <button
+                            ref={assistantAvatarTriggerRef}
+                            type="button"
+                            className="omni-settings-dialog__avatar-hero"
+                            onClick={() => setAssistantAvatarPanelOpen((current) => !current)}
+                            title="选择头像"
+                          >
+                            <span className="omni-settings-dialog__avatar-hero-preview">
+                              {renderAssistantAvatar(activeAssistant, activeAssistantAvatarSeed)}
+                            </span>
+                            <span className="omni-settings-dialog__avatar-hero-copy">
+                              <strong>点击更换头像</strong>
+                              <span>{activeAssistant.avatarType === "image" ? "当前使用自定义图片" : "当前使用头像包图标"}</span>
+                            </span>
+                          </button>
+                          {assistantAvatarPanelOpen && (
+                            <div ref={assistantAvatarPanelRef} className="omni-settings-dialog__avatar-panel">
+                              <div className="omni-settings-dialog__avatar-categories">
+                                {AVATAR_CATEGORIES.map((category) => {
+                                  const CategoryIcon = resolveAvatarCategoryIcon(category.icon);
+                                  return (
+                                  <button
+                                    key={category.id}
+                                    type="button"
+                                    className={`omni-settings-dialog__avatar-category ${assistantAvatarCategory === category.id ? "omni-settings-dialog__avatar-category--active" : ""}`}
+                                    title={category.label}
+                                    onClick={() => setAssistantAvatarCategory(category.id)}
+                                  >
+                                    <CategoryIcon size={14} strokeWidth={1.8} />
+                                    <span>{category.label}</span>
+                                  </button>
+                                  );
+                                })}
+                              </div>
+                              <div className="omni-settings-dialog__avatar-search">
+                                <Search size={14} strokeWidth={1.8} />
+                                <input
+                                  value={assistantAvatarSearchQuery}
+                                  onChange={(event) => setAssistantAvatarSearchQuery(event.target.value)}
+                                  placeholder="搜索头像"
+                                />
+                              </div>
+                              <div className="chat-history-panel__avatar-grid chat-history-panel__avatar-grid--detailed">
+                              {filteredAssistantAvatars.length > 0 ? (
+                                filteredAssistantAvatars.map((avatar) => (
+                                    <button
+                                      key={avatar.code}
+                                      type="button"
+                                      className={`chat-history-panel__avatar-option chat-history-panel__avatar-option--detailed chat-history-panel__avatar-option--tone-${avatar.tone} ${activeAssistant.avatarType !== "image" && resolveEmojiAvatarCode(activeAssistant.avatarValue) === avatar.code ? "chat-history-panel__avatar-option--active" : ""}`}
+                                      onClick={() => {
+                                      onUpdateAssistantProfile(activeAssistant.id, {
+                                        sourcePresetId: avatar.code,
+                                        avatarType: "emoji",
+                                        avatarValue: `emoji:${avatar.code}`,
+                                        systemPrompt: enhancePresetPromptIfNeeded(avatar.code, avatar.prompt),
+                                        allowedToolIds: avatar.allowedToolIds ?? activeAssistant.allowedToolIds,
+                                        allowedSkillIds: avatar.allowedSkillIds ?? activeAssistant.allowedSkillIds,
+                                        defaultModelId: avatar.defaultModelId ?? activeAssistant.defaultModelId ?? null,
+                                      });
+                                      setAssistantPromptDraft(enhancePresetPromptIfNeeded(avatar.code, avatar.prompt));
+                                        setAssistantModelDraft(avatar.defaultModelId ?? activeAssistant.defaultModelId ?? "");
+                                        setAssistantAvatarPanelOpen(false);
+                                      }}
+                                      title={avatar.label}
+                                    >
+                                      <span className="chat-history-panel__avatar-option-badge">
+                                        <img src={getEmojiAssetSrc(avatar.code)} alt={avatar.label} className="chat-history-panel__avatar-option-image" />
+                                      </span>
+                                        <span className="chat-history-panel__avatar-option-copy">
+                                          <span className="chat-history-panel__avatar-option-label">{avatar.label}</span>
+                                          <span className="chat-history-panel__avatar-option-meta">{avatar.hint}</span>
+                                        </span>
+                                      </button>
+                                  ))
+                                ) : (
+                                  <div className="omni-settings-dialog__avatar-empty">没有匹配的头像</div>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className="chat-history-panel__avatar-upload"
+                                onClick={() => assistantAvatarInputRef.current?.click()}
+                              >
+                                上传图片
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       <div className="omni-settings-dialog__form-grid">
                         <label className="chat-topic-panel__field">
                           <span>名称</span>
@@ -808,12 +943,27 @@ export default function MainChatView({
                         </label>
                         <label className="chat-topic-panel__field">
                           <span>默认模型</span>
-                          <input
-                            value={assistantModelDraft}
-                            onChange={(event) => setAssistantModelDraft(event.target.value)}
-                            onBlur={() => onUpdateAssistantProfile(activeAssistant.id, { defaultModelId: assistantModelDraft || null })}
-                            placeholder="例如 gpt-4o"
-                          />
+                          <div className="omni-settings-dialog__model-select">
+                            <select
+                              value={assistantModelDraft}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setAssistantModelDraft(nextValue);
+                                onUpdateAssistantProfile(activeAssistant.id, { defaultModelId: nextValue });
+                              }}
+                            >
+                              {availableModels.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                  {model.name}
+                                </option>
+                              ))}
+                            </select>
+                            {selectedAssistantModel && (
+                              <div className="omni-settings-dialog__model-select-meta">
+                                {selectedAssistantModel.provider} / {selectedAssistantModel.id}
+                              </div>
+                            )}
+                          </div>
                         </label>
                         <label className="chat-topic-panel__field omni-settings-dialog__field--full">
                           <span>描述</span>
@@ -832,101 +982,6 @@ export default function MainChatView({
                             rows={5}
                           />
                         </label>
-                      </div>
-                    </div>
-
-                    <div className="omni-settings-dialog__assistant-side">
-                      <div className="omni-settings-dialog__assistant-copy">
-                        <div className="omni-settings-dialog__setting-label">助手头像</div>
-                      </div>
-                      <div className="omni-settings-dialog__setting-control omni-settings-dialog__setting-control--avatar">
-                        <button
-                          ref={assistantAvatarTriggerRef}
-                          type="button"
-                          className="omni-settings-dialog__avatar-hero"
-                          onClick={() => setAssistantAvatarPanelOpen((current) => !current)}
-                          title="选择头像"
-                        >
-                          <span className="omni-settings-dialog__avatar-hero-preview">
-                            {renderAssistantAvatar(activeAssistant, activeAssistantAvatarSeed)}
-                          </span>
-                          <span className="omni-settings-dialog__avatar-hero-copy">
-                            <strong>点击更换头像</strong>
-                            <span>{activeAssistant.avatarType === "image" ? "当前使用自定义图片" : "当前使用头像包图标"}</span>
-                          </span>
-                        </button>
-                        {assistantAvatarPanelOpen && (
-                          <div ref={assistantAvatarPanelRef} className="omni-settings-dialog__avatar-panel">
-                            <div className="omni-settings-dialog__avatar-categories">
-                              {AVATAR_CATEGORIES.map((category) => {
-                                const CategoryIcon = resolveAvatarCategoryIcon(category.icon);
-                                return (
-                                <button
-                                  key={category.id}
-                                  type="button"
-                                  className={`omni-settings-dialog__avatar-category ${assistantAvatarCategory === category.id ? "omni-settings-dialog__avatar-category--active" : ""}`}
-                                  title={category.label}
-                                  onClick={() => setAssistantAvatarCategory(category.id)}
-                                >
-                                  <CategoryIcon size={14} strokeWidth={1.8} />
-                                  <span>{category.label}</span>
-                                </button>
-                                );
-                              })}
-                            </div>
-                            <div className="omni-settings-dialog__avatar-search">
-                              <Search size={14} strokeWidth={1.8} />
-                              <input
-                                value={assistantAvatarSearchQuery}
-                                onChange={(event) => setAssistantAvatarSearchQuery(event.target.value)}
-                                placeholder="搜索头像"
-                              />
-                            </div>
-                            <div className="chat-history-panel__avatar-grid chat-history-panel__avatar-grid--detailed">
-                            {filteredAssistantAvatars.length > 0 ? (
-                              filteredAssistantAvatars.map((avatar) => (
-                                  <button
-                                    key={avatar.code}
-                                    type="button"
-                                    className={`chat-history-panel__avatar-option chat-history-panel__avatar-option--detailed chat-history-panel__avatar-option--tone-${avatar.tone} ${activeAssistant.avatarType !== "image" && resolveEmojiAvatarCode(activeAssistant.avatarValue) === avatar.code ? "chat-history-panel__avatar-option--active" : ""}`}
-                                    onClick={() => {
-                                      onUpdateAssistantProfile(activeAssistant.id, {
-                                        sourcePresetId: avatar.code,
-                                        avatarType: "emoji",
-                                        avatarValue: `emoji:${avatar.code}`,
-                                        systemPrompt: avatar.prompt,
-                                        allowedToolIds: avatar.allowedToolIds ?? activeAssistant.allowedToolIds,
-                                        allowedSkillIds: avatar.allowedSkillIds ?? activeAssistant.allowedSkillIds,
-                                        defaultModelId: avatar.defaultModelId ?? activeAssistant.defaultModelId ?? null,
-                                      });
-                                      setAssistantPromptDraft(avatar.prompt);
-                                      setAssistantModelDraft(avatar.defaultModelId ?? activeAssistant.defaultModelId ?? "");
-                                      setAssistantAvatarPanelOpen(false);
-                                    }}
-                                    title={avatar.label}
-                                  >
-                                    <span className="chat-history-panel__avatar-option-badge">
-                                      <img src={getEmojiAssetSrc(avatar.code)} alt={avatar.label} className="chat-history-panel__avatar-option-image" />
-                                    </span>
-                                      <span className="chat-history-panel__avatar-option-copy">
-                                        <span className="chat-history-panel__avatar-option-label">{avatar.label}</span>
-                                        <span className="chat-history-panel__avatar-option-meta">{avatar.hint}</span>
-                                      </span>
-                                    </button>
-                                ))
-                              ) : (
-                                <div className="omni-settings-dialog__avatar-empty">没有匹配的头像</div>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              className="chat-history-panel__avatar-upload"
-                              onClick={() => assistantAvatarInputRef.current?.click()}
-                            >
-                              上传图片
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1178,11 +1233,11 @@ export default function MainChatView({
                           type="button"
                           className="empty-chat-state__card"
                           onClick={() =>
-                            onCreateCustomAssistant({
+                          onCreateCustomAssistant({
                               sourcePresetId: preset.code,
                               title: preset.label,
                               description: preset.hint,
-                              systemPrompt: preset.prompt,
+                              systemPrompt: enhancePresetPromptIfNeeded(preset.code, preset.prompt),
                               avatarType: "emoji",
                               avatarValue: `emoji:${preset.code}`,
                               defaultModelId: preset.defaultModelId ?? null,
