@@ -1096,6 +1096,13 @@ body,
   gap: 6px;
 }
 
+.chat-history-panel__assistant-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .chat-history-panel__assistant-group-label {
   padding: 0 4px;
   color: var(--omni-app-muted);

@@ -741,43 +741,43 @@ export default function MainChatView({
           )}
 
             <div className="chat-history-panel__assistant-section">
-              <div className="chat-history-panel__section-head">
-                <span>自定义助手</span>
+              <div className="chat-history-panel__assistant-group-header">
+                <div className="chat-history-panel__assistant-group-label">{DEFAULT_ASSISTANT_GROUP_LABEL}</div>
                 <div className="chat-history-panel__section-actions">
                   <div ref={assistantMenuRef} className="chat-history-panel__section-menu">
-                  <button
-                    type="button"
-                    className={`chat-history-panel__section-action ${assistantMenuOpen ? "chat-history-panel__section-action--active" : ""}`}
-                    onClick={() => setAssistantMenuOpen((current) => !current)}
-                    title="助手菜单"
-                  >
-                    <MoreHorizontal size={14} strokeWidth={1.8} />
-                  </button>
-                  {assistantMenuOpen && (
-                    <div className="chat-history-panel__section-dropdown">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAssistantMenuOpen(false);
-                          onCreateCustomAssistant();
-                        }}
-                      >
-                        <Plus size={14} strokeWidth={1.9} />
-                        <span>新建助手</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAssistantMenuOpen(false);
-                          setAssistantGroupManagerOpen(true);
-                        }}
-                      >
-                        <FolderOpen size={14} strokeWidth={1.9} />
-                        <span>分组管理</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                    <button
+                      type="button"
+                      className={`chat-history-panel__section-action ${assistantMenuOpen ? "chat-history-panel__section-action--active" : ""}`}
+                      onClick={() => setAssistantMenuOpen((current) => !current)}
+                      title="助手菜单"
+                    >
+                      <MoreHorizontal size={14} strokeWidth={1.8} />
+                    </button>
+                    {assistantMenuOpen && (
+                      <div className="chat-history-panel__section-dropdown">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAssistantMenuOpen(false);
+                            onCreateCustomAssistant();
+                          }}
+                        >
+                          <Plus size={14} strokeWidth={1.9} />
+                          <span>新建助手</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAssistantMenuOpen(false);
+                            setAssistantGroupManagerOpen(true);
+                          }}
+                        >
+                          <FolderOpen size={14} strokeWidth={1.9} />
+                          <span>分组管理</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
                     className={`chat-history-panel__section-action ${customAssistantsCollapsed ? "" : "chat-history-panel__section-action--active"}`}
@@ -790,7 +790,6 @@ export default function MainChatView({
               </div>
               {!customAssistantsCollapsed && <div className="chat-history-panel__assistant-list">
                 <div className="chat-history-panel__assistant-group">
-                  <div className="chat-history-panel__assistant-group-label">{DEFAULT_ASSISTANT_GROUP_LABEL}</div>
                   {defaultAssistantGroup.assistants.length === 0 ? (
                     <button
                       type="button"
