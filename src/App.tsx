@@ -54,6 +54,7 @@ function App() {
     commitAssistantMemory,
     createCustomAssistantProfile,
     createSessionFromMessages,
+    deleteAssistantProfile,
     deleteChatSession,
     getChatSessionById,
     getRelatedContextForAssistant,
@@ -549,6 +550,7 @@ function App() {
           onModelChange={handleModelChange}
           onNewChat={handleNewChat}
           onCreateCustomAssistant={createCustomAssistantProfile}
+          onDeleteAssistant={deleteAssistantProfile}
           onRegenerateMessage={handleRegenerateMessage}
           onRenameChat={handleRenameChat}
           onSelectAssistant={selectAssistant}

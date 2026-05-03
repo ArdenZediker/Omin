@@ -260,6 +260,51 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     return updatedAssistant;
   }, []);
 
+  const deleteAssistantProfile = useCallback(
+    (assistantId: string) => {
+      if (!assistantId || assistantId === DEFAULT_ASSISTANT_ID) {
+        return false;
+      }
+
+      let removed = false;
+      const relatedSessionIds = new Set(chatSessions.filter((session) => session.assistantId === assistantId).map((session) => session.id));
+
+      setAssistants((current) => {
+        const target = current.find((assistant) => assistant.id === assistantId);
+        if (!target || target.kind !== "custom") {
+          removed = false;
+          return current;
+        }
+        removed = true;
+        return current.filter((assistant) => assistant.id !== assistantId);
+      });
+
+      if (!removed) {
+        return false;
+      }
+
+      setChatSessions((current) => current.filter((session) => session.assistantId !== assistantId));
+      setAssistantMemories((current) => current.filter((memory) => memory.assistantId !== assistantId));
+      setSessionSummaries((current) => current.filter((summary) => summary.assistantId !== assistantId && !relatedSessionIds.has(summary.sessionId)));
+      setScheduledTasks((current) => current.filter((task) => !task.sessionId || !relatedSessionIds.has(task.sessionId)));
+
+      if (activeAssistantId === assistantId) {
+        setActiveAssistantId(DEFAULT_ASSISTANT_ID);
+        const fallbackSession = chatSessions
+          .filter((session) => session.assistantId === DEFAULT_ASSISTANT_ID)
+          .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+        setActiveChatId(fallbackSession?.id ?? null);
+        setMessages(fallbackSession?.messages ?? []);
+      } else if (activeChatId && chatSessions.some((session) => session.id === activeChatId && session.assistantId === assistantId)) {
+        setActiveChatId(null);
+        setMessages([]);
+      }
+
+      return true;
+    },
+    [activeAssistantId, activeChatId, chatSessions]
+  );
+
   const resetActiveChat = useCallback(() => {
     setActiveChatId(null);
     setMessages([]);
@@ -496,6 +541,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     setUserPreferences,
     toggleFavoriteChatSession,
     togglePinnedChatSession,
+    deleteAssistantProfile,
     updateAssistantProfile,
   };
 }

@@ -338,6 +338,14 @@ body,
   min-height: 40px;
 }
 
+.main-chat-toolbar__assistant--single-line {
+  align-items: center;
+}
+
+.main-chat-toolbar__assistant--settings {
+  align-items: center;
+}
+
 .main-chat-layout--topic-collapsed .main-chat-toolbar__assistant {
   flex: 1;
   min-width: 0;
@@ -374,6 +382,16 @@ body,
   display: flex;
   flex-direction: column;
   min-height: 38px;
+}
+
+.main-chat-toolbar__assistant-copy--single-line {
+  justify-content: center;
+  min-height: 36px;
+}
+
+.main-chat-toolbar__assistant-copy--settings {
+  justify-content: center;
+  min-height: 36px;
 }
 
 .main-chat-toolbar__assistant-copy strong {
@@ -865,13 +883,13 @@ body,
 
 .chat-history-panel__assistant {
   width: 100%;
-  min-height: 74px;
+  min-height: 58px;
   border: 1px solid var(--omni-panel-border);
   border-radius: 14px;
   position: relative;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 22px;
-  align-items: start;
+  grid-template-columns: 38px minmax(0, 1fr) 28px;
+  align-items: center;
   gap: 10px;
   padding: 10px 12px;
   background: var(--omni-panel-bg);
@@ -904,7 +922,7 @@ body,
   background: linear-gradient(180deg, #fff8eb, #fff1da);
   border: 1px solid rgba(251, 191, 36, 0.18);
   flex: 0 0 auto;
-  align-self: start;
+  align-self: center;
 }
 
 .chat-history-panel__assistant-emoji {
@@ -1136,6 +1154,26 @@ body,
   cursor: pointer;
 }
 
+.omni-settings-dialog__danger-button {
+  min-height: 34px;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(254, 242, 242, 0.86);
+  color: #b91c1c;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.omni-settings-dialog__danger-button:hover {
+  background: rgba(254, 226, 226, 0.96);
+}
+
 .chat-history-panel__avatar-file {
   display: none;
 }
@@ -1161,14 +1199,16 @@ body,
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  align-self: start;
+  justify-content: center;
+  align-self: center;
+  min-height: 38px;
 }
 
 .chat-history-panel__assistant-copy strong {
   color: var(--omni-app-text);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.25;
 }
 
 .chat-history-panel__assistant-copy span {
@@ -1181,6 +1221,14 @@ body,
   overflow: hidden;
 }
 
+.chat-history-panel__assistant-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+
 .chat-history-panel__assistant-action {
   width: 22px;
   height: 22px;
@@ -1188,8 +1236,65 @@ body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: start;
-  margin-top: 2px;
+  align-self: center;
+  margin-top: 0;
+}
+
+.chat-history-panel__assistant-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  min-width: 126px;
+  padding: 6px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 12px;
+  background: var(--omni-panel-bg);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-history-panel__assistant-dropdown button {
+  width: 100%;
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-history-panel__assistant-dropdown button:hover {
+  background: var(--omni-soft-bg);
+}
+
+.chat-history-panel__assistant-dropdown-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: color-mix(in srgb, #ef4444 18%, var(--omni-panel-border));
+}
+
+.chat-history-panel__assistant-dropdown-danger {
+  background: rgba(254, 242, 242, 0.72) !important;
+  color: #dc2626;
+}
+
+.chat-history-panel__assistant-dropdown-danger:hover {
+  background: rgba(254, 226, 226, 0.96) !important;
+}
+
+.chat-history-panel__assistant-dropdown-confirm {
+  width: 188px;
+  padding: 2px;
 }
 
 .chat-history-panel__assistant-action--placeholder {
