@@ -135,7 +135,7 @@ export default function CompactWindow({
     <div
       className={`compact-shell drag-region ${
         isCharacterHorizontalPanelOpen && characterPanelSide === "left" ? "compact-shell--reply-left" : ""
-      } ${isCompactMenuOpen && !isCharacterMenuPinned && compactMenuSide === "left" ? "compact-shell--menu-left" : ""}`}
+      } ${!isCharacterAppearance && isCompactMenuOpen && !isCharacterMenuPinned && compactMenuSide === "left" ? "compact-shell--menu-left" : ""}`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
         const isInsideFloatingPanel = Boolean(

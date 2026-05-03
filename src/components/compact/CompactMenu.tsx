@@ -1,8 +1,9 @@
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { BasicSettings, ExternalChatEntry } from "../../app/types";
 import type { CharacterModel, CompactAppearance } from "../../hooks/useCompactWindowState";
-import { omniSmallIconSrc } from "../../app/constants";
-import { Check, ChevronRight, MessageSquareMore, Palette, RotateCcw, Settings2 } from "lucide-react";
+import { omniSmallIconSrc, THEME_MODE_STORAGE_KEY } from "../../app/constants";
+import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../../app/settings";
+import { Bot, Check, ChevronRight, Circle, MessageSquareMore, Minimize2, MonitorCog, Moon, Palette, RotateCcw, Settings2, Sun } from "lucide-react";
 import anthropicLogoSrc from "@lobehub/icons-static-svg/icons/claude.svg?url";
 import baichuanLogoSrc from "@lobehub/icons-static-svg/icons/baichuan.svg?url";
 import chatgptLogoSrc from "@lobehub/icons-static-svg/icons/openai.svg?url";
@@ -80,13 +81,12 @@ function MenuLeadingIcon({ children }: { children: ReactNode }) {
 export default function CompactMenu({
   appearanceOptions,
   characterMenuPosition,
-  characterModel,
   characterModelOptions,
   characterScale,
   compactAppearance,
   entries,
-  isCharacterAppearance,
-  isCharacterModelOpen,
+  isCharacterAppearance: _isCharacterAppearance,
+  isCharacterModelOpen: _isCharacterModelOpen,
   isCompactAppearanceOpen,
   isCompactModelOpen,
   compactMenuSide,
@@ -99,11 +99,14 @@ export default function CompactMenu({
   onScaleReset,
   onUpdateBasicSettings,
   onSetCharacterMenuPinned,
-  onSetIsCharacterModelOpen,
+  onSetIsCharacterModelOpen: _onSetIsCharacterModelOpen,
   onSetIsCompactAppearanceOpen,
-  onSetIsCompactMenuOpen,
+  onSetIsCompactMenuOpen: _onSetIsCompactMenuOpen,
   onSetIsCompactModelOpen,
 }: CompactMenuProps) {
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getInitialThemeMode(THEME_MODE_STORAGE_KEY));
+  const [isThemeOpen, setIsThemeOpen] = useState(false);
+
   const menuPositionStyle =
     characterMenuPosition && typeof window !== "undefined"
       ? {
@@ -112,6 +115,18 @@ export default function CompactMenu({
           top: Math.max(8, characterMenuPosition.y),
         }
       : undefined;
+
+  const switchThemeMode = (mode: ThemeMode) => {
+    setThemeMode(mode);
+    applyThemeMode(THEME_MODE_STORAGE_KEY, mode);
+  };
+
+  const resolveAppearanceIcon = (appearance: CompactAppearance) => {
+    if (appearance === "default") return <Circle className="compact-menu__icon" />;
+    if (appearance === "compact") return <Minimize2 className="compact-menu__icon" />;
+    if (appearance === "large") return <MonitorCog className="compact-menu__icon" />;
+    return <Bot className="compact-menu__icon" />;
+  };
 
   return (
     <div
@@ -128,7 +143,7 @@ export default function CompactMenu({
           onMouseEnter={() => {
             onSetIsCompactModelOpen(true);
             onSetIsCompactAppearanceOpen(false);
-            onSetIsCharacterModelOpen(false);
+            setIsThemeOpen(false);
           }}
         >
           <span className="compact-menu__item-main">
@@ -147,7 +162,7 @@ export default function CompactMenu({
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(true);
-            onSetIsCharacterModelOpen(false);
+            setIsThemeOpen(false);
           }}
         >
           <span className="compact-menu__item-main">
@@ -155,6 +170,25 @@ export default function CompactMenu({
               <Palette className="compact-menu__icon" />
             </MenuLeadingIcon>
             <span>界面外观</span>
+          </span>
+          <ChevronRight className="compact-menu__arrow-icon" aria-hidden="true" />
+        </button>
+
+        <button
+          type="button"
+          className="compact-menu__item compact-menu__item--branch"
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseEnter={() => {
+            onSetIsCompactModelOpen(false);
+            onSetIsCompactAppearanceOpen(false);
+            setIsThemeOpen(true);
+          }}
+        >
+          <span className="compact-menu__item-main">
+            <MenuLeadingIcon>
+              <MonitorCog className="compact-menu__icon" />
+            </MenuLeadingIcon>
+            <span>主题切换</span>
           </span>
           <ChevronRight className="compact-menu__arrow-icon" aria-hidden="true" />
         </button>
@@ -168,7 +202,7 @@ export default function CompactMenu({
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(false);
-            onSetIsCharacterModelOpen(false);
+            setIsThemeOpen(false);
           }}
           onClick={() => {
             onUpdateBasicSettings({ followCursorScreen: !followCursorScreen });
@@ -183,7 +217,7 @@ export default function CompactMenu({
           </span>
         </button>
 
-        {isCharacterAppearance && (
+        {compactAppearance === "character" && (
           <button
             type="button"
             className="compact-menu__item"
@@ -191,7 +225,7 @@ export default function CompactMenu({
             onMouseEnter={() => {
               onSetIsCompactModelOpen(false);
               onSetIsCompactAppearanceOpen(false);
-              onSetIsCharacterModelOpen(false);
+              setIsThemeOpen(false);
             }}
             onClick={onScaleReset}
           >
@@ -212,7 +246,7 @@ export default function CompactMenu({
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(false);
-            onSetIsCharacterModelOpen(false);
+            setIsThemeOpen(false);
           }}
           onClick={() => {
             void onOpenSettingsFromCompact();
@@ -233,7 +267,7 @@ export default function CompactMenu({
           onMouseEnter={() => {
             onSetIsCompactModelOpen(true);
             onSetIsCompactAppearanceOpen(false);
-            onSetIsCharacterModelOpen(false);
+            setIsThemeOpen(false);
           }}
         >
           <div className="compact-menu__label">聊天入口</div>
@@ -274,80 +308,91 @@ export default function CompactMenu({
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(true);
+            setIsThemeOpen(false);
           }}
         >
           <div className="compact-menu__label">外观设置</div>
-          {appearanceOptions.map((option) =>
-            option.id === "character" ? (
-              <div key={option.id} className="compact-menu__branch">
-                <button
-                  type="button"
-                  className={`compact-menu__item compact-menu__item--branch ${
-                    compactAppearance === option.id ? "compact-menu__item--active" : ""
-                  }`}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onMouseEnter={() => {
-                    onSetIsCompactModelOpen(false);
-                    onSetIsCharacterModelOpen(true);
-                  }}
-                  onClick={() => {
-                    if (compactAppearance !== "character") {
-                      onCompactAppearanceChange("character");
-                      window.setTimeout(() => {
-                        onSetIsCompactMenuOpen(true);
-                        onSetIsCompactAppearanceOpen(true);
-                        onSetIsCharacterModelOpen(true);
-                        onSetCharacterMenuPinned(true);
-                      }, 0);
-                      return;
-                    }
-                    onSetIsCharacterModelOpen(true);
-                  }}
-                >
-                  <span>{option.title}</span>
-                  <ChevronRight className="compact-menu__arrow-icon" aria-hidden="true" />
-                </button>
-
-                {isCharacterModelOpen && (
-                  <div
-                    className={`compact-submenu compact-submenu--${compactSubmenuSide} compact-submenu--nested animate-fade-in`}
-                    onMouseEnter={() => {
-                      onSetIsCompactModelOpen(false);
-                      onSetIsCharacterModelOpen(true);
-                      onSetIsCompactAppearanceOpen(true);
-                    }}
-                  >
-                    <div className="compact-menu__label">角色模型</div>
-                    {characterModelOptions.map((modelOption) => (
-                      <button
-                        key={modelOption.id}
-                        type="button"
-                        className={`compact-menu__item ${characterModel === modelOption.id ? "compact-menu__item--active" : ""}`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={() => onCharacterModelChange(modelOption.id)}
-                      >
-                        <span>{modelOption.title}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <button
-                key={option.id}
-                type="button"
-                className={`compact-menu__item ${compactAppearance === option.id ? "compact-menu__item--active" : ""}`}
-                onMouseDown={(e) => e.stopPropagation()}
-                onMouseEnter={() => {
-                  onSetIsCompactModelOpen(false);
-                  onSetIsCharacterModelOpen(false);
-                }}
-                onClick={() => onCompactAppearanceChange(option.id)}
-              >
+          {appearanceOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={`compact-menu__item ${compactAppearance === option.id ? "compact-menu__item--active" : ""}`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => {
+                onCompactAppearanceChange(option.id);
+                if (option.id === "character" && characterModelOptions[0]) {
+                  onCharacterModelChange(characterModelOptions[0].id);
+                  onSetCharacterMenuPinned(false);
+                }
+              }}
+            >
+              <span className="compact-menu__item-main">
+                <MenuLeadingIcon>{resolveAppearanceIcon(option.id)}</MenuLeadingIcon>
                 <span>{option.title}</span>
-              </button>
-            )
-          )}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isThemeOpen && (
+        <div
+          className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
+          onMouseEnter={() => {
+            onSetIsCompactModelOpen(false);
+            onSetIsCompactAppearanceOpen(false);
+            setIsThemeOpen(true);
+          }}
+        >
+          <div className="compact-menu__label">主题切换</div>
+          <button
+            type="button"
+            className={`compact-menu__item ${themeMode === "auto" ? "compact-menu__item--active" : ""}`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => switchThemeMode("auto")}
+          >
+            <span className="compact-menu__item-main">
+              <span className={`compact-menu__check ${themeMode === "auto" ? "compact-menu__check--checked" : ""}`} aria-hidden="true">
+                {themeMode === "auto" ? <Check className="compact-menu__check-icon" /> : null}
+              </span>
+              <MenuLeadingIcon>
+                <MonitorCog className="compact-menu__icon" />
+              </MenuLeadingIcon>
+              <span>自动</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`compact-menu__item ${themeMode === "light" ? "compact-menu__item--active" : ""}`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => switchThemeMode("light")}
+          >
+            <span className="compact-menu__item-main">
+              <span className={`compact-menu__check ${themeMode === "light" ? "compact-menu__check--checked" : ""}`} aria-hidden="true">
+                {themeMode === "light" ? <Check className="compact-menu__check-icon" /> : null}
+              </span>
+              <MenuLeadingIcon>
+                <Sun className="compact-menu__icon" />
+              </MenuLeadingIcon>
+              <span>明亮</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`compact-menu__item ${themeMode === "dark" ? "compact-menu__item--active" : ""}`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => switchThemeMode("dark")}
+          >
+            <span className="compact-menu__item-main">
+              <span className={`compact-menu__check ${themeMode === "dark" ? "compact-menu__check--checked" : ""}`} aria-hidden="true">
+                {themeMode === "dark" ? <Check className="compact-menu__check-icon" /> : null}
+              </span>
+              <MenuLeadingIcon>
+                <Moon className="compact-menu__icon" />
+              </MenuLeadingIcon>
+              <span>暗黑</span>
+            </span>
+          </button>
         </div>
       )}
     </div>

@@ -3361,7 +3361,7 @@ body,
   align-items: flex-start;
   justify-content: flex-start;
   background: transparent;
-  padding: 8px;
+  padding: 6px 6px 18px;
   box-sizing: border-box;
 }
 
@@ -3378,8 +3378,8 @@ body,
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 4px 4px 12px;
-  margin: -4px -4px -12px;
+  padding: 4px 4px 16px;
+  margin: -4px -4px -16px;
 }
 
 .compact-hover-zone--character {
