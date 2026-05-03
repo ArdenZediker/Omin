@@ -58,6 +58,12 @@ type TopicDeleteConfirmState = {
   sessions: ChatSession[];
 } | null;
 
+type AssistantDeleteConfirmState = {
+  assistantId: string;
+  title: string;
+  message: string;
+} | null;
+
 type MainChatViewProps = {
   activeAssistant: AssistantProfile | null;
   activeAssistantId: string;
@@ -111,6 +117,7 @@ type MainChatViewProps = {
     allowedToolIds?: string[];
     allowedSkillIds?: string[];
   }) => void;
+  onDeleteAssistant: (assistantId: string) => boolean;
   onDeleteChat: (session: ChatSession) => void;
   onEditUserMessage: (messageIndex: number) => void;
   onModelChange: (modelId: string) => void;
@@ -281,6 +288,7 @@ export default function MainChatView({
   onClearChat,
   onCopyMessage,
   onCreateCustomAssistant,
+  onDeleteAssistant,
   onDeleteChat,
   onEditUserMessage,
   onModelChange,
@@ -313,6 +321,7 @@ export default function MainChatView({
   const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
   const [topicDeleteConfirm, setTopicDeleteConfirm] = useState<TopicDeleteConfirmState>(null);
+  const [assistantDeleteConfirm, setAssistantDeleteConfirm] = useState<AssistantDeleteConfirmState>(null);
   const [assistantSearchQuery, setAssistantSearchQuery] = useState("");
   const [assistantMenuOpen, setAssistantMenuOpen] = useState(false);
   const [assistantSettingsId, setAssistantSettingsId] = useState<string | null>(null);
@@ -320,6 +329,7 @@ export default function MainChatView({
   const [assistantAvatarSearchQuery, setAssistantAvatarSearchQuery] = useState("");
   const [assistantAvatarCategory, setAssistantAvatarCategory] = useState("recent");
   const [customAssistantsCollapsed, setCustomAssistantsCollapsed] = useState(false);
+  const [openAssistantCardMenuId, setOpenAssistantCardMenuId] = useState<string | null>(null);
   const [expandedMemoryIds, setExpandedMemoryIds] = useState<string[]>([]);
   const [expandedSummaryIds, setExpandedSummaryIds] = useState<string[]>([]);
   const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
@@ -334,6 +344,7 @@ export default function MainChatView({
   const topicMenuRef = useRef<HTMLDivElement | null>(null);
   const topicMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const assistantMenuRef = useRef<HTMLDivElement | null>(null);
+  const assistantCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const assistantAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const assistantAvatarPanelRef = useRef<HTMLDivElement | null>(null);
   const assistantAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -472,6 +483,22 @@ export default function MainChatView({
   }, [assistantMenuOpen]);
 
   useEffect(() => {
+    if (!openAssistantCardMenuId) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const activeMenu = assistantCardMenuRefs.current[openAssistantCardMenuId];
+      if (activeMenu?.contains(target)) return;
+      setOpenAssistantCardMenuId(null);
+      setAssistantDeleteConfirm(null);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [openAssistantCardMenuId]);
+
+  useEffect(() => {
     if (!assistantAvatarPanelOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -520,6 +547,18 @@ export default function MainChatView({
     topicDeleteConfirm.sessions.forEach((session) => onDeleteChat(session));
     setTopicDeleteConfirm(null);
     setTopicMenuOpen(false);
+  };
+
+  const handleConfirmDeleteAssistant = () => {
+    if (!assistantDeleteConfirm) return;
+    const deleted = onDeleteAssistant(assistantDeleteConfirm.assistantId);
+    if (!deleted) return;
+    if (assistantSettingsId === assistantDeleteConfirm.assistantId) {
+      setAssistantSettingsId(null);
+      setAssistantAvatarPanelOpen(false);
+    }
+    setAssistantDeleteConfirm(null);
+    setOpenAssistantCardMenuId(null);
   };
 
 
@@ -582,7 +621,6 @@ export default function MainChatView({
                 </span>
                 <span className="chat-history-panel__assistant-copy">
                   <strong>{basicAssistant.title}</strong>
-                  <span>{basicAssistant.description}</span>
                 </span>
                 <span className="chat-history-panel__assistant-action chat-history-panel__assistant-action--placeholder" aria-hidden="true" />
               </button>
@@ -658,29 +696,90 @@ export default function MainChatView({
                     </span>
                     <span className="chat-history-panel__assistant-copy">
                       <strong>{assistant.title}</strong>
-                      <span>{assistant.description}</span>
                     </span>
                     <span
-                      className="chat-history-panel__assistant-action"
-                      role="button"
-                      tabIndex={0}
-                      title="助手设置"
-                      aria-label="助手设置"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onSelectAssistant(assistant.id);
-                        setAssistantSettingsId(assistant.id);
+                      ref={(node) => {
+                        assistantCardMenuRefs.current[assistant.id] = node;
                       }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          onSelectAssistant(assistant.id);
-                          setAssistantSettingsId(assistant.id);
-                        }
-                      }}
+                      className="chat-history-panel__assistant-menu"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
                     >
-                      <Settings size={13} strokeWidth={1.9} />
+                      <button
+                        type="button"
+                        className={`chat-history-panel__assistant-action ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant-action--active" : ""}`}
+                        title="更多操作"
+                        aria-label="更多操作"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenAssistantCardMenuId((current) => (current === assistant.id ? null : assistant.id));
+                        }}
+                      >
+                        <MoreHorizontal size={13} strokeWidth={1.9} />
+                      </button>
+                      {openAssistantCardMenuId === assistant.id && (
+                        <div className="chat-history-panel__assistant-dropdown">
+                          {assistantDeleteConfirm?.assistantId === assistant.id ? (
+                            <div className="chat-topic-panel__menu-confirm chat-history-panel__assistant-dropdown-confirm">
+                              <div className="chat-topic-panel__menu-confirm-title">{assistantDeleteConfirm.title}</div>
+                              <div className="chat-topic-panel__menu-confirm-message">{assistantDeleteConfirm.message}</div>
+                              <div className="chat-topic-panel__menu-confirm-actions">
+                                <button
+                                  type="button"
+                                  className="chat-topic-panel__menu-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setAssistantDeleteConfirm(null);
+                                  }}
+                                >
+                                  取消
+                                </button>
+                                <button
+                                  type="button"
+                                  className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleConfirmDeleteAssistant();
+                                  }}
+                                >
+                                  确认删除
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setOpenAssistantCardMenuId(null);
+                                  onSelectAssistant(assistant.id);
+                                  setAssistantSettingsId(assistant.id);
+                                }}
+                              >
+                                <Settings size={13} strokeWidth={1.9} />
+                                <span>助手设置</span>
+                              </button>
+                              <div className="chat-history-panel__assistant-dropdown-divider" />
+                              <button
+                                type="button"
+                                className="chat-history-panel__assistant-dropdown-danger"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setAssistantDeleteConfirm({
+                                    assistantId: assistant.id,
+                                    title: "删除助手",
+                                    message: `确认删除“${assistant.title}”吗？相关话题和记忆会一并删除。`,
+                                  });
+                                }}
+                              >
+                                <Trash2 size={13} strokeWidth={1.9} />
+                                <span>删除助手</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </span>
                   </button>
                 ))
@@ -695,7 +794,7 @@ export default function MainChatView({
         <header className="main-chat-header drag-region">
           <div className="main-chat-toolbar">
             <div className="main-chat-toolbar__session main-chat-toolbar__session--hero">
-              <div className="main-chat-toolbar__assistant">
+              <div className="main-chat-toolbar__assistant main-chat-toolbar__assistant--single-line">
                 {isAssistantSettingsMode && (
                   <button
                     type="button"
@@ -712,9 +811,8 @@ export default function MainChatView({
                 <div className="main-chat-toolbar__assistant-mark">
                   {renderAssistantAvatar(activeAssistant, activeAssistantAvatarSeed)}
                 </div>
-                <div className="main-chat-toolbar__assistant-copy">
+                <div className="main-chat-toolbar__assistant-copy main-chat-toolbar__assistant-copy--single-line">
                   <strong>{isAssistantSettingsMode ? "助手设置" : currentTopicTitle}</strong>
-                  <span>{isAssistantSettingsMode ? "在中间区域配置当前自定义助手" : activeAssistant?.description || "开始新一轮思考、问答或执行任务"}</span>
                   {!isAssistantSettingsMode && showAssistantTopTags && (
                     <div className="main-chat-toolbar__assistant-tags">
                       {activeAssistantPresetMeta && (
