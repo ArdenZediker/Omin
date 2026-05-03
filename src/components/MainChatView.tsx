@@ -1666,6 +1666,26 @@ export default function MainChatView({
                             >
                               <Star size={12} strokeWidth={2} fill={session.favorite ? "currentColor" : "none"} />
                             </span>
+                            <span
+                              className="chat-topic-panel__pin chat-topic-panel__pin--danger"
+                              title="删除话题"
+                              aria-label="删除话题"
+                              role="button"
+                              tabIndex={0}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onDeleteChat(session);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  onDeleteChat(session);
+                                }
+                              }}
+                            >
+                              <Trash2 size={12} strokeWidth={2} />
+                            </span>
                           </button>
                         ))}
                       </div>
@@ -1724,6 +1744,26 @@ export default function MainChatView({
                         }}
                       >
                         <Star size={12} strokeWidth={2} fill={session.favorite ? "currentColor" : "none"} />
+                      </span>
+                      <span
+                        className="chat-topic-panel__pin chat-topic-panel__pin--danger"
+                        title="删除话题"
+                        aria-label="删除话题"
+                        role="button"
+                        tabIndex={0}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDeleteChat(session);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onDeleteChat(session);
+                          }
+                        }}
+                      >
+                        <Trash2 size={12} strokeWidth={2} />
                       </span>
                     </button>
                   ))}
