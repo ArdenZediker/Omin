@@ -26,6 +26,7 @@ export type AssistantProfileDraft = {
   sourcePresetId?: string | null;
   title?: string;
   description?: string;
+  groupName?: string | null;
   avatarType?: "emoji" | "image";
   avatarValue?: string;
   systemPrompt?: string;
@@ -43,6 +44,7 @@ export type AssistantProfile = {
   sourcePresetId?: string | null;
   title: string;
   description: string;
+  groupName?: string | null;
   avatarType?: "emoji" | "image";
   avatarValue?: string;
   systemPrompt?: string;

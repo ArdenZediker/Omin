@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Bot,
   Check,
+  GripVertical,
   Compass,
   Cpu,
   FolderOpen,
@@ -12,6 +13,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   PawPrint,
+  Pencil,
   PanelRightClose,
   PanelRightOpen,
   Pin,
@@ -40,6 +42,7 @@ import { filterAvatarPresets, getEmojiAssetSrc, resolveAssistantAvatarImageSrc, 
 import { ASSISTANT_SKILL_OPTIONS, SKILL_MANIFESTS } from "../config/manifests/skills";
 import { ASSISTANT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
 import type { AvatarCategoryManifest } from "../config/manifests/types";
+import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import ModelSelector from "./ModelSelector";
@@ -63,6 +66,11 @@ type AssistantDeleteConfirmState = {
   title: string;
   message: string;
 } | null;
+
+type AssistantDisplayGroup = {
+  label: string;
+  assistants: AssistantProfile[];
+};
 
 type MainChatViewProps = {
   activeAssistant: AssistantProfile | null;
@@ -144,6 +152,8 @@ type MainChatViewProps = {
 
 const TOPIC_PANEL_WIDTH = 272;
 const TOPIC_PANEL_AUTO_COLLAPSE_RATIO = 2 / 3;
+const ASSISTANT_GROUPS_STORAGE_KEY = "assistant_groups";
+const DEFAULT_ASSISTANT_GROUP_LABEL = "默认列表";
 
 function normalizeSearchText(value: string) {
   return value.toLocaleLowerCase().replace(/\s+/g, "");
@@ -324,7 +334,26 @@ export default function MainChatView({
   const [assistantDeleteConfirm, setAssistantDeleteConfirm] = useState<AssistantDeleteConfirmState>(null);
   const [assistantSearchQuery, setAssistantSearchQuery] = useState("");
   const [assistantMenuOpen, setAssistantMenuOpen] = useState(false);
+  const [assistantGroupManagerOpen, setAssistantGroupManagerOpen] = useState(false);
+  const [assistantGroupCreateMode, setAssistantGroupCreateMode] = useState(false);
+  const [assistantGroupDraft, setAssistantGroupDraft] = useState("");
+  const [assistantMoveGroupMenuId, setAssistantMoveGroupMenuId] = useState<string | null>(null);
+  const [assistantMoveGroupMenuPosition, setAssistantMoveGroupMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [assistantGroups, setAssistantGroups] = useState<string[]>(() => {
+    const saved = readSqliteBackedValue(ASSISTANT_GROUPS_STORAGE_KEY);
+    if (!saved) return [];
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
+        : [];
+    } catch {
+      return [];
+    }
+  });
   const [assistantSettingsId, setAssistantSettingsId] = useState<string | null>(null);
+  const [editingAssistantGroupName, setEditingAssistantGroupName] = useState<string | null>(null);
+  const [editingAssistantGroupDraft, setEditingAssistantGroupDraft] = useState("");
   const [assistantAvatarPanelOpen, setAssistantAvatarPanelOpen] = useState(false);
   const [assistantAvatarSearchQuery, setAssistantAvatarSearchQuery] = useState("");
   const [assistantAvatarCategory, setAssistantAvatarCategory] = useState("recent");
@@ -345,6 +374,7 @@ export default function MainChatView({
   const topicMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const assistantMenuRef = useRef<HTMLDivElement | null>(null);
   const assistantCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const assistantMoveGroupMenuRef = useRef<HTMLDivElement | null>(null);
   const assistantAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const assistantAvatarPanelRef = useRef<HTMLDivElement | null>(null);
   const assistantAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -368,6 +398,18 @@ export default function MainChatView({
   const isTopicPanelVisible = topicPanelManualVisible ?? defaultTopicPanelVisible;
   const basicAssistant = assistants.find((assistant) => assistant.kind === "basic") ?? null;
   const customAssistants = assistants.filter((assistant) => assistant.kind === "custom");
+  const assistantGroupNames = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...assistantGroups,
+          ...customAssistants
+            .map((assistant) => assistant.groupName?.trim())
+            .filter((groupName): groupName is string => Boolean(groupName)),
+        ])
+      ).sort((a, b) => a.localeCompare(b, "zh-CN")),
+    [assistantGroups, customAssistants]
+  );
   const activeAssistantAvatarSeed = resolveAssistantAvatarSeed(assistants, activeAssistant?.id ?? null);
   const activeAssistantPresetMeta = findPresetMetaByAssistant(activeAssistant);
   const activeSkillCount = activeAssistant?.allowedSkillIds.length ?? 0;
@@ -387,6 +429,31 @@ export default function MainChatView({
     if (!normalizedAssistantSearchQuery) return true;
     return normalizeSearchText(`${assistant.title} ${assistant.description}`).includes(normalizedAssistantSearchQuery);
   });
+  const groupedCustomAssistants = useMemo<AssistantDisplayGroup[]>(() => {
+    const grouped = new Map<string, AssistantProfile[]>();
+    filteredCustomAssistants.forEach((assistant) => {
+      const label = assistant.groupName?.trim() || DEFAULT_ASSISTANT_GROUP_LABEL;
+      const list = grouped.get(label) ?? [];
+      list.push(assistant);
+      grouped.set(label, list);
+    });
+
+    return Array.from(grouped.entries())
+      .sort(([labelA], [labelB]) => {
+        if (labelA === DEFAULT_ASSISTANT_GROUP_LABEL) return -1;
+        if (labelB === DEFAULT_ASSISTANT_GROUP_LABEL) return 1;
+        return labelA.localeCompare(labelB, "zh-CN");
+      })
+      .map(([label, nextAssistants]) => ({ label, assistants: nextAssistants }));
+  }, [filteredCustomAssistants]);
+  const defaultAssistantGroup = useMemo(
+    () => groupedCustomAssistants.find((group) => group.label === DEFAULT_ASSISTANT_GROUP_LABEL) ?? { label: DEFAULT_ASSISTANT_GROUP_LABEL, assistants: [] },
+    [groupedCustomAssistants]
+  );
+  const namedAssistantGroups = useMemo(
+    () => groupedCustomAssistants.filter((group) => group.label !== DEFAULT_ASSISTANT_GROUP_LABEL),
+    [groupedCustomAssistants]
+  );
   const filteredAssistantAvatars = filterAvatarPresets(AVATAR_PRESETS, assistantAvatarCategory, assistantAvatarSearchQuery);
   const isAssistantSettingsMode = Boolean(assistantSettingsId && activeAssistant?.kind === "custom");
   const [assistantTitleDraft, setAssistantTitleDraft] = useState(activeAssistant?.title ?? "");
@@ -417,6 +484,10 @@ export default function MainChatView({
     setAssistantPromptDraft(activeAssistant?.systemPrompt ?? "");
     setAssistantModelDraft(activeAssistant?.defaultModelId ?? "");
   }, [activeAssistant]);
+
+  useEffect(() => {
+    saveSqliteBackedValue(ASSISTANT_GROUPS_STORAGE_KEY, JSON.stringify(assistantGroups));
+  }, [assistantGroups]);
 
   useEffect(() => {
     if (!workspaceElement) return;
@@ -476,6 +547,7 @@ export default function MainChatView({
       if (!target) return;
       if (assistantMenuRef.current?.contains(target)) return;
       setAssistantMenuOpen(false);
+      setAssistantGroupDraft("");
     };
 
     window.addEventListener("pointerdown", handlePointerDown);
@@ -490,8 +562,11 @@ export default function MainChatView({
       if (!target) return;
       const activeMenu = assistantCardMenuRefs.current[openAssistantCardMenuId];
       if (activeMenu?.contains(target)) return;
+      if (assistantMoveGroupMenuRef.current?.contains(target)) return;
       setOpenAssistantCardMenuId(null);
       setAssistantDeleteConfirm(null);
+      setAssistantMoveGroupMenuId(null);
+      setAssistantMoveGroupMenuPosition(null);
     };
 
     window.addEventListener("pointerdown", handlePointerDown);
@@ -547,6 +622,44 @@ export default function MainChatView({
     topicDeleteConfirm.sessions.forEach((session) => onDeleteChat(session));
     setTopicDeleteConfirm(null);
     setTopicMenuOpen(false);
+  };
+
+  const handleCreateAssistantGroup = () => {
+    const nextGroupName = assistantGroupDraft.trim();
+    if (!nextGroupName) {
+      return;
+    }
+    const exists = assistantGroupNames.some((groupName) => groupName === nextGroupName);
+    if (!exists) {
+      setAssistantGroups((current) => [...current, nextGroupName]);
+    }
+    setAssistantGroupDraft("");
+  };
+
+  const handleDeleteAssistantGroup = (groupName: string) => {
+    setAssistantGroups((current) => current.filter((item) => item !== groupName));
+    customAssistants
+      .filter((assistant) => (assistant.groupName?.trim() || "") === groupName)
+      .forEach((assistant) => {
+        onUpdateAssistantProfile(assistant.id, { groupName: null });
+      });
+  };
+
+  const handleRenameAssistantGroup = (groupName: string) => {
+    const nextGroupName = editingAssistantGroupDraft.trim();
+    if (!nextGroupName || nextGroupName === groupName) {
+      setEditingAssistantGroupName(null);
+      setEditingAssistantGroupDraft("");
+      return;
+    }
+    setAssistantGroups((current) => current.map((item) => (item === groupName ? nextGroupName : item)));
+    customAssistants
+      .filter((assistant) => (assistant.groupName?.trim() || "") === groupName)
+      .forEach((assistant) => {
+        onUpdateAssistantProfile(assistant.id, { groupName: nextGroupName });
+      });
+    setEditingAssistantGroupName(null);
+    setEditingAssistantGroupDraft("");
   };
 
   const handleConfirmDeleteAssistant = () => {
@@ -656,6 +769,7 @@ export default function MainChatView({
                         type="button"
                         onClick={() => {
                           setAssistantMenuOpen(false);
+                          setAssistantGroupManagerOpen(true);
                         }}
                       >
                         <FolderOpen size={14} strokeWidth={1.9} />
@@ -675,120 +789,481 @@ export default function MainChatView({
                 </div>
               </div>
               {!customAssistantsCollapsed && <div className="chat-history-panel__assistant-list">
-                {filteredCustomAssistants.length === 0 ? (
-                  <div className="chat-history-panel__assistant-empty">
-                    {customAssistants.length === 0 ? "还没有自定义助手" : "没有匹配的助手"}
-                  </div>
-                ) : (
-                filteredCustomAssistants.map((assistant, index) => (
-                  <button
-                    key={assistant.id}
-                    type="button"
-                    className={`chat-history-panel__assistant ${activeAssistantId === assistant.id ? "chat-history-panel__assistant--active" : ""}`}
-                    onClick={() => {
-                      setAssistantSettingsId(null);
-                      setAssistantAvatarPanelOpen(false);
-                      onSelectAssistant(assistant.id);
-                    }}
-                  >
-                    <span className="chat-history-panel__assistant-icon chat-history-panel__assistant-icon--custom">
-                      {renderAssistantAvatar(assistant, index)}
-                    </span>
-                    <span className="chat-history-panel__assistant-copy">
-                      <strong>{assistant.title}</strong>
-                    </span>
-                    <span
-                      ref={(node) => {
-                        assistantCardMenuRefs.current[assistant.id] = node;
-                      }}
-                      className="chat-history-panel__assistant-menu"
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
+                <div className="chat-history-panel__assistant-group">
+                  <div className="chat-history-panel__assistant-group-label">{DEFAULT_ASSISTANT_GROUP_LABEL}</div>
+                  {defaultAssistantGroup.assistants.length === 0 ? (
+                    <button
+                      type="button"
+                      className="chat-history-panel__assistant-create"
+                      onClick={() => onCreateCustomAssistant()}
                     >
+                      <Plus size={14} strokeWidth={1.9} />
+                      <span>新建助手</span>
+                    </button>
+                  ) : (
+                    defaultAssistantGroup.assistants.map((assistant, index) => (
                       <button
+                        key={assistant.id}
                         type="button"
-                        className={`chat-history-panel__assistant-action ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant-action--active" : ""}`}
-                        title="更多操作"
-                        aria-label="更多操作"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenAssistantCardMenuId((current) => (current === assistant.id ? null : assistant.id));
+                        className={`chat-history-panel__assistant ${activeAssistantId === assistant.id ? "chat-history-panel__assistant--active" : ""} ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant--menu-open" : ""}`}
+                        onClick={() => {
+                          setAssistantSettingsId(null);
+                          setAssistantAvatarPanelOpen(false);
+                          onSelectAssistant(assistant.id);
                         }}
                       >
-                        <MoreHorizontal size={13} strokeWidth={1.9} />
-                      </button>
-                      {openAssistantCardMenuId === assistant.id && (
-                        <div className="chat-history-panel__assistant-dropdown">
-                          {assistantDeleteConfirm?.assistantId === assistant.id ? (
-                            <div className="chat-topic-panel__menu-confirm chat-history-panel__assistant-dropdown-confirm">
-                              <div className="chat-topic-panel__menu-confirm-title">{assistantDeleteConfirm.title}</div>
-                              <div className="chat-topic-panel__menu-confirm-message">{assistantDeleteConfirm.message}</div>
-                              <div className="chat-topic-panel__menu-confirm-actions">
-                                <button
-                                  type="button"
-                                  className="chat-topic-panel__menu-button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setAssistantDeleteConfirm(null);
-                                  }}
-                                >
-                                  取消
-                                </button>
-                                <button
-                                  type="button"
-                                  className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleConfirmDeleteAssistant();
-                                  }}
-                                >
-                                  确认删除
-                                </button>
-                              </div>
+                        <span className="chat-history-panel__assistant-icon chat-history-panel__assistant-icon--custom">
+                          {renderAssistantAvatar(assistant, index)}
+                        </span>
+                        <span className="chat-history-panel__assistant-copy">
+                          <strong>{assistant.title}</strong>
+                        </span>
+                        <span
+                          ref={(node) => {
+                            assistantCardMenuRefs.current[assistant.id] = node;
+                          }}
+                          className="chat-history-panel__assistant-menu"
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className={`chat-history-panel__assistant-action ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant-action--active" : ""}`}
+                            title="更多操作"
+                            aria-label="更多操作"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenAssistantCardMenuId((current) => (current === assistant.id ? null : assistant.id));
+                            }}
+                          >
+                            <MoreHorizontal size={13} strokeWidth={1.9} />
+                          </button>
+                          {openAssistantCardMenuId === assistant.id && (
+                            <div className="chat-history-panel__assistant-dropdown">
+                              {assistantDeleteConfirm?.assistantId === assistant.id ? (
+                                <div className="chat-topic-panel__menu-confirm chat-history-panel__assistant-dropdown-confirm">
+                                  <div className="chat-topic-panel__menu-confirm-title">{assistantDeleteConfirm.title}</div>
+                                  <div className="chat-topic-panel__menu-confirm-message">{assistantDeleteConfirm.message}</div>
+                                  <div className="chat-topic-panel__menu-confirm-actions">
+                                    <button
+                                      type="button"
+                                      className="chat-topic-panel__menu-button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setAssistantDeleteConfirm(null);
+                                      }}
+                                    >
+                                      取消
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleConfirmDeleteAssistant();
+                                      }}
+                                    >
+                                      确认删除
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setOpenAssistantCardMenuId(null);
+                                      onSelectAssistant(assistant.id);
+                                      setAssistantSettingsId(assistant.id);
+                                    }}
+                                  >
+                                    <Settings size={13} strokeWidth={1.9} />
+                                    <span>助手设置</span>
+                                  </button>
+                                  <div className="chat-history-panel__assistant-dropdown-divider" />
+                                  <button
+                                    type="button"
+                                    className="chat-history-panel__assistant-dropdown-branch"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      const triggerRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                      const estimatedSubmenuWidth = 172;
+                                      const estimatedSubmenuHeight = Math.min(window.innerHeight - 24, 220);
+                                      const rightSpace = window.innerWidth - triggerRect.right;
+                                      const nextLeft =
+                                        rightSpace >= estimatedSubmenuWidth
+                                          ? triggerRect.right + 8
+                                          : Math.max(12, triggerRect.left - estimatedSubmenuWidth - 8);
+                                      const nextTop = Math.min(
+                                        Math.max(12, triggerRect.top - 8),
+                                        Math.max(12, window.innerHeight - estimatedSubmenuHeight - 12)
+                                      );
+                                      setAssistantMoveGroupMenuPosition({ top: nextTop, left: nextLeft });
+                                      setAssistantMoveGroupMenuId((current) => (current === assistant.id ? null : assistant.id));
+                                    }}
+                                  >
+                                    <span className="chat-history-panel__assistant-dropdown-main">
+                                      <FolderOpen size={13} strokeWidth={1.9} />
+                                      <span>移动到分组</span>
+                                    </span>
+                                    <ChevronRight size={13} strokeWidth={1.9} />
+                                  </button>
+                                  <div className="chat-history-panel__assistant-dropdown-divider" />
+                                  <button
+                                    type="button"
+                                    className="chat-history-panel__assistant-dropdown-danger"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setAssistantDeleteConfirm({
+                                        assistantId: assistant.id,
+                                        title: "删除助手",
+                                        message: `确认删除“${assistant.title}”吗？相关话题和记忆会一并删除。`,
+                                      });
+                                    }}
+                                  >
+                                    <Trash2 size={13} strokeWidth={1.9} />
+                                    <span>删除助手</span>
+                                  </button>
+                                </>
+                              )}
                             </div>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setOpenAssistantCardMenuId(null);
-                                  onSelectAssistant(assistant.id);
-                                  setAssistantSettingsId(assistant.id);
-                                }}
-                              >
-                                <Settings size={13} strokeWidth={1.9} />
-                                <span>助手设置</span>
-                              </button>
-                              <div className="chat-history-panel__assistant-dropdown-divider" />
-                              <button
-                                type="button"
-                                className="chat-history-panel__assistant-dropdown-danger"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setAssistantDeleteConfirm({
-                                    assistantId: assistant.id,
-                                    title: "删除助手",
-                                    message: `确认删除“${assistant.title}”吗？相关话题和记忆会一并删除。`,
-                                  });
-                                }}
-                              >
-                                <Trash2 size={13} strokeWidth={1.9} />
-                                <span>删除助手</span>
-                              </button>
-                            </>
                           )}
-                        </div>
-                      )}
-                    </span>
-                  </button>
-                ))
-                )}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {namedAssistantGroups.length === 0 ? null : namedAssistantGroups.map((group) => (
+                  <div key={group.label} className="chat-history-panel__assistant-group">
+                    <div className="chat-history-panel__assistant-group-label">{group.label}</div>
+                    {group.assistants.map((assistant, index) => (
+                      <button
+                        key={assistant.id}
+                        type="button"
+                        className={`chat-history-panel__assistant ${activeAssistantId === assistant.id ? "chat-history-panel__assistant--active" : ""} ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant--menu-open" : ""}`}
+                        onClick={() => {
+                          setAssistantSettingsId(null);
+                          setAssistantAvatarPanelOpen(false);
+                          onSelectAssistant(assistant.id);
+                        }}
+                      >
+                        <span className="chat-history-panel__assistant-icon chat-history-panel__assistant-icon--custom">
+                          {renderAssistantAvatar(assistant, index)}
+                        </span>
+                        <span className="chat-history-panel__assistant-copy">
+                          <strong>{assistant.title}</strong>
+                        </span>
+                        <span
+                          ref={(node) => {
+                            assistantCardMenuRefs.current[assistant.id] = node;
+                          }}
+                          className="chat-history-panel__assistant-menu"
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className={`chat-history-panel__assistant-action ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant-action--active" : ""}`}
+                            title="更多操作"
+                            aria-label="更多操作"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenAssistantCardMenuId((current) => (current === assistant.id ? null : assistant.id));
+                            }}
+                          >
+                            <MoreHorizontal size={13} strokeWidth={1.9} />
+                          </button>
+                          {openAssistantCardMenuId === assistant.id && (
+                            <div className="chat-history-panel__assistant-dropdown">
+                              {assistantDeleteConfirm?.assistantId === assistant.id ? (
+                                <div className="chat-topic-panel__menu-confirm chat-history-panel__assistant-dropdown-confirm">
+                                  <div className="chat-topic-panel__menu-confirm-title">{assistantDeleteConfirm.title}</div>
+                                  <div className="chat-topic-panel__menu-confirm-message">{assistantDeleteConfirm.message}</div>
+                                  <div className="chat-topic-panel__menu-confirm-actions">
+                                    <button
+                                      type="button"
+                                      className="chat-topic-panel__menu-button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setAssistantDeleteConfirm(null);
+                                      }}
+                                    >
+                                      取消
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleConfirmDeleteAssistant();
+                                      }}
+                                    >
+                                      确认删除
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setOpenAssistantCardMenuId(null);
+                                      onSelectAssistant(assistant.id);
+                                      setAssistantSettingsId(assistant.id);
+                                    }}
+                                  >
+                                    <Settings size={13} strokeWidth={1.9} />
+                                    <span>助手设置</span>
+                                  </button>
+                                  <div className="chat-history-panel__assistant-dropdown-divider" />
+                                  <button
+                                    type="button"
+                                    className="chat-history-panel__assistant-dropdown-branch"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      const triggerRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                      const estimatedSubmenuWidth = 172;
+                                      const estimatedSubmenuHeight = Math.min(window.innerHeight - 24, 220);
+                                      const rightSpace = window.innerWidth - triggerRect.right;
+                                      const nextLeft =
+                                        rightSpace >= estimatedSubmenuWidth
+                                          ? triggerRect.right + 8
+                                          : Math.max(12, triggerRect.left - estimatedSubmenuWidth - 8);
+                                      const nextTop = Math.min(
+                                        Math.max(12, triggerRect.top - 8),
+                                        Math.max(12, window.innerHeight - estimatedSubmenuHeight - 12)
+                                      );
+                                      setAssistantMoveGroupMenuPosition({ top: nextTop, left: nextLeft });
+                                      setAssistantMoveGroupMenuId((current) => (current === assistant.id ? null : assistant.id));
+                                    }}
+                                  >
+                                    <span className="chat-history-panel__assistant-dropdown-main">
+                                      <FolderOpen size={13} strokeWidth={1.9} />
+                                      <span>移动到分组</span>
+                                    </span>
+                                    <ChevronRight size={13} strokeWidth={1.9} />
+                                  </button>
+                                  <div className="chat-history-panel__assistant-dropdown-divider" />
+                                  <button
+                                    type="button"
+                                    className="chat-history-panel__assistant-dropdown-danger"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setAssistantDeleteConfirm({
+                                        assistantId: assistant.id,
+                                        title: "删除助手",
+                                        message: `确认删除“${assistant.title}”吗？相关话题和记忆会一并删除。`,
+                                      });
+                                    }}
+                                  >
+                                    <Trash2 size={13} strokeWidth={1.9} />
+                                    <span>删除助手</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
               </div>}
             </div>
 
         </div>
       </aside>
+
+      {assistantGroupManagerOpen && (
+        <div
+          className="omni-confirm-overlay"
+          onClick={() => {
+            setAssistantGroupManagerOpen(false);
+            setAssistantGroupDraft("");
+          }}
+        >
+          <div
+            className="omni-confirm-dialog chat-history-panel__group-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-history-panel__group-dialog-header">
+              <div className="chat-history-panel__group-dialog-title">分组管理</div>
+              <button
+                type="button"
+                className="chat-history-panel__group-dialog-close"
+                onClick={() => {
+                  setAssistantGroupManagerOpen(false);
+                  setAssistantGroupDraft("");
+                }}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+            <div className="chat-history-panel__group-dialog-body">
+              <div className="chat-history-panel__group-manager-list">
+                <div className="chat-history-panel__group-manager-item chat-history-panel__group-manager-item--default">
+                  <div className="chat-history-panel__group-manager-row">
+                    <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
+                      <GripVertical size={14} strokeWidth={1.9} />
+                    </span>
+                    <span>{DEFAULT_ASSISTANT_GROUP_LABEL}</span>
+                  </div>
+                  <span className="chat-history-panel__group-manager-badge">系统</span>
+                </div>
+                {assistantGroupNames.length === 0 ? (
+                  <div className="chat-history-panel__group-manager-empty">还没有自定义分组</div>
+                ) : (
+                  assistantGroupNames.map((groupName) => (
+                    <div key={groupName} className="chat-history-panel__group-manager-item">
+                      {editingAssistantGroupName === groupName ? (
+                        <>
+                          <div className="chat-history-panel__group-manager-row">
+                            <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
+                              <GripVertical size={14} strokeWidth={1.9} />
+                            </span>
+                            <input
+                              className="chat-history-panel__group-manager-inline-input"
+                              value={editingAssistantGroupDraft}
+                              onChange={(event) => setEditingAssistantGroupDraft(event.target.value)}
+                              onBlur={() => handleRenameAssistantGroup(groupName)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  handleRenameAssistantGroup(groupName);
+                                }
+                              }}
+                              autoFocus
+                            />
+                          </div>
+                          <div className="chat-history-panel__group-manager-actions">
+                            <button type="button" onClick={() => handleRenameAssistantGroup(groupName)}>
+                              <Check size={14} strokeWidth={2} />
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="chat-history-panel__group-manager-row">
+                            <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
+                              <GripVertical size={14} strokeWidth={1.9} />
+                            </span>
+                            <span>{groupName}</span>
+                          </div>
+                          <div className="chat-history-panel__group-manager-actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAssistantGroupName(groupName);
+                                setEditingAssistantGroupDraft(groupName);
+                              }}
+                            >
+                              <Pencil size={14} strokeWidth={1.9} />
+                            </button>
+                            <button type="button" onClick={() => handleDeleteAssistantGroup(groupName)}>
+                              <Trash2 size={14} strokeWidth={1.9} />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="chat-history-panel__group-dialog-footer">
+              {assistantGroupCreateMode ? (
+                <div className="chat-history-panel__group-create chat-history-panel__group-create--dialog">
+                  <input
+                    value={assistantGroupDraft}
+                    onChange={(event) => setAssistantGroupDraft(event.target.value)}
+                    placeholder="添加新分组"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        handleCreateAssistantGroup();
+                        setAssistantGroupCreateMode(false);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCreateAssistantGroup();
+                      setAssistantGroupCreateMode(false);
+                    }}
+                  >
+                    <Check size={14} strokeWidth={2} />
+                    <span>确认添加</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="chat-history-panel__group-add-button"
+                  onClick={() => setAssistantGroupCreateMode(true)}
+                >
+                  <Plus size={14} strokeWidth={1.9} />
+                  <span>添加新分组</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {assistantMoveGroupMenuId && assistantMoveGroupMenuPosition && (
+        <div
+          ref={assistantMoveGroupMenuRef}
+          className="chat-history-panel__assistant-submenu chat-history-panel__assistant-submenu--floating"
+          style={{
+            top: assistantMoveGroupMenuPosition.top,
+            left: assistantMoveGroupMenuPosition.left,
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {[DEFAULT_ASSISTANT_GROUP_LABEL, ...assistantGroupNames].map((groupName) => {
+            const currentAssistant = customAssistants.find((assistant) => assistant.id === assistantMoveGroupMenuId);
+            const currentGroupName = currentAssistant?.groupName?.trim() || DEFAULT_ASSISTANT_GROUP_LABEL;
+            const isActive = currentGroupName === groupName;
+            return (
+            <button
+              key={`${assistantMoveGroupMenuId}-${groupName}-choice`}
+              type="button"
+              className={isActive ? "chat-history-panel__assistant-group-choice--active" : ""}
+              onClick={(event) => {
+                event.stopPropagation();
+                onUpdateAssistantProfile(assistantMoveGroupMenuId, {
+                  groupName: groupName === DEFAULT_ASSISTANT_GROUP_LABEL ? null : groupName,
+                });
+                setAssistantMoveGroupMenuId(null);
+                setAssistantMoveGroupMenuPosition(null);
+                setOpenAssistantCardMenuId(null);
+              }}
+            >
+              {isActive ? <Check size={13} strokeWidth={2.2} /> : <span className="chat-history-panel__assistant-group-choice-spacer" aria-hidden="true" />}
+              <span>{groupName}</span>
+              <span className="chat-history-panel__assistant-group-choice-tail" aria-hidden="true" />
+            </button>
+            );
+          })}
+          <div className="chat-history-panel__assistant-dropdown-divider" />
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setAssistantMoveGroupMenuId(null);
+              setAssistantMoveGroupMenuPosition(null);
+              setOpenAssistantCardMenuId(null);
+              setAssistantGroupManagerOpen(true);
+            }}
+          >
+            <span className="chat-history-panel__assistant-dropdown-main">
+              <Plus size={13} strokeWidth={1.9} />
+              <span>添加新分组</span>
+            </span>
+          </button>
+        </div>
+      )}
 
       <section ref={setWorkspaceElement} className="main-chat-workspace" style={{ "--composer-height": `${composerHeight}px` } as CSSProperties}>
         <header className="main-chat-header drag-region">
@@ -1047,6 +1522,23 @@ export default function MainChatView({
                               </div>
                             )}
                           </div>
+                        </label>
+                        <label className="chat-topic-panel__field">
+                          <span>所属分组</span>
+                          <select
+                            value={activeAssistant.groupName ?? ""}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              onUpdateAssistantProfile(activeAssistant.id, { groupName: nextValue || null });
+                            }}
+                          >
+                            <option value="">{DEFAULT_ASSISTANT_GROUP_LABEL}</option>
+                            {assistantGroupNames.map((groupName) => (
+                              <option key={groupName} value={groupName}>
+                                {groupName}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                         <label className="chat-topic-panel__field omni-settings-dialog__field--full">
                           <span>描述</span>
