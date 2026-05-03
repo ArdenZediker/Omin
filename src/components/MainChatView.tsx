@@ -393,7 +393,7 @@ export default function MainChatView({
   );
   const allTopicSessions = useMemo(() => groupedChatSessions.flatMap((group) => group.sessions), [groupedChatSessions]);
   const filteredTopicSessions = useMemo(() => filteredTopicGroups.flatMap((group) => group.sessions), [filteredTopicGroups]);
-  const currentTopicTitle = activeSession?.title || (activeAssistant?.kind === "basic" ? "默认聊天" : activeAssistant?.title) || "默认聊天";
+  const currentTopicTitle = activeSession?.title || (activeAssistant?.kind === "basic" ? "Omni" : activeAssistant?.title) || "Omni";
   const defaultTopicPanelVisible = !isTopicPanelAutoCollapsed;
   const isTopicPanelVisible = topicPanelManualVisible ?? defaultTopicPanelVisible;
   const basicAssistant = assistants.find((assistant) => assistant.kind === "basic") ?? null;
@@ -1677,7 +1677,7 @@ export default function MainChatView({
                       const supportLabel = supportedKinds.includes("basic") && supportedKinds.includes("custom")
                         ? "基础 / 自定义助手"
                         : supportedKinds.includes("basic")
-                          ? "基础聊天"
+                          ? "Omni"
                           : "自定义助手";
                       return (
                         <label key={skill.id} className="omni-settings-dialog__toggle-row">
@@ -1756,6 +1756,7 @@ export default function MainChatView({
                           type="button"
                           className="chat-recall-banner__action"
                           onClick={() => {
+                            setSidePanelTab("memory");
                             setTopicPanelManualVisible(true);
                             setExpandedMemoryIds(relatedContext.memories.map((memory) => memory.id));
                             setExpandedSummaryIds(relatedContext.summaries.map((summary) => summary.sessionId));

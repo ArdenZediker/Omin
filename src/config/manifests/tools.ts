@@ -25,7 +25,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
 export const TOOLSET_MANIFESTS: ToolsetManifest[] = [
   {
     id: "basic-chat",
-    title: "基础聊天",
+    title: "Omni",
     description: "适合常规问答和话题管理",
     toolIds: ["search_sessions", "read_session"],
   },
