@@ -155,23 +155,6 @@ function renderTopicGroupLabel(label: string) {
   return <span>{label}</span>;
 }
 
-function formatTaskStatusLabel(status: string) {
-  switch (status) {
-    case "running":
-      return "进行中";
-    case "completed":
-      return "已完成";
-    case "failed":
-      return "失败";
-    case "aborted":
-      return "已中止";
-    case "pending":
-      return "等待中";
-    default:
-      return status;
-  }
-}
-
 function findPresetMetaByAssistant(assistant: AssistantProfile | null) {
   if (!assistant?.sourcePresetId) return null;
   return AVATAR_PRESETS.find((preset) => preset.code === assistant.sourcePresetId) ?? null;
@@ -382,16 +365,6 @@ export default function MainChatView({
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
-  const activeSubtaskCards = latestTaskResult?.plan.childTaskIds?.map((childTaskId) => {
-    const isActive = latestTaskResult.plan.metadata?.activeChildTaskId === childTaskId;
-    const delegatedTo = isActive ? String(latestTaskResult.plan.metadata?.delegatedTo ?? "") : "";
-    return {
-      id: childTaskId,
-      title: formatChildTaskLabel(childTaskId),
-      status: isActive ? "running" : "queued",
-      delegatedTo,
-    };
-  }) ?? [];
   const normalizedAssistantSearchQuery = normalizeSearchText(assistantSearchQuery);
   const isBasicAssistantVisible = Boolean(
     basicAssistant &&
@@ -538,13 +511,13 @@ export default function MainChatView({
       return;
     }
     setTopicDeleteConfirm({ title, message, sessions });
-    setTopicMenuOpen(false);
   };
 
   const handleConfirmDeleteSessions = () => {
     if (!topicDeleteConfirm) return;
     topicDeleteConfirm.sessions.forEach((session) => onDeleteChat(session));
     setTopicDeleteConfirm(null);
+    setTopicMenuOpen(false);
   };
 
   return (
@@ -1278,47 +1251,6 @@ export default function MainChatView({
                 {error && <div className="main-chat-error animate-fade-in">{error}</div>}
               </div>
 
-              {latestTaskResult && (
-                <div className="main-chat-task-board">
-                  <div className="main-chat-task-board__head">
-                    <div className="main-chat-task-board__title">
-                      <strong>{latestTaskResult.plan.goal}</strong>
-                      <span>{formatTaskStatusLabel(latestTaskResult.status)} · {latestTaskResult.intent}</span>
-                    </div>
-                    <span className={`main-chat-task-board__status main-chat-task-board__status--${latestTaskResult.status}`}>
-                      {formatTaskStatusLabel(latestTaskResult.status)}
-                    </span>
-                  </div>
-                  {activeSubtaskCards.length > 0 && (
-                    <div className="main-chat-task-board__subtasks">
-                      {activeSubtaskCards.map((task) => (
-                        <div key={task.id} className="main-chat-task-board__subtask">
-                          <strong>{task.title}</strong>
-                          <span>{formatTaskStatusLabel(task.status)}</span>
-                          {task.delegatedTo ? <small>{task.delegatedTo}</small> : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {latestTaskResult.trace.length > 0 && (
-                    <div className="main-chat-task-board__trace">
-                      {latestTaskResult.trace.slice(-4).map((entry) => (
-                        <div key={`${entry.at}-${entry.message}`} className="main-chat-task-board__trace-item">
-                          <span>{formatTaskStatusLabel(latestTaskResult.status)}</span>
-                          <p>{entry.message}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {taskAggregateSummary && (
-                    <div className="main-chat-task-board__summary">
-                      <strong>聚合结果</strong>
-                      <span>{taskAggregateSummary.text}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
               <div ref={setComposerElement}>
                 <ChatInput
                   canStartNewTopic={activeAssistant?.kind === "basic"}
@@ -1870,12 +1802,18 @@ export default function MainChatView({
       </section>
 
       {topicDeleteConfirm && (
-        <div className="omni-confirm-overlay" onClick={() => setTopicDeleteConfirm(null)}>
+        <div className="omni-confirm-overlay" onClick={() => {
+          setTopicDeleteConfirm(null);
+          setTopicMenuOpen(false);
+        }}>
           <div className="omni-confirm-dialog" onClick={(event) => event.stopPropagation()}>
             <div className="omni-confirm-dialog__title">{topicDeleteConfirm.title}</div>
             <div className="omni-confirm-dialog__message">{topicDeleteConfirm.message}</div>
             <div className="omni-confirm-dialog__actions">
-              <button type="button" className="omni-confirm-dialog__button" onClick={() => setTopicDeleteConfirm(null)}>
+              <button type="button" className="omni-confirm-dialog__button" onClick={() => {
+                setTopicDeleteConfirm(null);
+                setTopicMenuOpen(false);
+              }}>
                 取消
               </button>
               <button
