@@ -149,7 +149,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     return () => {
       cancelled = true;
     };
-  }, [persist, activeAssistantId, activeChatId]);
+  }, [persist]);
 
   useEffect(() => {
     if (!persist || !isStorageHydrated) return;
