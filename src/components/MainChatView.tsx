@@ -450,6 +450,7 @@ export default function MainChatView({
       if (topicMenuRef.current?.contains(target)) return;
       if (topicMenuButtonRef.current?.contains(target)) return;
       setTopicMenuOpen(false);
+      setTopicDeleteConfirm(null);
     };
 
     window.addEventListener("pointerdown", handlePointerDown);
@@ -1286,11 +1287,80 @@ export default function MainChatView({
                   title="更多操作"
                   onClick={() => {
                     setTopicSearchOpen(false);
+                    setTopicDeleteConfirm(null);
                     setTopicMenuOpen((current) => !current);
                   }}
                 >
                   <MoreHorizontal size={16} strokeWidth={1.8} />
                 </button>
+                {sidePanelTab === "topics" && topicMenuOpen && (
+                  <div ref={topicMenuRef} className="chat-topic-panel__menu">
+                    {topicDeleteConfirm ? (
+                      <div className="chat-topic-panel__menu-confirm">
+                        <div className="chat-topic-panel__menu-confirm-title">{topicDeleteConfirm.title}</div>
+                        <div className="chat-topic-panel__menu-confirm-message">{topicDeleteConfirm.message}</div>
+                        <div className="chat-topic-panel__menu-confirm-actions">
+                          <button
+                            type="button"
+                            className="chat-topic-panel__menu-button"
+                            onClick={() => setTopicDeleteConfirm(null)}
+                          >
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
+                            onClick={handleConfirmDeleteSessions}
+                          >
+                            确定删除
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="chat-topic-panel__menu-button"
+                          onClick={() => {
+                            setTopicGroupingMode("time");
+                            setTopicMenuOpen(false);
+                          }}
+                        >
+                          <span className="chat-topic-panel__menu-check">{topicGroupingMode === "time" ? <Check size={14} strokeWidth={2.2} /> : null}</span>
+                          <span>按时间分组</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-topic-panel__menu-button"
+                          onClick={() => {
+                            setTopicGroupingMode("flat");
+                            setTopicMenuOpen(false);
+                          }}
+                        >
+                          <span className="chat-topic-panel__menu-check">{topicGroupingMode === "flat" ? <Check size={14} strokeWidth={2.2} /> : null}</span>
+                          <span>不分组</span>
+                        </button>
+                        <div className="chat-topic-panel__menu-divider" />
+                        <button
+                          type="button"
+                          className="chat-topic-panel__menu-button"
+                          onClick={() => handleDeleteSessions(allTopicSessions.filter((session) => !session.favorite), "删除未收藏话题", "确定删除未收藏的话题吗？")}
+                        >
+                          <Trash2 size={14} strokeWidth={1.9} />
+                          <span>删除未收藏话题</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
+                          onClick={() => handleDeleteSessions(allTopicSessions, "删除全部话题", "确定删除当前助手下的全部话题吗？")}
+                        >
+                          <Trash2 size={14} strokeWidth={1.9} />
+                          <span>删除全部话题</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1310,50 +1380,6 @@ export default function MainChatView({
                   onChange={(event) => setTopicSearchQuery(event.target.value)}
                   placeholder="搜索话题标题"
                 />
-              </div>
-            )}
-
-            {sidePanelTab === "topics" && topicMenuOpen && (
-              <div ref={topicMenuRef} className="chat-topic-panel__menu">
-                <button
-                  type="button"
-                  className="chat-topic-panel__menu-button"
-                  onClick={() => {
-                    setTopicGroupingMode("time");
-                    setTopicMenuOpen(false);
-                  }}
-                >
-                  <span className="chat-topic-panel__menu-check">{topicGroupingMode === "time" ? <Check size={14} strokeWidth={2.2} /> : null}</span>
-                  <span>按时间分组</span>
-                </button>
-                <button
-                  type="button"
-                  className="chat-topic-panel__menu-button"
-                  onClick={() => {
-                    setTopicGroupingMode("flat");
-                    setTopicMenuOpen(false);
-                  }}
-                >
-                  <span className="chat-topic-panel__menu-check">{topicGroupingMode === "flat" ? <Check size={14} strokeWidth={2.2} /> : null}</span>
-                  <span>不分组</span>
-                </button>
-                <div className="chat-topic-panel__menu-divider" />
-                <button
-                  type="button"
-                  className="chat-topic-panel__menu-button"
-                  onClick={() => handleDeleteSessions(allTopicSessions.filter((session) => !session.favorite), "删除未收藏话题", "确定删除未收藏的话题吗？")}
-                >
-                  <Trash2 size={14} strokeWidth={1.9} />
-                  <span>删除未收藏话题</span>
-                </button>
-                <button
-                  type="button"
-                  className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
-                  onClick={() => handleDeleteSessions(allTopicSessions, "删除全部话题", "确定删除当前助手下的全部话题吗？")}
-                >
-                  <Trash2 size={14} strokeWidth={1.9} />
-                  <span>删除全部话题</span>
-                </button>
               </div>
             )}
 
@@ -1801,32 +1827,6 @@ export default function MainChatView({
         </aside>}
       </section>
 
-      {topicDeleteConfirm && (
-        <div className="omni-confirm-overlay" onClick={() => {
-          setTopicDeleteConfirm(null);
-          setTopicMenuOpen(false);
-        }}>
-          <div className="omni-confirm-dialog" onClick={(event) => event.stopPropagation()}>
-            <div className="omni-confirm-dialog__title">{topicDeleteConfirm.title}</div>
-            <div className="omni-confirm-dialog__message">{topicDeleteConfirm.message}</div>
-            <div className="omni-confirm-dialog__actions">
-              <button type="button" className="omni-confirm-dialog__button" onClick={() => {
-                setTopicDeleteConfirm(null);
-                setTopicMenuOpen(false);
-              }}>
-                取消
-              </button>
-              <button
-                type="button"
-                className="omni-confirm-dialog__button omni-confirm-dialog__button--danger"
-                onClick={handleConfirmDeleteSessions}
-              >
-                确定删除
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
