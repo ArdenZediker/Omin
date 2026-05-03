@@ -362,6 +362,7 @@ export default function MainChatView({
   const activeSkillCount = activeAssistant?.allowedSkillIds.length ?? 0;
   const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
   const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
+  const showAssistantTopTags = false;
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
@@ -570,7 +571,11 @@ export default function MainChatView({
               <button
                 type="button"
                 className={`chat-history-panel__assistant ${activeAssistantId === basicAssistant.id ? "chat-history-panel__assistant--active" : ""}`}
-                onClick={() => onSelectAssistant(basicAssistant.id)}
+                onClick={() => {
+                  setAssistantSettingsId(null);
+                  setAssistantAvatarPanelOpen(false);
+                  onSelectAssistant(basicAssistant.id);
+                }}
               >
                 <span className="chat-history-panel__assistant-icon">
                   {renderAssistantAvatar(basicAssistant)}
@@ -579,6 +584,7 @@ export default function MainChatView({
                   <strong>{basicAssistant.title}</strong>
                   <span>{basicAssistant.description}</span>
                 </span>
+                <span className="chat-history-panel__assistant-action chat-history-panel__assistant-action--placeholder" aria-hidden="true" />
               </button>
             </div>
           )}
@@ -641,7 +647,11 @@ export default function MainChatView({
                     key={assistant.id}
                     type="button"
                     className={`chat-history-panel__assistant ${activeAssistantId === assistant.id ? "chat-history-panel__assistant--active" : ""}`}
-                    onClick={() => onSelectAssistant(assistant.id)}
+                    onClick={() => {
+                      setAssistantSettingsId(null);
+                      setAssistantAvatarPanelOpen(false);
+                      onSelectAssistant(assistant.id);
+                    }}
                   >
                     <span className="chat-history-panel__assistant-icon chat-history-panel__assistant-icon--custom">
                       {renderAssistantAvatar(assistant, index)}
@@ -686,13 +696,26 @@ export default function MainChatView({
           <div className="main-chat-toolbar">
             <div className="main-chat-toolbar__session main-chat-toolbar__session--hero">
               <div className="main-chat-toolbar__assistant">
+                {isAssistantSettingsMode && (
+                  <button
+                    type="button"
+                    className="main-chat-toolbar__icon-button main-chat-toolbar__back-button"
+                    title="返回聊天"
+                    onClick={() => {
+                      setAssistantSettingsId(null);
+                      setAssistantAvatarPanelOpen(false);
+                    }}
+                  >
+                    <ChevronLeft className="main-chat-toolbar__icon" strokeWidth={1.8} />
+                  </button>
+                )}
                 <div className="main-chat-toolbar__assistant-mark">
                   {renderAssistantAvatar(activeAssistant, activeAssistantAvatarSeed)}
                 </div>
                 <div className="main-chat-toolbar__assistant-copy">
                   <strong>{isAssistantSettingsMode ? "助手设置" : currentTopicTitle}</strong>
                   <span>{isAssistantSettingsMode ? "在中间区域配置当前自定义助手" : activeAssistant?.description || "开始新一轮思考、问答或执行任务"}</span>
-                  {!isAssistantSettingsMode && (
+                  {!isAssistantSettingsMode && showAssistantTopTags && (
                     <div className="main-chat-toolbar__assistant-tags">
                       {activeAssistantPresetMeta && (
                         <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
@@ -741,19 +764,6 @@ export default function MainChatView({
             </div>
 
             <div className="main-chat-toolbar__actions no-drag">
-              {isAssistantSettingsMode && (
-                <button
-                  type="button"
-                  className="main-chat-toolbar__icon-button"
-                  title="返回聊天"
-                  onClick={() => {
-                    setAssistantSettingsId(null);
-                    setAssistantAvatarPanelOpen(false);
-                  }}
-                >
-                  <ChevronLeft className="main-chat-toolbar__icon" strokeWidth={1.8} />
-                </button>
-              )}
               {messages.length > 0 && (
                 <button onClick={onClearChat} className="main-chat-toolbar__icon-button" title="清空对话" type="button">
                   <Trash2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
@@ -1621,7 +1631,11 @@ export default function MainChatView({
                             key={session.id}
                             type="button"
                             className={`chat-topic-panel__item ${session.id === activeChatId ? "chat-topic-panel__item--active" : ""}`}
-                            onClick={() => onSelectChat(session.id)}
+                            onClick={() => {
+                              setAssistantSettingsId(null);
+                              setAssistantAvatarPanelOpen(false);
+                              onSelectChat(session.id);
+                            }}
                           >
                             <MessageSquare size={13} strokeWidth={1.9} className="chat-topic-panel__item-icon" />
                             <span className="chat-topic-panel__item-copy">
@@ -1700,7 +1714,11 @@ export default function MainChatView({
                       key={session.id}
                       type="button"
                       className={`chat-topic-panel__item ${session.id === activeChatId ? "chat-topic-panel__item--active" : ""}`}
-                      onClick={() => onSelectChat(session.id)}
+                      onClick={() => {
+                        setAssistantSettingsId(null);
+                        setAssistantAvatarPanelOpen(false);
+                        onSelectChat(session.id);
+                      }}
                     >
                       <MessageSquare size={13} strokeWidth={1.9} className="chat-topic-panel__item-icon" />
                       <span className="chat-topic-panel__item-copy">
