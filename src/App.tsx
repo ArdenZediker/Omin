@@ -130,10 +130,28 @@ function App() {
     [compactAppearance, effectiveCompactScale]
   );
   const compactViewportSize = useMemo(() => {
-    if (isAnimatedCompactAppearance && isCompactQueryOpen && !isCompactMenuOpen && !isCompactReplyLoading && !compactReply) {
+    if (
+      compactAppearance === "pet" &&
+      isCompactQueryOpen &&
+      !isCompactMenuOpen &&
+      !isCompactReplyLoading &&
+      !compactReply
+    ) {
       return {
-        width: compactAppearance === "pet" ? Math.max(compactSize.width, 272) : compactSize.width,
-        height: compactSize.height + (compactAppearance === "pet" ? 44 : 96),
+        width: Math.max(compactSize.width, 286),
+        height: compactSize.height + 54,
+      };
+    }
+    if (
+      compactAppearance === "character" &&
+      isCompactQueryOpen &&
+      !isCompactMenuOpen &&
+      !isCompactReplyLoading &&
+      !compactReply
+    ) {
+      return {
+        width: compactSize.width,
+        height: compactSize.height + 96,
       };
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {

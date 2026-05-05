@@ -406,7 +406,7 @@ export function useCompactWindowController({
       const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
       const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
       suppressCompactBlur();
-      if (isCharacterAppearance) {
+      if (isCharacterAppearance || compactAppearance === "pet") {
         await appWindow.setAlwaysOnTop(true);
         await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
         return;
@@ -433,6 +433,7 @@ export function useCompactWindowController({
     compactSubmenuSide,
     isCharacterModelOpen,
     isCharacterAppearance,
+    compactAppearance,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
     isCompactModelOpen,
