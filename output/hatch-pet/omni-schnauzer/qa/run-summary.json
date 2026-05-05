@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "run_dir": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer",
+  "spritesheet": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\final\\spritesheet.webp",
+  "validation": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\final\\validation.json",
+  "contact_sheet": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\qa\\contact-sheet.png",
+  "review": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\qa\\review.json",
+  "videos": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\qa\\videos",
+  "package": "C:\\Users\\Administrator\\.codex\\pets\\omni-schnauzer"
+}

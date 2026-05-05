@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 
-export type CompactAppearance = "default" | "compact" | "large" | "character";
+export type CompactAppearance = "default" | "compact" | "large" | "character" | "pet";
 export type CharacterModel = "hiyori";
 
 export const COMPACT_APPEARANCE_STORAGE_KEY = "omni_compact_appearance";
@@ -18,7 +18,7 @@ export function clampCharacterScale(value: number) {
 export function getInitialCompactAppearance(): CompactAppearance {
   if (typeof window === "undefined") return "default";
   const saved = readSqliteBackedValue(COMPACT_APPEARANCE_STORAGE_KEY);
-  return saved === "compact" || saved === "large" || saved === "character" ? saved : "default";
+  return saved === "compact" || saved === "large" || saved === "character" || saved === "pet" ? saved : "default";
 }
 
 export function getInitialCharacterScale(): number {

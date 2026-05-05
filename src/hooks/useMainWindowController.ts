@@ -126,14 +126,17 @@ export function useMainWindowController({
       if (initialBasicSettings.showCompactBall) {
         const storedAppearance = readSqliteBackedValue("omni_compact_appearance");
         const appearance: CompactAppearance =
-          storedAppearance === "compact" || storedAppearance === "large" || storedAppearance === "character"
+          storedAppearance === "compact" ||
+          storedAppearance === "large" ||
+          storedAppearance === "character" ||
+          storedAppearance === "pet"
             ? storedAppearance
             : "default";
         const storedScale = Number(readSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY) || "1");
         const scale = Number.isFinite(storedScale) ? storedScale : 1;
         void showCompactWindow(
           appearance,
-          appearance === "character" ? scale * CHARACTER_SCALE_BASELINE : 1,
+          appearance === "character" || appearance === "pet" ? scale * CHARACTER_SCALE_BASELINE : 1,
           COMPACT_WINDOW_LABEL
         );
       }

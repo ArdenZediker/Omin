@@ -3877,6 +3877,10 @@ body,
   align-items: center;
 }
 
+.compact-bar--pet {
+  align-items: flex-start;
+}
+
 .compact-menu-anchor {
   position: relative;
   display: flex;
@@ -3935,6 +3939,38 @@ body,
   cursor: default;
 }
 
+.compact-button--pet {
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.desktop-pet {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  border-radius: 16px;
+}
+
+.desktop-pet__viewport {
+  position: relative;
+  width: 192px;
+  height: 208px;
+  overflow: hidden;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.desktop-pet__atlas {
+  position: absolute;
+  display: block;
+  max-width: none;
+  max-height: none;
+  user-select: none;
+  pointer-events: none;
+}
+
 .compact-button--character:hover {
   box-shadow: none;
 }
@@ -3945,6 +3981,29 @@ body,
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(203, 213, 225, 0.64);
   box-shadow: none;
+}
+
+.compact-bar__actions--pet {
+  position: absolute;
+  right: 8px;
+  bottom: 10px;
+  z-index: 22;
+}
+
+.compact-bar__actions--pet .compact-button--search-chip {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(203, 213, 225, 0.78);
+  box-shadow:
+    0 6px 16px rgba(15, 23, 42, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+.compact-bar__actions--pet .compact-button__search {
+  width: 14px;
+  height: 14px;
 }
 
 .compact-button--search-chip:hover {
@@ -4055,6 +4114,46 @@ body,
   width: calc(100vw - 16px);
   max-width: 360px;
   padding: 7px;
+}
+
+.compact-bar--pet .compact-query,
+.compact-query--pet {
+  top: calc(100% + 10px);
+  left: 50%;
+  bottom: auto;
+  transform: translateX(-50%);
+  width: 224px;
+  min-width: 0;
+  max-width: min(236px, calc(100vw - 24px));
+  padding: 6px;
+  border-radius: 999px;
+  z-index: 32;
+}
+
+.compact-query--pet .compact-query__row {
+  gap: 5px;
+}
+
+.compact-query--pet .compact-query__preset {
+  padding: 6px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.compact-query--pet .compact-query__input {
+  min-width: 0;
+  height: 28px;
+  border-radius: 999px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.compact-query--pet .compact-query__row > * {
+  flex-shrink: 0;
+}
+
+.compact-query--pet .compact-query__input {
+  flex: 1 1 auto;
 }
 
 .compact-bar--character .compact-query__row {

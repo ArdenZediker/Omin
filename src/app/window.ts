@@ -7,6 +7,9 @@ import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
 
 export function isCharacterPointerInHitArea(element: HTMLElement, clientX: number, clientY: number) {
+  if (element.dataset.hitMode === "full") {
+    return true;
+  }
   const rect = element.getBoundingClientRect();
   const relativeX = (clientX - rect.left) / rect.width;
   const relativeY = (clientY - rect.top) / rect.height;
@@ -234,10 +237,11 @@ export function getCompactWindowSize(appearance: CompactAppearance, scale: numbe
 }
 
 export function getExpandedCompactViewportSize(includeReply = false) {
+  const maxPresetWidth = Math.max(...Object.values(COMPACT_APPEARANCE_PRESETS).map((preset) => preset.width));
   const maxPresetHeight = Math.max(...Object.values(COMPACT_APPEARANCE_PRESETS).map((preset) => preset.height));
   return {
     width: Math.max(
-      Math.round(COMPACT_APPEARANCE_PRESETS.character.width * 4.2 * CHARACTER_SCALE_BASELINE) + (includeReply ? 380 : 12),
+      Math.round(maxPresetWidth * 4.2 * CHARACTER_SCALE_BASELINE) + (includeReply ? 380 : 12),
       COMPACT_MENU_PANEL_WIDTH
     ),
     height:
@@ -281,6 +285,12 @@ export async function applyCompactWindowChrome(targetWindow: ReturnType<typeof g
     targetWindow.setAlwaysOnTop(true),
     targetWindow.setSkipTaskbar(true),
   ]);
+
+  try {
+    await targetWindow.setVisibleOnAllWorkspaces(true);
+  } catch {
+    // Some platforms do not support this flag.
+  }
 }
 
 export async function applyExpandedWindowChrome(targetWindow: ReturnType<typeof getCurrentWindow>) {
@@ -313,6 +323,7 @@ export async function ensureCompactWindow(appearance: CompactAppearance, scale: 
       transparent: true,
       shadow: false,
       alwaysOnTop: true,
+      visibleOnAllWorkspaces: true,
       skipTaskbar: true,
       resizable: false,
       visible: false,

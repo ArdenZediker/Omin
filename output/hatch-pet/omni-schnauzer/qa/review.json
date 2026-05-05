@@ -1,0 +1,962 @@
+{
+  "ok": true,
+  "frames_root": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames",
+  "errors": [],
+  "warnings": [],
+  "rows": [
+    {
+      "state": "idle",
+      "expected_frames": 6,
+      "actual_frames": 6,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\idle\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20585,
+          "bbox": [
+            25,
+            5,
+            167,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 109
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\idle\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20130,
+          "bbox": [
+            29,
+            5,
+            162,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 115
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\idle\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20516,
+          "bbox": [
+            27,
+            5,
+            164,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 109
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\idle\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20531,
+          "bbox": [
+            28,
+            5,
+            164,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 137
+        },
+        {
+          "index": 4,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\idle\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20205,
+          "bbox": [
+            27,
+            5,
+            165,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 118
+        },
+        {
+          "index": 5,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\idle\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20674,
+          "bbox": [
+            27,
+            5,
+            165,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 129
+        }
+      ]
+    },
+    {
+      "state": "running-right",
+      "expected_frames": 8,
+      "actual_frames": 8,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-right\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21746,
+          "bbox": [
+            5,
+            7,
+            187,
+            201
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 296
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-right\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20091,
+          "bbox": [
+            5,
+            11,
+            187,
+            197
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 318
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-right\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20240,
+          "bbox": [
+            5,
+            13,
+            187,
+            195
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 292
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-right\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20711,
+          "bbox": [
+            5,
+            12,
+            187,
+            195
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 308
+        },
+        {
+          "index": 4,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-right\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19993,
+          "bbox": [
+            5,
+            9,
+            187,
+            199
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 287
+        },
+        {
+          "index": 5,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-right\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19412,
+          "bbox": [
+            5,
+            16,
+            187,
+            191
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 282
+        },
+        {
+          "index": 6,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-right\\06.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20718,
+          "bbox": [
+            5,
+            8,
+            187,
+            200
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 297
+        },
+        {
+          "index": 7,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-right\\07.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20103,
+          "bbox": [
+            5,
+            9,
+            187,
+            198
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 319
+        }
+      ]
+    },
+    {
+      "state": "running-left",
+      "expected_frames": 8,
+      "actual_frames": 8,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-left\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20103,
+          "bbox": [
+            5,
+            9,
+            187,
+            198
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 319
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-left\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20718,
+          "bbox": [
+            5,
+            8,
+            187,
+            200
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 297
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-left\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19412,
+          "bbox": [
+            5,
+            16,
+            187,
+            191
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 282
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-left\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19993,
+          "bbox": [
+            5,
+            9,
+            187,
+            199
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 287
+        },
+        {
+          "index": 4,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-left\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20711,
+          "bbox": [
+            5,
+            12,
+            187,
+            195
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 308
+        },
+        {
+          "index": 5,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-left\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20240,
+          "bbox": [
+            5,
+            13,
+            187,
+            195
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 292
+        },
+        {
+          "index": 6,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-left\\06.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20091,
+          "bbox": [
+            5,
+            11,
+            187,
+            197
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 318
+        },
+        {
+          "index": 7,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running-left\\07.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21746,
+          "bbox": [
+            5,
+            7,
+            187,
+            201
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 296
+        }
+      ]
+    },
+    {
+      "state": "waving",
+      "expected_frames": 4,
+      "actual_frames": 4,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waving\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21335,
+          "bbox": [
+            22,
+            5,
+            170,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 97
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waving\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22039,
+          "bbox": [
+            15,
+            5,
+            176,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 88
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waving\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22006,
+          "bbox": [
+            15,
+            5,
+            177,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 91
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waving\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21241,
+          "bbox": [
+            22,
+            5,
+            170,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 98
+        }
+      ]
+    },
+    {
+      "state": "jumping",
+      "expected_frames": 5,
+      "actual_frames": 5,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\jumping\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22248,
+          "bbox": [
+            5,
+            22,
+            187,
+            185
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 144
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\jumping\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 23173,
+          "bbox": [
+            16,
+            5,
+            175,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 155
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\jumping\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22330,
+          "bbox": [
+            21,
+            5,
+            171,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 182
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\jumping\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 23449,
+          "bbox": [
+            16,
+            5,
+            176,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 176
+        },
+        {
+          "index": 4,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\jumping\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 25469,
+          "bbox": [
+            13,
+            5,
+            178,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 200
+        }
+      ]
+    },
+    {
+      "state": "failed",
+      "expected_frames": 8,
+      "actual_frames": 8,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\failed\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 24347,
+          "bbox": [
+            9,
+            5,
+            183,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 238
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\failed\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 23035,
+          "bbox": [
+            19,
+            5,
+            172,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 250
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\failed\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19229,
+          "bbox": [
+            5,
+            36,
+            187,
+            171
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 240
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\failed\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 18743,
+          "bbox": [
+            5,
+            38,
+            187,
+            170
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 231
+        },
+        {
+          "index": 4,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\failed\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 24444,
+          "bbox": [
+            10,
+            5,
+            182,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 237
+        },
+        {
+          "index": 5,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\failed\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22932,
+          "bbox": [
+            17,
+            5,
+            174,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 180
+        },
+        {
+          "index": 6,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\failed\\06.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22969,
+          "bbox": [
+            18,
+            5,
+            173,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 215
+        },
+        {
+          "index": 7,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\failed\\07.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22467,
+          "bbox": [
+            20,
+            5,
+            171,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 203
+        }
+      ]
+    },
+    {
+      "state": "waiting",
+      "expected_frames": 6,
+      "actual_frames": 6,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waiting\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20954,
+          "bbox": [
+            23,
+            5,
+            168,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 154
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waiting\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20327,
+          "bbox": [
+            26,
+            5,
+            166,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 162
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waiting\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 18781,
+          "bbox": [
+            31,
+            5,
+            161,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 156
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waiting\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19070,
+          "bbox": [
+            29,
+            5,
+            163,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 156
+        },
+        {
+          "index": 4,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waiting\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20890,
+          "bbox": [
+            24,
+            5,
+            167,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 159
+        },
+        {
+          "index": 5,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\waiting\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19675,
+          "bbox": [
+            29,
+            5,
+            163,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 126
+        }
+      ]
+    },
+    {
+      "state": "running",
+      "expected_frames": 6,
+      "actual_frames": 6,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21404,
+          "bbox": [
+            13,
+            5,
+            179,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 169
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21928,
+          "bbox": [
+            19,
+            5,
+            173,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 174
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21815,
+          "bbox": [
+            18,
+            5,
+            173,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 186
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20046,
+          "bbox": [
+            18,
+            5,
+            174,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 187
+        },
+        {
+          "index": 4,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21032,
+          "bbox": [
+            17,
+            5,
+            174,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 152
+        },
+        {
+          "index": 5,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\running\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22243,
+          "bbox": [
+            15,
+            5,
+            176,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 192
+        }
+      ]
+    },
+    {
+      "state": "review",
+      "expected_frames": 6,
+      "actual_frames": 6,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\review\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21423,
+          "bbox": [
+            24,
+            5,
+            168,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 158
+        },
+        {
+          "index": 1,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\review\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21300,
+          "bbox": [
+            23,
+            5,
+            169,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 181
+        },
+        {
+          "index": 2,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\review\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21561,
+          "bbox": [
+            22,
+            5,
+            170,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 159
+        },
+        {
+          "index": 3,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\review\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 20070,
+          "bbox": [
+            29,
+            5,
+            163,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 170
+        },
+        {
+          "index": 4,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\review\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 21177,
+          "bbox": [
+            26,
+            5,
+            165,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 159
+        },
+        {
+          "index": 5,
+          "file": "D:\\AI-Coding\\\u65b0\u5efa\u6587\u4ef6\u5939\\omni\\output\\hatch-pet\\omni-schnauzer\\frames\\review\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 22788,
+          "bbox": [
+            17,
+            5,
+            174,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 190
+        }
+      ]
+    }
+  ]
+}

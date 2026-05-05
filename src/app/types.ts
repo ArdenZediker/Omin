@@ -46,4 +46,5 @@ export type ExternalChatEntry = {
 export type CompactReply = {
   question: string;
   answer: string;
+  isError?: boolean;
 };
