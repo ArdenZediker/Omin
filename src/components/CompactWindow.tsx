@@ -189,6 +189,14 @@ export default function CompactWindow({
           return;
         }
 
+        if (isPetAppearance && isCompactQueryOpen && !isInsideFloatingPanel) {
+          e.preventDefault();
+          e.stopPropagation();
+          onSetIsCompactQueryOpen(false);
+          closeReply();
+          return;
+        }
+
         if (isLive2DAppearance) {
           return;
         }
@@ -325,11 +333,11 @@ export default function CompactWindow({
               />
             )}
 
-            {isCompactQueryOpen && (
+            {isCompactQueryOpen && !isPetAppearance && (
               <CompactQueryPanel
                 compactQuery={compactQuery}
                 isCharacterAppearance={isAnimatedAppearance}
-                variant={isPetAppearance ? "pet" : isLive2DAppearance ? "character" : "default"}
+                variant={isLive2DAppearance ? "character" : "default"}
                 onChange={onSetCompactQuery}
                 onClose={() => onSetIsCompactQueryOpen(false)}
                 onSubmit={onCompactQuerySubmit}
@@ -345,6 +353,17 @@ export default function CompactWindow({
               onClose={closeReply}
             />
           </div>
+
+          {isCompactQueryOpen && isPetAppearance && (
+            <CompactQueryPanel
+              compactQuery={compactQuery}
+              isCharacterAppearance={isAnimatedAppearance}
+              variant="pet"
+              onChange={onSetCompactQuery}
+              onClose={() => onSetIsCompactQueryOpen(false)}
+              onSubmit={onCompactQuerySubmit}
+            />
+          )}
 
           {!isLive2DAppearance && !isPetAppearance && !isCompactQueryOpen && (
             <div className={`compact-bar__actions no-drag ${isPetAppearance ? "compact-bar__actions--pet" : ""}`}>
