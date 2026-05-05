@@ -1,6 +1,7 @@
 type CompactQueryPanelProps = {
   compactQuery: string;
   isCharacterAppearance: boolean;
+  variant?: "default" | "character" | "pet";
   onChange: (value: string) => void;
   onClose: () => void;
   onSubmit: (openMain?: boolean) => void | Promise<void>;
@@ -9,13 +10,50 @@ type CompactQueryPanelProps = {
 export default function CompactQueryPanel({
   compactQuery,
   isCharacterAppearance,
+  variant = isCharacterAppearance ? "character" : "default",
   onChange,
   onClose,
   onSubmit,
 }: CompactQueryPanelProps) {
-  if (isCharacterAppearance) {
+  if (variant === "pet") {
     return (
-      <div className="compact-query animate-fade-in no-drag" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="compact-query compact-query--pet animate-fade-in no-drag" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="compact-query__row compact-query__row--pet">
+          <input
+            type="text"
+            value={compactQuery}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onClose();
+                return;
+              }
+              if (e.key === "Enter" && e.altKey) {
+                e.preventDefault();
+                void onSubmit(true);
+                return;
+              }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void onSubmit(false);
+              }
+            }}
+            placeholder="输入后回车"
+            className="compact-query__input compact-query__input--pet"
+            autoFocus
+          />
+          <button type="button" className="compact-query__preset compact-query__preset--pet" onClick={() => void onSubmit(false)}>
+            发送
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "character") {
+    return (
+      <div className="compact-query compact-query--character animate-fade-in no-drag" onMouseDown={(e) => e.stopPropagation()}>
         <div className="compact-query__row">
           <button type="button" className="compact-query__preset" onClick={() => onChange("默认查询")}>
             默认查询
@@ -25,6 +63,11 @@ export default function CompactQueryPanel({
             value={compactQuery}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onClose();
+                return;
+              }
               if (e.key === "Enter" && e.altKey) {
                 e.preventDefault();
                 void onSubmit(true);
@@ -43,18 +86,14 @@ export default function CompactQueryPanel({
             发送
           </button>
         </div>
-        <div className="compact-query__hint">回车在角色旁回答，Alt+回车切到主窗口</div>
+        <div className="compact-query__hint">回车直接回答，Alt+回车切到主窗口</div>
       </div>
     );
   }
 
   return (
     <div className="compact-search-popover no-drag" onMouseDown={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        className="compact-query__preset compact-query__preset--inline"
-        onClick={() => onChange("默认查询")}
-      >
+      <button type="button" className="compact-query__preset compact-query__preset--inline" onClick={() => onChange("默认查询")}>
         默认查询
       </button>
       <input

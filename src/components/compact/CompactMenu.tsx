@@ -3,7 +3,7 @@ import type { BasicSettings, ExternalChatEntry } from "../../app/types";
 import type { CharacterModel, CompactAppearance } from "../../hooks/useCompactWindowState";
 import { omniSmallIconSrc, THEME_MODE_STORAGE_KEY } from "../../app/constants";
 import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../../app/settings";
-import { Bot, Check, ChevronRight, Circle, MessageSquareMore, Minimize2, MonitorCog, Moon, Palette, RotateCcw, Settings2, Sun } from "lucide-react";
+import { Bot, Check, ChevronRight, Circle, MessageSquareMore, Minimize2, MonitorCog, Moon, Palette, PawPrint, RotateCcw, Settings2, Sun } from "lucide-react";
 import anthropicLogoSrc from "@lobehub/icons-static-svg/icons/claude.svg?url";
 import baichuanLogoSrc from "@lobehub/icons-static-svg/icons/baichuan.svg?url";
 import chatgptLogoSrc from "@lobehub/icons-static-svg/icons/openai.svg?url";
@@ -125,6 +125,7 @@ export default function CompactMenu({
     if (appearance === "default") return <Circle className="compact-menu__icon" />;
     if (appearance === "compact") return <Minimize2 className="compact-menu__icon" />;
     if (appearance === "large") return <MonitorCog className="compact-menu__icon" />;
+    if (appearance === "pet") return <PawPrint className="compact-menu__icon" />;
     return <Bot className="compact-menu__icon" />;
   };
 
@@ -217,7 +218,7 @@ export default function CompactMenu({
           </span>
         </button>
 
-        {compactAppearance === "character" && (
+        {(compactAppearance === "character" || compactAppearance === "pet") && (
           <button
             type="button"
             className="compact-menu__item"

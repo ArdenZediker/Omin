@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+﻿import { useCallback, useEffect, useRef } from "react";
 import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -134,9 +134,14 @@ export function useCompactWindowController({
   const compactFollowMonitorRef = useRef<string | null>(null);
   const compactInternalMoveRef = useRef(false);
   const compactInteractionUntilRef = useRef(0);
+  const compactSuppressBlurUntilRef = useRef(0);
 
   const markCompactInteraction = useCallback(() => {
     compactInteractionUntilRef.current = Date.now() + 900;
+  }, []);
+
+  const suppressCompactBlur = useCallback((durationMs = 360) => {
+    compactSuppressBlurUntilRef.current = Date.now() + durationMs;
   }, []);
 
   const raiseCompactWindow = useCallback(async () => {
@@ -144,9 +149,15 @@ export function useCompactWindowController({
       return;
     }
 
-    await appWindow.setAlwaysOnTop(true);
+    suppressCompactBlur();
     await appWindow.show();
-  }, [isCompactWindow]);
+    try {
+      await appWindow.setAlwaysOnTop(false);
+    } catch {
+      // Ignore z-order refresh failures.
+    }
+    await appWindow.setAlwaysOnTop(true);
+  }, [isCompactWindow, suppressCompactBlur]);
 
   const resolveCompactMenuSides = useCallback(async (anchorX?: number, anchorY?: number) => {
     if (!isCompactWindow) {
@@ -335,6 +346,9 @@ export function useCompactWindowController({
           void raiseCompactWindow();
           return;
         }
+        if (Date.now() <= compactSuppressBlurUntilRef.current) {
+          return;
+        }
         void raiseCompactWindow();
         resetCompactFloatingUi();
       })
@@ -362,9 +376,10 @@ export function useCompactWindowController({
         if (!isVisible) {
           return;
         }
+        await appWindow.setAlwaysOnTop(false);
         await appWindow.setAlwaysOnTop(true);
       } catch {
-        // 忽略置顶恢复失败
+        // 蹇界暐缃《鎭㈠澶辫触
       }
     };
 
@@ -390,8 +405,10 @@ export function useCompactWindowController({
       const scaleFactor = await appWindow.scaleFactor();
       const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
       const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
+      suppressCompactBlur();
       if (isCharacterAppearance) {
         await appWindow.setAlwaysOnTop(true);
+        await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
         return;
       }
 
@@ -422,6 +439,7 @@ export function useCompactWindowController({
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
+    suppressCompactBlur,
   ]);
 
   useEffect(() => {
@@ -485,25 +503,35 @@ export function useCompactWindowController({
   }, [closeCompactMenuPanels, setIsCharacterMenuPinned]);
 
   useEffect(() => {
-    if (!isCompactWindow || isCharacterAppearance || isCharacterMenuPinned || !isCompactMenuOpen) {
+    if (!isCompactWindow || isCharacterMenuPinned || (!isCompactMenuOpen && !isCompactQueryOpen)) {
       return;
     }
 
-    const closeOnBlur = () => closeCompactMenuNow();
+    const closeOnBlur = () => {
+      if (Date.now() <= compactSuppressBlurUntilRef.current) {
+        return;
+      }
+      closeCompactMenuNow();
+    };
     window.addEventListener("blur", closeOnBlur);
     document.addEventListener("visibilitychange", closeOnBlur);
     return () => {
       window.removeEventListener("blur", closeOnBlur);
       document.removeEventListener("visibilitychange", closeOnBlur);
     };
-  }, [closeCompactMenuNow, isCharacterAppearance, isCharacterMenuPinned, isCompactMenuOpen, isCompactWindow]);
+  }, [closeCompactMenuNow, isCharacterMenuPinned, isCompactMenuOpen, isCompactQueryOpen, isCompactWindow]);
 
   useEffect(() => {
     if (!isCompactWindow || !isCharacterMenuPinned || !isCompactMenuOpen) {
       return;
     }
 
-    const closeOnBlur = () => closeCompactMenuNow();
+    const closeOnBlur = () => {
+      if (Date.now() <= compactSuppressBlurUntilRef.current) {
+        return;
+      }
+      closeCompactMenuNow();
+    };
     window.addEventListener("blur", closeOnBlur);
     window.addEventListener("mouseleave", closeOnBlur);
     document.addEventListener("visibilitychange", closeOnBlur);
@@ -558,12 +586,13 @@ export function useCompactWindowController({
   }, [compactAppearance, compactSize.width, effectiveCompactScale, isCharacterAppearance, isCompactWindow]);
 
   const handleOpenCompactQuery = useCallback(async () => {
+    suppressCompactBlur();
     closeCompactMenus();
     if (isCompactWindow && isCharacterAppearance) {
       setCharacterPanelSide(await resolveCharacterPanelSide());
     }
     setIsCompactQueryOpen(true);
-  }, [closeCompactMenus, isCharacterAppearance, isCompactWindow, resolveCharacterPanelSide, setCharacterPanelSide, setIsCompactQueryOpen]);
+  }, [closeCompactMenus, isCharacterAppearance, isCompactWindow, resolveCharacterPanelSide, setCharacterPanelSide, setIsCompactQueryOpen, suppressCompactBlur]);
 
   const handleOpenExternalChat = useCallback(
     async (entry: (typeof EXTERNAL_CHAT_ENTRIES)[number]) => {
@@ -655,12 +684,13 @@ export function useCompactWindowController({
           model: resolvedModel,
           messages: [{ role: "user", content: draft }],
         });
-
-        setCompactReply({ question: draft, answer: response.content });
+        setCompactReply({ question: draft, answer: response.content, isError: false });
+        setIsCompactQueryOpen(false);
+        setCompactQuery("");
         setIsCompactQueryOpen(false);
         setCompactQuery("");
       } catch (error) {
-        setCompactReply({ question: draft, answer: error instanceof Error ? error.message : "查询失败" });
+        setCompactReply({ question: draft, answer: error instanceof Error ? error.message : "查询失败", isError: true });
       } finally {
         setIsCompactReplyLoading(false);
       }
@@ -670,7 +700,7 @@ export function useCompactWindowController({
 
   const handleCompactWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
-      if (compactAppearance !== "character") {
+      if (compactAppearance !== "character" && compactAppearance !== "pet") {
         return;
       }
       event.preventDefault();
@@ -750,6 +780,7 @@ export function useCompactWindowController({
 
   const openCompactMenu = useCallback(async (anchorClientX?: number, anchorClientY?: number) => {
     markCompactInteraction();
+    suppressCompactBlur();
     await raiseCompactWindow();
     if (compactMenuOpeningRef.current || isCompactMenuOpen) {
       return;
@@ -770,13 +801,13 @@ export function useCompactWindowController({
       const pointer = await cursorPosition().catch(() => null);
       const anchorX =
         typeof anchorClientX === "number"
-          ? anchorClientX
+          ? anchorClientX - windowPosition.x
           : pointer
             ? pointer.x / scaleFactor - windowPosition.x
             : Math.max(0, fallbackSize.width / 2);
       const anchorY =
         typeof anchorClientY === "number"
-          ? anchorClientY
+          ? anchorClientY - windowPosition.y
           : pointer
             ? pointer.y / scaleFactor - windowPosition.y
             : Math.max(0, fallbackSize.height / 2);
@@ -800,6 +831,7 @@ export function useCompactWindowController({
     isCompactQueryOpen,
     markCompactInteraction,
     raiseCompactWindow,
+    suppressCompactBlur,
     setIsCharacterMenuPinned,
     setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
@@ -814,6 +846,7 @@ export function useCompactWindowController({
     async (event: React.MouseEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
+      suppressCompactBlur();
       if (characterDragTimerRef.current !== null) {
         window.clearTimeout(characterDragTimerRef.current);
         characterDragTimerRef.current = null;
@@ -843,6 +876,7 @@ export function useCompactWindowController({
     [
       resolveCharacterPanelSide,
       resolveCompactMenuSides,
+      suppressCompactBlur,
       setCharacterMenuPosition,
       setCharacterPanelSide,
       setIsCharacterMenuPinned,

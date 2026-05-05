@@ -39,6 +39,7 @@ export const COMPACT_APPEARANCE_PRESETS: Record<CompactAppearance, { width: numb
   compact: { width: 108, height: 56 },
   large: { width: 136, height: 72 },
   character: { width: 86, height: 108 },
+  pet: { width: 78, height: 90 },
 };
 
 export const COMPACT_APPEARANCE_OPTIONS: Array<{
@@ -49,6 +50,7 @@ export const COMPACT_APPEARANCE_OPTIONS: Array<{
   { id: "default", title: "默认外观", description: "标准胶囊尺寸" },
   { id: "compact", title: "紧凑外观", description: "更小更轻量" },
   { id: "large", title: "大号外观", description: "更醒目的尺寸" },
+  { id: "pet", title: "桌宠", description: "桌宠精灵模式" },
   { id: "character", title: "2D 角色", description: "角色形象模式" },
 ];
 

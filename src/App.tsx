@@ -122,15 +122,19 @@ function App() {
   const [openChatMenu, setOpenChatMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
 
-  const effectiveCompactScale = compactAppearance === "character" ? characterScale * CHARACTER_SCALE_BASELINE : 1;
-  const isCharacterAppearance = compactAppearance === "character";
+  const isLive2DAppearance = compactAppearance === "character";
+  const isAnimatedCompactAppearance = compactAppearance === "character" || compactAppearance === "pet";
+  const effectiveCompactScale = isAnimatedCompactAppearance ? characterScale * CHARACTER_SCALE_BASELINE : 1;
   const compactSize = useMemo(
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
     [compactAppearance, effectiveCompactScale]
   );
   const compactViewportSize = useMemo(() => {
-    if (isCharacterAppearance && isCompactQueryOpen && !isCompactMenuOpen && !isCompactReplyLoading && !compactReply) {
-      return { width: compactSize.width, height: compactSize.height + 96 };
+    if (isAnimatedCompactAppearance && isCompactQueryOpen && !isCompactMenuOpen && !isCompactReplyLoading && !compactReply) {
+      return {
+        width: compactAppearance === "pet" ? Math.max(compactSize.width, 272) : compactSize.width,
+        height: compactSize.height + (compactAppearance === "pet" ? 44 : 96),
+      };
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
       return getExpandedCompactViewportSizeForAppearance(compactAppearance, effectiveCompactScale, {
@@ -145,24 +149,24 @@ function App() {
     compactSize.height,
     compactSize.width,
     effectiveCompactScale,
-    isCharacterAppearance,
+    isAnimatedCompactAppearance,
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
   ]);
-  const isCharacterHorizontalPanelOpen = isCharacterAppearance && Boolean(isCompactMenuOpen || isCompactReplyLoading || compactReply);
+  const isCharacterHorizontalPanelOpen = isAnimatedCompactAppearance && Boolean(isCompactMenuOpen || isCompactReplyLoading || compactReply);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
-      compactAppearance === "character" ? Math.max(26, Math.round(compactSize.width * 0.36)) : Math.max(30, compactSize.height - 24);
+      isAnimatedCompactAppearance ? Math.max(26, Math.round(compactSize.width * 0.36)) : Math.max(30, compactSize.height - 24);
     const iconSize =
-      compactAppearance === "character" ? Math.max(14, Math.round(buttonSize * 0.48)) : Math.max(14, Math.round(buttonSize * 0.5));
+      isAnimatedCompactAppearance ? Math.max(14, Math.round(buttonSize * 0.48)) : Math.max(14, Math.round(buttonSize * 0.5));
     const characterReplyGap = Math.min(108, Math.max(40, Math.round(compactSize.width * 0.3)));
-    const compactGap = compactAppearance === "character" ? Math.max(4, Math.round(compactSize.width * 0.04)) : 8;
+    const compactGap = isAnimatedCompactAppearance ? Math.max(4, Math.round(compactSize.width * 0.04)) : 8;
     const compactPadding =
-      compactAppearance === "character"
+      isAnimatedCompactAppearance
         ? Math.max(3, Math.round(compactSize.width * 0.03))
         : 8;
-    const inlineBarWidth = compactAppearance === "character" ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
+    const inlineBarWidth = isAnimatedCompactAppearance ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -174,7 +178,7 @@ function App() {
       "--compact-character-size": `${Math.max(48, compactSize.width - 18)}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
     } as CSSProperties;
-  }, [compactAppearance, compactSize.height, compactSize.width]);
+  }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance]);
 
   const availableModels = modelRegistry.getAvailableModels();
   const hasModels = availableModels.length > 0;
@@ -288,7 +292,7 @@ function App() {
     compactViewportSize,
     currentModel,
     effectiveCompactScale,
-    isCharacterAppearance,
+    isCharacterAppearance: isLive2DAppearance,
     isCharacterMenuPinned,
     isCharacterModelOpen,
     isCompactAppearanceOpen,
@@ -469,7 +473,7 @@ function App() {
         compactSize={compactSize}
         compactStyle={compactStyle}
         entries={compactController.entries}
-        isCharacterAppearance={isCharacterAppearance}
+        isCharacterAppearance={isAnimatedCompactAppearance}
         isCharacterDragging={compactController.isCharacterDragging}
         isCharacterHorizontalPanelOpen={isCharacterHorizontalPanelOpen}
         isCharacterMenuPinned={isCharacterMenuPinned}

@@ -1,7 +1,9 @@
-import type { CSSProperties, Dispatch, MouseEvent, SetStateAction, WheelEvent } from "react";
+﻿import { useEffect, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
 import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindowState";
+import type { DesktopPetAction } from "../config/pets/omniSchnauzer";
 import Live2DCharacter from "./Live2DCharacter";
+import DesktopPet from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
 import CompactReplyPanel from "./compact/CompactReplyPanel";
@@ -75,7 +77,7 @@ export default function CompactWindow({
   compactSize,
   compactStyle,
   entries,
-  isCharacterAppearance,
+  isCharacterAppearance: _isCharacterAppearance,
   isCharacterDragging,
   isCharacterHorizontalPanelOpen,
   isCharacterModelOpen,
@@ -117,6 +119,37 @@ export default function CompactWindow({
     onSetCompactReply(null);
     onSetIsCompactReplyLoading(false);
   };
+  const isLive2DAppearance = compactAppearance === "character";
+  const isPetAppearance = compactAppearance === "pet";
+  const isAnimatedAppearance = isLive2DAppearance || isPetAppearance;
+  const petViewportSize = Math.max(48, compactSize.width - 18);
+  const petRenderHeight = petViewportSize;
+  const petRenderWidth = Math.round((petRenderHeight * 192) / 208);
+  const [petRecentlyOpenedMenu, setPetRecentlyOpenedMenu] = useState(false);
+  const petState: DesktopPetAction = isCharacterDragging
+    ? "running"
+    : compactReply?.isError
+    ? "failed"
+    : petRecentlyOpenedMenu
+    ? "waving"
+    : isCompactReplyLoading || compactReply
+    ? "review"
+    : isCompactMenuOpen
+    ? "jumping"
+    : "idle";
+
+  useEffect(() => {
+    if (!isPetAppearance || !isCompactMenuOpen) {
+      setPetRecentlyOpenedMenu(false);
+      return;
+    }
+    setPetRecentlyOpenedMenu(true);
+    const timer = window.setTimeout(() => {
+      setPetRecentlyOpenedMenu(false);
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [isPetAppearance, isCompactMenuOpen]);
+
 
   const resolveAnchorEdge = (target: HTMLElement) => {
     const anchor = target.querySelector<HTMLElement>(".compact-menu-anchor");
@@ -135,7 +168,11 @@ export default function CompactWindow({
     <div
       className={`compact-shell drag-region ${
         isCharacterHorizontalPanelOpen && characterPanelSide === "left" ? "compact-shell--reply-left" : ""
-      } ${!isCharacterAppearance && isCompactMenuOpen && !isCharacterMenuPinned && compactMenuSide === "left" ? "compact-shell--menu-left" : ""}`}
+      } ${
+        !isAnimatedAppearance && isCompactMenuOpen && !isCharacterMenuPinned && compactMenuSide === "left"
+          ? "compact-shell--menu-left"
+          : ""
+      }`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
         const isInsideFloatingPanel = Boolean(
@@ -152,7 +189,7 @@ export default function CompactWindow({
           return;
         }
 
-        if (isCharacterAppearance) {
+        if (isLive2DAppearance) {
           return;
         }
       }}
@@ -160,9 +197,9 @@ export default function CompactWindow({
       onWheel={onCompactWheel}
     >
       <div
-        className={`compact-hover-zone ${isCharacterAppearance ? "compact-hover-zone--character" : ""}`}
+        className={`compact-hover-zone ${isAnimatedAppearance ? "compact-hover-zone--character" : ""}`}
         onMouseEnter={
-          !isCharacterAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
+          !isLive2DAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
             ? (e) => {
                 const anchor = resolveAnchorEdge(e.currentTarget);
                 void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
@@ -170,12 +207,12 @@ export default function CompactWindow({
             : undefined
         }
         onMouseLeave={
-          !isCharacterAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
+          !isLive2DAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
             ? onCloseCompactMenuNow
             : undefined
         }
         onClick={
-          !isCharacterAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "click"
+          !isLive2DAppearance && !isCompactQueryOpen && basicSettings.menuOpenMode === "click"
             ? (e) => {
                 const target = e.target as HTMLElement;
                 if (!target.closest("button")) {
@@ -186,22 +223,29 @@ export default function CompactWindow({
             : undefined
         }
       >
-        <div className={`compact-bar ${isCharacterAppearance ? "compact-bar--character" : ""}`} style={compactStyle}>
-          <div className="compact-menu-anchor no-drag" onContextMenu={isCharacterAppearance ? onCharacterContextMenu : undefined}>
+        <div
+          className={`compact-bar ${isAnimatedAppearance ? "compact-bar--character" : ""} ${
+            isPetAppearance ? "compact-bar--pet" : ""
+          }`}
+          style={compactStyle}
+        >
+          <div className="compact-menu-anchor no-drag" onContextMenu={isAnimatedAppearance ? onCharacterContextMenu : undefined}>
             <button
               type="button"
-              className={`compact-button compact-button--brand ${isCharacterAppearance ? "compact-button--character" : ""}`}
-              onMouseDown={isCharacterAppearance ? onCharacterPointerDown : (e) => e.stopPropagation()}
+              className={`compact-button compact-button--brand ${isAnimatedAppearance ? "compact-button--character" : ""} ${
+                isPetAppearance ? "compact-button--pet" : ""
+              }`}
+              onMouseDown={isAnimatedAppearance ? onCharacterPointerDown : (e) => e.stopPropagation()}
               onMouseMove={
-                isCharacterAppearance
+                isAnimatedAppearance
                   ? (e) => {
                       e.currentTarget.style.cursor = onPointerHitTest(e.currentTarget, e.clientX, e.clientY) ? "grab" : "default";
                     }
                   : undefined
               }
-              onMouseUp={isCharacterAppearance ? onCharacterPointerUp : undefined}
+              onMouseUp={isAnimatedAppearance ? onCharacterPointerUp : undefined}
               onMouseLeave={
-                isCharacterAppearance
+                isAnimatedAppearance
                   ? (e) => {
                       e.currentTarget.style.cursor = "default";
                       onCharacterPointerUp();
@@ -209,10 +253,26 @@ export default function CompactWindow({
                   : undefined
               }
               onClick={(event) => {
-                if (isCharacterAppearance) {
+                if (isLive2DAppearance) {
                   if (isCharacterDragging) {
                     return;
                   }
+                  return;
+                }
+                if (isPetAppearance) {
+                  event.stopPropagation();
+                  if (isCharacterDragging) {
+                    return;
+                  }
+                  if (isCompactMenuOpen) {
+                    onCloseCompactMenuNow();
+                  }
+                  closeReply();
+                  if (isCompactQueryOpen) {
+                    onSetIsCompactQueryOpen(false);
+                    return;
+                  }
+                  void onOpenCompactQuery();
                   return;
                 }
                 event.stopPropagation();
@@ -223,9 +283,12 @@ export default function CompactWindow({
                 const rect = event.currentTarget.getBoundingClientRect();
                 void onOpenCompactMenu(rect.left + rect.width / 2, rect.top + rect.height / 2);
               }}
+              data-hit-mode={isPetAppearance ? "full" : undefined}
               aria-label="切换主界面"
             >
-              {isCharacterAppearance ? (
+              {isPetAppearance ? (
+                <DesktopPet width={petRenderWidth} height={petRenderHeight} state={petState} />
+              ) : isLive2DAppearance ? (
                 <Live2DCharacter key={characterModel} width={Math.max(48, compactSize.width - 18)} height={Math.max(72, compactSize.height - 34)} model={characterModel} />
               ) : (
                 <img src={omniSmallIconSrc} alt="Omni" className="compact-button__icon" />
@@ -235,13 +298,13 @@ export default function CompactWindow({
             {isCompactMenuOpen && (
               <CompactMenu
                 appearanceOptions={appearanceOptions}
-                characterMenuPosition={isCharacterMenuPinned ? characterMenuPosition : null}
+                characterMenuPosition={isCharacterMenuPinned || isPetAppearance ? characterMenuPosition : null}
                 characterModel={characterModel}
                 characterModelOptions={characterModelOptions}
                 characterScale={characterScale}
                 compactAppearance={compactAppearance}
                 entries={entries}
-                isCharacterAppearance={isCharacterAppearance}
+                isCharacterAppearance={isAnimatedAppearance}
                 isCharacterModelOpen={isCharacterModelOpen}
                 isCompactAppearanceOpen={isCompactAppearanceOpen}
                 isCompactModelOpen={isCompactModelOpen}
@@ -265,7 +328,8 @@ export default function CompactWindow({
             {isCompactQueryOpen && (
               <CompactQueryPanel
                 compactQuery={compactQuery}
-                isCharacterAppearance={isCharacterAppearance}
+                isCharacterAppearance={isAnimatedAppearance}
+                variant={isPetAppearance ? "pet" : isLive2DAppearance ? "character" : "default"}
                 onChange={onSetCompactQuery}
                 onClose={() => onSetIsCompactQueryOpen(false)}
                 onSubmit={onCompactQuerySubmit}
@@ -274,16 +338,16 @@ export default function CompactWindow({
 
             <CompactReplyPanel
               compactReply={compactReply}
-              isCharacterAppearance={isCharacterAppearance}
+              isCharacterAppearance={isAnimatedAppearance}
               isCompactReplyLoading={isCompactReplyLoading}
               panelSide={characterPanelSide}
-              speakerLabel={isCharacterAppearance ? "角色" : "Omni"}
+              speakerLabel={isLive2DAppearance ? "角色" : "Omni"}
               onClose={closeReply}
             />
           </div>
 
-          {!isCharacterAppearance && !isCompactQueryOpen && (
-            <div className="compact-bar__actions no-drag">
+          {!isLive2DAppearance && !isPetAppearance && !isCompactQueryOpen && (
+            <div className={`compact-bar__actions no-drag ${isPetAppearance ? "compact-bar__actions--pet" : ""}`}>
               <button
                 type="button"
                 className="compact-button compact-button--search-chip"
