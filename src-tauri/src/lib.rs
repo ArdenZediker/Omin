@@ -10,6 +10,7 @@ use std::{
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter,
     Manager,
 };
 
@@ -102,19 +103,6 @@ struct DbChatSession {
     created_at: i64,
     updated_at: i64,
     usage: DbChatUsageStats,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DbAssistantPresetRecord {
-    id: String,
-    title: String,
-    description: String,
-    avatar_code: Option<String>,
-    system_prompt: Option<String>,
-    default_model_id: Option<String>,
-    allowed_tool_ids: Vec<String>,
-    allowed_skill_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1136,25 +1124,21 @@ fn remove_app_kv(app: tauri::AppHandle, key: String) -> Result<(), String> {
     Ok(())
 }
 
-fn toggle_main_window_visibility(app: &tauri::AppHandle) {
-    let compact_window = app.get_webview_window("compact");
+fn show_main_window(app: &tauri::AppHandle) {
     let main_window = app.get_webview_window("main");
-
-    if let Some(window) = compact_window.as_ref() {
-        if window.is_visible().unwrap_or(false) {
-            let _ = window.set_focus();
-            return;
-        }
-
-        let _ = window.show();
-        let _ = window.set_focus();
-        return;
-    }
+    let compact_window = app.get_webview_window("compact");
 
     if let Some(window) = main_window.as_ref() {
         let _ = window.show();
-        let _ = window.set_focus();
         let _ = window.unminimize();
+        let _ = window.set_focus();
+        let _ = window.emit("omni-focus-input", ());
+        return;
+    }
+
+    if let Some(window) = compact_window.as_ref() {
+        let _ = window.show();
+        let _ = window.set_focus();
     }
 }
 
@@ -1168,9 +1152,10 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed
-                        && (shortcut.to_string() == "Alt+Space" || shortcut.to_string() == "Ctrl+Space")
+                        && (shortcut.to_string() == "Ctrl+Shift+Space"
+                            || shortcut.to_string() == "Ctrl+Alt+Space")
                     {
-                        toggle_main_window_visibility(app);
+                        show_main_window(app);
                     }
                 })
                 .build(),
@@ -1195,7 +1180,7 @@ pub fn run() {
         .setup(|app| {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-            let show_hide = MenuItemBuilder::with_id("toggle", "显示 / 隐藏").build(app)?;
+            let show_hide = MenuItemBuilder::with_id("toggle", "打开主界面").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出 Omni").build(app)?;
             let tray_menu = MenuBuilder::new(app)
                 .item(&show_hide)
@@ -1216,11 +1201,11 @@ pub fn run() {
                             ..
                         } = event
                         {
-                            toggle_main_window_visibility(&tray.app_handle());
+                            show_main_window(&tray.app_handle());
                         }
                     })
                     .on_menu_event(|app, event| match event.id.as_ref() {
-                        "toggle" => toggle_main_window_visibility(app),
+                        "toggle" => show_main_window(app),
                         "quit" => app.exit(0),
                         _ => {}
                     })
@@ -1229,21 +1214,27 @@ pub fn run() {
                 eprintln!("[Omni] 托盘图标不可用，已跳过托盘初始化");
             }
 
-            let alt_shortcut = tauri_plugin_global_shortcut::Shortcut::new(
-                Some(tauri_plugin_global_shortcut::Modifiers::ALT),
+            let primary_shortcut = tauri_plugin_global_shortcut::Shortcut::new(
+                Some(
+                    tauri_plugin_global_shortcut::Modifiers::CONTROL
+                        | tauri_plugin_global_shortcut::Modifiers::SHIFT,
+                ),
                 tauri_plugin_global_shortcut::Code::Space,
             );
-            let ctrl_shortcut = tauri_plugin_global_shortcut::Shortcut::new(
-                Some(tauri_plugin_global_shortcut::Modifiers::CONTROL),
+            let fallback_shortcut = tauri_plugin_global_shortcut::Shortcut::new(
+                Some(
+                    tauri_plugin_global_shortcut::Modifiers::CONTROL
+                        | tauri_plugin_global_shortcut::Modifiers::ALT,
+                ),
                 tauri_plugin_global_shortcut::Code::Space,
             );
 
-            if app.global_shortcut().register(alt_shortcut).is_ok() {
-                eprintln!("[Omni] 已注册全局快捷键 Alt+Space");
-            } else if app.global_shortcut().register(ctrl_shortcut).is_ok() {
-                eprintln!("[Omni] Alt+Space 不可用，已回退到 Ctrl+Space");
+            if app.global_shortcut().register(primary_shortcut).is_ok() {
+                eprintln!("[Omni] 已注册全局快捷键 Ctrl+Shift+Space");
+            } else if app.global_shortcut().register(fallback_shortcut).is_ok() {
+                eprintln!("[Omni] Ctrl+Shift+Space 不可用，已回退到 Ctrl+Alt+Space");
             } else {
-                eprintln!("[Omni] Alt+Space 和 Ctrl+Space 都注册失败");
+                eprintln!("[Omni] Ctrl+Shift+Space 和 Ctrl+Alt+Space 都注册失败");
             }
 
             Ok(())

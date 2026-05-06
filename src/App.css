@@ -157,6 +157,10 @@ body,
   background: var(--omni-app-bg);
 }
 
+.main-chat-layout--assistant-collapsed {
+  grid-template-columns: 56px 0 minmax(0, 1fr);
+}
+
 .main-chat-layout::after {
   display: none;
 }
@@ -712,6 +716,15 @@ body,
   padding: 16px 16px 14px;
   overflow: visible;
   border-right: 1px solid color-mix(in srgb, var(--omni-divider-strong) 82%, transparent);
+}
+
+.main-chat-layout--assistant-collapsed .chat-history-panel {
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  padding-left: 0;
+  padding-right: 0;
+  border-right-color: transparent;
 }
 
 .chat-history-panel__brand {
@@ -2128,21 +2141,29 @@ body,
   box-shadow: none;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
 }
 
 .chat-composer__toolbar {
+  position: relative;
+  z-index: 30;
   min-height: 44px;
   padding: 12px 14px 6px;
   display: flex;
   align-items: center;
   gap: 12px;
+  overflow: visible;
 }
 
 .chat-composer__toolbar-group {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.chat-composer__tool-dropdown {
+  position: relative;
 }
 
 .chat-composer__toolbar-group--right {
@@ -2167,6 +2188,71 @@ body,
   color: var(--omni-app-text);
 }
 
+.chat-composer__tool-button--active {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+}
+
+.chat-composer__context-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  min-width: 190px;
+  padding: 10px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 14px;
+  background: var(--omni-panel-bg);
+  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-composer__context-menu-title {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chat-composer__context-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--omni-app-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-composer__mode-option {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: transparent;
+  color: var(--omni-app-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-composer__mode-option:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+}
+
+.chat-composer__mode-option-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chat-composer__mode-option-desc {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+}
+
 .chat-composer__toolbar-badge {
   min-height: 24px;
   padding: 0 10px;
@@ -2184,6 +2270,8 @@ body,
 }
 
 .chat-composer__editor {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   padding: 4px 18px 0;
@@ -2274,6 +2362,51 @@ body,
   max-width: 980px;
 }
 
+.chat-composer__context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 auto 10px;
+  max-width: 980px;
+}
+
+.chat-composer__context-chip {
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+  font-size: 12px;
+}
+
+.chat-composer__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 auto 10px;
+  max-width: 980px;
+}
+
+.chat-composer__status-chip {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-composer__status-chip:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 6%, transparent);
+}
+
 .chat-composer__row {
   display: contents;
 }
@@ -2310,6 +2443,8 @@ body,
 }
 
 .chat-composer__footer {
+  position: relative;
+  z-index: 1;
   min-height: 58px;
   padding: 0 16px 14px;
   display: flex;

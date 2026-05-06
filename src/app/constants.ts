@@ -16,6 +16,7 @@ export const COMPACT_MENU_CLOSE_DELAY_MS = 160;
 export const COMPACT_MENU_PANEL_WIDTH = 360;
 export const COMPACT_MENU_PANEL_HEIGHT = 228;
 export const UNSET_SHORTCUT = "未设置";
+export const DEFAULT_OPEN_MAIN_SHORTCUT = "Ctrl+Shift+Space";
 export const omniIconSrc = "/omni-mark.svg";
 export const omniSmallIconSrc = "/omni-mark-small.svg";
 
@@ -30,7 +31,7 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   mainWindowPositionMode: "remember",
   showCompactBall: true,
   followCursorScreen: false,
-  openMainShortcut: UNSET_SHORTCUT,
+  openMainShortcut: DEFAULT_OPEN_MAIN_SHORTCUT,
   switchPreviousModelShortcut: UNSET_SHORTCUT,
 };
 

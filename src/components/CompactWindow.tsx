@@ -126,9 +126,7 @@ export default function CompactWindow({
   const petRenderHeight = petViewportSize;
   const petRenderWidth = Math.round((petRenderHeight * 192) / 208);
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
-  const petState: DesktopPetAction = isCharacterDragging
-    ? "running"
-    : compactReply?.isError
+  const petState: DesktopPetAction = compactReply?.isError
     ? "sad-failed"
     : petCelebrateReply
     ? "task-done"
