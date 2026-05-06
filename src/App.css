@@ -120,6 +120,18 @@ body,
   animation: fadeIn 0.2s ease-out;
 }
 
+@keyframes petQueryFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 .glass {
   background: var(--omni-app-bg, rgba(15, 15, 20, 0.92));
   color: var(--omni-app-text, rgba(255, 255, 255, 0.9));
@@ -3791,6 +3803,10 @@ body,
   justify-content: flex-end;
 }
 
+.compact-shell--pet-expanded {
+  justify-content: center;
+}
+
 .compact-hover-zone {
   position: relative;
   display: inline-flex;
@@ -3945,6 +3961,9 @@ body,
 .compact-button--pet {
   align-items: flex-end;
   justify-content: center;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .desktop-pet {
@@ -3954,6 +3973,8 @@ body,
   justify-content: center;
   overflow: visible;
   border-radius: 16px;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .desktop-pet__viewport {
@@ -3963,15 +3984,19 @@ body,
   overflow: hidden;
   flex: 0 0 auto;
   pointer-events: none;
+  background: rgba(255, 255, 255, 0.001) !important;
 }
 
 .desktop-pet__atlas {
   position: absolute;
+  inset: 0 auto auto 0;
   display: block;
   max-width: none;
   max-height: none;
   user-select: none;
   pointer-events: none;
+  image-rendering: auto;
+  background: transparent !important;
 }
 
 .compact-button--character:hover {
@@ -4121,42 +4146,44 @@ body,
 
 .compact-query--pet {
   top: calc(var(--compact-character-size, 138px) + 4px);
-  left: 0;
+  left: 50%;
   bottom: auto;
-  transform: none;
-  width: min(246px, calc(100vw - 20px));
+  transform: translateX(-50%);
+  width: min(286px, calc(100vw - 32px));
   min-width: 0;
-  max-width: calc(100vw - 20px);
+  max-width: calc(100vw - 32px);
   padding: 6px;
   border-radius: 999px;
   z-index: 32;
   pointer-events: auto;
 }
 
+.compact-query--pet.animate-fade-in {
+  animation: petQueryFadeIn 140ms ease-out;
+}
+
 .compact-query--pet .compact-query__row {
-  gap: 5px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
 }
 
 .compact-query--pet .compact-query__preset {
-  padding: 6px 8px;
+  min-width: 44px;
+  height: 30px;
+  padding: 0 12px;
   border-radius: 999px;
   font-size: 11px;
 }
 
 .compact-query--pet .compact-query__input {
+  width: 100%;
   min-width: 0;
-  height: 28px;
+  height: 30px;
   border-radius: 999px;
   padding: 0 9px;
   font-size: 12px;
-}
-
-.compact-query--pet .compact-query__row > * {
-  flex-shrink: 0;
-}
-
-.compact-query--pet .compact-query__input {
-  flex: 1 1 auto;
 }
 
 .compact-bar--character .compact-query__row {
@@ -4241,6 +4268,17 @@ body,
   top: calc(100% + 10px);
   right: auto;
   left: 0;
+}
+
+.compact-reply--pet {
+  top: calc(var(--compact-character-size, 138px) + 48px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(320px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: 180px;
+  z-index: 33;
 }
 
 .compact-reply__close {

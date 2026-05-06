@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "pet:v2:plan": "node scripts/pet_v2/plan_pet_v2_run.mjs output/pet-v2/omni-pet-v2",
+    "pet:v2:normalize": "node scripts/pet_v2/normalize_pet_v2_row.mjs output/pet-v2/omni-pet-v2",
+    "pet:v2:compose": "node scripts/pet_v2/compose_pet_v2_atlas.mjs output/pet-v2/omni-pet-v2",
+    "pet:v3:plan": "node scripts/pet_v2/plan_pet_v3_run.mjs output/pet-v3/omni-pet-v3",
+    "pet:v3:normalize": "node scripts/pet_v2/normalize_pet_v2_row.mjs output/pet-v3/omni-pet-v3",
+    "pet:v3:compose": "node scripts/pet_v2/compose_pet_v2_atlas.mjs output/pet-v3/omni-pet-v3"
   },
   "dependencies": {
     "@lobehub/icons-static-svg": "^1.88.0",

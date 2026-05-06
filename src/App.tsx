@@ -130,6 +130,12 @@ function App() {
     [compactAppearance, effectiveCompactScale]
   );
   const compactViewportSize = useMemo(() => {
+    if (compactAppearance === "pet" && isCompactMenuOpen) {
+      return {
+        width: Math.max(compactSize.width, 430),
+        height: compactSize.height + 260,
+      };
+    }
     if (
       compactAppearance === "pet" &&
       isCompactQueryOpen &&
@@ -138,8 +144,14 @@ function App() {
       !compactReply
     ) {
       return {
-        width: Math.max(compactSize.width, 286),
-        height: compactSize.height + 54,
+        width: Math.max(compactSize.width, 330),
+        height: compactSize.height + 64,
+      };
+    }
+    if (compactAppearance === "pet" && (isCompactReplyLoading || compactReply)) {
+      return {
+        width: Math.max(compactSize.width, 392),
+        height: compactSize.height + 238,
       };
     }
     if (
@@ -172,7 +184,7 @@ function App() {
     isCompactQueryOpen,
     isCompactReplyLoading,
   ]);
-  const isCharacterHorizontalPanelOpen = isAnimatedCompactAppearance && Boolean(isCompactMenuOpen || isCompactReplyLoading || compactReply);
+  const isCharacterHorizontalPanelOpen = isLive2DAppearance && Boolean(isCompactMenuOpen || isCompactReplyLoading || compactReply);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
       isAnimatedCompactAppearance ? Math.max(26, Math.round(compactSize.width * 0.36)) : Math.max(30, compactSize.height - 24);

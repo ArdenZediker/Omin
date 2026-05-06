@@ -125,30 +125,28 @@ export default function CompactWindow({
   const petViewportSize = Math.max(48, compactSize.width - 18);
   const petRenderHeight = petViewportSize;
   const petRenderWidth = Math.round((petRenderHeight * 192) / 208);
-  const [petRecentlyOpenedMenu, setPetRecentlyOpenedMenu] = useState(false);
+  const [petCelebrateReply, setPetCelebrateReply] = useState(false);
   const petState: DesktopPetAction = isCharacterDragging
     ? "running"
     : compactReply?.isError
-    ? "failed"
-    : petRecentlyOpenedMenu
-    ? "waving"
+    ? "sad-failed"
+    : petCelebrateReply
+    ? "task-done"
     : isCompactReplyLoading || compactReply
-    ? "review"
-    : isCompactMenuOpen
-    ? "jumping"
+    ? "working"
     : "idle";
 
   useEffect(() => {
-    if (!isPetAppearance || !isCompactMenuOpen) {
-      setPetRecentlyOpenedMenu(false);
+    if (!isPetAppearance || !compactReply || compactReply.isError) {
+      setPetCelebrateReply(false);
       return;
     }
-    setPetRecentlyOpenedMenu(true);
+    setPetCelebrateReply(true);
     const timer = window.setTimeout(() => {
-      setPetRecentlyOpenedMenu(false);
-    }, 900);
+      setPetCelebrateReply(false);
+    }, 1200);
     return () => window.clearTimeout(timer);
-  }, [isPetAppearance, isCompactMenuOpen]);
+  }, [compactReply, isPetAppearance]);
 
 
   const resolveAnchorEdge = (target: HTMLElement) => {
@@ -171,6 +169,10 @@ export default function CompactWindow({
       } ${
         !isAnimatedAppearance && isCompactMenuOpen && !isCharacterMenuPinned && compactMenuSide === "left"
           ? "compact-shell--menu-left"
+          : ""
+      } ${
+        isPetAppearance && (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply)
+          ? "compact-shell--pet-expanded"
           : ""
       }`}
       onMouseDownCapture={(e) => {
@@ -350,6 +352,7 @@ export default function CompactWindow({
               isCompactReplyLoading={isCompactReplyLoading}
               panelSide={characterPanelSide}
               speakerLabel={isLive2DAppearance ? "角色" : "Omni"}
+              variant={isPetAppearance ? "pet" : isLive2DAppearance ? "character" : "default"}
               onClose={closeReply}
             />
           </div>
