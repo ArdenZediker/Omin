@@ -16,6 +16,8 @@ import {
   Pencil,
   PanelRightClose,
   PanelRightOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pin,
   Plus,
   ChevronDown,
@@ -324,6 +326,8 @@ export default function MainChatView({
   const [composerElement, setComposerElement] = useState<HTMLDivElement | null>(null);
   const [isTopicPanelAutoCollapsed, setIsTopicPanelAutoCollapsed] = useState(false);
   const [topicPanelManualVisible, setTopicPanelManualVisible] = useState<boolean | null>(null);
+  const [isAssistantPanelAutoCollapsed, setIsAssistantPanelAutoCollapsed] = useState(false);
+  const [assistantPanelManualVisible, setAssistantPanelManualVisible] = useState<boolean | null>(null);
   const [composerHeight, setComposerHeight] = useState(0);
   const [topicSearchOpen, setTopicSearchOpen] = useState(false);
   const [topicSearchQuery, setTopicSearchQuery] = useState("");
@@ -396,6 +400,8 @@ export default function MainChatView({
   const currentTopicTitle = activeSession?.title || (activeAssistant?.kind === "basic" ? "Omni" : activeAssistant?.title) || "Omni";
   const defaultTopicPanelVisible = !isTopicPanelAutoCollapsed;
   const isTopicPanelVisible = topicPanelManualVisible ?? defaultTopicPanelVisible;
+  const defaultAssistantPanelVisible = !isAssistantPanelAutoCollapsed;
+  const isAssistantPanelVisible = assistantPanelManualVisible ?? defaultAssistantPanelVisible;
   const basicAssistant = assistants.find((assistant) => assistant.kind === "basic") ?? null;
   const customAssistants = assistants.filter((assistant) => assistant.kind === "custom");
   const assistantGroupNames = useMemo(
@@ -419,6 +425,33 @@ export default function MainChatView({
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
+  const composerContextPresetText = useMemo(() => {
+    const sections: string[] = [];
+
+    if (activeSession?.title) {
+      sections.push(`当前话题：${activeSession.title}`);
+    }
+
+    if (relatedContext.memories.length > 0) {
+      sections.push(
+        `助手记忆：\n${relatedContext.memories
+          .slice(0, 3)
+          .map((memory, index) => `${index + 1}. ${memory.content}`)
+          .join("\n")}`
+      );
+    }
+
+    if (relatedContext.summaries.length > 0) {
+      sections.push(
+        `相关话题摘要：\n${relatedContext.summaries
+          .slice(0, 3)
+          .map((summary, index) => `${index + 1}. ${summary.title}：${summary.summary}`)
+          .join("\n")}`
+      );
+    }
+
+    return sections.join("\n\n");
+  }, [activeSession?.title, relatedContext.memories, relatedContext.summaries]);
   const normalizedAssistantSearchQuery = normalizeSearchText(assistantSearchQuery);
   const isBasicAssistantVisible = Boolean(
     basicAssistant &&
@@ -463,11 +496,13 @@ export default function MainChatView({
   const selectedAssistantModel = availableModels.find((model) => model.id === assistantModelDraft) ?? null;
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
+    if (assistantPanelManualVisible === true) classNames.push("main-chat-layout--assistant-forced-open");
+    if (!isAssistantPanelVisible) classNames.push("main-chat-layout--assistant-collapsed");
     if (topicPanelManualVisible === true) classNames.push("main-chat-layout--topic-forced-open");
     if (!isTopicPanelVisible) classNames.push("main-chat-layout--topic-collapsed");
     if (isAssistantSettingsMode) classNames.push("main-chat-layout--assistant-settings");
     return classNames.join(" ");
-  }, [isAssistantSettingsMode, isTopicPanelVisible, topicPanelManualVisible]);
+  }, [assistantPanelManualVisible, isAssistantPanelVisible, isAssistantSettingsMode, isTopicPanelVisible, topicPanelManualVisible]);
 
   useEffect(() => {
     if (!composerElement) return;
@@ -495,7 +530,10 @@ export default function MainChatView({
       const nextWorkspaceWidth = workspaceElement.getBoundingClientRect().width || 0;
       const nextEstimatedPaneWidth = Math.max(0, nextWorkspaceWidth - TOPIC_PANEL_WIDTH);
       const nextEstimatedPaneRatio = nextWorkspaceWidth > 0 ? nextEstimatedPaneWidth / nextWorkspaceWidth : 1;
-      setIsTopicPanelAutoCollapsed(nextEstimatedPaneRatio < TOPIC_PANEL_AUTO_COLLAPSE_RATIO);
+      const shouldCollapseRight = nextEstimatedPaneRatio < TOPIC_PANEL_AUTO_COLLAPSE_RATIO;
+      const shouldCollapseLeft = nextWorkspaceWidth < 1320;
+      setIsTopicPanelAutoCollapsed(shouldCollapseRight);
+      setIsAssistantPanelAutoCollapsed(shouldCollapseRight && shouldCollapseLeft);
     };
     updateAutoCollapsed();
     let frameId = 0;
@@ -1269,6 +1307,27 @@ export default function MainChatView({
           <div className="main-chat-toolbar">
             <div className="main-chat-toolbar__session main-chat-toolbar__session--hero">
               <div className="main-chat-toolbar__assistant main-chat-toolbar__assistant--single-line">
+                {!isAssistantSettingsMode && (
+                  <button
+                    type="button"
+                    className="main-chat-toolbar__icon-button main-chat-toolbar__back-button"
+                    aria-label={isAssistantPanelVisible ? "收起助手栏" : "展开助手栏"}
+                    title={isAssistantPanelVisible ? "收起助手栏" : "展开助手栏"}
+                    onClick={() =>
+                      setAssistantPanelManualVisible((currentValue) => {
+                        const currentVisible = currentValue ?? defaultAssistantPanelVisible;
+                        const nextVisible = !currentVisible;
+                        return nextVisible === defaultAssistantPanelVisible ? null : nextVisible;
+                      })
+                    }
+                  >
+                    {isAssistantPanelVisible ? (
+                      <PanelLeftClose className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                    ) : (
+                      <PanelLeftOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                    )}
+                  </button>
+                )}
                 {isAssistantSettingsMode && (
                   <button
                     type="button"
@@ -1856,6 +1915,8 @@ export default function MainChatView({
               <div ref={setComposerElement}>
                 <ChatInput
                   canStartNewTopic={activeAssistant?.kind === "basic"}
+                  contextPresetText={composerContextPresetText}
+                  onCreateScheduledTask={onCreateScheduledTask}
                   onSend={onSend}
                   hasConversation={messages.some((message) => message.role === "user")}
                   usageLabel={activeSession ? formatUsageLabel(activeSession.usage) : null}

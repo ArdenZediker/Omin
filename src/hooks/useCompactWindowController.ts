@@ -658,11 +658,6 @@ export function useCompactWindowController({
         return;
       }
 
-      if (compactAppearance === "pet") {
-        isCharacterDraggingRef.current = false;
-        return;
-      }
-
       isCharacterDraggingRef.current = false;
       if (characterDragTimerRef.current !== null) {
         window.clearTimeout(characterDragTimerRef.current);
