@@ -2,6 +2,7 @@ import { modelRegistry } from "../adapters/registry";
 import type { Message } from "../adapters/types";
 import { getUsagePreferences } from "./storage";
 import type { ChatExecutionResult } from "./types";
+import { buildKnowledgeContextBlock } from "./knowledgeContext";
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are Omni, a helpful, knowledgeable AI assistant. Be concise and clear. Use markdown when useful.";
@@ -44,8 +45,18 @@ export async function executeChatTurn(options: {
   signal?: AbortSignal;
   systemPrompt?: string;
   onChunk?: (chunk: string) => void;
+  knowledgeQuery?: string | null;
+  enableKnowledgeContext?: boolean;
 }): Promise<ChatExecutionResult> {
-  const { model, messages, signal, systemPrompt = DEFAULT_SYSTEM_PROMPT, onChunk } = options;
+  const {
+    model,
+    messages,
+    signal,
+    systemPrompt = DEFAULT_SYSTEM_PROMPT,
+    onChunk,
+    knowledgeQuery,
+    enableKnowledgeContext = true,
+  } = options;
 
   if (signal?.aborted) {
     throw new DOMException("Request aborted", "AbortError");
@@ -68,7 +79,21 @@ export async function executeChatTurn(options: {
     throw new Error("当前模型或偏好设置不允许图片输入");
   }
 
-  const requestMessages: Message[] = [{ role: "system", content: systemPrompt }, ...messages];
+  const knowledgeContext =
+    enableKnowledgeContext && !signal?.aborted
+      ? await buildKnowledgeContextBlock({
+          model,
+          messages,
+          knowledgeQuery,
+          signal,
+        })
+      : null;
+
+  const systemMessage: Message = { role: "system", content: systemPrompt };
+  const knowledgeMessages: Message[] = knowledgeContext
+    ? [{ role: "system", content: knowledgeContext.block }]
+    : [];
+  const requestMessages: Message[] = [systemMessage, ...knowledgeMessages, ...messages];
   const shouldStream = Boolean(modelConfig?.supportsStreaming && preferences.enableStreaming && onChunk);
 
   if (shouldStream) {
@@ -107,6 +132,7 @@ export async function executeChatTurn(options: {
       },
       estimated: true,
       costUsd: estimateCost(model, promptTokens, completionTokens),
+      knowledgeContext: knowledgeContext ?? null,
     };
   }
 
@@ -134,5 +160,6 @@ export async function executeChatTurn(options: {
     },
     estimated: !response.usage,
     costUsd: estimateCost(model, promptTokens, completionTokens),
+    knowledgeContext: knowledgeContext ?? null,
   };
 }

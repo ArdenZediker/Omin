@@ -7,7 +7,9 @@ import { modelRegistry } from "./adapters/registry";
 import TitleBar from "./components/TitleBar";
 import SettingsPanel from "./components/SettingsPanel";
 import MainChatView from "./components/MainChatView";
+import KnowledgeBaseView from "./components/KnowledgeBaseView";
 import CompactWindow from "./components/CompactWindow";
+import { usePromptDialog } from "./components/PromptDialog";
 import {
   CHARACTER_SCALE_BASELINE,
   BASIC_SETTINGS_STORAGE_KEY,
@@ -19,7 +21,7 @@ import {
 import type { BasicSettings, ViewMode } from "./app/types";
 import { saveBasicSettings } from "./app/settingsStore";
 import { saveSqliteBackedValue } from "./app/sqliteStorage";
-import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getStoredMainView, isCharacterPointerInHitArea } from "./app/window";
+import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getPetCompactViewportSize, getStoredMainView, isCharacterPointerInHitArea } from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -44,6 +46,7 @@ const appWindow = getSafeCurrentWindow();
 const isCompactWindow = appWindow?.label === "compact";
 
 function App() {
+  const { openPrompt } = usePromptDialog();
   const {
     activeAssistant,
     activeAssistantId,
@@ -130,29 +133,14 @@ function App() {
     [compactAppearance, effectiveCompactScale]
   );
   const compactViewportSize = useMemo(() => {
-    if (compactAppearance === "pet" && isCompactMenuOpen) {
-      return {
-        width: Math.max(compactSize.width, 430),
-        height: compactSize.height + 260,
-      };
-    }
-    if (
-      compactAppearance === "pet" &&
-      isCompactQueryOpen &&
-      !isCompactMenuOpen &&
-      !isCompactReplyLoading &&
-      !compactReply
-    ) {
-      return {
-        width: Math.max(compactSize.width, 330),
-        height: compactSize.height + 64,
-      };
-    }
-    if (compactAppearance === "pet" && (isCompactReplyLoading || compactReply)) {
-      return {
-        width: Math.max(compactSize.width, 392),
-        height: compactSize.height + 238,
-      };
+    if (compactAppearance === "pet") {
+      return getPetCompactViewportSize({
+        compactSize,
+        isCompactMenuOpen,
+        isCompactQueryOpen,
+        isCompactReplyLoading,
+        hasCompactReply: Boolean(compactReply),
+      });
     }
     if (
       compactAppearance === "character" &&
@@ -375,15 +363,28 @@ function App() {
   );
 
   const handleRenameChat = useCallback(
-    (session: { id: string; title: string }) => {
-      const nextTitle = window.prompt("重命名会话", session.title)?.trim();
+    async (session: { id: string; title: string }) => {
+      const values = await openPrompt({
+        title: "重命名会话",
+        description: "修改当前会话名称后会立即保存。",
+        confirmLabel: "保存",
+        fields: [
+          {
+            label: "会话名称",
+            defaultValue: session.title,
+            placeholder: "请输入会话名称",
+            autoFocus: true,
+          },
+        ],
+      });
+      const nextTitle = values?.[0]?.trim();
       if (!nextTitle) {
         return;
       }
       renameChatSession(session.id, nextTitle);
       setOpenChatMenu(null);
     },
-    [renameChatSession]
+    [openPrompt, renameChatSession]
   );
 
   const handleToggleFavoriteChat = useCallback((session: { id: string }) => {
@@ -603,6 +604,13 @@ function App() {
           onUpdateScheduledTask={handleUpdateScheduledTask}
           onDeleteScheduledTask={handleDeleteScheduledTask}
           onUseEmptyPrompt={handleUseEmptyPrompt}
+          onOpenKnowledge={() => setView("knowledge")}
+        />
+      ) : view === "knowledge" ? (
+        <KnowledgeBaseView
+          onBackToChat={() => setView("chat")}
+          onSettingsOpen={() => setView("settings")}
+          windowControls={<TitleBar inline onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />}
         />
       ) : (
         <>

@@ -1,4 +1,4 @@
-export type ViewMode = "chat" | "settings";
+export type ViewMode = "chat" | "knowledge" | "settings";
 export type MenuOpenMode = "hover" | "click";
 export type MinimizeBehavior = "taskbar" | "compact";
 export type WindowPositionMode = "center" | "remember";

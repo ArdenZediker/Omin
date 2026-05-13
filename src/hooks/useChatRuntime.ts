@@ -33,7 +33,7 @@ type UseChatRuntimeArgs = {
   setInputDraftKey: React.Dispatch<React.SetStateAction<number>>;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setOpenChatMenu: React.Dispatch<React.SetStateAction<{ id: string; x: number; y: number } | null>>;
-  setView: React.Dispatch<React.SetStateAction<"chat" | "settings">>;
+  setView: React.Dispatch<React.SetStateAction<"chat" | "knowledge" | "settings">>;
   togglePinnedChatSession: (sessionId: string) => boolean;
 };
 
@@ -118,7 +118,14 @@ export function useChatRuntime({
       const conversationMessages = taskResult.conversationMessages ?? fallbackMessages;
 
       if (taskResult.finalResult) {
-        setMessages([...conversationMessages, { role: "assistant", content: taskResult.finalResult.content }]);
+        setMessages([
+          ...conversationMessages,
+          {
+            role: "assistant",
+            content: taskResult.finalResult.content,
+            knowledgeContext: taskResult.finalResult.knowledgeContext ?? null,
+          },
+        ]);
         if (sessionId) {
           applyUsageToSession(sessionId, taskResult.finalResult, conversationMessages);
           commitAssistantMemory(sessionId, conversationMessages, taskResult.finalResult.content);

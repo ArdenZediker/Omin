@@ -59,6 +59,19 @@ const SKILL_ICON_MAP: Record<string, React.ComponentType<{ size?: number; stroke
   compare: GitCompare,
 };
 
+const CONTEXT_OPTION_LABELS = {
+  session: "当前话题历史",
+  memory: "助手记忆",
+  favorites: "收藏话题",
+  workspace: "工作区文件",
+} as const;
+
+const TIMER_PRESET_OPTIONS = {
+  daily: { label: "每天 09:00", cron: "0 9 * * *" },
+  hourly: { label: "每小时", cron: "0 * * * *" },
+  workday: { label: "工作日 09:00", cron: "0 9 * * 1-5" },
+} as const;
+
 function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
   const Icon =
     suggestion.kind === "local"
@@ -86,7 +99,7 @@ export default function ChatInput({
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [activePopover, setActivePopover] = useState<"mode" | "knowledge" | "timer" | null>(null);
-  const [timerPreset, setTimerPreset] = useState<"daily" | "hourly" | "workday">("daily");
+  const [timerPreset, setTimerPreset] = useState<keyof typeof TIMER_PRESET_OPTIONS>("daily");
   const [contextSelection, setContextSelection] = useState({
     session: true,
     memory: true,
@@ -96,6 +109,7 @@ export default function ChatInput({
   const composerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const matchedSuggestions = getMatchingSlashSuggestions(input);
   const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
   const skillSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "skill");
@@ -142,35 +156,6 @@ export default function ChatInput({
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [activePopover]);
 
-  const handleSubmit = () => {
-    if ((!input.trim() && images.length === 0) || isLoading) {
-      return;
-    }
-
-    const contextLines = [];
-    if (contextSelection.session) contextLines.push("- 当前话题历史");
-    if (contextSelection.memory) contextLines.push("- 助手记忆");
-    if (contextSelection.favorites) contextLines.push("- 收藏话题");
-    if (contextSelection.workspace) contextLines.push("- 工作区文件");
-
-    const finalContent =
-      contextLines.length > 0 && contextPresetText
-        ? `【上下文要求】\n请优先结合以下来源回答：\n${contextLines.join("\n")}\n\n【可用上下文】\n${contextPresetText}\n\n【用户问题】\n${input.trim()}`
-        : input.trim();
-
-    onSend(finalContent, images.length > 0 ? images : undefined);
-    setInput("");
-    setImages([]);
-    setActivePopover(null);
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      handleSubmit();
-    }
-  };
-
   const appendImageFiles = async (files: File[]) => {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) {
@@ -190,6 +175,33 @@ export default function ChatInput({
     );
 
     setImages((prev) => [...prev, ...nextImages]);
+  };
+
+  const handleSubmit = () => {
+    if ((!input.trim() && images.length === 0) || isLoading) {
+      return;
+    }
+
+    const contextLines = Object.entries(contextSelection)
+      .filter(([, enabled]) => enabled)
+      .map(([key]) => `- ${CONTEXT_OPTION_LABELS[key as keyof typeof CONTEXT_OPTION_LABELS]}`);
+
+    const finalContent =
+      contextLines.length > 0 && contextPresetText
+        ? `【上下文要求】\n请优先结合以下来源回答：\n${contextLines.join("\n")}\n\n【可用上下文】\n${contextPresetText}\n\n【用户问题】\n${input.trim()}`
+        : input.trim();
+
+    onSend(finalContent, images.length > 0 ? images : undefined);
+    setInput("");
+    setImages([]);
+    setActivePopover(null);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit();
+    }
   };
 
   const handlePaste = (event: React.ClipboardEvent) => {
@@ -214,12 +226,9 @@ export default function ChatInput({
     event.target.value = "";
   };
 
-  const activeContextChips = [
-    contextSelection.session ? "当前话题" : null,
-    contextSelection.memory ? "助手记忆" : null,
-    contextSelection.favorites ? "收藏话题" : null,
-    contextSelection.workspace ? "工作区文件" : null,
-  ].filter(Boolean) as string[];
+  const activeContextChips = Object.entries(contextSelection)
+    .filter(([, enabled]) => enabled)
+    .map(([key]) => CONTEXT_OPTION_LABELS[key as keyof typeof CONTEXT_OPTION_LABELS]);
 
   const activeSlashCommand = input.trim().startsWith("/") ? input.trim().split(/\s+/)[0].toLowerCase() : "";
   const activeLocalCommand = LOCAL_SLASH_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
@@ -227,12 +236,6 @@ export default function ChatInput({
   const activeModeLabel = activeLocalCommand?.title ?? activeSkillCommand?.title ?? null;
   const activeModeTypeLabel = activeLocalCommand ? "工具模式" : activeSkillCommand ? "技能模式" : null;
   const hasComposerStatus = Boolean(activeModeLabel || activeContextChips.length > 0 || images.length > 0);
-
-  const timerPresetOptions = {
-    daily: { label: "每天 09:00", cron: "0 9 * * *" },
-    hourly: { label: "每小时", cron: "0 * * * *" },
-    workday: { label: "工作日 09:00", cron: "0 9 * * 1-5" },
-  } as const;
 
   return (
     <div ref={composerRef} className="chat-composer">
@@ -316,9 +319,9 @@ export default function ChatInput({
               }}
               title="清除当前模式"
             >
-                <Bot size={13} strokeWidth={1.9} />
-                <span>{activeModeTypeLabel}：{activeModeLabel}</span>
-                <X size={12} strokeWidth={2} />
+              <Bot size={13} strokeWidth={1.9} />
+              <span>{activeModeTypeLabel}：{activeModeLabel}</span>
+              <X size={12} strokeWidth={2} />
             </button>
           )}
 
@@ -376,11 +379,11 @@ export default function ChatInput({
                   <button
                     type="button"
                     className="chat-composer__mode-option"
-                      onClick={() => {
-                        setInput((current) => current.replace(/^\/\S+\s*/, ""));
-                        setActivePopover(null);
-                        textareaRef.current?.focus();
-                      }}
+                    onClick={() => {
+                      setInput((current) => current.replace(/^\/\S+\s*/, ""));
+                      setActivePopover(null);
+                      textareaRef.current?.focus();
+                    }}
                   >
                     <span className="chat-composer__mode-option-title">普通聊天</span>
                     <span className="chat-composer__mode-option-desc">直接发送当前问题</span>
@@ -388,11 +391,11 @@ export default function ChatInput({
                   <button
                     type="button"
                     className="chat-composer__mode-option"
-                      onClick={() => {
-                        setInput("/analyze_files ");
-                        setActivePopover(null);
-                        textareaRef.current?.focus();
-                      }}
+                    onClick={() => {
+                      setInput("/analyze_files ");
+                      setActivePopover(null);
+                      textareaRef.current?.focus();
+                    }}
                   >
                     <span className="chat-composer__mode-option-title">工具分析</span>
                     <span className="chat-composer__mode-option-desc">预填文件分析命令</span>
@@ -415,6 +418,7 @@ export default function ChatInput({
                 </div>
               )}
             </div>
+
             <button
               type="button"
               className="chat-composer__tool-button"
@@ -423,6 +427,7 @@ export default function ChatInput({
             >
               <Paperclip size={16} strokeWidth={1.8} />
             </button>
+
             <div className="chat-composer__tool-dropdown">
               <button
                 type="button"
@@ -435,41 +440,25 @@ export default function ChatInput({
               {activePopover === "knowledge" && (
                 <div className="chat-composer__context-menu">
                   <div className="chat-composer__context-menu-title">本次回答引用</div>
-                  <label className="chat-composer__context-option">
-                    <input
-                      type="checkbox"
-                      checked={contextSelection.session}
-                      onChange={(event) => setContextSelection((current) => ({ ...current, session: event.target.checked }))}
-                    />
-                    <span>当前话题历史</span>
-                  </label>
-                  <label className="chat-composer__context-option">
-                    <input
-                      type="checkbox"
-                      checked={contextSelection.memory}
-                      onChange={(event) => setContextSelection((current) => ({ ...current, memory: event.target.checked }))}
-                    />
-                    <span>助手记忆</span>
-                  </label>
-                  <label className="chat-composer__context-option">
-                    <input
-                      type="checkbox"
-                      checked={contextSelection.favorites}
-                      onChange={(event) => setContextSelection((current) => ({ ...current, favorites: event.target.checked }))}
-                    />
-                    <span>收藏话题</span>
-                  </label>
-                  <label className="chat-composer__context-option">
-                    <input
-                      type="checkbox"
-                      checked={contextSelection.workspace}
-                      onChange={(event) => setContextSelection((current) => ({ ...current, workspace: event.target.checked }))}
-                    />
-                    <span>工作区文件</span>
-                  </label>
+                  {Object.entries(CONTEXT_OPTION_LABELS).map(([key, label]) => (
+                    <label key={key} className="chat-composer__context-option">
+                      <input
+                        type="checkbox"
+                        checked={contextSelection[key as keyof typeof contextSelection]}
+                        onChange={(event) =>
+                          setContextSelection((current) => ({
+                            ...current,
+                            [key]: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
                 </div>
               )}
             </div>
+
             <div className="chat-composer__tool-dropdown">
               <button
                 type="button"
@@ -482,7 +471,7 @@ export default function ChatInput({
               {activePopover === "timer" && (
                 <div className="chat-composer__context-menu">
                   <div className="chat-composer__context-menu-title">快速创建任务</div>
-                  {(Object.entries(timerPresetOptions) as Array<[keyof typeof timerPresetOptions, (typeof timerPresetOptions)[keyof typeof timerPresetOptions]]>).map(
+                  {(Object.entries(TIMER_PRESET_OPTIONS) as Array<[keyof typeof TIMER_PRESET_OPTIONS, (typeof TIMER_PRESET_OPTIONS)[keyof typeof TIMER_PRESET_OPTIONS]]>).map(
                     ([key, option]) => (
                       <button
                         key={key}
@@ -500,19 +489,19 @@ export default function ChatInput({
                   <button
                     type="button"
                     className="chat-composer__mode-option"
-                      onClick={() => {
-                        if (!onCreateScheduledTask || !input.trim()) {
-                          return;
+                    onClick={() => {
+                      if (!onCreateScheduledTask || !input.trim()) {
+                        return;
                       }
-                      const selected = timerPresetOptions[timerPreset];
-                        onCreateScheduledTask({
-                          title: `快速任务 ${selected.label}`,
-                          prompt: input.trim(),
-                          cron: selected.cron,
-                          target: "desktop",
-                        });
-                        setActivePopover(null);
-                      }}
+                      const selected = TIMER_PRESET_OPTIONS[timerPreset];
+                      onCreateScheduledTask({
+                        title: `快速任务 ${selected.label}`,
+                        prompt: input.trim(),
+                        cron: selected.cron,
+                        target: "desktop",
+                      });
+                      setActivePopover(null);
+                    }}
                   >
                     <span className="chat-composer__mode-option-title">保存当前输入为任务</span>
                     <span className="chat-composer__mode-option-desc">使用上方选中的执行频率</span>
@@ -521,7 +510,9 @@ export default function ChatInput({
               )}
             </div>
           </div>
+
           <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
+
           <div className="chat-composer__toolbar-group chat-composer__toolbar-group--right">
             <button type="button" className="chat-composer__tool-button" title="布局">
               <CirclePlus size={16} strokeWidth={1.8} />
@@ -564,6 +555,7 @@ export default function ChatInput({
                 <LibraryBig size={16} strokeWidth={1.8} />
               </button>
             )}
+
             {isLoading ? (
               <button onClick={onStop} className="chat-composer__submit chat-composer__submit--stop" title="停止生成" type="button">
                 <Square className="w-4 h-4" fill="currentColor" strokeWidth={1.8} />

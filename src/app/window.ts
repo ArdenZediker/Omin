@@ -185,7 +185,8 @@ export function persistMainPosition(position: { x: number; y: number }) {
 
 export function getStoredMainView(): ViewMode {
   if (typeof window === "undefined") return "chat";
-  return readSqliteBackedValue(MAIN_VIEW_STORAGE_KEY) === "settings" ? "settings" : "chat";
+  const saved = readSqliteBackedValue(MAIN_VIEW_STORAGE_KEY);
+  return saved === "settings" || saved === "knowledge" ? saved : "chat";
 }
 
 export function getMainWindowSizeForView(viewMode: ViewMode) {
@@ -267,15 +268,45 @@ export function getExpandedCompactViewportSizeForAppearance(
   };
 }
 
-export async function resizeWindow(targetWindow: ReturnType<typeof getCurrentWindow>, width: number, height: number) {
-  const scaleFactor = await targetWindow.scaleFactor();
-  const currentSize = (await targetWindow.outerSize()).toLogical(scaleFactor);
-  const currentPosition = (await targetWindow.outerPosition()).toLogical(scaleFactor);
-  const nextX = currentPosition.x + (currentSize.width - width) / 2;
-  const nextY = currentPosition.y + (currentSize.height - height) / 2;
+export function getPetCompactMenuViewport(size: { width: number; height: number }) {
+  return {
+    width: Math.max(size.width, 430),
+    height: size.height + 260,
+  };
+}
 
+export function getPetCompactViewportSize(options: {
+  compactSize: { width: number; height: number };
+  isCompactMenuOpen: boolean;
+  isCompactQueryOpen: boolean;
+  isCompactReplyLoading: boolean;
+  hasCompactReply: boolean;
+}) {
+  const { compactSize, isCompactMenuOpen, isCompactQueryOpen, isCompactReplyLoading, hasCompactReply } = options;
+
+  if (isCompactMenuOpen) {
+    return getPetCompactMenuViewport(compactSize);
+  }
+
+  if (isCompactQueryOpen && !isCompactReplyLoading && !hasCompactReply) {
+    return {
+      width: Math.max(compactSize.width, 330),
+      height: compactSize.height + 64,
+    };
+  }
+
+  if (isCompactReplyLoading || hasCompactReply) {
+    return {
+      width: Math.max(compactSize.width, 392),
+      height: compactSize.height + 238,
+    };
+  }
+
+  return null;
+}
+
+export async function resizeWindow(targetWindow: ReturnType<typeof getCurrentWindow>, width: number, height: number) {
   await targetWindow.setSize(new LogicalSize(width, height));
-  await targetWindow.setPosition(new LogicalPosition(Math.round(nextX), Math.round(nextY)));
 }
 
 export async function applyCompactWindowChrome(targetWindow: ReturnType<typeof getCurrentWindow>) {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Copy, Pencil, RefreshCw } from "lucide-react";
 import type { Message } from "../adapters/types";
+import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 
 interface ChatMessageProps {
@@ -106,7 +107,17 @@ export default function ChatMessage({
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
             {isStreaming && !message.content.trim() ? <ThinkingIndicator /> : renderMarkdown(message.content)}
           </div>
-        </div>
+          {message.knowledgeContext?.sources?.length ? (
+            <div className="mt-3 space-y-2">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">知识来源</div>
+              <div className="grid gap-2">
+                {message.knowledgeContext.sources.slice(0, 3).map((source, index) => (
+                  <KnowledgeSourceCard key={`${source.chunkId}-${index}`} source={source} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+          </div>
       )}
       {!isStreaming && !isEditing && (
         <div className={`mt-1.5 flex items-center gap-1.5 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -147,6 +158,26 @@ function ThinkingIndicator() {
         <span />
         <span />
       </span>
+    </div>
+  );
+}
+
+function KnowledgeSourceCard({ source }: { source: KnowledgeContextSource }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-slate-900">{source.chunkTitle || source.sourceName}</div>
+          <div className="mt-0.5 text-[11px] text-slate-500">{source.collectionName}</div>
+        </div>
+        <div className="shrink-0 text-[11px] text-slate-400">score {source.score}</div>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-slate-500">
+        {source.sourcePath ? <span>{source.sourcePath}</span> : null}
+        {source.favorite ? <span>收藏</span> : null}
+        {source.accessCount > 0 ? <span>访问 {source.accessCount}</span> : null}
+      </div>
+      <div className="mt-2 text-sm leading-6 text-slate-600">{source.excerpt}</div>
     </div>
   );
 }

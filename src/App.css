@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 :root {
   font-family: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -2972,6 +2972,85 @@ body,
   gap: 12px;
 }
 
+.omni-prompt-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.omni-prompt-dialog__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.omni-prompt-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.omni-prompt-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.omni-prompt-dialog__field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--omni-app-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.omni-prompt-dialog__field-label small {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.omni-prompt-dialog__input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 94%, var(--omni-soft-bg));
+  color: var(--omni-app-text);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.omni-prompt-dialog__input:focus {
+  border-color: rgba(96, 165, 250, 0.42);
+  box-shadow:
+    0 0 0 3px rgba(96, 165, 250, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+}
+
+.omni-prompt-dialog__error {
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.omni-prompt-dialog__actions {
+  padding: 0 0 2px;
+}
+
+.omni-confirm-dialog__button--primary {
+  border-color: transparent;
+  background: var(--omni-app-text);
+  color: var(--omni-panel-bg);
+}
+
+.omni-confirm-dialog__button--primary:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 88%, #000000 12%);
+}
+
 .omni-confirm-dialog--assistant-settings {
   width: min(920px, calc(100vw - 36px));
   max-height: calc(100vh - 32px);
@@ -3468,7 +3547,16 @@ body,
   font: inherit;
   font-size: 13px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.omni-confirm-dialog__button > span {
+  line-height: 1;
 }
 
 .omni-confirm-dialog__button:hover {
@@ -4777,6 +4865,15 @@ body,
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
+.knowledge-upload-input {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  left: -9999px;
+  top: -9999px;
+}
 
 .omni-window-controls {
   position: absolute;
@@ -5535,3 +5632,4 @@ body,
     grid-template-columns: 1fr;
   }
 }
+

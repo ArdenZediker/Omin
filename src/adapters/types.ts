@@ -1,3 +1,5 @@
+import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
+
 // Omni - 多模型适配层
 // 为所有 AI 模型提供统一接口
 
@@ -5,6 +7,7 @@ export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
   images?: string[]; // base64 编码图片
+  knowledgeContext?: KnowledgeContextResult | null;
 }
 
 export interface ModelConfig {
@@ -35,6 +38,11 @@ export interface ChatResponse {
   };
 }
 
+export interface EmbeddingResponse {
+  embedding: number[];
+  model: string;
+}
+
 export interface StreamChunk {
   content: string;
   done: boolean;
@@ -50,6 +58,7 @@ export interface ModelAdapter {
     request: ChatRequest,
     onChunk: (chunk: StreamChunk) => void
   ): Promise<ChatResponse>;
+  embed?(input: string): Promise<EmbeddingResponse>;
   validate(): Promise<boolean>;
 }
 

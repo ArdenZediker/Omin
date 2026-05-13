@@ -24,23 +24,25 @@ import {
 import {
   getExpandedCompactViewportSizeForAppearance,
   getMonitorForCursor,
+  getPetCompactMenuViewport,
   isCharacterPointerInHitArea,
   moveCompactWindowToMonitor,
   openInternalChatWindow,
   persistCompactPosition,
   restoreMainWindow,
 } from "../app/window";
+import {
+  resolveCompactMenuPositionFromViewport,
+  resolveCompactMenuSidesFromSpace,
+} from "./compactMenuGeometry";
+import {
+  clearPendingDragTimer,
+  isNoDragTarget,
+  isOutsidePinnedCharacterMenu,
+  shouldCloseCharacterReplyPanel,
+} from "./compactInteractionGuards";
 
 const appWindow = getCurrentWindow();
-const COMPACT_MENU_HEIGHT = 280;
-const COMPACT_MENU_EDGE_PADDING = 8;
-const COMPACT_MENU_WIDTH = 200;
-const COMPACT_MENU_GAP = 6;
-const COMPACT_MENU_SUBMENU_WIDTH = 176;
-
-function clampToRange(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
 
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
@@ -187,26 +189,7 @@ export function useCompactWindowController({
       : Number(window.screen.availWidth || window.screen.width || 0) * monitorScale;
     const leftSpace = Math.max(0, (anchorPhysicalX - workAreaLeft) / monitorScale);
     const rightSpace = Math.max(0, (workAreaRight - anchorPhysicalX) / monitorScale);
-    const menuFootprint = COMPACT_MENU_WIDTH + COMPACT_MENU_GAP;
-    const submenuFootprint = COMPACT_MENU_SUBMENU_WIDTH + COMPACT_MENU_GAP;
-    const menuSide =
-      rightSpace >= menuFootprint
-        ? ("right" as const)
-        : leftSpace >= menuFootprint
-          ? ("left" as const)
-          : leftSpace > rightSpace
-            ? ("left" as const)
-            : ("right" as const);
-    const submenuSide =
-      menuSide === "right"
-        ? rightSpace - menuFootprint >= submenuFootprint
-          ? ("right" as const)
-          : ("left" as const)
-        : leftSpace - menuFootprint >= submenuFootprint
-          ? ("left" as const)
-          : ("right" as const);
-
-    return { menuSide, submenuSide };
+    return resolveCompactMenuSidesFromSpace(leftSpace, rightSpace);
   }, [isCompactWindow]);
 
   const resolveCompactMenuPosition = useCallback(
@@ -220,34 +203,7 @@ export function useCompactWindowController({
       const windowSize = (await appWindow.outerSize()).toLogical(scaleFactor);
       const viewportWidth = viewportOverride?.width ?? compactViewportSize?.width ?? windowSize.width;
       const viewportHeight = viewportOverride?.height ?? compactViewportSize?.height ?? windowSize.height;
-      const minLeft =
-        side === "left"
-          ? COMPACT_MENU_SUBMENU_WIDTH + COMPACT_MENU_GAP + COMPACT_MENU_EDGE_PADDING
-          : COMPACT_MENU_EDGE_PADDING;
-      const maxLeft =
-        side === "right"
-          ? Math.max(
-              COMPACT_MENU_EDGE_PADDING,
-              viewportWidth -
-                COMPACT_MENU_WIDTH -
-                COMPACT_MENU_SUBMENU_WIDTH -
-                COMPACT_MENU_GAP -
-                COMPACT_MENU_EDGE_PADDING
-            )
-          : Math.max(minLeft, viewportWidth - COMPACT_MENU_WIDTH - COMPACT_MENU_EDGE_PADDING);
-      const minTop = COMPACT_MENU_EDGE_PADDING;
-      const maxTop = Math.max(minTop, viewportHeight - COMPACT_MENU_HEIGHT - COMPACT_MENU_EDGE_PADDING);
-
-      return {
-        x: Math.round(
-          clampToRange(
-            side === "left" ? anchorX - COMPACT_MENU_WIDTH - COMPACT_MENU_GAP : anchorX + COMPACT_MENU_GAP,
-            minLeft,
-            maxLeft
-          )
-        ),
-        y: Math.round(clampToRange(anchorY - 16, minTop, maxTop)),
-      };
+      return resolveCompactMenuPositionFromViewport(anchorX, anchorY, side, viewportWidth, viewportHeight);
     },
     [compactViewportSize]
   );
@@ -641,27 +597,21 @@ export function useCompactWindowController({
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
       if (event.button !== 0) {
-        if (characterDragTimerRef.current !== null) {
-          window.clearTimeout(characterDragTimerRef.current);
-          characterDragTimerRef.current = null;
-        }
+        clearPendingDragTimer(characterDragTimerRef.current);
+        characterDragTimerRef.current = null;
         return;
       }
 
       const isInCharacterHitArea = isCharacterPointerInHitArea(event.currentTarget, event.clientX, event.clientY);
       if (!isInCharacterHitArea) {
-        if (compactMenuCloseTimerRef.current !== null) {
-          window.clearTimeout(compactMenuCloseTimerRef.current);
-          compactMenuCloseTimerRef.current = null;
-        }
+        clearPendingDragTimer(compactMenuCloseTimerRef.current);
+        compactMenuCloseTimerRef.current = null;
         resetCompactFloatingUi();
         return;
       }
 
       isCharacterDraggingRef.current = false;
-      if (characterDragTimerRef.current !== null) {
-        window.clearTimeout(characterDragTimerRef.current);
-      }
+      clearPendingDragTimer(characterDragTimerRef.current);
       characterDragTimerRef.current = window.setTimeout(() => {
         isCharacterDraggingRef.current = true;
         void appWindow.startDragging();
@@ -672,10 +622,8 @@ export function useCompactWindowController({
   );
 
   const handleCharacterPointerUp = useCallback(() => {
-    if (characterDragTimerRef.current !== null) {
-      window.clearTimeout(characterDragTimerRef.current);
-      characterDragTimerRef.current = null;
-    }
+    clearPendingDragTimer(characterDragTimerRef.current);
+    characterDragTimerRef.current = null;
   }, []);
 
   const handleCompactQuerySubmit = useCallback(
@@ -764,7 +712,7 @@ export function useCompactWindowController({
       markCompactInteraction();
       void raiseCompactWindow();
       const target = event.target as HTMLElement;
-      if (isCharacterMenuPinned && !target.closest(".compact-menu") && !target.closest(".compact-menu-anchor")) {
+      if (isCharacterMenuPinned && isOutsidePinnedCharacterMenu(target)) {
         setIsCharacterMenuPinned(false);
         setIsCompactMenuOpen(false);
         setIsCompactModelOpen(false);
@@ -772,12 +720,7 @@ export function useCompactWindowController({
         setIsCharacterModelOpen(false);
       }
 
-      if (
-        compactAppearance === "character" &&
-        !target.closest(".compact-menu-anchor") &&
-        !target.closest(".compact-query") &&
-        !target.closest(".compact-reply")
-      ) {
+      if (compactAppearance === "character" && shouldCloseCharacterReplyPanel(target)) {
         setIsCompactQueryOpen(false);
         setCompactReply(null);
       }
@@ -785,7 +728,7 @@ export function useCompactWindowController({
       if (compactAppearance === "character") {
         return;
       }
-      if (target.closest(".no-drag")) {
+      if (isNoDragTarget(target)) {
         return;
       }
       if (event.button === 0) {
@@ -843,10 +786,7 @@ export function useCompactWindowController({
       const { menuSide, submenuSide } = await resolveCompactMenuSides(anchorX, anchorY);
       const petMenuViewport =
         compactAppearance === "pet"
-          ? {
-              width: Math.max(compactSize.width, 430),
-              height: compactSize.height + 260,
-            }
+          ? getPetCompactMenuViewport(compactSize)
           : null;
       const menuAnchorX = petMenuViewport ? Math.round(petMenuViewport.width / 2) : anchorX;
       setCompactMenuSide(menuSide);
@@ -884,15 +824,11 @@ export function useCompactWindowController({
       event.preventDefault();
       event.stopPropagation();
       suppressCompactBlur();
-      if (characterDragTimerRef.current !== null) {
-        window.clearTimeout(characterDragTimerRef.current);
-        characterDragTimerRef.current = null;
-      }
+      clearPendingDragTimer(characterDragTimerRef.current);
+      characterDragTimerRef.current = null;
       isCharacterDraggingRef.current = false;
-      if (compactMenuCloseTimerRef.current !== null) {
-        window.clearTimeout(compactMenuCloseTimerRef.current);
-        compactMenuCloseTimerRef.current = null;
-      }
+      clearPendingDragTimer(compactMenuCloseTimerRef.current);
+      compactMenuCloseTimerRef.current = null;
 
       const nextCharacterPanelSide = await resolveCharacterPanelSide();
       setCharacterPanelSide(nextCharacterPanelSide);
@@ -900,10 +836,7 @@ export function useCompactWindowController({
       const { menuSide, submenuSide } = await resolveCompactMenuSides(event.clientX, event.clientY);
       const petMenuViewport =
         compactAppearance === "pet"
-          ? {
-              width: Math.max(compactSize.width, 430),
-              height: compactSize.height + 260,
-            }
+          ? getPetCompactMenuViewport(compactSize)
           : null;
       const menuPosition = await resolveCompactMenuPosition(
         petMenuViewport ? Math.round(petMenuViewport.width / 2) : event.clientX,

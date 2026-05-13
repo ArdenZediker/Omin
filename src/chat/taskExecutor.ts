@@ -116,6 +116,7 @@ export async function executeTask(options: {
           signal,
           systemPrompt,
           onChunk,
+          enableKnowledgeContext: intent === "chat" || intent === "prompt_skill",
         });
         api.setFinalResult(finalResult);
         api.appendTrace("模型回复生成完成");
@@ -345,6 +346,7 @@ async function executeAnalyzeFilesTask(options: {
           messages: summaryMessages,
           signal,
           onChunk,
+          enableKnowledgeContext: false,
         });
         api.setFinalResult(finalResult);
         api.appendTrace("组合任务总结完成");

@@ -1,5 +1,5 @@
 // Omni - OpenAI 适配器
-import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, EmbeddingResponse } from "./types";
 
 const OPENAI_MODELS: ModelConfig[] = [
   { id: "gpt-4o", name: "GPT-4o", provider: "openai", maxTokens: 128000, supportsVision: true, supportsStreaming: true },
@@ -132,6 +132,33 @@ export class OpenAIAdapter implements ModelAdapter {
     }
 
     return { content: fullContent, model };
+  }
+
+  async embed(input: string): Promise<EmbeddingResponse> {
+    const embeddingModel = "text-embedding-3-small";
+    const response = await fetch(`${this.getBaseUrl()}/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.config.apiKey}`,
+        ...this.config.customHeaders,
+      },
+      body: JSON.stringify({
+        model: embeddingModel,
+        input,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+    }
+
+    const data = await response.json();
+    return {
+      embedding: data.data?.[0]?.embedding ?? [],
+      model: data.model ?? embeddingModel,
+    };
   }
 
   async validate(): Promise<boolean> {
