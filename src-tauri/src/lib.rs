@@ -15,6 +15,8 @@ use tauri::{
     Manager,
 };
 
+mod knowledge_chunker;
+
 #[derive(Serialize)]
 struct WorkspaceFileEntry {
     path: String,
@@ -1127,64 +1129,6 @@ fn preview_text(value: &str, max_chars: usize) -> String {
     format!("{clipped}...")
 }
 
-fn split_text_into_chunks(value: &str, max_chars: usize) -> Vec<String> {
-    let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
-    let mut chunks = Vec::new();
-    let mut current = String::new();
-
-    for paragraph in normalized.split("\n\n") {
-        let paragraph = paragraph.trim();
-        if paragraph.is_empty() {
-            continue;
-        }
-
-        let paragraph_len = paragraph.chars().count();
-        if paragraph_len > max_chars {
-            if !current.trim().is_empty() {
-                chunks.push(current.trim().to_string());
-                current.clear();
-            }
-
-            let chars: Vec<char> = paragraph.chars().collect();
-            let mut start = 0;
-            while start < chars.len() {
-                let end = (start + max_chars).min(chars.len());
-                chunks.push(chars[start..end].iter().collect());
-                start = end;
-            }
-            continue;
-        }
-
-        if current.is_empty() {
-            current.push_str(paragraph);
-            continue;
-        }
-
-        let projected_len = current.chars().count() + 2 + paragraph_len;
-        if projected_len <= max_chars {
-            current.push_str("\n\n");
-            current.push_str(paragraph);
-        } else {
-            chunks.push(current.trim().to_string());
-            current.clear();
-            current.push_str(paragraph);
-        }
-    }
-
-    if !current.trim().is_empty() {
-        chunks.push(current.trim().to_string());
-    }
-
-    if chunks.is_empty() {
-        let trimmed = normalized.trim();
-        if !trimmed.is_empty() {
-            chunks.push(trimmed.to_string());
-        }
-    }
-
-    chunks
-}
-
 fn parse_tags_json(value: &str) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
 }
@@ -1484,18 +1428,6 @@ fn import_knowledge_document(
     let document_id = uuid::Uuid::new_v4().to_string();
     let tags = input.tags.unwrap_or_default();
     let tags_json = serde_json::to_string(&tags).map_err(|err| err.to_string())?;
-    let chunks = if content.trim().is_empty() {
-        Vec::new()
-    } else {
-        split_text_into_chunks(&content, 1200)
-    };
-    let chunk_count = chunks.len() as i64;
-    let content_preview = if content.trim().is_empty() {
-        preview_text(source_name, 240)
-    } else {
-        preview_text(&content, 240)
-    };
-    let favorite = input.favorite.unwrap_or(false);
     let title_hierarchy = input.title_hierarchy.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
     let file_extension = normalize_file_extension(input.file_extension, source_name);
     let mime_type = input
@@ -1511,6 +1443,25 @@ fn import_knowledge_document(
         .thumbnail_data_url
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
+    let chunks = if content.trim().is_empty() {
+        Vec::new()
+    } else {
+        knowledge_chunker::split_document_text(
+            &content,
+            source_name,
+            Some(preview_type.as_str()),
+            file_extension.as_deref(),
+            knowledge_chunker::DEFAULT_CHUNK_SIZE,
+            knowledge_chunker::DEFAULT_CHUNK_OVERLAP,
+        )
+    };
+    let chunk_count = chunks.len() as i64;
+    let content_preview = if content.trim().is_empty() {
+        preview_text(source_name, 240)
+    } else {
+        preview_text(&content, 240)
+    };
+    let favorite = input.favorite.unwrap_or(false);
     let stored_file_path = input
         .content_bytes
         .as_ref()
@@ -1563,18 +1514,20 @@ fn import_knowledge_document(
 
         for (index, chunk_content) in chunks.into_iter().enumerate() {
             let chunk_id = uuid::Uuid::new_v4().to_string();
-            let chunk_title = if index == 0 {
-                Some(source_name.to_string())
-            } else {
-                None
-            };
+            let chunk_title = chunk_content.title.or_else(|| {
+                if index == 0 {
+                    Some(source_name.to_string())
+                } else {
+                    None
+                }
+            });
             stmt.execute(params![
                 chunk_id,
                 document_id,
                 collection_id,
                 index as i64,
                 chunk_title,
-                chunk_content,
+                chunk_content.content,
                 Option::<String>::None,
                 now,
             ])
@@ -1615,10 +1568,11 @@ fn score_search_candidate(
 ) -> f64 {
     let mut score = 0.0;
     let haystack = normalize_text_for_search(&format!(
-        "{} {} {} {} {}",
+        "{} {} {} {} {} {}",
         candidate.source_name,
         candidate.source_path.as_deref().unwrap_or_default(),
         candidate.title_hierarchy.as_deref().unwrap_or_default(),
+        candidate.title.as_deref().unwrap_or_default(),
         candidate.tags.join(" "),
         candidate.content
     ));
@@ -1635,6 +1589,16 @@ fn score_search_candidate(
 
     if haystack.contains(&normalize_text_for_search(&candidate.source_name)) {
         score += 1.0;
+    }
+    if candidate
+        .title
+        .as_deref()
+        .map(normalize_text_for_search)
+        .as_deref()
+        .map(|title| haystack.contains(title))
+        .unwrap_or(false)
+    {
+        score += 0.8;
     }
 
     if let Some(query_embedding) = query_embedding {

@@ -2641,6 +2641,7 @@ dependencies = [
 name = "omni"
 version = "0.1.0"
 dependencies = [
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",
