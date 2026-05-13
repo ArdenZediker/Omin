@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
@@ -162,24 +162,16 @@ export function useMainWindowController({
     if (isCompactWindow || !appWindow) {
       return;
     }
-
-    const container = messagesScrollRef.current;
-    if (!container) {
-      return;
-    }
-
-    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-  }, [isCompactWindow, messages, messagesScrollRef]);
-
-  useEffect(() => {
-    if (isCompactWindow || !appWindow) {
-      return;
-    }
     const win = appWindow;
 
     saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, view);
     const targetSize = getMainWindowSizeForView(view);
-    void resizeWindow(win, targetSize.width, targetSize.height);
+    void win.isMaximized().then((isMaximized) => {
+      if (isMaximized) {
+        return;
+      }
+      void resizeWindow(win, targetSize.width, targetSize.height);
+    });
   }, [
     basicSettings.mainWindowHeight,
     basicSettings.mainWindowWidth,
@@ -198,6 +190,7 @@ export function useMainWindowController({
     let focusCleanup: (() => void) | undefined;
     let draftCleanup: (() => void) | undefined;
     let settingsCleanup: (() => void) | undefined;
+    let knowledgeCleanup: (() => void) | undefined;
     let moveCleanup: (() => void) | undefined;
 
     void win
@@ -219,12 +212,21 @@ export function useMainWindowController({
         draftCleanup = unlisten;
       });
 
+      void win
     void win
       .listen("omni-open-settings", () => {
         setView("settings");
       })
       .then((unlisten) => {
         settingsCleanup = unlisten;
+      });
+
+    void win
+      .listen("omni-open-knowledge", () => {
+        setView("knowledge");
+      })
+      .then((unlisten) => {
+        knowledgeCleanup = unlisten;
       });
 
     void win
@@ -241,6 +243,7 @@ export function useMainWindowController({
       focusCleanup?.();
       draftCleanup?.();
       settingsCleanup?.();
+      knowledgeCleanup?.();
       moveCleanup?.();
     };
   }, [isCompactWindow, setInputDraft, setInputDraftImages, setInputDraftKey, setInputFocusKey, setView]);
@@ -322,6 +325,29 @@ export function useMainWindowController({
   const handleRestoreMain = useCallback(async (focusInput = false) => {
     await restoreMainWindow(focusInput);
   }, []);
+
+  const lastMessagesCountRef = useRef(messages.length);
+
+  useEffect(() => {
+    if (isCompactWindow || !appWindow) {
+      return;
+    }
+
+    const container = messagesScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const previousCount = lastMessagesCountRef.current;
+    const nextCount = messages.length;
+    lastMessagesCountRef.current = nextCount;
+
+    if (nextCount <= previousCount) {
+      return;
+    }
+
+    container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+  }, [isCompactWindow, messages.length, messagesScrollRef]);
 
   return {
     handleOpenCompact,

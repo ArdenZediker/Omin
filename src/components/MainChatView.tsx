@@ -150,10 +150,9 @@ type MainChatViewProps = {
   onUpdateScheduledTask: (taskId: string, patch: { title: string; prompt: string; cron: string; target: "desktop" | "notification" | "session" }) => void;
   onDeleteScheduledTask: (taskId: string) => void;
   onUseEmptyPrompt: (prompt: string) => void;
+  onOpenKnowledge: () => void;
 };
 
-const TOPIC_PANEL_WIDTH = 272;
-const TOPIC_PANEL_AUTO_COLLAPSE_RATIO = 2 / 3;
 const ASSISTANT_GROUPS_STORAGE_KEY = "assistant_groups";
 const DEFAULT_ASSISTANT_GROUP_LABEL = "默认列表";
 
@@ -321,6 +320,7 @@ export default function MainChatView({
   onUpdateScheduledTask,
   onDeleteScheduledTask,
   onUseEmptyPrompt,
+  onOpenKnowledge,
 }: MainChatViewProps) {
   const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
   const [composerElement, setComposerElement] = useState<HTMLDivElement | null>(null);
@@ -526,15 +526,26 @@ export default function MainChatView({
 
   useEffect(() => {
     if (!workspaceElement) return;
+
+    const topicCollapseThreshold = 1180;
+    const topicExpandThreshold = 1240;
+    const assistantCollapseThreshold = 1320;
+    const assistantExpandThreshold = 1380;
+
     const updateAutoCollapsed = () => {
-      const nextWorkspaceWidth = workspaceElement.getBoundingClientRect().width || 0;
-      const nextEstimatedPaneWidth = Math.max(0, nextWorkspaceWidth - TOPIC_PANEL_WIDTH);
-      const nextEstimatedPaneRatio = nextWorkspaceWidth > 0 ? nextEstimatedPaneWidth / nextWorkspaceWidth : 1;
-      const shouldCollapseRight = nextEstimatedPaneRatio < TOPIC_PANEL_AUTO_COLLAPSE_RATIO;
-      const shouldCollapseLeft = nextWorkspaceWidth < 1320;
-      setIsTopicPanelAutoCollapsed(shouldCollapseRight);
-      setIsAssistantPanelAutoCollapsed(shouldCollapseRight && shouldCollapseLeft);
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || workspaceElement.getBoundingClientRect().width || 0;
+
+      setIsTopicPanelAutoCollapsed((current) => {
+        const next = current ? viewportWidth < topicExpandThreshold : viewportWidth < topicCollapseThreshold;
+        return next;
+      });
+
+      setIsAssistantPanelAutoCollapsed((current) => {
+        const next = current ? viewportWidth < assistantExpandThreshold : viewportWidth < assistantCollapseThreshold;
+        return next;
+      });
     };
+
     updateAutoCollapsed();
     let frameId = 0;
     const scheduleUpdate = () => {
@@ -544,12 +555,9 @@ export default function MainChatView({
         updateAutoCollapsed();
       });
     };
-    const observer = new ResizeObserver(scheduleUpdate);
-    observer.observe(workspaceElement);
     window.addEventListener("resize", scheduleUpdate);
     return () => {
       if (frameId) cancelAnimationFrame(frameId);
-      observer.disconnect();
       window.removeEventListener("resize", scheduleUpdate);
     };
   }, [workspaceElement]);
@@ -726,7 +734,7 @@ export default function MainChatView({
           <button type="button" className="main-chat-nav__item" title="助手">
             <Sparkles size={18} strokeWidth={1.9} />
           </button>
-          <button type="button" className="main-chat-nav__item" title="资源">
+          <button type="button" className="main-chat-nav__item" title="知识" onClick={onOpenKnowledge}>
             <FolderOpen size={18} strokeWidth={1.9} />
           </button>
         </div>

@@ -1,4 +1,5 @@
 import type { Message } from "../adapters/types";
+import type { KnowledgeContextResult } from "./knowledgeTypes";
 
 export type ChatUsagePreferences = {
   enableStreaming: boolean;
@@ -133,6 +134,7 @@ export type ChatExecutionResult = {
   };
   estimated: boolean;
   costUsd: number;
+  knowledgeContext?: KnowledgeContextResult | null;
 };
 
 export type SlashSkill = {

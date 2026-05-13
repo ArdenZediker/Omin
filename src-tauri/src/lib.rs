@@ -1,7 +1,8 @@
-use rusqlite::{params, Connection, OptionalExtension};
+﻿use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::{
+    cmp::Ordering,
     fs,
     path::{Component, Path, PathBuf},
     collections::HashMap,
@@ -114,6 +115,126 @@ struct DbProviderConfigRecord {
     custom_models: Option<JsonValue>,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeCollectionRecord {
+    id: String,
+    name: String,
+    description: String,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeDocumentRecord {
+    id: String,
+    collection_id: String,
+    source_name: String,
+    source_path: Option<String>,
+    stored_file_path: Option<String>,
+    mime_type: Option<String>,
+    file_extension: Option<String>,
+    preview_type: Option<String>,
+    content: Option<String>,
+    content_preview: String,
+    thumbnail_data_url: Option<String>,
+    chunk_count: i64,
+    tags: Vec<String>,
+    favorite: bool,
+    access_count: i64,
+    last_accessed_at: Option<i64>,
+    title_hierarchy: Option<String>,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeChunkRecord {
+    id: String,
+    document_id: String,
+    collection_id: String,
+    chunk_index: i64,
+    title: Option<String>,
+    content: String,
+    embedding_json: Option<String>,
+    created_at: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeLibraryPayload {
+    collections: Vec<KnowledgeCollectionRecord>,
+    documents: Vec<KnowledgeDocumentRecord>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeDocumentDetailPayload {
+    document: KnowledgeDocumentRecord,
+    chunks: Vec<KnowledgeChunkRecord>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportKnowledgeDocumentInput {
+    collection_id: Option<String>,
+    source_name: String,
+    source_path: Option<String>,
+    content: String,
+    content_bytes: Option<Vec<u8>>,
+    mime_type: Option<String>,
+    file_extension: Option<String>,
+    preview_type: Option<String>,
+    thumbnail_data_url: Option<String>,
+    tags: Option<Vec<String>>,
+    title_hierarchy: Option<String>,
+    favorite: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchKnowledgeChunksInput {
+    query: String,
+    limit: Option<usize>,
+    collection_id: Option<String>,
+    query_embedding: Option<Vec<f64>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadKnowledgeDocumentInput {
+    document_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadKnowledgeDocumentFileInput {
+    document_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeDocumentBinaryPayload {
+    bytes: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchKnowledgeChunkResult {
+    chunk: KnowledgeChunkRecord,
+    score: f64,
+    source_name: String,
+    source_path: Option<String>,
+    collection_name: String,
+    tags: Vec<String>,
+    favorite: bool,
+    access_count: i64,
+    last_accessed_at: Option<i64>,
+    title_hierarchy: Option<String>,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("你好，{}！欢迎使用 Omni AI 助手！", name)
@@ -130,6 +251,152 @@ fn current_timestamp_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn knowledge_files_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
+    let root = app_data_dir.join("knowledge_files");
+    fs::create_dir_all(&root).map_err(|err| err.to_string())?;
+    Ok(root)
+}
+
+fn sanitize_storage_file_name(value: &str) -> String {
+    let mut cleaned = value
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ if ch.is_control() => '_',
+            _ => ch,
+        })
+        .collect::<String>();
+    cleaned = cleaned.trim().trim_matches('.').to_string();
+    if cleaned.is_empty() {
+        "document".to_string()
+    } else {
+        cleaned
+    }
+}
+
+fn file_extension_from_name(value: &str) -> Option<String> {
+    Path::new(value)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.trim().to_lowercase())
+        .filter(|ext| !ext.is_empty())
+}
+
+fn normalize_file_extension(extension: Option<String>, source_name: &str) -> Option<String> {
+    extension
+        .and_then(|value| {
+            let trimmed = value.trim().trim_start_matches('.').to_lowercase();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .or_else(|| file_extension_from_name(source_name))
+}
+
+fn infer_preview_type(extension: Option<&str>, mime_type: Option<&str>) -> String {
+    let extension = extension.unwrap_or_default().to_lowercase();
+    let mime_type = mime_type.unwrap_or_default().to_lowercase();
+
+    if matches!(
+        extension.as_str(),
+        "md" | "markdown" | "txt" | "log" | "json" | "csv" | "tsv" | "html" | "htm" | "xml" | "yml" | "yaml" | "js" | "jsx" | "ts" | "tsx" | "py" | "rs" | "css" | "toml" | "ini" | "sql" | "sh" | "bat" | "cmd"
+    ) || mime_type.starts_with("text/")
+        || mime_type == "application/json"
+    {
+        return if extension == "md" || extension == "markdown" {
+            "markdown".to_string()
+        } else {
+            "text".to_string()
+        };
+    }
+
+    if matches!(extension.as_str(), "pdf") || mime_type == "application/pdf" {
+        return "pdf".to_string();
+    }
+
+    if matches!(extension.as_str(), "docx") || mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+        return "docx".to_string();
+    }
+
+    if matches!(
+        extension.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" | "ico"
+    ) || mime_type.starts_with("image/")
+    {
+        return "image".to_string();
+    }
+
+    if matches!(extension.as_str(), "doc" | "rtf") {
+        return "unsupported".to_string();
+    }
+
+    "unsupported".to_string()
+}
+
+fn document_file_name(source_name: &str, document_id: &str) -> String {
+    let base = sanitize_storage_file_name(source_name);
+    if base == "document" {
+        format!("{document_id}.bin")
+    } else {
+        base
+    }
+}
+
+fn store_knowledge_document_bytes(
+    app: &tauri::AppHandle,
+    collection_id: &str,
+    document_id: &str,
+    source_name: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, String> {
+    let collection_dir = sanitize_storage_file_name(collection_id);
+    let document_dir = sanitize_storage_file_name(document_id);
+    let file_name = document_file_name(source_name, document_id);
+    let stored_path = knowledge_files_root(app)?
+        .join(collection_dir)
+        .join(document_dir)
+        .join(file_name);
+    if let Some(parent) = stored_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(&stored_path, bytes).map_err(|err| err.to_string())?;
+    Ok(stored_path)
+}
+
+fn delete_stored_document_file(path: Option<&str>) {
+    let Some(path) = path else {
+        return;
+    };
+
+    let stored_path = PathBuf::from(path);
+    if stored_path.is_file() {
+        let _ = fs::remove_file(&stored_path);
+    }
+
+    fn remove_if_empty(path: &Path) {
+        if !path.is_dir() {
+            return;
+        }
+
+        let is_empty = fs::read_dir(path)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false);
+        if is_empty {
+            let _ = fs::remove_dir(path);
+        }
+    }
+
+    if let Some(document_dir) = stored_path.parent() {
+        remove_if_empty(document_dir);
+        if let Some(collection_dir) = document_dir.parent() {
+            remove_if_empty(collection_dir);
+        }
+    }
+}
+
 fn run_database_migrations(connection: &Connection) -> Result<(), String> {
     let version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -144,6 +411,18 @@ fn run_database_migrations(connection: &Connection) -> Result<(), String> {
     if version < 2 {
         connection
             .execute_batch("PRAGMA user_version = 2;")
+            .map_err(|err| err.to_string())?;
+    }
+
+    if version < 3 {
+        connection
+            .execute_batch("PRAGMA user_version = 3;")
+            .map_err(|err| err.to_string())?;
+    }
+
+    if version < 4 {
+        connection
+            .execute_batch("PRAGMA user_version = 4;")
             .map_err(|err| err.to_string())?;
     }
 
@@ -271,10 +550,53 @@ fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> 
           updated_at INTEGER NOT NULL,
           usage_json TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS knowledge_collections (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS knowledge_documents (
+          id TEXT PRIMARY KEY,
+          collection_id TEXT NOT NULL,
+          source_name TEXT NOT NULL,
+          source_path TEXT,
+          stored_file_path TEXT,
+          mime_type TEXT,
+          file_extension TEXT,
+          preview_type TEXT,
+          content TEXT,
+          content_preview TEXT NOT NULL,
+          chunk_count INTEGER NOT NULL,
+          tags_json TEXT NOT NULL,
+          favorite INTEGER NOT NULL DEFAULT 0,
+          access_count INTEGER NOT NULL DEFAULT 0,
+          last_accessed_at INTEGER,
+          title_hierarchy TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS knowledge_chunks (
+          id TEXT PRIMARY KEY,
+          document_id TEXT NOT NULL,
+          collection_id TEXT NOT NULL,
+          chunk_index INTEGER NOT NULL,
+          title TEXT,
+          content TEXT NOT NULL,
+          embedding_json TEXT,
+          created_at INTEGER NOT NULL,
+          UNIQUE(document_id, chunk_index)
+        );
         "#,
     ).map_err(|err| err.to_string())?;
     run_database_migrations(&connection)?;
     ensure_storage_migrations(&connection)?;
+    ensure_knowledge_schema(&connection)?;
+    ensure_knowledge_defaults(&connection)?;
     Ok(connection)
 }
 
@@ -745,6 +1067,835 @@ fn save_automation_storage(connection: &Connection, scheduled_tasks_json: Option
     Ok(())
 }
 
+fn ensure_knowledge_defaults(connection: &Connection) -> Result<(), String> {
+    let now = current_timestamp_ms();
+    connection
+        .execute(
+            r#"
+            INSERT OR IGNORE INTO knowledge_collections (
+              id, name, description, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5)
+            "#,
+            params![
+                "default",
+                "默认知识库",
+                "用于存放上传文件和导入内容",
+                now,
+                now
+            ],
+        )
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn normalize_knowledge_collection_id(value: Option<String>) -> String {
+    value
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+        .if_empty_then("default")
+}
+
+trait EmptyFallback {
+    fn if_empty_then(self, fallback: &str) -> String;
+}
+
+impl EmptyFallback for String {
+    fn if_empty_then(self, fallback: &str) -> String {
+        if self.trim().is_empty() {
+            fallback.to_string()
+        } else {
+            self
+        }
+    }
+}
+
+fn normalize_text_for_search(value: &str) -> String {
+    value
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .to_lowercase()
+}
+
+fn preview_text(value: &str, max_chars: usize) -> String {
+    let trimmed = value.trim();
+    let count = trimmed.chars().count();
+    if count <= max_chars {
+        return trimmed.to_string();
+    }
+    let clipped: String = trimmed.chars().take(max_chars.saturating_sub(3)).collect();
+    format!("{clipped}...")
+}
+
+fn split_text_into_chunks(value: &str, max_chars: usize) -> Vec<String> {
+    let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+
+    for paragraph in normalized.split("\n\n") {
+        let paragraph = paragraph.trim();
+        if paragraph.is_empty() {
+            continue;
+        }
+
+        let paragraph_len = paragraph.chars().count();
+        if paragraph_len > max_chars {
+            if !current.trim().is_empty() {
+                chunks.push(current.trim().to_string());
+                current.clear();
+            }
+
+            let chars: Vec<char> = paragraph.chars().collect();
+            let mut start = 0;
+            while start < chars.len() {
+                let end = (start + max_chars).min(chars.len());
+                chunks.push(chars[start..end].iter().collect());
+                start = end;
+            }
+            continue;
+        }
+
+        if current.is_empty() {
+            current.push_str(paragraph);
+            continue;
+        }
+
+        let projected_len = current.chars().count() + 2 + paragraph_len;
+        if projected_len <= max_chars {
+            current.push_str("\n\n");
+            current.push_str(paragraph);
+        } else {
+            chunks.push(current.trim().to_string());
+            current.clear();
+            current.push_str(paragraph);
+        }
+    }
+
+    if !current.trim().is_empty() {
+        chunks.push(current.trim().to_string());
+    }
+
+    if chunks.is_empty() {
+        let trimmed = normalized.trim();
+        if !trimmed.is_empty() {
+            chunks.push(trimmed.to_string());
+        }
+    }
+
+    chunks
+}
+
+fn parse_tags_json(value: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
+}
+
+fn collection_exists(connection: &Connection, collection_id: &str) -> Result<bool, String> {
+    let count: i64 = connection
+        .query_row(
+            "SELECT COUNT(1) FROM knowledge_collections WHERE id = ?1",
+            params![collection_id],
+            |row| row.get(0),
+        )
+        .map_err(|err| err.to_string())?;
+    Ok(count > 0)
+}
+
+fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPayload, String> {
+    ensure_knowledge_defaults(connection)?;
+
+    let mut collections_stmt = connection
+        .prepare(
+            r#"
+            SELECT id, name, description, created_at, updated_at
+            FROM knowledge_collections
+            ORDER BY created_at ASC, id ASC
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+    let collections = collections_stmt
+        .query_map([], |row| {
+            Ok(KnowledgeCollectionRecord {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
+    let mut documents_stmt = connection
+        .prepare(
+            r#"
+            SELECT id, collection_id, source_name, source_path, stored_file_path, mime_type, file_extension, preview_type,
+                   content, content_preview, chunk_count, thumbnail_data_url, tags_json, favorite,
+                   access_count, last_accessed_at, title_hierarchy, created_at, updated_at
+            FROM knowledge_documents
+            ORDER BY updated_at DESC, created_at DESC, id DESC
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+    let documents = documents_stmt
+        .query_map([], |row| {
+            let tags_json: String = row.get(12)?;
+            Ok(KnowledgeDocumentRecord {
+                id: row.get(0)?,
+                collection_id: row.get(1)?,
+                source_name: row.get(2)?,
+                source_path: row.get(3)?,
+                stored_file_path: row.get(4)?,
+                mime_type: row.get(5)?,
+                file_extension: row.get(6)?,
+                preview_type: row.get(7)?,
+                content: None,
+                content_preview: row.get(9)?,
+                chunk_count: row.get(10)?,
+                thumbnail_data_url: row.get(11)?,
+                tags: parse_tags_json(&tags_json),
+                favorite: row.get::<_, i64>(13)? != 0,
+                access_count: row.get(14)?,
+                last_accessed_at: row.get(15)?,
+                title_hierarchy: row.get(16)?,
+                created_at: row.get(17)?,
+                updated_at: row.get(18)?,
+            })
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
+    Ok(KnowledgeLibraryPayload { collections, documents })
+}
+
+fn load_knowledge_document(
+    connection: &Connection,
+    document_id: &str,
+) -> Result<KnowledgeDocumentDetailPayload, String> {
+    ensure_knowledge_defaults(connection)?;
+
+    let document = connection
+        .query_row(
+            r#"
+            SELECT id, collection_id, source_name, source_path, stored_file_path, mime_type, file_extension, preview_type,
+                   content, content_preview, chunk_count, thumbnail_data_url, tags_json, favorite,
+                   access_count, last_accessed_at, title_hierarchy, created_at, updated_at
+            FROM knowledge_documents
+            WHERE id = ?1
+            "#,
+            params![document_id],
+            |row| {
+                let tags_json: String = row.get(12)?;
+                Ok(KnowledgeDocumentRecord {
+                    id: row.get(0)?,
+                    collection_id: row.get(1)?,
+                    source_name: row.get(2)?,
+                    source_path: row.get(3)?,
+                    stored_file_path: row.get(4)?,
+                    mime_type: row.get(5)?,
+                    file_extension: row.get(6)?,
+                    preview_type: row.get(7)?,
+                    content: row.get(8)?,
+                    content_preview: row.get(9)?,
+                    chunk_count: row.get(10)?,
+                    thumbnail_data_url: row.get(11)?,
+                    tags: parse_tags_json(&tags_json),
+                    favorite: row.get::<_, i64>(13)? != 0,
+                    access_count: row.get(14)?,
+                    last_accessed_at: row.get(15)?,
+                    title_hierarchy: row.get(16)?,
+                    created_at: row.get(17)?,
+                    updated_at: row.get(18)?,
+                })
+            },
+        )
+        .map_err(|err| err.to_string())?;
+
+    let mut chunk_stmt = connection
+        .prepare(
+            r#"
+            SELECT id, document_id, collection_id, chunk_index, title, content, embedding_json, created_at
+            FROM knowledge_chunks
+            WHERE document_id = ?1
+            ORDER BY chunk_index ASC, created_at ASC, id ASC
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+    let chunks = chunk_stmt
+        .query_map(params![document_id], |row| {
+            Ok(KnowledgeChunkRecord {
+                id: row.get(0)?,
+                document_id: row.get(1)?,
+                collection_id: row.get(2)?,
+                chunk_index: row.get(3)?,
+                title: row.get(4)?,
+                content: row.get(5)?,
+                embedding_json: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
+    Ok(KnowledgeDocumentDetailPayload { document, chunks })
+}
+
+fn load_knowledge_document_file(
+    connection: &Connection,
+    document_id: &str,
+) -> Result<KnowledgeDocumentBinaryPayload, String> {
+    ensure_knowledge_defaults(connection)?;
+
+    let stored_file_path = connection
+        .query_row(
+            "SELECT stored_file_path FROM knowledge_documents WHERE id = ?1",
+            params![document_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+        .flatten()
+        .ok_or_else(|| "文档没有可用的原文件".to_string())?;
+
+    let bytes = fs::read(&stored_file_path).map_err(|err| err.to_string())?;
+    Ok(KnowledgeDocumentBinaryPayload { bytes })
+}
+
+fn create_knowledge_collection(connection: &Connection, name: &str, description: &str) -> Result<KnowledgeCollectionRecord, String> {
+    let now = current_timestamp_ms();
+    let id = uuid::Uuid::new_v4().to_string();
+    let name = name.trim();
+    let description = description.trim();
+
+    if name.is_empty() {
+        return Err("知识库名称不能为空".into());
+    }
+
+    connection
+        .execute(
+            r#"
+            INSERT INTO knowledge_collections (id, name, description, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            "#,
+            params![id, name, description, now, now],
+        )
+        .map_err(|err| err.to_string())?;
+
+    Ok(KnowledgeCollectionRecord {
+        id,
+        name: name.to_string(),
+        description: description.to_string(),
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+fn delete_knowledge_collection(connection: &Connection, collection_id: &str) -> Result<(), String> {
+    let collection_id = collection_id.trim();
+    if collection_id.is_empty() {
+        return Err("知识库 ID 不能为空".into());
+    }
+    if collection_id == "default" {
+        return Err("默认知识库不能删除".into());
+    }
+
+    let stored_paths = {
+        let mut stmt = connection
+            .prepare(
+                r#"
+                SELECT stored_file_path
+                FROM knowledge_documents
+                WHERE collection_id = ?1
+                "#,
+            )
+            .map_err(|err| err.to_string())?;
+        let rows = stmt.query_map(params![collection_id], |row| row.get::<_, Option<String>>(0))
+            .map_err(|err| err.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())?;
+        rows
+    };
+
+    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM knowledge_chunks WHERE collection_id = ?1", params![collection_id])
+        .map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM knowledge_documents WHERE collection_id = ?1", params![collection_id])
+        .map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM knowledge_collections WHERE id = ?1", params![collection_id])
+        .map_err(|err| err.to_string())?;
+    tx.commit().map_err(|err| err.to_string())?;
+
+    for path in stored_paths {
+        delete_stored_document_file(path.as_deref());
+    }
+
+    Ok(())
+}
+
+fn delete_knowledge_document(connection: &Connection, document_id: &str) -> Result<(), String> {
+    let document_id = document_id.trim();
+    if document_id.is_empty() {
+        return Err("文档 ID 不能为空".into());
+    }
+
+    let stored_file_path = connection
+        .query_row(
+            "SELECT stored_file_path FROM knowledge_documents WHERE id = ?1",
+            params![document_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+        .flatten();
+
+    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM knowledge_chunks WHERE document_id = ?1", params![document_id])
+        .map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM knowledge_documents WHERE id = ?1", params![document_id])
+        .map_err(|err| err.to_string())?;
+    tx.commit().map_err(|err| err.to_string())?;
+
+    delete_stored_document_file(stored_file_path.as_deref());
+    Ok(())
+}
+
+fn import_knowledge_document(
+    app: &tauri::AppHandle,
+    connection: &Connection,
+    input: ImportKnowledgeDocumentInput,
+) -> Result<KnowledgeDocumentRecord, String> {
+    ensure_knowledge_defaults(connection)?;
+
+    let collection_id = normalize_knowledge_collection_id(input.collection_id);
+    if !collection_exists(connection, &collection_id)? {
+        return Err(format!("知识库不存在: {collection_id}"));
+    }
+
+    let source_name = input.source_name.trim();
+    if source_name.is_empty() {
+        return Err("sourceName 不能为空".into());
+    }
+
+    let content = input.content.trim().to_string();
+
+    let now = current_timestamp_ms();
+    let document_id = uuid::Uuid::new_v4().to_string();
+    let tags = input.tags.unwrap_or_default();
+    let tags_json = serde_json::to_string(&tags).map_err(|err| err.to_string())?;
+    let chunks = if content.trim().is_empty() {
+        Vec::new()
+    } else {
+        split_text_into_chunks(&content, 1200)
+    };
+    let chunk_count = chunks.len() as i64;
+    let content_preview = if content.trim().is_empty() {
+        preview_text(source_name, 240)
+    } else {
+        preview_text(&content, 240)
+    };
+    let favorite = input.favorite.unwrap_or(false);
+    let title_hierarchy = input.title_hierarchy.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let file_extension = normalize_file_extension(input.file_extension, source_name);
+    let mime_type = input
+        .mime_type
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let preview_type = input
+        .preview_type
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| infer_preview_type(file_extension.as_deref(), mime_type.as_deref()));
+    let thumbnail_data_url = input
+        .thumbnail_data_url
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let stored_file_path = input
+        .content_bytes
+        .as_ref()
+        .filter(|bytes| !bytes.is_empty())
+        .map(|bytes| store_knowledge_document_bytes(app, &collection_id, &document_id, source_name, bytes))
+        .transpose()?
+        .map(|path| path.to_string_lossy().to_string());
+
+    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
+    tx.execute(
+        r#"
+        INSERT INTO knowledge_documents (
+          id, collection_id, source_name, source_path, stored_file_path, mime_type, file_extension, preview_type,
+          content, content_preview, chunk_count, thumbnail_data_url, tags_json, favorite,
+          access_count, last_accessed_at, title_hierarchy, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 0, NULL, ?15, ?16, ?17)
+        "#,
+        params![
+            document_id,
+            collection_id,
+            source_name,
+            input.source_path,
+            stored_file_path,
+            mime_type,
+            file_extension,
+            preview_type,
+            content,
+            content_preview,
+            chunk_count,
+            thumbnail_data_url,
+            tags_json,
+            if favorite { 1_i64 } else { 0_i64 },
+            title_hierarchy,
+            now,
+            now,
+        ],
+    )
+    .map_err(|err| err.to_string())?;
+
+    {
+        let mut stmt = tx
+            .prepare(
+                r#"
+                INSERT INTO knowledge_chunks (
+                  id, document_id, collection_id, chunk_index, title, content, embedding_json, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                "#,
+            )
+            .map_err(|err| err.to_string())?;
+
+        for (index, chunk_content) in chunks.into_iter().enumerate() {
+            let chunk_id = uuid::Uuid::new_v4().to_string();
+            let chunk_title = if index == 0 {
+                Some(source_name.to_string())
+            } else {
+                None
+            };
+            stmt.execute(params![
+                chunk_id,
+                document_id,
+                collection_id,
+                index as i64,
+                chunk_title,
+                chunk_content,
+                Option::<String>::None,
+                now,
+            ])
+            .map_err(|err| err.to_string())?;
+        }
+    }
+
+    tx.commit().map_err(|err| err.to_string())?;
+
+    Ok(KnowledgeDocumentRecord {
+        id: document_id,
+        collection_id,
+        source_name: source_name.to_string(),
+        source_path: input.source_path,
+        stored_file_path,
+        mime_type,
+        file_extension,
+        preview_type: Some(preview_type),
+        content: if content.trim().is_empty() { None } else { Some(content) },
+        content_preview,
+        thumbnail_data_url,
+        chunk_count,
+        tags,
+        favorite,
+        access_count: 0,
+        last_accessed_at: None,
+        title_hierarchy,
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+fn score_search_candidate(
+    query: &str,
+    query_terms: &[String],
+    query_embedding: Option<&[f64]>,
+    candidate: &KnowledgeSearchCandidate,
+) -> f64 {
+    let mut score = 0.0;
+    let haystack = normalize_text_for_search(&format!(
+        "{} {} {} {} {}",
+        candidate.source_name,
+        candidate.source_path.as_deref().unwrap_or_default(),
+        candidate.title_hierarchy.as_deref().unwrap_or_default(),
+        candidate.tags.join(" "),
+        candidate.content
+    ));
+
+    if haystack.contains(query) {
+        score += 8.0;
+    }
+
+    for term in query_terms {
+        if haystack.contains(term) {
+            score += 1.5;
+        }
+    }
+
+    if haystack.contains(&normalize_text_for_search(&candidate.source_name)) {
+        score += 1.0;
+    }
+
+    if let Some(query_embedding) = query_embedding {
+        if let Some(candidate_embedding) = candidate.embedding_json.as_deref().and_then(parse_embedding_json) {
+            score += cosine_similarity(query_embedding, &candidate_embedding) * 2.0;
+        }
+    }
+
+    score
+}
+
+fn parse_embedding_json(value: &str) -> Option<Vec<f64>> {
+    serde_json::from_str::<Vec<f64>>(value).ok()
+}
+
+fn cosine_similarity(left: &[f64], right: &[f64]) -> f64 {
+    let len = left.len().min(right.len());
+    if len == 0 {
+        return 0.0;
+    }
+
+    let mut dot = 0.0;
+    let mut left_norm = 0.0;
+    let mut right_norm = 0.0;
+
+    for index in 0..len {
+        let l = left[index];
+        let r = right[index];
+        dot += l * r;
+        left_norm += l * l;
+        right_norm += r * r;
+    }
+
+    let denominator = left_norm.sqrt() * right_norm.sqrt();
+    if denominator == 0.0 {
+        0.0
+    } else {
+        dot / denominator
+    }
+}
+
+struct KnowledgeSearchCandidate {
+    chunk_id: String,
+    document_id: String,
+    collection_id: String,
+    chunk_index: i64,
+    title: Option<String>,
+    content: String,
+    embedding_json: Option<String>,
+    created_at: i64,
+    source_name: String,
+    source_path: Option<String>,
+    collection_name: String,
+    tags: Vec<String>,
+    favorite: bool,
+    access_count: i64,
+    last_accessed_at: Option<i64>,
+    title_hierarchy: Option<String>,
+}
+
+fn search_knowledge_chunks(
+    connection: &Connection,
+    input: SearchKnowledgeChunksInput,
+) -> Result<Vec<SearchKnowledgeChunkResult>, String> {
+    let query = input.query.trim().to_lowercase();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    ensure_knowledge_defaults(connection)?;
+    let query_terms: Vec<String> = query
+        .split_whitespace()
+        .filter(|term| !term.is_empty())
+        .map(|term| term.to_string())
+        .collect();
+    let limit = input.limit.unwrap_or(10).clamp(1, 50);
+    let collection_filter = input.collection_id.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+    let query_embedding = input.query_embedding;
+
+    let mut stmt = connection
+        .prepare(
+            r#"
+            SELECT
+              c.id,
+              c.document_id,
+              c.collection_id,
+              c.chunk_index,
+              c.title,
+              c.content,
+              c.embedding_json,
+              c.created_at,
+              d.source_name,
+              d.source_path,
+              d.tags_json,
+              d.favorite,
+              d.access_count,
+              d.last_accessed_at,
+              d.title_hierarchy,
+              k.name
+            FROM knowledge_chunks c
+            JOIN knowledge_documents d ON d.id = c.document_id
+            JOIN knowledge_collections k ON k.id = c.collection_id
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+
+    let candidates = stmt
+        .query_map([], |row| {
+            let tags_json: String = row.get(10)?;
+            Ok(KnowledgeSearchCandidate {
+                chunk_id: row.get(0)?,
+                document_id: row.get(1)?,
+                collection_id: row.get(2)?,
+                chunk_index: row.get(3)?,
+                title: row.get(4)?,
+                content: row.get(5)?,
+                embedding_json: row.get(6)?,
+                created_at: row.get(7)?,
+                source_name: row.get(8)?,
+                source_path: row.get(9)?,
+                tags: parse_tags_json(&tags_json),
+                favorite: row.get::<_, i64>(11)? != 0,
+                access_count: row.get(12)?,
+                last_accessed_at: row.get(13)?,
+                title_hierarchy: row.get(14)?,
+                collection_name: row.get(15)?,
+            })
+        })
+        .map_err(|err| err.to_string())?
+        .filter_map(|row| row.ok())
+        .filter(|candidate| {
+            collection_filter
+                .as_ref()
+                .map(|collection_id| &candidate.collection_id == collection_id)
+                .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+
+    let mut scored = Vec::new();
+    for candidate in candidates {
+        let score = score_search_candidate(&query, &query_terms, query_embedding.as_deref(), &candidate);
+        if score <= 0.0 && !candidate.content.to_lowercase().contains(&query) {
+            continue;
+        }
+
+        scored.push((score, candidate));
+    }
+
+    scored.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| right.1.access_count.cmp(&left.1.access_count))
+            .then_with(|| left.1.created_at.cmp(&right.1.created_at))
+    });
+
+    Ok(scored
+        .into_iter()
+        .take(limit)
+        .map(|(score, candidate)| SearchKnowledgeChunkResult {
+            chunk: KnowledgeChunkRecord {
+                id: candidate.chunk_id,
+                document_id: candidate.document_id,
+                collection_id: candidate.collection_id,
+                chunk_index: candidate.chunk_index,
+                title: candidate.title,
+                content: candidate.content,
+                embedding_json: candidate.embedding_json,
+                created_at: candidate.created_at,
+            },
+            score,
+            source_name: candidate.source_name,
+            source_path: candidate.source_path,
+            collection_name: candidate.collection_name,
+            tags: candidate.tags,
+            favorite: candidate.favorite,
+            access_count: candidate.access_count,
+            last_accessed_at: candidate.last_accessed_at,
+            title_hierarchy: candidate.title_hierarchy,
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn load_knowledge_library_command(app: tauri::AppHandle) -> Result<KnowledgeLibraryPayload, String> {
+    let connection = open_sqlite_connection(&app)?;
+    load_knowledge_library(&connection)
+}
+
+#[tauri::command]
+fn load_knowledge_document_command(
+    app: tauri::AppHandle,
+    input: LoadKnowledgeDocumentInput,
+) -> Result<KnowledgeDocumentDetailPayload, String> {
+    let connection = open_sqlite_connection(&app)?;
+    load_knowledge_document(&connection, &input.document_id)
+}
+
+#[tauri::command]
+fn load_knowledge_document_file_command(
+    app: tauri::AppHandle,
+    input: LoadKnowledgeDocumentFileInput,
+) -> Result<KnowledgeDocumentBinaryPayload, String> {
+    let connection = open_sqlite_connection(&app)?;
+    load_knowledge_document_file(&connection, &input.document_id)
+}
+
+#[tauri::command]
+fn create_knowledge_collection_command(
+    app: tauri::AppHandle,
+    name: String,
+    description: String,
+) -> Result<KnowledgeCollectionRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    create_knowledge_collection(&connection, &name, &description)
+}
+
+#[tauri::command]
+fn delete_knowledge_collection_command(
+    app: tauri::AppHandle,
+    collection_id: String,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    delete_knowledge_collection(&connection, &collection_id)
+}
+
+#[tauri::command]
+fn delete_knowledge_document_command(
+    app: tauri::AppHandle,
+    document_id: String,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    delete_knowledge_document(&connection, &document_id)
+}
+
+#[tauri::command]
+fn import_knowledge_document_command(
+    app: tauri::AppHandle,
+    input: ImportKnowledgeDocumentInput,
+) -> Result<KnowledgeDocumentRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    import_knowledge_document(&app, &connection, input)
+}
+
+#[tauri::command]
+fn search_knowledge_chunks_command(
+    app: tauri::AppHandle,
+    input: SearchKnowledgeChunksInput,
+) -> Result<Vec<SearchKnowledgeChunkResult>, String> {
+    let connection = open_sqlite_connection(&app)?;
+    search_knowledge_chunks(&connection, input)
+}
+
 fn migrate_legacy_chat_kv_to_structured(connection: &Connection) -> Result<(), String> {
     if has_structured_chat_storage(connection)? {
         return Ok(());
@@ -818,6 +1969,122 @@ fn normalize_relative_path(input: &str) -> Result<PathBuf, String> {
     }
 
     Ok(normalized)
+}
+
+fn table_has_column(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = connection.prepare(&sql).map_err(|err| err.to_string())?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+    Ok(columns.iter().any(|item| item == column))
+}
+
+fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
+    ensure_knowledge_defaults(connection)?;
+
+    if !table_has_column(connection, "knowledge_chunks", "embedding_json")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_chunks ADD COLUMN embedding_json TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "tags_json")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "favorite")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "access_count")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "last_accessed_at")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN last_accessed_at INTEGER",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "title_hierarchy")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN title_hierarchy TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "stored_file_path")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN stored_file_path TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "mime_type")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN mime_type TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "file_extension")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN file_extension TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "preview_type")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN preview_type TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "thumbnail_data_url")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN thumbnail_data_url TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
 }
 
 fn collect_workspace_files(
@@ -1165,6 +2432,14 @@ pub fn run() {
             list_workspace_files,
             read_workspace_file,
             search_workspace_files,
+            load_knowledge_library_command,
+            load_knowledge_document_command,
+            load_knowledge_document_file_command,
+            create_knowledge_collection_command,
+            delete_knowledge_collection_command,
+            delete_knowledge_document_command,
+            import_knowledge_document_command,
+            search_knowledge_chunks_command,
             load_chat_storage,
             save_chat_storage,
             load_manifest_storage_command,
