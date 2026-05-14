@@ -2,12 +2,9 @@ import { Component, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
-import type {
-  KnowledgeCollection,
-  KnowledgeDocumentBinaryPayload,
-  KnowledgeDocumentDetail,
-  KnowledgeLibraryPayload,
-} from "../chat/knowledgeTypes";
+import mammoth from "mammoth/mammoth.browser";
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   ArrowLeft,
   Bot,
@@ -27,9 +24,12 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
-import mammoth from "mammoth/mammoth.browser";
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import type {
+  KnowledgeCollection,
+  KnowledgeDocumentBinaryPayload,
+  KnowledgeDocumentDetail,
+  KnowledgeLibraryPayload,
+} from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { usePromptDialog } from "./PromptDialog";
 
@@ -49,75 +49,9 @@ type KnowledgeBaseViewProps = {
   windowControls?: ReactNode;
 };
 
-type KnowledgeBaseDetailBoundaryProps = {
-  onBackToList: () => void;
-  onRetry: () => void;
-  children: ReactNode;
-};
-
-type KnowledgeBaseDetailBoundaryState = {
-  hasError: boolean;
-  errorMessage: string | null;
-};
-
-class KnowledgeBaseDetailBoundary extends Component<KnowledgeBaseDetailBoundaryProps, KnowledgeBaseDetailBoundaryState> {
-  state: KnowledgeBaseDetailBoundaryState = {
-    hasError: false,
-    errorMessage: null,
-  };
-
-  static getDerivedStateFromError(error: unknown): KnowledgeBaseDetailBoundaryState {
-    return {
-      hasError: true,
-      errorMessage: error instanceof Error ? error.message : "文档详情渲染失败",
-    };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("知识库详情页渲染失败", error, errorInfo);
-  }
-
-  render() {
-    if (!this.state.hasError) {
-      return this.props.children;
-    }
-
-    return (
-      <section className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-          <div className="max-w-md space-y-4 text-center">
-            <div className="text-lg font-semibold text-slate-950">文档详情渲染失败</div>
-            <div className="text-sm leading-6 text-slate-500">
-              {this.state.errorMessage ?? "进入详情后发生了渲染异常，请返回列表后重新打开。"}
-            </div>
-            <div className="flex items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  this.setState({ hasError: false, errorMessage: null });
-                  this.props.onRetry();
-                }}
-                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-              >
-                重新打开
-              </button>
-              <button
-                type="button"
-                onClick={this.props.onBackToList}
-                className="rounded-md border border-slate-200 bg-slate-950 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
-              >
-                返回列表
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
-}
-
-type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "unsupported";
 type KnowledgeDocumentDetailView = "preview" | "chunks";
+type KnowledgePageMode = "empty" | "list" | "detail";
+type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "unsupported";
 
 const DEFAULT_COLLECTION_ID = "default";
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
@@ -148,18 +82,79 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 const CATEGORIES: Omit<KnowledgeCategory, "count">[] = [
-  { id: "all", title: "全部文件", description: "上传文件或文件夹，构建可检索的知识库。", icon: Grid2x2 },
-  { id: "docs", title: "文档", description: "查看文档和可检索片段。", icon: LucideFileText },
-  { id: "images", title: "图片", description: "浏览图片类资源。", icon: LucideFileImage },
-  { id: "audio", title: "语音", description: "管理语音与音频资源。", icon: Mic },
-  { id: "video", title: "视频", description: "管理视频资源。", icon: PlaySquare },
+  { id: "all", title: "全部文件", description: "当前知识库中的全部文档", icon: Grid2x2 },
+  { id: "docs", title: "文档", description: "Markdown、PDF、Word、文本", icon: LucideFileText },
+  { id: "images", title: "图片", description: "图片类资源", icon: LucideFileImage },
+  { id: "audio", title: "音频", description: "音频类资源", icon: Mic },
+  { id: "video", title: "视频", description: "视频类资源", icon: PlaySquare },
 ];
+
+class KnowledgeBaseDetailBoundary extends Component<
+  {
+    onBackToList: () => void;
+    onRetry: () => void;
+    children: ReactNode;
+  },
+  {
+    hasError: boolean;
+    errorMessage: string | null;
+  }
+> {
+  state = {
+    hasError: false,
+    errorMessage: null,
+  };
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      errorMessage: error instanceof Error ? error.message : "文档详情渲染失败",
+    };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("知识库详情页渲染失败", error, errorInfo);
+  }
+
+  render() {
+    if (!this.state.hasError) {
+      return this.props.children;
+    }
+
+    return (
+      <section className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-slate-200 bg-white p-6">
+        <div className="max-w-md space-y-4 text-center">
+          <div className="text-lg font-semibold text-slate-950">文档详情渲染失败</div>
+          <div className="text-sm leading-6 text-slate-500">{this.state.errorMessage ?? "请返回列表后重新打开。"}</div>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, errorMessage: null });
+                this.props.onRetry();
+              }}
+              className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              重新打开
+            </button>
+            <button
+              type="button"
+              onClick={this.props.onBackToList}
+              className="rounded-none border border-slate-200 bg-slate-950 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+            >
+              返回列表
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+}
 
 function getExtension(value?: string | null) {
   if (!value) {
     return "";
   }
-
   const base = value.split(/[?#]/)[0];
   const dotIndex = base.lastIndexOf(".");
   if (dotIndex < 0) {
@@ -187,7 +182,6 @@ function getPreviewKindFromFile(file: File): PreviewKind {
   if (TEXT_EXTENSIONS.has(ext) || mimeType.startsWith("text/") || mimeType === "application/json") {
     return "text";
   }
-
   return "unsupported";
 }
 
@@ -225,7 +219,6 @@ function getPreviewKindFromDocument(document: KnowledgeLibraryPayload["documents
   if (kind === "text" || TEXT_EXTENSIONS.has(ext) || mimeType.startsWith("text/") || mimeType === "application/json") {
     return "text";
   }
-
   return "unsupported";
 }
 
@@ -248,8 +241,9 @@ function getDocumentTypeLabel(document?: KnowledgeLibraryPayload["documents"][nu
 
 function formatTimestamp(timestamp?: number | null) {
   if (!timestamp) {
-    return "未访问";
+    return "未知时间";
   }
+
   return new Date(timestamp).toLocaleString("zh-CN", {
     month: "2-digit",
     day: "2-digit",
@@ -323,26 +317,65 @@ function extractThumbnailPreviewLines(content: string, maxLines: number, maxChar
   return lines.slice(0, maxLines);
 }
 
+function roundRectPath(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.arcTo(x + width, y, x + width, y + height, r);
+  context.arcTo(x + width, y + height, x, y + height, r);
+  context.arcTo(x, y + height, x, y, r);
+  context.arcTo(x, y, x + width, y, r);
+  context.closePath();
+}
+
 function createThumbnailDataUrlFromContent(content: string) {
   const canvas = document.createElement("canvas");
-  canvas.width = 288;
-  canvas.height = 144;
+  const scale = 2;
+  const width = 320;
+  const height = 180;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
   const context = canvas.getContext("2d");
   if (!context) {
     return null;
   }
 
+  context.scale(scale, scale);
   context.fillStyle = "#f8fafc";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#334155";
-  context.font = "12px 'Segoe UI', sans-serif";
-  context.textAlign = "left";
-  context.textBaseline = "top";
-  context.globalAlpha = 0.96;
+  context.fillRect(0, 0, width, height);
 
-  extractThumbnailPreviewLines(content, 3, 58).forEach((line, index) => {
-    context.fillText(line, 16, 18 + index * 26);
+  context.shadowColor = "rgba(15, 23, 42, 0.08)";
+  context.shadowBlur = 10;
+  context.shadowOffsetY = 3;
+  context.fillStyle = "#ffffff";
+  roundRectPath(context, 16, 14, 288, 152, 14);
+  context.fill();
+  context.shadowColor = "transparent";
+  context.strokeStyle = "#dbe3ee";
+  context.lineWidth = 1;
+  context.stroke();
+
+  context.fillStyle = "#0f172a";
+  roundRectPath(context, 30, 28, 76, 8, 4);
+  context.fill();
+
+  context.fillStyle = "#cbd5e1";
+  roundRectPath(context, 30, 48, 160, 4, 2);
+  context.fill();
+
+  const lines = extractThumbnailPreviewLines(content, 5, 54);
+  const lineTop = 64;
+  lines.forEach((line, index) => {
+    context.fillStyle = index === 0 ? "#0f172a" : "#334155";
+    context.font = index === 0 ? "600 14px 'Segoe UI', sans-serif" : "12px 'Segoe UI', sans-serif";
+    context.textAlign = "left";
+    context.textBaseline = "top";
+    context.fillText(line, 30, lineTop + index * 20);
   });
+
+  context.fillStyle = "#e2e8f0";
+  roundRectPath(context, 30, 146, 98, 6, 3);
+  context.fill();
 
   return canvas.toDataURL("image/png");
 }
@@ -356,8 +389,8 @@ async function createThumbnailDataUrl(file: File, content: string) {
         const image = new Image();
         image.onload = () => {
           const canvas = document.createElement("canvas");
-          const width = 288;
-          const height = 152;
+          const width = 320;
+          const height = 180;
           canvas.width = width;
           canvas.height = height;
           const context = canvas.getContext("2d");
@@ -370,9 +403,9 @@ async function createThumbnailDataUrl(file: File, content: string) {
           context.fillRect(0, 0, width, height);
           context.imageSmoothingEnabled = true;
           context.imageSmoothingQuality = "high";
-          const targetSize = Math.min(width - 24, height - 24);
+
           const sourceRatio = image.width / image.height;
-          const targetRatio = 1;
+          const targetRatio = width / height;
           let drawWidth = image.width;
           let drawHeight = image.height;
           let offsetX = 0;
@@ -388,7 +421,8 @@ async function createThumbnailDataUrl(file: File, content: string) {
             offsetY = (image.height - drawHeight) / 2;
           }
 
-          context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight, 12, 12, targetSize, targetSize);
+          const inset = 10;
+          context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight, inset, inset, width - inset * 2, height - inset * 2);
           resolve(canvas.toDataURL("image/png"));
         };
         image.onerror = () => resolve(source);
@@ -413,7 +447,7 @@ function openFilePicker(input: HTMLInputElement | null) {
       pickerInput.showPicker();
       return;
     } catch {
-      // Fall back to click() when showPicker is unavailable or blocked.
+      // Fallback to click() below.
     }
   }
 
@@ -542,7 +576,7 @@ function PdfFirstPagePreview({ bytes }: { bytes: Uint8Array }) {
   return (
     <div className="flex flex-col gap-3">
       {isLoading ? <div className="text-sm text-slate-500">正在渲染 PDF 预览...</div> : null}
-      <canvas ref={canvasRef} className="max-w-full rounded-xl border border-slate-200 bg-white shadow-sm" />
+      <canvas ref={canvasRef} className="max-w-full rounded-none border border-slate-200 bg-white shadow-none" />
     </div>
   );
 }
@@ -639,59 +673,56 @@ function DocumentPreviewArea({
 
   if (error) {
     return (
-      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="text-sm font-medium text-slate-950">预览失败</div>
-        <div className="text-sm text-slate-500">{error}</div>
+      <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-none border border-slate-200 bg-white p-4">
         <button
           type="button"
           onClick={() => void onOpenExternal()}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+          className="absolute right-3 top-3 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
         >
           打开原文件
         </button>
+        <div className="space-y-3 pt-8">
+          <div className="text-sm font-medium text-slate-950">预览失败</div>
+          <div className="text-sm text-slate-500">{error}</div>
+        </div>
       </div>
     );
   }
 
   if (isLoading && previewKind !== "text" && previewKind !== "markdown") {
     return (
-      <div className="flex min-h-[18rem] items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-10 text-sm text-slate-500">
+      <div className="flex min-h-[18rem] items-center justify-center rounded-none border border-slate-200 bg-white px-4 py-10 text-sm text-slate-500">
         正在加载文档预览...
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col rounded-2xl border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <div className="text-sm font-semibold text-slate-950">预览</div>
-        <button
-          type="button"
-          onClick={() => void onOpenExternal()}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-        >
-          打开原文件
-        </button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+    <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-none border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={() => void onOpenExternal()}
+        className="absolute right-3 top-3 z-10 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+      >
+        打开原文件
+      </button>
+
+      <div className="min-h-0 flex-1 overflow-auto p-4 pt-12">
         {previewKind === "markdown" ? (
           <div className="markdown-body text-sm text-slate-700">{renderMarkdown(textPreview || document.contentPreview || document.sourceName)}</div>
         ) : null}
 
         {previewKind === "text" ? (
-          <pre className="whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+          <pre className="whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
             {textPreview || document.contentPreview || document.sourceName}
           </pre>
         ) : null}
 
         {previewKind === "docx" ? (
           docxHtml.trim() ? (
-            <div
-              className="docx-preview text-sm leading-7 text-slate-700"
-              dangerouslySetInnerHTML={{ __html: docxHtml }}
-            />
+            <div className="docx-preview text-sm leading-7 text-slate-700" dangerouslySetInnerHTML={{ __html: docxHtml }} />
           ) : (
-            <pre className="whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+            <pre className="whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
               {textPreview || document.contentPreview || document.sourceName}
             </pre>
           )
@@ -700,19 +731,12 @@ function DocumentPreviewArea({
         {previewKind === "pdf" && pdfBytes ? <PdfFirstPagePreview bytes={pdfBytes} /> : null}
 
         {previewKind === "image" && imageUrl ? (
-          <img src={imageUrl} alt={document.sourceName} className="max-h-[60vh] rounded-xl border border-slate-200 object-contain" />
+          <img src={imageUrl} alt={document.sourceName} className="max-h-[60vh] rounded-none border border-slate-200 object-contain" />
         ) : null}
 
         {previewKind === "unsupported" ? (
           <div className="space-y-3 text-sm text-slate-500">
-            <div>{textPreview || "该格式不支持内嵌预览。"}</div>
-            <button
-              type="button"
-              onClick={() => void onOpenExternal()}
-              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-            >
-              打开原文件
-            </button>
+            <div>{textPreview || "该格式不支持内嵌预览，可以打开原文件查看。"}</div>
           </div>
         ) : null}
       </div>
@@ -724,7 +748,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const { openPrompt } = usePromptDialog();
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [pageMode, setPageMode] = useState<"list" | "detail">("list");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
   const [isCollectionMenuOpen, setIsCollectionMenuOpen] = useState<string | null>(null);
@@ -739,9 +762,10 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
-  const activeCollection = useMemo(() => {
-    return library.collections.find((collection) => collection.id === selectedCollectionId) ?? library.collections[0] ?? null;
-  }, [library.collections, selectedCollectionId]);
+  const activeCollection = useMemo(
+    () => library.collections.find((collection) => collection.id === selectedCollectionId) ?? library.collections[0] ?? null,
+    [library.collections, selectedCollectionId]
+  );
 
   const activeCollectionDocuments = useMemo(() => {
     if (!activeCollection) {
@@ -750,11 +774,23 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     return library.documents.filter((document) => document.collectionId === activeCollection.id);
   }, [activeCollection?.id, library.documents]);
 
-  const activeCollectionDocumentCount = activeCollectionDocuments.length;
+  const selectedDocumentRecord = useMemo(
+    () => (selectedDocumentId ? library.documents.find((document) => document.id === selectedDocumentId) ?? null : null),
+    [library.documents, selectedDocumentId]
+  );
+
+  const selectedDocument = selectedDocumentDetail?.document ?? selectedDocumentRecord;
   const activeCollectionName = activeCollection?.name ?? "默认知识库";
-  const selectedDocumentCollectionName =
-    library.collections.find((collection) => collection.id === selectedDocumentDetail?.document.collectionId)?.name ??
-    (selectedDocumentDetail?.document.collectionId === DEFAULT_COLLECTION_ID ? "默认知识库" : "未命名知识库");
+  const selectedDocumentCollectionName = useMemo(() => {
+    if (!selectedDocument) {
+      return activeCollectionName;
+    }
+    return (
+      library.collections.find((collection) => collection.id === selectedDocument.collectionId)?.name ??
+      (selectedDocument.collectionId === DEFAULT_COLLECTION_ID ? "默认知识库" : "未命名知识库")
+    );
+  }, [activeCollectionName, library.collections, selectedDocument]);
+  const pageMode: KnowledgePageMode = selectedDocumentId ? "detail" : activeCollectionDocuments.length > 0 ? "list" : "empty";
 
   const activeCategories = useMemo(() => {
     const counts = { all: activeCollectionDocuments.length, docs: 0, images: 0, audio: 0, video: 0 };
@@ -762,6 +798,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       const categoryId = classifyResource(document.sourceName, document.sourcePath);
       counts[categoryId as keyof typeof counts] += 1;
     }
+
     return CATEGORIES.map((category) => ({
       ...category,
       count: counts[category.id as keyof typeof counts] ?? 0,
@@ -780,17 +817,13 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       if (activeCategory !== "all" && documentCategory !== activeCategory) {
         return false;
       }
+
       if (!normalizedQuery) {
         return true;
       }
+
       return normalizeSearchText(
-        [
-          document.sourceName,
-          document.sourcePath ?? "",
-          document.contentPreview,
-          document.titleHierarchy ?? "",
-          ...(document.tags ?? []),
-        ].join(" ")
+        [document.sourceName, document.sourcePath ?? "", document.contentPreview, document.titleHierarchy ?? "", ...(document.tags ?? [])].join(" ")
       ).includes(normalizedQuery);
     });
   }, [activeCategory, activeCollectionDocuments, searchQuery]);
@@ -808,14 +841,18 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   }, [library.collections, selectedCollectionId]);
 
   useEffect(() => {
-    if (selectedDocumentId && !visibleDocuments.some((document) => document.id === selectedDocumentId)) {
+    if (!selectedDocumentId) {
+      return;
+    }
+
+    const selectedDocument = library.documents.find((document) => document.id === selectedDocumentId);
+    if (!selectedDocument || selectedDocument.collectionId !== selectedCollectionId) {
       setSelectedDocumentId(null);
       setSelectedDocumentDetail(null);
       setDocumentDetailError(null);
       setSelectedDocumentDetailView("preview");
-      setPageMode("list");
     }
-  }, [selectedDocumentId, visibleDocuments]);
+  }, [library.documents, selectedCollectionId, selectedDocumentId]);
 
   useEffect(() => {
     if (!selectedDocumentId) {
@@ -850,6 +887,54 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       cancelled = true;
     };
   }, [selectedDocumentId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadKnowledgeLibrary()
+      .then((payload) => {
+        if (!cancelled) {
+          setLibrary(payload);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isUploadMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = () => setIsUploadMenuOpen(false);
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [isUploadMenuOpen]);
+
+  useEffect(() => {
+    if (!isCollectionMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = () => setIsCollectionMenuOpen(null);
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [isCollectionMenuOpen]);
+
+  useEffect(() => {
+    if (!isDocumentMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = () => setIsDocumentMenuOpen(null);
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [isDocumentMenuOpen]);
 
   async function refreshLibrary() {
     const payload = await loadKnowledgeLibrary();
@@ -899,11 +984,17 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     }
 
     try {
+      const targetCollectionId = DEFAULT_COLLECTION_ID;
       for (const file of items) {
-        await importFile(file, selectedCollectionId);
+        await importFile(file, targetCollectionId);
       }
 
       await refreshLibrary();
+      setSelectedCollectionId(DEFAULT_COLLECTION_ID);
+      setSelectedDocumentId(null);
+      setSelectedDocumentDetail(null);
+      setDocumentDetailError(null);
+      setSelectedDocumentDetailView("preview");
       setActiveCategory("all");
       setSearchQuery("");
     } catch (error) {
@@ -940,9 +1031,16 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
     await invoke("delete_knowledge_collection_command", { collectionId });
     await refreshLibrary();
-    setSelectedCollectionId((current) => (current === collectionId ? DEFAULT_COLLECTION_ID : current));
+    setSelectedCollectionId((current) => {
+      if (current !== collectionId) {
+        return current;
+      }
+      const defaultCollection = library.collections.find((collection) => collection.id === DEFAULT_COLLECTION_ID);
+      return defaultCollection?.id ?? DEFAULT_COLLECTION_ID;
+    });
     setSelectedDocumentId(null);
     setSelectedDocumentDetail(null);
+    setSelectedDocumentDetailView("preview");
   }
 
   async function deleteDocument(documentId: string) {
@@ -951,73 +1049,13 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setSelectedDocumentId(null);
     setSelectedDocumentDetail(null);
     setSelectedDocumentDetailView("preview");
-    setPageMode("list");
   }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void loadKnowledgeLibrary()
-      .then((payload) => {
-        if (cancelled) {
-          return;
-        }
-        setLibrary(payload);
-      })
-      .catch(() => {
-        // Keep silent; the empty-state view will handle the no-data case.
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isUploadMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = () => {
-      setIsUploadMenuOpen(false);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [isUploadMenuOpen]);
-
-  useEffect(() => {
-    if (!isCollectionMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = () => {
-      setIsCollectionMenuOpen(null);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [isCollectionMenuOpen]);
-
-  useEffect(() => {
-    if (!isDocumentMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = () => {
-      setIsDocumentMenuOpen(null);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [isDocumentMenuOpen]);
 
   function openDocument(documentId: string) {
     setSelectedDocumentDetail(null);
     setDocumentDetailError(null);
     setSelectedDocumentDetailView("preview");
     setSelectedDocumentId(documentId);
-    setPageMode("detail");
   }
 
   function openDocumentMenu(documentId: string) {
@@ -1025,11 +1063,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   }
 
   function backToDocumentList() {
+    setSelectedDocumentId(null);
+    setSelectedDocumentDetail(null);
+    setDocumentDetailError(null);
     setSelectedDocumentDetailView("preview");
-    setPageMode("list");
   }
 
-  const selectedDocument = selectedDocumentDetail?.document ?? null;
   async function openSelectedDocumentExternal() {
     const path = selectedDocument?.storedFilePath ?? selectedDocument?.sourcePath ?? null;
     if (!path) {
@@ -1038,87 +1077,122 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     await openPath(path);
   }
 
+  const detailView = pageMode === "detail";
+
   return (
     <div className="omni-knowledge-root flex h-full min-h-0 flex-col bg-white text-slate-900">
       <div className="omni-knowledge-layout flex min-h-0 flex-1">
-        <aside className="main-chat-nav">
-          <button type="button" className="main-chat-nav__brand" title="Omni">
+        <aside className="main-chat-nav drag-region">
+          <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
             <Bot size={20} strokeWidth={1.9} />
           </button>
           <div className="main-chat-nav__items">
-            <button type="button" className="main-chat-nav__item" title="聊天" onClick={onBackToChat}>
+            <button type="button" className="main-chat-nav__item no-drag" title="聊天" onClick={onBackToChat}>
               <MessageSquare size={18} strokeWidth={1.9} />
             </button>
-            <button type="button" className="main-chat-nav__item" title="助手">
+            <button type="button" className="main-chat-nav__item no-drag" title="助手">
               <Sparkles size={18} strokeWidth={1.9} />
             </button>
-            <button type="button" className="main-chat-nav__item main-chat-nav__item--active" title="知识库">
+            <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="知识库">
               <FolderOpen size={18} strokeWidth={1.9} />
             </button>
           </div>
-          <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom" title="设置" onClick={onSettingsOpen}>
+          <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" onClick={onSettingsOpen}>
             <Settings size={18} strokeWidth={1.9} />
           </button>
         </aside>
 
-        {!isSidebarCollapsed ? (
-          <aside className="omni-knowledge-sidebar flex w-80 shrink-0 flex-col border-r border-slate-200 bg-slate-50">
-            <div className="drag-region flex items-start border-b border-slate-200 px-4 pt-3 pb-2">
-              <div className="space-y-1">
-                <div className="text-3xl font-semibold tracking-[-0.03em] text-slate-950">文件</div>
+        <aside className={`omni-knowledge-sidebar flex min-h-0 shrink-0 flex-col border-r border-slate-200 bg-slate-50 ${isSidebarCollapsed ? "w-16" : "w-80"}`}>
+          <div className="drag-region flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-3">
+            {!isSidebarCollapsed ? (
+              <div className="min-w-0">
+                <div className="truncate text-base font-semibold tracking-[-0.02em] text-slate-950">文件</div>
+                <div className="mt-0.5 text-xs text-slate-500">知识库与分类</div>
               </div>
-            </div>
+            ) : (
+              <div className="h-8 w-8" />
+            )}
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((current) => !current)}
+              className="no-drag inline-flex h-8 w-8 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+              title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
+            </button>
+          </div>
 
-            <div className="mt-1 space-y-1 px-3">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <div className={isSidebarCollapsed ? "space-y-2 px-2 py-2" : "space-y-1 px-3 py-3"}>
               {activeCategories.map((category) => {
                 const Icon = category.icon;
                 const isActive = category.id === activeCategory;
+
                 return (
                   <button
                     key={category.id}
                     type="button"
                     onClick={() => setActiveCategory(category.id)}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
-                      isActive ? "bg-white text-slate-950 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
-                    }`}
+                    className={
+                      isSidebarCollapsed
+                        ? `flex h-11 w-11 items-center justify-center rounded-none border transition ${
+                            isActive
+                              ? "border-slate-950 bg-slate-950 text-white shadow-sm"
+                              : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                          }`
+                        : `flex w-full items-center gap-2 rounded-none border px-3 py-2 text-left text-sm transition ${
+                            isActive
+                              ? "border-slate-950 bg-white text-slate-950 shadow-sm"
+                              : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                          }`
+                    }
+                    title={category.title}
                   >
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-md ${isActive ? "bg-slate-100 text-slate-700" : "bg-slate-100 text-slate-500"}`}>
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-none ${isActive ? "text-slate-950" : "text-slate-500"}`}>
                       <Icon size={13} strokeWidth={1.8} />
                     </span>
-                    <span className="flex-1">{category.title}</span>
-                    <span className="text-[11px] text-slate-400">{category.count}</span>
+                    {!isSidebarCollapsed ? (
+                      <>
+                        <span className="flex-1">{category.title}</span>
+                        <span className="text-[11px] text-slate-400">{category.count}</span>
+                      </>
+                    ) : null}
                   </button>
                 );
               })}
             </div>
 
-            <div className="mt-2.5 border-t border-slate-200 px-4 pt-1.5">
-              <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                <span>知识库</span>
-                <button type="button" className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-slate-700" title="新建知识库" onClick={createCollection}>
-                  <Plus size={14} strokeWidth={2} />
-                </button>
-              </div>
+            <div className={isSidebarCollapsed ? "mt-2 border-t border-slate-200 px-2 pt-2" : "mt-2 border-t border-slate-200 px-4 pt-3"}>
+              {!isSidebarCollapsed ? (
+                <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  <span>知识库</span>
+                  <button type="button" className="rounded-none p-1 text-slate-400 hover:bg-white hover:text-slate-700" title="新建知识库" onClick={createCollection}>
+                    <Plus size={14} strokeWidth={2} />
+                  </button>
+                </div>
+              ) : null}
+
               <div className="space-y-1">
                 {library.collections.map((collection) => {
                   const isActive = collection.id === activeCollection?.id;
                   return (
                     <div
                       key={collection.id}
-                      className={`flex items-center gap-1 rounded-lg px-1 py-0.5 text-sm transition ${
-                        isActive ? "bg-white/80 text-slate-950" : "text-slate-500 hover:bg-white/60 hover:text-slate-800"
+                      className={`flex items-center gap-1 rounded-none border px-1 py-0.5 text-sm transition ${
+                        isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                       }`}
                     >
                       <button
                         type="button"
                         onClick={() => setSelectedCollectionId(collection.id)}
-                        className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-left"
+                        className={isSidebarCollapsed ? "flex h-10 w-10 items-center justify-center rounded-none" : "flex min-w-0 flex-1 items-center gap-2 rounded-none px-2 py-1 text-left"}
+                        title={collection.name}
                       >
                         <KnowledgeCollectionIcon className="h-4 w-4 shrink-0 text-blue-600" />
-                        <span className="flex-1 truncate">{collection.name}</span>
+                        {!isSidebarCollapsed ? <span className="flex-1 truncate">{collection.name}</span> : null}
                       </button>
 
-                      {collection.id !== DEFAULT_COLLECTION_ID ? (
+                      {!isSidebarCollapsed && collection.id !== DEFAULT_COLLECTION_ID ? (
                         <div className="relative">
                           <button
                             type="button"
@@ -1126,17 +1200,14 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                               event.stopPropagation();
                               setIsCollectionMenuOpen((current) => (current === collection.id ? null : collection.id));
                             }}
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            className="flex h-7 w-7 items-center justify-center rounded-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                             title="更多操作"
                           >
                             <EllipsisVertical size={14} strokeWidth={2} />
                           </button>
 
                           {isCollectionMenuOpen === collection.id ? (
-                            <div
-                              className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
-                              onPointerDown={(event) => event.stopPropagation()}
-                            >
+                            <div className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-none border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70">
                               <button
                                 type="button"
                                 className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
@@ -1154,106 +1225,162 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </div>
                   );
                 })}
+
                 {library.collections.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400">还没有知识库</div>
+                  <div className="rounded-none border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400">还没有知识库</div>
                 ) : null}
               </div>
             </div>
+          </div>
 
-            <div className="mt-auto border-t border-slate-200 p-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-                onClick={createCollection}
-              >
-                <Plus size={14} strokeWidth={2} />
-                新建知识库
-              </button>
-            </div>
-          </aside>
-        ) : null}
+          <div className="mt-auto border-t border-slate-200 p-3">
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-none border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              onClick={createCollection}
+            >
+              <Plus size={14} strokeWidth={2} />
+              {!isSidebarCollapsed ? "新建知识库" : ""}
+            </button>
+          </div>
+        </aside>
 
         <main className="omni-knowledge-main flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-          <header className="drag-region flex min-h-16 shrink-0 flex-col border-b border-slate-200">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-              <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsSidebarCollapsed((current) => !current)}
-                  className="no-drag inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-                  title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-                >
-                  {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
-                </button>
-
-                <div className="no-drag inline-flex h-10 min-w-0 basis-full items-center gap-2 rounded-none border border-slate-200 bg-white px-4 text-sm shadow-sm md:basis-[320px]">
-                  <Search size={14} strokeWidth={1.8} className="shrink-0 text-slate-400" />
-                  <input
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="搜索文件"
-                    className="w-full min-w-0 border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
-
-              <div className="drag-region relative flex shrink-0 items-center gap-3">
-                <div className="no-drag relative">
+          <header className="drag-region flex min-h-20 shrink-0 flex-col border-b border-slate-200 bg-white">
+            {detailView ? (
+              <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
+                <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
                   <button
                     type="button"
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={() => setIsUploadMenuOpen((current) => !current)}
-                    className="inline-flex h-10 items-center gap-2 rounded-none border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                    onClick={backToDocumentList}
+                    className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                    title="返回列表"
                   >
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-400">
-                      <Plus size={10} strokeWidth={2.2} />
-                    </span>
-                    上传
+                    <ArrowLeft size={16} strokeWidth={2} />
                   </button>
-
-                  {isUploadMenuOpen ? (
-                    <div
-                      className="absolute right-0 top-12 z-20 w-40 rounded-xl border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
-                      onPointerDown={(event) => event.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                        onClick={() => {
-                          setIsUploadMenuOpen(false);
-                          openFilePicker(fileInputRef.current);
-                        }}
-                      >
-                        <LucideFileText size={15} strokeWidth={1.8} className="text-slate-500" />
-                        上传文件
-                      </button>
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                        onClick={() => {
-                          setIsUploadMenuOpen(false);
-                          openFilePicker(folderInputRef.current);
-                        }}
-                      >
-                        <FolderOpen size={15} strokeWidth={1.8} className="text-slate-500" />
-                        上传文件夹
-                      </button>
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-semibold text-slate-950">
+                      {selectedDocument?.sourceName ?? selectedDocumentRecord?.sourceName ?? "文档详情"}
                     </div>
-                  ) : null}
+                    <div className="mt-1 truncate text-xs text-slate-500">
+                      {selectedDocumentCollectionName}
+                      {selectedDocument ? ` · ${getDocumentTypeLabel(selectedDocument)} · ${selectedDocument.chunkCount} 个分片` : ""}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="no-drag">{windowControls}</div>
-              </div>
-            </div>
+                <div className="drag-region flex items-center gap-2">
+                  <div className="no-drag inline-flex items-center gap-1 rounded-none border border-slate-200 bg-white p-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDocumentDetailView("preview")}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
+                        selectedDocumentDetailView === "preview" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                      }`}
+                      title="预览"
+                      aria-pressed={selectedDocumentDetailView === "preview"}
+                    >
+                      <LucideFileText size={15} strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDocumentDetailView("chunks")}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
+                        selectedDocumentDetailView === "chunks" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                      }`}
+                      title="分片"
+                      aria-pressed={selectedDocumentDetailView === "chunks"}
+                    >
+                      <Layers3 size={15} strokeWidth={2} />
+                    </button>
+                  </div>
 
-            <div className="flex items-center justify-between gap-3 px-4 pb-3 md:px-6">
-              <div className="min-w-0">
-                <div className="truncate text-base font-semibold text-slate-950">{activeCollectionName}</div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {activeCategoryData.title} · {activeCollectionDocumentCount} 个文件
+                  <div className="no-drag">{windowControls}</div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
+                <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsSidebarCollapsed((current) => !current)}
+                      className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                      title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+                    >
+                      {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
+                    </button>
+
+                    <div className="no-drag flex h-10 min-w-0 flex-1 items-center gap-2 rounded-none border border-slate-200 bg-white px-3 text-sm shadow-sm">
+                      <Search size={14} strokeWidth={1.8} className="shrink-0 text-slate-400" />
+                      <input
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder="搜索文档"
+                        className="w-full min-w-0 border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+
+                <div className="drag-region flex shrink-0 items-center gap-3">
+                    <div className="no-drag relative">
+                      <button
+                        type="button"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={() => setIsUploadMenuOpen((current) => !current)}
+                        className="inline-flex h-10 items-center gap-2 rounded-none border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                      >
+                        <span className="flex h-4 w-4 items-center justify-center rounded-none border border-slate-400">
+                          <Plus size={10} strokeWidth={2.2} />
+                        </span>
+                        上传
+                      </button>
+
+                      {isUploadMenuOpen ? (
+                        <div
+                          className="absolute right-0 top-12 z-20 w-40 rounded-none border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
+                          onPointerDown={(event) => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            onClick={() => {
+                              setIsUploadMenuOpen(false);
+                              openFilePicker(fileInputRef.current);
+                            }}
+                          >
+                            <LucideFileText size={15} strokeWidth={1.8} className="text-slate-500" />
+                            上传文件
+                          </button>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            onClick={() => {
+                              setIsUploadMenuOpen(false);
+                              openFilePicker(folderInputRef.current);
+                            }}
+                          >
+                            <FolderOpen size={15} strokeWidth={1.8} className="text-slate-500" />
+                            上传文件夹
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="no-drag">{windowControls}</div>
+                  </div>
+                </div>
+
+                <div className="drag-region flex min-h-14 items-center justify-between gap-3 px-4 pb-3 md:px-6">
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-semibold text-slate-950">{activeCollectionName}</div>
+                    <div className="mt-1 text-sm text-slate-500">
+                      {pageMode === "empty" ? "当前知识库还没有文档" : `${activeCategoryData.title} · ${visibleDocuments.length} 个文档`}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </header>
 
           <input
@@ -1285,114 +1412,9 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
             }}
           />
 
-          <div className="flex min-h-0 flex-1 px-6 py-5">
-            {pageMode === "list" ? (
-              activeCollectionDocuments.length > 0 ? (
-                <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <div className="flex min-h-0 flex-1 overflow-y-auto">
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,140px))] content-start gap-3">
-                      {visibleDocuments.map((document) => {
-                        const isActive = document.id === selectedDocumentId;
-                        const fileBadge = document.thumbnailDataUrl ? (
-                          <img src={document.thumbnailDataUrl} alt={document.sourceName} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[10px] font-semibold text-white">
-                            {document.sourceName.slice(0, 2).toUpperCase()}
-                          </div>
-                        );
-
-                        return (
-                          <div
-                            key={document.id}
-                            className={`group relative flex h-[155px] w-[140px] flex-col rounded-xl border p-2 text-left transition ${
-                              isActive ? "border-slate-900 bg-slate-950 text-white shadow-md" : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-white"
-                            }`}
-                            onContextMenu={(event) => {
-                              event.preventDefault();
-                              openDocumentMenu(document.id);
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => openDocument(document.id)}
-                              className="flex min-w-0 flex-1 flex-col items-stretch gap-1.5 text-left"
-                            >
-                              <div className="h-[86px] w-full overflow-hidden rounded-lg bg-white">{fileBadge}</div>
-                              <div className="min-w-0">
-                                <div className="truncate text-[12px] font-medium leading-4">{document.sourceName}</div>
-                                <div
-                                  className={`mt-1 truncate text-[10px] leading-4 ${isActive ? "text-slate-300" : "text-slate-500"}`}
-                                  title={document.contentPreview || "暂无内容摘要"}
-                                >
-                                  {document.contentPreview?.replace(/\s+/g, " ").trim() || "暂无内容摘要"}
-                                </div>
-                              </div>
-                            </button>
-
-                            {isDocumentMenuOpen === document.id ? (
-                              <div
-                                className="absolute right-0 top-6 z-20 w-32 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
-                                onPointerDown={(event) => event.stopPropagation()}
-                              >
-                                <button
-                                  type="button"
-                                  className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
-                                  onClick={() => {
-                                    setIsDocumentMenuOpen(null);
-                                    void deleteDocument(document.id);
-                                  }}
-                                >
-                                  删除
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                      {visibleDocuments.length === 0 ? (
-                        <div className="col-span-full rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-                          还没有符合条件的文档。可以先上传文件或切换分类。
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </section>
-              ) : (
-              <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
-                  <div className="flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
-                    <div className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">将文件或文件夹拖到这里</div>
-                    <div className="mt-2 text-sm text-slate-500">或者</div>
-                    <div className="mt-8 flex flex-wrap justify-center gap-4">
-                      <button
-                        type="button"
-                        className="flex h-40 w-52 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm hover:bg-white"
-                        onClick={createCollection}
-                      >
-                        <div className="mb-4 text-base font-medium">新建知识库</div>
-                        <Plus size={42} strokeWidth={1.6} className="text-fuchsia-500" />
-                      </button>
-                      <button
-                        type="button"
-                        className="flex h-40 w-52 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm hover:bg-white"
-                        onClick={() => openFilePicker(fileInputRef.current)}
-                      >
-                        <div className="mb-4 text-base font-medium">上传文件</div>
-                        <LucideFileText size={42} strokeWidth={1.6} className="text-amber-500" />
-                      </button>
-                      <button
-                        type="button"
-                        className="flex h-40 w-52 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm hover:bg-white"
-                        onClick={() => openFilePicker(folderInputRef.current)}
-                      >
-                        <div className="mb-4 text-base font-medium">上传文件夹</div>
-                        <FolderOpen size={42} strokeWidth={1.6} className="text-blue-500" />
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              )
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col gap-6">
+          <div className="drag-region flex min-h-0 flex-1 px-5 py-4">
+            {detailView ? (
+              <div className="no-drag flex min-h-0 w-full flex-1 flex-col">
                 <KnowledgeBaseDetailBoundary
                   key={selectedDocumentId ?? "detail-empty"}
                   onBackToList={backToDocumentList}
@@ -1402,114 +1424,164 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     }
                   }}
                 >
-                  <div className="border-b border-slate-200 px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-1 items-start gap-2">
-                      <button
-                        type="button"
-                        onClick={backToDocumentList}
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                        title="返回列表"
-                      >
-                        <ArrowLeft size={16} strokeWidth={2} />
-                      </button>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-slate-900">
-                          {selectedDocumentDetail?.document.sourceName ?? "文档详情"}
-                        </div>
-                        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-3 text-xs text-slate-500">
-                          <span>{selectedDocumentCollectionName}</span>
-                          <span>·</span>
-                          <span>{selectedDocumentDetail?.document ? getDocumentTypeLabel(selectedDocumentDetail.document) : "文档"}</span>
-                          <span>·</span>
-                          <span>{selectedDocumentDetail?.document.chunkCount ?? 0} 个分片</span>
+                  <div className="flex min-h-0 flex-1 flex-col gap-4">
+                    {documentDetailError ? (
+                      <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                        <div className="space-y-3">
+                          <div>{documentDetailError}</div>
+                          <button
+                            type="button"
+                            onClick={() => selectedDocumentId && openDocument(selectedDocumentId)}
+                            className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                          >
+                            重新加载
+                          </button>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex shrink-0 items-center rounded-full border border-slate-200 bg-slate-50 p-1">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDocumentDetailView("preview")}
-                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full transition ${
-                          selectedDocumentDetailView === "preview"
-                            ? "bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                            : "text-slate-500 hover:bg-white hover:text-slate-800"
-                        }`}
-                        title="预览"
-                        aria-pressed={selectedDocumentDetailView === "preview"}
-                      >
-                        <LucideFileText size={15} strokeWidth={2} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDocumentDetailView("chunks")}
-                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full transition ${
-                          selectedDocumentDetailView === "chunks"
-                            ? "bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                            : "text-slate-500 hover:bg-white hover:text-slate-800"
-                        }`}
-                        title="分片"
-                        aria-pressed={selectedDocumentDetailView === "chunks"}
-                      >
-                        <Layers3 size={15} strokeWidth={2} />
-                      </button>
-                    </div>
-                  </div>
-                  </div>
-
-                  <div className="flex min-h-0 flex-1 overflow-y-auto p-4">
-                  {!selectedDocumentId ? (
-                    <div className="flex h-full min-h-[24rem] items-center justify-center rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
-                      请选择左侧的文档卡片查看详情、分片和正文。
-                    </div>
-                  ) : documentDetailError ? (
-                    <div className="flex h-full min-h-[24rem] items-center justify-center rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
-                      <div className="space-y-3">
-                        <div>{documentDetailError}</div>
-                        <button
-                          type="button"
-                          onClick={() => openDocument(selectedDocumentId)}
-                          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                        >
-                          重新加载
-                        </button>
+                    ) : isLoadingDocumentDetail || !selectedDocument || !selectedDocumentDetail ? (
+                      <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                        正在加载文档详情...
                       </div>
-                    </div>
-                  ) : !selectedDocumentDetail || isLoadingDocumentDetail || !selectedDocument ? (
-                    <div className="flex h-full min-h-[24rem] items-center justify-center rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
-                      正在加载文档详情...
-                    </div>
-                  ) : (
-                    <div className="flex min-h-0 w-full flex-1 flex-col gap-4">
-                      <section className={selectedDocumentDetailView === "preview" ? "flex min-h-0 w-full flex-1" : "hidden"}>
+                    ) : selectedDocumentDetailView === "preview" ? (
+                      <div className="flex min-h-0 flex-1">
                         <DocumentPreviewArea key={selectedDocumentId} document={selectedDocument} onOpenExternal={openSelectedDocumentExternal} />
-                      </section>
+                      </div>
+                    ) : (
+                      <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-950">分片</div>
+                            <div className="mt-1 text-xs text-slate-500">共 {selectedDocumentDetail.chunks.length} 个分片</div>
+                          </div>
+                        </div>
 
-                      <section className={selectedDocumentDetailView === "chunks" ? "space-y-3" : "hidden"}>
-                        <div className="text-sm font-semibold text-slate-900">分片</div>
-                        {selectedDocumentDetail.chunks.map((chunk) => (
-                          <div key={chunk.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="text-sm font-medium text-slate-950">
-                                第 {chunk.chunkIndex + 1} 片
-                                {chunk.title ? ` · ${chunk.title}` : ""}
+                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                          {selectedDocumentDetail.chunks.map((chunk) => (
+                            <div key={chunk.id} className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-medium text-slate-950">
+                                    第 {chunk.chunkIndex + 1} 片{chunk.title ? ` · ${chunk.title}` : ""}
+                                  </div>
+                                </div>
+                                <div className="shrink-0 text-xs text-slate-400">{formatTimestamp(chunk.createdAt)}</div>
                               </div>
-                              <div className="text-xs text-slate-400">{formatTimestamp(chunk.createdAt)}</div>
+                              <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{chunk.content}</div>
                             </div>
-                            <div className="mt-2 text-sm leading-6 text-slate-600 whitespace-pre-wrap">{chunk.content}</div>
-                          </div>
-                        ))}
-                        {selectedDocumentDetail.chunks.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-                            这个文档还没有分片。
-                          </div>
-                        ) : null}
+                          ))}
+
+                          {selectedDocumentDetail.chunks.length === 0 ? (
+                            <div className="rounded-none border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+                              当前文档还没有分片
+                            </div>
+                          ) : null}
+                        </div>
                       </section>
-                    </div>
-                  )}
+                    )}
                   </div>
                 </KnowledgeBaseDetailBoundary>
               </div>
+            ) : pageMode === "list" ? (
+              <section className="no-drag flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="flex min-h-0 flex-1 overflow-y-auto">
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,140px))] content-start gap-3">
+                    {visibleDocuments.map((document) => {
+                      const isActive = document.id === selectedDocumentId;
+                      const fileBadge = document.thumbnailDataUrl ? (
+                        <img src={document.thumbnailDataUrl} alt={document.sourceName} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[10px] font-semibold text-white">
+                          {document.sourceName.slice(0, 2).toUpperCase()}
+                        </div>
+                      );
+
+                      return (
+                        <div
+                          key={document.id}
+                          className={`group relative flex h-[155px] w-[140px] flex-col rounded-none border p-2 text-left transition ${
+                            isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+                          }`}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            openDocumentMenu(document.id);
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => openDocument(document.id)}
+                            className="flex min-w-0 flex-1 flex-col items-stretch gap-1.5 text-left"
+                          >
+                            <div className="h-[86px] w-full overflow-hidden rounded-none bg-slate-100">{fileBadge}</div>
+                            <div className="min-w-0">
+                              <div className="truncate text-[12px] font-medium leading-4">{document.sourceName}</div>
+                              <div className="mt-1 truncate text-[10px] leading-4 text-slate-500" title={document.contentPreview || "暂无内容摘要"}>
+                                {document.contentPreview?.replace(/\s+/g, " ").trim() || "暂无内容摘要"}
+                              </div>
+                            </div>
+                          </button>
+
+                          {isDocumentMenuOpen === document.id ? (
+                            <div
+                              className="absolute right-0 top-6 z-20 w-32 overflow-hidden rounded-none border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
+                              onPointerDown={(event) => event.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+                                onClick={() => {
+                                  setIsDocumentMenuOpen(null);
+                                  void deleteDocument(document.id);
+                                }}
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+
+                    {visibleDocuments.length === 0 ? (
+                      <div className="col-span-full rounded-none border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                        没有符合当前筛选条件的文档。你可以先上传文件，或者切换分类。
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
+                <div className="flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
+                  <div className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">拖入文件或文件夹</div>
+                  <div className="mt-2 text-sm text-slate-500">或者直接上传，默认会进入当前知识库。</div>
+                  <div className="mt-8 flex flex-wrap justify-center gap-4">
+                    <button
+                      type="button"
+                      className="flex h-32 w-44 flex-col items-center justify-center rounded-none border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                      onClick={createCollection}
+                    >
+                      <div className="mb-3 text-base font-medium">新建知识库</div>
+                      <Plus size={34} strokeWidth={1.7} className="text-fuchsia-500" />
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-32 w-44 flex-col items-center justify-center rounded-none border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                      onClick={() => openFilePicker(fileInputRef.current)}
+                    >
+                      <div className="mb-3 text-base font-medium">上传文件</div>
+                      <LucideFileText size={34} strokeWidth={1.7} className="text-amber-500" />
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-32 w-44 flex-col items-center justify-center rounded-none border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                      onClick={() => openFilePicker(folderInputRef.current)}
+                    >
+                      <div className="mb-3 text-base font-medium">上传文件夹</div>
+                      <FolderOpen size={34} strokeWidth={1.7} className="text-blue-500" />
+                    </button>
+                  </div>
+                </div>
+              </section>
             )}
           </div>
         </main>

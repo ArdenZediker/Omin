@@ -8,6 +8,7 @@ use std::{
     collections::HashMap,
     time::{SystemTime, UNIX_EPOCH},
 };
+use reqwest::blocking::Client as BlockingHttpClient;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -108,7 +109,7 @@ struct DbChatSession {
     usage: DbChatUsageStats,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct DbProviderConfigRecord {
     api_key: String,
@@ -1098,6 +1099,213 @@ fn normalize_knowledge_collection_id(value: Option<String>) -> String {
         .if_empty_then("default")
 }
 
+const OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS: [&str; 6] = [
+    "openai",
+    "openrouter",
+    "moonshot",
+    "siliconflow",
+    "dashscope",
+    "zhipu",
+];
+
+const EMBEDDING_PROVIDER_PRIORITY: [&str; 6] = [
+    "openai",
+    "openrouter",
+    "moonshot",
+    "siliconflow",
+    "dashscope",
+    "zhipu",
+];
+
+const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
+
+fn provider_supports_embeddings(provider: &str) -> bool {
+    OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS.contains(&provider)
+}
+
+fn load_provider_config_map(connection: &Connection) -> Result<HashMap<String, DbProviderConfigRecord>, String> {
+    let raw = read_structured_app_value(connection, "omni_provider_configs")?;
+    match raw {
+        Some(value) => serde_json::from_str(&value).map_err(|err| err.to_string()),
+        None => Ok(HashMap::new()),
+    }
+}
+
+fn provider_for_model_id(model_id: &str, configs: &HashMap<String, DbProviderConfigRecord>) -> Option<String> {
+    let trimmed = model_id.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    for (provider, config) in configs {
+        if let Some(custom_models) = config.custom_models.as_ref().and_then(|value| value.as_array()) {
+            for model in custom_models {
+                let matches_id = model.get("id").and_then(|value| value.as_str()) == Some(trimmed);
+                let matches_request_model =
+                    model.get("requestModelId").and_then(|value| value.as_str()) == Some(trimmed);
+                if matches_id || matches_request_model {
+                    return Some(provider.clone());
+                }
+            }
+        }
+    }
+
+    if trimmed.starts_with("openai/") || trimmed.starts_with("anthropic/") || trimmed.starts_with("google/") {
+        return Some("openrouter".to_string());
+    }
+    if trimmed.starts_with("moonshot-v1-") {
+        return Some("moonshot".to_string());
+    }
+    if trimmed.starts_with("deepseek-ai/") || trimmed.starts_with("Qwen/") {
+        return Some("siliconflow".to_string());
+    }
+    if trimmed.starts_with("qwen-") {
+        return Some("dashscope".to_string());
+    }
+    if trimmed.starts_with("glm-") {
+        return Some("zhipu".to_string());
+    }
+
+    match trimmed {
+        "gpt-4o" | "gpt-4o-mini" | "o1" | "o3-mini" => Some("openai".to_string()),
+        value if value.starts_with("claude-") => Some("claude".to_string()),
+        value if value.starts_with("gemini-") => Some("gemini".to_string()),
+        "llama3" | "llava" => Some("ollama".to_string()),
+        value if value.starts_with("deepseek-") => Some("deepseek".to_string()),
+        _ => None,
+    }
+}
+
+fn resolve_embedding_provider(
+    connection: &Connection,
+) -> Result<Option<(String, DbProviderConfigRecord)>, String> {
+    let current_model = read_structured_app_value(connection, "omni_current_model")?.unwrap_or_default();
+    let configs = load_provider_config_map(connection)?;
+    let mut ordered_candidates: Vec<String> = Vec::new();
+
+    if let Some(provider) = provider_for_model_id(&current_model, &configs) {
+        ordered_candidates.push(provider);
+    }
+
+    for provider in EMBEDDING_PROVIDER_PRIORITY {
+        if !ordered_candidates.iter().any(|item| item == provider) {
+            ordered_candidates.push(provider.to_string());
+        }
+    }
+
+    for provider in configs.keys() {
+        if !ordered_candidates.iter().any(|item| item == provider) {
+            ordered_candidates.push(provider.clone());
+        }
+    }
+
+    for provider in ordered_candidates {
+        if !provider_supports_embeddings(&provider) {
+            continue;
+        }
+
+        let Some(config) = configs.get(&provider) else {
+            continue;
+        };
+
+        if config.api_key.trim().is_empty() {
+            continue;
+        }
+
+        return Ok(Some((provider, config.clone())));
+    }
+
+    Ok(None)
+}
+
+fn generate_chunk_embeddings(
+    connection: &Connection,
+    chunks: &[knowledge_chunker::ChunkSlice],
+) -> Vec<Option<String>> {
+    if chunks.is_empty() {
+        return Vec::new();
+    }
+
+    let Some((provider, config)) = resolve_embedding_provider(connection).ok().flatten() else {
+        return vec![None; chunks.len()];
+    };
+
+    let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1").trim();
+    let api_key = config.api_key.trim();
+    if base_url.is_empty() || api_key.is_empty() {
+        return vec![None; chunks.len()];
+    }
+
+    let client = match BlockingHttpClient::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+    {
+        Ok(client) => client,
+        Err(err) => {
+            eprintln!("知识库 embedding 客户端创建失败 ({provider}): {err}");
+            return vec![None; chunks.len()];
+        }
+    };
+
+    let input: Vec<&str> = chunks.iter().map(|chunk| chunk.content.as_str()).collect();
+    let request_body = serde_json::json!({
+        "model": DEFAULT_EMBEDDING_MODEL,
+        "input": input,
+    });
+
+    let response = match client
+        .post(format!("{}/embeddings", base_url.trim_end_matches('/')))
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&request_body)
+        .send()
+    {
+        Ok(response) => response,
+        Err(err) => {
+            eprintln!("知识库 embedding 请求失败 ({provider}): {err}");
+            return vec![None; chunks.len()];
+        }
+    };
+
+    if !response.status().is_success() {
+        let err_text = response.text().unwrap_or_default();
+        eprintln!("知识库 embedding API 返回错误 ({provider}): {err_text}");
+        return vec![None; chunks.len()];
+    }
+
+    #[derive(Deserialize)]
+    struct EmbeddingApiItem {
+        embedding: Vec<f64>,
+        index: usize,
+    }
+
+    #[derive(Deserialize)]
+    struct EmbeddingApiResponse {
+        data: Vec<EmbeddingApiItem>,
+    }
+
+    let payload: EmbeddingApiResponse = match response.json() {
+        Ok(payload) => payload,
+        Err(err) => {
+            eprintln!("知识库 embedding 响应解析失败 ({provider}): {err}");
+            return vec![None; chunks.len()];
+        }
+    };
+
+    let mut ordered = payload.data;
+    ordered.sort_by_key(|item| item.index);
+
+    let mut embeddings = vec![None; chunks.len()];
+    for (index, item) in ordered.into_iter().enumerate() {
+        if index >= embeddings.len() {
+            break;
+        }
+        embeddings[index] = serde_json::to_string(&item.embedding).ok();
+    }
+
+    embeddings
+}
+
 trait EmptyFallback {
     fn if_empty_then(self, fallback: &str) -> String;
 }
@@ -1456,6 +1664,7 @@ fn import_knowledge_document(
         )
     };
     let chunk_count = chunks.len() as i64;
+    let chunk_embeddings = generate_chunk_embeddings(connection, &chunks);
     let content_preview = if content.trim().is_empty() {
         preview_text(source_name, 240)
     } else {
@@ -1528,7 +1737,7 @@ fn import_knowledge_document(
                 index as i64,
                 chunk_title,
                 chunk_content.content,
-                Option::<String>::None,
+                chunk_embeddings.get(index).cloned().unwrap_or(None),
                 now,
             ])
             .map_err(|err| err.to_string())?;

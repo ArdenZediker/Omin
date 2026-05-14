@@ -88,12 +88,17 @@ export async function buildKnowledgeContextBlock(options: {
     return null;
   }
 
-  const adapter = modelRegistry.getAdapterForModel(options.model);
+  const adapterCandidates = [modelRegistry.getAdapterForModel(options.model), ...modelRegistry.getAvailableModels().map((model) => modelRegistry.getAdapterForModel(model.id))];
   let queryEmbedding: number[] | undefined;
-  if (adapter?.embed) {
+  for (const adapter of adapterCandidates) {
+    if (!adapter?.embed) {
+      continue;
+    }
+
     try {
       const embedding = await adapter.embed(query);
       queryEmbedding = embedding.embedding;
+      break;
     } catch {
       queryEmbedding = undefined;
     }
