@@ -723,22 +723,22 @@ export default function MainChatView({
 
   return (
     <div className={layoutClassName}>
-      <aside className="main-chat-nav">
-        <button type="button" className="main-chat-nav__brand" title="Omni">
+      <aside className="main-chat-nav drag-region">
+        <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
           <Bot size={20} strokeWidth={1.9} />
         </button>
         <div className="main-chat-nav__items">
-          <button type="button" className="main-chat-nav__item main-chat-nav__item--active" title="聊天">
+          <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="聊天">
             <MessageSquare size={18} strokeWidth={1.9} />
           </button>
-          <button type="button" className="main-chat-nav__item" title="助手">
+          <button type="button" className="main-chat-nav__item no-drag" title="助手">
             <Sparkles size={18} strokeWidth={1.9} />
           </button>
-          <button type="button" className="main-chat-nav__item" title="知识" onClick={onOpenKnowledge}>
+          <button type="button" className="main-chat-nav__item no-drag" title="知识" onClick={onOpenKnowledge}>
             <FolderOpen size={18} strokeWidth={1.9} />
           </button>
         </div>
-        <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom" title="设置" onClick={onSettingsOpen}>
+        <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" onClick={onSettingsOpen}>
           <Settings size={18} strokeWidth={1.9} />
         </button>
       </aside>

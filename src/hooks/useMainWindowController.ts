@@ -158,20 +158,44 @@ export function useMainWindowController({
     return () => window.removeEventListener("storage", onStorage);
   }, [isCompactWindow, setBasicSettings]);
 
+  const previousViewRef = useRef<ViewMode | null>(null);
+  const previousSettingsWindowSizeRef = useRef<{ width: number; height: number } | null>(null);
+
   useEffect(() => {
     if (isCompactWindow || !appWindow) {
       return;
     }
-    const win = appWindow;
 
+    const win = appWindow;
+    const previousView = previousViewRef.current;
+    const previousSettingsSize = previousSettingsWindowSizeRef.current;
     saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, view);
-    const targetSize = getMainWindowSizeForView(view);
-    void win.isMaximized().then((isMaximized) => {
-      if (isMaximized) {
-        return;
-      }
-      void resizeWindow(win, targetSize.width, targetSize.height);
-    });
+
+    const isSettingsView = view === "settings";
+    const settingsSizeChanged =
+      !previousSettingsSize ||
+      previousSettingsSize.width !== basicSettings.settingsWindowWidth ||
+      previousSettingsSize.height !== basicSettings.settingsWindowHeight;
+    const shouldResize = isSettingsView ? previousView !== "settings" || settingsSizeChanged : previousView === "settings";
+
+    if (shouldResize) {
+      const targetView = isSettingsView ? "settings" : "chat";
+      const targetSize = getMainWindowSizeForView(targetView);
+      void win.isMaximized().then((isMaximized) => {
+        if (isMaximized) {
+          return;
+        }
+        void resizeWindow(win, targetSize.width, targetSize.height);
+      });
+    }
+
+    previousViewRef.current = view;
+    if (isSettingsView) {
+      previousSettingsWindowSizeRef.current = {
+        width: basicSettings.settingsWindowWidth,
+        height: basicSettings.settingsWindowHeight,
+      };
+    }
   }, [
     basicSettings.mainWindowHeight,
     basicSettings.mainWindowWidth,
@@ -212,7 +236,6 @@ export function useMainWindowController({
         draftCleanup = unlisten;
       });
 
-      void win
     void win
       .listen("omni-open-settings", () => {
         setView("settings");
