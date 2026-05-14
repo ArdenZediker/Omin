@@ -5,7 +5,7 @@ import type { Message } from "./adapters/types";
 import { createDesktopActions } from "./app/desktopActions";
 import { modelRegistry } from "./adapters/registry";
 import TitleBar from "./components/TitleBar";
-import SettingsPanel from "./components/SettingsPanel";
+import SettingsWindow from "./components/SettingsWindow";
 import MainChatView from "./components/MainChatView";
 import KnowledgeBaseView from "./components/KnowledgeBaseView";
 import CompactWindow from "./components/CompactWindow";
@@ -18,7 +18,7 @@ import {
   omniIconSrc,
   omniSmallIconSrc,
 } from "./app/constants";
-import type { BasicSettings, ViewMode } from "./app/types";
+import type { BasicSettings } from "./app/types";
 import { saveBasicSettings } from "./app/settingsStore";
 import { saveSqliteBackedValue } from "./app/sqliteStorage";
 import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getPetCompactViewportSize, getStoredMainView, isCharacterPointerInHitArea } from "./app/window";
@@ -44,8 +44,17 @@ function getSafeCurrentWindow() {
 
 const appWindow = getSafeCurrentWindow();
 const isCompactWindow = appWindow?.label === "compact";
+const isSettingsWindow = appWindow?.label === "settings";
 
 function App() {
+  if (isSettingsWindow) {
+    return <SettingsWindow />;
+  }
+
+  return <MainApp />;
+}
+
+function MainApp() {
   const { openPrompt } = usePromptDialog();
   const {
     activeAssistant,
@@ -115,7 +124,7 @@ function App() {
   } = useCompactWindowState();
 
   const [currentModel, setCurrentModel] = useState("gpt-4o");
-  const [view, setView] = useState<ViewMode>(getStoredMainView);
+  const [view, setView] = useState<"chat" | "knowledge">(getStoredMainView);
   const [inputFocusKey, setInputFocusKey] = useState(0);
   const [inputDraft, setInputDraft] = useState("");
   const [inputDraftImages, setInputDraftImages] = useState<string[]>([]);
@@ -256,7 +265,6 @@ function App() {
     setInputDraftKey,
     setMessages,
     setOpenChatMenu,
-    setView,
     togglePinnedChatSession,
   });
 
@@ -593,7 +601,7 @@ function App() {
           onUpdateAssistantProfile={updateAssistantProfile}
           onSend={handleSend}
           onSetOpenChatMenu={setOpenChatMenu}
-          onSettingsOpen={() => setView("settings")}
+          onSettingsOpen={desktopActions.openSettings}
           onShareChat={handleShareChat}
           onStop={handleStop}
           onSubmitEditedUserMessage={handleSubmitEditedUserMessage}
@@ -606,17 +614,12 @@ function App() {
           onUseEmptyPrompt={handleUseEmptyPrompt}
           onOpenKnowledge={() => setView("knowledge")}
         />
-      ) : view === "knowledge" ? (
+      ) : (
         <KnowledgeBaseView
           onBackToChat={() => setView("chat")}
-          onSettingsOpen={() => setView("settings")}
+          onSettingsOpen={desktopActions.openSettings}
           windowControls={<TitleBar inline onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />}
         />
-      ) : (
-        <>
-          <TitleBar onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />
-          <SettingsPanel onClose={() => setView("chat")} onModelChange={handleModelChange} />
-        </>
       )}
     </div>
   );

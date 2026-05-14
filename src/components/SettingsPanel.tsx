@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { Bot, Settings, X } from "lucide-react";
+import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Bot, Settings } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
@@ -14,14 +16,16 @@ import {
   saveUsagePreferences,
   saveModelConnectionStatus,
 } from "../app/settingsStore";
+import { loadKnowledgeEmbeddingProfile, saveKnowledgeEmbeddingProfile, type KnowledgeEmbeddingProfile } from "../chat/knowledgeEmbedding";
 import BasicSettingsSection from "./settings/BasicSettingsSection";
+import KnowledgeEmbeddingSection from "./settings/KnowledgeEmbeddingSection";
 import ModelSettingsSection from "./settings/ModelSettingsSection";
+import TitleBar from "./TitleBar";
 
 interface SettingsPanelProps {
   onClose: () => void;
   onModelChange: (modelId: string) => void;
 }
-
 type SettingsSection = "basic" | "models";
 type RawRegistry = { configs: Map<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> };
 
@@ -40,6 +44,14 @@ function getRawApiKey(id: string) {
   return (modelRegistry as unknown as RawRegistry).configs.get(id)?.apiKey || "";
 }
 
+function getSafeCurrentWindow() {
+  try {
+    return getCurrentWindow();
+  } catch {
+    return null;
+  }
+}
+
 export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelProps) {
   const [section, setSection] = useState<SettingsSection>("basic");
   const [version, setVersion] = useState(0);
@@ -49,6 +61,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
   );
   const [prefs, setPrefs] = useState(loadUsagePreferences);
   const [prefsSaveStatus, setPrefsSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [knowledgeEmbeddingProfile, setKnowledgeEmbeddingProfile] = useState<KnowledgeEmbeddingProfile>(loadKnowledgeEmbeddingProfile);
   const [recordingShortcut, setRecordingShortcut] = useState<"openMainShortcut" | "switchPreviousModelShortcut" | null>(null);
   const [endpointName, setEndpointName] = useState("OpenAI 官方");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
@@ -286,8 +299,46 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     }
   };
 
+  const updateKnowledgeEmbeddingProfile = (profile: KnowledgeEmbeddingProfile) => {
+    setKnowledgeEmbeddingProfile(profile);
+    saveKnowledgeEmbeddingProfile(profile);
+    void emit("omni-knowledge-embedding-profile-changed", { profile });
+  };
+
+  const handleHeaderMouseDown = useCallback(async (event: React.MouseEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+    if (target.closest(".no-drag")) {
+      return;
+    }
+
+    const currentWindow = getSafeCurrentWindow();
+    if (!currentWindow) {
+      return;
+    }
+
+    await currentWindow.startDragging();
+  }, []);
+
+  const handleMinimizeWindow = useCallback(async () => {
+    const currentWindow = getSafeCurrentWindow();
+    if (!currentWindow) {
+      return;
+    }
+
+    try {
+      await currentWindow.setSkipTaskbar(false);
+      await currentWindow.minimize();
+    } catch {
+      // Ignore window manager failures.
+    }
+  }, []);
+
   return (
-    <div className="omni-settings-root relative flex h-full bg-white text-slate-900">
+    <div className="omni-settings-root relative flex h-full w-full flex-1 min-w-0 overflow-hidden bg-white text-slate-900">
       <aside className="omni-settings-sidebar w-36 shrink-0 border-r border-slate-200 bg-slate-50 py-3">
         <div className="omni-settings-muted px-3 pb-3 text-xs font-semibold text-slate-500">设置</div>
         <div className="space-y-1 px-2">
@@ -323,16 +374,19 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
       </aside>
 
       <section className="omni-settings-main flex min-w-0 flex-1 flex-col bg-white">
-        <header className="omni-settings-header flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-5">
-          <div>
+        <header className="omni-settings-header flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-5 select-none" onMouseDown={handleHeaderMouseDown}>
+          <div className="min-w-0 flex-1 pr-3">
             <h2 className="omni-settings-title text-sm font-semibold text-slate-950">{section === "basic" ? "基本设置" : "模型配置"}</h2>
             <p className="omni-settings-muted text-[11px] text-slate-500">
               {section === "basic" ? "管理 Omni 的通用基础选项。" : "通过模型列表新增或编辑 OpenAI 兼容模型。"}
             </p>
-          </div>
-          <button onClick={onClose} className="omni-settings-close flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 text-[0px]" type="button" aria-label="关闭设置">
-            <X size={15} strokeWidth={1.9} />
-          </button>
+          </div>          <TitleBar
+            inline
+            onMinimizeToCompact={handleMinimizeWindow}
+            onClose={onClose}
+            closeTitle="关闭设置"
+            minimizeBehavior="taskbar"
+          />
         </header>
 
         <div className="hide-scrollbar flex-1 overflow-y-auto overflow-x-hidden p-5">
@@ -347,42 +401,45 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 recordingShortcut={recordingShortcut}
               />
             ) : (
-              <ModelSettingsSection
-                apiKey={apiKey}
-                baseUrl={baseUrl}
-                editingModel={editingModel}
-                endpointModels={endpointModels}
-                endpointName={endpointName}
-                endpoints={endpoints}
-                getRawApiKey={getRawApiKey}
-                isModelFormOpen={isModelFormOpen}
-                modelEndpointId={modelEndpointId}
-                modelId={modelId}
-                modelName={modelName}
-                modelStreaming={modelStreaming}
-                modelVision={modelVision}
-                onChooseEndpoint={chooseEndpoint}
-                onCloseModelForm={() => setIsModelFormOpen(false)}
-                onOpenEditModelForm={openEditModelForm}
-                onOpenNewModelForm={openNewModelForm}
-                onRemoveModel={removeModel}
-                onSaveModel={saveModel}
-                onSavePrefs={saveCurrentPrefs}
-                onSetApiKey={setApiKey}
-                onSetBaseUrl={setBaseUrl}
-                onSetEndpointName={setEndpointName}
-                onSetModelEndpointId={setModelEndpointId}
-                onSetModelId={setModelId}
-                onSetModelName={setModelName}
-                onSetModelStreaming={setModelStreaming}
-                onSetModelVision={setModelVision}
-                onSetPrefs={setPrefs}
-                onTestConnection={testConnection}
-                prefs={prefs}
-                prefsSaveStatus={prefsSaveStatus}
-                testResult={testResult}
-                testingConnection={testingConnection}
-              />
+              <div className="space-y-6">
+                <KnowledgeEmbeddingSection profile={knowledgeEmbeddingProfile} onChangeProfile={updateKnowledgeEmbeddingProfile} />
+                <ModelSettingsSection
+                  apiKey={apiKey}
+                  baseUrl={baseUrl}
+                  editingModel={editingModel}
+                  endpointModels={endpointModels}
+                  endpointName={endpointName}
+                  endpoints={endpoints}
+                  getRawApiKey={getRawApiKey}
+                  isModelFormOpen={isModelFormOpen}
+                  modelEndpointId={modelEndpointId}
+                  modelId={modelId}
+                  modelName={modelName}
+                  modelStreaming={modelStreaming}
+                  modelVision={modelVision}
+                  onChooseEndpoint={chooseEndpoint}
+                  onCloseModelForm={() => setIsModelFormOpen(false)}
+                  onOpenEditModelForm={openEditModelForm}
+                  onOpenNewModelForm={openNewModelForm}
+                  onRemoveModel={removeModel}
+                  onSaveModel={saveModel}
+                  onSavePrefs={saveCurrentPrefs}
+                  onSetApiKey={setApiKey}
+                  onSetBaseUrl={setBaseUrl}
+                  onSetEndpointName={setEndpointName}
+                  onSetModelEndpointId={setModelEndpointId}
+                  onSetModelId={setModelId}
+                  onSetModelName={setModelName}
+                  onSetModelStreaming={setModelStreaming}
+                  onSetModelVision={setModelVision}
+                  onSetPrefs={setPrefs}
+                  onTestConnection={testConnection}
+                  prefs={prefs}
+                  prefsSaveStatus={prefsSaveStatus}
+                  testResult={testResult}
+                  testingConnection={testingConnection}
+                />
+              </div>
             )}
           </div>
         </div>

@@ -1,9 +1,10 @@
 ﻿import { useCallback, useEffect, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
-import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { readSqliteBackedValue } from "../app/sqliteStorage";
 import { executeChatTurn } from "../chat/engine";
 import {
   CHARACTER_MODEL_OPTIONS,
@@ -11,7 +12,6 @@ import {
   COMPACT_MENU_CLOSE_DELAY_MS,
   CURRENT_MODEL_STORAGE_KEY,
   EXTERNAL_CHAT_ENTRIES,
-  MAIN_VIEW_STORAGE_KEY,
   MAIN_WINDOW_LABEL,
 } from "../app/constants";
 import type { BasicSettings, CompactReply } from "../app/types";
@@ -29,7 +29,7 @@ import {
   moveCompactWindowToMonitor,
   openInternalChatWindow,
   persistCompactPosition,
-  restoreMainWindow,
+  showSettingsWindow,
 } from "../app/window";
 import {
   resolveCompactMenuPositionFromViewport,
@@ -138,6 +138,43 @@ export function useCompactWindowController({
   const compactInteractionUntilRef = useRef(0);
   const compactSuppressBlurUntilRef = useRef(0);
   const lastAppliedCompactSizeRef = useRef<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!isCompactWindow) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void listen<{ modelId?: string }>("omni-model-changed", (event) => {
+      const modelId = event.payload?.modelId;
+      if (!modelId) {
+        return;
+      }
+      setCurrentModel(modelId);
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isCompactWindow, setCurrentModel]);
+
+  useEffect(() => {
+    if (!isCompactWindow) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void listen("omni-knowledge-embedding-profile-changed", () => {
+      void loadProviderConfigs();
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isCompactWindow]);
 
   const markCompactInteraction = useCallback(() => {
     compactInteractionUntilRef.current = Date.now() + 900;
@@ -269,7 +306,7 @@ export function useCompactWindowController({
         compactFollowMonitorRef.current = nextMonitorKey;
         await moveCompactWindowToMonitor(appWindow, monitor, compactSize);
       } catch {
-        // 忽略显示器同步失败
+        // 蹇界暐鏄剧ず鍣ㄥ悓姝ュけ璐?
       }
     };
 
@@ -341,8 +378,7 @@ export function useCompactWindowController({
         await appWindow.setAlwaysOnTop(false);
         await appWindow.setAlwaysOnTop(true);
       } catch {
-        // 蹇界暐缃《鎭㈠澶辫触
-      }
+        // 韫囩晫鏆愮純顕€銆婇幁銏狀槻婢惰精瑙?      }
     };
 
     void ensureTopmost();
@@ -529,10 +565,7 @@ export function useCompactWindowController({
 
   const handleOpenSettingsFromCompact = useCallback(async () => {
     closeCompactMenus();
-    saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, "settings");
-    await restoreMainWindow(false);
-    const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
-    await mainWindow?.emit("omni-open-settings");
+    await showSettingsWindow();
   }, [closeCompactMenus]);
 
   const resolveCharacterPanelSide = useCallback(async () => {
@@ -667,7 +700,7 @@ export function useCompactWindowController({
         setIsCompactQueryOpen(false);
         setCompactQuery("");
       } catch (error) {
-        setCompactReply({ question: draft, answer: error instanceof Error ? error.message : "查询失败", isError: true });
+        setCompactReply({ question: draft, answer: error instanceof Error ? error.message : "鏌ヨ澶辫触", isError: true });
       } finally {
         setIsCompactReplyLoading(false);
       }

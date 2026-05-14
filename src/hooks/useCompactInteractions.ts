@@ -1,10 +1,11 @@
 import { useCallback } from "react";
 import { currentMonitor, type Window } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { readSqliteBackedValue } from "../app/sqliteStorage";
 import type { Message } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { executeChatTurn } from "../chat/engine";
+import { showSettingsWindow } from "../app/window";
 import {
   clampCharacterScale,
   type CharacterModel,
@@ -105,11 +106,8 @@ export function useCompactInteractions(args: UseCompactInteractionsArgs) {
 
   const handleOpenSettingsFromCompact = useCallback(async () => {
     closeCompactMenus();
-    saveSqliteBackedValue("omni_main_view", "settings");
-    await restoreMainWindow(false);
-    const mainWindow = await WebviewWindow.getByLabel(mainWindowLabel);
-    await mainWindow?.emit("omni-open-settings");
-  }, [closeCompactMenus, mainWindowLabel, restoreMainWindow]);
+    await showSettingsWindow();
+  }, [closeCompactMenus]);
 
   const handleToggleMainFromCompact = useCallback(async () => {
     await appWindow.setAlwaysOnTop(true);

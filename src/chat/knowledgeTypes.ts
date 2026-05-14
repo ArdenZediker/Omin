@@ -41,6 +41,8 @@ export type KnowledgeCollection = {
   id: string;
   name: string;
   description: string;
+  retrievalMode?: string | null;
+  embeddingProfileId?: string | null;
   createdAt?: number;
   updatedAt?: number;
 };

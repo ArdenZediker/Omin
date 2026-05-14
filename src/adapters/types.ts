@@ -58,7 +58,7 @@ export interface ModelAdapter {
     request: ChatRequest,
     onChunk: (chunk: StreamChunk) => void
   ): Promise<ChatResponse>;
-  embed?(input: string): Promise<EmbeddingResponse>;
+  embed?(input: string, model?: string): Promise<EmbeddingResponse>;
   validate(): Promise<boolean>;
 }
 

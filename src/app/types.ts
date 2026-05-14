@@ -1,4 +1,4 @@
-export type ViewMode = "chat" | "knowledge" | "settings";
+export type ViewMode = "chat" | "knowledge";
 export type MenuOpenMode = "hover" | "click";
 export type MinimizeBehavior = "taskbar" | "compact";
 export type WindowPositionMode = "center" | "remember";
@@ -9,8 +9,6 @@ export type BasicSettings = {
   minimizeBehavior: MinimizeBehavior;
   mainWindowWidth: number;
   mainWindowHeight: number;
-  settingsWindowWidth: number;
-  settingsWindowHeight: number;
   mainWindowPositionMode: WindowPositionMode;
   showCompactBall: boolean;
   followCursorScreen: boolean;

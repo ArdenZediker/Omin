@@ -134,8 +134,8 @@ export class OpenAIAdapter implements ModelAdapter {
     return { content: fullContent, model };
   }
 
-  async embed(input: string): Promise<EmbeddingResponse> {
-    const embeddingModel = "text-embedding-3-small";
+  async embed(input: string, model = "text-embedding-3-small"): Promise<EmbeddingResponse> {
+    const embeddingModel = model.trim() || "text-embedding-3-small";
     const response = await fetch(`${this.getBaseUrl()}/embeddings`, {
       method: "POST",
       headers: {

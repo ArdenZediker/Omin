@@ -469,6 +469,10 @@ async function loadKnowledgeLibrary() {
   return invoke<KnowledgeLibraryPayload>("load_knowledge_library_command");
 }
 
+async function ensureDefaultKnowledgeCollection() {
+  return invoke<KnowledgeCollection>("ensure_default_knowledge_collection_command");
+}
+
 async function loadKnowledgeDocumentDetail(documentId: string) {
   return invoke<KnowledgeDocumentDetail>("load_knowledge_document_command", {
     input: { documentId },
@@ -753,6 +757,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [isCollectionMenuOpen, setIsCollectionMenuOpen] = useState<string | null>(null);
   const [isDocumentMenuOpen, setIsDocumentMenuOpen] = useState<string | null>(null);
   const [library, setLibrary] = useState<KnowledgeLibraryPayload>({ collections: [], documents: [] });
+  const [isKnowledgeLibraryReady, setIsKnowledgeLibraryReady] = useState(false);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>(DEFAULT_COLLECTION_ID);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedDocumentDetail, setSelectedDocumentDetail] = useState<KnowledgeDocumentDetail | null>(null);
@@ -891,15 +896,27 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   useEffect(() => {
     let cancelled = false;
 
-    void loadKnowledgeLibrary()
-      .then((payload) => {
+    void (async () => {
+      try {
+        await ensureDefaultKnowledgeCollection();
+        const payload = await loadKnowledgeLibrary();
         if (!cancelled) {
           setLibrary(payload);
+          setSelectedCollectionId((current) => {
+            if (current === DEFAULT_COLLECTION_ID || !payload.collections.some((collection) => collection.id === current)) {
+              return payload.collections.find((collection) => collection.id === DEFAULT_COLLECTION_ID)?.id ?? payload.collections[0]?.id ?? DEFAULT_COLLECTION_ID;
+            }
+            return current;
+          });
+          setIsKnowledgeLibraryReady(true);
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         console.error(error);
-      });
+        if (!cancelled) {
+          setIsKnowledgeLibraryReady(true);
+        }
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -1226,9 +1243,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   );
                 })}
 
-                {library.collections.length === 0 ? (
-                  <div className="rounded-none border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400">还没有知识库</div>
-                ) : null}
+                {library.collections.length === 0 ? null : null}
               </div>
             </div>
           </div>
@@ -1551,36 +1566,30 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               </section>
             ) : (
               <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
-                <div className="flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
-                  <div className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">拖入文件或文件夹</div>
-                  <div className="mt-2 text-sm text-slate-500">或者直接上传，默认会进入当前知识库。</div>
-                  <div className="mt-8 flex flex-wrap justify-center gap-4">
+                {!isKnowledgeLibraryReady ? (
+                  <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+                    <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">正在准备默认知识库</div>
+                    <div className="mt-2 text-sm text-slate-500">请稍候，系统会自动创建默认知识库。</div>
+                  </div>
+                ) : library.collections.length === 0 ? (
+                  <div className="flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
+                    <div className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">还没有知识库</div>
+                    <div className="mt-2 text-sm text-slate-500">先新建一个知识库，再上传文件或文件夹。</div>
                     <button
                       type="button"
-                      className="flex h-32 w-44 flex-col items-center justify-center rounded-none border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                      className="mt-8 inline-flex items-center gap-2 rounded-none border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                       onClick={createCollection}
                     >
-                      <div className="mb-3 text-base font-medium">新建知识库</div>
-                      <Plus size={34} strokeWidth={1.7} className="text-fuchsia-500" />
-                    </button>
-                    <button
-                      type="button"
-                      className="flex h-32 w-44 flex-col items-center justify-center rounded-none border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
-                      onClick={() => openFilePicker(fileInputRef.current)}
-                    >
-                      <div className="mb-3 text-base font-medium">上传文件</div>
-                      <LucideFileText size={34} strokeWidth={1.7} className="text-amber-500" />
-                    </button>
-                    <button
-                      type="button"
-                      className="flex h-32 w-44 flex-col items-center justify-center rounded-none border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
-                      onClick={() => openFilePicker(folderInputRef.current)}
-                    >
-                      <div className="mb-3 text-base font-medium">上传文件夹</div>
-                      <FolderOpen size={34} strokeWidth={1.7} className="text-blue-500" />
+                      <Plus size={16} strokeWidth={2} />
+                      新建知识库
                     </button>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+                    <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">当前知识库暂无文档</div>
+                    <div className="mt-2 text-sm text-slate-500">请使用右上角上传按钮导入文件。</div>
+                  </div>
+                )}
               </section>
             )}
           </div>

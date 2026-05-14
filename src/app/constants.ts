@@ -3,8 +3,8 @@ import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindo
 
 export const MAIN_WINDOW_LABEL = "main";
 export const COMPACT_WINDOW_LABEL = "compact";
+export const SETTINGS_WINDOW_LABEL = "settings";
 export const EXPANDED_SIZE = { width: 920, height: 820 };
-export const SETTINGS_SIZE = EXPANDED_SIZE;
 export const BASIC_SETTINGS_STORAGE_KEY = "omni_basic_settings";
 export const COMPACT_POSITION_STORAGE_KEY = "omni_compact_position";
 export const MAIN_POSITION_STORAGE_KEY = "omni_main_position";
@@ -26,8 +26,6 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   minimizeBehavior: "compact",
   mainWindowWidth: EXPANDED_SIZE.width,
   mainWindowHeight: EXPANDED_SIZE.height,
-  settingsWindowWidth: SETTINGS_SIZE.width,
-  settingsWindowHeight: SETTINGS_SIZE.height,
   mainWindowPositionMode: "remember",
   showCompactBall: true,
   followCursorScreen: false,

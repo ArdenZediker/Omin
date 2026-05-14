@@ -90,6 +90,10 @@ class ModelRegistry {
     return this.adapters.get(modelConfig.provider) || null;
   }
 
+  getAdapterForProvider(provider: string): ModelAdapter | null {
+    return this.adapters.get(provider) || null;
+  }
+
   // 获取全部可用模型（自定义模型优先，内置模型仅作兜底）
   getAvailableModels(): ModelConfig[] {
     const registered = Array.from(this.adapters.keys());
