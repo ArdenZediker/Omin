@@ -124,6 +124,8 @@ struct KnowledgeCollectionRecord {
     id: String,
     name: String,
     description: String,
+    retrieval_mode: String,
+    embedding_profile_id: Option<String>,
     created_at: i64,
     updated_at: i64,
 }
@@ -194,6 +196,23 @@ struct ImportKnowledgeDocumentInput {
     tags: Option<Vec<String>>,
     title_hierarchy: Option<String>,
     favorite: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateKnowledgeCollectionInput {
+    collection_id: String,
+    name: Option<String>,
+    description: Option<String>,
+    retrieval_mode: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeEmbeddingProfileRecord {
+    enabled: bool,
+    provider: String,
+    model: String,
 }
 
 #[derive(Deserialize)]
@@ -622,6 +641,10 @@ fn is_model_connection_status_key(key: &str) -> bool {
     key == "omni_model_connection_status"
 }
 
+fn is_knowledge_embedding_profile_key(key: &str) -> bool {
+    key == "omni_knowledge_embedding_profile"
+}
+
 fn read_simple_table_value(connection: &Connection, table: &str, key: &str) -> Result<Option<String>, String> {
     let sql = format!("SELECT value FROM {table} WHERE key = ?1");
     connection
@@ -802,6 +825,9 @@ fn read_structured_app_value(connection: &Connection, key: &str) -> Result<Optio
     if is_model_connection_status_key(key) {
         return read_model_connection_status_value(connection);
     }
+    if is_knowledge_embedding_profile_key(key) {
+        return read_simple_table_value(connection, "app_settings", key);
+    }
     if is_window_state_key(key) {
         return read_simple_table_value(connection, "window_state", key);
     }
@@ -815,6 +841,9 @@ fn write_structured_app_value(connection: &Connection, key: &str, value: &str) -
     if is_model_connection_status_key(key) {
         return write_model_connection_status_value(connection, value);
     }
+    if is_knowledge_embedding_profile_key(key) {
+        return write_simple_table_value(connection, "app_settings", key, value);
+    }
     if is_window_state_key(key) {
         return write_simple_table_value(connection, "window_state", key, value);
     }
@@ -827,6 +856,9 @@ fn remove_structured_app_value(connection: &Connection, key: &str) -> Result<(),
     }
     if is_model_connection_status_key(key) {
         return remove_model_connection_status_value(connection);
+    }
+    if is_knowledge_embedding_profile_key(key) {
+        return remove_simple_table_value(connection, "app_settings", key);
     }
     if is_window_state_key(key) {
         return remove_simple_table_value(connection, "window_state", key);
@@ -1076,13 +1108,15 @@ fn ensure_knowledge_defaults(connection: &Connection) -> Result<(), String> {
         .execute(
             r#"
             INSERT OR IGNORE INTO knowledge_collections (
-              id, name, description, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5)
+              id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             "#,
             params![
                 "default",
                 "默认知识库",
                 "用于存放上传文件和导入内容",
+                "hybrid",
+                Option::<String>::None,
                 now,
                 now
             ],
@@ -1099,6 +1133,11 @@ fn normalize_knowledge_collection_id(value: Option<String>) -> String {
         .if_empty_then("default")
 }
 
+fn normalize_knowledge_retrieval_mode(value: &str) -> String {
+    let _ = value;
+    "hybrid".to_string()
+}
+
 const OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS: [&str; 6] = [
     "openai",
     "openrouter",
@@ -1108,19 +1147,23 @@ const OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS: [&str; 6] = [
     "zhipu",
 ];
 
-const EMBEDDING_PROVIDER_PRIORITY: [&str; 6] = [
-    "openai",
-    "openrouter",
-    "moonshot",
-    "siliconflow",
-    "dashscope",
-    "zhipu",
-];
-
 const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
+const KNOWLEDGE_EMBEDDING_PROFILE_KEY: &str = "omni_knowledge_embedding_profile";
 
 fn provider_supports_embeddings(provider: &str) -> bool {
     OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS.contains(&provider)
+}
+
+fn load_knowledge_embedding_profile(connection: &Connection) -> Result<KnowledgeEmbeddingProfileRecord, String> {
+    let raw = read_structured_app_value(connection, KNOWLEDGE_EMBEDDING_PROFILE_KEY)?;
+    match raw {
+        Some(value) => serde_json::from_str(&value).map_err(|err| err.to_string()),
+        None => Ok(KnowledgeEmbeddingProfileRecord {
+            enabled: false,
+            provider: "openai".to_string(),
+            model: DEFAULT_EMBEDDING_MODEL.to_string(),
+        }),
+    }
 }
 
 fn load_provider_config_map(connection: &Connection) -> Result<HashMap<String, DbProviderConfigRecord>, String> {
@@ -1131,91 +1174,28 @@ fn load_provider_config_map(connection: &Connection) -> Result<HashMap<String, D
     }
 }
 
-fn provider_for_model_id(model_id: &str, configs: &HashMap<String, DbProviderConfigRecord>) -> Option<String> {
-    let trimmed = model_id.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    for (provider, config) in configs {
-        if let Some(custom_models) = config.custom_models.as_ref().and_then(|value| value.as_array()) {
-            for model in custom_models {
-                let matches_id = model.get("id").and_then(|value| value.as_str()) == Some(trimmed);
-                let matches_request_model =
-                    model.get("requestModelId").and_then(|value| value.as_str()) == Some(trimmed);
-                if matches_id || matches_request_model {
-                    return Some(provider.clone());
-                }
-            }
-        }
-    }
-
-    if trimmed.starts_with("openai/") || trimmed.starts_with("anthropic/") || trimmed.starts_with("google/") {
-        return Some("openrouter".to_string());
-    }
-    if trimmed.starts_with("moonshot-v1-") {
-        return Some("moonshot".to_string());
-    }
-    if trimmed.starts_with("deepseek-ai/") || trimmed.starts_with("Qwen/") {
-        return Some("siliconflow".to_string());
-    }
-    if trimmed.starts_with("qwen-") {
-        return Some("dashscope".to_string());
-    }
-    if trimmed.starts_with("glm-") {
-        return Some("zhipu".to_string());
-    }
-
-    match trimmed {
-        "gpt-4o" | "gpt-4o-mini" | "o1" | "o3-mini" => Some("openai".to_string()),
-        value if value.starts_with("claude-") => Some("claude".to_string()),
-        value if value.starts_with("gemini-") => Some("gemini".to_string()),
-        "llama3" | "llava" => Some("ollama".to_string()),
-        value if value.starts_with("deepseek-") => Some("deepseek".to_string()),
-        _ => None,
-    }
-}
-
 fn resolve_embedding_provider(
     connection: &Connection,
-) -> Result<Option<(String, DbProviderConfigRecord)>, String> {
-    let current_model = read_structured_app_value(connection, "omni_current_model")?.unwrap_or_default();
+) -> Result<Option<(String, DbProviderConfigRecord, String)>, String> {
+    let profile = load_knowledge_embedding_profile(connection)?;
+    if !profile.enabled {
+        return Ok(None);
+    }
+
+    if !provider_supports_embeddings(&profile.provider) {
+        return Ok(None);
+    }
+
     let configs = load_provider_config_map(connection)?;
-    let mut ordered_candidates: Vec<String> = Vec::new();
+    let Some(config) = configs.get(&profile.provider) else {
+        return Ok(None);
+    };
 
-    if let Some(provider) = provider_for_model_id(&current_model, &configs) {
-        ordered_candidates.push(provider);
+    if config.api_key.trim().is_empty() {
+        return Ok(None);
     }
 
-    for provider in EMBEDDING_PROVIDER_PRIORITY {
-        if !ordered_candidates.iter().any(|item| item == provider) {
-            ordered_candidates.push(provider.to_string());
-        }
-    }
-
-    for provider in configs.keys() {
-        if !ordered_candidates.iter().any(|item| item == provider) {
-            ordered_candidates.push(provider.clone());
-        }
-    }
-
-    for provider in ordered_candidates {
-        if !provider_supports_embeddings(&provider) {
-            continue;
-        }
-
-        let Some(config) = configs.get(&provider) else {
-            continue;
-        };
-
-        if config.api_key.trim().is_empty() {
-            continue;
-        }
-
-        return Ok(Some((provider, config.clone())));
-    }
-
-    Ok(None)
+    Ok(Some((profile.provider, config.clone(), profile.model)))
 }
 
 fn generate_chunk_embeddings(
@@ -1226,7 +1206,7 @@ fn generate_chunk_embeddings(
         return Vec::new();
     }
 
-    let Some((provider, config)) = resolve_embedding_provider(connection).ok().flatten() else {
+    let Some((provider, config, embedding_model)) = resolve_embedding_provider(connection).ok().flatten() else {
         return vec![None; chunks.len()];
     };
 
@@ -1249,7 +1229,7 @@ fn generate_chunk_embeddings(
 
     let input: Vec<&str> = chunks.iter().map(|chunk| chunk.content.as_str()).collect();
     let request_body = serde_json::json!({
-        "model": DEFAULT_EMBEDDING_MODEL,
+        "model": embedding_model,
         "input": input,
     });
 
@@ -1358,7 +1338,7 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
     let mut collections_stmt = connection
         .prepare(
             r#"
-            SELECT id, name, description, created_at, updated_at
+            SELECT id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at
             FROM knowledge_collections
             ORDER BY created_at ASC, id ASC
             "#,
@@ -1370,8 +1350,10 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
                 id: row.get(0)?,
                 name: row.get(1)?,
                 description: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
+                retrieval_mode: row.get(3)?,
+                embedding_profile_id: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -1528,10 +1510,10 @@ fn create_knowledge_collection(connection: &Connection, name: &str, description:
     connection
         .execute(
             r#"
-            INSERT INTO knowledge_collections (id, name, description, created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO knowledge_collections (id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             "#,
-            params![id, name, description, now, now],
+            params![id, name, description, "hybrid", Option::<String>::None, now, now],
         )
         .map_err(|err| err.to_string())?;
 
@@ -1539,8 +1521,73 @@ fn create_knowledge_collection(connection: &Connection, name: &str, description:
         id,
         name: name.to_string(),
         description: description.to_string(),
+        retrieval_mode: "hybrid".to_string(),
+        embedding_profile_id: None,
         created_at: now,
         updated_at: now,
+    })
+}
+
+fn update_knowledge_collection(
+    connection: &Connection,
+    input: UpdateKnowledgeCollectionInput,
+) -> Result<KnowledgeCollectionRecord, String> {
+    let collection_id = input.collection_id.trim().to_string();
+    if collection_id.is_empty() {
+        return Err("知识库 ID 不能为空".into());
+    }
+
+    let existing = connection
+        .query_row(
+            r#"
+            SELECT id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at
+            FROM knowledge_collections
+            WHERE id = ?1
+            "#,
+            params![collection_id],
+            |row| {
+                Ok(KnowledgeCollectionRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    retrieval_mode: row.get(3)?,
+                    embedding_profile_id: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| format!("知识库不存在: {collection_id}"))?;
+
+    let name = input.name.unwrap_or(existing.name).trim().to_string();
+    let description = input.description.unwrap_or(existing.description).trim().to_string();
+    let retrieval_mode = input
+        .retrieval_mode
+        .map(|value| normalize_knowledge_retrieval_mode(&value))
+        .unwrap_or_else(|| existing.retrieval_mode.clone());
+    let updated_at = current_timestamp_ms();
+
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_collections
+            SET name = ?2, description = ?3, retrieval_mode = ?4, updated_at = ?5
+            WHERE id = ?1
+            "#,
+            params![collection_id, name, description, retrieval_mode, updated_at],
+        )
+        .map_err(|err| err.to_string())?;
+
+    Ok(KnowledgeCollectionRecord {
+        id: existing.id,
+        name,
+        description,
+        retrieval_mode,
+        embedding_profile_id: existing.embedding_profile_id,
+        created_at: existing.created_at,
+        updated_at,
     })
 }
 
@@ -1773,6 +1820,7 @@ fn score_search_candidate(
     query: &str,
     query_terms: &[String],
     query_embedding: Option<&[f64]>,
+    retrieval_mode: &str,
     candidate: &KnowledgeSearchCandidate,
 ) -> f64 {
     let mut score = 0.0;
@@ -1810,10 +1858,21 @@ fn score_search_candidate(
         score += 0.8;
     }
 
-    if let Some(query_embedding) = query_embedding {
-        if let Some(candidate_embedding) = candidate.embedding_json.as_deref().and_then(parse_embedding_json) {
-            score += cosine_similarity(query_embedding, &candidate_embedding) * 2.0;
+    let allow_embedding = matches!(retrieval_mode, "hybrid" | "vector");
+    if allow_embedding {
+        if let Some(query_embedding) = query_embedding {
+            if let Some(candidate_embedding) = candidate.embedding_json.as_deref().and_then(parse_embedding_json) {
+                score += cosine_similarity(query_embedding, &candidate_embedding) * 2.0;
+            }
         }
+    }
+
+    if matches!(retrieval_mode, "vector") {
+        score += 0.2;
+    }
+
+    if matches!(retrieval_mode, "keyword") {
+        score += 0.1;
     }
 
     score
@@ -1861,6 +1920,7 @@ struct KnowledgeSearchCandidate {
     source_name: String,
     source_path: Option<String>,
     collection_name: String,
+    retrieval_mode: String,
     tags: Vec<String>,
     favorite: bool,
     access_count: i64,
@@ -1893,7 +1953,6 @@ fn search_knowledge_chunks(
         }
     });
     let query_embedding = input.query_embedding;
-
     let mut stmt = connection
         .prepare(
             r#"
@@ -1913,7 +1972,8 @@ fn search_knowledge_chunks(
               d.access_count,
               d.last_accessed_at,
               d.title_hierarchy,
-              k.name
+              k.name,
+              k.retrieval_mode
             FROM knowledge_chunks c
             JOIN knowledge_documents d ON d.id = c.document_id
             JOIN knowledge_collections k ON k.id = c.collection_id
@@ -1941,6 +2001,7 @@ fn search_knowledge_chunks(
                 last_accessed_at: row.get(13)?,
                 title_hierarchy: row.get(14)?,
                 collection_name: row.get(15)?,
+                retrieval_mode: row.get(16)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -1955,7 +2016,13 @@ fn search_knowledge_chunks(
 
     let mut scored = Vec::new();
     for candidate in candidates {
-        let score = score_search_candidate(&query, &query_terms, query_embedding.as_deref(), &candidate);
+        let retrieval_mode = normalize_knowledge_retrieval_mode(candidate.retrieval_mode.as_str());
+        let effective_embedding = if matches!(retrieval_mode.as_str(), "hybrid" | "vector") {
+            query_embedding.as_deref()
+        } else {
+            None
+        };
+        let score = score_search_candidate(&query, &query_terms, effective_embedding, &retrieval_mode, &candidate);
         if score <= 0.0 && !candidate.content.to_lowercase().contains(&query) {
             continue;
         }
@@ -2031,6 +2098,43 @@ fn create_knowledge_collection_command(
 ) -> Result<KnowledgeCollectionRecord, String> {
     let connection = open_sqlite_connection(&app)?;
     create_knowledge_collection(&connection, &name, &description)
+}
+
+#[tauri::command]
+fn ensure_default_knowledge_collection_command(app: tauri::AppHandle) -> Result<KnowledgeCollectionRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    ensure_knowledge_defaults(&connection)?;
+
+    connection
+        .query_row(
+            r#"
+            SELECT id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at
+            FROM knowledge_collections
+            WHERE id = 'default'
+            "#,
+            [],
+            |row| {
+                Ok(KnowledgeCollectionRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    retrieval_mode: row.get(3)?,
+                    embedding_profile_id: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            },
+        )
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn update_knowledge_collection_command(
+    app: tauri::AppHandle,
+    input: UpdateKnowledgeCollectionInput,
+) -> Result<KnowledgeCollectionRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    update_knowledge_collection(&connection, input)
 }
 
 #[tauri::command]
@@ -2252,6 +2356,24 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
         connection
             .execute(
                 "ALTER TABLE knowledge_documents ADD COLUMN thumbnail_data_url TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_collections", "retrieval_mode")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_collections ADD COLUMN retrieval_mode TEXT NOT NULL DEFAULT 'hybrid'",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_collections", "embedding_profile_id")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_collections ADD COLUMN embedding_profile_id TEXT",
                 [],
             )
             .map_err(|err| err.to_string())?;
@@ -2609,6 +2731,8 @@ pub fn run() {
             load_knowledge_document_command,
             load_knowledge_document_file_command,
             create_knowledge_collection_command,
+            ensure_default_knowledge_collection_command,
+            update_knowledge_collection_command,
             delete_knowledge_collection_command,
             delete_knowledge_document_command,
             import_knowledge_document_command,

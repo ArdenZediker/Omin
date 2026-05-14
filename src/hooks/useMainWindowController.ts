@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
+﻿import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
@@ -36,7 +37,6 @@ function getSafeCurrentWindow() {
     return null;
   }
 }
-
 const appWindow = getSafeCurrentWindow();
 
 type UseMainWindowControllerArgs = {
@@ -87,6 +87,7 @@ export function useMainWindowController({
       CHARACTER_SCALE_STORAGE_KEY,
       "omni_character_model",
       "omni_provider_configs",
+      "omni_knowledge_embedding_profile",
       CURRENT_MODEL_STORAGE_KEY,
       "omni_model_connection_status",
       "omni_basic_settings",
@@ -116,6 +117,23 @@ export function useMainWindowController({
       media.removeEventListener("change", onSystemThemeChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (isCompactWindow || !appWindow) {
+      return;
+    }
+
+    let cleanup: (() => void) | undefined;
+    void appWindow.listen("omni-knowledge-embedding-profile-changed", () => {
+      void bootstrapSqliteStorage(["omni_knowledge_embedding_profile"]);
+    }).then((unlisten) => {
+      cleanup = unlisten;
+    });
+
+    return () => {
+      cleanup?.();
+    };
+  }, [isCompactWindow]);
 
   useEffect(() => {
     if (appWindow) {
@@ -158,29 +176,17 @@ export function useMainWindowController({
     return () => window.removeEventListener("storage", onStorage);
   }, [isCompactWindow, setBasicSettings]);
 
-  const previousViewRef = useRef<ViewMode | null>(null);
-  const previousSettingsWindowSizeRef = useRef<{ width: number; height: number } | null>(null);
-
   useEffect(() => {
     if (isCompactWindow || !appWindow) {
       return;
     }
 
     const win = appWindow;
-    const previousView = previousViewRef.current;
-    const previousSettingsSize = previousSettingsWindowSizeRef.current;
     saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, view);
-
-    const isSettingsView = view === "settings";
-    const settingsSizeChanged =
-      !previousSettingsSize ||
-      previousSettingsSize.width !== basicSettings.settingsWindowWidth ||
-      previousSettingsSize.height !== basicSettings.settingsWindowHeight;
-    const shouldResize = isSettingsView ? previousView !== "settings" || settingsSizeChanged : previousView === "settings";
+    const shouldResize = true;
 
     if (shouldResize) {
-      const targetView = isSettingsView ? "settings" : "chat";
-      const targetSize = getMainWindowSizeForView(targetView);
+      const targetSize = getMainWindowSizeForView(view);
       void win.isMaximized().then((isMaximized) => {
         if (isMaximized) {
           return;
@@ -188,19 +194,7 @@ export function useMainWindowController({
         void resizeWindow(win, targetSize.width, targetSize.height);
       });
     }
-
-    previousViewRef.current = view;
-    if (isSettingsView) {
-      previousSettingsWindowSizeRef.current = {
-        width: basicSettings.settingsWindowWidth,
-        height: basicSettings.settingsWindowHeight,
-      };
-    }
   }, [
-    basicSettings.mainWindowHeight,
-    basicSettings.mainWindowWidth,
-    basicSettings.settingsWindowHeight,
-    basicSettings.settingsWindowWidth,
     isCompactWindow,
     view,
   ]);
@@ -213,7 +207,6 @@ export function useMainWindowController({
 
     let focusCleanup: (() => void) | undefined;
     let draftCleanup: (() => void) | undefined;
-    let settingsCleanup: (() => void) | undefined;
     let knowledgeCleanup: (() => void) | undefined;
     let moveCleanup: (() => void) | undefined;
 
@@ -237,14 +230,6 @@ export function useMainWindowController({
       });
 
     void win
-      .listen("omni-open-settings", () => {
-        setView("settings");
-      })
-      .then((unlisten) => {
-        settingsCleanup = unlisten;
-      });
-
-    void win
       .listen("omni-open-knowledge", () => {
         setView("knowledge");
       })
@@ -265,11 +250,12 @@ export function useMainWindowController({
     return () => {
       focusCleanup?.();
       draftCleanup?.();
-      settingsCleanup?.();
       knowledgeCleanup?.();
       moveCleanup?.();
     };
   }, [isCompactWindow, setInputDraft, setInputDraftImages, setInputDraftKey, setInputFocusKey, setView]);
+
+
 
   useEffect(() => {
     if (isCompactWindow) {
@@ -302,14 +288,7 @@ export function useMainWindowController({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    basicSettings.openMainShortcut,
-    basicSettings.switchPreviousModelShortcut,
-    isCompactWindow,
-    onModelChange,
-    previousModel,
-    setView,
-  ]);
+  }, [basicSettings.openMainShortcut, basicSettings.switchPreviousModelShortcut, isCompactWindow, onModelChange, previousModel, setView]);
 
   useEffect(() => {
     if (isCompactWindow || basicSettings.openMainShortcut === UNSET_SHORTCUT) {
@@ -350,6 +329,28 @@ export function useMainWindowController({
   }, []);
 
   const lastMessagesCountRef = useRef(messages.length);
+
+  useEffect(() => {
+    if (isCompactWindow || !appWindow) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void listen<{ modelId?: string }>("omni-model-changed", (event) => {
+      const modelId = event.payload?.modelId;
+      if (!modelId) {
+        return;
+      }
+      setCurrentModel(modelId);
+      onModelChange(modelId);
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isCompactWindow, onModelChange, setCurrentModel]);
 
   useEffect(() => {
     if (isCompactWindow || !appWindow) {

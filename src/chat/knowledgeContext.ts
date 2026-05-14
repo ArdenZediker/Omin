@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { modelRegistry } from "../adapters/registry";
 import type { Message } from "../adapters/types";
+import { loadKnowledgeEmbeddingProfile } from "./knowledgeEmbedding";
 import type { KnowledgeContextResult, KnowledgeContextSource, SearchKnowledgeChunkResult } from "./knowledgeTypes";
 
 function canUseTauriInvoke() {
@@ -88,19 +89,17 @@ export async function buildKnowledgeContextBlock(options: {
     return null;
   }
 
-  const adapterCandidates = [modelRegistry.getAdapterForModel(options.model), ...modelRegistry.getAvailableModels().map((model) => modelRegistry.getAdapterForModel(model.id))];
+  const embeddingProfile = loadKnowledgeEmbeddingProfile();
   let queryEmbedding: number[] | undefined;
-  for (const adapter of adapterCandidates) {
-    if (!adapter?.embed) {
-      continue;
-    }
-
-    try {
-      const embedding = await adapter.embed(query);
-      queryEmbedding = embedding.embedding;
-      break;
-    } catch {
-      queryEmbedding = undefined;
+  if (embeddingProfile.enabled) {
+    const adapter = modelRegistry.getAdapterForProvider(embeddingProfile.provider);
+    if (adapter?.embed) {
+      try {
+        const embedding = await adapter.embed(query, embeddingProfile.model);
+        queryEmbedding = embedding.embedding;
+      } catch {
+        queryEmbedding = undefined;
+      }
     }
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Message, ModelConfig } from "../adapters/types";
+import { showSettingsWindow } from "../app/window";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { ToolRegistry } from "../chat/toolRegistry";
@@ -33,7 +34,6 @@ type UseChatRuntimeArgs = {
   setInputDraftKey: React.Dispatch<React.SetStateAction<number>>;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setOpenChatMenu: React.Dispatch<React.SetStateAction<{ id: string; x: number; y: number } | null>>;
-  setView: React.Dispatch<React.SetStateAction<"chat" | "knowledge" | "settings">>;
   togglePinnedChatSession: (sessionId: string) => boolean;
 };
 
@@ -64,7 +64,6 @@ export function useChatRuntime({
   setInputDraftKey,
   setMessages,
   setOpenChatMenu,
-  setView,
   togglePinnedChatSession,
 }: UseChatRuntimeArgs) {
   const [error, setError] = useState<string | null>(null);
@@ -270,7 +269,7 @@ export function useChatRuntime({
           command: settingsTool.command,
           title: settingsTool.title,
           execute: async () => {
-            setView("settings");
+            await showSettingsWindow();
             return { ok: true };
           },
         });
@@ -477,7 +476,6 @@ export function useChatRuntime({
       setActiveChatId,
       setMessages,
       setOpenChatMenu,
-      setView,
       togglePinnedChatSession,
     ]
   );

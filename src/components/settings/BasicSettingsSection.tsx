@@ -144,14 +144,14 @@ export default function BasicSettingsSection({
       <div className="space-y-4 border-t border-slate-100 pt-4">
         <h3 className="text-sm font-medium text-slate-900 omni-settings-title">默认尺寸</h3>
         <div className="space-y-3">
-          <Field label="主窗口尺寸">
+          <Field label="默认尺寸">
             <div className="flex items-center gap-2">
               <input
                 type="number"
                 min="640"
                 max="1800"
                 value={basicSettings.mainWindowWidth}
-                onChange={(e) => onUpdateBasicSettings({ mainWindowWidth: Number(e.target.value) })}
+                onChange={(e) => onUpdateBasicSettings({ mainWindowWidth: Number(e.target.value) || 640 })}
                 className="h-9 w-28 rounded-md border border-slate-300 px-3 text-sm"
               />
               <span className="text-xs text-slate-500 omni-settings-muted">×</span>
@@ -160,29 +160,7 @@ export default function BasicSettingsSection({
                 min="480"
                 max="1400"
                 value={basicSettings.mainWindowHeight}
-                onChange={(e) => onUpdateBasicSettings({ mainWindowHeight: Number(e.target.value) })}
-                className="h-9 w-28 rounded-md border border-slate-300 px-3 text-sm"
-              />
-              <span className="text-xs text-slate-500 omni-settings-muted">宽 × 高</span>
-            </div>
-          </Field>
-          <Field label="设置窗口尺寸">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="640"
-                max="1800"
-                value={basicSettings.settingsWindowWidth}
-                onChange={(e) => onUpdateBasicSettings({ settingsWindowWidth: Number(e.target.value) })}
-                className="h-9 w-28 rounded-md border border-slate-300 px-3 text-sm"
-              />
-              <span className="text-xs text-slate-500 omni-settings-muted">×</span>
-              <input
-                type="number"
-                min="480"
-                max="1400"
-                value={basicSettings.settingsWindowHeight}
-                onChange={(e) => onUpdateBasicSettings({ settingsWindowHeight: Number(e.target.value) })}
+                onChange={(e) => onUpdateBasicSettings({ mainWindowHeight: Number(e.target.value) || 480 })}
                 className="h-9 w-28 rounded-md border border-slate-300 px-3 text-sm"
               />
               <span className="text-xs text-slate-500 omni-settings-muted">宽 × 高</span>

@@ -1,7 +1,7 @@
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, SETTINGS_SIZE, THEME_MODE_STORAGE_KEY } from "./constants";
+import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL, THEME_MODE_STORAGE_KEY } from "./constants";
 import type { BasicSettings, ExternalChatEntry, ViewMode } from "./types";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
@@ -186,17 +186,19 @@ export function persistMainPosition(position: { x: number; y: number }) {
 export function getStoredMainView(): ViewMode {
   if (typeof window === "undefined") return "chat";
   const saved = readSqliteBackedValue(MAIN_VIEW_STORAGE_KEY);
-  return saved === "settings" || saved === "knowledge" ? saved : "chat";
+  return saved === "knowledge" ? "knowledge" : "chat";
 }
 
-export function getMainWindowSizeForView(viewMode: ViewMode) {
+export function getMainWindowSizeForView(_viewMode: ViewMode) {
   const settings = getBasicSettings();
-  if (viewMode === "settings") {
-    return {
-      width: clampWindowSize(settings.settingsWindowWidth, SETTINGS_SIZE.width, 640, 1800),
-      height: clampWindowSize(settings.settingsWindowHeight, SETTINGS_SIZE.height, 480, 1400),
-    };
-  }
+  return {
+    width: clampWindowSize(settings.mainWindowWidth, EXPANDED_SIZE.width, 640, 1800),
+    height: clampWindowSize(settings.mainWindowHeight, EXPANDED_SIZE.height, 480, 1400),
+  };
+}
+
+export function getSettingsWindowSize() {
+  const settings = getBasicSettings();
   return {
     width: clampWindowSize(settings.mainWindowWidth, EXPANDED_SIZE.width, 640, 1800),
     height: clampWindowSize(settings.mainWindowHeight, EXPANDED_SIZE.height, 480, 1400),
@@ -400,6 +402,49 @@ export async function showCompactWindow(
   await compactWindow.setAlwaysOnTop(true);
 }
 
+export async function ensureSettingsWindow() {
+  const size = getSettingsWindowSize();
+  let settingsWindow = await WebviewWindow.getByLabel(SETTINGS_WINDOW_LABEL);
+
+  if (!settingsWindow) {
+    settingsWindow = new WebviewWindow(SETTINGS_WINDOW_LABEL, {
+      url: "/?settings=1",
+      title: "Omni Settings",
+      width: size.width,
+      height: size.height,
+      minWidth: 720,
+      minHeight: 560,
+      decorations: false,
+      transparent: true,
+      shadow: false,
+      alwaysOnTop: false,
+      skipTaskbar: false,
+      resizable: true,
+      visible: false,
+      focus: false,
+      center: true,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      settingsWindow?.once("tauri://created", () => resolve());
+      settingsWindow?.once("tauri://error", (event) => reject(event.payload));
+    });
+
+    await applyExpandedWindowChrome(settingsWindow);
+    await settingsWindow.setSize(new LogicalSize(size.width, size.height));
+    return settingsWindow;
+  }
+
+  await applyExpandedWindowChrome(settingsWindow);
+  return settingsWindow;
+}
+
+export async function showSettingsWindow() {
+  const settingsWindow = await ensureSettingsWindow();
+  await settingsWindow.show();
+  await settingsWindow.setFocus();
+}
+
 export async function openInternalChatWindow(entry: ExternalChatEntry) {
   if (entry.kind !== "external" || !entry.url) return;
 
@@ -433,7 +478,10 @@ export async function openInternalChatWindow(entry: ExternalChatEntry) {
   await chatWindow.setFocus();
 }
 
-export async function restoreMainWindow(focusInput = false) {
+export async function restoreMainWindow(
+  focusInput = false,
+  options: { restoreGeometry?: boolean } = {}
+) {
   const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
 
   if (mainWindow) {
@@ -448,19 +496,21 @@ export async function restoreMainWindow(focusInput = false) {
 
     await applyExpandedWindowChrome(mainWindow);
     await mainWindow.show();
-    const restoredSize = getMainWindowSizeForView(getStoredMainView());
-    await resizeWindow(mainWindow, restoredSize.width, restoredSize.height);
+    if (options.restoreGeometry !== false) {
+      const restoredSize = getMainWindowSizeForView(getStoredMainView());
+      await resizeWindow(mainWindow, restoredSize.width, restoredSize.height);
 
-    const settings = getBasicSettings();
-    if (settings.mainWindowPositionMode !== "center") {
-      const storedMainPos = getStoredMainPosition();
-      if (storedMainPos && isMainPositionVisible(storedMainPos)) {
-        await mainWindow.setPosition(new LogicalPosition(storedMainPos.x, storedMainPos.y));
+      const settings = getBasicSettings();
+      if (settings.mainWindowPositionMode !== "center") {
+        const storedMainPos = getStoredMainPosition();
+        if (storedMainPos && isMainPositionVisible(storedMainPos)) {
+          await mainWindow.setPosition(new LogicalPosition(storedMainPos.x, storedMainPos.y));
+        } else {
+          await mainWindow.center();
+        }
       } else {
         await mainWindow.center();
       }
-    } else {
-      await mainWindow.center();
     }
 
     await mainWindow.setFocus();

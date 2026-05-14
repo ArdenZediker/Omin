@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
+import type { MouseEvent } from "react";
 import { Maximize2, Minimize2, Minus, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface TitleBarProps {
   onMinimizeToCompact: () => void | Promise<void>;
+  onClose?: () => void | Promise<void>;
+  closeTitle?: string;
   inline?: boolean;
   minimizeBehavior?: "taskbar" | "compact";
 }
@@ -16,7 +19,13 @@ function getSafeCurrentWindow() {
   }
 }
 
-export default function TitleBar({ onMinimizeToCompact, inline = false, minimizeBehavior = "taskbar" }: TitleBarProps) {
+export default function TitleBar({
+  onMinimizeToCompact,
+  onClose,
+  closeTitle,
+  inline = false,
+  minimizeBehavior = "taskbar",
+}: TitleBarProps) {
   const appWindow = getSafeCurrentWindow();
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -45,7 +54,7 @@ export default function TitleBar({ onMinimizeToCompact, inline = false, minimize
     };
   }, [appWindow]);
 
-  const handleMinimize = async (event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleMinimize = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     if (minimizeBehavior === "compact") {
       await onMinimizeToCompact();
@@ -58,12 +67,12 @@ export default function TitleBar({ onMinimizeToCompact, inline = false, minimize
     await appWindow.minimize();
   };
 
-  const handleClose = async (event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleClose = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    await onMinimizeToCompact();
+    await (onClose ?? onMinimizeToCompact)();
   };
 
-  const handleToggleMaximize = async (event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleToggleMaximize = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     if (!appWindow) {
       return;
@@ -77,7 +86,7 @@ export default function TitleBar({ onMinimizeToCompact, inline = false, minimize
     setIsMaximized(nextIsMaximized);
   };
 
-  const handleDragStart = async (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleDragStart = async (event: MouseEvent<HTMLDivElement>) => {
     if (!appWindow) {
       return;
     }
@@ -121,7 +130,7 @@ export default function TitleBar({ onMinimizeToCompact, inline = false, minimize
           onClick={handleClose}
           onMouseDown={(event) => event.stopPropagation()}
           className="omni-window-controls__button omni-window-controls__button--close"
-          title="关闭到悬浮球"
+          title={closeTitle ?? (onClose ? "关闭窗口" : minimizeBehavior === "compact" ? "收起到悬浮球" : "最小化到任务栏")}
           type="button"
         >
           <X className="omni-window-controls__icon" strokeWidth={1.7} />
