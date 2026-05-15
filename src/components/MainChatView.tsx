@@ -1188,8 +1188,6 @@ export default function MainChatView({
         </div>
       </aside>
 
-      <div className="main-chat-layout__splitter main-chat-layout__splitter--ghost" aria-hidden="true" />
-
       {assistantGroupManagerOpen && (
         <div
           className="omni-confirm-overlay"
