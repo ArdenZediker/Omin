@@ -670,12 +670,15 @@ export function useChatRuntime({
   );
 
   const handleNewChat = useCallback(() => {
-    setActiveChatId(null);
+    createSessionFromMessages([]);
     setMessages([]);
+    setInputDraft("");
+    setInputDraftImages([]);
+    setInputDraftKey((value) => value + 1);
     setError(null);
     setOpenChatMenu(null);
     setEditingMessageIndex(null);
-  }, [setActiveChatId, setMessages, setOpenChatMenu]);
+  }, [createSessionFromMessages, setEditingMessageIndex, setError, setInputDraft, setInputDraftImages, setInputDraftKey, setMessages, setOpenChatMenu]);
 
   return {
     abortControllerRef,
