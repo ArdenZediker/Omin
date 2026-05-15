@@ -97,9 +97,13 @@ export default function ModelSettingsSection({
 }: Props) {
   return (
     <>
-      <section className="space-y-3">
-        <div className="flex justify-end">
-          <button onClick={onOpenNewModelForm} className="rounded-md bg-slate-900 px-4 py-2 text-xs text-white" type="button">
+      <section className="min-w-0 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">模型列表</div>
+            <div className="mt-0.5 text-xs text-slate-500">当前已创建的聊天模型会显示在这里。</div>
+          </div>
+          <button onClick={onOpenNewModelForm} className="shrink-0 rounded-md bg-slate-900 px-4 py-2 text-xs text-white" type="button">
             新增模型
           </button>
         </div>
@@ -127,7 +131,7 @@ export default function ModelSettingsSection({
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section className="min-w-0 space-y-4">
         <div className="border-b border-slate-100 pb-2">
           <h3 className="text-sm font-medium text-slate-900">使用偏好</h3>
           <p className="mt-0.5 text-xs text-slate-500">控制默认请求参数，最终会与模型能力共同决定实际行为。</p>

@@ -1,7 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  DEFAULT_KNOWLEDGE_EMBEDDING_CONFIG,
-  getKnowledgeEmbeddingModelById,
   getKnowledgeEmbeddingProviderOptions,
   normalizeKnowledgeEmbeddingConfig,
   type KnowledgeEmbeddingConfig,
@@ -46,8 +44,6 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
   const normalizedConfig = useMemo(() => normalizeKnowledgeEmbeddingConfig(config), [config]);
   const [isModelFormOpen, setIsModelFormOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<EditingModelState | null>(null);
-
-  const activeModel = getKnowledgeEmbeddingModelById(normalizedConfig, normalizedConfig.activeModelId) ?? normalizedConfig.models[0] ?? null;
 
   const commit = (next: KnowledgeEmbeddingConfig) => {
     onChangeConfig(normalizeKnowledgeEmbeddingConfig(next));
@@ -113,13 +109,10 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
   };
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <section className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-slate-900">向量模型</h3>
-          <p className="mt-0.5 text-xs leading-5 text-slate-500">
-            每个模型单独保存供应商、Base URL、模型 ID 和 API Key。保存后只在列表里展示，不再占用顶部全局区域。
-          </p>
         </div>
         <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] ${normalizedConfig.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
           {normalizedConfig.enabled ? "已启用" : "已关闭"}
@@ -131,7 +124,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
         启用知识库向量化
       </label>
 
-      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">模型列表</div>
@@ -146,7 +139,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
           </button>
         </div>
 
-        <div className="space-y-2">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {normalizedConfig.models.length > 0 ? (
             normalizedConfig.models.map((model) => {
               const isActive = model.id === normalizedConfig.activeModelId;
@@ -161,10 +154,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
                     <button type="button" onClick={() => openEditModel(model)} className="min-w-0 flex-1 text-left">
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                         <span className="rounded-full bg-slate-100 px-2 py-1">供应商：{model.provider}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1">Base URL：{model.baseUrl}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1">模型标识：{model.id}</span>
                         <span className="rounded-full bg-slate-100 px-2 py-1">{model.name}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1">{model.model || "未填写模型 ID"}</span>
                         {isActive ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">当前使用</span> : null}
                         {!model.apiKey.trim() ? <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">缺少 Key</span> : null}
                       </div>
@@ -182,16 +172,6 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
                           设为当前
                         </button>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          removeModel(model.id);
-                        }}
-                        className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50"
-                      >
-                        删除
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -205,32 +185,12 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
-        <p className="text-xs leading-5 text-slate-500">
-          当前模型会作为默认向量模型使用；其它模型会保留，方便后续对比或回退。
-        </p>
-        <button
-          type="button"
-          onClick={() => onChangeConfig(DEFAULT_KNOWLEDGE_EMBEDDING_CONFIG)}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
-        >
-          恢复默认
-        </button>
-      </div>
-
-      {activeModel ? (
-        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
-          当前使用模型：{activeModel.name} / {activeModel.model}
-        </div>
-      ) : null}
-
       {isModelFormOpen && editingModel ? (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/25 px-6">
           <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
             <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900">{normalizedConfig.models.some((model) => model.id === editingModel.id) ? "编辑模型" : "新增模型"}</h3>
-                <p className="mt-0.5 text-xs text-slate-500">保存后只保留列表，不会一直展开编辑区。</p>
               </div>
               <button onClick={closeModelForm} className="text-slate-400 hover:text-slate-700" type="button">
                 ×
