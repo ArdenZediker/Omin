@@ -1177,8 +1177,7 @@ fn count_vectorized_chunks(chunks: &[Option<String>]) -> i64 {
     chunks.iter().filter(|value| value.is_some()).count() as i64
 }
 
-fn normalize_knowledge_retrieval_mode(value: &str) -> String {
-    let _ = value;
+fn normalize_knowledge_retrieval_mode(_value: &str) -> String {
     "hybrid".to_string()
 }
 
