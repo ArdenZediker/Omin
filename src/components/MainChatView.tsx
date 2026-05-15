@@ -339,7 +339,6 @@ export default function MainChatView({
   const [customAssistantsCollapsed, setCustomAssistantsCollapsed] = useState(false);
   const [openAssistantCardMenuId, setOpenAssistantCardMenuId] = useState<string | null>(null);
   const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
-  const [showAssistantCapabilityDetails, setShowAssistantCapabilityDetails] = useState(false);
   const topicSearchInputRef = useRef<HTMLInputElement | null>(null);
   const topicMenuRef = useRef<HTMLDivElement | null>(null);
   const topicMenuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -426,7 +425,6 @@ export default function MainChatView({
   const activeSkillCount = activeAssistant?.allowedSkillIds.length ?? 0;
   const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
   const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
-  const showAssistantTopTags = false;
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
@@ -1361,32 +1359,12 @@ export default function MainChatView({
                 </div>
                 <div className="main-chat-toolbar__assistant-copy main-chat-toolbar__assistant-copy--single-line">
                   <strong>{isAssistantSettingsMode ? "助手设置" : currentTopicTitle}</strong>
-                  {!isAssistantSettingsMode && showAssistantTopTags && (
-                    <div className="main-chat-toolbar__assistant-tags">
-                      {activeAssistantPresetMeta && (
-                        <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
-                          {activeAssistantPresetMeta.label}
-                        </button>
-                      )}
-                      <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
-                        {activeToolCount} 个工具
-                      </button>
-                      <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
-                        {activeSkillCount} 个技能
-                      </button>
-                      <button type="button" className="main-chat-toolbar__assistant-tag" onClick={() => setShowAssistantCapabilityDetails((current) => !current)}>
-                        {activeMemoryScopeLabel}
-                      </button>
-                    </div>
-                  )}
-                  {!isAssistantSettingsMode && showAssistantCapabilityDetails && (
+                  {!isAssistantSettingsMode && activeAssistantPresetMeta && (
                     <div className="main-chat-toolbar__assistant-panel">
-                      {activeAssistantPresetMeta ? (
-                        <div className="main-chat-toolbar__assistant-panel-row">
-                          <strong>来源预设</strong>
-                          <span>{activeAssistantPresetMeta.label} · {activeAssistantPresetMeta.hint}</span>
-                        </div>
-                      ) : null}
+                      <div className="main-chat-toolbar__assistant-panel-row">
+                        <strong>来源预设</strong>
+                        <span>{activeAssistantPresetMeta.label} · {activeAssistantPresetMeta.hint}</span>
+                      </div>
                       <div className="main-chat-toolbar__assistant-panel-row">
                         <strong>工具能力</strong>
                         <span>{activeToolCount} 项已启用</span>
