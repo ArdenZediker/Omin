@@ -386,6 +386,7 @@ async function executeAnalyzeFilesTask(options: {
 export async function executeInputTask(options: {
   input: string;
   images?: string[];
+  hiddenContext?: string;
   currentMessages: Message[];
   model: string;
   signal?: AbortSignal;
@@ -394,7 +395,18 @@ export async function executeInputTask(options: {
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown } | void>;
 }): Promise<TaskExecutionResult> {
-  const { input, images, currentMessages, model, signal, systemPrompt, onChunk, onPrepareConversation, executeTool } = options;
+  const {
+    input,
+    images,
+    hiddenContext,
+    currentMessages,
+    model,
+    signal,
+    systemPrompt,
+    onChunk,
+    onPrepareConversation,
+    executeTool,
+  } = options;
   const localCommand = !images || images.length === 0 ? resolveLocalSlashCommand(input) : null;
 
   if (localCommand) {
@@ -442,7 +454,7 @@ export async function executeInputTask(options: {
     model,
     messages: preparedMessages,
     signal,
-    systemPrompt,
+    systemPrompt: [systemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
     onChunk,
     intent,
     plan,

@@ -33,7 +33,7 @@ interface ChatInputProps {
     target: "desktop" | "notification" | "session";
   }) => void;
   onStartNewTopic?: () => void;
-  onSend: (content: string, images?: string[]) => void;
+  onSend: (content: string, images?: string[], hiddenContext?: string) => void;
   isLoading: boolean;
   onStop: () => void;
   focusSignal?: number;
@@ -186,12 +186,13 @@ export default function ChatInput({
       .filter(([, enabled]) => enabled)
       .map(([key]) => `- ${CONTEXT_OPTION_LABELS[key as keyof typeof CONTEXT_OPTION_LABELS]}`);
 
-    const finalContent =
+    const visibleContent = input.trim();
+    const hiddenContext =
       contextLines.length > 0 && contextPresetText
-        ? `【上下文要求】\n请优先结合以下来源回答：\n${contextLines.join("\n")}\n\n【可用上下文】\n${contextPresetText}\n\n【用户问题】\n${input.trim()}`
-        : input.trim();
+        ? `【上下文要求】\n请优先结合以下来源回答：\n${contextLines.join("\n")}\n\n【可用上下文】\n${contextPresetText}`
+        : undefined;
 
-    onSend(finalContent, images.length > 0 ? images : undefined);
+    onSend(visibleContent, images.length > 0 ? images : undefined, hiddenContext);
     setInput("");
     setImages([]);
     setActivePopover(null);

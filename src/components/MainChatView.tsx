@@ -156,7 +156,7 @@ type MainChatViewProps = {
   onSelectAssistant: (assistantId: string) => void;
   onSelectChat: (sessionId: string) => void;
   onUpdateAssistantProfile: (assistantId: string, patch: Partial<AssistantProfile>) => AssistantProfile | null;
-  onSend: (content: string, images?: string[]) => void | Promise<void>;
+  onSend: (content: string, images?: string[], hiddenContext?: string) => void | Promise<void>;
   onSetOpenChatMenu: Dispatch<SetStateAction<{ id: string; x: number; y: number } | null>>;
   onSettingsOpen: () => void;
   onShareChat: (session: ChatSession) => void | Promise<void>;
@@ -594,10 +594,10 @@ export default function MainChatView({
   useEffect(() => {
     if (!workspaceElement) return;
 
-    const topicCollapseThreshold = 1180;
-    const topicExpandThreshold = 1240;
-    const assistantCollapseThreshold = 1320;
-    const assistantExpandThreshold = 1380;
+    const topicCollapseThreshold = 1080;
+    const topicExpandThreshold = 1160;
+    const assistantCollapseThreshold = 980;
+    const assistantExpandThreshold = 1040;
 
     const updateAutoCollapsed = () => {
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth || workspaceElement.getBoundingClientRect().width || 0;

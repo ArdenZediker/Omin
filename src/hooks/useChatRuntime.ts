@@ -144,7 +144,10 @@ export function useChatRuntime({
   );
 
   const runConversationTurn = useCallback(
-    async (conversationMessages: Message[], options: { sessionId?: string | null; createSession?: boolean } = {}) => {
+    async (
+      conversationMessages: Message[],
+      options: { sessionId?: string | null; createSession?: boolean; hiddenContext?: string } = {}
+    ) => {
       let sessionId = options.sessionId ?? activeChatId;
       if (!sessionId && options.createSession) {
         const nextSession = createSessionFromMessages(conversationMessages);
@@ -165,7 +168,7 @@ export function useChatRuntime({
           model: executionModel,
           messages: conversationMessages,
           signal: abortController.signal,
-          systemPrompt: assistantSystemPrompt,
+          systemPrompt: [assistantSystemPrompt, options.hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
           onChunk: (chunk) => {
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
@@ -380,7 +383,7 @@ export function useChatRuntime({
           title: listFilesTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim();
-            const entries = await invoke<Array<{ path: string; is_dir: boolean }>>("list_workspace_files", {
+            const entries = await invoke<Array<{ path: string; is_dir: boolean }>>('list_workspace_files', {
               query: query || null,
               limit: 80,
             });
@@ -406,7 +409,7 @@ export function useChatRuntime({
             const relativePath = resolvedCommand.args.trim();
             if (!relativePath) return { ok: false, error: "用法: /read_file 相对路径" };
 
-            const content = await invoke<string>("read_workspace_file", {
+            const content = await invoke<string>('read_workspace_file', {
               path: relativePath,
               maxChars: 6000,
             });
@@ -427,7 +430,7 @@ export function useChatRuntime({
             const query = resolvedCommand.args.trim();
             if (!query) return { ok: false, error: "用法: /search_files 关键词" };
 
-            const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>("search_workspace_files", {
+            const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>('search_workspace_files', {
               query,
               limit: 50,
             });
@@ -481,7 +484,7 @@ export function useChatRuntime({
   );
 
   const handleSend = useCallback(
-    async (content: string, images?: string[]) => {
+    async (content: string, images?: string[], hiddenContext?: string) => {
       if (isLoading) {
         return;
       }
@@ -499,6 +502,7 @@ export function useChatRuntime({
         const taskResult = await executeInputTask({
           input: content,
           images,
+          hiddenContext,
           currentMessages: messages,
           model: executionModel,
           onPrepareConversation: (preparedMessages) => {
@@ -510,7 +514,7 @@ export function useChatRuntime({
             setMessages([...preparedMessages, { role: "assistant", content: "" }]);
           },
           signal: abortController.signal,
-          systemPrompt: assistantSystemPrompt,
+            systemPrompt: [assistantSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
           onChunk: (chunk) => {
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
@@ -554,7 +558,7 @@ export function useChatRuntime({
             return;
           }
 
-          setError(taskResult.error || "任务执行失败");
+          setError(taskResult.error || "娴犺濮熼幍褑顢戞径杈Е");
           setMessages(conversationMessages);
           return;
         }
@@ -567,7 +571,7 @@ export function useChatRuntime({
         if (sendError instanceof DOMException && sendError.name === "AbortError") {
           return;
         }
-        setError(sendError instanceof Error ? sendError.message : "未知错误");
+        setError(sendError instanceof Error ? sendError.message : "閺堫亞鐓￠柨娆掝嚖");
       } finally {
         if (runId === lastRunIdRef.current) {
           abortControllerRef.current = null;
@@ -575,7 +579,18 @@ export function useChatRuntime({
         }
       }
     },
-    [activeAssistant, activeChatId, assistantSystemPrompt, createSessionFromMessages, executeTool, executionModel, finishTaskResult, isLoading, messages, setMessages]
+    [
+      activeAssistant,
+      activeChatId,
+      assistantSystemPrompt,
+      createSessionFromMessages,
+      executeTool,
+      executionModel,
+      finishTaskResult,
+      isLoading,
+      messages,
+      setMessages,
+    ]
   );
 
   const handleStop = useCallback(() => {
@@ -684,3 +699,4 @@ export function useChatRuntime({
     setError,
   };
 }
+
