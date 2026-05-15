@@ -48,6 +48,25 @@ import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStora
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import ModelSelector from "./ModelSelector";
+import { useCallback } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+
+const MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY = "main_layout_topic_width";
+const DEFAULT_TOPIC_PANEL_WIDTH = 240;
+const MIN_TOPIC_PANEL_WIDTH = 220;
+const MAX_TOPIC_PANEL_WIDTH = 360;
+
+function clampPanelWidth(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function readStoredPanelWidth(storageKey: string, fallback: number, min: number, max: number) {
+  const saved = readSqliteBackedValue(storageKey);
+  if (!saved) return fallback;
+  const parsed = Number.parseInt(saved, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampPanelWidth(parsed, min, max);
+}
 
 type SessionGroup = {
   label: string;
@@ -343,6 +362,9 @@ export default function MainChatView({
   const [assistantGroupDraft, setAssistantGroupDraft] = useState("");
   const [assistantMoveGroupMenuId, setAssistantMoveGroupMenuId] = useState<string | null>(null);
   const [assistantMoveGroupMenuPosition, setAssistantMoveGroupMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [topicPanelWidth, setTopicPanelWidth] = useState(() =>
+    readStoredPanelWidth(MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY, DEFAULT_TOPIC_PANEL_WIDTH, MIN_TOPIC_PANEL_WIDTH, MAX_TOPIC_PANEL_WIDTH)
+  );
   const [assistantGroups, setAssistantGroups] = useState<string[]>(() => {
     const saved = readSqliteBackedValue(ASSISTANT_GROUPS_STORAGE_KEY);
     if (!saved) return [];
@@ -382,6 +404,10 @@ export default function MainChatView({
   const assistantAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const assistantAvatarPanelRef = useRef<HTMLDivElement | null>(null);
   const assistantAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const layoutDragRef = useRef<{
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const recommendedPrompts = emptyChatPrompts.slice(0, 4);
   const normalizedTopicSearchQuery = normalizeSearchText(topicSearchQuery);
@@ -418,6 +444,40 @@ export default function MainChatView({
   );
   const activeAssistantAvatarSeed = resolveAssistantAvatarSeed(assistants, activeAssistant?.id ?? null);
   const activeAssistantPresetMeta = findPresetMetaByAssistant(activeAssistant);
+  const handleLayoutDragPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    layoutDragRef.current = {
+      startX: event.clientX,
+      startWidth: topicPanelWidth,
+    };
+  }, [topicPanelWidth]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const state = layoutDragRef.current;
+      if (!state) return;
+      const delta = event.clientX - state.startX;
+      setTopicPanelWidth(clampPanelWidth(state.startWidth - delta, MIN_TOPIC_PANEL_WIDTH, MAX_TOPIC_PANEL_WIDTH));
+    };
+
+    const handlePointerUp = () => {
+      const state = layoutDragRef.current;
+      if (!state) return;
+      layoutDragRef.current = null;
+      saveSqliteBackedValue(MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY, String(topicPanelWidth));
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [topicPanelWidth]);
   const activeSkillCount = activeAssistant?.allowedSkillIds.length ?? 0;
   const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
   const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
@@ -503,6 +563,13 @@ export default function MainChatView({
     if (isAssistantSettingsMode) classNames.push("main-chat-layout--assistant-settings");
     return classNames.join(" ");
   }, [assistantPanelManualVisible, isAssistantPanelVisible, isAssistantSettingsMode, isTopicPanelVisible, topicPanelManualVisible]);
+  const layoutStyle = useMemo<CSSProperties>(
+    () =>
+      ({
+        "--topic-panel-width": `${topicPanelWidth}px`,
+      }) as CSSProperties,
+    [topicPanelWidth]
+  );
 
   useEffect(() => {
     if (!composerElement) return;
@@ -722,7 +789,7 @@ export default function MainChatView({
 
 
   return (
-    <div className={layoutClassName}>
+    <div className={layoutClassName} style={layoutStyle}>
       <aside className="main-chat-nav drag-region">
         <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
           <Bot size={20} strokeWidth={1.9} />
@@ -1120,6 +1187,8 @@ export default function MainChatView({
 
         </div>
       </aside>
+
+      <div className="main-chat-layout__splitter main-chat-layout__splitter--ghost" aria-hidden="true" />
 
       {assistantGroupManagerOpen && (
         <div
@@ -1941,8 +2010,17 @@ export default function MainChatView({
           )}
 
         </main>
+      </section>
 
-        {!isAssistantSettingsMode && <aside className="chat-topic-panel">
+      <div
+        className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整工作台宽度"
+        onPointerDown={handleLayoutDragPointerDown}
+      />
+
+      {!isAssistantSettingsMode && <aside className="chat-topic-panel">
           <div className="chat-topic-panel__body">
             <div className="chat-topic-panel__toolbar">
               <div className="chat-topic-panel__title">
@@ -2543,7 +2621,6 @@ export default function MainChatView({
             )}
           </div>
         </aside>}
-      </section>
 
     </div>
   );
