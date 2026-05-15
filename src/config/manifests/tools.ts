@@ -62,11 +62,3 @@ export const ASSISTANT_TOOL_OPTIONS = ASSISTANT_TOOL_MANIFESTS.map((tool) => ({
 export function getToolManifestById(id: string) {
   return TOOL_MANIFESTS.find((tool) => tool.id === id) ?? null;
 }
-
-export function getToolManifestByCommand(command: string) {
-  return TOOL_MANIFESTS.find((tool) => tool.command === command) ?? null;
-}
-
-export function getToolsetManifestById(id: string) {
-  return TOOLSET_MANIFESTS.find((toolset) => toolset.id === id) ?? null;
-}

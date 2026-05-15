@@ -289,7 +289,3 @@ export async function embedKnowledgeText(text: string, configOverride?: Knowledg
 
 export const DEFAULT_KNOWLEDGE_EMBEDDING_CONFIG = getDefaultKnowledgeEmbeddingConfig();
 export const KNOWLEDGE_EMBEDDING_PROVIDER_OPTIONS = PROVIDER_OPTIONS;
-
-export function normalizeKnowledgeRetrievalMode(): KnowledgeRetrievalMode {
-  return "hybrid";
-}

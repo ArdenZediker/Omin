@@ -53,11 +53,3 @@ export const ASSISTANT_SKILL_OPTIONS = SKILL_MANIFESTS.map((skill) => ({
   label: skill.title,
   description: skill.description,
 }));
-
-export function getSkillManifestById(id: string) {
-  return SKILL_MANIFESTS.find((skill) => skill.id === id) ?? null;
-}
-
-export function getSkillManifestByCommand(command: string) {
-  return SKILL_MANIFESTS.find((skill) => skill.command === command) ?? null;
-}
