@@ -5,6 +5,7 @@ export const MAIN_WINDOW_LABEL = "main";
 export const COMPACT_WINDOW_LABEL = "compact";
 export const SETTINGS_WINDOW_LABEL = "settings";
 export const EXPANDED_SIZE = { width: 920, height: 820 };
+export const SETTINGS_WINDOW_SIZE = { width: 980, height: 760 };
 export const BASIC_SETTINGS_STORAGE_KEY = "omni_basic_settings";
 export const COMPACT_POSITION_STORAGE_KEY = "omni_compact_position";
 export const MAIN_POSITION_STORAGE_KEY = "omni_main_position";

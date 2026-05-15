@@ -3,7 +3,7 @@ import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { BASIC_SETTINGS_STORAGE_KEY, CURRENT_MODEL_STORAGE_KEY, THEME_MODE_STORAGE_KEY } from "../app/constants";
-import { applyThemeFromStorage } from "../app/window";
+import { applyThemeFromStorage, restoreMainWindow } from "../app/window";
 import { bootstrapSqliteStorage, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
 import SettingsPanel from "./SettingsPanel";
@@ -54,11 +54,16 @@ export default function SettingsWindow() {
     }
 
     try {
-      await currentWindow.close();
+      await currentWindow.hide();
     } catch {
-      // Ignore close failures and keep the window responsive.
+      // Ignore hide failures and keep the window responsive.
     }
   }, []);
+
+  const handleBackToMain = useCallback(async () => {
+    await restoreMainWindow(true, { restoreGeometry: false });
+    await handleClose();
+  }, [handleClose]);
 
   const handleModelChange = useCallback(async (modelId: string) => {
     modelRegistry.setCurrentModel(modelId);
@@ -87,7 +92,7 @@ export default function SettingsWindow() {
 
   return (
     <div className="app-shell glass flex h-screen w-screen overflow-hidden">
-      <SettingsPanel onClose={handleClose} onModelChange={handleModelChange} />
+      <SettingsPanel onBackToMain={handleBackToMain} onClose={handleClose} onModelChange={handleModelChange} />
     </div>
   );
 }

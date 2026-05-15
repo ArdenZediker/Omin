@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { modelRegistry } from "../adapters/registry";
 import type { Message } from "../adapters/types";
-import { loadKnowledgeEmbeddingProfile } from "./knowledgeEmbedding";
+import { embedKnowledgeText } from "./knowledgeEmbedding";
 import type { KnowledgeContextResult, KnowledgeContextSource, SearchKnowledgeChunkResult } from "./knowledgeTypes";
 
 function canUseTauriInvoke() {
@@ -89,18 +88,14 @@ export async function buildKnowledgeContextBlock(options: {
     return null;
   }
 
-  const embeddingProfile = loadKnowledgeEmbeddingProfile();
   let queryEmbedding: number[] | undefined;
-  if (embeddingProfile.enabled) {
-    const adapter = modelRegistry.getAdapterForProvider(embeddingProfile.provider);
-    if (adapter?.embed) {
-      try {
-        const embedding = await adapter.embed(query, embeddingProfile.model);
-        queryEmbedding = embedding.embedding;
-      } catch {
-        queryEmbedding = undefined;
-      }
-    }
+  let queryEmbeddingModelKey: string | undefined;
+  try {
+    const embedding = await embedKnowledgeText(query);
+    queryEmbedding = embedding?.embedding;
+    queryEmbeddingModelKey = embedding?.modelKey;
+  } catch {
+    queryEmbedding = undefined;
   }
 
   if (options.signal?.aborted) {
@@ -112,6 +107,7 @@ export async function buildKnowledgeContextBlock(options: {
     query: string;
     limit: number;
     queryEmbedding?: number[];
+    queryEmbeddingModelKey?: string;
   } = {
     query,
     limit,
@@ -119,6 +115,9 @@ export async function buildKnowledgeContextBlock(options: {
 
   if (queryEmbedding && queryEmbedding.length > 0) {
     input.queryEmbedding = queryEmbedding;
+  }
+  if (queryEmbeddingModelKey) {
+    input.queryEmbeddingModelKey = queryEmbeddingModelKey;
   }
 
   let results: SearchKnowledgeChunkResult[] = [];

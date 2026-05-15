@@ -145,6 +145,8 @@ struct KnowledgeDocumentRecord {
     content_preview: String,
     thumbnail_data_url: Option<String>,
     chunk_count: i64,
+    vectorized_chunk_count: i64,
+    vectorization_state: String,
     tags: Vec<String>,
     favorite: bool,
     access_count: i64,
@@ -164,6 +166,7 @@ struct KnowledgeChunkRecord {
     title: Option<String>,
     content: String,
     embedding_json: Option<String>,
+    embedding_model_key: Option<String>,
     created_at: i64,
 }
 
@@ -209,10 +212,21 @@ struct UpdateKnowledgeCollectionInput {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct KnowledgeEmbeddingProfileRecord {
-    enabled: bool,
+struct KnowledgeEmbeddingModelConfigRecord {
+    id: String,
+    name: String,
     provider: String,
+    base_url: String,
     model: String,
+    api_key: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeEmbeddingConfigRecord {
+    enabled: bool,
+    active_model_id: String,
+    models: Vec<KnowledgeEmbeddingModelConfigRecord>,
 }
 
 #[derive(Deserialize)]
@@ -222,6 +236,13 @@ struct SearchKnowledgeChunksInput {
     limit: Option<usize>,
     collection_id: Option<String>,
     query_embedding: Option<Vec<f64>>,
+    query_embedding_model_key: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RevectorizeKnowledgeDocumentInput {
+    document_id: String,
 }
 
 #[derive(Deserialize)]
@@ -577,6 +598,8 @@ fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> 
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           description TEXT NOT NULL,
+          retrieval_mode TEXT NOT NULL DEFAULT 'hybrid',
+          embedding_profile_id TEXT,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
@@ -610,6 +633,7 @@ fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> 
           title TEXT,
           content TEXT NOT NULL,
           embedding_json TEXT,
+          embedding_model_key TEXT,
           created_at INTEGER NOT NULL,
           UNIQUE(document_id, chunk_index)
         );
@@ -629,6 +653,29 @@ fn read_kv(connection: &Connection, key: &str) -> Result<Option<String>, String>
         .map_err(|err| err.to_string())
 }
 
+fn write_kv(connection: &Connection, key: &str, value: &str) -> Result<(), String> {
+    connection
+        .execute(
+            r#"
+            INSERT INTO app_kv (key, value, updated_at)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(key) DO UPDATE SET
+              value = excluded.value,
+              updated_at = excluded.updated_at
+            "#,
+            params![key, value, current_timestamp_ms()],
+        )
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn remove_kv(connection: &Connection, key: &str) -> Result<(), String> {
+    connection
+        .execute("DELETE FROM app_kv WHERE key = ?1", params![key])
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
 fn is_window_state_key(key: &str) -> bool {
     matches!(key, "omni_main_view" | "omni_compact_position" | "omni_main_position")
 }
@@ -641,7 +688,7 @@ fn is_model_connection_status_key(key: &str) -> bool {
     key == "omni_model_connection_status"
 }
 
-fn is_knowledge_embedding_profile_key(key: &str) -> bool {
+fn is_knowledge_embedding_config_key(key: &str) -> bool {
     key == "omni_knowledge_embedding_profile"
 }
 
@@ -825,8 +872,8 @@ fn read_structured_app_value(connection: &Connection, key: &str) -> Result<Optio
     if is_model_connection_status_key(key) {
         return read_model_connection_status_value(connection);
     }
-    if is_knowledge_embedding_profile_key(key) {
-        return read_simple_table_value(connection, "app_settings", key);
+    if is_knowledge_embedding_config_key(key) {
+        return read_kv(connection, key);
     }
     if is_window_state_key(key) {
         return read_simple_table_value(connection, "window_state", key);
@@ -841,8 +888,8 @@ fn write_structured_app_value(connection: &Connection, key: &str, value: &str) -
     if is_model_connection_status_key(key) {
         return write_model_connection_status_value(connection, value);
     }
-    if is_knowledge_embedding_profile_key(key) {
-        return write_simple_table_value(connection, "app_settings", key, value);
+    if is_knowledge_embedding_config_key(key) {
+        return write_kv(connection, key, value);
     }
     if is_window_state_key(key) {
         return write_simple_table_value(connection, "window_state", key, value);
@@ -857,8 +904,8 @@ fn remove_structured_app_value(connection: &Connection, key: &str) -> Result<(),
     if is_model_connection_status_key(key) {
         return remove_model_connection_status_value(connection);
     }
-    if is_knowledge_embedding_profile_key(key) {
-        return remove_simple_table_value(connection, "app_settings", key);
+    if is_knowledge_embedding_config_key(key) {
+        return remove_kv(connection, key);
     }
     if is_window_state_key(key) {
         return remove_simple_table_value(connection, "window_state", key);
@@ -1103,25 +1150,6 @@ fn save_automation_storage(connection: &Connection, scheduled_tasks_json: Option
 }
 
 fn ensure_knowledge_defaults(connection: &Connection) -> Result<(), String> {
-    let now = current_timestamp_ms();
-    connection
-        .execute(
-            r#"
-            INSERT OR IGNORE INTO knowledge_collections (
-              id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-            "#,
-            params![
-                "default",
-                "默认知识库",
-                "用于存放上传文件和导入内容",
-                "hybrid",
-                Option::<String>::None,
-                now,
-                now
-            ],
-        )
-        .map_err(|err| err.to_string())?;
     Ok(())
 }
 
@@ -1130,7 +1158,48 @@ fn normalize_knowledge_collection_id(value: Option<String>) -> String {
         .unwrap_or_default()
         .trim()
         .to_string()
-        .if_empty_then("default")
+        .if_empty_then("")
+}
+
+fn derive_vectorization_state(chunk_count: i64, vectorized_chunk_count: i64) -> String {
+    if chunk_count <= 0 {
+        "empty".to_string()
+    } else if vectorized_chunk_count <= 0 {
+        "unvectorized".to_string()
+    } else if vectorized_chunk_count >= chunk_count {
+        "vectorized".to_string()
+    } else {
+        "partial".to_string()
+    }
+}
+
+fn count_vectorized_chunks(chunks: &[Option<String>]) -> i64 {
+    chunks.iter().filter(|value| value.is_some()).count() as i64
+}
+
+fn count_vectorized_chunks_for_model(chunks: &[KnowledgeChunkRecord], model_key: Option<&str>) -> i64 {
+    let Some(model_key) = model_key else {
+        return chunks.iter().filter(|chunk| chunk.embedding_json.is_some()).count() as i64;
+    };
+
+    chunks
+        .iter()
+        .filter(|chunk| {
+            chunk.embedding_json.is_some()
+                && chunk
+                    .embedding_model_key
+                    .as_deref()
+                    .map(|value| value == model_key)
+                    .unwrap_or(false)
+        })
+        .count() as i64
+}
+
+fn current_knowledge_embedding_model_key(connection: &Connection) -> Option<String> {
+    load_knowledge_embedding_active_model(connection)
+        .ok()
+        .flatten()
+        .map(|(_, model)| format!("{}:{}:{}", model.provider, model.model, fingerprint_text(model.api_key.trim())))
 }
 
 fn normalize_knowledge_retrieval_mode(value: &str) -> String {
@@ -1148,72 +1217,249 @@ const OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS: [&str; 6] = [
 ];
 
 const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
-const KNOWLEDGE_EMBEDDING_PROFILE_KEY: &str = "omni_knowledge_embedding_profile";
+const KNOWLEDGE_EMBEDDING_CONFIG_KEY: &str = "omni_knowledge_embedding_profile";
+const DEFAULT_BASE_URL_FALLBACK: &str = "https://api.openai.com/v1";
 
 fn provider_supports_embeddings(provider: &str) -> bool {
     OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS.contains(&provider)
 }
 
-fn load_knowledge_embedding_profile(connection: &Connection) -> Result<KnowledgeEmbeddingProfileRecord, String> {
-    let raw = read_structured_app_value(connection, KNOWLEDGE_EMBEDDING_PROFILE_KEY)?;
-    match raw {
-        Some(value) => serde_json::from_str(&value).map_err(|err| err.to_string()),
-        None => Ok(KnowledgeEmbeddingProfileRecord {
-            enabled: false,
+fn fingerprint_text(value: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn default_knowledge_embedding_config() -> KnowledgeEmbeddingConfigRecord {
+    KnowledgeEmbeddingConfigRecord {
+        enabled: false,
+        active_model_id: format!("openai:{DEFAULT_EMBEDDING_MODEL}:0"),
+        models: vec![KnowledgeEmbeddingModelConfigRecord {
+            id: format!("openai:{DEFAULT_EMBEDDING_MODEL}:0"),
+            name: "默认向量模型".to_string(),
             provider: "openai".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
             model: DEFAULT_EMBEDDING_MODEL.to_string(),
-        }),
+            api_key: String::new(),
+        }],
     }
 }
 
-fn load_provider_config_map(connection: &Connection) -> Result<HashMap<String, DbProviderConfigRecord>, String> {
-    let raw = read_structured_app_value(connection, "omni_provider_configs")?;
+fn normalize_knowledge_embedding_config_record(
+    input: KnowledgeEmbeddingConfigRecord,
+) -> KnowledgeEmbeddingConfigRecord {
+    let default_model_id = input
+        .active_model_id
+        .trim()
+        .to_string()
+        .if_empty_then(&format!("openai:{DEFAULT_EMBEDDING_MODEL}:0"));
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut models = Vec::new();
+    for (index, model) in input.models.into_iter().enumerate() {
+        let provider = if provider_supports_embeddings(&model.provider) {
+            model.provider.trim().to_string()
+        } else {
+            "openai".to_string()
+        };
+        let raw_model = model.model.trim();
+        let model_value = if raw_model.is_empty() {
+            DEFAULT_EMBEDDING_MODEL.to_string()
+        } else {
+            raw_model.to_string()
+        };
+        let model_name = model.name.trim().to_string();
+        let model_id = if model.id.trim().is_empty() {
+            format!("{provider}:{model_value}:{index}")
+        } else {
+            model.id.trim().to_string()
+        };
+        let base_url = {
+            let trimmed = model.base_url.trim();
+            if trimmed.is_empty() {
+                DEFAULT_BASE_URL_FALLBACK.to_string()
+            } else {
+                trimmed.to_string()
+            }
+        };
+        let unique_id = if seen_ids.contains(&model_id) {
+            format!("{model_id}-{index}")
+        } else {
+            model_id
+        };
+        seen_ids.insert(unique_id.clone());
+        models.push(KnowledgeEmbeddingModelConfigRecord {
+            id: unique_id,
+            name: if model_name.is_empty() {
+                model_value.clone()
+            } else {
+                model_name
+            },
+            provider,
+            base_url,
+            model: model_value,
+            api_key: model.api_key.trim().to_string(),
+        });
+    }
+
+    if models.is_empty() {
+        models = vec![KnowledgeEmbeddingModelConfigRecord {
+            id: default_model_id.clone(),
+            name: "默认向量模型".to_string(),
+            provider: "openai".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            model: DEFAULT_EMBEDDING_MODEL.to_string(),
+            api_key: String::new(),
+        }];
+    }
+
+    let active_model_id = if models.iter().any(|model| model.id == input.active_model_id) {
+        input.active_model_id
+    } else {
+        default_model_id.clone()
+    };
+
+    KnowledgeEmbeddingConfigRecord { enabled: input.enabled, active_model_id, models }
+}
+
+fn load_knowledge_embedding_config(connection: &Connection) -> Result<KnowledgeEmbeddingConfigRecord, String> {
+    let raw = read_kv(connection, KNOWLEDGE_EMBEDDING_CONFIG_KEY)?;
     match raw {
-        Some(value) => serde_json::from_str(&value).map_err(|err| err.to_string()),
-        None => Ok(HashMap::new()),
+        Some(value) => {
+            match serde_json::from_str::<KnowledgeEmbeddingConfigRecord>(&value) {
+                Ok(parsed) => Ok(normalize_knowledge_embedding_config_record(parsed)),
+                Err(_) => load_legacy_knowledge_embedding_config(connection).map(|value| value.unwrap_or_else(default_knowledge_embedding_config)),
+            }
+        }
+        None => Ok(default_knowledge_embedding_config()),
     }
 }
 
-fn resolve_embedding_provider(
+fn load_knowledge_embedding_active_model(
     connection: &Connection,
-) -> Result<Option<(String, DbProviderConfigRecord, String)>, String> {
-    let profile = load_knowledge_embedding_profile(connection)?;
-    if !profile.enabled {
+) -> Result<Option<(KnowledgeEmbeddingConfigRecord, KnowledgeEmbeddingModelConfigRecord)>, String> {
+    let config = load_knowledge_embedding_config(connection)?;
+    if !config.enabled {
         return Ok(None);
     }
 
-    if !provider_supports_embeddings(&profile.provider) {
-        return Ok(None);
-    }
+    let active = config
+        .models
+        .iter()
+        .find(|model| model.id == config.active_model_id)
+        .cloned()
+        .or_else(|| config.models.first().cloned())
+        .filter(|model| !model.api_key.trim().is_empty() && provider_supports_embeddings(&model.provider));
 
-    let configs = load_provider_config_map(connection)?;
-    let Some(config) = configs.get(&profile.provider) else {
+    Ok(active.map(|model| (config, model)))
+}
+
+fn load_legacy_knowledge_embedding_config(connection: &Connection) -> Result<Option<KnowledgeEmbeddingConfigRecord>, String> {
+    let raw = read_kv(connection, KNOWLEDGE_EMBEDDING_CONFIG_KEY)?;
+    let Some(value) = raw else {
         return Ok(None);
     };
 
-    if config.api_key.trim().is_empty() {
+    let parsed: JsonValue = serde_json::from_str(&value).map_err(|err| err.to_string())?;
+    let Some(object) = parsed.as_object() else {
         return Ok(None);
-    }
+    };
 
-    Ok(Some((profile.provider, config.clone(), profile.model)))
+    let enabled = object.get("enabled").and_then(JsonValue::as_bool).unwrap_or(false);
+    let active_model_id = object
+        .get("activeModelId")
+        .and_then(JsonValue::as_str)
+        .unwrap_or("")
+        .to_string();
+    let api_key = object
+        .get("apiKey")
+        .and_then(JsonValue::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    let models = object
+        .get("models")
+        .and_then(JsonValue::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .enumerate()
+                .map(|(index, item)| {
+                    let model = item.as_object();
+                    let model_name = model
+                        .and_then(|value| value.get("name"))
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let model_provider = model
+                        .and_then(|value| value.get("provider"))
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or("openai")
+                        .to_string();
+                    let model_base_url = model
+                        .and_then(|value| value.get("baseUrl"))
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or("https://api.openai.com/v1")
+                        .to_string();
+                    let model_id = model
+                        .and_then(|value| value.get("id"))
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let model_value = model
+                        .and_then(|value| value.get("model"))
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or(DEFAULT_EMBEDDING_MODEL)
+                        .to_string();
+                    let model_api_key = model
+                        .and_then(|value| value.get("apiKey"))
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or("")
+                        .to_string();
+
+                    KnowledgeEmbeddingModelConfigRecord {
+                        id: if model_id.is_empty() {
+                            format!("{}:{}:{}", model_provider, model_value, index)
+                        } else {
+                            model_id
+                        },
+                        name: if model_name.is_empty() { model_value.clone() } else { model_name },
+                        provider: model_provider,
+                        base_url: model_base_url,
+                        model: model_value,
+                        api_key: if model_api_key.is_empty() { api_key.clone() } else { model_api_key },
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Ok(Some(normalize_knowledge_embedding_config_record(KnowledgeEmbeddingConfigRecord {
+        enabled,
+        active_model_id,
+        models,
+    })))
 }
 
 fn generate_chunk_embeddings(
     connection: &Connection,
     chunks: &[knowledge_chunker::ChunkSlice],
-) -> Vec<Option<String>> {
+) -> (Vec<Option<String>>, Option<String>) {
     if chunks.is_empty() {
-        return Vec::new();
+        return (Vec::new(), None);
     }
 
-    let Some((provider, config, embedding_model)) = resolve_embedding_provider(connection).ok().flatten() else {
-        return vec![None; chunks.len()];
+    let Some((config, active_model)) = load_knowledge_embedding_active_model(connection).ok().flatten() else {
+        return (vec![None; chunks.len()], None);
     };
+    let provider = active_model.provider.clone();
 
-    let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1").trim();
-    let api_key = config.api_key.trim();
+    let base_url = active_model.base_url.trim();
+    let api_key = active_model.api_key.trim();
     if base_url.is_empty() || api_key.is_empty() {
-        return vec![None; chunks.len()];
+        return (vec![None; chunks.len()], None);
     }
 
     let client = match BlockingHttpClient::builder()
@@ -1223,13 +1469,13 @@ fn generate_chunk_embeddings(
         Ok(client) => client,
         Err(err) => {
             eprintln!("知识库 embedding 客户端创建失败 ({provider}): {err}");
-            return vec![None; chunks.len()];
+            return (vec![None; chunks.len()], None);
         }
     };
 
     let input: Vec<&str> = chunks.iter().map(|chunk| chunk.content.as_str()).collect();
     let request_body = serde_json::json!({
-        "model": embedding_model,
+        "model": active_model.model,
         "input": input,
     });
 
@@ -1243,14 +1489,14 @@ fn generate_chunk_embeddings(
         Ok(response) => response,
         Err(err) => {
             eprintln!("知识库 embedding 请求失败 ({provider}): {err}");
-            return vec![None; chunks.len()];
+            return (vec![None; chunks.len()], None);
         }
     };
 
     if !response.status().is_success() {
         let err_text = response.text().unwrap_or_default();
         eprintln!("知识库 embedding API 返回错误 ({provider}): {err_text}");
-        return vec![None; chunks.len()];
+        return (vec![None; chunks.len()], None);
     }
 
     #[derive(Deserialize)]
@@ -1268,7 +1514,7 @@ fn generate_chunk_embeddings(
         Ok(payload) => payload,
         Err(err) => {
             eprintln!("知识库 embedding 响应解析失败 ({provider}): {err}");
-            return vec![None; chunks.len()];
+            return (vec![None; chunks.len()], None);
         }
     };
 
@@ -1283,7 +1529,8 @@ fn generate_chunk_embeddings(
         embeddings[index] = serde_json::to_string(&item.embedding).ok();
     }
 
-    embeddings
+    let model_key = format!("{}:{}:{}", active_model.provider, active_model.model, fingerprint_text(active_model.api_key.trim()));
+    (embeddings, Some(model_key))
 }
 
 trait EmptyFallback {
@@ -1365,7 +1612,14 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
             r#"
             SELECT id, collection_id, source_name, source_path, stored_file_path, mime_type, file_extension, preview_type,
                    content, content_preview, chunk_count, thumbnail_data_url, tags_json, favorite,
-                   access_count, last_accessed_at, title_hierarchy, created_at, updated_at
+                   access_count, last_accessed_at, title_hierarchy, created_at, updated_at,
+                   (
+                     SELECT COUNT(1)
+                     FROM knowledge_chunks c
+                     WHERE c.document_id = knowledge_documents.id
+                       AND c.embedding_json IS NOT NULL
+                       AND TRIM(c.embedding_json) <> ''
+                   ) AS vectorized_chunk_count
             FROM knowledge_documents
             ORDER BY updated_at DESC, created_at DESC, id DESC
             "#,
@@ -1374,6 +1628,8 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
     let documents = documents_stmt
         .query_map([], |row| {
             let tags_json: String = row.get(12)?;
+            let chunk_count: i64 = row.get(10)?;
+            let vectorized_chunk_count: i64 = row.get(19)?;
             Ok(KnowledgeDocumentRecord {
                 id: row.get(0)?,
                 collection_id: row.get(1)?,
@@ -1385,8 +1641,10 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
                 preview_type: row.get(7)?,
                 content: None,
                 content_preview: row.get(9)?,
-                chunk_count: row.get(10)?,
+                chunk_count,
                 thumbnail_data_url: row.get(11)?,
+                vectorized_chunk_count,
+                vectorization_state: derive_vectorization_state(chunk_count, vectorized_chunk_count),
                 tags: parse_tags_json(&tags_json),
                 favorite: row.get::<_, i64>(13)? != 0,
                 access_count: row.get(14)?,
@@ -1414,13 +1672,22 @@ fn load_knowledge_document(
             r#"
             SELECT id, collection_id, source_name, source_path, stored_file_path, mime_type, file_extension, preview_type,
                    content, content_preview, chunk_count, thumbnail_data_url, tags_json, favorite,
-                   access_count, last_accessed_at, title_hierarchy, created_at, updated_at
+                   access_count, last_accessed_at, title_hierarchy, created_at, updated_at,
+                   (
+                     SELECT COUNT(1)
+                     FROM knowledge_chunks c
+                     WHERE c.document_id = knowledge_documents.id
+                       AND c.embedding_json IS NOT NULL
+                       AND TRIM(c.embedding_json) <> ''
+                   ) AS vectorized_chunk_count
             FROM knowledge_documents
             WHERE id = ?1
             "#,
             params![document_id],
             |row| {
                 let tags_json: String = row.get(12)?;
+                let chunk_count: i64 = row.get(10)?;
+                let vectorized_chunk_count: i64 = row.get(19)?;
                 Ok(KnowledgeDocumentRecord {
                     id: row.get(0)?,
                     collection_id: row.get(1)?,
@@ -1432,8 +1699,10 @@ fn load_knowledge_document(
                     preview_type: row.get(7)?,
                     content: row.get(8)?,
                     content_preview: row.get(9)?,
-                    chunk_count: row.get(10)?,
+                    chunk_count,
                     thumbnail_data_url: row.get(11)?,
+                    vectorized_chunk_count,
+                    vectorization_state: derive_vectorization_state(chunk_count, vectorized_chunk_count),
                     tags: parse_tags_json(&tags_json),
                     favorite: row.get::<_, i64>(13)? != 0,
                     access_count: row.get(14)?,
@@ -1449,7 +1718,7 @@ fn load_knowledge_document(
     let mut chunk_stmt = connection
         .prepare(
             r#"
-            SELECT id, document_id, collection_id, chunk_index, title, content, embedding_json, created_at
+            SELECT id, document_id, collection_id, chunk_index, title, content, embedding_json, embedding_model_key, created_at
             FROM knowledge_chunks
             WHERE document_id = ?1
             ORDER BY chunk_index ASC, created_at ASC, id ASC
@@ -1466,7 +1735,8 @@ fn load_knowledge_document(
                 title: row.get(4)?,
                 content: row.get(5)?,
                 embedding_json: row.get(6)?,
-                created_at: row.get(7)?,
+                embedding_model_key: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -1596,9 +1866,6 @@ fn delete_knowledge_collection(connection: &Connection, collection_id: &str) -> 
     if collection_id.is_empty() {
         return Err("知识库 ID 不能为空".into());
     }
-    if collection_id == "default" {
-        return Err("默认知识库不能删除".into());
-    }
 
     let stored_paths = {
         let mut stmt = connection
@@ -1711,7 +1978,8 @@ fn import_knowledge_document(
         )
     };
     let chunk_count = chunks.len() as i64;
-    let chunk_embeddings = generate_chunk_embeddings(connection, &chunks);
+    let (chunk_embeddings, embedding_model_key) = generate_chunk_embeddings(connection, &chunks);
+    let vectorized_chunk_count = count_vectorized_chunks(&chunk_embeddings);
     let content_preview = if content.trim().is_empty() {
         preview_text(source_name, 240)
     } else {
@@ -1762,8 +2030,8 @@ fn import_knowledge_document(
             .prepare(
                 r#"
                 INSERT INTO knowledge_chunks (
-                  id, document_id, collection_id, chunk_index, title, content, embedding_json, created_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                  id, document_id, collection_id, chunk_index, title, content, embedding_json, embedding_model_key, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                 "#,
             )
             .map_err(|err| err.to_string())?;
@@ -1785,6 +2053,7 @@ fn import_knowledge_document(
                 chunk_title,
                 chunk_content.content,
                 chunk_embeddings.get(index).cloned().unwrap_or(None),
+                embedding_model_key.clone(),
                 now,
             ])
             .map_err(|err| err.to_string())?;
@@ -1806,6 +2075,8 @@ fn import_knowledge_document(
         content_preview,
         thumbnail_data_url,
         chunk_count,
+        vectorized_chunk_count,
+        vectorization_state: derive_vectorization_state(chunk_count, vectorized_chunk_count),
         tags,
         favorite,
         access_count: 0,
@@ -1813,6 +2084,67 @@ fn import_knowledge_document(
         title_hierarchy,
         created_at: now,
         updated_at: now,
+    })
+}
+
+fn rebuild_document_embeddings(
+    connection: &Connection,
+    document_id: &str,
+) -> Result<KnowledgeDocumentRecord, String> {
+    ensure_knowledge_defaults(connection)?;
+
+    let document = load_knowledge_document(connection, document_id)?.document;
+
+    let mut chunk_stmt = connection
+        .prepare(
+            r#"
+            SELECT chunk_index, content
+            FROM knowledge_chunks
+            WHERE document_id = ?1
+            ORDER BY chunk_index ASC, created_at ASC, id ASC
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+    let chunk_rows = chunk_stmt
+        .query_map(params![document_id], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
+    let chunk_slices = chunk_rows
+        .into_iter()
+        .map(|(_, content)| knowledge_chunker::ChunkSlice { content, title: None })
+        .collect::<Vec<_>>();
+
+    let (embeddings, embedding_model_key) = generate_chunk_embeddings(connection, &chunk_slices);
+    let vectorized_chunk_count = count_vectorized_chunks(&embeddings);
+    let now = current_timestamp_ms();
+
+    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare("UPDATE knowledge_chunks SET embedding_json = ?2, embedding_model_key = ?3 WHERE document_id = ?1 AND chunk_index = ?4")
+            .map_err(|err| err.to_string())?;
+        for (index, embedding_json) in embeddings.into_iter().enumerate() {
+            stmt.execute(params![document_id, embedding_json, embedding_model_key.clone(), index as i64])
+                .map_err(|err| err.to_string())?;
+        }
+    }
+
+    tx.execute(
+        "UPDATE knowledge_documents SET updated_at = ?2 WHERE id = ?1",
+        params![document_id, now],
+    )
+    .map_err(|err| err.to_string())?;
+    tx.commit().map_err(|err| err.to_string())?;
+
+    Ok(KnowledgeDocumentRecord {
+        vectorized_chunk_count,
+        vectorization_state: derive_vectorization_state(document.chunk_count, vectorized_chunk_count),
+        updated_at: now,
+        ..document
     })
 }
 
@@ -1916,6 +2248,7 @@ struct KnowledgeSearchCandidate {
     title: Option<String>,
     content: String,
     embedding_json: Option<String>,
+    embedding_model_key: Option<String>,
     created_at: i64,
     source_name: String,
     source_path: Option<String>,
@@ -1944,6 +2277,11 @@ fn search_knowledge_chunks(
         .map(|term| term.to_string())
         .collect();
     let limit = input.limit.unwrap_or(10).clamp(1, 50);
+    let query_model_key = input
+        .query_embedding_model_key
+        .as_deref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     let collection_filter = input.collection_id.and_then(|value| {
         let trimmed = value.trim().to_string();
         if trimmed.is_empty() {
@@ -1964,6 +2302,7 @@ fn search_knowledge_chunks(
               c.title,
               c.content,
               c.embedding_json,
+              c.embedding_model_key,
               c.created_at,
               d.source_name,
               d.source_path,
@@ -1983,7 +2322,7 @@ fn search_knowledge_chunks(
 
     let candidates = stmt
         .query_map([], |row| {
-            let tags_json: String = row.get(10)?;
+            let tags_json: String = row.get(11)?;
             Ok(KnowledgeSearchCandidate {
                 chunk_id: row.get(0)?,
                 document_id: row.get(1)?,
@@ -1992,16 +2331,17 @@ fn search_knowledge_chunks(
                 title: row.get(4)?,
                 content: row.get(5)?,
                 embedding_json: row.get(6)?,
-                created_at: row.get(7)?,
-                source_name: row.get(8)?,
-                source_path: row.get(9)?,
+                embedding_model_key: row.get(7)?,
+                created_at: row.get(8)?,
+                source_name: row.get(9)?,
+                source_path: row.get(10)?,
                 tags: parse_tags_json(&tags_json),
-                favorite: row.get::<_, i64>(11)? != 0,
-                access_count: row.get(12)?,
-                last_accessed_at: row.get(13)?,
-                title_hierarchy: row.get(14)?,
-                collection_name: row.get(15)?,
-                retrieval_mode: row.get(16)?,
+                favorite: row.get::<_, i64>(12)? != 0,
+                access_count: row.get(13)?,
+                last_accessed_at: row.get(14)?,
+                title_hierarchy: row.get(15)?,
+                collection_name: row.get(16)?,
+                retrieval_mode: row.get(17)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -2017,6 +2357,14 @@ fn search_knowledge_chunks(
     let mut scored = Vec::new();
     for candidate in candidates {
         let retrieval_mode = normalize_knowledge_retrieval_mode(candidate.retrieval_mode.as_str());
+        let embedding_matches = query_model_key
+            .as_deref()
+            .map(|model_key| candidate.embedding_model_key.as_deref().map(|value| value == model_key).unwrap_or(false))
+            .unwrap_or(true);
+        if !embedding_matches {
+            continue;
+        }
+
         let effective_embedding = if matches!(retrieval_mode.as_str(), "hybrid" | "vector") {
             query_embedding.as_deref()
         } else {
@@ -2051,6 +2399,7 @@ fn search_knowledge_chunks(
                 title: candidate.title,
                 content: candidate.content,
                 embedding_json: candidate.embedding_json,
+                embedding_model_key: candidate.embedding_model_key,
                 created_at: candidate.created_at,
             },
             score,
@@ -2165,6 +2514,15 @@ fn import_knowledge_document_command(
 }
 
 #[tauri::command]
+fn rebuild_knowledge_document_embeddings_command(
+    app: tauri::AppHandle,
+    input: RevectorizeKnowledgeDocumentInput,
+) -> Result<KnowledgeDocumentRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    rebuild_document_embeddings(&connection, &input.document_id)
+}
+
+#[tauri::command]
 fn search_knowledge_chunks_command(
     app: tauri::AppHandle,
     input: SearchKnowledgeChunksInput,
@@ -2260,8 +2618,6 @@ fn table_has_column(connection: &Connection, table: &str, column: &str) -> Resul
 }
 
 fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
-    ensure_knowledge_defaults(connection)?;
-
     if !table_has_column(connection, "knowledge_chunks", "embedding_json")? {
         connection
             .execute(
@@ -2378,6 +2734,8 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|err| err.to_string())?;
     }
+
+    ensure_knowledge_defaults(connection)?;
 
     Ok(())
 }
@@ -2736,6 +3094,7 @@ pub fn run() {
             delete_knowledge_collection_command,
             delete_knowledge_document_command,
             import_knowledge_document_command,
+            rebuild_knowledge_document_embeddings_command,
             search_knowledge_chunks_command,
             load_chat_storage,
             save_chat_storage,

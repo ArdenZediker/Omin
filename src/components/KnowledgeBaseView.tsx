@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState } from "react";
+﻿import { Component, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -53,7 +53,6 @@ type KnowledgeDocumentDetailView = "preview" | "chunks";
 type KnowledgePageMode = "empty" | "list" | "detail";
 type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "unsupported";
 
-const DEFAULT_COLLECTION_ID = "default";
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
 const TEXT_EXTENSIONS = new Set([
   "txt",
@@ -237,6 +236,21 @@ function getDocumentTypeLabel(document?: KnowledgeLibraryPayload["documents"][nu
   if (kind === "text") return ext ? ext.toUpperCase() : "TXT";
 
   return document.mimeType ? document.mimeType.split("/").pop()?.toUpperCase() ?? "文档" : "文档";
+}
+
+function getVectorizationLabel(state?: string | null) {
+  switch (state) {
+    case "vectorized":
+      return "已向量化";
+    case "partial":
+      return "部分向量化";
+    case "unvectorized":
+      return "未向量化";
+    case "empty":
+      return "无内容";
+    default:
+      return "未知状态";
+  }
 }
 
 function formatTimestamp(timestamp?: number | null) {
@@ -469,10 +483,6 @@ async function loadKnowledgeLibrary() {
   return invoke<KnowledgeLibraryPayload>("load_knowledge_library_command");
 }
 
-async function ensureDefaultKnowledgeCollection() {
-  return invoke<KnowledgeCollection>("ensure_default_knowledge_collection_command");
-}
-
 async function loadKnowledgeDocumentDetail(documentId: string) {
   return invoke<KnowledgeDocumentDetail>("load_knowledge_document_command", {
     input: { documentId },
@@ -481,6 +491,12 @@ async function loadKnowledgeDocumentDetail(documentId: string) {
 
 async function loadKnowledgeDocumentBinary(documentId: string) {
   return invoke<KnowledgeDocumentBinaryPayload>("load_knowledge_document_file_command", {
+    input: { documentId },
+  });
+}
+
+async function rebuildKnowledgeDocumentEmbeddings(documentId: string) {
+  return invoke<KnowledgeDocumentDetail>("rebuild_knowledge_document_embeddings_command", {
     input: { documentId },
   });
 }
@@ -498,7 +514,7 @@ async function convertDocxBytesToText(bytes: Uint8Array) {
 }
 
 async function convertPdfBytesToText(bytes: Uint8Array) {
-  const loadingTask = getDocument({ data: bytes });
+  const loadingTask = getDocument({ data: bytes.slice() });
   const pdf = await loadingTask.promise;
   const parts: string[] = [];
 
@@ -523,7 +539,7 @@ async function convertPdfBytesToText(bytes: Uint8Array) {
 }
 
 async function renderPdfFirstPage(bytes: Uint8Array, canvas: HTMLCanvasElement) {
-  const loadingTask = getDocument({ data: bytes });
+  const loadingTask = getDocument({ data: bytes.slice() });
   const pdf = await loadingTask.promise;
   const page = await pdf.getPage(1);
   const viewport = page.getViewport({ scale: 1.2 });
@@ -597,6 +613,7 @@ function DocumentPreviewArea({
   const [textPreview, setTextPreview] = useState<string>("");
   const [docxHtml, setDocxHtml] = useState<string>("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
@@ -614,6 +631,7 @@ function DocumentPreviewArea({
       setError(null);
       setDocxHtml("");
       setImageUrl(null);
+      setPdfObjectUrl(null);
       setPdfBytes(null);
 
       const sourceText = (document.content ?? document.contentPreview ?? document.sourceName ?? "").trim();
@@ -650,7 +668,13 @@ function DocumentPreviewArea({
             }
           }
         } else if (previewKind === "pdf") {
+          const url = URL.createObjectURL(new Blob([bytes.slice()], { type: document.mimeType ?? "application/pdf" }));
+          objectUrlRef.current = url;
+          setPdfObjectUrl(url);
           setPdfBytes(bytes);
+          if (!cancelled) {
+            setTextPreview(sourceText);
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -711,28 +735,42 @@ function DocumentPreviewArea({
         打开原文件
       </button>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4 pt-12">
+      <div className="min-h-0 flex-1 overflow-hidden p-4 pt-12">
         {previewKind === "markdown" ? (
-          <div className="markdown-body text-sm text-slate-700">{renderMarkdown(textPreview || document.contentPreview || document.sourceName)}</div>
+          <div className="h-full overflow-auto pr-1">
+            <div className="markdown-body text-sm text-slate-700">{renderMarkdown(textPreview || document.contentPreview || document.sourceName)}</div>
+          </div>
         ) : null}
 
         {previewKind === "text" ? (
-          <pre className="whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+          <pre className="h-full overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
             {textPreview || document.contentPreview || document.sourceName}
           </pre>
         ) : null}
 
         {previewKind === "docx" ? (
           docxHtml.trim() ? (
-            <div className="docx-preview text-sm leading-7 text-slate-700" dangerouslySetInnerHTML={{ __html: docxHtml }} />
+            <div className="h-full overflow-auto pr-1">
+              <div className="docx-preview text-sm leading-7 text-slate-700" dangerouslySetInnerHTML={{ __html: docxHtml }} />
+            </div>
           ) : (
-            <pre className="whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+            <pre className="h-full overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
               {textPreview || document.contentPreview || document.sourceName}
             </pre>
           )
         ) : null}
 
-        {previewKind === "pdf" && pdfBytes ? <PdfFirstPagePreview bytes={pdfBytes} /> : null}
+        {previewKind === "pdf" ? (
+          pdfObjectUrl ? (
+            <div className="flex h-full min-h-0 flex-1 overflow-hidden rounded-none border border-slate-200 bg-white">
+              <object data={pdfObjectUrl} type="application/pdf" className="h-full w-full">
+                <div className="p-4 text-sm text-slate-500">当前环境无法直接预览 PDF，请点击右上角打开原文件。</div>
+              </object>
+            </div>
+          ) : pdfBytes ? (
+            <PdfFirstPagePreview bytes={pdfBytes} />
+          ) : null
+        ) : null}
 
         {previewKind === "image" && imageUrl ? (
           <img src={imageUrl} alt={document.sourceName} className="max-h-[60vh] rounded-none border border-slate-200 object-contain" />
@@ -756,9 +794,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
   const [isCollectionMenuOpen, setIsCollectionMenuOpen] = useState<string | null>(null);
   const [isDocumentMenuOpen, setIsDocumentMenuOpen] = useState<string | null>(null);
+  const [createCollectionError, setCreateCollectionError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [library, setLibrary] = useState<KnowledgeLibraryPayload>({ collections: [], documents: [] });
   const [isKnowledgeLibraryReady, setIsKnowledgeLibraryReady] = useState(false);
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string>(DEFAULT_COLLECTION_ID);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string>("");
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedDocumentDetail, setSelectedDocumentDetail] = useState<KnowledgeDocumentDetail | null>(null);
   const [selectedDocumentDetailView, setSelectedDocumentDetailView] = useState<KnowledgeDocumentDetailView>("preview");
@@ -767,10 +807,16 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
-  const activeCollection = useMemo(
-    () => library.collections.find((collection) => collection.id === selectedCollectionId) ?? library.collections[0] ?? null,
-    [library.collections, selectedCollectionId]
-  );
+  const activeCollection = useMemo(() => {
+    if (selectedCollectionId) {
+      const selected = library.collections.find((collection) => collection.id === selectedCollectionId);
+      if (selected) {
+        return selected;
+      }
+    }
+
+    return library.collections[0] ?? null;
+  }, [library.collections, selectedCollectionId]);
 
   const activeCollectionDocuments = useMemo(() => {
     if (!activeCollection) {
@@ -785,14 +831,15 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   );
 
   const selectedDocument = selectedDocumentDetail?.document ?? selectedDocumentRecord;
-  const activeCollectionName = activeCollection?.name ?? "默认知识库";
+  const activeCollectionName = activeCollection?.name ?? "未选择知识库";
+  const selectedVectorizationLabel = getVectorizationLabel(selectedDocument?.vectorizationState ?? null);
   const selectedDocumentCollectionName = useMemo(() => {
     if (!selectedDocument) {
       return activeCollectionName;
     }
     return (
       library.collections.find((collection) => collection.id === selectedDocument.collectionId)?.name ??
-      (selectedDocument.collectionId === DEFAULT_COLLECTION_ID ? "默认知识库" : "未命名知识库")
+      "未命名知识库"
     );
   }, [activeCollectionName, library.collections, selectedDocument]);
   const pageMode: KnowledgePageMode = selectedDocumentId ? "detail" : activeCollectionDocuments.length > 0 ? "list" : "empty";
@@ -835,13 +882,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
   useEffect(() => {
     if (library.collections.length === 0) {
-      setSelectedCollectionId(DEFAULT_COLLECTION_ID);
+      setSelectedCollectionId("");
       return;
     }
 
-    if (!library.collections.some((collection) => collection.id === selectedCollectionId)) {
-      const defaultCollection = library.collections.find((collection) => collection.id === DEFAULT_COLLECTION_ID);
-      setSelectedCollectionId(defaultCollection?.id ?? library.collections[0].id);
+    if (!selectedCollectionId || !library.collections.some((collection) => collection.id === selectedCollectionId)) {
+      setSelectedCollectionId(library.collections[0].id);
     }
   }, [library.collections, selectedCollectionId]);
 
@@ -898,13 +944,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
     void (async () => {
       try {
-        await ensureDefaultKnowledgeCollection();
         const payload = await loadKnowledgeLibrary();
         if (!cancelled) {
           setLibrary(payload);
           setSelectedCollectionId((current) => {
-            if (current === DEFAULT_COLLECTION_ID || !payload.collections.some((collection) => collection.id === current)) {
-              return payload.collections.find((collection) => collection.id === DEFAULT_COLLECTION_ID)?.id ?? payload.collections[0]?.id ?? DEFAULT_COLLECTION_ID;
+            if (!current || !payload.collections.some((collection) => collection.id === current)) {
+              return payload.collections[0]?.id ?? "";
             }
             return current;
           });
@@ -1000,14 +1045,19 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       return;
     }
 
+    setUploadError(null);
+
     try {
-      const targetCollectionId = DEFAULT_COLLECTION_ID;
+      const targetCollectionId = activeCollection?.id;
+      if (!targetCollectionId) {
+        throw new Error("请先创建知识库后再上传文件");
+      }
       for (const file of items) {
         await importFile(file, targetCollectionId);
       }
 
       await refreshLibrary();
-      setSelectedCollectionId(DEFAULT_COLLECTION_ID);
+      setSelectedCollectionId(targetCollectionId);
       setSelectedDocumentId(null);
       setSelectedDocumentDetail(null);
       setDocumentDetailError(null);
@@ -1016,44 +1066,47 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       setSearchQuery("");
     } catch (error) {
       console.error(error);
+      setUploadError(error instanceof Error ? error.message : "????");
     }
   }
 
   async function createCollection() {
-    const values = await openPrompt({
-      title: "新建知识库",
-      description: "先输入名称，再补充简介，便于后续检索和管理。",
-      confirmLabel: "创建",
-      fields: [
-        { label: "知识库名称", defaultValue: "新知识库", placeholder: "请输入知识库名称", autoFocus: true },
-        { label: "知识库描述", defaultValue: "用于组织上传文件", placeholder: "请输入知识库描述", required: false },
-      ],
-    });
+    setCreateCollectionError(null);
 
-    const name = values?.[0]?.trim();
-    if (!name) {
-      return;
+    try {
+      const values = await openPrompt({
+        title: "新建知识库",
+        description: "先输入名称，再补充简介，便于后续检索和管理。",
+        confirmLabel: "创建",
+        fields: [
+          { label: "知识库名称", defaultValue: "新知识库", placeholder: "请输入知识库名称", autoFocus: true },
+          { label: "知识库描述", defaultValue: "用于组织上传文件", placeholder: "请输入知识库描述", required: false },
+        ],
+      });
+
+      const name = values?.[0]?.trim();
+      if (!name) {
+        return;
+      }
+
+      const description = values?.[1]?.trim() || "用于组织上传文件";
+      const createdCollection = await invoke<KnowledgeCollection>("create_knowledge_collection_command", { name, description });
+      await refreshLibrary();
+      setSelectedCollectionId(createdCollection.id);
+    } catch (error) {
+      console.error(error);
+      setCreateCollectionError(error instanceof Error ? error.message : "创建知识库失败");
     }
-
-    const description = values?.[1]?.trim() || "用于组织上传文件";
-    const createdCollection = await invoke<KnowledgeCollection>("create_knowledge_collection_command", { name, description });
-    await refreshLibrary();
-    setSelectedCollectionId(createdCollection.id);
   }
 
   async function deleteCollection(collectionId: string) {
-    if (collectionId === DEFAULT_COLLECTION_ID) {
-      return;
-    }
-
     await invoke("delete_knowledge_collection_command", { collectionId });
-    await refreshLibrary();
+    const payload = await refreshLibrary();
     setSelectedCollectionId((current) => {
       if (current !== collectionId) {
         return current;
       }
-      const defaultCollection = library.collections.find((collection) => collection.id === DEFAULT_COLLECTION_ID);
-      return defaultCollection?.id ?? DEFAULT_COLLECTION_ID;
+      return payload.collections[0]?.id ?? "";
     });
     setSelectedDocumentId(null);
     setSelectedDocumentDetail(null);
@@ -1066,6 +1119,21 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setSelectedDocumentId(null);
     setSelectedDocumentDetail(null);
     setSelectedDocumentDetailView("preview");
+  }
+
+  async function rebuildDocumentEmbeddings(documentId: string) {
+    setDocumentDetailError(null);
+    setIsLoadingDocumentDetail(true);
+    try {
+      await rebuildKnowledgeDocumentEmbeddings(documentId);
+      await refreshLibrary();
+      const detail = await loadKnowledgeDocumentDetail(documentId);
+      setSelectedDocumentDetail(detail);
+    } catch (error) {
+      setDocumentDetailError(error instanceof Error ? error.message : "重建向量化失败");
+    } finally {
+      setIsLoadingDocumentDetail(false);
+    }
   }
 
   function openDocument(documentId: string) {
@@ -1183,7 +1251,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               {!isSidebarCollapsed ? (
                 <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                   <span>知识库</span>
-                  <button type="button" className="rounded-none p-1 text-slate-400 hover:bg-white hover:text-slate-700" title="新建知识库" onClick={createCollection}>
+                  <button
+                    type="button"
+                    className="no-drag rounded-none p-1 text-slate-400 hover:bg-white hover:text-slate-700"
+                    title="新建知识库"
+                    onClick={createCollection}
+                  >
                     <Plus size={14} strokeWidth={2} />
                   </button>
                 </div>
@@ -1209,7 +1282,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         {!isSidebarCollapsed ? <span className="flex-1 truncate">{collection.name}</span> : null}
                       </button>
 
-                      {!isSidebarCollapsed && collection.id !== DEFAULT_COLLECTION_ID ? (
+                      {!isSidebarCollapsed ? (
                         <div className="relative">
                           <button
                             type="button"
@@ -1224,7 +1297,10 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                           </button>
 
                           {isCollectionMenuOpen === collection.id ? (
-                            <div className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-none border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70">
+                            <div
+                              className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-none border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
+                              onPointerDown={(event) => event.stopPropagation()}
+                            >
                               <button
                                 type="button"
                                 className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
@@ -1242,8 +1318,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </div>
                   );
                 })}
-
-                {library.collections.length === 0 ? null : null}
               </div>
             </div>
           </div>
@@ -1281,6 +1355,14 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                       {selectedDocumentCollectionName}
                       {selectedDocument ? ` · ${getDocumentTypeLabel(selectedDocument)} · ${selectedDocument.chunkCount} 个分片` : ""}
                     </div>
+                    {selectedDocument ? (
+                      <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600">
+                        <span>{selectedVectorizationLabel}</span>
+                        {selectedDocument.vectorizedChunkCount !== undefined ? (
+                          <span>· {selectedDocument.vectorizedChunkCount}/{selectedDocument.chunkCount}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1310,13 +1392,23 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </button>
                   </div>
 
+                  {selectedDocument ? (
+                    <button
+                      type="button"
+                      onClick={() => void rebuildDocumentEmbeddings(selectedDocument.id)}
+                      className="no-drag rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                    >
+                      重置向量化
+                    </button>
+                  ) : null}
+
                   <div className="no-drag">{windowControls}</div>
                 </div>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-                <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
+                  <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
                     <button
                       type="button"
                       onClick={() => setIsSidebarCollapsed((current) => !current)}
@@ -1337,7 +1429,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </div>
                   </div>
 
-                <div className="drag-region flex shrink-0 items-center gap-3">
+                  <div className="drag-region flex shrink-0 items-center gap-3">
                     <div className="no-drag relative">
                       <button
                         type="button"
@@ -1532,6 +1624,9 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                               <div className="mt-1 truncate text-[10px] leading-4 text-slate-500" title={document.contentPreview || "暂无内容摘要"}>
                                 {document.contentPreview?.replace(/\s+/g, " ").trim() || "暂无内容摘要"}
                               </div>
+                              <div className="mt-1 inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
+                                {getVectorizationLabel(document.vectorizationState ?? null)}
+                              </div>
                             </div>
                           </button>
 
@@ -1568,13 +1663,23 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
                 {!isKnowledgeLibraryReady ? (
                   <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-                    <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">正在准备默认知识库</div>
-                    <div className="mt-2 text-sm text-slate-500">请稍候，系统会自动创建默认知识库。</div>
+                    <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">正在加载知识库</div>
+                    <div className="mt-2 text-sm text-slate-500">请稍候，系统会读取当前已有的知识库。</div>
                   </div>
                 ) : library.collections.length === 0 ? (
                   <div className="flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
                     <div className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">还没有知识库</div>
                     <div className="mt-2 text-sm text-slate-500">先新建一个知识库，再上传文件或文件夹。</div>
+                    {uploadError ? (
+                      <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                        {uploadError}
+                      </div>
+                    ) : null}
+                    {createCollectionError ? (
+                      <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                        {createCollectionError}
+                      </div>
+                    ) : null}
                     <button
                       type="button"
                       className="mt-8 inline-flex items-center gap-2 rounded-none border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
@@ -1588,6 +1693,16 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
                     <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">当前知识库暂无文档</div>
                     <div className="mt-2 text-sm text-slate-500">请使用右上角上传按钮导入文件。</div>
+                    {uploadError ? (
+                      <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                        {uploadError}
+                      </div>
+                    ) : null}
+                    {createCollectionError ? (
+                      <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                        {createCollectionError}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </section>

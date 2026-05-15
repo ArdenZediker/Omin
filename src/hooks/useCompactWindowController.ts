@@ -378,7 +378,8 @@ export function useCompactWindowController({
         await appWindow.setAlwaysOnTop(false);
         await appWindow.setAlwaysOnTop(true);
       } catch {
-        // 韫囩晫鏆愮純顕€銆婇幁銏狀槻婢惰精瑙?      }
+        // Ignore visibility polling failures on platforms that don't support it.
+      }
     };
 
     void ensureTopmost();
