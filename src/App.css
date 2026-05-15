@@ -753,6 +753,9 @@ body,
   opacity: 0;
   pointer-events: none;
   overflow: hidden;
+  flex-basis: 0;
+  width: 0;
+  min-width: 0;
   padding-left: 0;
   padding-right: 0;
   border-right-color: transparent;
@@ -2578,6 +2581,18 @@ body,
     opacity 180ms ease,
     transform 220ms ease,
     border-color 180ms ease;
+}
+
+.main-chat-layout--topic-collapsed .chat-topic-panel {
+  opacity: 0;
+  pointer-events: none;
+  flex-basis: 0;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-color: transparent;
+  overflow: hidden;
+  transform: translateX(12px);
 }
 
 .main-chat-layout__splitter {
