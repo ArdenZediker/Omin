@@ -1149,7 +1149,7 @@ fn save_automation_storage(connection: &Connection, scheduled_tasks_json: Option
     Ok(())
 }
 
-fn ensure_knowledge_defaults(connection: &Connection) -> Result<(), String> {
+fn ensure_knowledge_defaults(_connection: &Connection) -> Result<(), String> {
     Ok(())
 }
 
@@ -1175,31 +1175,6 @@ fn derive_vectorization_state(chunk_count: i64, vectorized_chunk_count: i64) -> 
 
 fn count_vectorized_chunks(chunks: &[Option<String>]) -> i64 {
     chunks.iter().filter(|value| value.is_some()).count() as i64
-}
-
-fn count_vectorized_chunks_for_model(chunks: &[KnowledgeChunkRecord], model_key: Option<&str>) -> i64 {
-    let Some(model_key) = model_key else {
-        return chunks.iter().filter(|chunk| chunk.embedding_json.is_some()).count() as i64;
-    };
-
-    chunks
-        .iter()
-        .filter(|chunk| {
-            chunk.embedding_json.is_some()
-                && chunk
-                    .embedding_model_key
-                    .as_deref()
-                    .map(|value| value == model_key)
-                    .unwrap_or(false)
-        })
-        .count() as i64
-}
-
-fn current_knowledge_embedding_model_key(connection: &Connection) -> Option<String> {
-    load_knowledge_embedding_active_model(connection)
-        .ok()
-        .flatten()
-        .map(|(_, model)| format!("{}:{}:{}", model.provider, model.model, fingerprint_text(model.api_key.trim())))
 }
 
 fn normalize_knowledge_retrieval_mode(value: &str) -> String {
@@ -1451,7 +1426,7 @@ fn generate_chunk_embeddings(
         return (Vec::new(), None);
     }
 
-    let Some((config, active_model)) = load_knowledge_embedding_active_model(connection).ok().flatten() else {
+    let Some((_, active_model)) = load_knowledge_embedding_active_model(connection).ok().flatten() else {
         return (vec![None; chunks.len()], None);
     };
     let provider = active_model.provider.clone();
