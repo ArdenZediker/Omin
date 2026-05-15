@@ -2,7 +2,7 @@
 import type { KeyboardEvent } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Bot, Settings, Sparkles } from "lucide-react";
+import { Cuboid, MessageSquareText, Settings } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
@@ -36,7 +36,7 @@ type ModelConfigSection = "chat" | "embedding";
 type ModelSectionCard = {
   title: string;
   description: string;
-  icon: typeof Bot;
+  icon: typeof Settings;
   count: number;
 };
 type ModelSectionCards = Record<ModelConfigSection, ModelSectionCard>;
@@ -104,13 +104,13 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     chat: {
       title: "聊天模型",
       description: "管理 OpenAI 兼容聊天模型、接口、偏好和连接测试。",
-      icon: Bot,
+      icon: MessageSquareText,
       count: endpointModels.length,
     },
     embedding: {
       title: "向量模型",
       description: "管理知识库向量化供应商、API Key 和多个嵌入模型。",
-      icon: Sparkles,
+      icon: Cuboid,
       count: knowledgeEmbeddingConfig.models.length,
     },
   };
@@ -377,7 +377,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                 : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
             }`}
           >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-sky-100 text-sky-700">
               <Settings size={13} strokeWidth={1.8} />
             </span>
             基本设置
@@ -392,7 +392,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
             }`}
           >
             <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-violet-100 text-violet-700">
-              <Bot size={13} strokeWidth={1.8} />
+              <Cuboid size={13} strokeWidth={1.8} />
             </span>
             模型配置
           </button>
@@ -425,8 +425,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
           </div>
         </header>
 
-        <div className="hide-scrollbar flex-1 overflow-y-auto overflow-x-hidden p-5">
-          <div className={`mx-auto w-full ${section === "models" ? "max-w-none" : "max-w-3xl"} space-y-6`}>
+        <div className="hide-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-5">
+          <div className={`mx-auto flex min-h-full w-full ${section === "models" ? "max-w-none flex-col gap-6" : "max-w-3xl flex-col gap-6"}`}>
             {section === "basic" ? (
               <BasicSettingsSection
                 basicSettings={basicSettings}
@@ -437,8 +437,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                 recordingShortcut={recordingShortcut}
               />
             ) : (
-              <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
-                <aside className="self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-6">
+                <aside className="min-w-0 self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <div className="px-2 pb-3">
                     <div className="text-xs font-semibold text-slate-500">模型分类</div>
                     <div className="mt-1 text-[11px] leading-5 text-slate-400">聊天模型和向量模型分开配置，切换不会互相干扰。</div>
@@ -477,7 +477,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                   </div>
                 </aside>
 
-                <div className="min-w-0 space-y-6">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6">
                   <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>

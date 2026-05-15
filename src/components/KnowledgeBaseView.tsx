@@ -1169,7 +1169,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       <div className="omni-knowledge-layout flex min-h-0 flex-1">
         <aside className="main-chat-nav drag-region">
           <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
-            <Bot size={20} strokeWidth={1.9} />
+            <Bot size={20} strokeWidth={1.9} className="text-sky-500" />
           </button>
           <div className="main-chat-nav__items">
             <button type="button" className="main-chat-nav__item no-drag" title="聊天" onClick={onBackToChat}>
@@ -1197,14 +1197,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
             ) : (
               <div className="h-8 w-8" />
             )}
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed((current) => !current)}
-              className="no-drag inline-flex h-8 w-8 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-              title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-            >
-              {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
-            </button>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -1212,6 +1204,16 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               {activeCategories.map((category) => {
                 const Icon = category.icon;
                 const isActive = category.id === activeCategory;
+                const categoryIconColor =
+                  category.id === "all"
+                    ? "#2563eb"
+                    : category.id === "docs"
+                      ? "#3b82f6"
+                      : category.id === "images"
+                        ? "#f59e0b"
+                        : category.id === "audio"
+                          ? "#10b981"
+                          : "#8b5cf6";
 
                 return (
                   <button
@@ -1234,7 +1236,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     title={category.title}
                   >
                     <span className={`flex h-5 w-5 items-center justify-center rounded-none ${isActive ? "text-slate-950" : "text-slate-500"}`}>
-                      <Icon size={13} strokeWidth={1.8} />
+                      <Icon size={13} strokeWidth={1.8} stroke={categoryIconColor} color={categoryIconColor} />
                     </span>
                     {!isSidebarCollapsed ? (
                       <>
