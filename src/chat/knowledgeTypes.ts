@@ -24,6 +24,7 @@ export type SearchKnowledgeChunkResult = {
     title?: string | null;
     content: string;
     embeddingJson?: string | null;
+    embeddingModelKey?: string | null;
     createdAt: number;
   };
   score: number;
@@ -60,6 +61,8 @@ export type KnowledgeDocument = {
   contentPreview: string;
   thumbnailDataUrl?: string | null;
   chunkCount: number;
+  vectorizedChunkCount?: number;
+  vectorizationState?: "empty" | "unvectorized" | "partial" | "vectorized";
   tags: string[];
   favorite: boolean;
   accessCount: number;
@@ -82,6 +85,7 @@ export type KnowledgeDocumentChunk = {
   title?: string | null;
   content: string;
   embeddingJson?: string | null;
+  embeddingModelKey?: string | null;
   createdAt: number;
 };
 

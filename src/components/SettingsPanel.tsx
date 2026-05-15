@@ -2,7 +2,7 @@
 import type { KeyboardEvent } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Bot, Settings } from "lucide-react";
+import { Bot, Settings, Sparkles } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
@@ -16,7 +16,11 @@ import {
   saveUsagePreferences,
   saveModelConnectionStatus,
 } from "../app/settingsStore";
-import { loadKnowledgeEmbeddingProfile, saveKnowledgeEmbeddingProfile, type KnowledgeEmbeddingProfile } from "../chat/knowledgeEmbedding";
+import {
+  loadKnowledgeEmbeddingConfig,
+  saveKnowledgeEmbeddingConfig,
+  type KnowledgeEmbeddingConfig,
+} from "../chat/knowledgeEmbedding";
 import BasicSettingsSection from "./settings/BasicSettingsSection";
 import KnowledgeEmbeddingSection from "./settings/KnowledgeEmbeddingSection";
 import ModelSettingsSection from "./settings/ModelSettingsSection";
@@ -24,12 +28,19 @@ import TitleBar from "./TitleBar";
 
 interface SettingsPanelProps {
   onClose: () => void;
+  onBackToMain: () => void | Promise<void>;
   onModelChange: (modelId: string) => void;
 }
 type SettingsSection = "basic" | "models";
+type ModelConfigSection = "chat" | "embedding";
+type ModelSectionCard = {
+  title: string;
+  description: string;
+  icon: typeof Bot;
+  count: number;
+};
+type ModelSectionCards = Record<ModelConfigSection, ModelSectionCard>;
 type RawRegistry = { configs: Map<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> };
-
-const MASK = "********";
 const DEFAULT_ENDPOINTS = [
   { id: "openai", name: "OpenAI 官方", baseUrl: "https://api.openai.com/v1" },
   { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1" },
@@ -52,8 +63,9 @@ function getSafeCurrentWindow() {
   }
 }
 
-export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelProps) {
+export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: SettingsPanelProps) {
   const [section, setSection] = useState<SettingsSection>("basic");
+  const [modelSection, setModelSection] = useState<ModelConfigSection>("chat");
   const [version, setVersion] = useState(0);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode(THEME_MODE_STORAGE_KEY));
   const [basicSettings, setBasicSettings] = useState<BasicSettings>(
@@ -61,7 +73,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
   );
   const [prefs, setPrefs] = useState(loadUsagePreferences);
   const [prefsSaveStatus, setPrefsSaveStatus] = useState<"idle" | "saved" | "error">("idle");
-  const [knowledgeEmbeddingProfile, setKnowledgeEmbeddingProfile] = useState<KnowledgeEmbeddingProfile>(loadKnowledgeEmbeddingProfile);
+  const [knowledgeEmbeddingConfig, setKnowledgeEmbeddingConfig] = useState<KnowledgeEmbeddingConfig>(loadKnowledgeEmbeddingConfig);
   const [recordingShortcut, setRecordingShortcut] = useState<"openMainShortcut" | "switchPreviousModelShortcut" | null>(null);
   const [endpointName, setEndpointName] = useState("OpenAI 官方");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
@@ -88,6 +100,21 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
   const endpointModels = endpoints.flatMap((endpoint) =>
     modelRegistry.getCustomModels(endpoint.id).map((model) => ({ ...model, endpointId: endpoint.id, endpointName: endpoint.name }))
   );
+  const modelSectionCards: ModelSectionCards = {
+    chat: {
+      title: "聊天模型",
+      description: "管理 OpenAI 兼容聊天模型、接口、偏好和连接测试。",
+      icon: Bot,
+      count: endpointModels.length,
+    },
+    embedding: {
+      title: "向量模型",
+      description: "管理知识库向量化供应商、API Key 和多个嵌入模型。",
+      icon: Sparkles,
+      count: knowledgeEmbeddingConfig.models.length,
+    },
+  };
+  const currentModelSectionCard = modelSectionCards[modelSection];
 
   useEffect(() => {
     setIsModelFormOpen(false);
@@ -138,7 +165,6 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
       setModelEndpointId("");
       setEndpointName("");
       setBaseUrl("");
-      setApiKey("");
       setTestResult(null);
       return;
     }
@@ -148,7 +174,6 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     setModelEndpointId(id);
     setEndpointName(cfg?.name || endpoint?.name || id);
     setBaseUrl(cfg?.baseUrl || endpoint?.baseUrl || "");
-    setApiKey(cfg?.hasApiKey ? MASK : "");
     setTestResult(null);
   };
 
@@ -160,7 +185,6 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
       const cfg = modelRegistry.getProviderConfig(endpoint.id);
       setEndpointName(cfg?.name || endpoint.name);
       setBaseUrl(cfg?.baseUrl || endpoint.baseUrl || "");
-      setApiKey(cfg?.hasApiKey ? MASK : "");
     }
     setModelId("");
     setModelName("");
@@ -177,7 +201,6 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     setModelEndpointId(model.endpointId);
     setEndpointName(cfg?.name || endpoint?.name || model.endpointId);
     setBaseUrl(cfg?.baseUrl || endpoint?.baseUrl || "");
-    setApiKey(cfg?.hasApiKey ? MASK : "");
     setModelId(model.requestModelId || model.id.replace(`${model.endpointId}:`, ""));
     setModelName(model.name);
     setModelVision(model.supportsVision ?? false);
@@ -188,13 +211,12 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
 
   const validateCurrentEndpoint = async () => {
     const id = modelEndpointId.trim();
-    const resolvedApiKey = apiKey === MASK ? getRawApiKey(id) : apiKey.trim();
-    if (!id || !endpointName.trim() || !baseUrl.trim() || !resolvedApiKey) return null;
+    if (!id || !endpointName.trim() || !baseUrl.trim() || !getRawApiKey(id)) return null;
 
     const existingModels = modelRegistry.getCustomModels(id);
     modelRegistry.registerProvider(id, {
+      apiKey: getRawApiKey(id),
       name: endpointName.trim(),
-      apiKey: resolvedApiKey,
       baseUrl: baseUrl.trim(),
       customModels: existingModels.length ? existingModels : undefined,
     });
@@ -216,7 +238,6 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
       }
       if (valid) {
         await saveProviderConfigs();
-        setApiKey(MASK);
         setVersion((value) => value + 1);
       }
     } catch {
@@ -232,8 +253,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
   const saveModel = async () => {
     const id = modelEndpointId.trim();
     const rawId = modelId.trim();
-    const resolvedApiKey = apiKey === MASK ? getRawApiKey(id) : apiKey.trim();
-    if (!id || !endpointName.trim() || !baseUrl.trim() || !resolvedApiKey || !rawId) return;
+    if (!id || !endpointName.trim() || !baseUrl.trim() || !getRawApiKey(id) || !rawId) return;
 
     setTestingConnection(true);
     setTestResult(null);
@@ -256,8 +276,8 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
 
     const existingModels = modelRegistry.getCustomModels(id);
     modelRegistry.registerProvider(id, {
+      apiKey: getRawApiKey(id),
       name: endpointName.trim(),
-      apiKey: resolvedApiKey,
       baseUrl: baseUrl.trim(),
       customModels: existingModels.length ? existingModels : undefined,
     });
@@ -277,7 +297,6 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     setIsModelFormOpen(false);
     setModelId("");
     setModelName("");
-    setApiKey(MASK);
     setTestResult(null);
     setVersion((value) => value + 1);
   };
@@ -299,11 +318,18 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     }
   };
 
-  const updateKnowledgeEmbeddingProfile = (profile: KnowledgeEmbeddingProfile) => {
-    setKnowledgeEmbeddingProfile(profile);
-    saveKnowledgeEmbeddingProfile(profile);
-    void emit("omni-knowledge-embedding-profile-changed", { profile });
+  const updateKnowledgeEmbeddingConfig = (config: KnowledgeEmbeddingConfig) => {
+    setKnowledgeEmbeddingConfig(config);
+    saveKnowledgeEmbeddingConfig(config);
+    void emit("omni-knowledge-embedding-profile-changed", { config });
   };
+
+  useEffect(() => {
+    if (section === "models") {
+      return;
+    }
+    setModelSection("chat");
+  }, [section]);
 
   const handleHeaderMouseDown = useCallback(async (event: React.MouseEvent<HTMLElement>) => {
     if (event.button !== 0) {
@@ -375,22 +401,32 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
 
       <section className="omni-settings-main flex min-w-0 flex-1 flex-col bg-white">
         <header className="omni-settings-header flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-5 select-none" onMouseDown={handleHeaderMouseDown}>
-          <div className="min-w-0 flex-1 pr-3">
+          <div className="drag-region min-w-0 flex-1 pr-3">
             <h2 className="omni-settings-title text-sm font-semibold text-slate-950">{section === "basic" ? "基本设置" : "模型配置"}</h2>
             <p className="omni-settings-muted text-[11px] text-slate-500">
               {section === "basic" ? "管理 Omni 的通用基础选项。" : "通过模型列表新增或编辑 OpenAI 兼容模型。"}
             </p>
-          </div>          <TitleBar
-            inline
-            onMinimizeToCompact={handleMinimizeWindow}
-            onClose={onClose}
-            closeTitle="关闭设置"
-            minimizeBehavior="taskbar"
-          />
+          </div>
+          <div className="no-drag flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void onBackToMain()}
+              className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+            >
+              回到主界面
+            </button>
+            <TitleBar
+              inline
+              onMinimizeToCompact={handleMinimizeWindow}
+              onClose={onClose}
+              closeTitle="关闭设置"
+              minimizeBehavior="taskbar"
+            />
+          </div>
         </header>
 
         <div className="hide-scrollbar flex-1 overflow-y-auto overflow-x-hidden p-5">
-          <div className="mx-auto w-full max-w-3xl space-y-6">
+          <div className={`mx-auto w-full ${section === "models" ? "max-w-none" : "max-w-3xl"} space-y-6`}>
             {section === "basic" ? (
               <BasicSettingsSection
                 basicSettings={basicSettings}
@@ -401,44 +437,98 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 recordingShortcut={recordingShortcut}
               />
             ) : (
-              <div className="space-y-6">
-                <KnowledgeEmbeddingSection profile={knowledgeEmbeddingProfile} onChangeProfile={updateKnowledgeEmbeddingProfile} />
-                <ModelSettingsSection
-                  apiKey={apiKey}
-                  baseUrl={baseUrl}
-                  editingModel={editingModel}
-                  endpointModels={endpointModels}
-                  endpointName={endpointName}
-                  endpoints={endpoints}
-                  getRawApiKey={getRawApiKey}
-                  isModelFormOpen={isModelFormOpen}
-                  modelEndpointId={modelEndpointId}
-                  modelId={modelId}
-                  modelName={modelName}
-                  modelStreaming={modelStreaming}
-                  modelVision={modelVision}
-                  onChooseEndpoint={chooseEndpoint}
-                  onCloseModelForm={() => setIsModelFormOpen(false)}
-                  onOpenEditModelForm={openEditModelForm}
-                  onOpenNewModelForm={openNewModelForm}
-                  onRemoveModel={removeModel}
-                  onSaveModel={saveModel}
-                  onSavePrefs={saveCurrentPrefs}
-                  onSetApiKey={setApiKey}
-                  onSetBaseUrl={setBaseUrl}
-                  onSetEndpointName={setEndpointName}
-                  onSetModelEndpointId={setModelEndpointId}
-                  onSetModelId={setModelId}
-                  onSetModelName={setModelName}
-                  onSetModelStreaming={setModelStreaming}
-                  onSetModelVision={setModelVision}
-                  onSetPrefs={setPrefs}
-                  onTestConnection={testConnection}
-                  prefs={prefs}
-                  prefsSaveStatus={prefsSaveStatus}
-                  testResult={testResult}
-                  testingConnection={testingConnection}
-                />
+              <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
+                <aside className="self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="px-2 pb-3">
+                    <div className="text-xs font-semibold text-slate-500">模型分类</div>
+                    <div className="mt-1 text-[11px] leading-5 text-slate-400">聊天模型和向量模型分开配置，切换不会互相干扰。</div>
+                  </div>
+                  <div className="space-y-1">
+                    {(["chat", "embedding"] as const).map((key) => {
+                      const item = modelSectionCards[key];
+                      const isActive = modelSection === key;
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setModelSection(key)}
+                          className={`flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
+                            isActive
+                              ? "bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
+                              : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
+                          }`}
+                        >
+                          <span className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg ${isActive ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>
+                            <Icon size={15} strokeWidth={1.8} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-medium">{item.title}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] ${isActive ? "bg-slate-100 text-slate-700" : "bg-slate-100 text-slate-500"}`}>
+                                {item.count}
+                              </span>
+                            </span>
+                            <span className="mt-1 block text-[11px] leading-4 text-slate-400">{item.description}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </aside>
+
+                <div className="min-w-0 space-y-6">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-900">{currentModelSectionCard.title}</h3>
+                        <p className="mt-0.5 text-xs leading-5 text-slate-500">{currentModelSectionCard.description}</p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">{currentModelSectionCard.count} 项</span>
+                    </div>
+                  </div>
+
+                  {modelSection === "chat" ? (
+                    <ModelSettingsSection
+                      apiKey={apiKey}
+                      baseUrl={baseUrl}
+                      editingModel={editingModel}
+                      endpointModels={endpointModels}
+                      endpointName={endpointName}
+                      endpoints={endpoints}
+                      getRawApiKey={getRawApiKey}
+                      isModelFormOpen={isModelFormOpen}
+                      modelEndpointId={modelEndpointId}
+                      modelId={modelId}
+                      modelName={modelName}
+                      modelStreaming={modelStreaming}
+                      modelVision={modelVision}
+                      onChooseEndpoint={chooseEndpoint}
+                      onCloseModelForm={() => setIsModelFormOpen(false)}
+                      onOpenEditModelForm={openEditModelForm}
+                      onOpenNewModelForm={openNewModelForm}
+                      onRemoveModel={removeModel}
+                      onSaveModel={saveModel}
+                      onSavePrefs={saveCurrentPrefs}
+                      onSetApiKey={setApiKey}
+                      onSetBaseUrl={setBaseUrl}
+                      onSetEndpointName={setEndpointName}
+                      onSetModelEndpointId={setModelEndpointId}
+                      onSetModelId={setModelId}
+                      onSetModelName={setModelName}
+                      onSetModelStreaming={setModelStreaming}
+                      onSetModelVision={setModelVision}
+                      onSetPrefs={setPrefs}
+                      onTestConnection={testConnection}
+                      prefs={prefs}
+                      prefsSaveStatus={prefsSaveStatus}
+                      testResult={testResult}
+                      testingConnection={testingConnection}
+                    />
+                  ) : (
+                    <KnowledgeEmbeddingSection config={knowledgeEmbeddingConfig} onChangeConfig={updateKnowledgeEmbeddingConfig} />
+                  )}
+                </div>
               </div>
             )}
           </div>
