@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Message } from "./adapters/types";
@@ -274,7 +274,7 @@ function MainApp() {
   );
 
   useEffect(() => {
-    if (!activeAssistant?.defaultModelId) {
+    if (!activeAssistant.defaultModelId) {
       return;
     }
     if (!availableModels.some((model) => model.id === activeAssistant.defaultModelId)) {
@@ -284,7 +284,7 @@ function MainApp() {
       return;
     }
     handleModelChange(activeAssistant.defaultModelId);
-  }, [activeAssistant?.defaultModelId, availableModels, currentModel, handleModelChange]);
+  }, [activeAssistant.defaultModelId, availableModels, currentModel, handleModelChange]);
 
   const { handleOpenCompact, handleRestoreMain } = useMainWindowController({
     basicSettings,
@@ -349,10 +349,10 @@ function MainApp() {
   });
 
   const lastMessage = messages[messages.length - 1];
-  const isStreaming = isLoading && lastMessage?.role === "assistant";
+  const isStreaming = isLoading && lastMessage.role === "assistant";
 
   const handleCopyMessage = useCallback(async (message: Message) => {
-    await navigator.clipboard?.writeText(message.content);
+    await navigator.clipboard.writeText(message.content);
   }, []);
 
   const handleSelectChat = useCallback(
@@ -406,7 +406,7 @@ function MainApp() {
   const handleShareChat = useCallback(async (session: { messages: Message[] }) => {
     const text = session.messages.map((message) => `${message.role}: ${message.content}`).join("\n\n");
     if (text) {
-      await navigator.clipboard?.writeText(text);
+      await navigator.clipboard.writeText(text);
     }
     setOpenChatMenu(null);
   }, []);
@@ -440,61 +440,6 @@ function MainApp() {
     setScheduledTasks,
     desktopActions,
   });
-
-  const handleToggleScheduledTask = useCallback((taskId: string) => {
-    setScheduledTasks((current) =>
-      current.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              enabled: !task.enabled,
-              updatedAt: Date.now(),
-            }
-          : task
-      )
-    );
-  }, [setScheduledTasks]);
-
-  const handleCreateScheduledTask = useCallback(
-    (input: { title: string; prompt: string; cron: string; target: "desktop" | "notification" | "session" }) => {
-      setScheduledTasks((current) => [
-        {
-          id: `scheduled_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          title: input.title,
-          prompt: input.prompt,
-          cron: input.cron,
-          target: input.target,
-          enabled: true,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          lastRunAt: null,
-        },
-        ...current,
-      ]);
-    },
-    [setScheduledTasks]
-  );
-
-  const handleUpdateScheduledTask = useCallback(
-    (taskId: string, patch: { title: string; prompt: string; cron: string; target: "desktop" | "notification" | "session" }) => {
-      setScheduledTasks((current) =>
-        current.map((task) =>
-          task.id === taskId
-            ? {
-                ...task,
-                ...patch,
-                updatedAt: Date.now(),
-              }
-            : task
-        )
-      );
-    },
-    [setScheduledTasks]
-  );
-
-  const handleDeleteScheduledTask = useCallback((taskId: string) => {
-    setScheduledTasks((current) => current.filter((task) => task.id !== taskId));
-  }, [setScheduledTasks]);
 
   if (isCompactWindow) {
     return (
@@ -577,7 +522,6 @@ function MainApp() {
           isLoading={isLoading}
           isStreaming={isStreaming}
           relatedContext={relatedContext}
-          scheduledTasks={scheduledTasks}
           latestTaskResult={latestTaskResult}
           taskRuntimeState={taskRuntimeState}
           messages={messages}
@@ -607,10 +551,6 @@ function MainApp() {
           onSubmitEditedUserMessage={handleSubmitEditedUserMessage}
           onToggleFavoriteChat={handleToggleFavoriteChat}
           onTogglePinChat={handleTogglePinChat}
-          onToggleScheduledTask={handleToggleScheduledTask}
-          onCreateScheduledTask={handleCreateScheduledTask}
-          onUpdateScheduledTask={handleUpdateScheduledTask}
-          onDeleteScheduledTask={handleDeleteScheduledTask}
           onUseEmptyPrompt={handleUseEmptyPrompt}
           onOpenKnowledge={() => setView("knowledge")}
         />
@@ -626,3 +566,7 @@ function MainApp() {
 }
 
 export default App;
+
+
+
+
