@@ -170,14 +170,14 @@ body,
 
 .main-chat-layout {
   position: relative;
-  --topic-panel-width: 244px;
-  --assistant-panel-width: 280px;
+  --topic-panel-width: 232px;
+  --assistant-panel-width: 244px;
   min-height: 0;
   flex: 1;
   display: flex;
   align-items: stretch;
-  gap: 0;
-  padding: 10px;
+  gap: 12px;
+  padding: 4px;
   background: transparent;
 }
 
@@ -186,7 +186,7 @@ body,
 }
 
 .main-chat-layout--topic-collapsed {
-  gap: 0;
+  gap: 12px;
 }
 
 .main-chat-nav {
@@ -326,8 +326,8 @@ body,
 
 .main-chat-toolbar {
   min-height: 76px;
-  margin: 12px 12px 10px;
-  padding: 14px 16px;
+  margin: 10px 10px 8px;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -740,7 +740,7 @@ body,
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 88%, transparent), color-mix(in srgb, var(--omni-soft-bg) 92%, transparent)),
     var(--omni-soft-bg);
-  padding: 14px 12px 12px;
+  padding: 12px 10px 10px;
   overflow: visible;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
   border-radius: var(--omni-radius-xl);
@@ -2552,9 +2552,9 @@ body,
 
 .chat-topic-panel {
   position: relative;
-  flex: 0 0 max(var(--topic-panel-width), 256px);
-  width: max(var(--topic-panel-width), 256px);
-  min-width: 256px;
+  flex: 0 0 max(var(--topic-panel-width), 224px);
+  width: max(var(--topic-panel-width), 224px);
+  min-width: 224px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -2582,7 +2582,7 @@ body,
 
 .main-chat-layout__splitter {
   position: relative;
-  flex: 0 0 8px;
+  flex: 0 0 4px;
   z-index: 20;
   align-self: stretch;
   border-radius: 999px;
@@ -2594,8 +2594,8 @@ body,
 .main-chat-layout__splitter::before {
   content: "";
   position: absolute;
-  top: 8px;
-  bottom: 8px;
+  top: 14px;
+  bottom: 14px;
   left: 50%;
   width: 2px;
   border-radius: 999px;
@@ -2613,6 +2613,7 @@ body,
 
 .main-chat-layout__splitter--topic {
   grid-column: 4;
+  margin-inline: -8px;
 }
 
 .main-chat-layout__splitter--ghost {
@@ -2717,7 +2718,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 10px 8px;
+  padding: 8px 8px 6px;
   background: transparent;
   opacity: 1;
   transform: translateX(0);
