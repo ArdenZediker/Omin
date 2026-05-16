@@ -6,6 +6,17 @@ import { Cuboid, MessageSquareText, Settings } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
+import {
+  loadCodexPetLibraryState,
+  loadCodexPetPackages,
+  createCodexPetPackage,
+  saveCodexPetLibraryState,
+} from "../app/pets/codexPetStore";
+import {
+  DEFAULT_CODEX_PET_LIBRARY_STATE,
+  type CodexPetLibraryState,
+  type CodexPetPackage,
+} from "../app/pets/codexPetTypes";
 import type { BasicSettings } from "../app/types";
 import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../app/settings";
 import {
@@ -71,6 +82,9 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [basicSettings, setBasicSettings] = useState<BasicSettings>(
     loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS)
   );
+  const [codexPetPackages, setCodexPetPackages] = useState<CodexPetPackage[]>([]);
+  const [codexPetLibraryState, setCodexPetLibraryState] = useState<CodexPetLibraryState>(DEFAULT_CODEX_PET_LIBRARY_STATE);
+  const [codexPetHome, setCodexPetHome] = useState("");
   const [prefs, setPrefs] = useState(loadUsagePreferences);
   const [prefsSaveStatus, setPrefsSaveStatus] = useState<"idle" | "saved" | "error">("idle");
   const [knowledgeEmbeddingConfig, setKnowledgeEmbeddingConfig] = useState<KnowledgeEmbeddingConfig>(loadKnowledgeEmbeddingConfig);
@@ -126,6 +140,49 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       const next = { ...current, ...patch };
       saveBasicSettings(BASIC_SETTINGS_STORAGE_KEY, next);
       return next;
+    });
+  };
+
+  const updateCodexPetLibraryState = (patch: Partial<CodexPetLibraryState>) => {
+    setCodexPetLibraryState((current) => {
+      const next = { ...current, ...patch, updatedAt: Date.now() };
+      void saveCodexPetLibraryState(next);
+      return next;
+    });
+  };
+
+  const selectCodexPet = (petId: string) => updateCodexPetLibraryState({ activePetId: petId });
+
+  const refreshCodexPets = async () => {
+    const payload = await loadCodexPetPackages();
+    setCodexPetPackages(payload.packages);
+    setCodexPetHome(payload.codexHome);
+    setCodexPetLibraryState((current) => {
+      const nextActivePetId = current.activePetId && payload.packages.some((pet) => pet.id === current.activePetId)
+        ? current.activePetId
+        : payload.activePetId;
+      if (current.activePetId === nextActivePetId) {
+        return current;
+      }
+      return { ...current, activePetId: nextActivePetId, updatedAt: Date.now() };
+    });
+  };
+
+  const createCodexPet = async () => {
+    const created = await createCodexPetPackage();
+    const payload = await loadCodexPetPackages();
+    const nextPackages = payload.packages.some((pet) => pet.id === created.id) ? payload.packages : [created, ...payload.packages];
+    const nextActivePetId = payload.activePetId ?? created.id;
+    setCodexPetPackages(nextPackages);
+    setCodexPetHome(payload.codexHome);
+    setCodexPetLibraryState((current) => {
+      const nextSelection = current.activePetId && nextPackages.some((pet) => pet.id === current.activePetId)
+        ? current.activePetId
+        : nextActivePetId;
+      if (current.activePetId === nextSelection) {
+        return current;
+      }
+      return { ...current, activePetId: nextSelection, updatedAt: Date.now() };
     });
   };
 
@@ -331,6 +388,21 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     setModelSection("chat");
   }, [section]);
 
+  useEffect(() => {
+    void (async () => {
+      const [libraryState, payload] = await Promise.all([
+        loadCodexPetLibraryState(DEFAULT_CODEX_PET_LIBRARY_STATE),
+        loadCodexPetPackages(),
+      ]);
+      setCodexPetLibraryState(libraryState);
+      setCodexPetPackages(payload.packages);
+      setCodexPetHome(payload.codexHome);
+      if (!libraryState.activePetId && payload.activePetId) {
+        setCodexPetLibraryState({ activePetId: payload.activePetId, updatedAt: Date.now() });
+      }
+    })();
+  }, []);
+
   const handleHeaderMouseDown = useCallback(async (event: React.MouseEvent<HTMLElement>) => {
     if (event.button !== 0) {
       return;
@@ -430,6 +502,12 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
             {section === "basic" ? (
               <BasicSettingsSection
                 basicSettings={basicSettings}
+                codexPetPackages={codexPetPackages}
+                codexPetLibraryState={codexPetLibraryState}
+                codexPetHome={codexPetHome}
+                onSelectCodexPet={selectCodexPet}
+                onCreateCodexPet={createCodexPet}
+                onRefreshCodexPets={refreshCodexPets}
                 onCaptureShortcut={captureShortcut}
                 onChangeThemeMode={changeThemeMode}
                 onUpdateBasicSettings={updateBasicSettings}

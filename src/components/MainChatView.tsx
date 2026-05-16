@@ -40,7 +40,6 @@ import type { TaskRuntimeState } from "../chat/taskTypes";
 import { RECOMMENDED_ASSISTANT_PRESETS } from "../config/manifests/assistants";
 import { AVATAR_CATEGORIES, AVATAR_PRESETS } from "../config/manifests/avatars";
 import { filterAvatarPresets, getEmojiAssetSrc, resolveAssistantAvatarImageSrc, resolveAssistantAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
-import { ASSISTANT_SKILL_OPTIONS, SKILL_MANIFESTS } from "../config/manifests/skills";
 import { ASSISTANT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
 import type { AvatarCategoryManifest } from "../config/manifests/types";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
@@ -422,7 +421,6 @@ export default function MainChatView({
       window.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [topicPanelWidth]);
-  const activeSkillCount = activeAssistant?.allowedSkillIds.length ?? 0;
   const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
   const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
@@ -1370,10 +1368,6 @@ export default function MainChatView({
                         <span>{activeToolCount} 项已启用</span>
                       </div>
                       <div className="main-chat-toolbar__assistant-panel-row">
-                        <strong>技能能力</strong>
-                        <span>{activeSkillCount} 项已启用</span>
-                      </div>
-                      <div className="main-chat-toolbar__assistant-panel-row">
                         <strong>记忆范围</strong>
                         <span>{activeMemoryScopeLabel}</span>
                       </div>
@@ -1719,38 +1713,6 @@ export default function MainChatView({
                   </div>
                 </div>
 
-                <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">技能权限</div>
-                  <div className="omni-settings-dialog__toggle-list">
-                    {ASSISTANT_SKILL_OPTIONS.map((skill) => {
-                      const checked = activeAssistant.allowedSkillIds.includes(skill.id);
-                      const supportedKinds = SKILL_MANIFESTS.find((item) => item.id === skill.id)?.supportedAssistantKinds ?? ["basic", "custom"];
-                      const supportLabel = supportedKinds.includes("basic") && supportedKinds.includes("custom")
-                        ? "基础 / 自定义助手"
-                        : supportedKinds.includes("basic")
-                          ? "Omni"
-                          : "自定义助手";
-                      return (
-                        <label key={skill.id} className="omni-settings-dialog__toggle-row">
-                          <div className="omni-settings-dialog__toggle-copy">
-                            <strong>{skill.label}</strong>
-                            <span>{skill.description} · 适用：{supportLabel}</span>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) => {
-                              const nextAllowedSkillIds = event.target.checked
-                                ? [...activeAssistant.allowedSkillIds, skill.id]
-                                : activeAssistant.allowedSkillIds.filter((item) => item !== skill.id);
-                              onUpdateAssistantProfile(activeAssistant.id, { allowedSkillIds: nextAllowedSkillIds });
-                            }}
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
               <input
                 ref={assistantAvatarInputRef}

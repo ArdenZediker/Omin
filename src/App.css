@@ -2227,6 +2227,14 @@ body,
   pointer-events: auto;
 }
 
+.chat-composer__suggestion-group-title {
+  margin-bottom: 6px;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .chat-composer__suggestions-list {
   min-height: 0;
   overflow-y: auto;
@@ -5851,3 +5859,4 @@ body,
     grid-template-columns: 1fr;
   }
 }
+
