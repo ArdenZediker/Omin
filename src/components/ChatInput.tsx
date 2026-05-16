@@ -184,30 +184,28 @@ export default function ChatInput({
   return (
     <div ref={composerRef} className="chat-composer">
       {showSlashSuggestions && (
-        <div className="chat-composer__skills">
-          {localSuggestions.length > 0 && (
-            <div className="chat-composer__skills-group">
-              <div className="chat-composer__skills-group-title">命令</div>
-              {localSuggestions.map((suggestion) => (
-                <button
-                  key={`${suggestion.kind}-${suggestion.id}`}
-                  type="button"
-                  className="chat-composer__skill"
-                  onClick={() => {
-                    setInput(buildSlashDraft(suggestion));
-                    textareaRef.current?.focus();
-                  }}
-                >
-                  <span className="chat-composer__skill-icon" aria-hidden="true">
-                    <SuggestionIcon suggestion={suggestion} />
-                  </span>
-                  <span className="chat-composer__skill-command">{suggestion.command}</span>
-                  <span className="chat-composer__skill-description">{suggestion.description}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
+        <div className="chat-composer__suggestions">
+          <div className="chat-composer__suggestions-list">
+            {localSuggestions.map((suggestion) => (
+              <button
+                key={`${suggestion.kind}-${suggestion.id}`}
+                type="button"
+                className="chat-composer__suggestion"
+                onClick={() => {
+                  setInput(buildSlashDraft(suggestion));
+                  textareaRef.current?.focus();
+                }}
+              >
+                <span className="chat-composer__suggestion-icon" aria-hidden="true">
+                  <SuggestionIcon suggestion={suggestion} />
+                </span>
+                <span className="chat-composer__suggestion-copy">
+                  <span className="chat-composer__suggestion-command">{suggestion.command}</span>
+                  <span className="chat-composer__suggestion-description">{suggestion.description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
