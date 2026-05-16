@@ -6,7 +6,6 @@ import {
   Eraser,
   GitCompare,
   Languages,
-  LibraryBig,
   ListCollapse,
   MessageCircleQuestion,
   Paperclip,
@@ -52,13 +51,6 @@ const SKILL_ICON_MAP: Record<string, React.ComponentType<{ size?: number; stroke
   compare: GitCompare,
 };
 
-const CONTEXT_OPTION_LABELS = {
-  session: "当前话题历史",
-  memory: "助手记忆",
-  favorites: "收藏话题",
-  workspace: "工作区文件",
-} as const;
-
 function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
   const Icon =
     suggestion.kind === "local"
@@ -84,13 +76,7 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
-  const [activePopover, setActivePopover] = useState<"mode" | "knowledge" | null>(null);
-  const [contextSelection, setContextSelection] = useState({
-    session: true,
-    memory: true,
-    favorites: false,
-    workspace: false,
-  });
+  const [activePopover, setActivePopover] = useState<"mode" | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -167,15 +153,8 @@ export default function ChatInput({
       return;
     }
 
-    const contextLines = Object.entries(contextSelection)
-      .filter(([, enabled]) => enabled)
-      .map(([key]) => `- ${CONTEXT_OPTION_LABELS[key as keyof typeof CONTEXT_OPTION_LABELS]}`);
-
     const visibleContent = input.trim();
-    const hiddenContext =
-      contextLines.length > 0 && contextPresetText
-        ? `【上下文要求】\n请优先结合以下来源回答：\n${contextLines.join("\n")}\n\n【可用上下文】\n${contextPresetText}`
-        : undefined;
+    const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
 
     onSend(visibleContent, images.length > 0 ? images : undefined, hiddenContext);
     setInput("");
@@ -212,16 +191,12 @@ export default function ChatInput({
     event.target.value = "";
   };
 
-  const activeContextChips = Object.entries(contextSelection)
-    .filter(([, enabled]) => enabled)
-    .map(([key]) => CONTEXT_OPTION_LABELS[key as keyof typeof CONTEXT_OPTION_LABELS]);
-
   const activeSlashCommand = input.trim().startsWith("/") ? input.trim().split(/\s+/)[0].toLowerCase() : "";
   const activeLocalCommand = LOCAL_SLASH_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
   const activeSkillCommand = SKILL_MANIFESTS.find((item) => item.command === activeSlashCommand) ?? null;
   const activeModeLabel = activeLocalCommand?.title ?? activeSkillCommand?.title ?? null;
   const activeModeTypeLabel = activeLocalCommand ? "工具模式" : activeSkillCommand ? "技能模式" : null;
-  const hasComposerStatus = Boolean(activeModeLabel || activeContextChips.length > 0 || images.length > 0);
+  const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
 
   return (
     <div ref={composerRef} className="chat-composer">
@@ -308,18 +283,6 @@ export default function ChatInput({
               <Bot size={13} strokeWidth={1.9} />
               <span>{activeModeTypeLabel}：{activeModeLabel}</span>
               <X size={12} strokeWidth={2} />
-            </button>
-          )}
-
-          {activeContextChips.length > 0 && (
-            <button
-              type="button"
-              className="chat-composer__status-chip"
-              onClick={() => setActivePopover("knowledge")}
-              title="查看上下文来源"
-            >
-              <LibraryBig size={13} strokeWidth={1.9} />
-              <span>上下文：{activeContextChips.join(" / ")}</span>
             </button>
           )}
 
@@ -414,37 +377,6 @@ export default function ChatInput({
               <Paperclip size={16} strokeWidth={1.8} />
             </button>
 
-            <div className="chat-composer__tool-dropdown">
-              <button
-                type="button"
-                className={`chat-composer__tool-button ${activePopover === "knowledge" ? "chat-composer__tool-button--active" : ""}`}
-                title="上下文来源"
-                onClick={() => setActivePopover((current) => (current === "knowledge" ? null : "knowledge"))}
-              >
-                <LibraryBig size={16} strokeWidth={1.8} />
-              </button>
-              {activePopover === "knowledge" && (
-                <div className="chat-composer__context-menu">
-                  <div className="chat-composer__context-menu-title">本次回答引用</div>
-                  {Object.entries(CONTEXT_OPTION_LABELS).map(([key, label]) => (
-                    <label key={key} className="chat-composer__context-option">
-                      <input
-                        type="checkbox"
-                        checked={contextSelection[key as keyof typeof contextSelection]}
-                        onChange={(event) =>
-                          setContextSelection((current) => ({
-                            ...current,
-                            [key]: event.target.checked,
-                          }))
-                        }
-                      />
-                      <span>{label}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-
           </div>
 
           <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
@@ -483,11 +415,7 @@ export default function ChatInput({
                 <CirclePlus size={16} strokeWidth={1.8} />
                 <span>新话题</span>
               </button>
-            ) : (
-              <button type="button" className="chat-composer__aux-button" title="工具箱">
-                <LibraryBig size={16} strokeWidth={1.8} />
-              </button>
-            )}
+            ) : null}
 
             {isLoading ? (
               <button onClick={onStop} className="chat-composer__submit chat-composer__submit--stop" title="停止生成" type="button">
