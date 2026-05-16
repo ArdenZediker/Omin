@@ -38,9 +38,7 @@ const LOCAL_COMMAND_ICON_MAP: Record<string, React.ComponentType<{ size?: number
 };
 
 function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
-  const Icon =
-    LOCAL_COMMAND_ICON_MAP[suggestion.id] ?? CirclePlus;
-
+  const Icon = LOCAL_COMMAND_ICON_MAP[suggestion.id] ?? CirclePlus;
   return <Icon size={16} strokeWidth={1.8} />;
 }
 
@@ -60,8 +58,6 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
-  const [activePopover, setActivePopover] = useState<"mode" | null>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -89,26 +85,6 @@ export default function ChatInput({
       textareaRef.current?.focus();
     }
   }, [draftImages, draftSignal, draftValue]);
-
-  useEffect(() => {
-    if (!activePopover) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) {
-        return;
-      }
-      if (composerRef.current?.contains(target)) {
-        return;
-      }
-      setActivePopover(null);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [activePopover]);
 
   const appendImageFiles = async (files: File[]) => {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
@@ -142,7 +118,6 @@ export default function ChatInput({
     onSend(visibleContent, images.length > 0 ? images : undefined, hiddenContext);
     setInput("");
     setImages([]);
-    setActivePopover(null);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -179,36 +154,10 @@ export default function ChatInput({
   const activeModeLabel = activeLocalCommand?.title ?? null;
   const activeModeTypeLabel = activeLocalCommand ? "工具模式" : null;
   const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
-  const showSlashSuggestions = matchedSuggestions.length > 0 && !activeModeLabel;
+  const showSlashSuggestions = localSuggestions.length > 0 && !activeModeLabel;
 
   return (
-    <div ref={composerRef} className="chat-composer">
-      {showSlashSuggestions && (
-        <div className="chat-composer__suggestions">
-          <div className="chat-composer__suggestions-list">
-            {localSuggestions.map((suggestion) => (
-              <button
-                key={`${suggestion.kind}-${suggestion.id}`}
-                type="button"
-                className="chat-composer__suggestion"
-                onClick={() => {
-                  setInput(buildSlashDraft(suggestion));
-                  textareaRef.current?.focus();
-                }}
-              >
-                <span className="chat-composer__suggestion-icon" aria-hidden="true">
-                  <SuggestionIcon suggestion={suggestion} />
-                </span>
-                <span className="chat-composer__suggestion-copy">
-                  <span className="chat-composer__suggestion-command">{suggestion.command}</span>
-                  <span className="chat-composer__suggestion-description">{suggestion.description}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
+    <div className="chat-composer">
       {images.length > 0 && (
         <div className="chat-composer__attachments">
           {images.map((img, index) => (
@@ -240,7 +189,9 @@ export default function ChatInput({
               title="清除当前模式"
             >
               <Bot size={13} strokeWidth={1.9} />
-              <span>{activeModeTypeLabel}：{activeModeLabel}</span>
+              <span>
+                {activeModeTypeLabel}：{activeModeLabel}
+              </span>
               <X size={12} strokeWidth={2} />
             </button>
           )}
@@ -270,48 +221,9 @@ export default function ChatInput({
             void handleFileSelect(event);
           }}
         />
+
         <div className="chat-composer__toolbar">
           <div className="chat-composer__toolbar-group">
-            <div className="chat-composer__tool-dropdown">
-              <button
-                type="button"
-                className={`chat-composer__tool-button ${activePopover === "mode" ? "chat-composer__tool-button--active" : ""}`}
-                title="对话模式"
-                onClick={() => setActivePopover((current) => (current === "mode" ? null : "mode"))}
-              >
-                <Bot size={16} strokeWidth={1.8} />
-              </button>
-              {activePopover === "mode" && (
-                <div className="chat-composer__context-menu">
-                  <div className="chat-composer__context-menu-title">发送方式</div>
-                  <button
-                    type="button"
-                    className="chat-composer__mode-option"
-                    onClick={() => {
-                      setInput((current) => current.replace(/^\/\S+\s*/, ""));
-                      setActivePopover(null);
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    <span className="chat-composer__mode-option-title">普通聊天</span>
-                    <span className="chat-composer__mode-option-desc">直接发送当前问题</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="chat-composer__mode-option"
-                    onClick={() => {
-                      setInput("/analyze_files ");
-                      setActivePopover(null);
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    <span className="chat-composer__mode-option-title">工具分析</span>
-                    <span className="chat-composer__mode-option-desc">预填文件分析命令</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
             <button
               type="button"
               className="chat-composer__tool-button"
@@ -320,7 +232,6 @@ export default function ChatInput({
             >
               <Paperclip size={16} strokeWidth={1.8} />
             </button>
-
           </div>
 
           <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
@@ -332,48 +243,79 @@ export default function ChatInput({
           </div>
         </div>
 
-        <div className="chat-composer__editor">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder="输入聊天内容..."
-            className="chat-composer__textarea hide-scrollbar"
-            rows={1}
-            disabled={isLoading}
-          />
+        <div className="chat-composer__body">
+          <div className="chat-composer__editor-wrap">
+            <div className="chat-composer__editor">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder="输入聊天内容..."
+                className="chat-composer__textarea hide-scrollbar"
+                rows={1}
+                disabled={isLoading}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="chat-composer__footer">
-          <div className="chat-composer__footer-hint">↵ 发送 / Shift + ↵ 换行</div>
-          <div className="chat-composer__footer-actions">
-            {canStartNewTopic && hasConversation ? (
-              <button
-                type="button"
-                className="chat-composer__aux-button chat-composer__aux-button--topic"
-                title="开启新话题"
-                onClick={onStartNewTopic}
-              >
-                <CirclePlus size={16} strokeWidth={1.8} />
-                <span>新话题</span>
-              </button>
-            ) : null}
+          <div className="chat-composer__footer-row">
+            <div className="chat-composer__footer-hint">Enter 发送 / Shift + Enter 换行</div>
+            <div className="chat-composer__footer-actions">
+              {canStartNewTopic && hasConversation ? (
+                <button
+                  type="button"
+                  className="chat-composer__aux-button chat-composer__aux-button--topic"
+                  title="开启新话题"
+                  onClick={onStartNewTopic}
+                >
+                  <CirclePlus size={16} strokeWidth={1.8} />
+                  <span>新话题</span>
+                </button>
+              ) : null}
 
-            {isLoading ? (
-              <button onClick={onStop} className="chat-composer__submit chat-composer__submit--stop" title="停止生成" type="button">
-                <Square className="w-4 h-4" fill="currentColor" strokeWidth={1.8} />
-              </button>
-            ) : (
-              <button onClick={handleSubmit} disabled={!input.trim() && images.length === 0} className="chat-composer__submit" title="发送消息" type="button">
-                <span>发送</span>
-                <ArrowRight className="chat-composer__submit-icon" strokeWidth={2} />
-              </button>
-            )}
+              {isLoading ? (
+                <button onClick={onStop} className="chat-composer__submit chat-composer__submit--stop" title="停止生成" type="button">
+                  <Square className="w-4 h-4" fill="currentColor" strokeWidth={1.8} />
+                </button>
+              ) : (
+                <button onClick={handleSubmit} disabled={!input.trim() && images.length === 0} className="chat-composer__submit" title="发送消息" type="button">
+                  <span>发送</span>
+                  <ArrowRight className="chat-composer__submit-icon" strokeWidth={2} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
+      {showSlashSuggestions && (
+        <div className="chat-composer__suggestions">
+          <div className="chat-composer__suggestions-list">
+            {localSuggestions.map((suggestion) => (
+              <button
+                key={`${suggestion.kind}-${suggestion.id}`}
+                type="button"
+                className="chat-composer__suggestion"
+                onClick={() => {
+                  setInput(buildSlashDraft(suggestion));
+                  textareaRef.current?.focus();
+                }}
+              >
+                <span className="chat-composer__suggestion-icon" aria-hidden="true">
+                  <SuggestionIcon suggestion={suggestion} />
+                </span>
+                <span className="chat-composer__suggestion-copy">
+                  <span className="chat-composer__suggestion-command">{suggestion.command}</span>
+                  <span className="chat-composer__suggestion-description">{suggestion.description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
