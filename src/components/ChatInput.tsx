@@ -15,7 +15,6 @@ import {
   Pin,
   Settings,
   Square,
-  TimerReset,
   X,
 } from "lucide-react";
 import { buildSlashDraft, getMatchingSlashSuggestions, LOCAL_SLASH_COMMANDS, type SlashSuggestion } from "../chat/skills";
@@ -26,12 +25,6 @@ interface ChatInputProps {
   hasConversation?: boolean;
   usageLabel?: string | null;
   contextPresetText?: string;
-  onCreateScheduledTask?: (input: {
-    title: string;
-    prompt: string;
-    cron: string;
-    target: "desktop" | "notification" | "session";
-  }) => void;
   onStartNewTopic?: () => void;
   onSend: (content: string, images?: string[], hiddenContext?: string) => void;
   isLoading: boolean;
@@ -66,12 +59,6 @@ const CONTEXT_OPTION_LABELS = {
   workspace: "工作区文件",
 } as const;
 
-const TIMER_PRESET_OPTIONS = {
-  daily: { label: "每天 09:00", cron: "0 9 * * *" },
-  hourly: { label: "每小时", cron: "0 * * * *" },
-  workday: { label: "工作日 09:00", cron: "0 9 * * 1-5" },
-} as const;
-
 function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
   const Icon =
     suggestion.kind === "local"
@@ -86,7 +73,6 @@ export default function ChatInput({
   hasConversation = false,
   usageLabel,
   contextPresetText,
-  onCreateScheduledTask,
   onStartNewTopic,
   onSend,
   isLoading,
@@ -98,8 +84,7 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
-  const [activePopover, setActivePopover] = useState<"mode" | "knowledge" | "timer" | null>(null);
-  const [timerPreset, setTimerPreset] = useState<keyof typeof TIMER_PRESET_OPTIONS>("daily");
+  const [activePopover, setActivePopover] = useState<"mode" | "knowledge" | null>(null);
   const [contextSelection, setContextSelection] = useState({
     session: true,
     memory: true,
@@ -460,64 +445,11 @@ export default function ChatInput({
               )}
             </div>
 
-            <div className="chat-composer__tool-dropdown">
-              <button
-                type="button"
-                className={`chat-composer__tool-button ${activePopover === "timer" ? "chat-composer__tool-button--active" : ""}`}
-                title="定时任务"
-                onClick={() => setActivePopover((current) => (current === "timer" ? null : "timer"))}
-              >
-                <TimerReset size={16} strokeWidth={1.8} />
-              </button>
-              {activePopover === "timer" && (
-                <div className="chat-composer__context-menu">
-                  <div className="chat-composer__context-menu-title">快速创建任务</div>
-                  {(Object.entries(TIMER_PRESET_OPTIONS) as Array<[keyof typeof TIMER_PRESET_OPTIONS, (typeof TIMER_PRESET_OPTIONS)[keyof typeof TIMER_PRESET_OPTIONS]]>).map(
-                    ([key, option]) => (
-                      <button
-                        key={key}
-                        type="button"
-                        className="chat-composer__mode-option"
-                        onClick={() => {
-                          setTimerPreset(key);
-                        }}
-                      >
-                        <span className="chat-composer__mode-option-title">{option.label}</span>
-                        <span className="chat-composer__mode-option-desc">{option.cron}</span>
-                      </button>
-                    )
-                  )}
-                  <button
-                    type="button"
-                    className="chat-composer__mode-option"
-                    onClick={() => {
-                      if (!onCreateScheduledTask || !input.trim()) {
-                        return;
-                      }
-                      const selected = TIMER_PRESET_OPTIONS[timerPreset];
-                      onCreateScheduledTask({
-                        title: `快速任务 ${selected.label}`,
-                        prompt: input.trim(),
-                        cron: selected.cron,
-                        target: "desktop",
-                      });
-                      setActivePopover(null);
-                    }}
-                  >
-                    <span className="chat-composer__mode-option-title">保存当前输入为任务</span>
-                    <span className="chat-composer__mode-option-desc">使用上方选中的执行频率</span>
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
 
           <div className="chat-composer__toolbar-group chat-composer__toolbar-group--right">
-            <button type="button" className="chat-composer__tool-button" title="布局">
-              <CirclePlus size={16} strokeWidth={1.8} />
-            </button>
             <button type="button" className="chat-composer__tool-button" title="展开">
               <ArrowRight size={16} strokeWidth={1.8} className="chat-composer__tool-button-arrow" />
             </button>
