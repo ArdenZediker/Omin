@@ -197,10 +197,11 @@ export default function ChatInput({
   const activeModeLabel = activeLocalCommand?.title ?? activeSkillCommand?.title ?? null;
   const activeModeTypeLabel = activeLocalCommand ? "工具模式" : activeSkillCommand ? "技能模式" : null;
   const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
+  const showSlashSuggestions = matchedSuggestions.length > 0 && !activeModeLabel;
 
   return (
     <div ref={composerRef} className="chat-composer">
-      {matchedSuggestions.length > 0 && (
+      {showSlashSuggestions && (
         <div className="chat-composer__skills">
           {localSuggestions.length > 0 && (
             <div className="chat-composer__skills-group">
