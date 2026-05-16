@@ -4,20 +4,14 @@ import {
   Bot,
   CirclePlus,
   Eraser,
-  GitCompare,
-  Languages,
-  ListCollapse,
-  MessageCircleQuestion,
   Paperclip,
   Pencil,
-  PencilLine,
   Pin,
   Settings,
   Square,
   X,
 } from "lucide-react";
 import { buildSlashDraft, getMatchingSlashSuggestions, LOCAL_SLASH_COMMANDS, type SlashSuggestion } from "../chat/skills";
-import { SKILL_MANIFESTS } from "../config/manifests/skills";
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;
@@ -43,19 +37,9 @@ const LOCAL_COMMAND_ICON_MAP: Record<string, React.ComponentType<{ size?: number
   pin: Pin,
 };
 
-const SKILL_ICON_MAP: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
-  summarize: ListCollapse,
-  translate: Languages,
-  rewrite: PencilLine,
-  explain: MessageCircleQuestion,
-  compare: GitCompare,
-};
-
 function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
   const Icon =
-    suggestion.kind === "local"
-      ? (LOCAL_COMMAND_ICON_MAP[suggestion.id] ?? CirclePlus)
-      : (SKILL_ICON_MAP[suggestion.id] ?? MessageCircleQuestion);
+    LOCAL_COMMAND_ICON_MAP[suggestion.id] ?? CirclePlus;
 
   return <Icon size={16} strokeWidth={1.8} />;
 }
@@ -83,7 +67,6 @@ export default function ChatInput({
 
   const matchedSuggestions = getMatchingSlashSuggestions(input);
   const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
-  const skillSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "skill");
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -193,9 +176,8 @@ export default function ChatInput({
 
   const activeSlashCommand = input.trim().startsWith("/") ? input.trim().split(/\s+/)[0].toLowerCase() : "";
   const activeLocalCommand = LOCAL_SLASH_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
-  const activeSkillCommand = SKILL_MANIFESTS.find((item) => item.command === activeSlashCommand) ?? null;
-  const activeModeLabel = activeLocalCommand?.title ?? activeSkillCommand?.title ?? null;
-  const activeModeTypeLabel = activeLocalCommand ? "工具模式" : activeSkillCommand ? "技能模式" : null;
+  const activeModeLabel = activeLocalCommand?.title ?? null;
+  const activeModeTypeLabel = activeLocalCommand ? "工具模式" : null;
   const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
   const showSlashSuggestions = matchedSuggestions.length > 0 && !activeModeLabel;
 
@@ -226,28 +208,6 @@ export default function ChatInput({
             </div>
           )}
 
-          {skillSuggestions.length > 0 && (
-            <div className="chat-composer__skills-group">
-              <div className="chat-composer__skills-group-title">技能</div>
-              {skillSuggestions.map((suggestion) => (
-                <button
-                  key={`${suggestion.kind}-${suggestion.id}`}
-                  type="button"
-                  className="chat-composer__skill"
-                  onClick={() => {
-                    setInput(buildSlashDraft(suggestion));
-                    textareaRef.current?.focus();
-                  }}
-                >
-                  <span className="chat-composer__skill-icon" aria-hidden="true">
-                    <SuggestionIcon suggestion={suggestion} />
-                  </span>
-                  <span className="chat-composer__skill-command">{suggestion.command}</span>
-                  <span className="chat-composer__skill-description">{suggestion.description}</span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -350,21 +310,6 @@ export default function ChatInput({
                     <span className="chat-composer__mode-option-title">工具分析</span>
                     <span className="chat-composer__mode-option-desc">预填文件分析命令</span>
                   </button>
-                  {SKILL_MANIFESTS.map((skill) => (
-                    <button
-                      key={skill.id}
-                      type="button"
-                      className="chat-composer__mode-option"
-                      onClick={() => {
-                        setInput(buildSlashDraft({ command: skill.command }));
-                        setActivePopover(null);
-                        textareaRef.current?.focus();
-                      }}
-                    >
-                      <span className="chat-composer__mode-option-title">{skill.title}</span>
-                      <span className="chat-composer__mode-option-desc">{skill.description}</span>
-                    </button>
-                  ))}
                 </div>
               )}
             </div>
