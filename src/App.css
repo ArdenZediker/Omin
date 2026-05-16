@@ -2130,32 +2130,32 @@ body,
   }
 
   
+
 .chat-composer__suggestions {
   position: relative;
   display: flex;
-  align-items: center;
-  margin: 0 0 8px;
+  justify-content: flex-start;
+  margin: 0 0 6px;
   padding: 0 10px;
 }
 
 .chat-composer__suggestions-list {
-  width: min(560px, 100%);
-  max-height: 104px;
+  width: min(640px, 100%);
+  max-height: 148px;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-left: 10px;
-  padding: 8px;
+  gap: 0;
+  margin-left: 0;
+  padding: 6px;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 90%, transparent);
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 98%, transparent), color-mix(in srgb, var(--omni-panel-bg) 92%, transparent)),
-    var(--omni-panel-bg);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 96%, transparent);
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
 }
 
 .chat-composer__suggestion {
+  width: 100%;
   border: 0;
   border-radius: 10px;
   display: flex;
