@@ -190,7 +190,7 @@ export default function ChatInput({
             >
               <Bot size={13} strokeWidth={1.9} />
               <span>
-                {activeModeTypeLabel}：{activeModeLabel}
+                {activeModeTypeLabel}: {activeModeLabel}
               </span>
               <X size={12} strokeWidth={2} />
             </button>
@@ -204,7 +204,7 @@ export default function ChatInput({
               title="继续添加图片"
             >
               <Paperclip size={13} strokeWidth={1.9} />
-              <span>附件：{images.length} 张图片</span>
+              <span>附件: {images.length} 张图片</span>
             </button>
           )}
         </div>
@@ -294,25 +294,30 @@ export default function ChatInput({
       {showSlashSuggestions && (
         <div className="chat-composer__suggestions">
           <div className="chat-composer__suggestions-list">
-            {localSuggestions.map((suggestion) => (
-              <button
-                key={`${suggestion.kind}-${suggestion.id}`}
-                type="button"
-                className="chat-composer__suggestion"
-                onClick={() => {
-                  setInput(buildSlashDraft(suggestion));
-                  textareaRef.current?.focus();
-                }}
-              >
-                <span className="chat-composer__suggestion-icon" aria-hidden="true">
-                  <SuggestionIcon suggestion={suggestion} />
-                </span>
-                <span className="chat-composer__suggestion-copy">
-                  <span className="chat-composer__suggestion-command">{suggestion.command}</span>
-                  <span className="chat-composer__suggestion-description">{suggestion.description}</span>
-                </span>
-              </button>
-            ))}
+            {localSuggestions.length > 0 && (
+              <div className="chat-composer__suggestion-group">
+                <div className="chat-composer__suggestion-group-title">本地命令</div>
+                {localSuggestions.map((suggestion) => (
+                  <button
+                    key={`${suggestion.kind}-${suggestion.id}`}
+                    type="button"
+                    className="chat-composer__suggestion"
+                    onClick={() => {
+                      setInput(buildSlashDraft(suggestion));
+                      textareaRef.current?.focus();
+                    }}
+                  >
+                    <span className="chat-composer__suggestion-icon" aria-hidden="true">
+                      <SuggestionIcon suggestion={suggestion} />
+                    </span>
+                    <span className="chat-composer__suggestion-copy">
+                      <span className="chat-composer__suggestion-command">{suggestion.command}</span>
+                      <span className="chat-composer__suggestion-description">{suggestion.description}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

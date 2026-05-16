@@ -7,6 +7,7 @@ export const SETTINGS_WINDOW_LABEL = "settings";
 export const EXPANDED_SIZE = { width: 920, height: 820 };
 export const SETTINGS_WINDOW_SIZE = { width: 980, height: 760 };
 export const BASIC_SETTINGS_STORAGE_KEY = "omni_basic_settings";
+export const CODEX_PET_LIBRARY_STATE_STORAGE_KEY = "omni_codex_pet_library_state";
 export const COMPACT_POSITION_STORAGE_KEY = "omni_compact_position";
 export const MAIN_POSITION_STORAGE_KEY = "omni_main_position";
 export const MAIN_VIEW_STORAGE_KEY = "omni_main_view";

@@ -1,12 +1,20 @@
 import type { KeyboardEvent, ReactNode } from "react";
 import type { BasicSettings } from "../../app/types";
 import type { ThemeMode } from "../../app/settings";
+import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
+import CodexPetSection from "./CodexPetSection";
 
 type Props = {
   basicSettings: BasicSettings;
   themeMode: ThemeMode;
   onChangeThemeMode: (mode: ThemeMode) => void;
   onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
+  codexPetPackages: CodexPetPackage[];
+  codexPetLibraryState: CodexPetLibraryState;
+  codexPetHome: string;
+  onSelectCodexPet: (petId: string) => void;
+  onCreateCodexPet: () => void;
+  onRefreshCodexPets: () => void;
   onCaptureShortcut: (
     event: KeyboardEvent<HTMLButtonElement>,
     keyName: keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">
@@ -37,6 +45,12 @@ export default function BasicSettingsSection({
   themeMode,
   onChangeThemeMode,
   onUpdateBasicSettings,
+  codexPetPackages,
+  codexPetLibraryState,
+  codexPetHome,
+  onSelectCodexPet,
+  onCreateCodexPet,
+  onRefreshCodexPets,
   onCaptureShortcut,
   recordingShortcut,
 }: Props) {
@@ -94,6 +108,15 @@ export default function BasicSettingsSection({
           </div>
         </div>
       </div>
+
+      <CodexPetSection
+        packages={codexPetPackages}
+        state={codexPetLibraryState}
+        codexHome={codexPetHome}
+        onSelectPet={onSelectCodexPet}
+        onCreatePet={onCreateCodexPet}
+        onRefreshPets={onRefreshCodexPets}
+      />
 
       <div className="space-y-4 border-t border-slate-100 pt-4">
         <h3 className="text-sm font-medium text-slate-900 omni-settings-title">悬浮与窗口</h3>
