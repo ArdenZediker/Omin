@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
-import { convertFileSrc } from "@tauri-apps/api/core";
 
 type DesktopPetProps = {
   width: number;
@@ -26,7 +25,7 @@ export default function DesktopPet({ width, height, state, packageData }: Deskto
   const [frameIndex, setFrameIndex] = useState(0);
   const actualState = state;
   const frameset = PET_ROWS[actualState];
-  const sheetSrc = packageData?.spritesheetFilePath ? convertFileSrc(packageData.spritesheetFilePath) : "/pets/omni-pet-v3-alpha.png?v=20260506-1444";
+  const sheetSrc = packageData?.spritesheetWebPath ?? "/pets/omni-pet-v3-alpha.png?v=20260506-1444";
   const cellWidth = 192;
   const cellHeight = 208;
   const atlasColumns = 8;
