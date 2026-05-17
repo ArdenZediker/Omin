@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
+import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
 import DesktopPet from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
@@ -100,9 +101,9 @@ export default function CompactWindow({
   };
   const isPetAppearance = compactAppearance === "pet";
   const isAnimatedAppearance = isPetAppearance;
-  const petViewportSize = Math.max(48, compactSize.width - 18);
-  const petRenderHeight = petViewportSize;
-  const petRenderWidth = Math.round((petRenderHeight * 192) / 208);
+  const petViewportSize = getCodexPetViewportSize(compactSize.width);
+  const petRenderHeight = petViewportSize.height;
+  const petRenderWidth = petViewportSize.width;
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
   const petState = compactReply?.isError
     ? "failed"
