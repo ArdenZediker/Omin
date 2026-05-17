@@ -233,6 +233,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
             localStorage.setItem("omni_compact_appearance", "default");
             window.dispatchEvent(new StorageEvent("storage", { key: "omni_compact_appearance", newValue: "default" }));
           }
+          await emit("omni-compact-appearance-changed", { appearance: "default", scale: 1 });
           await showCompactWindow("default", 1, COMPACT_WINDOW_LABEL);
           setIsDesktopPetAwake(false);
           return;
@@ -251,6 +252,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       localStorage.setItem("omni_compact_appearance", "pet");
       window.dispatchEvent(new StorageEvent("storage", { key: "omni_compact_appearance", newValue: "pet" }));
     }
+    await emit("omni-compact-appearance-changed", { appearance: "pet", scale: 2 });
     await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
     setIsDesktopPetAwake(true);
   };

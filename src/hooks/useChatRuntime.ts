@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
 import { COMPACT_WINDOW_LABEL } from "../app/constants";
@@ -303,12 +304,18 @@ export function useChatRuntime({
             const action = resolvedCommand.args.trim().toLowerCase();
             const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
 
+            const restoreCompactBall = async () => {
+              saveSqliteBackedValue("omni_compact_appearance", "default");
+              await emit("omni-compact-appearance-changed", { appearance: "default", scale: 1 });
+              await showCompactWindow("default", 1, COMPACT_WINDOW_LABEL);
+            };
+
             if (!action) {
               if (compactWindow) {
                 try {
                   const visible = await compactWindow.isVisible();
                   if (visible) {
-                    await compactWindow.hide();
+                    await restoreCompactBall();
                     return { ok: true, outputText: "已收起桌面宠物。" };
                   }
                 } catch {
@@ -317,12 +324,14 @@ export function useChatRuntime({
               }
 
               saveSqliteBackedValue("omni_compact_appearance", "pet");
+              await emit("omni-compact-appearance-changed", { appearance: "pet", scale: 2 });
               await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
               return { ok: true, outputText: "已唤醒桌面宠物。" };
             }
 
             if (["wake", "open", "show", "on"].includes(action)) {
               saveSqliteBackedValue("omni_compact_appearance", "pet");
+              await emit("omni-compact-appearance-changed", { appearance: "pet", scale: 2 });
               await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
               return { ok: true, outputText: "已唤醒桌面宠物。" };
             }
@@ -331,7 +340,7 @@ export function useChatRuntime({
               if (!compactWindow) {
                 return { ok: true, outputText: "桌面宠物当前未开启。" };
               }
-              await compactWindow.hide();
+              await restoreCompactBall();
               return { ok: true, outputText: "已收起桌面宠物。" };
             }
 
