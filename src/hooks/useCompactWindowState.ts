@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 
 export type CompactAppearance = "default" | "compact" | "large" | "pet";
@@ -53,6 +54,26 @@ export function useCompactWindowState() {
 
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<{ appearance?: CompactAppearance; scale?: number }>("omni-compact-appearance-changed", (event) => {
+      const appearance = event.payload?.appearance;
+      const scale = event.payload?.scale;
+      if (appearance) {
+        setCompactAppearance(appearance);
+      }
+      if (typeof scale === "number" && Number.isFinite(scale)) {
+        setCharacterScale(clampCharacterScale(scale));
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
   }, []);
 
   useEffect(() => {
