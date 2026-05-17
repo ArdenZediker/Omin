@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { CODEX_PET_CELL_SIZE, fitCodexPetToBounds } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
 
 type DesktopPetProps = {
@@ -26,13 +27,11 @@ export default function DesktopPet({ width, height, state, packageData }: Deskto
   const actualState = state;
   const frameset = PET_ROWS[actualState];
   const sheetSrc = packageData?.spritesheetWebPath ?? "/pets/omni-pet-v3-alpha.png?v=20260506-1444";
-  const cellWidth = 192;
-  const cellHeight = 208;
+  const cellWidth = CODEX_PET_CELL_SIZE.width;
+  const cellHeight = CODEX_PET_CELL_SIZE.height;
   const atlasColumns = 8;
   const atlasRows = 9;
-  const scale = Math.min(width / cellWidth, height / cellHeight);
-  const scaledCellWidth = Math.round(cellWidth * scale);
-  const scaledCellHeight = Math.round(cellHeight * scale);
+  const { width: scaledCellWidth, height: scaledCellHeight, scale } = fitCodexPetToBounds({ width, height });
   const scaledAtlasWidth = Math.round(cellWidth * atlasColumns * scale);
   const scaledAtlasHeight = Math.round(cellHeight * atlasRows * scale);
 

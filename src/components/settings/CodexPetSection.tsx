@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { fitCodexPetToBounds } from "../../app/pets/codexPetSizing";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
 import DesktopPet from "../DesktopPet";
 
@@ -27,6 +28,7 @@ export default function CodexPetSection({
 }: Props) {
   const [expanded, setExpanded] = useState(true);
   const activePackage = packages.find((pet) => pet.id === state.activePetId) ?? null;
+  const previewSize = fitCodexPetToBounds({ width: 54, height: 54 });
   const handleOpenFolder = async () => {
     const folderPath = projectPetsRoot;
     try {
@@ -109,12 +111,12 @@ export default function CodexPetSection({
               return (
                 <button
                   key={pet.id}
-                  type="button"
-                  onClick={() => onSelectPet(pet.id)}
-                  className="flex w-full items-center gap-3 border-b border-slate-100 px-5 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50"
-                >
-                  <div className="flex h-[54px] w-[54px] shrink-0 items-end justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                    <DesktopPet width={34} height={40} state="idle" packageData={pet} />
+                type="button"
+                onClick={() => onSelectPet(pet.id)}
+                className="flex w-full items-center gap-3 border-b border-slate-100 px-5 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50"
+              >
+                <div className="flex h-[54px] w-[54px] shrink-0 items-end justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                    <DesktopPet width={previewSize.width} height={previewSize.height} state="idle" packageData={pet} />
                   </div>
 
                   <div className="min-w-0 flex-1">

@@ -11,6 +11,7 @@ import KnowledgeBaseView from "./components/KnowledgeBaseView";
 import CompactWindow from "./components/CompactWindow";
 import { usePromptDialog } from "./components/PromptDialog";
 import { loadCodexPetPackages } from "./app/pets/codexPetStore";
+import { getCodexPetViewportHeight } from "./app/pets/codexPetSizing";
 import type { CodexPetPackage } from "./app/pets/codexPetTypes";
 import {
   CHARACTER_SCALE_BASELINE,
@@ -175,6 +176,7 @@ function MainApp() {
         ? Math.max(3, Math.round(compactSize.width * 0.03))
         : 8;
     const inlineBarWidth = isAnimatedCompactAppearance ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
+    const compactCharacterSize = getCodexPetViewportHeight(compactSize.width);
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -183,7 +185,7 @@ function MainApp() {
       "--compact-button-icon-size": `${iconSize}px`,
       "--compact-gap": `${compactGap}px`,
       "--compact-padding": `${compactPadding}px`,
-      "--compact-character-size": `${Math.max(48, compactSize.width - 18)}px`,
+      "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
     } as CSSProperties;
   }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance]);

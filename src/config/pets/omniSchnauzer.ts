@@ -1,3 +1,5 @@
+import { CODEX_PET_CELL_SIZE } from "../../app/pets/codexPetSizing";
+
 export type DesktopPetAction =
   | "idle"
   | "blink"
@@ -42,8 +44,8 @@ export const OMNI_SCHNAUZER_PET: DesktopPetManifest = {
   id: "omni-pet-v3",
   name: "Omni Pet V3",
   spritesheetSrc: "/pets/omni-pet-v3-alpha.png?v=20260506-1444",
-  cellWidth: 192,
-  cellHeight: 208,
+  cellWidth: CODEX_PET_CELL_SIZE.width,
+  cellHeight: CODEX_PET_CELL_SIZE.height,
   atlasColumns: 8,
   atlasRows: 26,
   ambientActions: ["idle", "blink"],
