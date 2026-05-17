@@ -157,6 +157,24 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
 
   const selectCodexPet = (petId: string) => updateCodexPetLibraryState({ activePetId: petId });
 
+  const syncCompactVisualState = async () => {
+    const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
+    const currentAppearance = typeof window === "undefined" ? "default" : localStorage.getItem("omni_compact_appearance");
+    const isPetAppearance = currentAppearance === "pet";
+
+    if (!compactWindow) {
+      setIsDesktopPetAwake(false);
+      return;
+    }
+
+    try {
+      const visible = await compactWindow.isVisible();
+      setIsDesktopPetAwake(visible && isPetAppearance);
+    } catch {
+      setIsDesktopPetAwake(false);
+    }
+  };
+
   const refreshCodexPets = async () => {
     const payload = await loadCodexPetPackages();
     setCodexPetPackages(payload.packages);
@@ -190,13 +208,32 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     });
   };
 
+  useEffect(() => {
+    if (!codexPetLibraryState.activePetId) {
+      return;
+    }
+
+    const currentAppearance = typeof window === "undefined" ? "default" : localStorage.getItem("omni_compact_appearance");
+    if (currentAppearance !== "pet") {
+      return;
+    }
+
+    void showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
+    void syncCompactVisualState();
+  }, [codexPetLibraryState.activePetId]);
+
   const enableDesktopPet = async () => {
     const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
     if (compactWindow) {
       try {
         const visible = await compactWindow.isVisible();
-        if (visible) {
-          await compactWindow.hide();
+        const currentAppearance = typeof window === "undefined" ? "default" : localStorage.getItem("omni_compact_appearance");
+        if (visible && currentAppearance === "pet") {
+          if (typeof window !== "undefined") {
+            localStorage.setItem("omni_compact_appearance", "default");
+            window.dispatchEvent(new StorageEvent("storage", { key: "omni_compact_appearance", newValue: "default" }));
+          }
+          await showCompactWindow("default", 1, COMPACT_WINDOW_LABEL);
           setIsDesktopPetAwake(false);
           return;
         }
@@ -433,14 +470,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
         setCodexPetLibraryState({ activePetId: payload.activePetId, updatedAt: Date.now() });
       }
 
-      const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
-      if (compactWindow) {
-        try {
-          setIsDesktopPetAwake(await compactWindow.isVisible());
-        } catch {
-          setIsDesktopPetAwake(false);
-        }
-      }
+      await syncCompactVisualState();
     })();
   }, []);
 
@@ -448,19 +478,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     let cancelled = false;
 
     const syncCompactPetVisibility = async () => {
-      const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
-      if (!compactWindow) {
-        if (!cancelled) {
-          setIsDesktopPetAwake(false);
-        }
-        return;
-      }
-
       try {
-        const visible = await compactWindow.isVisible();
-        if (!cancelled) {
-          setIsDesktopPetAwake(visible);
-        }
+        await syncCompactVisualState();
       } catch {
         if (!cancelled) {
           setIsDesktopPetAwake(false);
