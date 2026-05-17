@@ -2265,6 +2265,15 @@ body,
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
 }
 
+.chat-composer__suggestion--active {
+  background: color-mix(in srgb, var(--omni-app-text) 10%, transparent);
+}
+
+.chat-composer__suggestion--active .chat-composer__suggestion-icon {
+  background: #e2e8f0;
+  color: #64748b;
+}
+
 .chat-composer__suggestion-icon {
   width: 20px;
   height: 20px;

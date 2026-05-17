@@ -385,9 +385,10 @@ export async function showCompactWindow(
   const settings = getBasicSettings();
   const size = getCompactWindowSize(appearance, scale);
   const storedPosition = getStoredCompactPosition();
+  const monitor = await getMonitorForCursor();
+  const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
 
   if (settings.followCursorScreen) {
-    const monitor = await getMonitorForCursor();
     if (monitor) {
       await moveCompactWindowToMonitor(compactWindow, monitor, size);
     } else if (storedPosition) {
@@ -395,6 +396,42 @@ export async function showCompactWindow(
     }
   } else if (storedPosition) {
     await compactWindow.setPosition(new LogicalPosition(storedPosition.x, storedPosition.y));
+  }
+
+  if (monitor) {
+    await clampCompactWindowToMonitor(compactWindow, monitor, size);
+  }
+
+  if (mainWindow) {
+    try {
+      const mainVisible = await mainWindow.isVisible();
+      if (mainVisible) {
+        const [compactScaleFactor, mainScaleFactor] = await Promise.all([
+          compactWindow.scaleFactor(),
+          mainWindow.scaleFactor(),
+        ]);
+        const compactPosition = (await compactWindow.outerPosition()).toLogical(compactScaleFactor);
+        const mainPosition = (await mainWindow.outerPosition()).toLogical(mainScaleFactor);
+        const mainSize = (await mainWindow.outerSize()).toLogical(mainScaleFactor);
+        const compactRight = compactPosition.x + size.width;
+        const compactBottom = compactPosition.y + size.height;
+        const mainRight = mainPosition.x + mainSize.width;
+        const mainBottom = mainPosition.y + mainSize.height;
+        const overlapsMainWindow =
+          compactPosition.x < mainRight &&
+          compactRight > mainPosition.x &&
+          compactPosition.y < mainBottom &&
+          compactBottom > mainPosition.y;
+
+        if (overlapsMainWindow) {
+          const nextX = Math.max(0, Math.round(mainPosition.x - size.width - 12));
+          await compactWindow.setPosition(new LogicalPosition(nextX, Math.round(compactPosition.y)));
+          persistCompactPosition({ x: nextX, y: Math.round(compactPosition.y) });
+        }
+      }
+    } catch {
+      // Ignore cross-window geometry failures.
+    }
   }
 
   await compactWindow.show();
