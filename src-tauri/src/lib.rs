@@ -73,7 +73,7 @@ struct CodexPetPackageRecord {
     display_name: String,
     description: String,
     spritesheet_path: String,
-    spritesheet_file_path: String,
+    spritesheet_web_path: String,
     package_dir: String,
     manifest_path: String,
     spritesheet_exists: bool,
@@ -393,13 +393,14 @@ fn load_codex_pet_package_record(package_dir: &Path) -> Result<Option<CodexPetPa
     let spritesheet_path = manifest.spritesheet_path.trim().to_string();
     let spritesheet_file_path = package_dir.join(&spritesheet_path);
     let spritesheet_exists = spritesheet_file_path.exists();
+    let spritesheet_web_path = format!("/pets/{id}/{}", spritesheet_path.replace('\\', "/"));
 
     Ok(Some(CodexPetPackageRecord {
         id,
         display_name,
         description,
         spritesheet_path,
-        spritesheet_file_path: spritesheet_file_path.to_string_lossy().to_string(),
+        spritesheet_web_path,
         package_dir: package_dir.to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
         spritesheet_exists,
@@ -409,8 +410,7 @@ fn load_codex_pet_package_record(package_dir: &Path) -> Result<Option<CodexPetPa
 
 #[tauri::command]
 fn load_codex_pet_packages() -> Result<CodexPetPackageListPayload, String> {
-    let codex_home = codex_home_dir();
-    let pet_root = codex_home.join("pets");
+    let pet_root = current_pet_root()?;
     fs::create_dir_all(&pet_root).map_err(|err| err.to_string())?;
 
     let mut packages = Vec::new();
@@ -442,13 +442,13 @@ fn load_codex_pet_packages() -> Result<CodexPetPackageListPayload, String> {
     Ok(CodexPetPackageListPayload {
         packages,
         active_pet_id,
-        codex_home: codex_home.to_string_lossy().to_string(),
+        codex_home: pet_root.to_string_lossy().to_string(),
     })
 }
 
 #[tauri::command]
 fn create_codex_pet_package() -> Result<CodexPetPackageRecord, String> {
-    let pet_root = codex_pet_root();
+    let pet_root = current_pet_root()?;
     fs::create_dir_all(&pet_root).map_err(|err| err.to_string())?;
 
     let base_id = "new-pet";
@@ -480,7 +480,7 @@ fn create_codex_pet_package() -> Result<CodexPetPackageRecord, String> {
         display_name: manifest.display_name,
         description: manifest.description,
         spritesheet_path: manifest.spritesheet_path,
-        spritesheet_file_path: spritesheet_path.to_string_lossy().to_string(),
+        spritesheet_web_path: format!("/pets/{pet_id}/spritesheet.webp"),
         package_dir: package_dir.to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
         spritesheet_exists: true,
@@ -489,7 +489,45 @@ fn create_codex_pet_package() -> Result<CodexPetPackageRecord, String> {
 }
 
 fn workspace_root() -> Result<PathBuf, String> {
-    std::env::current_dir().map_err(|err| err.to_string())
+    let current_dir = std::env::current_dir().map_err(|err| err.to_string())?;
+    if current_dir.file_name().and_then(|name| name.to_str()) == Some("src-tauri") {
+        return current_dir
+            .parent()
+            .map(PathBuf::from)
+            .ok_or_else(|| "Unable to resolve workspace root".to_string());
+    }
+    Ok(current_dir)
+}
+
+fn project_pets_root() -> Result<PathBuf, String> {
+    let root = workspace_root()?;
+    let pets_root = root.join("public").join("pets");
+    fs::create_dir_all(&pets_root).map_err(|err| err.to_string())?;
+    Ok(pets_root)
+}
+
+fn packaged_pet_root() -> Result<PathBuf, String> {
+    let app_data_dir = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("XDG_DATA_HOME").map(PathBuf::from))
+        .or_else(|| std::env::var_os("HOME").map(PathBuf::from).map(|home| home.join(".local/share")))
+        .unwrap_or_else(|| PathBuf::from("."));
+    let pets_root = app_data_dir.join("omni").join("pets");
+    fs::create_dir_all(&pets_root).map_err(|err| err.to_string())?;
+    Ok(pets_root)
+}
+
+fn current_pet_root() -> Result<PathBuf, String> {
+    if tauri::is_dev() {
+        project_pets_root()
+    } else {
+        packaged_pet_root()
+    }
+}
+
+#[tauri::command]
+fn load_workspace_pet_dir_command() -> Result<String, String> {
+    Ok(current_pet_root()?.to_string_lossy().to_string())
 }
 
 fn current_timestamp_ms() -> i64 {
@@ -3261,6 +3299,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             greet,
+            load_workspace_pet_dir_command,
             load_codex_pet_packages,
             create_codex_pet_package,
             list_workspace_files,

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
 import DesktopPet from "../DesktopPet";
 
@@ -24,15 +26,39 @@ export default function CodexPetSection({
   onRefreshPets,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
+  const [projectPetsRoot, setProjectPetsRoot] = useState(codexHome || "");
   const activePackage = packages.find((pet) => pet.id === state.activePetId) ?? null;
+  const handleOpenFolder = async () => {
+    const folderPath = projectPetsRoot || codexHome || "~/.codex";
+    try {
+      await revealItemInDir(folderPath);
+    } catch (error) {
+      console.error("打开宠物文件夹失败", error);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<string>("load_workspace_pet_dir_command")
+      .then((path) => {
+        if (!cancelled) {
+          setProjectPetsRoot(path);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProjectPetsRoot(codexHome || "");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [codexHome]);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm omni-settings-card">
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
-      >
+      <button type="button" onClick={() => setExpanded((value) => !value)} className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left">
         <div>
           <div className="text-sm font-medium text-slate-900">宠物</div>
           <div className="mt-1 text-sm text-slate-500">{activePackage ? `已选择 ${activePackage.displayName}` : "未选择宠物"}</div>
@@ -68,6 +94,22 @@ export default function CodexPetSection({
             </div>
           </div>
 
+          <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="font-medium text-slate-700">自定义宠物</div>
+                <div className="mt-0.5 truncate">{projectPetsRoot || codexHome || "~/.codex"}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleOpenFolder()}
+                className="shrink-0 text-slate-400 text-xs hover:text-slate-600"
+              >
+                打开文件夹 ↗
+              </button>
+            </div>
+          </div>
+
           <div className="border-t border-slate-100">
             {packages.map((pet) => {
               const isActive = pet.id === state.activePetId;
@@ -99,14 +141,6 @@ export default function CodexPetSection({
                 </button>
               );
             })}
-
-            <div className="flex items-center justify-between gap-4 border-t border-slate-100 px-5 py-4 text-sm text-slate-500">
-              <div className="min-w-0">
-                <div className="font-medium text-slate-700">自定义宠物</div>
-                <div className="mt-1 truncate">{codexHome || "~/.codex"}/pets</div>
-              </div>
-              <div className="shrink-0 text-slate-400">打开文件夹 ↗</div>
-            </div>
           </div>
         </>
       )}
