@@ -142,12 +142,7 @@ export function useMainWindowController({
       const initialBasicSettings = getBasicSettings();
       if (initialBasicSettings.showCompactBall) {
         const storedAppearance = readSqliteBackedValue("omni_compact_appearance");
-        const appearance: CompactAppearance =
-          storedAppearance === "compact" ||
-          storedAppearance === "large" ||
-          storedAppearance === "pet"
-            ? storedAppearance
-            : "default";
+        const appearance: CompactAppearance = storedAppearance === "compact" || storedAppearance === "large" || storedAppearance === "pet" ? storedAppearance : "default";
         const storedScale = Number(readSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY) || "1");
         const scale = Number.isFinite(storedScale) ? storedScale : 1;
         void showCompactWindow(
@@ -315,7 +310,9 @@ export function useMainWindowController({
 
   const handleOpenCompact = useCallback(async () => {
     if (basicSettings.showCompactBall) {
-      await showCompactWindow(compactAppearance, effectiveCompactScale, COMPACT_WINDOW_LABEL);
+      const normalizedAppearance: CompactAppearance =
+        compactAppearance === "compact" || compactAppearance === "large" || compactAppearance === "pet" ? compactAppearance : "default";
+      await showCompactWindow(normalizedAppearance, normalizedAppearance === "pet" ? effectiveCompactScale : 1, COMPACT_WINDOW_LABEL);
     }
     if (appWindow) {
       await appWindow.hide();
