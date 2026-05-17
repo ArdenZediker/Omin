@@ -4,7 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
 import { COMPACT_WINDOW_LABEL } from "../app/constants";
-import { saveSqliteBackedValue } from "../app/sqliteStorage";
+import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
@@ -302,7 +302,8 @@ export function useChatRuntime({
           title: petTool.title,
           execute: async (resolvedCommand) => {
             const action = resolvedCommand.args.trim().toLowerCase();
-            const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
+            const currentAppearance = readSqliteBackedValue("omni_compact_appearance");
+            const compactWindow = currentAppearance === "pet" ? await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL) : null;
 
             const restoreCompactBall = async () => {
               saveSqliteBackedValue("omni_compact_appearance", "default");

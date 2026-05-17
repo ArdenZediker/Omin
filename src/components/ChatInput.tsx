@@ -37,6 +37,11 @@ const LOCAL_COMMAND_ICON_MAP: Record<string, React.ComponentType<{ size?: number
   pin: Pin,
 };
 
+const IMMEDIATE_COMMAND_IDS = new Set(["new", "clear", "settings", "pet", "pin"]);
+const IMMEDIATE_COMMAND_PAYLOADS: Record<string, string> = {
+  pet: "/pet wake",
+};
+
 function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
   const Icon = LOCAL_COMMAND_ICON_MAP[suggestion.id] ?? CirclePlus;
   return <Icon size={16} strokeWidth={1.8} />;
@@ -58,8 +63,10 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const matchedSuggestions = getMatchingSlashSuggestions(input);
   const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
@@ -120,7 +127,75 @@ export default function ChatInput({
     setImages([]);
   };
 
+  const submitImmediateCommand = (command: string) => {
+    if (isLoading) {
+      return;
+    }
+    const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
+    onSend(command, undefined, hiddenContext);
+    setInput("");
+    setImages([]);
+  };
+
+  const activeSlashCommand = input.trim().startsWith("/") ? input.trim().split(/\s+/)[0].toLowerCase() : "";
+  const activeLocalCommand = LOCAL_SLASH_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
+  const activeModeLabel = activeLocalCommand?.title ?? null;
+  const activeModeTypeLabel = activeLocalCommand ? "工具模式" : null;
+  const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
+  const showSlashSuggestions = localSuggestions.length > 0 && !activeModeLabel;
+
+  useEffect(() => {
+    suggestionItemRefs.current = suggestionItemRefs.current.slice(0, localSuggestions.length);
+  }, [localSuggestions.length]);
+
+  useEffect(() => {
+    if (!showSlashSuggestions) {
+      setSelectedSuggestionIndex(0);
+      return;
+    }
+
+    setSelectedSuggestionIndex((current) => Math.min(current, localSuggestions.length - 1));
+  }, [localSuggestions.length, showSlashSuggestions]);
+
+  useEffect(() => {
+    if (!showSlashSuggestions) {
+      return;
+    }
+
+    suggestionItemRefs.current[selectedSuggestionIndex]?.scrollIntoView({ block: "nearest" });
+  }, [selectedSuggestionIndex, showSlashSuggestions]);
+
+  const applySuggestion = (suggestion: SlashSuggestion) => {
+    if (IMMEDIATE_COMMAND_IDS.has(suggestion.id)) {
+      submitImmediateCommand(IMMEDIATE_COMMAND_PAYLOADS[suggestion.id] ?? suggestion.command);
+      return;
+    }
+
+    setInput(buildSlashDraft(suggestion));
+    textareaRef.current?.focus();
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (showSlashSuggestions && localSuggestions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSelectedSuggestionIndex((current) => (current + 1) % localSuggestions.length);
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSelectedSuggestionIndex((current) => (current - 1 + localSuggestions.length) % localSuggestions.length);
+        return;
+      }
+
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        applySuggestion(localSuggestions[selectedSuggestionIndex] ?? localSuggestions[0]);
+        return;
+      }
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       handleSubmit();
@@ -148,13 +223,6 @@ export default function ChatInput({
     }
     event.target.value = "";
   };
-
-  const activeSlashCommand = input.trim().startsWith("/") ? input.trim().split(/\s+/)[0].toLowerCase() : "";
-  const activeLocalCommand = LOCAL_SLASH_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
-  const activeModeLabel = activeLocalCommand?.title ?? null;
-  const activeModeTypeLabel = activeLocalCommand ? "工具模式" : null;
-  const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
-  const showSlashSuggestions = localSuggestions.length > 0 && !activeModeLabel;
 
   return (
     <div className="chat-composer">
@@ -291,33 +359,33 @@ export default function ChatInput({
           </div>
         </div>
       </div>
+
       {showSlashSuggestions && (
         <div className="chat-composer__suggestions">
           <div className="chat-composer__suggestions-list">
-            {localSuggestions.length > 0 && (
-              <div className="chat-composer__suggestion-group">
-                <div className="chat-composer__suggestion-group-title">本地命令</div>
-                {localSuggestions.map((suggestion) => (
-                  <button
-                    key={`${suggestion.kind}-${suggestion.id}`}
-                    type="button"
-                    className="chat-composer__suggestion"
-                    onClick={() => {
-                      setInput(buildSlashDraft(suggestion));
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    <span className="chat-composer__suggestion-icon" aria-hidden="true">
-                      <SuggestionIcon suggestion={suggestion} />
-                    </span>
-                    <span className="chat-composer__suggestion-copy">
-                      <span className="chat-composer__suggestion-command">{suggestion.command}</span>
-                      <span className="chat-composer__suggestion-description">{suggestion.description}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="chat-composer__suggestion-group">
+              <div className="chat-composer__suggestion-group-title">本地命令</div>
+              {localSuggestions.map((suggestion, index) => (
+                <button
+                  key={`${suggestion.kind}-${suggestion.id}`}
+                  ref={(element) => {
+                    suggestionItemRefs.current[index] = element;
+                  }}
+                  type="button"
+                  className={`chat-composer__suggestion${selectedSuggestionIndex === index ? " chat-composer__suggestion--active" : ""}`}
+                  onClick={() => applySuggestion(suggestion)}
+                  onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                >
+                  <span className="chat-composer__suggestion-icon" aria-hidden="true">
+                    <SuggestionIcon suggestion={suggestion} />
+                  </span>
+                  <span className="chat-composer__suggestion-copy">
+                    <span className="chat-composer__suggestion-command">{suggestion.command}</span>
+                    <span className="chat-composer__suggestion-description">{suggestion.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

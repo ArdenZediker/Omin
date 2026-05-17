@@ -39,7 +39,7 @@ export const COMPACT_APPEARANCE_PRESETS: Record<CompactAppearance, { width: numb
   default: { width: 120, height: 64 },
   compact: { width: 108, height: 56 },
   large: { width: 136, height: 72 },
-  pet: { width: 78, height: 90 },
+  pet: { width: 92, height: 90 },
 };
 
 export const COMPACT_APPEARANCE_OPTIONS: Array<{
