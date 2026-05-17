@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 
-export type CompactAppearance = "default" | "compact" | "large" | "character" | "pet";
-export type CharacterModel = "hiyori";
+export type CompactAppearance = "default" | "compact" | "large" | "pet";
+export type CharacterModel = never;
 
 export const COMPACT_APPEARANCE_STORAGE_KEY = "omni_compact_appearance";
 export const CHARACTER_SCALE_STORAGE_KEY = "omni_character_scale";
@@ -18,7 +18,7 @@ export function clampCharacterScale(value: number) {
 export function getInitialCompactAppearance(): CompactAppearance {
   if (typeof window === "undefined") return "default";
   const saved = readSqliteBackedValue(COMPACT_APPEARANCE_STORAGE_KEY);
-  return saved === "compact" || saved === "large" || saved === "character" || saved === "pet" ? saved : "default";
+  return saved === "compact" || saved === "large" || saved === "pet" ? saved : "default";
 }
 
 export function getInitialCharacterScale(): number {
@@ -28,22 +28,18 @@ export function getInitialCharacterScale(): number {
 }
 
 export function getInitialCharacterModel(): CharacterModel {
-  return "hiyori";
+  return undefined as never;
 }
 
 export function useCompactWindowState() {
   const [compactAppearance, setCompactAppearance] = useState<CompactAppearance>(getInitialCompactAppearance);
   const [characterScale, setCharacterScale] = useState<number>(getInitialCharacterScale);
-  const [characterModel, setCharacterModel] = useState<CharacterModel>(getInitialCharacterModel);
   const [isCompactMenuOpen, setIsCompactMenuOpen] = useState(false);
   const [isCompactModelOpen, setIsCompactModelOpen] = useState(false);
   const [isCompactAppearanceOpen, setIsCompactAppearanceOpen] = useState(false);
-  const [isCharacterModelOpen, setIsCharacterModelOpen] = useState(false);
-  const [isCharacterMenuPinned, setIsCharacterMenuPinned] = useState(false);
   const [compactMenuSide, setCompactMenuSide] = useState<"left" | "right">("right");
   const [compactSubmenuSide, setCompactSubmenuSide] = useState<"left" | "right">("right");
   const [characterMenuPosition, setCharacterMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const [characterPanelSide, setCharacterPanelSide] = useState<"left" | "right">("left");
   const [isCompactQueryOpen, setIsCompactQueryOpen] = useState(false);
   const [compactQuery, setCompactQuery] = useState("");
   const [compactReply, setCompactReply] = useState<{ question: string; answer: string } | null>(null);
@@ -53,7 +49,6 @@ export function useCompactWindowState() {
     const onStorage = () => {
       setCompactAppearance(getInitialCompactAppearance());
       setCharacterScale(getInitialCharacterScale());
-      setCharacterModel(getInitialCharacterModel());
     };
 
     window.addEventListener("storage", onStorage);
@@ -68,19 +63,13 @@ export function useCompactWindowState() {
     saveSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY, String(characterScale));
   }, [characterScale]);
 
-  useEffect(() => {
-    saveSqliteBackedValue(CHARACTER_MODEL_STORAGE_KEY, characterModel);
-  }, [characterModel]);
-
   const closeCompactMenuPanels = useCallback(() => {
     setIsCompactMenuOpen(false);
     setIsCompactModelOpen(false);
     setIsCompactAppearanceOpen(false);
-    setIsCharacterModelOpen(false);
   }, []);
 
   const closeCompactMenus = useCallback(() => {
-    setIsCharacterMenuPinned(false);
     closeCompactMenuPanels();
   }, [closeCompactMenuPanels]);
 
@@ -102,8 +91,6 @@ export function useCompactWindowState() {
 
   return {
     characterMenuPosition,
-    characterModel,
-    characterPanelSide,
     characterScale,
     clearCompactQuery,
     clearCompactReply,
@@ -112,8 +99,6 @@ export function useCompactWindowState() {
     compactAppearance,
     compactQuery,
     compactReply,
-    isCharacterMenuPinned,
-    isCharacterModelOpen,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
     isCompactModelOpen,
@@ -123,16 +108,12 @@ export function useCompactWindowState() {
     isCompactReplyLoading,
     resetCompactFloatingUi,
     setCharacterMenuPosition,
-    setCharacterModel,
-    setCharacterPanelSide,
     setCharacterScale,
     setCompactAppearance,
     setCompactQuery,
     setCompactReply,
     setCompactMenuSide,
     setCompactSubmenuSide,
-    setIsCharacterMenuPinned,
-    setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
     setIsCompactMenuOpen,
     setIsCompactModelOpen,

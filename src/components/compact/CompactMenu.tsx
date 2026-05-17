@@ -1,6 +1,6 @@
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { BasicSettings, ExternalChatEntry } from "../../app/types";
-import type { CharacterModel, CompactAppearance } from "../../hooks/useCompactWindowState";
+import type { CompactAppearance } from "../../hooks/useCompactWindowState";
 import { omniSmallIconSrc, THEME_MODE_STORAGE_KEY } from "../../app/constants";
 import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../../app/settings";
 import { Bot, Check, ChevronRight, Circle, MessageSquareMore, Minimize2, MonitorCog, Moon, Palette, PawPrint, RotateCcw, Settings2, Sun } from "lucide-react";
@@ -44,29 +44,21 @@ const ENTRY_GROUP_LABELS: Record<"common" | "domestic", string> = {
 
 type CompactMenuProps = {
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
-  characterMenuPosition: { x: number; y: number } | null;
-  characterModel: CharacterModel;
-  characterModelOptions: Array<{ id: CharacterModel; title: string; description: string }>;
+  menuPosition: { x: number; y: number } | null;
   characterScale: number;
   compactAppearance: CompactAppearance;
   entries: ExternalChatEntry[];
-  isCharacterAppearance: boolean;
-  isCharacterModelOpen: boolean;
   isCompactAppearanceOpen: boolean;
   isCompactModelOpen: boolean;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
   followCursorScreen: boolean;
-  onCharacterModelChange: (model: CharacterModel) => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
   onOpenExternalChat: (entry: ExternalChatEntry) => void | Promise<void>;
   onOpenSettingsFromCompact: () => void | Promise<void>;
   onScaleReset: () => void;
   onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
-  onSetCharacterMenuPinned: Dispatch<SetStateAction<boolean>>;
-  onSetIsCharacterModelOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactAppearanceOpen: Dispatch<SetStateAction<boolean>>;
-  onSetIsCompactMenuOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactModelOpen: Dispatch<SetStateAction<boolean>>;
 };
 
@@ -80,39 +72,32 @@ function MenuLeadingIcon({ children }: { children: ReactNode }) {
 
 export default function CompactMenu({
   appearanceOptions,
-  characterMenuPosition,
-  characterModelOptions,
+  menuPosition,
   characterScale,
   compactAppearance,
   entries,
-  isCharacterAppearance: _isCharacterAppearance,
-  isCharacterModelOpen: _isCharacterModelOpen,
   isCompactAppearanceOpen,
   isCompactModelOpen,
   compactMenuSide,
   compactSubmenuSide,
   followCursorScreen,
-  onCharacterModelChange,
   onCompactAppearanceChange,
   onOpenExternalChat,
   onOpenSettingsFromCompact,
   onScaleReset,
   onUpdateBasicSettings,
-  onSetCharacterMenuPinned,
-  onSetIsCharacterModelOpen: _onSetIsCharacterModelOpen,
   onSetIsCompactAppearanceOpen,
-  onSetIsCompactMenuOpen: _onSetIsCompactMenuOpen,
   onSetIsCompactModelOpen,
 }: CompactMenuProps) {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getInitialThemeMode(THEME_MODE_STORAGE_KEY));
   const [isThemeOpen, setIsThemeOpen] = useState(false);
 
   const menuPositionStyle =
-    characterMenuPosition && typeof window !== "undefined"
+    menuPosition && typeof window !== "undefined"
       ? {
           position: "fixed" as const,
-          left: Math.max(8, characterMenuPosition.x),
-          top: Math.max(8, characterMenuPosition.y),
+          left: Math.max(8, menuPosition.x),
+          top: Math.max(8, menuPosition.y),
         }
       : undefined;
 
@@ -132,7 +117,7 @@ export default function CompactMenu({
   return (
     <div
       className={`compact-menu animate-fade-in compact-menu--${compactMenuSide} ${
-        characterMenuPosition ? "compact-menu--cursor" : ""
+        menuPosition ? "compact-menu--cursor" : ""
       }`}
       style={menuPositionStyle}
     >
@@ -218,7 +203,7 @@ export default function CompactMenu({
           </span>
         </button>
 
-        {(compactAppearance === "character" || compactAppearance === "pet") && (
+        {compactAppearance === "pet" && (
           <button
             type="button"
             className="compact-menu__item"
@@ -321,10 +306,6 @@ export default function CompactMenu({
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => {
                 onCompactAppearanceChange(option.id);
-                if (option.id === "character" && characterModelOptions[0]) {
-                  onCharacterModelChange(characterModelOptions[0].id);
-                  onSetCharacterMenuPinned(false);
-                }
               }}
             >
               <span className="compact-menu__item-main">

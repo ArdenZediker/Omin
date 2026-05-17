@@ -258,7 +258,7 @@ export function useCompactInteractions(args: UseCompactInteractionsArgs) {
   ]);
 
   const handleCompactWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    if (compactAppearance !== "character") {
+    if (compactAppearance !== "pet") {
       return;
     }
     e.preventDefault();

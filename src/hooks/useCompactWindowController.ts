@@ -7,7 +7,6 @@ import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 import { executeChatTurn } from "../chat/engine";
 import {
-  CHARACTER_MODEL_OPTIONS,
   COMPACT_APPEARANCE_OPTIONS,
   COMPACT_MENU_CLOSE_DELAY_MS,
   CURRENT_MODEL_STORAGE_KEY,
@@ -15,14 +14,12 @@ import {
   MAIN_WINDOW_LABEL,
 } from "../app/constants";
 import type { BasicSettings, CompactReply } from "../app/types";
-import type { CharacterModel, CompactAppearance } from "./useCompactWindowState";
+import type { CompactAppearance } from "./useCompactWindowState";
 import {
   clampCharacterScale,
-  type CharacterModel as CharacterModelType,
   type CompactAppearance as CompactAppearanceType,
 } from "./useCompactWindowState";
 import {
-  getExpandedCompactViewportSizeForAppearance,
   getMonitorForCursor,
   getPetCompactMenuViewport,
   isCharacterPointerInHitArea,
@@ -38,7 +35,6 @@ import {
 import {
   clearPendingDragTimer,
   isNoDragTarget,
-  isOutsidePinnedCharacterMenu,
   shouldCloseCharacterReplyPanel,
 } from "./compactInteractionGuards";
 
@@ -56,10 +52,6 @@ type UseCompactWindowControllerArgs = {
   compactSize: { width: number; height: number };
   compactViewportSize: { width: number; height: number } | null;
   currentModel: string;
-  effectiveCompactScale: number;
-  isCharacterAppearance: boolean;
-  isCharacterMenuPinned: boolean;
-  isCharacterModelOpen: boolean;
   isCompactAppearanceOpen: boolean;
   isCompactMenuOpen: boolean;
   isCompactModelOpen: boolean;
@@ -69,8 +61,6 @@ type UseCompactWindowControllerArgs = {
   onRestoreMain: (focusInput?: boolean) => Promise<void>;
   resetCompactFloatingUi: () => void;
   setCharacterMenuPosition: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
-  setCharacterModel: React.Dispatch<React.SetStateAction<CharacterModel>>;
-  setCharacterPanelSide: React.Dispatch<React.SetStateAction<"left" | "right">>;
   setCharacterScale: React.Dispatch<React.SetStateAction<number>>;
   setCompactAppearance: React.Dispatch<React.SetStateAction<CompactAppearance>>;
   setCompactQuery: React.Dispatch<React.SetStateAction<string>>;
@@ -78,8 +68,6 @@ type UseCompactWindowControllerArgs = {
   setCompactMenuSide: React.Dispatch<React.SetStateAction<"left" | "right">>;
   setCompactSubmenuSide: React.Dispatch<React.SetStateAction<"left" | "right">>;
   setCurrentModel: React.Dispatch<React.SetStateAction<string>>;
-  setIsCharacterMenuPinned: React.Dispatch<React.SetStateAction<boolean>>;
-  setIsCharacterModelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setIsCompactAppearanceOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setIsCompactMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setIsCompactModelOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -99,10 +87,6 @@ export function useCompactWindowController({
   compactSize,
   compactViewportSize,
   currentModel,
-  effectiveCompactScale,
-  isCharacterAppearance,
-  isCharacterMenuPinned,
-  isCharacterModelOpen,
   isCompactAppearanceOpen,
   isCompactMenuOpen,
   isCompactModelOpen,
@@ -112,8 +96,6 @@ export function useCompactWindowController({
   onRestoreMain,
   resetCompactFloatingUi,
   setCharacterMenuPosition,
-  setCharacterModel,
-  setCharacterPanelSide,
   setCharacterScale,
   setCompactAppearance,
   setCompactQuery,
@@ -121,8 +103,6 @@ export function useCompactWindowController({
   setCompactMenuSide,
   setCompactSubmenuSide,
   setCurrentModel,
-  setIsCharacterMenuPinned,
-  setIsCharacterModelOpen,
   setIsCompactAppearanceOpen,
   setIsCompactMenuOpen,
   setIsCompactModelOpen,
@@ -264,8 +244,7 @@ export function useCompactWindowController({
       !isCompactMenuOpen &&
       !isCompactQueryOpen &&
       !isCompactReplyLoading &&
-      !compactReply &&
-      !isCharacterMenuPinned;
+      !compactReply;
 
     if (!canFollowCursorScreen) {
       if (!basicSettings.followCursorScreen || !basicSettings.showCompactBall) {
@@ -324,7 +303,6 @@ export function useCompactWindowController({
     basicSettings.showCompactBall,
     compactReply,
     compactSize,
-    isCharacterMenuPinned,
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
@@ -399,13 +377,13 @@ export function useCompactWindowController({
     }
 
     const targetSize = compactViewportSize ?? compactSize;
-    const isCompactSubmenuOpen = isCompactMenuOpen && (isCompactModelOpen || isCompactAppearanceOpen || isCharacterModelOpen);
+    const isCompactSubmenuOpen = isCompactMenuOpen && (isCompactModelOpen || isCompactAppearanceOpen);
     void (async () => {
       const scaleFactor = await appWindow.scaleFactor();
       const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
       const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
       suppressCompactBlur();
-      if (isCharacterAppearance || compactAppearance === "pet") {
+      if (compactAppearance === "pet") {
         await appWindow.setAlwaysOnTop(true);
         const lastSize = lastAppliedCompactSizeRef.current;
         const hasSizeChanged =
@@ -452,8 +430,6 @@ export function useCompactWindowController({
     compactViewportSize,
     compactMenuSide,
     compactSubmenuSide,
-    isCharacterModelOpen,
-    isCharacterAppearance,
     compactAppearance,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
@@ -500,10 +476,6 @@ export function useCompactWindowController({
   }, []);
 
   const closeCompactMenu = useCallback(() => {
-    if (isCharacterMenuPinned) {
-      return;
-    }
-
     if (compactMenuCloseTimerRef.current !== null) {
       window.clearTimeout(compactMenuCloseTimerRef.current);
     }
@@ -512,20 +484,18 @@ export function useCompactWindowController({
       closeCompactMenuPanels();
       compactMenuCloseTimerRef.current = null;
     }, COMPACT_MENU_CLOSE_DELAY_MS);
-  }, [closeCompactMenuPanels, isCharacterMenuPinned]);
+  }, [closeCompactMenuPanels]);
 
   const closeCompactMenuNow = useCallback(() => {
     if (compactMenuCloseTimerRef.current !== null) {
       window.clearTimeout(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
     }
-
-    setIsCharacterMenuPinned(false);
     closeCompactMenuPanels();
-  }, [closeCompactMenuPanels, setIsCharacterMenuPinned]);
+  }, [closeCompactMenuPanels]);
 
   useEffect(() => {
-    if (!isCompactWindow || isCharacterMenuPinned || (!isCompactMenuOpen && !isCompactQueryOpen)) {
+    if (!isCompactWindow || (!isCompactMenuOpen && !isCompactQueryOpen)) {
       return;
     }
 
@@ -541,77 +511,18 @@ export function useCompactWindowController({
       window.removeEventListener("blur", closeOnBlur);
       document.removeEventListener("visibilitychange", closeOnBlur);
     };
-  }, [closeCompactMenuNow, isCharacterMenuPinned, isCompactMenuOpen, isCompactQueryOpen, isCompactWindow]);
-
-  useEffect(() => {
-    if (!isCompactWindow || !isCharacterMenuPinned || !isCompactMenuOpen) {
-      return;
-    }
-
-    const closeOnBlur = () => {
-      if (Date.now() <= compactSuppressBlurUntilRef.current) {
-        return;
-      }
-      closeCompactMenuNow();
-    };
-    window.addEventListener("blur", closeOnBlur);
-    window.addEventListener("mouseleave", closeOnBlur);
-    document.addEventListener("visibilitychange", closeOnBlur);
-    return () => {
-      window.removeEventListener("blur", closeOnBlur);
-      window.removeEventListener("mouseleave", closeOnBlur);
-      document.removeEventListener("visibilitychange", closeOnBlur);
-    };
-  }, [closeCompactMenuNow, isCharacterMenuPinned, isCompactMenuOpen, isCompactWindow]);
+  }, [closeCompactMenuNow, isCompactMenuOpen, isCompactQueryOpen, isCompactWindow]);
 
   const handleOpenSettingsFromCompact = useCallback(async () => {
     closeCompactMenus();
     await showSettingsWindow();
   }, [closeCompactMenus]);
 
-  const resolveCharacterPanelSide = useCallback(async () => {
-    if (!isCompactWindow || !isCharacterAppearance) {
-      return "left" as const;
-    }
-
-    const scaleFactor = await appWindow.scaleFactor();
-    const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
-    const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
-    const monitor = await currentMonitor();
-    const monitorScale = monitor?.scaleFactor || scaleFactor || 1;
-    const workAreaLeft = monitor ? monitor.workArea.position.x / monitorScale : 0;
-    const workAreaWidth = monitor
-      ? monitor.workArea.size.width / monitorScale
-      : Number(window.screen.availWidth || window.screen.width || 0);
-    const workAreaRight = workAreaLeft + workAreaWidth;
-    const expandedSize = getExpandedCompactViewportSizeForAppearance(compactAppearance, effectiveCompactScale, {
-      includeReply: true,
-      includeHorizontalPanel: false,
-    });
-    const panelWidth = Math.max(176, expandedSize.width - compactSize.width + 12);
-    const leftSpace = Math.max(0, currentPosition.x - workAreaLeft);
-    const rightSpace = Math.max(0, workAreaRight - (currentPosition.x + currentSize.width));
-    const canOpenLeft = leftSpace >= panelWidth;
-    const canOpenRight = rightSpace >= panelWidth;
-
-    if (!canOpenLeft && canOpenRight) {
-      return "right" as const;
-    }
-    if (canOpenLeft && !canOpenRight) {
-      return "left" as const;
-    }
-
-    return leftSpace >= rightSpace ? "left" as const : "right" as const;
-  }, [compactAppearance, compactSize.width, effectiveCompactScale, isCharacterAppearance, isCompactWindow]);
-
   const handleOpenCompactQuery = useCallback(async () => {
     suppressCompactBlur();
     closeCompactMenus();
-    if (isCompactWindow && isCharacterAppearance) {
-      setCharacterPanelSide(await resolveCharacterPanelSide());
-    }
     setIsCompactQueryOpen(true);
-  }, [closeCompactMenus, isCharacterAppearance, isCompactWindow, resolveCharacterPanelSide, setCharacterPanelSide, setIsCompactQueryOpen, suppressCompactBlur]);
+  }, [closeCompactMenus, setIsCompactQueryOpen, suppressCompactBlur]);
 
   const handleOpenExternalChat = useCallback(
     async (entry: (typeof EXTERNAL_CHAT_ENTRIES)[number]) => {
@@ -711,7 +622,7 @@ export function useCompactWindowController({
 
   const handleCompactWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
-      if (compactAppearance !== "character" && compactAppearance !== "pet") {
+      if (compactAppearance !== "pet") {
         return;
       }
       event.preventDefault();
@@ -728,14 +639,6 @@ export function useCompactWindowController({
     [closeCompactMenus, setCompactAppearance]
   );
 
-  const handleCharacterModelChange = useCallback(
-    (model: CharacterModelType) => {
-      setCharacterModel(model);
-      closeCompactMenus();
-    },
-    [closeCompactMenus, setCharacterModel]
-  );
-
   const handleCompactScaleReset = useCallback(() => {
     setCharacterScale(1);
     closeCompactMenus();
@@ -746,22 +649,11 @@ export function useCompactWindowController({
       markCompactInteraction();
       void raiseCompactWindow();
       const target = event.target as HTMLElement;
-      if (isCharacterMenuPinned && isOutsidePinnedCharacterMenu(target)) {
-        setIsCharacterMenuPinned(false);
-        setIsCompactMenuOpen(false);
-        setIsCompactModelOpen(false);
-        setIsCompactAppearanceOpen(false);
-        setIsCharacterModelOpen(false);
-      }
-
-      if (compactAppearance === "character" && shouldCloseCharacterReplyPanel(target)) {
+      if (compactAppearance === "pet" && shouldCloseCharacterReplyPanel(target)) {
         setIsCompactQueryOpen(false);
         setCompactReply(null);
       }
 
-      if (compactAppearance === "character") {
-        return;
-      }
       if (isNoDragTarget(target)) {
         return;
       }
@@ -771,15 +663,9 @@ export function useCompactWindowController({
     },
     [
       compactAppearance,
-      isCharacterMenuPinned,
       markCompactInteraction,
       raiseCompactWindow,
       setCompactReply,
-      setIsCharacterMenuPinned,
-      setIsCharacterModelOpen,
-      setIsCompactAppearanceOpen,
-      setIsCompactMenuOpen,
-      setIsCompactModelOpen,
       setIsCompactQueryOpen,
     ]
   );
@@ -829,8 +715,6 @@ export function useCompactWindowController({
       setIsCompactMenuOpen(true);
       setIsCompactModelOpen(false);
       setIsCompactAppearanceOpen(false);
-      setIsCharacterModelOpen(false);
-      setIsCharacterMenuPinned(false);
       setIsCompactQueryOpen(false);
     } finally {
       compactMenuOpeningRef.current = false;
@@ -843,8 +727,6 @@ export function useCompactWindowController({
     markCompactInteraction,
     raiseCompactWindow,
     suppressCompactBlur,
-    setIsCharacterMenuPinned,
-    setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
     setIsCompactMenuOpen,
     setIsCompactModelOpen,
@@ -864,9 +746,6 @@ export function useCompactWindowController({
       clearPendingDragTimer(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
 
-      const nextCharacterPanelSide = await resolveCharacterPanelSide();
-      setCharacterPanelSide(nextCharacterPanelSide);
-
       const { menuSide, submenuSide } = await resolveCompactMenuSides(event.clientX, event.clientY);
       const petMenuViewport =
         compactAppearance === "pet"
@@ -885,18 +764,12 @@ export function useCompactWindowController({
       setIsCompactMenuOpen(true);
       setIsCompactModelOpen(false);
       setIsCompactAppearanceOpen(false);
-      setIsCharacterModelOpen(false);
-      setIsCharacterMenuPinned(true);
       setIsCompactQueryOpen(false);
     },
     [
-      resolveCharacterPanelSide,
       resolveCompactMenuSides,
       suppressCompactBlur,
       setCharacterMenuPosition,
-      setCharacterPanelSide,
-      setIsCharacterMenuPinned,
-      setIsCharacterModelOpen,
       setIsCompactAppearanceOpen,
       setIsCompactMenuOpen,
       setIsCompactModelOpen,
@@ -908,12 +781,10 @@ export function useCompactWindowController({
 
   return {
     appearanceOptions: COMPACT_APPEARANCE_OPTIONS,
-    characterModelOptions: CHARACTER_MODEL_OPTIONS,
     closeCompactMenu,
     closeCompactMenuNow,
     entries: EXTERNAL_CHAT_ENTRIES,
     handleCharacterContextMenu,
-    handleCharacterModelChange,
     handleCharacterPointerDown,
     handleCharacterPointerUp,
     handleCompactAppearanceChange,

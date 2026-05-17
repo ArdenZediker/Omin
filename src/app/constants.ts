@@ -39,7 +39,6 @@ export const COMPACT_APPEARANCE_PRESETS: Record<CompactAppearance, { width: numb
   default: { width: 120, height: 64 },
   compact: { width: 108, height: 56 },
   large: { width: 136, height: 72 },
-  character: { width: 86, height: 108 },
   pet: { width: 78, height: 90 },
 };
 
@@ -52,12 +51,9 @@ export const COMPACT_APPEARANCE_OPTIONS: Array<{
   { id: "compact", title: "紧凑外观", description: "更小更轻量" },
   { id: "large", title: "大号外观", description: "更醒目的尺寸" },
   { id: "pet", title: "桌宠", description: "桌宠精灵模式" },
-  { id: "character", title: "2D 角色", description: "角色形象模式" },
 ];
 
-export const CHARACTER_MODEL_OPTIONS: Array<{ id: CharacterModel; title: string; description: string }> = [
-  { id: "hiyori", title: "Hiyori", description: "春日风格" },
-];
+export const CHARACTER_MODEL_OPTIONS: Array<{ id: CharacterModel; title: string; description: string }> = [];
 
 export const EXTERNAL_CHAT_ENTRIES: ExternalChatEntry[] = [
   { id: "omni", title: "Omni", description: "打开 Omni 主界面", group: "common", kind: "main", icon: "omni" },
