@@ -48,6 +48,20 @@ function requireTool(id: string) {
   return manifest as typeof manifest & { command: string };
 }
 
+const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = new Set([
+  "new",
+  "clear",
+  "settings",
+  "pet",
+  "model",
+  "rename",
+  "pin",
+]);
+
+const SILENT_LOCAL_TOOL_IDS = new Set([
+  "pet",
+]);
+
 export function useChatRuntime({
   activeChatId,
   activeAssistant,
@@ -507,7 +521,7 @@ export function useChatRuntime({
         return { ok: false, error: `暂不支持命令: ${command.command}` };
       }
 
-      if (activeAssistant && !activeAssistant.allowedToolIds.includes(tool.id)) {
+      if (activeAssistant && !ALWAYS_ALLOWED_LOCAL_TOOL_IDS.has(tool.id) && !activeAssistant.allowedToolIds.includes(tool.id)) {
         return { ok: false, error: `当前助手未启用工具: ${tool.title}` };
       }
 
@@ -593,7 +607,8 @@ export function useChatRuntime({
           if (taskResult.status === "failed") {
             setError(taskResult.error || "工具执行失败");
           }
-          if (taskResult.toolResult?.outputText) {
+          const localCommandToolId = taskResult.plan.metadata?.toolId;
+          if (taskResult.toolResult?.outputText && !SILENT_LOCAL_TOOL_IDS.has(String(localCommandToolId || ""))) {
             setMessages([...messages, { role: "assistant", content: taskResult.toolResult.outputText }]);
           }
           return;

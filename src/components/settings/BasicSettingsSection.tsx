@@ -228,7 +228,7 @@ export default function BasicSettingsSection({
         <CodexPetSection
           packages={codexPetPackages}
           state={codexPetLibraryState}
-          codexHome={codexPetHome}
+          projectPetsRoot={codexPetHome}
           isDesktopPetAwake={isDesktopPetAwake}
           onEnableDesktopPet={onEnableDesktopPet}
           onSelectPet={onSelectCodexPet}

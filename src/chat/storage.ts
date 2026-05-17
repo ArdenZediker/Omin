@@ -25,6 +25,7 @@ export const DEFAULT_ASSISTANT_TOOL_IDS = [
   "new",
   "clear",
   "settings",
+  "pet",
   "rename",
   "pin",
   "model",
