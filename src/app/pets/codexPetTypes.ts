@@ -3,6 +3,7 @@ export type CodexPetPackage = {
   displayName: string;
   description: string;
   spritesheetPath: string;
+  spritesheetFilePath: string;
   packageDir: string;
   manifestPath: string;
   spritesheetExists: boolean;

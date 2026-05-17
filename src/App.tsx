@@ -10,9 +10,12 @@ import MainChatView from "./components/MainChatView";
 import KnowledgeBaseView from "./components/KnowledgeBaseView";
 import CompactWindow from "./components/CompactWindow";
 import { usePromptDialog } from "./components/PromptDialog";
+import { loadCodexPetPackages } from "./app/pets/codexPetStore";
+import type { CodexPetPackage } from "./app/pets/codexPetTypes";
 import {
   CHARACTER_SCALE_BASELINE,
   BASIC_SETTINGS_STORAGE_KEY,
+  CODEX_PET_LIBRARY_STATE_STORAGE_KEY,
   CURRENT_MODEL_STORAGE_KEY,
   EMPTY_CHAT_PROMPTS,
   omniIconSrc,
@@ -132,6 +135,7 @@ function MainApp() {
   const [basicSettings, setBasicSettings] = useState<BasicSettings>(getBasicSettings);
   const [previousModel, setPreviousModel] = useState<string | null>(null);
   const [openChatMenu, setOpenChatMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [codexPetPackage, setCodexPetPackage] = useState<CodexPetPackage | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
 
   const isLive2DAppearance = compactAppearance === "character";
@@ -355,6 +359,44 @@ function MainApp() {
     await navigator.clipboard.writeText(message.content);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncActivePet = async () => {
+      try {
+        const payload = await loadCodexPetPackages();
+        if (cancelled) return;
+        const rawState = typeof window === "undefined" ? null : localStorage.getItem(CODEX_PET_LIBRARY_STATE_STORAGE_KEY);
+        const persistedActivePetId = rawState ? (JSON.parse(rawState) as { activePetId?: string | null }).activePetId ?? null : null;
+        const active =
+          payload.packages.find((pet) => pet.id === persistedActivePetId) ??
+          payload.packages.find((pet) => pet.id === payload.activePetId) ??
+          payload.packages[0] ??
+          null;
+        setCodexPetPackage(active);
+      } catch {
+        if (!cancelled) {
+          setCodexPetPackage(null);
+        }
+      }
+    };
+
+    void syncActivePet();
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === CODEX_PET_LIBRARY_STATE_STORAGE_KEY) {
+        void syncActivePet();
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
   const handleSelectChat = useCallback(
     (sessionId: string) => {
       if (sessionId === activeChatId || isLoading) {
@@ -447,6 +489,7 @@ function MainApp() {
         appearanceOptions={compactController.appearanceOptions}
         basicSettings={basicSettings}
         characterMenuPosition={characterMenuPosition}
+        codexPetPackage={codexPetPackage}
         characterModel={characterModel as CharacterModel}
         characterModelOptions={compactController.characterModelOptions}
         characterPanelSide={characterPanelSide}

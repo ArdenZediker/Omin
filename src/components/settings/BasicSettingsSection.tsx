@@ -12,6 +12,8 @@ type Props = {
   codexPetPackages: CodexPetPackage[];
   codexPetLibraryState: CodexPetLibraryState;
   codexPetHome: string;
+  isDesktopPetAwake: boolean;
+  onEnableDesktopPet: () => void;
   onSelectCodexPet: (petId: string) => void;
   onCreateCodexPet: () => void;
   onRefreshCodexPets: () => void;
@@ -48,6 +50,8 @@ export default function BasicSettingsSection({
   codexPetPackages,
   codexPetLibraryState,
   codexPetHome,
+  isDesktopPetAwake,
+  onEnableDesktopPet,
   onSelectCodexPet,
   onCreateCodexPet,
   onRefreshCodexPets,
@@ -108,15 +112,6 @@ export default function BasicSettingsSection({
           </div>
         </div>
       </div>
-
-      <CodexPetSection
-        packages={codexPetPackages}
-        state={codexPetLibraryState}
-        codexHome={codexPetHome}
-        onSelectPet={onSelectCodexPet}
-        onCreatePet={onCreateCodexPet}
-        onRefreshPets={onRefreshCodexPets}
-      />
 
       <div className="space-y-4 border-t border-slate-100 pt-4">
         <h3 className="text-sm font-medium text-slate-900 omni-settings-title">悬浮与窗口</h3>
@@ -227,6 +222,19 @@ export default function BasicSettingsSection({
           </button>
         </Field>
         <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">点击快捷键框后直接按键设置，Backspace / Delete / Esc 清空。</p>
+      </div>
+
+      <div className="border-t border-slate-100 pt-4">
+        <CodexPetSection
+          packages={codexPetPackages}
+          state={codexPetLibraryState}
+          codexHome={codexPetHome}
+          isDesktopPetAwake={isDesktopPetAwake}
+          onEnableDesktopPet={onEnableDesktopPet}
+          onSelectPet={onSelectCodexPet}
+          onCreatePet={onCreateCodexPet}
+          onRefreshPets={onRefreshCodexPets}
+        />
       </div>
     </section>
   );
