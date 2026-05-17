@@ -37,7 +37,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 - 先结论，后说明。
 - 语言简洁、礼貌、自然。
 - 尽量补一句“下一步建议”。`,
-    allowedToolIds: ["search_sessions", "read_session"],
+    allowedToolIds: ["pet", "search_sessions", "read_session"],
     allowedSkillIds: ["summarize", "explain", "compare"],
     defaultModelId: null,
   },
@@ -69,7 +69,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 - 优先分点、分阶段、分层级表达。
 - 语言保持专业但不生硬。
 - 结论后附关键依据。`,
-    allowedToolIds: ["search_sessions", "read_session", "read_file", "search_files", "analyze_files"],
+    allowedToolIds: ["pet", "search_sessions", "read_session", "read_file", "search_files", "analyze_files"],
     allowedSkillIds: ["summarize", "explain", "compare"],
     defaultModelId: null,
   },
@@ -100,7 +100,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 适合使用清单、方向对比、命名提案。
 - 可以有画面感，但表达要清楚。`,
-    allowedToolIds: ["search_sessions", "read_session"],
+    allowedToolIds: ["pet", "search_sessions", "read_session"],
     allowedSkillIds: ["rewrite", "compare"],
     defaultModelId: null,
   },
@@ -131,7 +131,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 步骤化、清单化、任务导向。
 - 少讲背景，多给推进方案。`,
-    allowedToolIds: ["search_sessions", "read_session", "list_files", "read_file"],
+    allowedToolIds: ["pet", "search_sessions", "read_session", "list_files", "read_file"],
     allowedSkillIds: ["summarize", "explain"],
     defaultModelId: null,
   },
@@ -166,7 +166,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 - 中文表达自然、克制、清楚。
 - 少空话，少套话。
 - 尽量给出用户下一步可以直接执行的建议。`,
-    allowedToolIds: ["search_sessions", "read_session"],
+    allowedToolIds: ["pet", "search_sessions", "read_session"],
     allowedSkillIds: ["summarize", "translate", "explain"],
     defaultModelId: null,
   },
@@ -197,7 +197,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 模板化、清单化、步骤化。
 - 尽量短，不拖沓。`,
-    allowedToolIds: ["search_sessions", "read_session", "list_files"],
+    allowedToolIds: ["pet", "search_sessions", "read_session", "list_files"],
     allowedSkillIds: ["summarize", "rewrite"],
     defaultModelId: null,
   },
@@ -229,7 +229,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 更自然、更口语，但保持干净。
 - 回答短一些，更像真实对话。`,
-    allowedToolIds: ["search_sessions"],
+    allowedToolIds: ["pet", "search_sessions"],
     allowedSkillIds: ["rewrite", "translate"],
     defaultModelId: null,
   },
@@ -260,7 +260,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 结构化、决策导向。
 - 可用表格、分点、阶段说明。`,
-    allowedToolIds: ["search_sessions", "read_session", "read_file", "search_files"],
+    allowedToolIds: ["pet", "search_sessions", "read_session", "read_file", "search_files"],
     allowedSkillIds: ["summarize", "compare", "explain"],
     defaultModelId: null,
   },
@@ -291,7 +291,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 先框架后结论。
 - 保持逻辑链条清晰。`,
-    allowedToolIds: ["search_sessions", "read_session", "read_file", "search_files", "analyze_files"],
+    allowedToolIds: ["pet", "search_sessions", "read_session", "read_file", "search_files", "analyze_files"],
     allowedSkillIds: ["explain", "compare"],
     defaultModelId: null,
   },
@@ -322,7 +322,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 更偏路线图和阶段计划。
 - 强调节奏、依赖和优先级。`,
-    allowedToolIds: ["search_sessions", "read_session"],
+    allowedToolIds: ["pet", "search_sessions", "read_session"],
     allowedSkillIds: ["summarize", "compare"],
     defaultModelId: null,
   },
@@ -353,7 +353,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 直接、具体、工程化。
 - 能给示例就不给空话。`,
-    allowedToolIds: ["search_sessions", "read_session", "list_files", "read_file", "search_files", "analyze_files"],
+    allowedToolIds: ["pet", "search_sessions", "read_session", "list_files", "read_file", "search_files", "analyze_files"],
     allowedSkillIds: ["explain", "compare"],
     defaultModelId: null,
   },
@@ -384,7 +384,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 更像排障手册。
 - 诊断顺序清楚，验证路径明确。`,
-    allowedToolIds: ["search_sessions", "read_session", "read_file", "search_files", "analyze_files"],
+    allowedToolIds: ["pet", "search_sessions", "read_session", "read_file", "search_files", "analyze_files"],
     allowedSkillIds: ["summarize", "explain"],
     defaultModelId: null,
   },
@@ -415,7 +415,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 适合方案清单和方向对比。
 - 有创意，但不浮夸。`,
-    allowedToolIds: ["search_sessions"],
+    allowedToolIds: ["pet", "search_sessions"],
     allowedSkillIds: ["rewrite", "compare"],
     defaultModelId: null,
   },
@@ -446,7 +446,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 兼顾包装感与执行感。
 - 优先给完整活动方案骨架。`,
-    allowedToolIds: ["search_sessions", "read_session"],
+    allowedToolIds: ["pet", "search_sessions", "read_session"],
     allowedSkillIds: ["rewrite", "summarize"],
     defaultModelId: null,
   },
@@ -478,7 +478,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 适合输出语气定义、内容方向、标题方案、传播建议和品牌化改写。
 - 可适度强调节奏感、画面感和辨识度，但必须可执行。`,
-    allowedToolIds: ["search_sessions", "read_session"],
+    allowedToolIds: ["pet", "search_sessions", "read_session"],
     allowedSkillIds: ["rewrite", "compare"],
     defaultModelId: null,
   },
@@ -509,7 +509,7 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ## 输出风格
 - 注重语言节奏与清晰度。
 - 改得更好，但不改偏。`,
-    allowedToolIds: ["search_sessions", "read_session", "read_file"],
+    allowedToolIds: ["pet", "search_sessions", "read_session", "read_file"],
     allowedSkillIds: ["rewrite", "summarize", "translate"],
     defaultModelId: null,
   },

@@ -141,6 +141,9 @@ async function executeLocalCommandTask(options: {
     model,
     messages: [],
     goal: `执行命令 ${command.command}${command.args ? ` ${command.args}` : ""}`,
+    metadata: {
+      toolId: command.id,
+    },
   });
 
   const runResult = await runTaskPlan({

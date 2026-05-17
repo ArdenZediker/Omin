@@ -7,7 +7,7 @@ import DesktopPet from "../DesktopPet";
 type Props = {
   packages: CodexPetPackage[];
   state: CodexPetLibraryState;
-  codexHome: string;
+  projectPetsRoot: string;
   isDesktopPetAwake: boolean;
   onEnableDesktopPet: () => Promise<void> | void;
   onSelectPet: (petId: string) => void;
@@ -18,7 +18,7 @@ type Props = {
 export default function CodexPetSection({
   packages,
   state,
-  codexHome,
+  projectPetsRoot,
   isDesktopPetAwake,
   onEnableDesktopPet,
   onSelectPet,
@@ -26,10 +26,9 @@ export default function CodexPetSection({
   onRefreshPets,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
-  const [projectPetsRoot, setProjectPetsRoot] = useState(codexHome || "");
   const activePackage = packages.find((pet) => pet.id === state.activePetId) ?? null;
   const handleOpenFolder = async () => {
-    const folderPath = projectPetsRoot || codexHome || "~/.codex";
+    const folderPath = projectPetsRoot;
     try {
       await revealItemInDir(folderPath);
     } catch (error) {
@@ -39,22 +38,16 @@ export default function CodexPetSection({
 
   useEffect(() => {
     let cancelled = false;
-    void invoke<string>("load_workspace_pet_dir_command")
-      .then((path) => {
-        if (!cancelled) {
-          setProjectPetsRoot(path);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setProjectPetsRoot(codexHome || "");
-        }
-      });
+    void invoke<string>("load_workspace_pet_dir_command").catch(() => {
+      if (!cancelled) {
+        console.error("读取当前项目宠物目录失败");
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [codexHome]);
+  }, []);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm omni-settings-card">
@@ -98,7 +91,7 @@ export default function CodexPetSection({
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="font-medium text-slate-700">自定义宠物</div>
-                <div className="mt-0.5 truncate">{projectPetsRoot || codexHome || "~/.codex"}</div>
+                <div className="mt-0.5 truncate">{projectPetsRoot || "当前项目宠物目录"}</div>
               </div>
               <button
                 type="button"
