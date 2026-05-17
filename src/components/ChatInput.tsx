@@ -64,12 +64,24 @@ export default function ChatInput({
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const [dismissedSlashInput, setDismissedSlashInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const matchedSuggestions = getMatchingSlashSuggestions(input);
   const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
+  const trimmedInput = input.trim();
+  const activeSlashCommand = trimmedInput.startsWith("/") ? trimmedInput.split(/\s+/)[0].toLowerCase() : "";
+  const activeLocalCommand = LOCAL_SLASH_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
+  const activeModeLabel = activeLocalCommand?.title ?? null;
+  const activeModeTypeLabel = activeLocalCommand ? "工具模式" : null;
+  const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
+  const showSlashSuggestions =
+    localSuggestions.length > 0 &&
+    !activeModeLabel &&
+    trimmedInput.startsWith("/") &&
+    input !== dismissedSlashInput;
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -93,57 +105,6 @@ export default function ChatInput({
     }
   }, [draftImages, draftSignal, draftValue]);
 
-  const appendImageFiles = async (files: File[]) => {
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) {
-      return;
-    }
-
-    const nextImages = await Promise.all(
-      imageFiles.map(
-        (file) =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (readerEvent) => resolve(readerEvent.target?.result as string);
-            reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
-            reader.readAsDataURL(file);
-          })
-      )
-    );
-
-    setImages((prev) => [...prev, ...nextImages]);
-  };
-
-  const handleSubmit = () => {
-    if ((!input.trim() && images.length === 0) || isLoading) {
-      return;
-    }
-
-    const visibleContent = input.trim();
-    const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
-
-    onSend(visibleContent, images.length > 0 ? images : undefined, hiddenContext);
-    setInput("");
-    setImages([]);
-  };
-
-  const submitImmediateCommand = (command: string) => {
-    if (isLoading) {
-      return;
-    }
-    const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
-    onSend(command, undefined, hiddenContext);
-    setInput("");
-    setImages([]);
-  };
-
-  const activeSlashCommand = input.trim().startsWith("/") ? input.trim().split(/\s+/)[0].toLowerCase() : "";
-  const activeLocalCommand = LOCAL_SLASH_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
-  const activeModeLabel = activeLocalCommand?.title ?? null;
-  const activeModeTypeLabel = activeLocalCommand ? "工具模式" : null;
-  const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
-  const showSlashSuggestions = localSuggestions.length > 0 && !activeModeLabel;
-
   useEffect(() => {
     suggestionItemRefs.current = suggestionItemRefs.current.slice(0, localSuggestions.length);
   }, [localSuggestions.length]);
@@ -165,6 +126,65 @@ export default function ChatInput({
     suggestionItemRefs.current[selectedSuggestionIndex]?.scrollIntoView({ block: "nearest" });
   }, [selectedSuggestionIndex, showSlashSuggestions]);
 
+  useEffect(() => {
+    if (!dismissedSlashInput) {
+      return;
+    }
+
+    if (input !== dismissedSlashInput) {
+      setDismissedSlashInput("");
+    }
+  }, [dismissedSlashInput, input]);
+
+  const appendImageFiles = async (files: File[]) => {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    const nextImages = await Promise.all(
+      imageFiles.map(
+        (file) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (readerEvent) => resolve(readerEvent.target?.result as string);
+            reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+
+    setImages((prev) => [...prev, ...nextImages]);
+  };
+
+  const clearSuggestionDismissal = () => {
+    setDismissedSlashInput("");
+  };
+
+  const handleSubmit = () => {
+    if ((!trimmedInput && images.length === 0) || isLoading) {
+      return;
+    }
+
+    const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
+    onSend(trimmedInput, images.length > 0 ? images : undefined, hiddenContext);
+    setInput("");
+    setImages([]);
+    clearSuggestionDismissal();
+  };
+
+  const submitImmediateCommand = (command: string) => {
+    if (isLoading) {
+      return;
+    }
+
+    const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
+    onSend(command, undefined, hiddenContext);
+    setInput("");
+    setImages([]);
+    clearSuggestionDismissal();
+  };
+
   const applySuggestion = (suggestion: SlashSuggestion) => {
     if (IMMEDIATE_COMMAND_IDS.has(suggestion.id)) {
       submitImmediateCommand(IMMEDIATE_COMMAND_PAYLOADS[suggestion.id] ?? suggestion.command);
@@ -172,25 +192,71 @@ export default function ChatInput({
     }
 
     setInput(buildSlashDraft(suggestion));
+    clearSuggestionDismissal();
     textareaRef.current?.focus();
   };
 
+  useEffect(() => {
+    if (!showSlashSuggestions) {
+      return;
+    }
+
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (document.activeElement !== textareaRef.current) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setDismissedSlashInput(input);
+        return;
+      }
+
+      if (event.key === "Tab") {
+        event.preventDefault();
+        event.stopPropagation();
+        applySuggestion(localSuggestions[selectedSuggestionIndex] ?? localSuggestions[0]);
+      }
+    };
+
+    window.addEventListener("keydown", onWindowKeyDown, true);
+    return () => window.removeEventListener("keydown", onWindowKeyDown, true);
+  }, [applySuggestion, input, localSuggestions, selectedSuggestionIndex, showSlashSuggestions]);
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (showSlashSuggestions && localSuggestions.length > 0) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setDismissedSlashInput(input);
+        return;
+      }
+
+      if (event.key === "Tab") {
+        event.preventDefault();
+        event.stopPropagation();
+        applySuggestion(localSuggestions[selectedSuggestionIndex] ?? localSuggestions[0]);
+        return;
+      }
+
       if (event.key === "ArrowDown") {
         event.preventDefault();
+        event.stopPropagation();
         setSelectedSuggestionIndex((current) => (current + 1) % localSuggestions.length);
         return;
       }
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
+        event.stopPropagation();
         setSelectedSuggestionIndex((current) => (current - 1 + localSuggestions.length) % localSuggestions.length);
         return;
       }
 
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
+        event.stopPropagation();
         applySuggestion(localSuggestions[selectedSuggestionIndex] ?? localSuggestions[0]);
         return;
       }
@@ -198,6 +264,7 @@ export default function ChatInput({
 
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      event.stopPropagation();
       handleSubmit();
     }
   };
@@ -252,6 +319,7 @@ export default function ChatInput({
               className="chat-composer__status-chip"
               onClick={() => {
                 setInput((current) => current.replace(/^\/\S+\s*/, ""));
+                clearSuggestionDismissal();
                 textareaRef.current?.focus();
               }}
               title="清除当前模式"
@@ -318,7 +386,7 @@ export default function ChatInput({
                 ref={textareaRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDownCapture={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder="输入聊天内容..."
                 className="chat-composer__textarea hide-scrollbar"
@@ -350,7 +418,7 @@ export default function ChatInput({
                   <Square className="w-4 h-4" fill="currentColor" strokeWidth={1.8} />
                 </button>
               ) : (
-                <button onClick={handleSubmit} disabled={!input.trim() && images.length === 0} className="chat-composer__submit" title="发送消息" type="button">
+                <button onClick={handleSubmit} disabled={!trimmedInput && images.length === 0} className="chat-composer__submit" title="发送消息" type="button">
                   <span>发送</span>
                   <ArrowRight className="chat-composer__submit-icon" strokeWidth={2} />
                 </button>
