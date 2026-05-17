@@ -311,7 +311,7 @@ export function useMainWindowController({
   const handleOpenCompact = useCallback(async () => {
     if (basicSettings.showCompactBall) {
       const normalizedAppearance: CompactAppearance =
-        compactAppearance === "compact" || compactAppearance === "large" || compactAppearance === "pet" ? compactAppearance : "default";
+        compactAppearance === "pet" ? "pet" : compactAppearance === "compact" || compactAppearance === "large" ? compactAppearance : "default";
       await showCompactWindow(normalizedAppearance, normalizedAppearance === "pet" ? effectiveCompactScale : 1, COMPACT_WINDOW_LABEL);
     }
     if (appWindow) {
