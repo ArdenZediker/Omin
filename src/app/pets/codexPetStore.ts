@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { loadAppKvEntries, saveAppKvEntry } from "../sqliteStorage";
+import { loadAppKvEntries, saveSqliteBackedValue } from "../sqliteStorage";
 import { CODEX_PET_LIBRARY_STATE_STORAGE_KEY } from "../constants";
 import type { CodexPetLibraryState, CodexPetPackageResponse } from "./codexPetTypes";
 
@@ -44,7 +44,7 @@ export async function loadCodexPetLibraryState(defaults: CodexPetLibraryState): 
 }
 
 export async function saveCodexPetLibraryState(state: CodexPetLibraryState) {
-  await saveAppKvEntry(CODEX_PET_LIBRARY_STATE_STORAGE_KEY, JSON.stringify(state));
+  saveSqliteBackedValue(CODEX_PET_LIBRARY_STATE_STORAGE_KEY, JSON.stringify(state));
 }
 
 export async function createCodexPetPackage() {

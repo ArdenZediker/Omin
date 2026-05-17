@@ -248,7 +248,7 @@ export function getExpandedCompactViewportSize(includeReply = false) {
     ),
     height:
       Math.max(
-        Math.round(COMPACT_APPEARANCE_PRESETS.character.height * 4.2 * CHARACTER_SCALE_BASELINE) + 12,
+        Math.round(COMPACT_APPEARANCE_PRESETS.pet.height * 4.2 * CHARACTER_SCALE_BASELINE) + 12,
         maxPresetHeight
       ) + COMPACT_MENU_PANEL_HEIGHT,
   };

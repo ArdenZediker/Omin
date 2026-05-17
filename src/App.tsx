@@ -31,7 +31,6 @@ import { useScheduledTasks } from "./hooks/useScheduledTasks";
 import { useMainWindowController } from "./hooks/useMainWindowController";
 import { useCompactWindowController } from "./hooks/useCompactWindowController";
 import {
-  type CharacterModel,
   type CompactAppearance,
   useCompactWindowState,
 } from "./hooks/useCompactWindowState";
@@ -90,8 +89,6 @@ function MainApp() {
 
   const {
     characterMenuPosition,
-    characterModel,
-    characterPanelSide,
     characterScale,
     closeCompactMenuPanels,
     closeCompactMenus,
@@ -100,8 +97,6 @@ function MainApp() {
     compactSubmenuSide,
     compactQuery,
     compactReply,
-    isCharacterMenuPinned,
-    isCharacterModelOpen,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
     isCompactModelOpen,
@@ -109,16 +104,12 @@ function MainApp() {
     isCompactReplyLoading,
     resetCompactFloatingUi,
     setCharacterMenuPosition,
-    setCharacterModel,
-    setCharacterPanelSide,
     setCharacterScale,
     setCompactAppearance,
     setCompactQuery,
     setCompactReply,
     setCompactMenuSide,
     setCompactSubmenuSide,
-    setIsCharacterMenuPinned,
-    setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
     setIsCompactMenuOpen,
     setIsCompactModelOpen,
@@ -138,9 +129,8 @@ function MainApp() {
   const [codexPetPackage, setCodexPetPackage] = useState<CodexPetPackage | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
 
-  const isLive2DAppearance = compactAppearance === "character";
-  const isAnimatedCompactAppearance = compactAppearance === "character" || compactAppearance === "pet";
-  const effectiveCompactScale = isAnimatedCompactAppearance ? characterScale * CHARACTER_SCALE_BASELINE : 1;
+  const isAnimatedCompactAppearance = compactAppearance === "pet";
+  const effectiveCompactScale = compactAppearance === "pet" ? characterScale * CHARACTER_SCALE_BASELINE : 1;
   const compactSize = useMemo(
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
     [compactAppearance, effectiveCompactScale]
@@ -154,18 +144,6 @@ function MainApp() {
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
       });
-    }
-    if (
-      compactAppearance === "character" &&
-      isCompactQueryOpen &&
-      !isCompactMenuOpen &&
-      !isCompactReplyLoading &&
-      !compactReply
-    ) {
-      return {
-        width: compactSize.width,
-        height: compactSize.height + 96,
-      };
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
       return getExpandedCompactViewportSizeForAppearance(compactAppearance, effectiveCompactScale, {
@@ -185,7 +163,6 @@ function MainApp() {
     isCompactQueryOpen,
     isCompactReplyLoading,
   ]);
-  const isCharacterHorizontalPanelOpen = isLive2DAppearance && Boolean(isCompactMenuOpen || isCompactReplyLoading || compactReply);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
       isAnimatedCompactAppearance ? Math.max(26, Math.round(compactSize.width * 0.36)) : Math.max(30, compactSize.height - 24);
@@ -321,10 +298,6 @@ function MainApp() {
     compactSize,
     compactViewportSize,
     currentModel,
-    effectiveCompactScale,
-    isCharacterAppearance: isLive2DAppearance,
-    isCharacterMenuPinned,
-    isCharacterModelOpen,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
     isCompactModelOpen,
@@ -334,8 +307,6 @@ function MainApp() {
     onRestoreMain: handleRestoreMain,
     resetCompactFloatingUi,
     setCharacterMenuPosition,
-    setCharacterModel,
-    setCharacterPanelSide,
     setCharacterScale,
     setCompactAppearance,
     setCompactQuery,
@@ -343,8 +314,6 @@ function MainApp() {
     setCompactMenuSide,
     setCompactSubmenuSide,
     setCurrentModel,
-    setIsCharacterMenuPinned,
-    setIsCharacterModelOpen,
     setIsCompactAppearanceOpen,
     setIsCompactMenuOpen,
     setIsCompactModelOpen,
@@ -488,11 +457,8 @@ function MainApp() {
       <CompactWindow
         appearanceOptions={compactController.appearanceOptions}
         basicSettings={basicSettings}
-        characterMenuPosition={characterMenuPosition}
+        menuPosition={characterMenuPosition}
         codexPetPackage={codexPetPackage}
-        characterModel={characterModel as CharacterModel}
-        characterModelOptions={compactController.characterModelOptions}
-        characterPanelSide={characterPanelSide}
         characterScale={characterScale}
         compactAppearance={compactAppearance as CompactAppearance}
         compactQuery={compactQuery}
@@ -500,11 +466,7 @@ function MainApp() {
         compactSize={compactSize}
         compactStyle={compactStyle}
         entries={compactController.entries}
-        isCharacterAppearance={isAnimatedCompactAppearance}
         isCharacterDragging={compactController.isCharacterDragging}
-        isCharacterHorizontalPanelOpen={isCharacterHorizontalPanelOpen}
-        isCharacterMenuPinned={isCharacterMenuPinned}
-        isCharacterModelOpen={isCharacterModelOpen}
         isCompactAppearanceOpen={isCompactAppearanceOpen}
         isCompactMenuOpen={isCompactMenuOpen}
         isCompactModelOpen={isCompactModelOpen}
@@ -514,7 +476,6 @@ function MainApp() {
         isCompactReplyLoading={isCompactReplyLoading}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
-        onCharacterModelChange={compactController.handleCharacterModelChange}
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
         onCharacterPointerUp={compactController.handleCharacterPointerUp}
         onCloseCompactMenuNow={compactController.closeCompactMenuNow}
@@ -528,13 +489,10 @@ function MainApp() {
         onOpenExternalChat={compactController.handleOpenExternalChat}
         onOpenSettingsFromCompact={desktopActions.openSettings}
         onPointerHitTest={isCharacterPointerInHitArea}
-        onSetCharacterMenuPinned={setIsCharacterMenuPinned}
         onSetCompactQuery={setCompactQuery}
         onSetCompactReply={setCompactReply}
         onUpdateBasicSettings={updateBasicSettings}
-        onSetIsCharacterModelOpen={setIsCharacterModelOpen}
         onSetIsCompactAppearanceOpen={setIsCompactAppearanceOpen}
-        onSetIsCompactMenuOpen={setIsCompactMenuOpen}
         onSetIsCompactModelOpen={setIsCompactModelOpen}
         onSetIsCompactQueryOpen={setIsCompactQueryOpen}
         onSetIsCompactReplyLoading={setIsCompactReplyLoading}

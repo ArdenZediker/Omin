@@ -85,7 +85,6 @@ export function useMainWindowController({
       MAIN_VIEW_STORAGE_KEY,
       "omni_compact_appearance",
       CHARACTER_SCALE_STORAGE_KEY,
-      "omni_character_model",
       "omni_provider_configs",
       "omni_knowledge_embedding_profile",
       CURRENT_MODEL_STORAGE_KEY,
@@ -146,7 +145,6 @@ export function useMainWindowController({
         const appearance: CompactAppearance =
           storedAppearance === "compact" ||
           storedAppearance === "large" ||
-          storedAppearance === "character" ||
           storedAppearance === "pet"
             ? storedAppearance
             : "default";
@@ -154,7 +152,7 @@ export function useMainWindowController({
         const scale = Number.isFinite(storedScale) ? storedScale : 1;
         void showCompactWindow(
           appearance,
-          appearance === "character" || appearance === "pet" ? scale * CHARACTER_SCALE_BASELINE : 1,
+          appearance === "pet" ? scale * CHARACTER_SCALE_BASELINE : 1,
           COMPACT_WINDOW_LABEL
         );
       }
