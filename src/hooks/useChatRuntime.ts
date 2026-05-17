@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Message, ModelConfig } from "../adapters/types";
-import { showSettingsWindow } from "../app/window";
+import { showCompactWindow, showSettingsWindow } from "../app/window";
+import { COMPACT_WINDOW_LABEL } from "../app/constants";
+import { saveSqliteBackedValue } from "../app/sqliteStorage";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { ToolRegistry } from "../chat/toolRegistry";
@@ -231,6 +234,7 @@ export function useChatRuntime({
         const newTool = requireTool("new");
         const clearTool = requireTool("clear");
         const settingsTool = requireTool("settings");
+        const petTool = requireTool("pet");
         const renameTool = requireTool("rename");
         const pinTool = requireTool("pin");
         const modelTool = requireTool("model");
@@ -274,6 +278,50 @@ export function useChatRuntime({
           execute: async () => {
             await showSettingsWindow();
             return { ok: true };
+          },
+        });
+
+        registry.register({
+          id: petTool.id,
+          command: petTool.command,
+          title: petTool.title,
+          execute: async (resolvedCommand) => {
+            const action = resolvedCommand.args.trim().toLowerCase();
+            const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
+
+            if (!action) {
+              if (compactWindow) {
+                try {
+                  const visible = await compactWindow.isVisible();
+                  if (visible) {
+                    await compactWindow.hide();
+                    return { ok: true, outputText: "已收起桌面宠物。" };
+                  }
+                } catch {
+                  // Fall through to wake pet.
+                }
+              }
+
+              saveSqliteBackedValue("omni_compact_appearance", "pet");
+              await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
+              return { ok: true, outputText: "已唤醒桌面宠物。" };
+            }
+
+            if (["wake", "open", "show", "on"].includes(action)) {
+              saveSqliteBackedValue("omni_compact_appearance", "pet");
+              await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
+              return { ok: true, outputText: "已唤醒桌面宠物。" };
+            }
+
+            if (["close", "hide", "off"].includes(action)) {
+              if (!compactWindow) {
+                return { ok: true, outputText: "桌面宠物当前未开启。" };
+              }
+              await compactWindow.hide();
+              return { ok: true, outputText: "已收起桌面宠物。" };
+            }
+
+            return { ok: false, error: "用法: /pet 或 /pet wake 或 /pet close" };
           },
         });
 

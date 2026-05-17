@@ -73,6 +73,7 @@ struct CodexPetPackageRecord {
     display_name: String,
     description: String,
     spritesheet_path: String,
+    spritesheet_file_path: String,
     package_dir: String,
     manifest_path: String,
     spritesheet_exists: bool,
@@ -390,13 +391,15 @@ fn load_codex_pet_package_record(package_dir: &Path) -> Result<Option<CodexPetPa
     let display_name = manifest.display_name.trim().to_string();
     let description = manifest.description.trim().to_string();
     let spritesheet_path = manifest.spritesheet_path.trim().to_string();
-    let spritesheet_exists = package_dir.join(&spritesheet_path).exists();
+    let spritesheet_file_path = package_dir.join(&spritesheet_path);
+    let spritesheet_exists = spritesheet_file_path.exists();
 
     Ok(Some(CodexPetPackageRecord {
         id,
         display_name,
         description,
         spritesheet_path,
+        spritesheet_file_path: spritesheet_file_path.to_string_lossy().to_string(),
         package_dir: package_dir.to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
         spritesheet_exists,
@@ -477,6 +480,7 @@ fn create_codex_pet_package() -> Result<CodexPetPackageRecord, String> {
         display_name: manifest.display_name,
         description: manifest.description,
         spritesheet_path: manifest.spritesheet_path,
+        spritesheet_file_path: spritesheet_path.to_string_lossy().to_string(),
         package_dir: package_dir.to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
         spritesheet_exists: true,

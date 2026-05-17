@@ -11,6 +11,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   { id: "new", command: "/new", title: "新对话", description: "创建一个新的空白对话" },
   { id: "clear", command: "/clear", title: "清空消息", description: "清空当前对话中的消息" },
   { id: "settings", command: "/settings", title: "打开设置", description: "打开设置页面" },
+  { id: "pet", command: "/pet", title: "宠物", description: "唤醒或收起桌面宠物" },
   { id: "model", command: "/model", title: "切换模型", description: "输入模型 ID 或名称后切换模型" },
   { id: "rename", command: "/rename", title: "重命名对话", description: "重命名当前对话" },
   { id: "pin", command: "/pin", title: "置顶对话", description: "置顶或取消置顶当前对话" },

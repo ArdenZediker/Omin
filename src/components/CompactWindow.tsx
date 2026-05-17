@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
 import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindowState";
-import type { DesktopPetAction } from "../config/pets/omniSchnauzer";
+import type { CodexPetPackage } from "../app/pets/codexPetTypes";
 import Live2DCharacter from "./Live2DCharacter";
 import DesktopPet from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
@@ -11,6 +11,7 @@ import CompactReplyPanel from "./compact/CompactReplyPanel";
 type CompactWindowProps = {
   basicSettings: BasicSettings;
   characterMenuPosition: { x: number; y: number } | null;
+  codexPetPackage: CodexPetPackage | null;
   characterModel: CharacterModel;
   characterPanelSide: "left" | "right";
   characterScale: number;
@@ -66,6 +67,7 @@ export default function CompactWindow({
   appearanceOptions,
   basicSettings,
   characterMenuPosition,
+  codexPetPackage,
   characterModel,
   characterModelOptions,
   characterPanelSide,
@@ -126,13 +128,13 @@ export default function CompactWindow({
   const petRenderHeight = petViewportSize;
   const petRenderWidth = Math.round((petRenderHeight * 192) / 208);
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
-  const petState: DesktopPetAction = compactReply?.isError
-    ? "sad-failed"
+  const petState = compactReply?.isError
+    ? "failed"
     : petCelebrateReply
-    ? "task-done"
-    : isCompactReplyLoading || compactReply
-    ? "working"
-    : "idle";
+      ? "review"
+      : isCompactReplyLoading || compactReply
+        ? "waiting"
+        : "idle";
 
   useEffect(() => {
     if (!isPetAppearance || !compactReply || compactReply.isError) {
@@ -295,7 +297,7 @@ export default function CompactWindow({
               aria-label="切换主界面"
             >
               {isPetAppearance ? (
-                <DesktopPet width={petRenderWidth} height={petRenderHeight} state={petState} />
+                <DesktopPet width={petRenderWidth} height={petRenderHeight} state={petState} packageData={codexPetPackage} />
               ) : isLive2DAppearance ? (
                 <Live2DCharacter key={characterModel} width={Math.max(48, compactSize.width - 18)} height={Math.max(72, compactSize.height - 34)} model={characterModel} />
               ) : (

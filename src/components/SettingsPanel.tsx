@@ -2,6 +2,8 @@
 import type { KeyboardEvent } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { showCompactWindow } from "../app/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Cuboid, MessageSquareText, Settings } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
@@ -19,6 +21,7 @@ import {
 } from "../app/pets/codexPetTypes";
 import type { BasicSettings } from "../app/types";
 import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../app/settings";
+import { COMPACT_WINDOW_LABEL } from "../app/constants";
 import {
   loadBasicSettings,
   loadUsagePreferences,
@@ -85,6 +88,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [codexPetPackages, setCodexPetPackages] = useState<CodexPetPackage[]>([]);
   const [codexPetLibraryState, setCodexPetLibraryState] = useState<CodexPetLibraryState>(DEFAULT_CODEX_PET_LIBRARY_STATE);
   const [codexPetHome, setCodexPetHome] = useState("");
+  const [isDesktopPetAwake, setIsDesktopPetAwake] = useState(false);
   const [prefs, setPrefs] = useState(loadUsagePreferences);
   const [prefsSaveStatus, setPrefsSaveStatus] = useState<"idle" | "saved" | "error">("idle");
   const [knowledgeEmbeddingConfig, setKnowledgeEmbeddingConfig] = useState<KnowledgeEmbeddingConfig>(loadKnowledgeEmbeddingConfig);
@@ -184,6 +188,34 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       }
       return { ...current, activePetId: nextSelection, updatedAt: Date.now() };
     });
+  };
+
+  const enableDesktopPet = async () => {
+    const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
+    if (compactWindow) {
+      try {
+        const visible = await compactWindow.isVisible();
+        if (visible) {
+          await compactWindow.hide();
+          setIsDesktopPetAwake(false);
+          return;
+        }
+      } catch {
+        // Fall through to wake pet.
+      }
+    }
+
+    updateBasicSettings({ minimizeBehavior: "compact", showCompactBall: true });
+    await saveCodexPetLibraryState({
+      activePetId: codexPetLibraryState.activePetId,
+      updatedAt: Date.now(),
+    });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("omni_compact_appearance", "pet");
+      window.dispatchEvent(new StorageEvent("storage", { key: "omni_compact_appearance", newValue: "pet" }));
+    }
+    await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
+    setIsDesktopPetAwake(true);
   };
 
   const changeThemeMode = (mode: ThemeMode) => {
@@ -400,7 +432,51 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       if (!libraryState.activePetId && payload.activePetId) {
         setCodexPetLibraryState({ activePetId: payload.activePetId, updatedAt: Date.now() });
       }
+
+      const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
+      if (compactWindow) {
+        try {
+          setIsDesktopPetAwake(await compactWindow.isVisible());
+        } catch {
+          setIsDesktopPetAwake(false);
+        }
+      }
     })();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncCompactPetVisibility = async () => {
+      const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
+      if (!compactWindow) {
+        if (!cancelled) {
+          setIsDesktopPetAwake(false);
+        }
+        return;
+      }
+
+      try {
+        const visible = await compactWindow.isVisible();
+        if (!cancelled) {
+          setIsDesktopPetAwake(visible);
+        }
+      } catch {
+        if (!cancelled) {
+          setIsDesktopPetAwake(false);
+        }
+      }
+    };
+
+    void syncCompactPetVisibility();
+    const timer = window.setInterval(() => {
+      void syncCompactPetVisibility();
+    }, 800);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const handleHeaderMouseDown = useCallback(async (event: React.MouseEvent<HTMLElement>) => {
@@ -505,6 +581,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                 codexPetPackages={codexPetPackages}
                 codexPetLibraryState={codexPetLibraryState}
                 codexPetHome={codexPetHome}
+                isDesktopPetAwake={isDesktopPetAwake}
+                onEnableDesktopPet={enableDesktopPet}
                 onSelectCodexPet={selectCodexPet}
                 onCreateCodexPet={createCodexPet}
                 onRefreshCodexPets={refreshCodexPets}
