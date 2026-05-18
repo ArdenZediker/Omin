@@ -194,7 +194,9 @@ export default function CompactWindow({
       onWheel={onCompactWheel}
     >
       <div
-        className={`compact-hover-zone ${isAnimatedAppearance ? "compact-hover-zone--character" : ""}`}
+        className={`compact-hover-zone ${isAnimatedAppearance ? "compact-hover-zone--character" : ""} ${
+          isPetAppearance ? "compact-hover-zone--pet" : ""
+        } ${shouldShowPetThought ? "compact-hover-zone--pet-thought" : ""}`}
         onMouseEnter={
           !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
             ? (e) => {
@@ -223,7 +225,7 @@ export default function CompactWindow({
         <div
           className={`compact-bar ${isAnimatedAppearance ? "compact-bar--character" : ""} ${
             isPetAppearance ? "compact-bar--pet" : ""
-          }`}
+          } ${shouldShowPetThought ? "compact-bar--pet-thought" : ""}`}
           style={compactStyle}
         >
           <div className="compact-menu-anchor no-drag" onContextMenu={isAnimatedAppearance ? onCharacterContextMenu : undefined}>

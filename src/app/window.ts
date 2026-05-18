@@ -7,6 +7,9 @@ import { isCompactPetHidden } from "./compactVisibility";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
 
+const PET_THOUGHT_VIEWPORT_MIN_WIDTH = 320;
+const PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT = 128;
+
 export function isCharacterPointerInHitArea(element: HTMLElement, clientX: number, clientY: number) {
   if (element.dataset.hitMode === "full") {
     return true;
@@ -309,8 +312,9 @@ export function getPetCompactViewportSize(options: {
   isCompactQueryOpen: boolean;
   isCompactReplyLoading: boolean;
   hasCompactReply: boolean;
+  hasPetThought?: boolean;
 }) {
-  const { compactSize, isCompactMenuOpen, isCompactQueryOpen, isCompactReplyLoading, hasCompactReply } = options;
+  const { compactSize, isCompactMenuOpen, isCompactQueryOpen, isCompactReplyLoading, hasCompactReply, hasPetThought } = options;
 
   if (isCompactMenuOpen) {
     return getPetCompactMenuViewport(compactSize);
@@ -327,6 +331,15 @@ export function getPetCompactViewportSize(options: {
     return {
       width: Math.max(compactSize.width, 392),
       height: compactSize.height + 238,
+    };
+  }
+
+  if (hasPetThought) {
+    const thoughtViewportHeight = Math.max(PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT, Math.round(compactSize.width * 0.62 + 64));
+    // Reserve room for the bubble so it stays inside the compact window.
+    return {
+      width: Math.max(compactSize.width, PET_THOUGHT_VIEWPORT_MIN_WIDTH),
+      height: compactSize.height + thoughtViewportHeight,
     };
   }
 

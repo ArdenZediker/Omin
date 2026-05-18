@@ -4275,6 +4275,18 @@ body,
   margin: -4px -4px -16px;
 }
 
+.compact-hover-zone--pet {
+  width: 100%;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.compact-hover-zone--pet-thought {
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 4px;
+}
+
 .compact-hover-zone--character {
   padding: 0;
   margin: 0;
@@ -4359,12 +4371,31 @@ body,
   min-width: var(--compact-bar-width, 156px);
 }
 
+.compact-bar--pet-thought {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+
 .compact-menu-anchor {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+}
+
+.compact-bar--pet-thought .compact-menu-anchor {
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.compact-bar--pet-thought .pet-thought-bubble {
+  position: static;
+  transform: none;
 }
 
 .pet-thought-bubble {

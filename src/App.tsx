@@ -137,6 +137,7 @@ function MainApp() {
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
     [compactAppearance, effectiveCompactScale]
   );
+  const hasPetThought = Boolean(petThought && !isCompactMenuOpen && !isCompactQueryOpen && !isCompactReplyLoading && !compactReply);
   const compactViewportSize = useMemo(() => {
     if (compactAppearance === "pet") {
       return getPetCompactViewportSize({
@@ -145,6 +146,7 @@ function MainApp() {
         isCompactQueryOpen,
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
+        hasPetThought,
       });
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
@@ -164,6 +166,7 @@ function MainApp() {
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
+    hasPetThought,
   ]);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
@@ -188,8 +191,9 @@ function MainApp() {
       "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
+      "--compact-pet-thought-gap": hasPetThought ? `${Math.max(88, Math.round(compactSize.width * 0.75))}px` : "0px",
     } as CSSProperties;
-  }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance]);
+  }, [compactSize.height, compactSize.width, hasPetThought, isAnimatedCompactAppearance]);
 
   const availableModels = modelRegistry.getAvailableModels();
   const hasModels = availableModels.length > 0;
