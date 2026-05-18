@@ -50,7 +50,7 @@ type UseChatRuntimeArgs = {
 function requireTool(id: string) {
   const manifest = getToolManifestById(id);
   if (!manifest?.command) {
-    throw new Error(`缂傚搫鐨銉ュ徔鐎规矮绠? ${id}`);
+    throw new Error(`缺少工具定义: ${id}`);
   }
   return manifest as typeof manifest & { command: string };
 }
@@ -70,6 +70,10 @@ const SILENT_LOCAL_TOOL_IDS = new Set([
 ]);
 
 const PET_THOUGHT_COMPLETE_CLEAR_DELAY_MS = 1200;
+
+function canUseTauriEvents() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 export function useChatRuntime({
   activeChatId,
@@ -141,6 +145,9 @@ export function useChatRuntime({
 
   const emitPetThought = useCallback((state: PetThoughtState | null) => {
     petThoughtRef.current = state;
+    if (!canUseTauriEvents()) {
+      return;
+    }
     if (petThoughtBroadcastFrameRef.current !== null) {
       window.cancelAnimationFrame(petThoughtBroadcastFrameRef.current);
     }
@@ -201,7 +208,7 @@ export function useChatRuntime({
   }, [clearPetThoughtTimer, emitPetThought]);
 
   useEffect(() => {
-    if (isCompactWindow || !("__TAURI_INTERNALS__" in window)) {
+    if (isCompactWindow || !canUseTauriEvents()) {
       return;
     }
 
@@ -278,7 +285,7 @@ export function useChatRuntime({
       }
 
       if (taskResult.status === "failed") {
-        setError(taskResult.error || "娴犺濮熼幍褑顢戞径杈Е");
+        setError(taskResult.error || "任务执行失败");
       }
     },
     [applyUsageToSession, commitAssistantMemory, setMessages]
@@ -459,6 +466,10 @@ export function useChatRuntime({
           command: petTool.command,
           title: petTool.title,
           execute: async (resolvedCommand) => {
+            if (!canUseTauriEvents()) {
+              return { ok: false, error: "Desktop pet is only available in the desktop app." };
+            }
+
             const action = resolvedCommand.args.trim().toLowerCase();
             const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
             const isCompactWindowVisible = compactWindow ? await compactWindow.isVisible().catch(() => false) : false;
@@ -771,7 +782,7 @@ export function useChatRuntime({
             history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
           }));
           if (taskResult.status === "failed") {
-            setError(taskResult.error || "瀹搞儱鍙块幍褑顢戞径杈Е");
+            setError(taskResult.error || "工具执行失败");
           }
           const localCommandToolId = taskResult.plan.metadata?.toolId;
           if (taskResult.toolResult?.outputText && !SILENT_LOCAL_TOOL_IDS.has(String(localCommandToolId || ""))) {
@@ -790,7 +801,7 @@ export function useChatRuntime({
             return;
           }
 
-          setError(taskResult.error || "婵炲濮鹃褎鎱ㄩ悢鐓庣鐟滄垿銆侀幋鐐茬窞閺夊牜鍋夎");
+          setError(taskResult.error || "任务执行失败");
           setMessages(conversationMessages);
           if (hasPetThought) {
             emitPetThought({
