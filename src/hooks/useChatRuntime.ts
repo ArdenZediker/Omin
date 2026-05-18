@@ -4,7 +4,9 @@ import { emit } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
 import { COMPACT_WINDOW_LABEL } from "../app/constants";
-import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { getPetWindowScale } from "../app/compactPetScale";
+import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibility";
+import { saveSqliteBackedValue } from "../app/sqliteStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
@@ -302,46 +304,36 @@ export function useChatRuntime({
           title: petTool.title,
           execute: async (resolvedCommand) => {
             const action = resolvedCommand.args.trim().toLowerCase();
-            const currentAppearance = readSqliteBackedValue("omni_compact_appearance");
-            const compactWindow = currentAppearance === "pet" ? await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL) : null;
-
-            const restoreCompactBall = async () => {
-              saveSqliteBackedValue("omni_compact_appearance", "default");
-              await emit("omni-compact-appearance-changed", { appearance: "default", scale: 1 });
-              await showCompactWindow("default", 1, COMPACT_WINDOW_LABEL);
+            const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
+            const isCompactWindowVisible = compactWindow ? await compactWindow.isVisible().catch(() => false) : false;
+            const hideCompactPet = async () => {
+              setCompactPetHidden(true);
+              await compactWindow?.close().catch(() => undefined);
             };
 
             if (!action) {
-              if (compactWindow) {
-                try {
-                  const visible = await compactWindow.isVisible();
-                  if (visible) {
-                    await restoreCompactBall();
-                    return { ok: true, outputText: "已收起桌面宠物。" };
-                  }
-                } catch {
-                  // Fall through to wake pet.
-                }
+              if (compactWindow && isCompactWindowVisible && !isCompactPetHidden()) {
+                await hideCompactPet();
+                return { ok: true, outputText: "已收起桌面宠物。" };
               }
 
+              setCompactPetHidden(false);
               saveSqliteBackedValue("omni_compact_appearance", "pet");
-              await emit("omni-compact-appearance-changed", { appearance: "pet", scale: 2 });
-              await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
+              await emit("omni-compact-appearance-changed", { appearance: "pet" });
+              await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
               return { ok: true, outputText: "已唤醒桌面宠物。" };
             }
 
             if (["wake", "open", "show", "on"].includes(action)) {
+              setCompactPetHidden(false);
               saveSqliteBackedValue("omni_compact_appearance", "pet");
-              await emit("omni-compact-appearance-changed", { appearance: "pet", scale: 2 });
-              await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
+              await emit("omni-compact-appearance-changed", { appearance: "pet" });
+              await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
               return { ok: true, outputText: "已唤醒桌面宠物。" };
             }
 
             if (["close", "hide", "off"].includes(action)) {
-              if (!compactWindow) {
-                return { ok: true, outputText: "桌面宠物当前未开启。" };
-              }
-              await restoreCompactBall();
+              await hideCompactPet();
               return { ok: true, outputText: "已收起桌面宠物。" };
             }
 

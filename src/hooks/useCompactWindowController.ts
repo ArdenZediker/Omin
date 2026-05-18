@@ -319,15 +319,32 @@ export function useCompactWindowController({
     let unlisten: (() => void) | undefined;
     void appWindow
       .onFocusChanged(({ payload }) => {
-        if (payload) {
+        void appWindow.isVisible().then((isVisible) => {
+          if (!isVisible) {
+            return;
+          }
+
+          if (payload) {
+            void raiseCompactWindow();
+            return;
+          }
+
+          if (Date.now() <= compactSuppressBlurUntilRef.current) {
+            return;
+          }
           void raiseCompactWindow();
-          return;
-        }
-        if (Date.now() <= compactSuppressBlurUntilRef.current) {
-          return;
-        }
-        void raiseCompactWindow();
-        resetCompactFloatingUi();
+          resetCompactFloatingUi();
+        }).catch(() => {
+          if (payload) {
+            void raiseCompactWindow();
+            return;
+          }
+          if (Date.now() <= compactSuppressBlurUntilRef.current) {
+            return;
+          }
+          void raiseCompactWindow();
+          resetCompactFloatingUi();
+        });
       })
       .then((fn) => {
         unlisten = fn;

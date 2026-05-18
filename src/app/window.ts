@@ -3,6 +3,7 @@ import { cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL, SETTINGS_WINDOW_SIZE, THEME_MODE_STORAGE_KEY } from "./constants";
 import type { BasicSettings, ExternalChatEntry, ViewMode } from "./types";
+import { isCompactPetHidden } from "./compactVisibility";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
 
@@ -381,6 +382,14 @@ export async function showCompactWindow(
   scale: number,
   compactWindowLabel: string
 ) {
+  if (appearance === "pet" && isCompactPetHidden()) {
+    const compactWindow = await WebviewWindow.getByLabel(compactWindowLabel);
+    if (compactWindow) {
+      await compactWindow.hide().catch(() => undefined);
+    }
+    return;
+  }
+
   const compactWindow = await ensureCompactWindow(appearance, scale, compactWindowLabel);
   const settings = getBasicSettings();
   const size = getCompactWindowSize(appearance, scale);

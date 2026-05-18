@@ -26,7 +26,7 @@ export default function DesktopPet({ width, height, state, packageData }: Deskto
   const [frameIndex, setFrameIndex] = useState(0);
   const actualState = state;
   const frameset = PET_ROWS[actualState];
-  const sheetSrc = packageData?.spritesheetWebPath ?? "/pets/omni-pet-v3-alpha.png?v=20260506-1444";
+  const sheetSrc = packageData?.spritesheetWebPath ?? "/pets/omni-schnauzer/spritesheet.webp";
   const cellWidth = CODEX_PET_CELL_SIZE.width;
   const cellHeight = CODEX_PET_CELL_SIZE.height;
   const atlasColumns = 8;

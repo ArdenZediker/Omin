@@ -14,6 +14,8 @@ import {
   createCodexPetPackage,
   saveCodexPetLibraryState,
 } from "../app/pets/codexPetStore";
+import { getPetWindowScale } from "../app/compactPetScale";
+import { setCompactPetHidden } from "../app/compactVisibility";
 import {
   DEFAULT_CODEX_PET_LIBRARY_STATE,
   type CodexPetLibraryState,
@@ -213,27 +215,26 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       return;
     }
 
-    const currentAppearance = typeof window === "undefined" ? "default" : localStorage.getItem("omni_compact_appearance");
-    if (currentAppearance !== "pet") {
+    if (!isDesktopPetAwake) {
       return;
     }
 
-    void showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
+    void showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
     void syncCompactVisualState();
-  }, [codexPetLibraryState.activePetId]);
+  }, [codexPetLibraryState.activePetId, isDesktopPetAwake]);
 
   const enableDesktopPet = async () => {
     const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
     if (compactWindow) {
       try {
         const visible = await compactWindow.isVisible();
-        const currentAppearance = typeof window === "undefined" ? "default" : localStorage.getItem("omni_compact_appearance");
-        if (visible && currentAppearance === "pet") {
+        if (visible && isDesktopPetAwake) {
+          setCompactPetHidden(true);
           if (typeof window !== "undefined") {
             localStorage.setItem("omni_compact_appearance", "default");
             window.dispatchEvent(new StorageEvent("storage", { key: "omni_compact_appearance", newValue: "default" }));
           }
-          await emit("omni-compact-appearance-changed", { appearance: "default", scale: 1 });
+          await emit("omni-compact-appearance-changed", { appearance: "default" });
           await showCompactWindow("default", 1, COMPACT_WINDOW_LABEL);
           setIsDesktopPetAwake(false);
           return;
@@ -252,8 +253,9 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       localStorage.setItem("omni_compact_appearance", "pet");
       window.dispatchEvent(new StorageEvent("storage", { key: "omni_compact_appearance", newValue: "pet" }));
     }
-    await emit("omni-compact-appearance-changed", { appearance: "pet", scale: 2 });
-    await showCompactWindow("pet", 2, COMPACT_WINDOW_LABEL);
+    setCompactPetHidden(false);
+    await emit("omni-compact-appearance-changed", { appearance: "pet" });
+    await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
     setIsDesktopPetAwake(true);
   };
 
