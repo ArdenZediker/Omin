@@ -4367,6 +4367,85 @@ body,
   flex: 0 0 auto;
 }
 
+.pet-thought-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  min-width: 184px;
+  max-width: min(280px, calc(100vw - 28px));
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  box-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.16),
+    0 2px 4px rgba(15, 23, 42, 0.06);
+  z-index: 24;
+  pointer-events: none;
+  animation: petThoughtBubbleIn 180ms ease-out;
+}
+
+.pet-thought-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 1px);
+  width: 14px;
+  height: 14px;
+  transform: translateX(-50%) rotate(45deg);
+  background: inherit;
+  border-right: 1px solid rgba(203, 213, 225, 0.9);
+  border-bottom: 1px solid rgba(203, 213, 225, 0.9);
+  box-shadow: 5px 5px 10px rgba(15, 23, 42, 0.04);
+}
+
+.pet-thought-bubble__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--omni-app-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.pet-thought-bubble__preview {
+  margin-top: 4px;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.pet-thought-bubble--thinking {
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
+.pet-thought-bubble--complete {
+  border-color: rgba(34, 197, 94, 0.22);
+}
+
+.pet-thought-bubble--error {
+  border-color: rgba(239, 68, 68, 0.22);
+}
+
+@keyframes petThoughtBubbleIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
 .compact-button {
   width: var(--compact-button-size, 34px);
   height: var(--compact-button-size, 34px);
@@ -5433,6 +5512,19 @@ body,
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -2px 5px rgba(0, 0, 0, 0.34);
 }
 
+:root[data-omni-theme="dark"] .pet-thought-bubble {
+  background: rgba(17, 17, 17, 0.94);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.32),
+    0 2px 4px rgba(0, 0, 0, 0.14);
+}
+
+:root[data-omni-theme="dark"] .pet-thought-bubble::after {
+  border-right-color: rgba(255, 255, 255, 0.12);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
 :root[data-omni-theme="dark"] .compact-button__icon,
 :root[data-omni-theme="dark"] .compact-button__search {
   filter: none;
@@ -5843,4 +5935,3 @@ body,
     grid-template-columns: 1fr;
   }
 }
-

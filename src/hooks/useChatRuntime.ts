@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
 import { COMPACT_WINDOW_LABEL } from "../app/constants";
@@ -10,10 +11,12 @@ import { saveSqliteBackedValue } from "../app/sqliteStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
+import { getChatSessionTitle } from "../chat/storage";
 import { ToolRegistry } from "../chat/toolRegistry";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { AssistantProfile, ChatExecutionResult } from "../chat/types";
 import { getToolManifestById } from "../config/manifests/tools";
+import type { PetThoughtState } from "../app/types";
 
 type SessionLite = {
   id: string;
@@ -41,12 +44,13 @@ type UseChatRuntimeArgs = {
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setOpenChatMenu: React.Dispatch<React.SetStateAction<{ id: string; x: number; y: number } | null>>;
   togglePinnedChatSession: (sessionId: string) => boolean;
+  isCompactWindow: boolean;
 };
 
 function requireTool(id: string) {
   const manifest = getToolManifestById(id);
   if (!manifest?.command) {
-    throw new Error(`缺少工具定义: ${id}`);
+    throw new Error(`缂傚搫鐨銉ュ徔鐎规矮绠? ${id}`);
   }
   return manifest as typeof manifest & { command: string };
 }
@@ -64,6 +68,8 @@ const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = new Set([
 const SILENT_LOCAL_TOOL_IDS = new Set([
   "pet",
 ]);
+
+const PET_THOUGHT_COMPLETE_CLEAR_DELAY_MS = 1200;
 
 export function useChatRuntime({
   activeChatId,
@@ -85,6 +91,7 @@ export function useChatRuntime({
   setMessages,
   setOpenChatMenu,
   togglePinnedChatSession,
+  isCompactWindow,
 }: UseChatRuntimeArgs) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -98,12 +105,126 @@ export function useChatRuntime({
   const lastRunIdRef = useRef(0);
   const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
   const toolRegistryRef = useRef<ToolRegistry | null>(null);
+  const petThoughtRef = useRef<PetThoughtState | null>(null);
+  const petThoughtBroadcastFrameRef = useRef<number | null>(null);
+  const petThoughtClearTimerRef = useRef<number | null>(null);
 
   const executionModel =
     activeAssistant?.defaultModelId && availableModels.some((model) => model.id === activeAssistant.defaultModelId)
       ? activeAssistant.defaultModelId
       : currentModel;
   const assistantSystemPrompt = activeAssistant?.systemPrompt?.trim() ? activeAssistant.systemPrompt.trim() : undefined;
+
+  const resolvePetThoughtTitle = useCallback(
+    (sessionId: string | null | undefined, conversationMessages: Message[]) => {
+      const sessionTitle = sessionId ? getChatSessionById(sessionId)?.title?.trim() : "";
+      if (sessionTitle) {
+        return sessionTitle;
+      }
+
+      const inferredTitle = getChatSessionTitle(conversationMessages).trim();
+      if (inferredTitle) {
+        return inferredTitle;
+      }
+
+      return activeAssistant?.kind === "basic" ? "Omni" : activeAssistant?.title?.trim() || "Omni";
+    },
+    [activeAssistant?.kind, activeAssistant?.title, getChatSessionById]
+  );
+
+  const clearPetThoughtTimer = useCallback(() => {
+    if (petThoughtClearTimerRef.current !== null) {
+      window.clearTimeout(petThoughtClearTimerRef.current);
+      petThoughtClearTimerRef.current = null;
+    }
+  }, []);
+
+  const emitPetThought = useCallback((state: PetThoughtState | null) => {
+    petThoughtRef.current = state;
+    if (petThoughtBroadcastFrameRef.current !== null) {
+      window.cancelAnimationFrame(petThoughtBroadcastFrameRef.current);
+    }
+    petThoughtBroadcastFrameRef.current = window.requestAnimationFrame(() => {
+      petThoughtBroadcastFrameRef.current = null;
+      void emit("omni-pet-thought-changed", petThoughtRef.current);
+    });
+  }, []);
+
+  const startPetThought = useCallback(
+    (sessionId: string | null | undefined, conversationMessages: Message[]) => {
+      clearPetThoughtTimer();
+      emitPetThought({
+        sessionId: sessionId ?? null,
+        sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
+        previewText: "",
+        status: "thinking",
+        updatedAt: Date.now(),
+      });
+    },
+    [clearPetThoughtTimer, emitPetThought, resolvePetThoughtTitle]
+  );
+
+  const updatePetThought = useCallback(
+    (sessionId: string | null | undefined, conversationMessages: Message[], previewText: string) => {
+      emitPetThought({
+        sessionId: sessionId ?? null,
+        sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
+        previewText,
+        status: "thinking",
+        updatedAt: Date.now(),
+      });
+    },
+    [emitPetThought, resolvePetThoughtTitle]
+  );
+
+  const completePetThought = useCallback(
+    (sessionId: string | null | undefined, conversationMessages: Message[], previewText: string) => {
+      clearPetThoughtTimer();
+      emitPetThought({
+        sessionId: sessionId ?? null,
+        sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
+        previewText,
+        status: "complete",
+        updatedAt: Date.now(),
+      });
+      petThoughtClearTimerRef.current = window.setTimeout(() => {
+        petThoughtClearTimerRef.current = null;
+        emitPetThought(null);
+      }, PET_THOUGHT_COMPLETE_CLEAR_DELAY_MS);
+    },
+    [clearPetThoughtTimer, emitPetThought, resolvePetThoughtTitle]
+  );
+
+  const clearPetThought = useCallback(() => {
+    clearPetThoughtTimer();
+    emitPetThought(null);
+  }, [clearPetThoughtTimer, emitPetThought]);
+
+  useEffect(() => {
+    if (isCompactWindow || !("__TAURI_INTERNALS__" in window)) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void listen("omni-pet-thought-request", () => {
+      void emit("omni-pet-thought-changed", petThoughtRef.current);
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isCompactWindow]);
+
+  useEffect(() => {
+    return () => {
+      if (petThoughtBroadcastFrameRef.current !== null) {
+        window.cancelAnimationFrame(petThoughtBroadcastFrameRef.current);
+      }
+      clearPetThoughtTimer();
+    };
+  }, [clearPetThoughtTimer]);
 
   useEffect(() => {
     void saveTaskHistory(taskRuntimeState.history);
@@ -157,7 +278,7 @@ export function useChatRuntime({
       }
 
       if (taskResult.status === "failed") {
-        setError(taskResult.error || "任务执行失败");
+        setError(taskResult.error || "娴犺濮熼幍褑顢戞径杈Е");
       }
     },
     [applyUsageToSession, commitAssistantMemory, setMessages]
@@ -182,6 +303,7 @@ export function useChatRuntime({
       setMessages([...conversationMessages, { role: "assistant", content: "" }]);
       setError(null);
       setIsLoading(true);
+      startPetThought(sessionId, conversationMessages);
 
       try {
         const taskResult = await executeTask({
@@ -193,6 +315,7 @@ export function useChatRuntime({
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
             }
+            updatePetThought(sessionId, conversationMessages, `${petThoughtRef.current?.previewText ?? ""}${chunk}`);
             setMessages((prev) => {
               const updated = [...prev];
               const lastIdx = updated.length - 1;
@@ -205,34 +328,55 @@ export function useChatRuntime({
         });
 
         if (runId !== lastRunIdRef.current) {
-          return sessionId;
+          return;
         }
 
         if (!taskResult.finalResult && taskResult.status === "aborted") {
           setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
-          return sessionId;
+          clearPetThought();
+          return;
         }
 
         if (!taskResult.finalResult && !taskResult.toolResult?.outputText) {
-          setError(taskResult.error || "任务执行失败");
+          setError(taskResult.error || "?????????");
           setMessages(conversationMessages);
-          return sessionId;
+          emitPetThought({
+            sessionId: sessionId ?? null,
+            sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
+            previewText: "",
+            status: "error",
+            updatedAt: Date.now(),
+          });
+          return;
         }
 
+        completePetThought(
+          sessionId,
+          conversationMessages,
+          taskResult.finalResult?.content || taskResult.toolResult?.outputText || petThoughtRef.current?.previewText || ""
+        );
         finishTaskResult(taskResult, sessionId, conversationMessages);
-        return sessionId;
+        return;
       } catch (runError) {
         if (runId !== lastRunIdRef.current) {
-          return sessionId;
+          return;
         }
         if (runError instanceof DOMException && runError.name === "AbortError") {
           setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
-          return sessionId;
+          clearPetThought();
+          return;
         }
 
-        setError(runError instanceof Error ? runError.message : "未知错误");
+        setError(runError instanceof Error ? runError.message : "??????");
         setMessages(conversationMessages);
-        return sessionId;
+        emitPetThought({
+          sessionId: sessionId ?? null,
+          sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
+          previewText: "",
+          status: "error",
+          updatedAt: Date.now(),
+        });
+        return;
       } finally {
         if (runId === lastRunIdRef.current) {
           abortControllerRef.current = null;
@@ -240,7 +384,19 @@ export function useChatRuntime({
         }
       }
     },
-    [activeChatId, assistantSystemPrompt, createSessionFromMessages, executionModel, finishTaskResult, setMessages]
+    [
+      activeChatId,
+      assistantSystemPrompt,
+      clearPetThought,
+      completePetThought,
+      createSessionFromMessages,
+      executionModel,
+      finishTaskResult,
+      resolvePetThoughtTitle,
+      setMessages,
+      startPetThought,
+      updatePetThought,
+    ]
   );
 
   const executeTool = useCallback(
@@ -314,14 +470,14 @@ export function useChatRuntime({
             if (!action) {
               if (compactWindow && isCompactWindowVisible && !isCompactPetHidden()) {
                 await hideCompactPet();
-                return { ok: true, outputText: "已收起桌面宠物。" };
+                return { ok: true, outputText: "Hid desktop pet." };
               }
 
               setCompactPetHidden(false);
               saveSqliteBackedValue("omni_compact_appearance", "pet");
               await emit("omni-compact-appearance-changed", { appearance: "pet" });
               await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
-              return { ok: true, outputText: "已唤醒桌面宠物。" };
+              return { ok: true, outputText: "Opened desktop pet." };
             }
 
             if (["wake", "open", "show", "on"].includes(action)) {
@@ -329,15 +485,15 @@ export function useChatRuntime({
               saveSqliteBackedValue("omni_compact_appearance", "pet");
               await emit("omni-compact-appearance-changed", { appearance: "pet" });
               await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
-              return { ok: true, outputText: "已唤醒桌面宠物。" };
+              return { ok: true, outputText: "Opened desktop pet." };
             }
 
             if (["close", "hide", "off"].includes(action)) {
               await hideCompactPet();
-              return { ok: true, outputText: "已收起桌面宠物。" };
+              return { ok: true, outputText: "Hid desktop pet." };
             }
 
-            return { ok: false, error: "用法: /pet 或 /pet wake 或 /pet close" };
+            return { ok: false, error: "Usage: /pet, /pet wake, or /pet close" };
           },
         });
 
@@ -346,8 +502,8 @@ export function useChatRuntime({
           command: renameTool.command,
           title: renameTool.title,
           execute: async (resolvedCommand, context) => {
-            if (!context.activeChatId) return { ok: false, error: "当前没有可重命名的会话" };
-            if (!resolvedCommand.args) return { ok: false, error: "用法: /rename 新标题" };
+            if (!context.activeChatId) return { ok: false, error: "No chat session to rename." };
+            if (!resolvedCommand.args) return { ok: false, error: "Usage: /rename <title>" };
             renameChatSession(context.activeChatId, resolvedCommand.args);
             setError(null);
             setOpenChatMenu(null);
@@ -360,7 +516,7 @@ export function useChatRuntime({
           command: pinTool.command,
           title: pinTool.title,
           execute: async (_, context) => {
-            if (!context.activeChatId) return { ok: false, error: "当前没有可置顶的会话" };
+            if (!context.activeChatId) return { ok: false, error: "No chat session to pin." };
             togglePinnedChatSession(context.activeChatId);
             setError(null);
             setOpenChatMenu(null);
@@ -374,13 +530,13 @@ export function useChatRuntime({
           title: modelTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim().toLowerCase();
-            if (!query) return { ok: false, error: "用法: /model 模型 ID 或名称" };
+            if (!query) return { ok: false, error: "Usage: /model <model id or name>" };
 
             const matchedModel =
               availableModels.find((model) => model.id.toLowerCase() === query || model.name.toLowerCase() === query) ??
               availableModels.find((model) => model.id.toLowerCase().includes(query) || model.name.toLowerCase().includes(query));
 
-            if (!matchedModel) return { ok: false, error: `未找到匹配模型: ${resolvedCommand.args}` };
+            if (!matchedModel) return { ok: false, error: `No matching model: ${resolvedCommand.args}` };
 
             handleModelChange(matchedModel.id);
             setError(null);
@@ -394,21 +550,21 @@ export function useChatRuntime({
           title: searchSessionsTool.title,
           execute: async (resolvedCommand, context) => {
             const query = resolvedCommand.args.trim();
-            if (!query) return { ok: false, error: "用法: /search_sessions 关键词" };
+            if (!query) return { ok: false, error: "Usage: /search_sessions <keyword>" };
 
             const matchedSessions = searchChatSessions(query);
             if (matchedSessions.length === 0) {
-              return { ok: true, outputText: `未找到包含“${query}”的会话。`, data: [] };
+              return { ok: true, outputText: `No sessions contain "${query}".`, data: [] };
             }
 
             const lines = matchedSessions.slice(0, 8).map((session, index) => {
-              const marker = context.activeChatId === session.id ? " [当前]" : "";
-              return `${index + 1}. ${session.title}${marker} | id=${session.id} | ${session.messages.length} 条消息`;
+              const marker = context.activeChatId === session.id ? " [current]" : "";
+              return `${index + 1}. ${session.title}${marker} | id=${session.id} | ${session.messages.length} messages`;
             });
 
             return {
               ok: true,
-              outputText: [`找到 ${matchedSessions.length} 个相关会话：`, ...lines].join("\n"),
+              outputText: [`Found ${matchedSessions.length} related sessions:`, ...lines].join("\n"),
               data: matchedSessions.map((session) => ({ id: session.id, title: session.title })),
             };
           },
@@ -420,14 +576,14 @@ export function useChatRuntime({
           title: readSessionTool.title,
           execute: async (resolvedCommand) => {
             const sessionId = resolvedCommand.args.trim();
-            if (!sessionId) return { ok: false, error: "用法: /read_session 会话ID" };
+            if (!sessionId) return { ok: false, error: "Usage: /read_session <session id>" };
             const session = getChatSessionById(sessionId);
-            if (!session) return { ok: false, error: `未找到会话: ${sessionId}` };
+            if (!session) return { ok: false, error: `Session not found: ${sessionId}` };
 
             const preview = session.messages
               .slice(-8)
               .map((message, index) => {
-                const content = message.content.trim() || "[空内容]";
+                const content = message.content.trim() || "[empty content]";
                 const clipped = content.length > 120 ? `${content.slice(0, 117)}...` : content;
                 return `${index + 1}. ${message.role}: ${clipped}`;
               })
@@ -435,7 +591,7 @@ export function useChatRuntime({
 
             return {
               ok: true,
-              outputText: [`会话：${session.title}`, `ID：${session.id}`, `消息数：${session.messages.length}`, "", preview].join("\n"),
+              outputText: [`Session: ${session.title}`, `ID: ${session.id}`, `Message count: ${session.messages.length}`, "", preview].join("\n"),
               data: { id: session.id, title: session.title, messageCount: session.messages.length },
             };
           },
@@ -447,7 +603,7 @@ export function useChatRuntime({
           title: listFilesTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim();
-            const entries = await invoke<Array<{ path: string; is_dir: boolean }>>('list_workspace_files', {
+            const entries = await invoke<Array<{ path: string; is_dir: boolean }>>("list_workspace_files", {
               query: query || null,
               limit: 80,
             });
@@ -455,13 +611,13 @@ export function useChatRuntime({
             if (entries.length === 0) {
               return {
                 ok: true,
-                outputText: query ? `未找到包含“${query}”的文件。` : "当前工作区没有可列出的文件。",
+                outputText: query ? `No files contain "${query}".` : "No files in the current workspace.",
                 data: [],
               };
             }
 
             const lines = entries.slice(0, 20).map((entry, index) => `${index + 1}. ${entry.is_dir ? "[DIR]" : "[FILE]"} ${entry.path}`);
-            return { ok: true, outputText: [`找到 ${entries.length} 个条目：`, ...lines].join("\n"), data: entries };
+            return { ok: true, outputText: [`Found ${entries.length} items:`, ...lines].join("\n"), data: entries };
           },
         });
 
@@ -471,16 +627,16 @@ export function useChatRuntime({
           title: readFileTool.title,
           execute: async (resolvedCommand) => {
             const relativePath = resolvedCommand.args.trim();
-            if (!relativePath) return { ok: false, error: "用法: /read_file 相对路径" };
+            if (!relativePath) return { ok: false, error: "Usage: /read_file <relative path>" };
 
-            const content = await invoke<string>('read_workspace_file', {
+            const content = await invoke<string>("read_workspace_file", {
               path: relativePath,
               maxChars: 6000,
             });
 
             return {
               ok: true,
-              outputText: [`文件：${relativePath}`, "", content].join("\n"),
+              outputText: [`File: ${relativePath}`, "", content].join("\n"),
               data: { path: relativePath },
             };
           },
@@ -492,19 +648,19 @@ export function useChatRuntime({
           title: searchFilesTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim();
-            if (!query) return { ok: false, error: "用法: /search_files 关键词" };
+            if (!query) return { ok: false, error: "Usage: /search_files <keyword>" };
 
-            const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>('search_workspace_files', {
+            const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>("search_workspace_files", {
               query,
               limit: 50,
             });
 
             if (matches.length === 0) {
-              return { ok: true, outputText: `未找到包含“${query}”的文件内容。`, data: [] };
+              return { ok: true, outputText: `No file content contains "${query}".`, data: [] };
             }
 
             const lines = matches.slice(0, 20).map((match, index) => `${index + 1}. ${match.path}:${match.line_number} ${match.line_preview}`);
-            return { ok: true, outputText: [`找到 ${matches.length} 条相关内容：`, ...lines].join("\n"), data: matches };
+            return { ok: true, outputText: [`Found ${matches.length} related matches:`, ...lines].join("\n"), data: matches };
           },
         });
 
@@ -520,11 +676,11 @@ export function useChatRuntime({
 
       const tool = toolRegistryRef.current.get(command.command);
       if (!tool) {
-        return { ok: false, error: `暂不支持命令: ${command.command}` };
+        return { ok: false, error: `Unsupported command: ${command.command}` };
       }
 
       if (activeAssistant && !ALWAYS_ALLOWED_LOCAL_TOOL_IDS.has(tool.id) && !activeAssistant.allowedToolIds.includes(tool.id)) {
-        return { ok: false, error: `当前助手未启用工具: ${tool.title}` };
+        return { ok: false, error: `This assistant has not enabled tool: ${tool.title}` };
       }
 
       return toolRegistryRef.current.execute(command as never, {
@@ -559,10 +715,13 @@ export function useChatRuntime({
       abortControllerRef.current = abortController;
       setError(null);
       setIsLoading(true);
+      clearPetThought();
+
+      let sessionId = activeChatId;
+      let conversationMessagesForTask = messages;
+      let hasPetThought = false;
 
       try {
-        let sessionId = activeChatId;
-        let conversationMessagesForTask = messages;
         const taskResult = await executeInputTask({
           input: content,
           images,
@@ -576,12 +735,17 @@ export function useChatRuntime({
               sessionId = nextSession.id;
             }
             setMessages([...preparedMessages, { role: "assistant", content: "" }]);
+            startPetThought(sessionId, preparedMessages);
+            hasPetThought = true;
           },
           signal: abortController.signal,
-            systemPrompt: [assistantSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+          systemPrompt: [assistantSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
           onChunk: (chunk) => {
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
+            }
+            if (hasPetThought) {
+              updatePetThought(sessionId, conversationMessagesForTask, `${petThoughtRef.current?.previewText ?? ""}${chunk}`);
             }
             setMessages((prev) => {
               const updated = [...prev];
@@ -607,7 +771,7 @@ export function useChatRuntime({
             history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
           }));
           if (taskResult.status === "failed") {
-            setError(taskResult.error || "工具执行失败");
+            setError(taskResult.error || "瀹搞儱鍙块幍褑顢戞径杈Е");
           }
           const localCommandToolId = taskResult.plan.metadata?.toolId;
           if (taskResult.toolResult?.outputText && !SILENT_LOCAL_TOOL_IDS.has(String(localCommandToolId || ""))) {
@@ -620,23 +784,54 @@ export function useChatRuntime({
         if (!taskResult.finalResult) {
           if (taskResult.status === "aborted") {
             setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+            if (hasPetThought) {
+              clearPetThought();
+            }
             return;
           }
 
-          setError(taskResult.error || "娴犺濮熼幍褑顢戞径杈Е");
+          setError(taskResult.error || "婵炲濮鹃褎鎱ㄩ悢鐓庣鐟滄垿銆侀幋鐐茬窞閺夊牜鍋夎");
           setMessages(conversationMessages);
+          if (hasPetThought) {
+            emitPetThought({
+              sessionId: sessionId ?? null,
+              sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
+              previewText: "",
+              status: "error",
+              updatedAt: Date.now(),
+            });
+          }
           return;
         }
 
+        if (hasPetThought) {
+          completePetThought(
+            sessionId,
+            conversationMessages,
+            taskResult.finalResult?.content || taskResult.toolResult?.outputText || petThoughtRef.current?.previewText || ""
+          );
+        }
         finishTaskResult(taskResult, sessionId, conversationMessages);
       } catch (sendError) {
         if (runId !== lastRunIdRef.current) {
           return;
         }
         if (sendError instanceof DOMException && sendError.name === "AbortError") {
+          if (hasPetThought) {
+            clearPetThought();
+          }
           return;
         }
-        setError(sendError instanceof Error ? sendError.message : "閺堫亞鐓￠柨娆掝嚖");
+        setError(sendError instanceof Error ? sendError.message : "发送消息失败");
+        if (hasPetThought) {
+          emitPetThought({
+            sessionId: sessionId ?? null,
+            sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessagesForTask),
+            previewText: "",
+            status: "error",
+            updatedAt: Date.now(),
+          });
+        }
       } finally {
         if (runId === lastRunIdRef.current) {
           abortControllerRef.current = null;
@@ -645,16 +840,21 @@ export function useChatRuntime({
       }
     },
     [
-      activeAssistant,
       activeChatId,
       assistantSystemPrompt,
+      clearPetThought,
+      completePetThought,
       createSessionFromMessages,
+      emitPetThought,
       executeTool,
       executionModel,
       finishTaskResult,
       isLoading,
       messages,
+      resolvePetThoughtTitle,
       setMessages,
+      startPetThought,
+      updatePetThought,
     ]
   );
 

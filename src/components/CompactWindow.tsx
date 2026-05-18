@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
-import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
+import type { BasicSettings, CompactReply, ExternalChatEntry, PetThoughtState } from "../app/types";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
@@ -7,6 +7,7 @@ import DesktopPet from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
 import CompactReplyPanel from "./compact/CompactReplyPanel";
+import PetThoughtBubble from "./compact/PetThoughtBubble";
 
 type CompactWindowProps = {
   basicSettings: BasicSettings;
@@ -26,6 +27,7 @@ type CompactWindowProps = {
   isCompactReplyLoading: boolean;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
+  petThought: PetThoughtState | null;
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   onCharacterContextMenu: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
@@ -71,6 +73,7 @@ export default function CompactWindow({
   isCompactModelOpen,
   isCompactQueryOpen,
   isCompactReplyLoading,
+  petThought,
   omniSmallIconSrc,
   compactMenuSide,
   compactSubmenuSide,
@@ -109,6 +112,14 @@ export default function CompactWindow({
   const petRenderHeight = petViewportSize.height;
   const petRenderWidth = petViewportSize.width;
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
+  const shouldShowPetThought = Boolean(
+    isPetAppearance &&
+      petThought &&
+      !isCompactMenuOpen &&
+      !isCompactQueryOpen &&
+      !isCompactReplyLoading &&
+      !compactReply
+  );
   const petState = compactReply?.isError
     ? "failed"
     : petCelebrateReply
@@ -216,6 +227,7 @@ export default function CompactWindow({
           style={compactStyle}
         >
           <div className="compact-menu-anchor no-drag" onContextMenu={isAnimatedAppearance ? onCharacterContextMenu : undefined}>
+            {shouldShowPetThought ? <PetThoughtBubble thought={petThought} /> : null}
             <button
               type="button"
               className={`compact-button compact-button--brand ${isAnimatedAppearance ? "compact-button--character" : ""} ${
