@@ -17,6 +17,25 @@ export function isCharacterPointerInHitArea(element: HTMLElement, clientX: numbe
   return relativeX >= 0.38 && relativeX <= 0.66 && relativeY >= 0.04 && relativeY <= 0.98;
 }
 
+export function isCharacterPointerInResizeArea(element: HTMLElement, clientX: number, clientY: number) {
+  const rect = element.getBoundingClientRect();
+  const edgeThickness = Math.max(10, Math.min(18, Math.min(rect.width, rect.height) * 0.14));
+  const offsetX = clientX - rect.left;
+  const offsetY = clientY - rect.top;
+  const isInsideRect = offsetX >= 0 && offsetX <= rect.width && offsetY >= 0 && offsetY <= rect.height;
+
+  if (!isInsideRect) {
+    return false;
+  }
+
+  return (
+    offsetX <= edgeThickness ||
+    offsetX >= rect.width - edgeThickness ||
+    offsetY <= edgeThickness ||
+    offsetY >= rect.height - edgeThickness
+  );
+}
+
 export function getBasicSettings(): BasicSettings {
   if (typeof window === "undefined") return DEFAULT_BASIC_SETTINGS;
   return readSqliteBackedJson("omni_basic_settings", DEFAULT_BASIC_SETTINGS);
@@ -206,6 +225,14 @@ export function getSettingsWindowSize() {
 }
 
 export function isMainPositionVisible(position: { x: number; y: number }) {
+  const restoredSize = getMainWindowSizeForView(getStoredMainView());
+  return isWindowRectVisible(position, restoredSize);
+}
+
+export function isWindowRectVisible(
+  position: { x: number; y: number },
+  size: { width: number; height: number }
+) {
   if (typeof window === "undefined") return false;
 
   const screenInfo = window.screen as Screen & { availLeft?: number; availTop?: number };
@@ -221,13 +248,12 @@ export function isMainPositionVisible(position: { x: number; y: number }) {
   const right = left + width;
   const bottom = top + height;
   const visibleMargin = 80;
-  const restoredSize = getMainWindowSizeForView(getStoredMainView());
 
   return (
     position.x < right - visibleMargin &&
-    position.x + restoredSize.width > left + visibleMargin &&
+    position.x + size.width > left + visibleMargin &&
     position.y < bottom - visibleMargin &&
-    position.y + restoredSize.height > top + visibleMargin
+    position.y + size.height > top + visibleMargin
   );
 }
 
@@ -380,7 +406,8 @@ export async function ensureCompactWindow(appearance: CompactAppearance, scale: 
 export async function showCompactWindow(
   appearance: CompactAppearance,
   scale: number,
-  compactWindowLabel: string
+  compactWindowLabel: string,
+  options: { avoidMainWindowOverlap?: boolean } = {}
 ) {
   if (appearance === "pet" && isCompactPetHidden()) {
     const compactWindow = await WebviewWindow.getByLabel(compactWindowLabel);
@@ -394,12 +421,12 @@ export async function showCompactWindow(
   const settings = getBasicSettings();
   const size = getCompactWindowSize(appearance, scale);
   const storedPosition = getStoredCompactPosition();
-  const monitor = await getMonitorForCursor();
   const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
+  const cursorMonitor = settings.followCursorScreen ? await getMonitorForCursor() : null;
 
   if (settings.followCursorScreen) {
-    if (monitor) {
-      await moveCompactWindowToMonitor(compactWindow, monitor, size);
+    if (cursorMonitor) {
+      await moveCompactWindowToMonitor(compactWindow, cursorMonitor, size);
     } else if (storedPosition) {
       await compactWindow.setPosition(new LogicalPosition(storedPosition.x, storedPosition.y));
     }
@@ -407,11 +434,11 @@ export async function showCompactWindow(
     await compactWindow.setPosition(new LogicalPosition(storedPosition.x, storedPosition.y));
   }
 
-  if (monitor) {
-    await clampCompactWindowToMonitor(compactWindow, monitor, size);
+  if (cursorMonitor) {
+    await clampCompactWindowToMonitor(compactWindow, cursorMonitor, size);
   }
 
-  if (mainWindow) {
+  if (mainWindow && options.avoidMainWindowOverlap !== false) {
     try {
       const mainVisible = await mainWindow.isVisible();
       if (mainVisible) {
@@ -537,7 +564,7 @@ export async function restoreMainWindow(
         await mainWindow.unminimize();
       }
     } catch {
-      // 某些平台不支持此状态检查，直接忽略。
+      // Ignore platforms that do not support minimized-state checks.
     }
 
     await applyExpandedWindowChrome(mainWindow);
