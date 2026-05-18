@@ -1,20 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale, getStoredCharacterScale } from "../app/compactPetScale";
+export { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale } from "../app/compactPetScale";
 
 export type CompactAppearance = "default" | "compact" | "large" | "pet";
 export type CharacterModel = never;
 
 export const COMPACT_APPEARANCE_STORAGE_KEY = "omni_compact_appearance";
-export const CHARACTER_SCALE_STORAGE_KEY = "omni_character_scale";
 export const CHARACTER_MODEL_STORAGE_KEY = "omni_character_model";
-export const CHARACTER_SCALE_BASELINE = 2;
-const MIN_CHARACTER_SCALE = 0.45;
-export const MAX_CHARACTER_SCALE = 4.2;
-
-export function clampCharacterScale(value: number) {
-  return Math.min(MAX_CHARACTER_SCALE, Math.max(MIN_CHARACTER_SCALE, Number(value.toFixed(2))));
-}
 
 export function getInitialCompactAppearance(): CompactAppearance {
   if (typeof window === "undefined") return "default";
@@ -23,9 +17,7 @@ export function getInitialCompactAppearance(): CompactAppearance {
 }
 
 export function getInitialCharacterScale(): number {
-  if (typeof window === "undefined") return 1;
-  const saved = Number(readSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY) || "1");
-  return Number.isFinite(saved) ? clampCharacterScale(saved) : 1;
+  return getStoredCharacterScale();
 }
 
 export function getInitialCharacterModel(): CharacterModel {

@@ -43,7 +43,7 @@ export type DesktopPetManifest = {
 export const OMNI_SCHNAUZER_PET: DesktopPetManifest = {
   id: "omni-pet-v3",
   name: "Omni Pet V3",
-  spritesheetSrc: "/pets/omni-pet-v3-alpha.png?v=20260506-1444",
+  spritesheetSrc: "/pets/omni-schnauzer/spritesheet.webp",
   cellWidth: CODEX_PET_CELL_SIZE.width,
   cellHeight: CODEX_PET_CELL_SIZE.height,
   atlasColumns: 8,

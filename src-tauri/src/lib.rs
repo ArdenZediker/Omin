@@ -314,18 +314,6 @@ fn greet(name: &str) -> String {
     format!("你好，{}！欢迎使用 Omni AI 助手！", name)
 }
 
-fn codex_home_dir() -> PathBuf {
-    std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from).map(|home| home.join(".codex")))
-        .or_else(|| std::env::var_os("USERPROFILE").map(|profile| PathBuf::from(profile).join(".codex")))
-        .unwrap_or_else(|| PathBuf::from(".codex"))
-}
-
-fn codex_pet_root() -> PathBuf {
-    codex_home_dir().join("pets")
-}
-
 fn validate_codex_pet_id(value: &str) -> Result<String, String> {
     let normalized = value.trim().to_lowercase();
     if normalized.is_empty() {
@@ -355,15 +343,12 @@ fn read_codex_pet_manifest(path: &Path) -> Result<Option<CodexPetManifestInput>,
 fn codex_pet_template_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
-    if let Ok(root) = workspace_root() {
-        candidates.push(root.join("output/hatch-pet/omni-schnauzer/final/spritesheet.webp"));
-        candidates.push(root.join("output/pet-v3/omni-pet-v3/final/spritesheet.webp"));
-        candidates.push(root.join("output/pet-v2/omni-pet-v2/final/spritesheet.webp"));
+    if let Ok(root) = project_pets_root() {
+        candidates.push(root.join("omni-schnauzer/spritesheet.webp"));
+        candidates.push(root.join("ikun-hoops/spritesheet.webp"));
+        candidates.push(root.join("Gardevoir/spritesheet.webp"));
     }
 
-    let pet_root = codex_pet_root();
-    candidates.push(pet_root.join("omni-schnauzer/spritesheet.webp"));
-    candidates.push(pet_root.join("ikun-hoops/spritesheet.webp"));
     candidates
 }
 
@@ -393,7 +378,11 @@ fn load_codex_pet_package_record(package_dir: &Path) -> Result<Option<CodexPetPa
     let spritesheet_path = manifest.spritesheet_path.trim().to_string();
     let spritesheet_file_path = package_dir.join(&spritesheet_path);
     let spritesheet_exists = spritesheet_file_path.exists();
-    let spritesheet_web_path = format!("/pets/{id}/{}", spritesheet_path.replace('\\', "/"));
+    let package_name = package_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&id);
+    let spritesheet_web_path = format!("/pets/{package_name}/{}", spritesheet_path.replace('\\', "/"));
 
     Ok(Some(CodexPetPackageRecord {
         id,
@@ -506,23 +495,8 @@ fn project_pets_root() -> Result<PathBuf, String> {
     Ok(pets_root)
 }
 
-fn packaged_pet_root() -> Result<PathBuf, String> {
-    let app_data_dir = std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("XDG_DATA_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from).map(|home| home.join(".local/share")))
-        .unwrap_or_else(|| PathBuf::from("."));
-    let pets_root = app_data_dir.join("omni").join("pets");
-    fs::create_dir_all(&pets_root).map_err(|err| err.to_string())?;
-    Ok(pets_root)
-}
-
 fn current_pet_root() -> Result<PathBuf, String> {
-    if tauri::is_dev() {
-        project_pets_root()
-    } else {
-        packaged_pet_root()
-    }
+    project_pets_root()
 }
 
 #[tauri::command]

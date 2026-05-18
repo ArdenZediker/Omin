@@ -39,7 +39,7 @@ const LOCAL_COMMAND_ICON_MAP: Record<string, React.ComponentType<{ size?: number
 
 const IMMEDIATE_COMMAND_IDS = new Set(["new", "clear", "settings", "pet", "pin"]);
 const IMMEDIATE_COMMAND_PAYLOADS: Record<string, string> = {
-  pet: "/pet wake",
+  pet: "/pet",
 };
 
 function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {

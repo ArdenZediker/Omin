@@ -6,7 +6,6 @@ import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import {
   BASIC_SETTINGS_STORAGE_KEY,
-  CHARACTER_SCALE_BASELINE,
   COMPACT_WINDOW_LABEL,
   CURRENT_MODEL_STORAGE_KEY,
   MAIN_VIEW_STORAGE_KEY,
@@ -15,6 +14,8 @@ import {
 } from "../app/constants";
 import type { BasicSettings, ViewMode } from "../app/types";
 import { bootstrapSqliteStorage, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { getPetWindowScale } from "../app/compactPetScale";
+import { COMPACT_PET_HIDDEN_STORAGE_KEY, isCompactPetHidden } from "../app/compactVisibility";
 import { CHARACTER_SCALE_STORAGE_KEY, type CompactAppearance } from "./useCompactWindowState";
 import {
   applyCompactWindowChrome,
@@ -85,6 +86,7 @@ export function useMainWindowController({
       MAIN_VIEW_STORAGE_KEY,
       "omni_compact_appearance",
       CHARACTER_SCALE_STORAGE_KEY,
+      COMPACT_PET_HIDDEN_STORAGE_KEY,
       "omni_provider_configs",
       "omni_knowledge_embedding_profile",
       CURRENT_MODEL_STORAGE_KEY,
@@ -143,11 +145,9 @@ export function useMainWindowController({
       if (initialBasicSettings.showCompactBall) {
         const storedAppearance = readSqliteBackedValue("omni_compact_appearance");
         const appearance: CompactAppearance = storedAppearance === "compact" || storedAppearance === "large" || storedAppearance === "pet" ? storedAppearance : "default";
-        const storedScale = Number(readSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY) || "1");
-        const scale = Number.isFinite(storedScale) ? storedScale : 1;
         void showCompactWindow(
           appearance,
-          appearance === "pet" ? scale * CHARACTER_SCALE_BASELINE : 1,
+          appearance === "pet" && isCompactPetHidden() ? 1 : appearance === "pet" ? getPetWindowScale() : 1,
           COMPACT_WINDOW_LABEL
         );
       }
@@ -312,7 +312,11 @@ export function useMainWindowController({
     if (basicSettings.showCompactBall) {
       const normalizedAppearance: CompactAppearance =
         compactAppearance === "pet" ? "pet" : compactAppearance === "compact" || compactAppearance === "large" ? compactAppearance : "default";
-      await showCompactWindow(normalizedAppearance, normalizedAppearance === "pet" ? effectiveCompactScale : 1, COMPACT_WINDOW_LABEL);
+      await showCompactWindow(
+        normalizedAppearance,
+        normalizedAppearance === "pet" && isCompactPetHidden() ? 1 : normalizedAppearance === "pet" ? getPetWindowScale() : 1,
+        COMPACT_WINDOW_LABEL
+      );
     }
     if (appWindow) {
       await appWindow.hide();
