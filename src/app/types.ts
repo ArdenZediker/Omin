@@ -46,3 +46,13 @@ export type CompactReply = {
   answer: string;
   isError?: boolean;
 };
+
+export type PetThoughtStatus = "thinking" | "complete" | "error" | "cleared";
+
+export type PetThoughtState = {
+  sessionId: string | null;
+  sessionTitle: string;
+  previewText: string;
+  status: PetThoughtStatus;
+  updatedAt: number;
+};

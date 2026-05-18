@@ -116,7 +116,8 @@ function MainApp() {
     setIsCompactModelOpen,
     setIsCompactQueryOpen,
     setIsCompactReplyLoading,
-  } = useCompactWindowState();
+    petThought,
+  } = useCompactWindowState({ isCompactWindow });
 
   const [currentModel, setCurrentModel] = useState("gpt-4o");
   const [view, setView] = useState<"chat" | "knowledge">(getStoredMainView);
@@ -249,6 +250,7 @@ function MainApp() {
     setMessages,
     setOpenChatMenu,
     togglePinnedChatSession,
+    isCompactWindow,
   });
 
   const relatedContext = useMemo(
@@ -476,6 +478,7 @@ function MainApp() {
         compactSubmenuSide={compactSubmenuSide}
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
+        petThought={petThought}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
