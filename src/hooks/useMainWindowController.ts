@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -315,7 +315,8 @@ export function useMainWindowController({
       await showCompactWindow(
         normalizedAppearance,
         normalizedAppearance === "pet" && isCompactPetHidden() ? 1 : normalizedAppearance === "pet" ? getPetWindowScale() : 1,
-        COMPACT_WINDOW_LABEL
+        COMPACT_WINDOW_LABEL,
+        { avoidMainWindowOverlap: false }
       );
     }
     if (appWindow) {
@@ -377,3 +378,4 @@ export function useMainWindowController({
     handleRestoreMain,
   };
 }
+

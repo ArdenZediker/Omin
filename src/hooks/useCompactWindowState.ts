@@ -24,6 +24,10 @@ export function getInitialCharacterModel(): CharacterModel {
   return undefined as never;
 }
 
+function canUseTauriEvents() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 export function useCompactWindowState() {
   const [compactAppearance, setCompactAppearance] = useState<CompactAppearance>(getInitialCompactAppearance);
   const [characterScale, setCharacterScale] = useState<number>(getInitialCharacterScale);
@@ -49,6 +53,10 @@ export function useCompactWindowState() {
   }, []);
 
   useEffect(() => {
+    if (!canUseTauriEvents()) {
+      return;
+    }
+
     let unlisten: (() => void) | undefined;
     void listen<{ appearance?: CompactAppearance; scale?: number }>("omni-compact-appearance-changed", (event) => {
       const appearance = event.payload?.appearance;

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
@@ -23,6 +23,8 @@ import {
   getMonitorForCursor,
   getPetCompactMenuViewport,
   isCharacterPointerInHitArea,
+  isCharacterPointerInResizeArea,
+  isWindowRectVisible,
   moveCompactWindowToMonitor,
   openInternalChatWindow,
   persistCompactPosition,
@@ -38,12 +40,21 @@ import {
   shouldCloseCharacterReplyPanel,
 } from "./compactInteractionGuards";
 
-const appWindow = getCurrentWindow();
+function getSafeCurrentWindow() {
+  try {
+    return getCurrentWindow();
+  } catch {
+    return null;
+  }
+}
+
+const appWindow = getSafeCurrentWindow() as ReturnType<typeof getCurrentWindow>;
 
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
   closeCompactMenuPanels: () => void;
   closeCompactMenus: () => void;
+  characterScale: number;
   compactAppearance: CompactAppearance;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
@@ -79,6 +90,7 @@ export function useCompactWindowController({
   basicSettings,
   closeCompactMenuPanels,
   closeCompactMenus,
+  characterScale,
   compactAppearance,
   compactMenuSide,
   compactSubmenuSide,
@@ -109,10 +121,17 @@ export function useCompactWindowController({
   setIsCompactQueryOpen,
   setIsCompactReplyLoading,
 }: UseCompactWindowControllerArgs) {
+  const PET_CLICK_DRAG_THRESHOLD_PX = 6;
+  const PET_CLICK_SUPPRESS_AFTER_DRAG_MS = 320;
+  const PET_RESIZE_SCALE_PER_PIXEL = 0.005;
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
   const characterDragTimerRef = useRef<number | null>(null);
   const isCharacterDraggingRef = useRef(false);
+  const characterPointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const characterPointerMovedRef = useRef(false);
+  const characterResizeRef = useRef<{ startClientY: number; startScale: number } | null>(null);
+  const suppressPetClickUntilRef = useRef(0);
   const compactFollowMonitorRef = useRef<string | null>(null);
   const compactInternalMoveRef = useRef(false);
   const compactInteractionUntilRef = useRef(0);
@@ -285,7 +304,7 @@ export function useCompactWindowController({
         compactFollowMonitorRef.current = nextMonitorKey;
         await moveCompactWindowToMonitor(appWindow, monitor, compactSize);
       } catch {
-        // 蹇界暐鏄剧ず鍣ㄥ悓姝ュけ璐?
+        // 闂傚倸鍊搁崐鎼佸磹閹间讲鈧箓顢楅崟顐わ紱闂佸憡娲﹂崐瀣洪鍕庘晠鏌嶆潪鎷屽厡闁哄睙鍐炬富闁靛牆妫楁慨褏绱掗悩鍐茬仴閺佸牓鏌＄仦璇插姕闁绘挻鐟╅弻锝呂旈埀顒勬偋婵犲嫭顐介柡灞诲劜閻撴洘绻涢崱妤呯崪闂婎剦鍓熼弻锛勪沪閸撗勫垱濡ょ姷鍋為敋妞ゎ亜鍟撮幃娆擃敆婢跺鏋堢紓鍌氬€风欢锟犲窗濮樿泛鏋侀悹鍥ф▕濞兼牗绻涘顔荤凹妞ゃ儱鐗撻弻宥夊传閸曨偅娈堕梺闈涚墢閸忔ê顫忓ú顏勫窛濠电姴鍟伴崣鍡涙⒑濞茶骞栭柛濠傛健閹即顢氶埀顒€鐣峰鈧、娆撴嚃閳哄﹤鏅梻鍌欑缂嶅﹪銆傞敃鍌涘€块柨鏇楀亾妞も晛銈告俊鎼佸煛閸屾瀚奸梻鍌氬€搁悧濠冪瑹濡も偓鍗遍柛顐ｆ礃閻撴洟骞栭幖顓炴灈闁诲骏绱曠槐鎺楀磼濮樻瘷锝囩磼鏉炴壆鐭欑€规洏鍔嶇换婵嬪磼濞嗗繐顕?
       }
     };
 
@@ -492,6 +511,47 @@ export function useCompactWindowController({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isCompactWindow) {
+      return;
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const resizeState = characterResizeRef.current;
+      if (!resizeState) {
+        return;
+      }
+
+      const nextScale = clampCharacterScale(
+        resizeState.startScale + (resizeState.startClientY - event.clientY) * PET_RESIZE_SCALE_PER_PIXEL
+      );
+
+      characterPointerMovedRef.current = true;
+      setCharacterScale(nextScale);
+    };
+
+    const finishResize = () => {
+      if (!characterResizeRef.current) {
+        return;
+      }
+
+      characterResizeRef.current = null;
+      characterPointerDownRef.current = null;
+      if (characterPointerMovedRef.current) {
+        suppressPetClickUntilRef.current = Date.now() + PET_CLICK_SUPPRESS_AFTER_DRAG_MS;
+      }
+      characterPointerMovedRef.current = false;
+      isCharacterDraggingRef.current = false;
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", finishResize);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", finishResize);
+    };
+  }, [isCompactWindow, setCharacterScale]);
+
   const closeCompactMenu = useCallback(() => {
     if (compactMenuCloseTimerRef.current !== null) {
       window.clearTimeout(compactMenuCloseTimerRef.current);
@@ -541,6 +601,48 @@ export function useCompactWindowController({
     setIsCompactQueryOpen(true);
   }, [closeCompactMenus, setIsCompactQueryOpen, suppressCompactBlur]);
 
+  const handlePetPrimaryClick = useCallback(async () => {
+    suppressCompactBlur();
+    await raiseCompactWindow();
+
+    if (isCharacterDraggingRef.current || Date.now() <= suppressPetClickUntilRef.current) {
+      isCharacterDraggingRef.current = false;
+      return;
+    }
+
+    const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
+    if (!mainWindow) {
+      await onRestoreMain(false);
+      return;
+    }
+
+    try {
+      const [isVisible, isMinimized] = await Promise.all([
+        mainWindow.isVisible(),
+        mainWindow.isMinimized(),
+      ]);
+
+      if (!isVisible || isMinimized) {
+        await onRestoreMain(false);
+        return;
+      }
+
+      const scaleFactor = await mainWindow.scaleFactor();
+      const position = (await mainWindow.outerPosition()).toLogical(scaleFactor);
+      const size = (await mainWindow.outerSize()).toLogical(scaleFactor);
+      const isOnScreen = isWindowRectVisible(
+        { x: Math.round(position.x), y: Math.round(position.y) },
+        { width: Math.round(size.width), height: Math.round(size.height) }
+      );
+
+      if (!isOnScreen) {
+        await onRestoreMain(false);
+      }
+    } catch {
+      await onRestoreMain(false);
+    }
+  }, [onRestoreMain, raiseCompactWindow, suppressCompactBlur]);
+
   const handleOpenExternalChat = useCallback(
     async (entry: (typeof EXTERNAL_CHAT_ENTRIES)[number]) => {
       closeCompactMenus();
@@ -561,6 +663,22 @@ export function useCompactWindowController({
       if (event.button !== 0) {
         clearPendingDragTimer(characterDragTimerRef.current);
         characterDragTimerRef.current = null;
+        characterPointerDownRef.current = null;
+        characterPointerMovedRef.current = false;
+        characterResizeRef.current = null;
+        return;
+      }
+
+      if (compactAppearance === "pet" && isCharacterPointerInResizeArea(event.currentTarget, event.clientX, event.clientY)) {
+        clearPendingDragTimer(characterDragTimerRef.current);
+        characterDragTimerRef.current = null;
+        isCharacterDraggingRef.current = false;
+        characterPointerDownRef.current = { x: event.clientX, y: event.clientY };
+        characterPointerMovedRef.current = false;
+        characterResizeRef.current = {
+          startClientY: event.clientY,
+          startScale: characterScale,
+        };
         return;
       }
 
@@ -568,24 +686,58 @@ export function useCompactWindowController({
       if (!isInCharacterHitArea) {
         clearPendingDragTimer(compactMenuCloseTimerRef.current);
         compactMenuCloseTimerRef.current = null;
+        characterPointerDownRef.current = null;
+        characterPointerMovedRef.current = false;
+        characterResizeRef.current = null;
         resetCompactFloatingUi();
         return;
       }
 
       isCharacterDraggingRef.current = false;
+      characterPointerDownRef.current = { x: event.clientX, y: event.clientY };
+      characterPointerMovedRef.current = false;
       clearPendingDragTimer(characterDragTimerRef.current);
       characterDragTimerRef.current = window.setTimeout(() => {
         isCharacterDraggingRef.current = true;
+        characterPointerMovedRef.current = true;
         void appWindow.startDragging();
         characterDragTimerRef.current = null;
       }, 180);
     },
-    [compactAppearance, resetCompactFloatingUi]
+    [characterScale, compactAppearance, resetCompactFloatingUi]
   );
+
+  const handleCharacterPointerMove = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    if (characterResizeRef.current) {
+      return;
+    }
+
+    const pointerDown = characterPointerDownRef.current;
+    if (!pointerDown) {
+      return;
+    }
+
+    const deltaX = event.clientX - pointerDown.x;
+    const deltaY = event.clientY - pointerDown.y;
+    if (Math.hypot(deltaX, deltaY) < PET_CLICK_DRAG_THRESHOLD_PX) {
+      return;
+    }
+
+    characterPointerMovedRef.current = true;
+  }, []);
 
   const handleCharacterPointerUp = useCallback(() => {
     clearPendingDragTimer(characterDragTimerRef.current);
     characterDragTimerRef.current = null;
+    if (characterResizeRef.current) {
+      characterResizeRef.current = null;
+    }
+    characterPointerDownRef.current = null;
+    if (characterPointerMovedRef.current || isCharacterDraggingRef.current) {
+      suppressPetClickUntilRef.current = Date.now() + PET_CLICK_SUPPRESS_AFTER_DRAG_MS;
+    }
+    characterPointerMovedRef.current = false;
+    isCharacterDraggingRef.current = false;
   }, []);
 
   const handleCompactQuerySubmit = useCallback(
@@ -629,7 +781,7 @@ export function useCompactWindowController({
         setIsCompactQueryOpen(false);
         setCompactQuery("");
       } catch (error) {
-        setCompactReply({ question: draft, answer: error instanceof Error ? error.message : "鏌ヨ澶辫触", isError: true });
+        setCompactReply({ question: draft, answer: error instanceof Error ? error.message : "閺屻儴顕楁径杈Е", isError: true });
       } finally {
         setIsCompactReplyLoading(false);
       }
@@ -803,16 +955,21 @@ export function useCompactWindowController({
     entries: EXTERNAL_CHAT_ENTRIES,
     handleCharacterContextMenu,
     handleCharacterPointerDown,
+    handleCharacterPointerMove,
     handleCharacterPointerUp,
     handleCompactAppearanceChange,
     handleCompactDrag,
+    handlePetPrimaryClick,
     handleCompactQuerySubmit,
     handleCompactScaleReset,
     handleCompactWheel,
     handleOpenCompactQuery,
     handleOpenExternalChat,
     handleOpenSettingsFromCompact,
-    isCharacterDragging: isCharacterDraggingRef.current,
     openCompactMenu,
   };
 }
+
+
+
+

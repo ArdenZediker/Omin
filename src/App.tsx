@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Message } from "./adapters/types";
@@ -25,7 +25,7 @@ import {
 import type { BasicSettings } from "./app/types";
 import { saveBasicSettings } from "./app/settingsStore";
 import { saveSqliteBackedValue } from "./app/sqliteStorage";
-import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getPetCompactViewportSize, getStoredMainView, isCharacterPointerInHitArea } from "./app/window";
+import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getPetCompactViewportSize, getStoredMainView, isCharacterPointerInHitArea, isCharacterPointerInResizeArea } from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -292,6 +292,7 @@ function MainApp() {
     basicSettings,
     closeCompactMenuPanels,
     closeCompactMenus,
+    characterScale,
     compactAppearance,
     compactMenuSide,
     compactSubmenuSide,
@@ -468,7 +469,6 @@ function MainApp() {
         compactSize={compactSize}
         compactStyle={compactStyle}
         entries={compactController.entries}
-        isCharacterDragging={compactController.isCharacterDragging}
         isCompactAppearanceOpen={isCompactAppearanceOpen}
         isCompactMenuOpen={isCompactMenuOpen}
         isCompactModelOpen={isCompactModelOpen}
@@ -479,6 +479,7 @@ function MainApp() {
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
+        onCharacterPointerMove={compactController.handleCharacterPointerMove}
         onCharacterPointerUp={compactController.handleCharacterPointerUp}
         onCloseCompactMenuNow={compactController.closeCompactMenuNow}
         onCompactAppearanceChange={compactController.handleCompactAppearanceChange}
@@ -489,8 +490,10 @@ function MainApp() {
         onOpenCompactMenu={compactController.openCompactMenu}
         onOpenCompactQuery={compactController.handleOpenCompactQuery}
         onOpenExternalChat={compactController.handleOpenExternalChat}
+        onPetPrimaryClick={compactController.handlePetPrimaryClick}
         onOpenSettingsFromCompact={desktopActions.openSettings}
         onPointerHitTest={isCharacterPointerInHitArea}
+        onPointerResizeHitTest={isCharacterPointerInResizeArea}
         onSetCompactQuery={setCompactQuery}
         onSetCompactReply={setCompactReply}
         onUpdateBasicSettings={updateBasicSettings}
@@ -569,6 +572,9 @@ function MainApp() {
 }
 
 export default App;
+
+
+
 
 
 

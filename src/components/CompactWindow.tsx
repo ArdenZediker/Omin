@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
+import { useEffect, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
@@ -19,7 +19,6 @@ type CompactWindowProps = {
   compactSize: { width: number; height: number };
   compactStyle: CSSProperties;
   entries: ExternalChatEntry[];
-  isCharacterDragging: boolean;
   isCompactAppearanceOpen: boolean;
   isCompactMenuOpen: boolean;
   isCompactModelOpen: boolean;
@@ -31,6 +30,7 @@ type CompactWindowProps = {
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   onCharacterContextMenu: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
   onCharacterPointerDown: (e: MouseEvent<HTMLButtonElement>) => void;
+  onCharacterPointerMove: (e: MouseEvent<HTMLButtonElement>) => void;
   onCharacterPointerUp: () => void;
   onCloseCompactMenuNow: () => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
@@ -41,8 +41,10 @@ type CompactWindowProps = {
   onOpenCompactMenu: (clientX?: number, clientY?: number) => void | Promise<void>;
   onOpenCompactQuery: () => void | Promise<void>;
   onOpenExternalChat: (entry: ExternalChatEntry) => void | Promise<void>;
+  onPetPrimaryClick: () => void | Promise<void>;
   onOpenSettingsFromCompact: () => void | Promise<void>;
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
+  onPointerResizeHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
   onSetCompactQuery: Dispatch<SetStateAction<string>>;
   onSetCompactReply: Dispatch<SetStateAction<CompactReply | null>>;
   onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
@@ -64,7 +66,6 @@ export default function CompactWindow({
   compactSize,
   compactStyle,
   entries,
-  isCharacterDragging,
   isCompactAppearanceOpen,
   isCompactMenuOpen,
   isCompactModelOpen,
@@ -75,6 +76,7 @@ export default function CompactWindow({
   compactSubmenuSide,
   onCharacterContextMenu,
   onCharacterPointerDown,
+  onCharacterPointerMove,
   onCharacterPointerUp,
   onCloseCompactMenuNow,
   onCompactAppearanceChange,
@@ -85,8 +87,10 @@ export default function CompactWindow({
   onOpenCompactMenu,
   onOpenCompactQuery,
   onOpenExternalChat,
+  onPetPrimaryClick,
   onOpenSettingsFromCompact,
   onPointerHitTest,
+  onPointerResizeHitTest,
   onSetCompactQuery,
   onSetCompactReply,
   onUpdateBasicSettings,
@@ -221,7 +225,13 @@ export default function CompactWindow({
               onMouseMove={
                 isAnimatedAppearance
                   ? (e) => {
-                      e.currentTarget.style.cursor = onPointerHitTest(e.currentTarget, e.clientX, e.clientY) ? "grab" : "default";
+                      const nextCursor = onPointerResizeHitTest(e.currentTarget, e.clientX, e.clientY)
+                        ? "nwse-resize"
+                        : onPointerHitTest(e.currentTarget, e.clientX, e.clientY)
+                          ? "grab"
+                          : "default";
+                      e.currentTarget.style.cursor = nextCursor;
+                      onCharacterPointerMove(e);
                     }
                   : undefined
               }
@@ -237,18 +247,7 @@ export default function CompactWindow({
               onClick={(event) => {
                 if (isPetAppearance) {
                   event.stopPropagation();
-                  if (isCharacterDragging) {
-                    return;
-                  }
-                  if (isCompactMenuOpen) {
-                    onCloseCompactMenuNow();
-                  }
-                  closeReply();
-                  if (isCompactQueryOpen) {
-                    onSetIsCompactQueryOpen(false);
-                    return;
-                  }
-                  void onOpenCompactQuery();
+                  void onPetPrimaryClick();
                   return;
                 }
                 event.stopPropagation();
@@ -260,7 +259,7 @@ export default function CompactWindow({
                 void onOpenCompactMenu(rect.left + rect.width / 2, rect.top + rect.height / 2);
               }}
               data-hit-mode={isPetAppearance ? "full" : undefined}
-              aria-label="切换主界面"
+              aria-label="\u5207\u6362\u4e3b\u754c\u9762"
             >
               {isPetAppearance ? (
                 <DesktopPet width={petRenderWidth} height={petRenderHeight} state={petState} packageData={codexPetPackage} />
@@ -333,8 +332,8 @@ export default function CompactWindow({
                 onClick={() => {
                   void onOpenCompactQuery();
                 }}
-                aria-label="打开查询"
-                title="打开查询"
+                aria-label="\u6253\u5f00\u67e5\u8be2"
+                title="\u6253\u5f00\u67e5\u8be2"
               >
                 <svg className="compact-button__search" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                   <circle cx="11" cy="11" r="6.5" strokeWidth="1.8" />
@@ -349,3 +348,4 @@ export default function CompactWindow({
     </div>
   );
 }
+
