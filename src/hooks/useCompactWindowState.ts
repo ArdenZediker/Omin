@@ -3,6 +3,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale, getStoredCharacterScale } from "../app/compactPetScale";
 import type { PetThoughtState } from "../app/types";
+import type { PetThoughtPlacement } from "../app/window";
 export { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale } from "../app/compactPetScale";
 
 export type CompactAppearance = "default" | "compact" | "large" | "pet";
@@ -47,6 +48,7 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
   const [compactReply, setCompactReply] = useState<{ question: string; answer: string } | null>(null);
   const [isCompactReplyLoading, setIsCompactReplyLoading] = useState(false);
   const [petThought, setPetThought] = useState<PetThoughtState | null>(null);
+  const [petThoughtPlacement, setPetThoughtPlacement] = useState<PetThoughtPlacement>("top");
 
   useEffect(() => {
     const onStorage = () => {
@@ -101,6 +103,10 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
   }, [isCompactWindow]);
 
   useEffect(() => {
+    setPetThoughtPlacement("top");
+  }, [petThought?.sessionId]);
+
+  useEffect(() => {
     saveSqliteBackedValue(COMPACT_APPEARANCE_STORAGE_KEY, compactAppearance);
   }, [compactAppearance]);
 
@@ -145,6 +151,7 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     compactQuery,
     compactReply,
     petThought,
+    petThoughtPlacement,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
     isCompactModelOpen,
@@ -166,5 +173,6 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     setIsCompactQueryOpen,
     setIsCompactReplyLoading,
     setPetThought,
+    setPetThoughtPlacement,
   };
 }

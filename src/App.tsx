@@ -111,6 +111,7 @@ function MainApp() {
     isCompactQueryOpen,
     isCompactReplyLoading,
     resetCompactFloatingUi,
+    petThoughtPlacement,
     setCharacterMenuPosition,
     setCharacterScale,
     setCompactAppearance,
@@ -124,6 +125,7 @@ function MainApp() {
     setIsCompactQueryOpen,
     setIsCompactReplyLoading,
     petThought,
+    setPetThoughtPlacement,
   } = useCompactWindowState({ isCompactWindow });
 
   const [currentModel, setCurrentModel] = useState("gpt-4o");
@@ -152,6 +154,8 @@ function MainApp() {
         isCompactQueryOpen,
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
+        thoughtPlacement: petThoughtPlacement,
+        reservePetThoughtSpace: Boolean(petThought),
       });
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
@@ -170,6 +174,8 @@ function MainApp() {
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
+    petThought,
+    petThoughtPlacement,
   ]);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
@@ -485,6 +491,7 @@ function MainApp() {
         isCompactReplyLoading={isCompactReplyLoading}
         isCharacterDragging={compactController.isCharacterDragging}
         petThought={petThought}
+        petThoughtPlacement={petThoughtPlacement}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
@@ -509,6 +516,7 @@ function MainApp() {
         onSetIsCompactModelOpen={setIsCompactModelOpen}
         onSetIsCompactQueryOpen={setIsCompactQueryOpen}
         onSetIsCompactReplyLoading={setIsCompactReplyLoading}
+        onSetPetThoughtPlacement={setPetThoughtPlacement}
       />
     );
   }
