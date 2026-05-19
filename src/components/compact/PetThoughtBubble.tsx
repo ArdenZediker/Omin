@@ -1,20 +1,18 @@
 import { ChevronDown, CircleAlert } from "lucide-react";
+import { createPortal } from "react-dom";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { PetThoughtState } from "../../app/types";
 import type { PetThoughtPlacement } from "../../app/window";
 
-type BubblePlacement = PetThoughtPlacement;
-
 type PetThoughtBubbleProps = {
   thought: PetThoughtState | null;
   anchorRef: RefObject<HTMLElement | null>;
-  placement: BubblePlacement;
+  placement: PetThoughtPlacement;
   lockPlacement: boolean;
-  onPlacementChange: (placement: BubblePlacement) => void;
+  onPlacementChange: (placement: PetThoughtPlacement) => void;
 };
 
 type BubbleLayout = {
-  placement: BubblePlacement;
   bubbleLeft: number;
   bubbleTop: number;
   tailX: number;
@@ -25,119 +23,19 @@ type BubbleLayout = {
 };
 
 const VIEWPORT_MARGIN = 12;
-const BUBBLE_GAP = 12;
+const BUBBLE_GAP = 20;
 const MIN_TAIL_HORIZONTAL_INSET = 24;
 const MIN_TAIL_VERTICAL_INSET = 18;
 const REPOSITION_POLL_MS = 180;
-const HORIZONTAL_PLACEMENT_BONUS = 20;
-const PLACEMENT_SWITCH_SCORE_GAP = 36;
 const ACTION_FALLBACK_SIZE = 20;
 const COUNTER_FALLBACK_SIZE = 26;
-const TOP_PLACEMENT_RIGHT_INSET = 14;
+const TOP_LEFT_INSET = 24;
 
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
     return min;
   }
   return Math.min(max, Math.max(min, value));
-}
-
-function getPlacementFrame(
-  placement: BubblePlacement,
-  anchorRect: DOMRect,
-  bubbleWidth: number,
-  bubbleHeight: number
-) {
-  const centerX = anchorRect.left + anchorRect.width / 2;
-  const centerY = anchorRect.top + anchorRect.height / 2;
-
-  switch (placement) {
-    case "right":
-      return {
-        left: anchorRect.right + BUBBLE_GAP,
-        top: centerY - bubbleHeight / 2,
-      };
-    case "left":
-      return {
-        left: anchorRect.left - BUBBLE_GAP - bubbleWidth,
-        top: centerY - bubbleHeight / 2,
-      };
-    case "bottom":
-      return {
-        left: centerX - bubbleWidth / 2,
-        top: anchorRect.bottom + BUBBLE_GAP,
-      };
-    case "top":
-    default:
-      return {
-        left: anchorRect.right - bubbleWidth - TOP_PLACEMENT_RIGHT_INSET,
-        top: anchorRect.top - BUBBLE_GAP - bubbleHeight,
-      };
-  }
-}
-
-function resolvePlacement(
-  anchorRect: DOMRect,
-  bubbleWidth: number,
-  bubbleHeight: number,
-  currentPlacement: BubblePlacement
-) {
-  const screenInfo = window.screen as Screen & { availLeft?: number; availTop?: number };
-  const availLeft = Number(screenInfo.availLeft ?? 0);
-  const availTop = Number(screenInfo.availTop ?? 0);
-  const availWidth = Number(screenInfo.availWidth || screenInfo.width || window.innerWidth);
-  const availHeight = Number(screenInfo.availHeight || screenInfo.height || window.innerHeight);
-  const screenLeft = Number(window.screenX ?? window.screenLeft ?? 0);
-  const screenTop = Number(window.screenY ?? window.screenTop ?? 0);
-  const anchorScreenRect = {
-    left: screenLeft + anchorRect.left,
-    right: screenLeft + anchorRect.right,
-    top: screenTop + anchorRect.top,
-    bottom: screenTop + anchorRect.bottom,
-  };
-  const monitorRight = availLeft + availWidth;
-  const monitorBottom = availTop + availHeight;
-  const leftSpace = anchorScreenRect.left - availLeft;
-  const rightSpace = monitorRight - anchorScreenRect.right;
-  const topSpace = anchorScreenRect.top - availTop;
-  const bottomSpace = monitorBottom - anchorScreenRect.bottom;
-  const candidates: Array<{
-    placement: BubblePlacement;
-    fits: boolean;
-    score: number;
-  }> = [
-    {
-      placement: "right",
-      fits: rightSpace >= bubbleWidth + BUBBLE_GAP + VIEWPORT_MARGIN,
-      score: rightSpace - bubbleWidth + HORIZONTAL_PLACEMENT_BONUS,
-    },
-    {
-      placement: "left",
-      fits: leftSpace >= bubbleWidth + BUBBLE_GAP + VIEWPORT_MARGIN,
-      score: leftSpace - bubbleWidth + HORIZONTAL_PLACEMENT_BONUS,
-    },
-    {
-      placement: "top",
-      fits: topSpace >= bubbleHeight + BUBBLE_GAP + VIEWPORT_MARGIN,
-      score: topSpace - bubbleHeight,
-    },
-    {
-      placement: "bottom",
-      fits: bottomSpace >= bubbleHeight + BUBBLE_GAP + VIEWPORT_MARGIN,
-      score: bottomSpace - bubbleHeight,
-    },
-  ];
-  const fits = candidates.filter((candidate) => candidate.fits);
-  const pool = fits.length > 0 ? fits : candidates;
-  const best = pool.reduce((winner, candidate) => (candidate.score > winner.score ? candidate : winner), pool[0]);
-  if (best.placement === currentPlacement) {
-    return currentPlacement;
-  }
-  const current = pool.find((candidate) => candidate.placement === currentPlacement);
-  if (current && best.score - current.score < PLACEMENT_SWITCH_SCORE_GAP) {
-    return currentPlacement;
-  }
-  return best.placement;
 }
 
 export default function PetThoughtBubble({
@@ -147,9 +45,12 @@ export default function PetThoughtBubble({
   lockPlacement,
   onPlacementChange,
 }: PetThoughtBubbleProps) {
+  void placement;
+  void lockPlacement;
+  void onPlacementChange;
+
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const actionRef = useRef<HTMLButtonElement | null>(null);
-  const layoutPlacementRef = useRef<BubblePlacement>(placement);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const isError = thought?.status === "error";
   const previewText =
@@ -159,7 +60,6 @@ export default function PetThoughtBubble({
         ? "Response failed"
         : thought?.previewText.trim() ?? "";
   const [layout, setLayout] = useState<BubbleLayout>({
-    placement,
     bubbleLeft: VIEWPORT_MARGIN,
     bubbleTop: VIEWPORT_MARGIN,
     tailX: 48,
@@ -168,10 +68,6 @@ export default function PetThoughtBubble({
     actionTop: VIEWPORT_MARGIN,
     ready: false,
   });
-
-  useLayoutEffect(() => {
-    layoutPlacementRef.current = layout.placement;
-  }, [layout.placement]);
 
   useLayoutEffect(() => {
     if (!thought) {
@@ -231,11 +127,16 @@ export default function PetThoughtBubble({
       }
 
       const bubbleRect = bubble.getBoundingClientRect();
-      const currentPlacement = layoutPlacementRef.current;
-      const resolvedPlacement = resolvePlacement(anchorRect, bubbleRect.width, bubbleRect.height, currentPlacement);
-      const frameRect = getPlacementFrame(resolvedPlacement, anchorRect, bubbleRect.width, bubbleRect.height);
-      const bubbleLeft = clamp(frameRect.left, VIEWPORT_MARGIN, viewportWidth - bubbleRect.width - VIEWPORT_MARGIN);
-      const bubbleTop = clamp(frameRect.top, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
+      const bubbleLeft = clamp(
+        anchorRect.left - bubbleRect.width + TOP_LEFT_INSET,
+        VIEWPORT_MARGIN,
+        viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
+      );
+      const bubbleTop = clamp(
+        anchorRect.top - BUBBLE_GAP - bubbleRect.height,
+        VIEWPORT_MARGIN,
+        viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
+      );
       const anchorCenterX = anchorRect.left + anchorRect.width / 2;
       const anchorCenterY = anchorRect.top + anchorRect.height / 2;
       const tailX = clamp(
@@ -249,14 +150,9 @@ export default function PetThoughtBubble({
         bubbleRect.height - MIN_TAIL_VERTICAL_INSET
       );
 
-      if (!lockPlacement && resolvedPlacement !== placement) {
-        onPlacementChange(resolvedPlacement);
-      }
-
       setLayout((current) => {
         if (
           current.ready &&
-          current.placement === resolvedPlacement &&
           Math.abs(current.bubbleLeft - bubbleLeft) < 1 &&
           Math.abs(current.bubbleTop - bubbleTop) < 1 &&
           Math.abs(current.tailX - tailX) < 1 &&
@@ -267,7 +163,6 @@ export default function PetThoughtBubble({
           return current;
         }
         return {
-          placement: resolvedPlacement,
           bubbleLeft,
           bubbleTop,
           tailX,
@@ -303,7 +198,7 @@ export default function PetThoughtBubble({
       window.clearInterval(pollTimer);
       observer?.disconnect();
     };
-  }, [anchorRef, isCollapsed, lockPlacement, onPlacementChange, placement, previewText, thought]);
+  }, [anchorRef, isCollapsed, previewText, thought]);
 
   useLayoutEffect(() => {
     if (!thought) {
@@ -317,6 +212,7 @@ export default function PetThoughtBubble({
   }
 
   const responseCount = Math.max(1, thought.responseCount || 1);
+  const portalTarget = typeof document === "undefined" ? null : document.body;
 
   const bubbleStyle = {
     left: `${layout.bubbleLeft}px`,
@@ -332,12 +228,12 @@ export default function PetThoughtBubble({
     visibility: layout.ready ? "visible" : "hidden",
   } as CSSProperties;
 
-  return (
+  const content = (
     <>
       {!isCollapsed ? (
         <div
           ref={bubbleRef}
-          className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.placement} no-drag`}
+          className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--top no-drag`}
           style={bubbleStyle}
         >
           <div className="pet-thought-bubble__body">
@@ -404,4 +300,10 @@ export default function PetThoughtBubble({
       )}
     </>
   );
+
+  if (!portalTarget) {
+    return content;
+  }
+
+  return createPortal(content, portalTarget);
 }
