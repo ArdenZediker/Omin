@@ -1,4 +1,4 @@
-import { CircleAlert } from "lucide-react";
+import { ChevronDown, CircleAlert } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { PetThoughtState } from "../../app/types";
 import type { PetThoughtPlacement } from "../../app/window";
@@ -183,6 +183,38 @@ export default function PetThoughtBubble({
       const bubbleRect = bubble.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
+      if (isCollapsed) {
+        const left = clamp(
+          anchorRect.right - bubbleRect.width * 0.15,
+          VIEWPORT_MARGIN,
+          viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
+        );
+        const top = clamp(
+          anchorRect.top - bubbleRect.height * 0.2,
+          VIEWPORT_MARGIN,
+          viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
+        );
+
+        setLayout((current) => {
+          if (
+            current.ready &&
+            Math.abs(current.left - left) < 1 &&
+            Math.abs(current.top - top) < 1
+          ) {
+            return current;
+          }
+
+          return {
+            placement: current.placement,
+            left,
+            top,
+            tailX: current.tailX,
+            tailY: current.tailY,
+            ready: true,
+          };
+        });
+        return;
+      }
       const currentPlacement = layoutPlacementRef.current;
       const resolvedPlacement = resolvePlacement(anchorRect, bubbleRect.width, bubbleRect.height, currentPlacement);
       const frameRect = getPlacementFrame(resolvedPlacement, anchorRect, bubbleRect.width, bubbleRect.height);
@@ -238,14 +270,14 @@ export default function PetThoughtBubble({
       window.clearInterval(pollTimer);
       observer?.disconnect();
     };
-  }, [anchorRef, lockPlacement, onPlacementChange, placement, previewText, thought]);
+  }, [anchorRef, isCollapsed, lockPlacement, onPlacementChange, placement, previewText, thought]);
 
   useLayoutEffect(() => {
     if (!thought) {
       return;
     }
     setIsCollapsed(false);
-  }, [thought?.updatedAt, thought?.sessionId]);
+  }, [thought?.responseCount, thought?.sessionId]);
 
   if (!thought) {
     return null;
@@ -259,6 +291,7 @@ export default function PetThoughtBubble({
     visibility: layout.ready ? "visible" : "hidden",
     "--pet-thought-tail-x": `${layout.tailX}px`,
     "--pet-thought-tail-y": `${layout.tailY}px`,
+    "--pet-thought-arrow-opacity": isCollapsed ? "0" : "1",
   } as CSSProperties;
 
   return (
@@ -286,7 +319,7 @@ export default function PetThoughtBubble({
             aria-label="收缩气泡"
             title="收缩气泡"
           >
-            <span aria-hidden="true">⌄</span>
+            <ChevronDown size={11} strokeWidth={2.5} aria-hidden="true" focusable="false" />
           </button>
           <div className="pet-thought-bubble__body">
             <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
