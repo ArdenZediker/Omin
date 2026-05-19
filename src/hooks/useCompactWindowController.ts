@@ -23,7 +23,6 @@ import {
   getMonitorForCursor,
   getPetCompactMenuViewport,
   isCharacterPointerInHitArea,
-  isCharacterPointerInResizeArea,
   isWindowRectVisible,
   moveCompactWindowToMonitor,
   openInternalChatWindow,
@@ -95,7 +94,6 @@ type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
   closeCompactMenuPanels: () => void;
   closeCompactMenus: () => void;
-  characterScale: number;
   compactAppearance: CompactAppearance;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
@@ -133,7 +131,6 @@ export function useCompactWindowController({
   basicSettings,
   closeCompactMenuPanels,
   closeCompactMenus,
-  characterScale,
   compactAppearance,
   compactMenuSide,
   compactSubmenuSide,
@@ -166,16 +163,17 @@ export function useCompactWindowController({
   setIsCompactQueryOpen,
   setIsCompactReplyLoading,
 }: UseCompactWindowControllerArgs) {
-  const PET_CLICK_DRAG_THRESHOLD_PX = 6;
+  const PET_CLICK_DRAG_THRESHOLD_PX = 4;
   const PET_CLICK_SUPPRESS_AFTER_DRAG_MS = 320;
-  const PET_RESIZE_SCALE_PER_PIXEL = 0.005;
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
-  const characterDragTimerRef = useRef<number | null>(null);
   const isCharacterDraggingRef = useRef(false);
-  const characterPointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const characterPointerDownRef = useRef<{ screenX: number; screenY: number } | null>(null);
+  const characterDragOriginRef = useRef<{ screenX: number; screenY: number; windowX: number; windowY: number } | null>(null);
+  const characterDragRafRef = useRef<number | null>(null);
+  const characterDragPendingRef = useRef<{ x: number; y: number } | null>(null);
+  const characterDragApplyingRef = useRef(false);
   const characterPointerMovedRef = useRef(false);
-  const characterResizeRef = useRef<{ startClientY: number; startScale: number } | null>(null);
   const suppressPetClickUntilRef = useRef(0);
   const compactFollowMonitorRef = useRef<string | null>(null);
   const compactInternalMoveRef = useRef(false);
@@ -570,52 +568,81 @@ export function useCompactWindowController({
       if (compactMenuCloseTimerRef.current !== null) {
         window.clearTimeout(compactMenuCloseTimerRef.current);
       }
-      if (characterDragTimerRef.current !== null) {
-        window.clearTimeout(characterDragTimerRef.current);
+      if (characterDragRafRef.current !== null) {
+        window.cancelAnimationFrame(characterDragRafRef.current);
+        characterDragRafRef.current = null;
       }
+      characterDragApplyingRef.current = false;
     };
   }, []);
 
-  useEffect(() => {
-    if (!isCompactWindow) {
+  const flushCharacterDragPosition = useCallback(async () => {
+    if (characterDragApplyingRef.current) {
       return;
     }
 
-    const handleMouseMove = (event: MouseEvent) => {
-      const resizeState = characterResizeRef.current;
-      if (!resizeState) {
-        return;
+    characterDragApplyingRef.current = true;
+    try {
+      while (characterDragPendingRef.current) {
+        const pending = characterDragPendingRef.current;
+        characterDragPendingRef.current = null;
+        await appWindow.setPosition(new LogicalPosition(Math.round(pending.x), Math.round(pending.y)));
+      }
+    } finally {
+      characterDragApplyingRef.current = false;
+      if (characterDragPendingRef.current) {
+        void flushCharacterDragPosition();
+      }
+    }
+  }, []);
+
+  const scheduleCharacterDragPosition = useCallback((x: number, y: number) => {
+    characterDragPendingRef.current = { x, y };
+    if (characterDragRafRef.current !== null) {
+      return;
+    }
+
+    characterDragRafRef.current = window.requestAnimationFrame(() => {
+      characterDragRafRef.current = null;
+      void flushCharacterDragPosition();
+    });
+  }, [flushCharacterDragPosition]);
+
+  const continueCharacterDrag = useCallback(
+    (pointerScreenX: number, pointerScreenY: number) => {
+      const pointerDown = characterPointerDownRef.current;
+      if (!pointerDown) {
+        return false;
       }
 
-      const nextScale = clampCharacterScale(
-        resizeState.startScale + (resizeState.startClientY - event.clientY) * PET_RESIZE_SCALE_PER_PIXEL
-      );
+      const deltaX = pointerScreenX - pointerDown.screenX;
+      const deltaY = pointerScreenY - pointerDown.screenY;
+      const moveDistance = Math.hypot(deltaX, deltaY);
+      if (moveDistance < PET_CLICK_DRAG_THRESHOLD_PX) {
+        return false;
+      }
 
       characterPointerMovedRef.current = true;
-      setCharacterScale(nextScale);
-    };
-
-    const finishResize = () => {
-      if (!characterResizeRef.current) {
-        return;
+      if (!characterDragOriginRef.current) {
+        characterDragOriginRef.current = {
+          screenX: pointerDown.screenX,
+          screenY: pointerDown.screenY,
+          windowX: Number(window.screenX || 0),
+          windowY: Number(window.screenY || 0),
+        };
       }
 
-      characterResizeRef.current = null;
-      characterPointerDownRef.current = null;
-      if (characterPointerMovedRef.current) {
-        suppressPetClickUntilRef.current = Date.now() + PET_CLICK_SUPPRESS_AFTER_DRAG_MS;
+      const origin = characterDragOriginRef.current;
+      if (!origin) {
+        return false;
       }
-      characterPointerMovedRef.current = false;
-      isCharacterDraggingRef.current = false;
-    };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", finishResize);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", finishResize);
-    };
-  }, [isCompactWindow, setCharacterScale]);
+      isCharacterDraggingRef.current = true;
+      scheduleCharacterDragPosition(origin.windowX + deltaX, origin.windowY + deltaY);
+      return true;
+    },
+    [scheduleCharacterDragPosition]
+  );
 
   const closeCompactMenu = useCallback(() => {
     if (compactMenuCloseTimerRef.current !== null) {
@@ -724,26 +751,13 @@ export function useCompactWindowController({
 
   const handleCharacterPointerDown = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
       event.stopPropagation();
       if (event.button !== 0) {
-        clearPendingDragTimer(characterDragTimerRef.current);
-        characterDragTimerRef.current = null;
         characterPointerDownRef.current = null;
+        characterDragOriginRef.current = null;
         characterPointerMovedRef.current = false;
-        characterResizeRef.current = null;
-        return;
-      }
-
-      if (compactAppearance === "pet" && isCharacterPointerInResizeArea(event.currentTarget, event.clientX, event.clientY)) {
-        clearPendingDragTimer(characterDragTimerRef.current);
-        characterDragTimerRef.current = null;
         isCharacterDraggingRef.current = false;
-        characterPointerDownRef.current = { x: event.clientX, y: event.clientY };
-        characterPointerMovedRef.current = false;
-        characterResizeRef.current = {
-          startClientY: event.clientY,
-          startScale: characterScale,
-        };
         return;
       }
 
@@ -752,58 +766,70 @@ export function useCompactWindowController({
         clearPendingDragTimer(compactMenuCloseTimerRef.current);
         compactMenuCloseTimerRef.current = null;
         characterPointerDownRef.current = null;
+        characterDragOriginRef.current = null;
         characterPointerMovedRef.current = false;
-        characterResizeRef.current = null;
         resetCompactFloatingUi();
         return;
       }
 
       isCharacterDraggingRef.current = false;
-      characterPointerDownRef.current = { x: event.clientX, y: event.clientY };
+      characterPointerDownRef.current = { screenX: event.screenX, screenY: event.screenY };
+      characterDragOriginRef.current = null;
       characterPointerMovedRef.current = false;
-      clearPendingDragTimer(characterDragTimerRef.current);
-      characterDragTimerRef.current = window.setTimeout(() => {
-        isCharacterDraggingRef.current = true;
-        characterPointerMovedRef.current = true;
-        void appWindow.startDragging();
-        characterDragTimerRef.current = null;
-      }, 180);
     },
-    [characterScale, compactAppearance, resetCompactFloatingUi]
+    [resetCompactFloatingUi]
   );
 
-  const handleCharacterPointerMove = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    if (characterResizeRef.current) {
-      return;
-    }
-
-    const pointerDown = characterPointerDownRef.current;
-    if (!pointerDown) {
-      return;
-    }
-
-    const deltaX = event.clientX - pointerDown.x;
-    const deltaY = event.clientY - pointerDown.y;
-    if (Math.hypot(deltaX, deltaY) < PET_CLICK_DRAG_THRESHOLD_PX) {
-      return;
-    }
-
-    characterPointerMovedRef.current = true;
-  }, []);
+  const handleCharacterPointerMove = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (continueCharacterDrag(event.screenX, event.screenY)) {
+        event.preventDefault();
+      }
+    },
+    [continueCharacterDrag]
+  );
 
   const handleCharacterPointerUp = useCallback(() => {
-    clearPendingDragTimer(characterDragTimerRef.current);
-    characterDragTimerRef.current = null;
-    if (characterResizeRef.current) {
-      characterResizeRef.current = null;
-    }
     characterPointerDownRef.current = null;
+    characterDragOriginRef.current = null;
+    characterDragPendingRef.current = null;
+    if (characterDragRafRef.current !== null) {
+      window.cancelAnimationFrame(characterDragRafRef.current);
+      characterDragRafRef.current = null;
+    }
     if (characterPointerMovedRef.current || isCharacterDraggingRef.current) {
       suppressPetClickUntilRef.current = Date.now() + PET_CLICK_SUPPRESS_AFTER_DRAG_MS;
     }
     characterPointerMovedRef.current = false;
     isCharacterDraggingRef.current = false;
   }, []);
+
+  useEffect(() => {
+    if (!isCompactWindow) {
+      return;
+    }
+
+    const onWindowMouseMove = (event: MouseEvent) => {
+      const consumed = continueCharacterDrag(event.screenX, event.screenY);
+      if (consumed) {
+        event.preventDefault();
+      }
+    };
+
+    const onWindowMouseUp = () => {
+      if (!characterPointerDownRef.current && !isCharacterDraggingRef.current && !characterPointerMovedRef.current) {
+        return;
+      }
+      handleCharacterPointerUp();
+    };
+
+    window.addEventListener("mousemove", onWindowMouseMove, { capture: true });
+    window.addEventListener("mouseup", onWindowMouseUp, { capture: true });
+    return () => {
+      window.removeEventListener("mousemove", onWindowMouseMove, { capture: true });
+      window.removeEventListener("mouseup", onWindowMouseUp, { capture: true });
+    };
+  }, [continueCharacterDrag, handleCharacterPointerUp, isCompactWindow]);
 
   const handleCompactQuerySubmit = useCallback(
     async (openMain = false) => {
@@ -974,8 +1000,6 @@ export function useCompactWindowController({
       event.preventDefault();
       event.stopPropagation();
       suppressCompactBlur();
-      clearPendingDragTimer(characterDragTimerRef.current);
-      characterDragTimerRef.current = null;
       isCharacterDraggingRef.current = false;
       clearPendingDragTimer(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
