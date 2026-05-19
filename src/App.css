@@ -4500,8 +4500,21 @@ body,
 .pet-thought-bubble__badge {
   flex: 0 0 auto;
   margin-top: 4px;
-  color: #ef4444;
+  color: #94a3b8;
   filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.12));
+}
+
+.pet-thought-bubble__badge--thinking {
+  color: #64748b;
+  animation: petThoughtBadgeSpin 0.92s linear infinite;
+}
+
+.pet-thought-bubble__badge--complete {
+  color: #16a34a;
+}
+
+.pet-thought-bubble__badge--error {
+  color: #ef4444;
 }
 
 .pet-thought-toggle,
@@ -4570,6 +4583,12 @@ body,
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes petThoughtBadgeSpin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
