@@ -4282,9 +4282,12 @@ body,
 }
 
 .compact-hover-zone--pet-thought {
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 0;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  margin: 0;
 }
 
 .compact-shell--pet-thought {
@@ -4292,7 +4295,10 @@ body,
 }
 
 .compact-shell--pet-thought .compact-hover-zone--pet {
-  padding-top: var(--compact-pet-thought-height, 0px);
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
 }
 
 .compact-hover-zone--character {
@@ -4379,6 +4385,41 @@ body,
   min-width: var(--compact-bar-width, 156px);
 }
 
+.compact-bar--pet-thought {
+  width: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 12px 18px;
+  flex-direction: row;
+  gap: 0;
+  justify-content: center;
+  align-items: center;
+}
+
+.compact-bar--pet-thought .compact-menu-anchor {
+  z-index: 1;
+}
+
+.compact-shell--pet-thought-top .compact-bar--pet-thought {
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.compact-shell--pet-thought-bottom .compact-bar--pet-thought {
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.compact-shell--pet-thought-right .compact-bar--pet-thought {
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.compact-shell--pet-thought-left .compact-bar--pet-thought {
+  justify-content: flex-end;
+  align-items: center;
+}
+
 .compact-menu-anchor {
   position: relative;
   display: flex;
@@ -4387,24 +4428,21 @@ body,
   flex: 0 0 auto;
 }
 
-.compact-bar--pet-thought .pet-thought-bubble {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 10px);
-  transform: translateX(-50%);
-}
-
 .compact-bar--pet-thought .compact-button--pet {
   position: relative;
 }
 
 .pet-thought-bubble {
+  --pet-thought-border: rgba(203, 213, 225, 0.9);
   min-width: 184px;
-  max-width: min(280px, calc(100vw - 28px));
+  max-width: min(280px, calc(100vw - 24px));
+  position: fixed;
+  left: 0;
+  top: 0;
   padding: 10px 12px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(203, 213, 225, 0.9);
+  border: 1px solid var(--pet-thought-border);
   box-shadow:
     0 12px 28px rgba(15, 23, 42, 0.16),
     0 2px 4px rgba(15, 23, 42, 0.06);
@@ -4414,20 +4452,48 @@ body,
   align-items: flex-start;
   gap: 10px;
   animation: petThoughtBubbleIn 180ms ease-out;
+  will-change: left, top;
 }
 
 .pet-thought-bubble::after {
   content: "";
   position: absolute;
-  left: 50%;
-  top: calc(100% - 1px);
   width: 14px;
   height: 14px;
-  transform: translateX(-50%) rotate(45deg);
   background: inherit;
-  border-right: 1px solid rgba(203, 213, 225, 0.9);
-  border-bottom: 1px solid rgba(203, 213, 225, 0.9);
   box-shadow: 5px 5px 10px rgba(15, 23, 42, 0.04);
+}
+
+.pet-thought-bubble--top::after {
+  left: var(--pet-thought-tail-x, 50%);
+  top: calc(100% - 1px);
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 1px solid var(--pet-thought-border);
+  border-bottom: 1px solid var(--pet-thought-border);
+}
+
+.pet-thought-bubble--bottom::after {
+  left: var(--pet-thought-tail-x, 50%);
+  bottom: calc(100% - 1px);
+  transform: translateX(-50%) rotate(45deg);
+  border-left: 1px solid var(--pet-thought-border);
+  border-top: 1px solid var(--pet-thought-border);
+}
+
+.pet-thought-bubble--left::after {
+  left: calc(100% - 1px);
+  top: var(--pet-thought-tail-y, 50%);
+  transform: translateY(-50%) rotate(45deg);
+  border-top: 1px solid var(--pet-thought-border);
+  border-right: 1px solid var(--pet-thought-border);
+}
+
+.pet-thought-bubble--right::after {
+  right: calc(100% - 1px);
+  top: var(--pet-thought-tail-y, 50%);
+  transform: translateY(-50%) rotate(45deg);
+  border-left: 1px solid var(--pet-thought-border);
+  border-bottom: 1px solid var(--pet-thought-border);
 }
 
 .pet-thought-bubble__title {
@@ -4465,20 +4531,15 @@ body,
 }
 
 .pet-thought-bubble--thinking {
-  border-color: rgba(96, 165, 250, 0.28);
+  --pet-thought-border: rgba(96, 165, 250, 0.28);
 }
 
 .pet-thought-bubble--complete {
-  border-color: rgba(34, 197, 94, 0.22);
+  --pet-thought-border: rgba(34, 197, 94, 0.22);
 }
 
 .pet-thought-bubble--error {
-  border-color: rgba(239, 68, 68, 0.22);
-}
-
-.pet-thought-bubble--error::after {
-  border-right-color: rgba(239, 68, 68, 0.22);
-  border-bottom-color: rgba(239, 68, 68, 0.22);
+  --pet-thought-border: rgba(239, 68, 68, 0.22);
 }
 
 @keyframes petThoughtBubbleIn {
@@ -5560,16 +5621,11 @@ body,
 }
 
 :root[data-omni-theme="dark"] .pet-thought-bubble {
+  --pet-thought-border: rgba(255, 255, 255, 0.12);
   background: rgba(17, 17, 17, 0.94);
-  border-color: rgba(255, 255, 255, 0.12);
   box-shadow:
     0 14px 30px rgba(0, 0, 0, 0.32),
     0 2px 4px rgba(0, 0, 0, 0.14);
-}
-
-:root[data-omni-theme="dark"] .pet-thought-bubble::after {
-  border-right-color: rgba(255, 255, 255, 0.12);
-  border-bottom-color: rgba(255, 255, 255, 0.12);
 }
 
 :root[data-omni-theme="dark"] .compact-button__icon,

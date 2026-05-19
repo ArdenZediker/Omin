@@ -25,7 +25,17 @@ import {
 import type { BasicSettings } from "./app/types";
 import { saveBasicSettings } from "./app/settingsStore";
 import { saveSqliteBackedValue } from "./app/sqliteStorage";
-import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getPetCompactViewportSize, getPetThoughtViewportHeight, getStoredMainView, isCharacterPointerInHitArea, isCharacterPointerInResizeArea } from "./app/window";
+import {
+  getBasicSettings,
+  getCompactWindowSize,
+  getExpandedCompactViewportSizeForAppearance,
+  getPetCompactViewportSize,
+  getPetThoughtViewportHeight,
+  getStoredMainView,
+  isCharacterPointerInHitArea,
+  isCharacterPointerInResizeArea,
+  type PetThoughtPlacement,
+} from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -129,9 +139,18 @@ function MainApp() {
   const [previousModel, setPreviousModel] = useState<string | null>(null);
   const [openChatMenu, setOpenChatMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [codexPetPackage, setCodexPetPackage] = useState<CodexPetPackage | null>(null);
+  const [petThoughtPlacement, setPetThoughtPlacement] = useState<PetThoughtPlacement>("top");
   const messagesScrollRef = useRef<HTMLDivElement>(null);
 
   const isAnimatedCompactAppearance = compactAppearance === "pet";
+  const shouldReservePetThoughtSpace = Boolean(
+    compactAppearance === "pet" &&
+      petThought &&
+      !isCompactMenuOpen &&
+      !isCompactQueryOpen &&
+      !isCompactReplyLoading &&
+      !compactReply
+  );
   const effectiveCompactScale = compactAppearance === "pet" ? characterScale * CHARACTER_SCALE_BASELINE : 1;
   const compactSize = useMemo(
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
@@ -145,7 +164,8 @@ function MainApp() {
         isCompactQueryOpen,
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
-        reservePetThoughtSpace: isAnimatedCompactAppearance,
+        thoughtPlacement: petThoughtPlacement,
+        reservePetThoughtSpace: shouldReservePetThoughtSpace,
       });
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
@@ -161,10 +181,11 @@ function MainApp() {
     compactSize.height,
     compactSize.width,
     effectiveCompactScale,
-    isAnimatedCompactAppearance,
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
+    petThoughtPlacement,
+    shouldReservePetThoughtSpace,
   ]);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
@@ -179,7 +200,7 @@ function MainApp() {
         : 8;
     const inlineBarWidth = isAnimatedCompactAppearance ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
     const compactCharacterSize = getCodexPetViewportHeight(compactSize.width);
-    const compactPetThoughtHeight = isAnimatedCompactAppearance ? getPetThoughtViewportHeight(compactSize.width) : 0;
+    const compactPetThoughtHeight = shouldReservePetThoughtSpace ? getPetThoughtViewportHeight(compactSize.width) : 0;
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -192,7 +213,13 @@ function MainApp() {
       "--compact-character-reply-gap": `${characterReplyGap}px`,
       "--compact-pet-thought-height": `${compactPetThoughtHeight}px`,
     } as CSSProperties;
-  }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance]);
+  }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance, shouldReservePetThoughtSpace]);
+
+  useEffect(() => {
+    if (!shouldReservePetThoughtSpace && petThoughtPlacement !== "top") {
+      setPetThoughtPlacement("top");
+    }
+  }, [petThoughtPlacement, shouldReservePetThoughtSpace]);
 
   const availableModels = modelRegistry.getAvailableModels();
   const hasModels = availableModels.length > 0;
@@ -313,7 +340,9 @@ function MainApp() {
     isCompactReplyLoading,
     isCompactWindow,
     onRestoreMain: handleRestoreMain,
+    petThoughtPlacement,
     resetCompactFloatingUi,
+    shouldReservePetThoughtSpace,
     setCharacterMenuPosition,
     setCharacterScale,
     setCompactAppearance,
@@ -392,14 +421,14 @@ function MainApp() {
   const handleRenameChat = useCallback(
     async (session: { id: string; title: string }) => {
       const values = await openPrompt({
-        title: "重命名会话",
-        description: "修改当前会话名称后会立即保存。",
-        confirmLabel: "保存",
+        title: "\u91cd\u547d\u540d\u4f1a\u8bdd",
+        description: "\u4fee\u6539\u5f53\u524d\u4f1a\u8bdd\u540d\u79f0\u540e\u4f1a\u7acb\u5373\u4fdd\u5b58\u3002",
+        confirmLabel: "\u4fdd\u5b58",
         fields: [
           {
-            label: "会话名称",
+            label: "\u4f1a\u8bdd\u540d\u79f0",
             defaultValue: session.title,
-            placeholder: "请输入会话名称",
+            placeholder: "\u8bf7\u8f93\u5165\u4f1a\u8bdd\u540d\u79f0",
             autoFocus: true,
           },
         ],
@@ -481,6 +510,7 @@ function MainApp() {
         compactSubmenuSide={compactSubmenuSide}
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
+        petThoughtPlacement={petThoughtPlacement}
         petThought={petThought}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
@@ -496,6 +526,7 @@ function MainApp() {
         onOpenCompactMenu={compactController.openCompactMenu}
         onOpenCompactQuery={compactController.handleOpenCompactQuery}
         onOpenExternalChat={compactController.handleOpenExternalChat}
+        onPetThoughtPlacementChange={setPetThoughtPlacement}
         onPetPrimaryClick={compactController.handlePetPrimaryClick}
         onOpenSettingsFromCompact={desktopActions.openSettings}
         onPointerHitTest={isCharacterPointerInHitArea}
