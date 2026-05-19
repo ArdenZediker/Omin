@@ -29,6 +29,7 @@ type CompactWindowProps = {
   compactSubmenuSide: "left" | "right";
   isCharacterDragging: boolean;
   petThought: PetThoughtState | null;
+  petThoughtPlacement: "top" | "right" | "left" | "bottom";
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   onCharacterContextMenu: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
@@ -54,6 +55,7 @@ type CompactWindowProps = {
   onSetIsCompactModelOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactQueryOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactReplyLoading: Dispatch<SetStateAction<boolean>>;
+  onSetPetThoughtPlacement: Dispatch<SetStateAction<"top" | "right" | "left" | "bottom">>;
 };
 
 export default function CompactWindow({
@@ -75,6 +77,7 @@ export default function CompactWindow({
   isCompactReplyLoading,
   isCharacterDragging,
   petThought,
+  petThoughtPlacement,
   omniSmallIconSrc,
   compactMenuSide,
   compactSubmenuSide,
@@ -101,6 +104,7 @@ export default function CompactWindow({
   onSetIsCompactModelOpen,
   onSetIsCompactQueryOpen,
   onSetIsCompactReplyLoading,
+  onSetPetThoughtPlacement,
 }: CompactWindowProps) {
   const closeReply = () => {
     onSetCompactReply(null);
@@ -235,9 +239,9 @@ export default function CompactWindow({
               <PetThoughtBubble
                 thought={petThought}
                 anchorRef={petAnchorRef}
-                placement="top"
+                placement={petThoughtPlacement}
                 lockPlacement={isCharacterDragging}
-                onPlacementChange={() => undefined}
+                onPlacementChange={onSetPetThoughtPlacement}
               />
             ) : null}
             <button

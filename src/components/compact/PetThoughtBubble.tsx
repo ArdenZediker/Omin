@@ -28,6 +28,7 @@ const VIEWPORT_MARGIN = 12;
 const BUBBLE_GAP = 10;
 const MAX_BUBBLE_WIDTH = 280;
 const MIN_BUBBLE_WIDTH = 140;
+const MIN_BUBBLE_HEIGHT = 64;
 const MIN_TAIL_HORIZONTAL_INSET = 24;
 const MIN_TAIL_VERTICAL_INSET = 18;
 const REPOSITION_POLL_MS = 180;
@@ -56,6 +57,7 @@ export default function PetThoughtBubble({
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const actionRef = useRef<HTMLButtonElement | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [placementState, setPlacementState] = useState<PetThoughtPlacement>(placement);
   const isError = thought?.status === "error";
   const previewText =
     thought?.status === "thinking" && !thought.previewText.trim()
@@ -74,6 +76,13 @@ export default function PetThoughtBubble({
     actionTop: VIEWPORT_MARGIN,
     ready: false,
   });
+
+  useLayoutEffect(() => {
+    if (!thought) {
+      return;
+    }
+    setPlacementState(placement);
+  }, [placement, thought]);
 
   useLayoutEffect(() => {
     if (!thought) {
@@ -116,24 +125,31 @@ export default function PetThoughtBubble({
         return;
       }
 
+      const bubbleWidth = Math.max(MIN_BUBBLE_WIDTH, bubbleRect.width);
+      const bubbleHeight = Math.max(MIN_BUBBLE_HEIGHT, bubbleRect.height);
       const topSpace = anchorRect.top - VIEWPORT_MARGIN - BUBBLE_GAP;
       const bottomSpace = viewportHeight - anchorRect.bottom - VIEWPORT_MARGIN - BUBBLE_GAP;
       const leftSpace = anchorRect.left - VIEWPORT_MARGIN - BUBBLE_GAP;
       const rightSpace = viewportWidth - anchorRect.right - VIEWPORT_MARGIN - BUBBLE_GAP;
 
       let bubblePlacement: PetThoughtPlacement = "top";
-      if (topSpace >= bubbleRect.height) {
+      if (topSpace >= bubbleHeight) {
         bubblePlacement = "top";
-      } else if (rightSpace >= bubbleRect.width && rightSpace >= leftSpace) {
+      } else if (rightSpace >= bubbleWidth && rightSpace >= leftSpace) {
         bubblePlacement = "right";
-      } else if (leftSpace >= bubbleRect.width) {
+      } else if (leftSpace >= bubbleWidth) {
         bubblePlacement = "left";
-      } else if (bottomSpace >= bubbleRect.height) {
+      } else if (bottomSpace >= bubbleHeight) {
         bubblePlacement = "bottom";
       } else if (rightSpace >= leftSpace) {
         bubblePlacement = "right";
       } else {
         bubblePlacement = "left";
+      }
+
+      if (placementState !== bubblePlacement) {
+        setPlacementState(bubblePlacement);
+        onPlacementChange(bubblePlacement);
       }
 
       const bubbleLeft =
