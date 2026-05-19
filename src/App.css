@@ -4390,7 +4390,8 @@ body,
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 10px;
+  gap: var(--compact-pet-thought-gap, 0px);
+  transition: gap 180ms ease-out;
 }
 
 .compact-bar--pet-thought .pet-thought-bubble {
