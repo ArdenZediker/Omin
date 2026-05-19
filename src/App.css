@@ -4455,6 +4455,15 @@ body,
   will-change: left, top;
 }
 
+.pet-thought-bubble--collapsed {
+  min-width: auto;
+  max-width: none;
+  padding: 4px;
+  border-radius: 999px;
+  gap: 0;
+  pointer-events: auto;
+}
+
 .pet-thought-bubble::after {
   content: "";
   position: absolute;
@@ -4528,6 +4537,49 @@ body,
   margin-top: 1px;
   color: #ef4444;
   filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.12));
+}
+
+.pet-thought-bubble__collapse {
+  pointer-events: auto;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.48);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.pet-thought-bubble__collapse:hover {
+  border-color: rgba(100, 116, 139, 0.6);
+  color: var(--omni-app-text);
+}
+
+.pet-thought-bubble__counter {
+  pointer-events: auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #dbeafe, #bfdbfe);
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(30, 64, 175, 0.22);
 }
 
 .pet-thought-bubble--thinking {
@@ -5626,6 +5678,18 @@ body,
   box-shadow:
     0 14px 30px rgba(0, 0, 0, 0.32),
     0 2px 4px rgba(0, 0, 0, 0.14);
+}
+
+:root[data-omni-theme="dark"] .pet-thought-bubble__collapse {
+  background: rgba(18, 18, 18, 0.92);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+:root[data-omni-theme="dark"] .pet-thought-bubble__counter {
+  background: linear-gradient(180deg, #334155, #1e293b);
+  color: rgba(219, 234, 254, 0.96);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.48);
 }
 
 :root[data-omni-theme="dark"] .compact-button__icon,

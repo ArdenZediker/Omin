@@ -144,6 +144,7 @@ export default function PetThoughtBubble({
 }: PetThoughtBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const layoutPlacementRef = useRef<BubblePlacement>(placement);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const isError = thought?.status === "error";
   const previewText =
     thought?.status === "thinking" && !thought.previewText.trim()
@@ -239,9 +240,18 @@ export default function PetThoughtBubble({
     };
   }, [anchorRef, lockPlacement, onPlacementChange, placement, previewText, thought]);
 
+  useLayoutEffect(() => {
+    if (!thought) {
+      return;
+    }
+    setIsCollapsed(false);
+  }, [thought?.updatedAt, thought?.sessionId]);
+
   if (!thought) {
     return null;
   }
+
+  const responseCount = Math.max(1, thought.responseCount || 1);
 
   const bubbleStyle = {
     left: `${layout.left}px`,
@@ -254,22 +264,63 @@ export default function PetThoughtBubble({
   return (
     <div
       ref={bubbleRef}
-      className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.placement} no-drag`}
+      className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.placement} ${
+        isCollapsed ? "pet-thought-bubble--collapsed" : ""
+      } no-drag`}
       style={bubbleStyle}
     >
-      <div className="pet-thought-bubble__body">
-        <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
-          {thought.sessionTitle}
-        </div>
-        {previewText ? (
-          <div className="pet-thought-bubble__preview" title={previewText}>
-            {previewText}
+      {!isCollapsed ? (
+        <>
+          <button
+            type="button"
+            className="pet-thought-bubble__collapse no-drag"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setIsCollapsed(true);
+            }}
+            aria-label="收缩气泡"
+            title="收缩气泡"
+          >
+            <span aria-hidden="true">⌄</span>
+          </button>
+          <div className="pet-thought-bubble__body">
+            <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
+              {thought.sessionTitle}
+            </div>
+            {previewText ? (
+              <div className="pet-thought-bubble__preview" title={previewText}>
+                {previewText}
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
-      {isError ? (
-        <CircleAlert className="pet-thought-bubble__badge" size={16} strokeWidth={2.2} aria-hidden="true" focusable="false" />
-      ) : null}
+          {isError ? (
+            <CircleAlert className="pet-thought-bubble__badge" size={16} strokeWidth={2.2} aria-hidden="true" focusable="false" />
+          ) : null}
+        </>
+      ) : (
+        <button
+          type="button"
+          className="pet-thought-bubble__counter no-drag"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsCollapsed(false);
+          }}
+          aria-label={`展开气泡，当前第 ${responseCount} 条回答`}
+          title={`第 ${responseCount} 条回答`}
+        >
+          {responseCount}
+        </button>
+      )}
     </div>
   );
 }
