@@ -4433,6 +4433,7 @@ body,
   gap: 10px;
   animation: petThoughtBubbleIn 180ms ease-out;
   will-change: left, top;
+  pointer-events: auto;
 }
 
 .pet-thought-bubble::after {
