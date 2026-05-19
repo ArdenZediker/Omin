@@ -341,7 +341,6 @@ function MainApp() {
     petThoughtPlacement,
     resetCompactFloatingUi,
     shouldReservePetThoughtSpace,
-    setPetThoughtPlacement,
     setCharacterMenuPosition,
     setCharacterScale,
     setCompactAppearance,
