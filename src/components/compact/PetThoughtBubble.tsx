@@ -182,10 +182,8 @@ export default function PetThoughtBubble({
       const bubbleRect = bubble.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-      const currentPlacement = lockPlacement ? placement : layoutPlacementRef.current;
-      const resolvedPlacement = lockPlacement
-        ? placement
-        : resolvePlacement(anchorRect, bubbleRect.width, bubbleRect.height, currentPlacement);
+      const currentPlacement = layoutPlacementRef.current;
+      const resolvedPlacement = resolvePlacement(anchorRect, bubbleRect.width, bubbleRect.height, currentPlacement);
       const frameRect = getPlacementFrame(resolvedPlacement, anchorRect, bubbleRect.width, bubbleRect.height);
       const left = clamp(frameRect.left, VIEWPORT_MARGIN, viewportWidth - bubbleRect.width - VIEWPORT_MARGIN);
       const top = clamp(frameRect.top, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
