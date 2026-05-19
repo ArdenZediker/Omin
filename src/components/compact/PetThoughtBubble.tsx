@@ -23,13 +23,13 @@ type BubbleLayout = {
 };
 
 const VIEWPORT_MARGIN = 12;
-const BUBBLE_GAP = 20;
+const BUBBLE_GAP = 14;
 const MIN_TAIL_HORIZONTAL_INSET = 24;
 const MIN_TAIL_VERTICAL_INSET = 18;
 const REPOSITION_POLL_MS = 180;
 const ACTION_FALLBACK_SIZE = 20;
 const COUNTER_FALLBACK_SIZE = 26;
-const TOP_LEFT_INSET = 24;
+const BUBBLE_VERTICAL_OFFSET = 0.56;
 
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
@@ -46,7 +46,6 @@ export default function PetThoughtBubble({
   onPlacementChange,
 }: PetThoughtBubbleProps) {
   void placement;
-  void lockPlacement;
   void onPlacementChange;
 
   const bubbleRef = useRef<HTMLDivElement | null>(null);
@@ -82,6 +81,10 @@ export default function PetThoughtBubble({
     let frame = 0;
 
     const reposition = () => {
+      if (lockPlacement) {
+        return;
+      }
+
       const bubble = bubbleRef.current;
       const action = actionRef.current;
       const anchorRect = anchor.getBoundingClientRect();
@@ -127,18 +130,18 @@ export default function PetThoughtBubble({
       }
 
       const bubbleRect = bubble.getBoundingClientRect();
+      const anchorCenterY = anchorRect.top + anchorRect.height / 2;
       const bubbleLeft = clamp(
-        anchorRect.left - bubbleRect.width + TOP_LEFT_INSET,
+        anchorRect.left - bubbleRect.width - BUBBLE_GAP,
         VIEWPORT_MARGIN,
         viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
       );
       const bubbleTop = clamp(
-        anchorRect.top - BUBBLE_GAP - bubbleRect.height,
+        anchorCenterY - bubbleRect.height * BUBBLE_VERTICAL_OFFSET,
         VIEWPORT_MARGIN,
         viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
       );
       const anchorCenterX = anchorRect.left + anchorRect.width / 2;
-      const anchorCenterY = anchorRect.top + anchorRect.height / 2;
       const tailX = clamp(
         anchorCenterX - bubbleLeft,
         MIN_TAIL_HORIZONTAL_INSET,
@@ -198,7 +201,7 @@ export default function PetThoughtBubble({
       window.clearInterval(pollTimer);
       observer?.disconnect();
     };
-  }, [anchorRef, isCollapsed, previewText, thought]);
+  }, [anchorRef, isCollapsed, lockPlacement, previewText, thought]);
 
   useLayoutEffect(() => {
     if (!thought) {
@@ -233,7 +236,7 @@ export default function PetThoughtBubble({
       {!isCollapsed ? (
         <div
           ref={bubbleRef}
-          className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--top no-drag`}
+          className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--left no-drag`}
           style={bubbleStyle}
         >
           <div className="pet-thought-bubble__body">
