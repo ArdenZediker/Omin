@@ -4284,7 +4284,15 @@ body,
 .compact-hover-zone--pet-thought {
   align-items: flex-start;
   justify-content: center;
-  padding-top: 4px;
+  padding-top: 0;
+}
+
+.compact-shell--pet-thought {
+  justify-content: flex-start;
+}
+
+.compact-shell--pet-thought .compact-hover-zone--pet {
+  padding-top: var(--compact-pet-thought-height, 0px);
 }
 
 .compact-hover-zone--character {

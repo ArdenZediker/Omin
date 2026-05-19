@@ -306,6 +306,10 @@ export function getPetCompactMenuViewport(size: { width: number; height: number 
   };
 }
 
+export function getPetThoughtViewportHeight(compactWidth: number) {
+  return Math.max(PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT, Math.round(compactWidth * 0.62 + 64));
+}
+
 export function getPetCompactViewportSize(options: {
   compactSize: { width: number; height: number };
   isCompactMenuOpen: boolean;
@@ -335,7 +339,7 @@ export function getPetCompactViewportSize(options: {
   }
 
   if (hasPetThought) {
-    const thoughtViewportHeight = Math.max(PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT, Math.round(compactSize.width * 0.62 + 64));
+    const thoughtViewportHeight = getPetThoughtViewportHeight(compactSize.width);
     // Reserve room for the bubble so it stays inside the compact window.
     return {
       width: Math.max(compactSize.width, PET_THOUGHT_VIEWPORT_MIN_WIDTH),
