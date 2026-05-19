@@ -8,6 +8,8 @@ type BubblePlacement = PetThoughtPlacement;
 type PetThoughtBubbleProps = {
   thought: PetThoughtState | null;
   anchorRef: RefObject<HTMLElement | null>;
+  placement: BubblePlacement;
+  lockPlacement: boolean;
   onPlacementChange: (placement: BubblePlacement) => void;
 };
 
@@ -26,6 +28,7 @@ const MIN_TAIL_HORIZONTAL_INSET = 24;
 const MIN_TAIL_VERTICAL_INSET = 18;
 const REPOSITION_POLL_MS = 180;
 const HORIZONTAL_PLACEMENT_BONUS = 20;
+const PLACEMENT_SWITCH_SCORE_GAP = 36;
 
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
@@ -68,19 +71,12 @@ function getPlacementFrame(
   }
 }
 
-function getVisibleArea(left: number, top: number, width: number, height: number, viewportWidth: number, viewportHeight: number) {
-  const visibleWidth = Math.max(
-    0,
-    Math.min(viewportWidth - VIEWPORT_MARGIN, left + width) - Math.max(VIEWPORT_MARGIN, left)
-  );
-  const visibleHeight = Math.max(
-    0,
-    Math.min(viewportHeight - VIEWPORT_MARGIN, top + height) - Math.max(VIEWPORT_MARGIN, top)
-  );
-  return visibleWidth * visibleHeight;
-}
-
-function resolvePlacement(anchorRect: DOMRect, bubbleWidth: number, bubbleHeight: number) {
+function resolvePlacement(
+  anchorRect: DOMRect,
+  bubbleWidth: number,
+  bubbleHeight: number,
+  currentPlacement: BubblePlacement
+) {
   const screenInfo = window.screen as Screen & { availLeft?: number; availTop?: number };
   const availLeft = Number(screenInfo.availLeft ?? 0);
   const availTop = Number(screenInfo.availTop ?? 0);
@@ -128,12 +124,26 @@ function resolvePlacement(anchorRect: DOMRect, bubbleWidth: number, bubbleHeight
   ];
   const fits = candidates.filter((candidate) => candidate.fits);
   const pool = fits.length > 0 ? fits : candidates;
-
-  return pool.reduce((best, candidate) => (candidate.score > best.score ? candidate : best), pool[0]).placement;
+  const best = pool.reduce((winner, candidate) => (candidate.score > winner.score ? candidate : winner), pool[0]);
+  if (best.placement === currentPlacement) {
+    return currentPlacement;
+  }
+  const current = pool.find((candidate) => candidate.placement === currentPlacement);
+  if (current && best.score - current.score < PLACEMENT_SWITCH_SCORE_GAP) {
+    return currentPlacement;
+  }
+  return best.placement;
 }
 
-export default function PetThoughtBubble({ thought, anchorRef, onPlacementChange }: PetThoughtBubbleProps) {
+export default function PetThoughtBubble({
+  thought,
+  anchorRef,
+  placement,
+  lockPlacement,
+  onPlacementChange,
+}: PetThoughtBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const layoutPlacementRef = useRef<BubblePlacement>(placement);
   const isError = thought?.status === "error";
   const previewText =
     thought?.status === "thinking" && !thought.previewText.trim()
@@ -142,13 +152,17 @@ export default function PetThoughtBubble({ thought, anchorRef, onPlacementChange
         ? "\u56de\u7b54\u5931\u8d25"
         : thought?.previewText.trim() ?? "";
   const [layout, setLayout] = useState<BubbleLayout>({
-    placement: "top",
+    placement,
     left: VIEWPORT_MARGIN,
     top: VIEWPORT_MARGIN,
     tailX: 48,
     tailY: 28,
     ready: false,
   });
+
+  useLayoutEffect(() => {
+    layoutPlacementRef.current = layout.placement;
+  }, [layout.placement]);
 
   useLayoutEffect(() => {
     if (!thought) {
@@ -168,46 +182,25 @@ export default function PetThoughtBubble({ thought, anchorRef, onPlacementChange
       const bubbleRect = bubble.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-      const preferredPlacement = resolvePlacement(anchorRect, bubbleRect.width, bubbleRect.height);
-      const placements: BubblePlacement[] = [
-        preferredPlacement,
-        ...(["right", "left", "top", "bottom"] as BubblePlacement[]).filter((placement) => placement !== preferredPlacement),
-      ];
-      const candidates = placements.map((placement) => {
-        const frameRect = getPlacementFrame(placement, anchorRect, bubbleRect.width, bubbleRect.height);
-        return {
-          placement,
-          frameRect,
-          fits:
-            frameRect.left >= VIEWPORT_MARGIN &&
-            frameRect.top >= VIEWPORT_MARGIN &&
-            frameRect.left + bubbleRect.width <= viewportWidth - VIEWPORT_MARGIN &&
-            frameRect.top + bubbleRect.height <= viewportHeight - VIEWPORT_MARGIN,
-          visibleArea: getVisibleArea(
-            frameRect.left,
-            frameRect.top,
-            bubbleRect.width,
-            bubbleRect.height,
-            viewportWidth,
-            viewportHeight
-          ),
-        };
-      });
-
-      const fallback = candidates.reduce((best, candidate) => (candidate.visibleArea > best.visibleArea ? candidate : best), candidates[0]);
-      const resolved = candidates.find((candidate) => candidate.fits) ?? fallback;
-      const left = clamp(resolved.frameRect.left, VIEWPORT_MARGIN, viewportWidth - bubbleRect.width - VIEWPORT_MARGIN);
-      const top = clamp(resolved.frameRect.top, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
+      const currentPlacement = lockPlacement ? placement : layoutPlacementRef.current;
+      const resolvedPlacement = lockPlacement
+        ? placement
+        : resolvePlacement(anchorRect, bubbleRect.width, bubbleRect.height, currentPlacement);
+      const frameRect = getPlacementFrame(resolvedPlacement, anchorRect, bubbleRect.width, bubbleRect.height);
+      const left = clamp(frameRect.left, VIEWPORT_MARGIN, viewportWidth - bubbleRect.width - VIEWPORT_MARGIN);
+      const top = clamp(frameRect.top, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
       const anchorCenterX = anchorRect.left + anchorRect.width / 2;
       const anchorCenterY = anchorRect.top + anchorRect.height / 2;
       const tailX = clamp(anchorCenterX - left, MIN_TAIL_HORIZONTAL_INSET, bubbleRect.width - MIN_TAIL_HORIZONTAL_INSET);
       const tailY = clamp(anchorCenterY - top, MIN_TAIL_VERTICAL_INSET, bubbleRect.height - MIN_TAIL_VERTICAL_INSET);
-      onPlacementChange(resolved.placement);
+      if (!lockPlacement && resolvedPlacement !== placement) {
+        onPlacementChange(resolvedPlacement);
+      }
 
       setLayout((current) => {
         if (
           current.ready &&
-          current.placement === resolved.placement &&
+          current.placement === resolvedPlacement &&
           Math.abs(current.left - left) < 1 &&
           Math.abs(current.top - top) < 1 &&
           Math.abs(current.tailX - tailX) < 1 &&
@@ -217,7 +210,7 @@ export default function PetThoughtBubble({ thought, anchorRef, onPlacementChange
         }
 
         return {
-          placement: resolved.placement,
+          placement: resolvedPlacement,
           left,
           top,
           tailX,
@@ -246,7 +239,7 @@ export default function PetThoughtBubble({ thought, anchorRef, onPlacementChange
       window.clearInterval(pollTimer);
       observer?.disconnect();
     };
-  }, [anchorRef, onPlacementChange, previewText, thought]);
+  }, [anchorRef, lockPlacement, onPlacementChange, placement, previewText, thought]);
 
   if (!thought) {
     return null;

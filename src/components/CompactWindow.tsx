@@ -28,6 +28,7 @@ type CompactWindowProps = {
   isCompactReplyLoading: boolean;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
+  isCharacterDragging: boolean;
   petThoughtPlacement: PetThoughtPlacement;
   petThought: PetThoughtState | null;
   omniSmallIconSrc: string;
@@ -75,6 +76,7 @@ export default function CompactWindow({
   isCompactModelOpen,
   isCompactQueryOpen,
   isCompactReplyLoading,
+  isCharacterDragging,
   petThoughtPlacement,
   petThought,
   omniSmallIconSrc,
@@ -238,6 +240,8 @@ export default function CompactWindow({
               <PetThoughtBubble
                 thought={petThought}
                 anchorRef={petButtonRef}
+                placement={petThoughtPlacement}
+                lockPlacement={isCharacterDragging}
                 onPlacementChange={onPetThoughtPlacementChange}
               />
             ) : null}

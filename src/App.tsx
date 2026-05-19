@@ -341,6 +341,7 @@ function MainApp() {
     petThoughtPlacement,
     resetCompactFloatingUi,
     shouldReservePetThoughtSpace,
+    setPetThoughtPlacement,
     setCharacterMenuPosition,
     setCharacterScale,
     setCompactAppearance,
@@ -508,6 +509,7 @@ function MainApp() {
         compactSubmenuSide={compactSubmenuSide}
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
+        isCharacterDragging={compactController.isCharacterDragging}
         petThoughtPlacement={petThoughtPlacement}
         petThought={petThought}
         omniSmallIconSrc={omniSmallIconSrc}
