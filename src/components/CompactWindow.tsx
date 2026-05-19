@@ -164,7 +164,7 @@ export default function CompactWindow({
         isPetAppearance && (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply)
           ? "compact-shell--pet-expanded"
           : ""
-      }`}
+      } ${shouldShowPetThought ? "compact-shell--pet-thought" : ""}`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
         const isInsideFloatingPanel = Boolean(

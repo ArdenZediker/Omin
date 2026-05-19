@@ -25,7 +25,7 @@ import {
 import type { BasicSettings } from "./app/types";
 import { saveBasicSettings } from "./app/settingsStore";
 import { saveSqliteBackedValue } from "./app/sqliteStorage";
-import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getPetCompactViewportSize, getStoredMainView, isCharacterPointerInHitArea, isCharacterPointerInResizeArea } from "./app/window";
+import { getBasicSettings, getCompactWindowSize, getExpandedCompactViewportSizeForAppearance, getPetCompactViewportSize, getPetThoughtViewportHeight, getStoredMainView, isCharacterPointerInHitArea, isCharacterPointerInResizeArea } from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -181,6 +181,7 @@ function MainApp() {
         : 8;
     const inlineBarWidth = isAnimatedCompactAppearance ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
     const compactCharacterSize = getCodexPetViewportHeight(compactSize.width);
+    const compactPetThoughtHeight = hasPetThought ? getPetThoughtViewportHeight(compactSize.width) : 0;
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -191,6 +192,7 @@ function MainApp() {
       "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
+      "--compact-pet-thought-height": `${compactPetThoughtHeight}px`,
     } as CSSProperties;
   }, [compactSize.height, compactSize.width, hasPetThought, isAnimatedCompactAppearance]);
 
@@ -305,6 +307,7 @@ function MainApp() {
     compactReply,
     compactSize,
     compactViewportSize,
+    hasPetThought,
     currentModel,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
