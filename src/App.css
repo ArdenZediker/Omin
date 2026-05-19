@@ -4394,6 +4394,10 @@ body,
   transform: translateX(-50%);
 }
 
+.compact-bar--pet-thought .compact-button--pet {
+  position: relative;
+}
+
 .pet-thought-bubble {
   min-width: 184px;
   max-width: min(280px, calc(100vw - 28px));

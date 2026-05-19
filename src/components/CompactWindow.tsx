@@ -120,6 +120,7 @@ export default function CompactWindow({
       !isCompactReplyLoading &&
       !compactReply
   );
+  const isPetThoughtLayout = isPetAppearance;
   const petState = compactReply?.isError
     ? "failed"
     : petCelebrateReply
@@ -164,7 +165,7 @@ export default function CompactWindow({
         isPetAppearance && (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply)
           ? "compact-shell--pet-expanded"
           : ""
-      } ${shouldShowPetThought ? "compact-shell--pet-thought" : ""}`}
+      } ${isPetThoughtLayout ? "compact-shell--pet-thought" : ""}`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
         const isInsideFloatingPanel = Boolean(
@@ -196,7 +197,7 @@ export default function CompactWindow({
       <div
         className={`compact-hover-zone ${isAnimatedAppearance ? "compact-hover-zone--character" : ""} ${
           isPetAppearance ? "compact-hover-zone--pet" : ""
-        } ${shouldShowPetThought ? "compact-hover-zone--pet-thought" : ""}`}
+        } ${isPetThoughtLayout ? "compact-hover-zone--pet-thought" : ""}`}
         onMouseEnter={
           !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
             ? (e) => {
@@ -225,7 +226,7 @@ export default function CompactWindow({
         <div
           className={`compact-bar ${isAnimatedAppearance ? "compact-bar--character" : ""} ${
             isPetAppearance ? "compact-bar--pet" : ""
-          } ${shouldShowPetThought ? "compact-bar--pet-thought" : ""}`}
+          } ${isPetThoughtLayout ? "compact-bar--pet-thought" : ""}`}
           style={compactStyle}
         >
           <div className="compact-menu-anchor no-drag" onContextMenu={isAnimatedAppearance ? onCharacterContextMenu : undefined}>
