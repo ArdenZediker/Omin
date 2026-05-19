@@ -33,6 +33,7 @@ const HORIZONTAL_PLACEMENT_BONUS = 20;
 const PLACEMENT_SWITCH_SCORE_GAP = 36;
 const ACTION_FALLBACK_SIZE = 20;
 const COUNTER_FALLBACK_SIZE = 26;
+const TOP_PLACEMENT_RIGHT_INSET = 14;
 
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
@@ -69,7 +70,7 @@ function getPlacementFrame(
     case "top":
     default:
       return {
-        left: centerX - bubbleWidth / 2,
+        left: anchorRect.right - bubbleWidth - TOP_PLACEMENT_RIGHT_INSET,
         top: anchorRect.top - BUBBLE_GAP - bubbleHeight,
       };
   }
