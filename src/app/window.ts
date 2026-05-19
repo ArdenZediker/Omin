@@ -9,6 +9,10 @@ import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } fr
 
 const PET_THOUGHT_VIEWPORT_MIN_WIDTH = 320;
 const PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT = 128;
+const PET_THOUGHT_VIEWPORT_SIDE_EXTRA_WIDTH = 316;
+const PET_THOUGHT_VIEWPORT_SIDE_MIN_HEIGHT = 188;
+
+export type PetThoughtPlacement = "top" | "right" | "left" | "bottom";
 
 export function isCharacterPointerInHitArea(element: HTMLElement, clientX: number, clientY: number) {
   if (element.dataset.hitMode === "full") {
@@ -310,12 +314,30 @@ export function getPetThoughtViewportHeight(compactWidth: number) {
   return Math.max(PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT, Math.round(compactWidth * 0.62 + 64));
 }
 
+export function getPetThoughtViewportSize(
+  compactSize: { width: number; height: number },
+  placement: PetThoughtPlacement
+) {
+  if (placement === "left" || placement === "right") {
+    return {
+      width: Math.max(PET_THOUGHT_VIEWPORT_MIN_WIDTH, compactSize.width + PET_THOUGHT_VIEWPORT_SIDE_EXTRA_WIDTH),
+      height: Math.max(PET_THOUGHT_VIEWPORT_SIDE_MIN_HEIGHT, compactSize.height + 28),
+    };
+  }
+
+  return {
+    width: Math.max(compactSize.width, PET_THOUGHT_VIEWPORT_MIN_WIDTH),
+    height: compactSize.height + getPetThoughtViewportHeight(compactSize.width),
+  };
+}
+
 export function getPetCompactViewportSize(options: {
   compactSize: { width: number; height: number };
   isCompactMenuOpen: boolean;
   isCompactQueryOpen: boolean;
   isCompactReplyLoading: boolean;
   hasCompactReply: boolean;
+  thoughtPlacement?: PetThoughtPlacement;
   reservePetThoughtSpace?: boolean;
 }) {
   const {
@@ -324,6 +346,7 @@ export function getPetCompactViewportSize(options: {
     isCompactQueryOpen,
     isCompactReplyLoading,
     hasCompactReply,
+    thoughtPlacement = "top",
     reservePetThoughtSpace,
   } = options;
 
@@ -346,12 +369,7 @@ export function getPetCompactViewportSize(options: {
   }
 
   if (reservePetThoughtSpace) {
-    const thoughtViewportHeight = getPetThoughtViewportHeight(compactSize.width);
-    // Reserve room for the bubble so it stays inside the compact window.
-    return {
-      width: Math.max(compactSize.width, PET_THOUGHT_VIEWPORT_MIN_WIDTH),
-      height: compactSize.height + thoughtViewportHeight,
-    };
+    return getPetThoughtViewportSize(compactSize, thoughtPlacement);
   }
 
   return null;

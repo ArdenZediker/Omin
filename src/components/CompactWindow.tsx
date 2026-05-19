@@ -1,8 +1,9 @@
-import { useEffect, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
 import type { BasicSettings, CompactReply, ExternalChatEntry, PetThoughtState } from "../app/types";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
+import type { PetThoughtPlacement } from "../app/window";
 import DesktopPet from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
@@ -27,6 +28,7 @@ type CompactWindowProps = {
   isCompactReplyLoading: boolean;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
+  petThoughtPlacement: PetThoughtPlacement;
   petThought: PetThoughtState | null;
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
@@ -43,6 +45,7 @@ type CompactWindowProps = {
   onOpenCompactMenu: (clientX?: number, clientY?: number) => void | Promise<void>;
   onOpenCompactQuery: () => void | Promise<void>;
   onOpenExternalChat: (entry: ExternalChatEntry) => void | Promise<void>;
+  onPetThoughtPlacementChange: (placement: PetThoughtPlacement) => void;
   onPetPrimaryClick: () => void | Promise<void>;
   onOpenSettingsFromCompact: () => void | Promise<void>;
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
@@ -73,6 +76,7 @@ export default function CompactWindow({
   isCompactModelOpen,
   isCompactQueryOpen,
   isCompactReplyLoading,
+  petThoughtPlacement,
   petThought,
   omniSmallIconSrc,
   compactMenuSide,
@@ -90,6 +94,7 @@ export default function CompactWindow({
   onOpenCompactMenu,
   onOpenCompactQuery,
   onOpenExternalChat,
+  onPetThoughtPlacementChange,
   onPetPrimaryClick,
   onOpenSettingsFromCompact,
   onPointerHitTest,
@@ -111,6 +116,7 @@ export default function CompactWindow({
   const petViewportSize = getCodexPetViewportSize(compactSize.width);
   const petRenderHeight = petViewportSize.height;
   const petRenderWidth = petViewportSize.width;
+  const petButtonRef = useRef<HTMLButtonElement | null>(null);
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
   const shouldShowPetThought = Boolean(
     isPetAppearance &&
@@ -120,7 +126,7 @@ export default function CompactWindow({
       !isCompactReplyLoading &&
       !compactReply
   );
-  const isPetThoughtLayout = isPetAppearance;
+  const isPetThoughtLayout = shouldShowPetThought;
   const petState = compactReply?.isError
     ? "failed"
     : petCelebrateReply
@@ -165,7 +171,7 @@ export default function CompactWindow({
         isPetAppearance && (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply)
           ? "compact-shell--pet-expanded"
           : ""
-      } ${isPetThoughtLayout ? "compact-shell--pet-thought" : ""}`}
+      } ${isPetThoughtLayout ? `compact-shell--pet-thought compact-shell--pet-thought-${petThoughtPlacement}` : ""}`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
         const isInsideFloatingPanel = Boolean(
@@ -230,8 +236,15 @@ export default function CompactWindow({
           style={compactStyle}
         >
           <div className="compact-menu-anchor no-drag" onContextMenu={isAnimatedAppearance ? onCharacterContextMenu : undefined}>
-            {shouldShowPetThought ? <PetThoughtBubble thought={petThought} /> : null}
+            {shouldShowPetThought ? (
+              <PetThoughtBubble
+                thought={petThought}
+                anchorRef={petButtonRef}
+                onPlacementChange={onPetThoughtPlacementChange}
+              />
+            ) : null}
             <button
+              ref={petButtonRef}
               type="button"
               className={`compact-button compact-button--brand ${isAnimatedAppearance ? "compact-button--character" : ""} ${
                 isPetAppearance ? "compact-button--pet" : ""
