@@ -15,10 +15,12 @@ type PetThoughtBubbleProps = {
 
 type BubbleLayout = {
   placement: BubblePlacement;
-  left: number;
-  top: number;
+  bubbleLeft: number;
+  bubbleTop: number;
   tailX: number;
   tailY: number;
+  actionLeft: number;
+  actionTop: number;
   ready: boolean;
 };
 
@@ -29,6 +31,8 @@ const MIN_TAIL_VERTICAL_INSET = 18;
 const REPOSITION_POLL_MS = 180;
 const HORIZONTAL_PLACEMENT_BONUS = 20;
 const PLACEMENT_SWITCH_SCORE_GAP = 36;
+const ACTION_FALLBACK_SIZE = 20;
+const COUNTER_FALLBACK_SIZE = 26;
 
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
@@ -143,21 +147,24 @@ export default function PetThoughtBubble({
   onPlacementChange,
 }: PetThoughtBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const actionRef = useRef<HTMLButtonElement | null>(null);
   const layoutPlacementRef = useRef<BubblePlacement>(placement);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const isError = thought?.status === "error";
   const previewText =
     thought?.status === "thinking" && !thought.previewText.trim()
-      ? "\u6b63\u5728\u601d\u8003..."
+      ? "Thinking..."
       : thought?.status === "error" && !thought.previewText.trim()
-        ? "\u56de\u7b54\u5931\u8d25"
+        ? "Response failed"
         : thought?.previewText.trim() ?? "";
   const [layout, setLayout] = useState<BubbleLayout>({
     placement,
-    left: VIEWPORT_MARGIN,
-    top: VIEWPORT_MARGIN,
+    bubbleLeft: VIEWPORT_MARGIN,
+    bubbleTop: VIEWPORT_MARGIN,
     tailX: 48,
     tailY: 28,
+    actionLeft: VIEWPORT_MARGIN,
+    actionTop: VIEWPORT_MARGIN,
     ready: false,
   });
 
@@ -170,60 +177,77 @@ export default function PetThoughtBubble({
       return;
     }
 
-    const bubble = bubbleRef.current;
     const anchor = anchorRef.current;
-    if (!bubble || !anchor) {
+    if (!anchor) {
       return;
     }
 
     let frame = 0;
 
     const reposition = () => {
+      const bubble = bubbleRef.current;
+      const action = actionRef.current;
       const anchorRect = anchor.getBoundingClientRect();
-      const bubbleRect = bubble.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-      if (isCollapsed) {
-        const left = clamp(
-          anchorRect.right - bubbleRect.width * 0.15,
-          VIEWPORT_MARGIN,
-          viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
-        );
-        const top = clamp(
-          anchorRect.top - bubbleRect.height * 0.2,
-          VIEWPORT_MARGIN,
-          viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
-        );
 
+      const actionWidth =
+        action?.getBoundingClientRect().width ?? (isCollapsed ? COUNTER_FALLBACK_SIZE : ACTION_FALLBACK_SIZE);
+      const actionHeight =
+        action?.getBoundingClientRect().height ?? (isCollapsed ? COUNTER_FALLBACK_SIZE : ACTION_FALLBACK_SIZE);
+      const actionLeft = clamp(
+        anchorRect.right - actionWidth * 0.5,
+        VIEWPORT_MARGIN,
+        viewportWidth - actionWidth - VIEWPORT_MARGIN
+      );
+      const actionTop = clamp(
+        anchorRect.top + anchorRect.height * 0.08,
+        VIEWPORT_MARGIN,
+        viewportHeight - actionHeight - VIEWPORT_MARGIN
+      );
+
+      if (isCollapsed) {
         setLayout((current) => {
           if (
             current.ready &&
-            Math.abs(current.left - left) < 1 &&
-            Math.abs(current.top - top) < 1
+            Math.abs(current.actionLeft - actionLeft) < 1 &&
+            Math.abs(current.actionTop - actionTop) < 1
           ) {
             return current;
           }
-
           return {
-            placement: current.placement,
-            left,
-            top,
-            tailX: current.tailX,
-            tailY: current.tailY,
+            ...current,
+            actionLeft,
+            actionTop,
             ready: true,
           };
         });
         return;
       }
+
+      if (!bubble) {
+        return;
+      }
+
+      const bubbleRect = bubble.getBoundingClientRect();
       const currentPlacement = layoutPlacementRef.current;
       const resolvedPlacement = resolvePlacement(anchorRect, bubbleRect.width, bubbleRect.height, currentPlacement);
       const frameRect = getPlacementFrame(resolvedPlacement, anchorRect, bubbleRect.width, bubbleRect.height);
-      const left = clamp(frameRect.left, VIEWPORT_MARGIN, viewportWidth - bubbleRect.width - VIEWPORT_MARGIN);
-      const top = clamp(frameRect.top, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
+      const bubbleLeft = clamp(frameRect.left, VIEWPORT_MARGIN, viewportWidth - bubbleRect.width - VIEWPORT_MARGIN);
+      const bubbleTop = clamp(frameRect.top, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
       const anchorCenterX = anchorRect.left + anchorRect.width / 2;
       const anchorCenterY = anchorRect.top + anchorRect.height / 2;
-      const tailX = clamp(anchorCenterX - left, MIN_TAIL_HORIZONTAL_INSET, bubbleRect.width - MIN_TAIL_HORIZONTAL_INSET);
-      const tailY = clamp(anchorCenterY - top, MIN_TAIL_VERTICAL_INSET, bubbleRect.height - MIN_TAIL_VERTICAL_INSET);
+      const tailX = clamp(
+        anchorCenterX - bubbleLeft,
+        MIN_TAIL_HORIZONTAL_INSET,
+        bubbleRect.width - MIN_TAIL_HORIZONTAL_INSET
+      );
+      const tailY = clamp(
+        anchorCenterY - bubbleTop,
+        MIN_TAIL_VERTICAL_INSET,
+        bubbleRect.height - MIN_TAIL_VERTICAL_INSET
+      );
+
       if (!lockPlacement && resolvedPlacement !== placement) {
         onPlacementChange(resolvedPlacement);
       }
@@ -232,20 +256,23 @@ export default function PetThoughtBubble({
         if (
           current.ready &&
           current.placement === resolvedPlacement &&
-          Math.abs(current.left - left) < 1 &&
-          Math.abs(current.top - top) < 1 &&
+          Math.abs(current.bubbleLeft - bubbleLeft) < 1 &&
+          Math.abs(current.bubbleTop - bubbleTop) < 1 &&
           Math.abs(current.tailX - tailX) < 1 &&
-          Math.abs(current.tailY - tailY) < 1
+          Math.abs(current.tailY - tailY) < 1 &&
+          Math.abs(current.actionLeft - actionLeft) < 1 &&
+          Math.abs(current.actionTop - actionTop) < 1
         ) {
           return current;
         }
-
         return {
           placement: resolvedPlacement,
-          left,
-          top,
+          bubbleLeft,
+          bubbleTop,
           tailX,
           tailY,
+          actionLeft,
+          actionTop,
           ready: true,
         };
       });
@@ -262,7 +289,12 @@ export default function PetThoughtBubble({
 
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleReposition);
     observer?.observe(anchor);
-    observer?.observe(bubble);
+    if (bubbleRef.current) {
+      observer?.observe(bubbleRef.current);
+    }
+    if (actionRef.current) {
+      observer?.observe(actionRef.current);
+    }
 
     return () => {
       window.cancelAnimationFrame(frame);
@@ -286,41 +318,27 @@ export default function PetThoughtBubble({
   const responseCount = Math.max(1, thought.responseCount || 1);
 
   const bubbleStyle = {
-    left: `${layout.left}px`,
-    top: `${layout.top}px`,
+    left: `${layout.bubbleLeft}px`,
+    top: `${layout.bubbleTop}px`,
     visibility: layout.ready ? "visible" : "hidden",
     "--pet-thought-tail-x": `${layout.tailX}px`,
     "--pet-thought-tail-y": `${layout.tailY}px`,
-    "--pet-thought-arrow-opacity": isCollapsed ? "0" : "1",
+  } as CSSProperties;
+
+  const actionStyle = {
+    left: `${layout.actionLeft}px`,
+    top: `${layout.actionTop}px`,
+    visibility: layout.ready ? "visible" : "hidden",
   } as CSSProperties;
 
   return (
-    <div
-      ref={bubbleRef}
-      className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.placement} ${
-        isCollapsed ? "pet-thought-bubble--collapsed" : ""
-      } no-drag`}
-      style={bubbleStyle}
-    >
+    <>
       {!isCollapsed ? (
-        <>
-          <button
-            type="button"
-            className="pet-thought-bubble__collapse no-drag"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setIsCollapsed(true);
-            }}
-            aria-label="收缩气泡"
-            title="收缩气泡"
-          >
-            <ChevronDown size={11} strokeWidth={2.5} aria-hidden="true" focusable="false" />
-          </button>
+        <div
+          ref={bubbleRef}
+          className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.placement} no-drag`}
+          style={bubbleStyle}
+        >
           <div className="pet-thought-bubble__body">
             <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
               {thought.sessionTitle}
@@ -332,13 +350,42 @@ export default function PetThoughtBubble({
             ) : null}
           </div>
           {isError ? (
-            <CircleAlert className="pet-thought-bubble__badge" size={16} strokeWidth={2.2} aria-hidden="true" focusable="false" />
+            <CircleAlert
+              className="pet-thought-bubble__badge"
+              size={16}
+              strokeWidth={2.2}
+              aria-hidden="true"
+              focusable="false"
+            />
           ) : null}
-        </>
+        </div>
+      ) : null}
+      {!isCollapsed ? (
+        <button
+          ref={actionRef}
+          type="button"
+          className="pet-thought-toggle no-drag"
+          style={actionStyle}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsCollapsed(true);
+          }}
+          aria-label="Collapse thought bubble"
+          title="Collapse thought bubble"
+        >
+          <ChevronDown size={11} strokeWidth={2.5} aria-hidden="true" focusable="false" />
+        </button>
       ) : (
         <button
+          ref={actionRef}
           type="button"
-          className="pet-thought-bubble__counter no-drag"
+          className="pet-thought-counter no-drag"
+          style={actionStyle}
           onMouseDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -348,12 +395,12 @@ export default function PetThoughtBubble({
             event.stopPropagation();
             setIsCollapsed(false);
           }}
-          aria-label={`展开气泡，当前第 ${responseCount} 条回答`}
-          title={`第 ${responseCount} 条回答`}
+          aria-label={`Expand thought bubble, response ${responseCount}`}
+          title={`Response ${responseCount}`}
         >
           {responseCount}
         </button>
       )}
-    </div>
+    </>
   );
 }

@@ -30,10 +30,8 @@ import {
   getCompactWindowSize,
   getExpandedCompactViewportSizeForAppearance,
   getPetCompactViewportSize,
-  getPetThoughtViewportHeight,
   getStoredMainView,
   isCharacterPointerInHitArea,
-  type PetThoughtPlacement,
 } from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
@@ -138,18 +136,9 @@ function MainApp() {
   const [previousModel, setPreviousModel] = useState<string | null>(null);
   const [openChatMenu, setOpenChatMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [codexPetPackage, setCodexPetPackage] = useState<CodexPetPackage | null>(null);
-  const [petThoughtPlacement, setPetThoughtPlacement] = useState<PetThoughtPlacement>("top");
   const messagesScrollRef = useRef<HTMLDivElement>(null);
 
   const isAnimatedCompactAppearance = compactAppearance === "pet";
-  const shouldReservePetThoughtSpace = Boolean(
-    compactAppearance === "pet" &&
-      petThought &&
-      !isCompactMenuOpen &&
-      !isCompactQueryOpen &&
-      !isCompactReplyLoading &&
-      !compactReply
-  );
   const effectiveCompactScale = compactAppearance === "pet" ? characterScale * CHARACTER_SCALE_BASELINE : 1;
   const compactSize = useMemo(
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
@@ -163,8 +152,6 @@ function MainApp() {
         isCompactQueryOpen,
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
-        thoughtPlacement: petThoughtPlacement,
-        reservePetThoughtSpace: shouldReservePetThoughtSpace,
       });
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
@@ -183,8 +170,6 @@ function MainApp() {
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
-    petThoughtPlacement,
-    shouldReservePetThoughtSpace,
   ]);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
@@ -199,7 +184,6 @@ function MainApp() {
         : 8;
     const inlineBarWidth = isAnimatedCompactAppearance ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
     const compactCharacterSize = getCodexPetViewportHeight(compactSize.width);
-    const compactPetThoughtHeight = shouldReservePetThoughtSpace ? getPetThoughtViewportHeight(compactSize.width) : 0;
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -210,15 +194,8 @@ function MainApp() {
       "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
-      "--compact-pet-thought-height": `${compactPetThoughtHeight}px`,
     } as CSSProperties;
-  }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance, shouldReservePetThoughtSpace]);
-
-  useEffect(() => {
-    if (!shouldReservePetThoughtSpace && petThoughtPlacement !== "top") {
-      setPetThoughtPlacement("top");
-    }
-  }, [petThoughtPlacement, shouldReservePetThoughtSpace]);
+  }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance]);
 
   const availableModels = modelRegistry.getAvailableModels();
   const hasModels = availableModels.length > 0;
@@ -338,9 +315,7 @@ function MainApp() {
     isCompactReplyLoading,
     isCompactWindow,
     onRestoreMain: handleRestoreMain,
-    petThoughtPlacement,
     resetCompactFloatingUi,
-    shouldReservePetThoughtSpace,
     setCharacterMenuPosition,
     setCharacterScale,
     setCompactAppearance,
@@ -509,7 +484,6 @@ function MainApp() {
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
         isCharacterDragging={compactController.isCharacterDragging}
-        petThoughtPlacement={petThoughtPlacement}
         petThought={petThought}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
@@ -525,7 +499,6 @@ function MainApp() {
         onOpenCompactMenu={compactController.openCompactMenu}
         onOpenCompactQuery={compactController.handleOpenCompactQuery}
         onOpenExternalChat={compactController.handleOpenExternalChat}
-        onPetThoughtPlacementChange={setPetThoughtPlacement}
         onPetPrimaryClick={compactController.handlePetPrimaryClick}
         onOpenSettingsFromCompact={desktopActions.openSettings}
         onPointerHitTest={isCharacterPointerInHitArea}
