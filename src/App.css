@@ -4414,7 +4414,7 @@ body,
 
 .pet-thought-bubble {
   --pet-thought-border: rgba(203, 213, 225, 0.9);
-  min-width: 184px;
+  min-width: 0;
   max-width: min(280px, calc(100vw - 24px));
   position: fixed;
   left: 0;
