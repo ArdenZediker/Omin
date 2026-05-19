@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
@@ -51,6 +51,13 @@ function getSafeCurrentWindow() {
 const appWindow = getSafeCurrentWindow() as ReturnType<typeof getCurrentWindow>;
 const PET_THOUGHT_LAYOUT_PADDING_X = 18;
 const PET_THOUGHT_LAYOUT_PADDING_Y = 12;
+const PET_THOUGHT_EDGE_MARGIN = 24;
+const PET_THOUGHT_GAP = 12;
+const PET_THOUGHT_ESTIMATED_WIDTH = 280;
+const PET_THOUGHT_ESTIMATED_HEIGHT = 112;
+const PET_THOUGHT_HORIZONTAL_BONUS = 20;
+const PET_THOUGHT_SWITCH_SCORE_GAP = 42;
+const PET_THOUGHT_SWITCH_COOLDOWN_MS = 90;
 
 function getPetAnchorOffset(
   size: { width: number; height: number },
@@ -90,6 +97,65 @@ function getPetAnchorOffset(
   }
 }
 
+function resolvePetThoughtPlacementFromPointer(
+  pointerScreenX: number,
+  pointerScreenY: number,
+  currentPlacement: PetThoughtPlacement,
+  canSwitch: boolean
+) {
+  const screenInfo = window.screen as Screen & { availLeft?: number; availTop?: number };
+  const availLeft = Number(screenInfo.availLeft ?? 0);
+  const availTop = Number(screenInfo.availTop ?? 0);
+  const availWidth = Number(screenInfo.availWidth || screenInfo.width || 0);
+  const availHeight = Number(screenInfo.availHeight || screenInfo.height || 0);
+  const right = availLeft + availWidth;
+  const bottom = availTop + availHeight;
+  const leftSpace = pointerScreenX - availLeft;
+  const rightSpace = right - pointerScreenX;
+  const topSpace = pointerScreenY - availTop;
+  const bottomSpace = bottom - pointerScreenY;
+
+  const horizontalNeed = PET_THOUGHT_ESTIMATED_WIDTH + PET_THOUGHT_GAP + PET_THOUGHT_EDGE_MARGIN;
+  const verticalNeed = PET_THOUGHT_ESTIMATED_HEIGHT + PET_THOUGHT_GAP + PET_THOUGHT_EDGE_MARGIN;
+  const candidates: Array<{ placement: PetThoughtPlacement; fits: boolean; score: number }> = [
+    {
+      placement: "right",
+      fits: rightSpace >= horizontalNeed,
+      score: rightSpace - horizontalNeed + PET_THOUGHT_HORIZONTAL_BONUS,
+    },
+    {
+      placement: "left",
+      fits: leftSpace >= horizontalNeed,
+      score: leftSpace - horizontalNeed + PET_THOUGHT_HORIZONTAL_BONUS,
+    },
+    {
+      placement: "top",
+      fits: topSpace >= verticalNeed,
+      score: topSpace - verticalNeed,
+    },
+    {
+      placement: "bottom",
+      fits: bottomSpace >= verticalNeed,
+      score: bottomSpace - verticalNeed,
+    },
+  ];
+
+  const fitCandidates = candidates.filter((candidate) => candidate.fits);
+  const pool = fitCandidates.length > 0 ? fitCandidates : candidates;
+  const best = pool.reduce((winner, candidate) => (candidate.score > winner.score ? candidate : winner), pool[0]);
+  if (!canSwitch) {
+    return currentPlacement;
+  }
+  if (best.placement === currentPlacement) {
+    return currentPlacement;
+  }
+  const currentCandidate = pool.find((candidate) => candidate.placement === currentPlacement);
+  if (currentCandidate && best.score - currentCandidate.score < PET_THOUGHT_SWITCH_SCORE_GAP) {
+    return currentPlacement;
+  }
+  return best.placement;
+}
+
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
   closeCompactMenuPanels: () => void;
@@ -112,6 +178,7 @@ type UseCompactWindowControllerArgs = {
   petThoughtPlacement: PetThoughtPlacement;
   resetCompactFloatingUi: () => void;
   shouldReservePetThoughtSpace: boolean;
+  setPetThoughtPlacement: React.Dispatch<React.SetStateAction<PetThoughtPlacement>>;
   setCharacterMenuPosition: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
   setCharacterScale: React.Dispatch<React.SetStateAction<number>>;
   setCompactAppearance: React.Dispatch<React.SetStateAction<CompactAppearance>>;
@@ -149,6 +216,7 @@ export function useCompactWindowController({
   petThoughtPlacement,
   resetCompactFloatingUi,
   shouldReservePetThoughtSpace,
+  setPetThoughtPlacement,
   setCharacterMenuPosition,
   setCharacterScale,
   setCompactAppearance,
@@ -165,6 +233,7 @@ export function useCompactWindowController({
 }: UseCompactWindowControllerArgs) {
   const PET_CLICK_DRAG_THRESHOLD_PX = 4;
   const PET_CLICK_SUPPRESS_AFTER_DRAG_MS = 320;
+  const [isCharacterDragging, setIsCharacterDragging] = useState(false);
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
   const isCharacterDraggingRef = useRef(false);
@@ -182,6 +251,12 @@ export function useCompactWindowController({
   const lastAppliedCompactSizeRef = useRef<{ width: number; height: number } | null>(null);
   const lastAppliedPetThoughtPlacementRef = useRef<PetThoughtPlacement>("top");
   const lastReservedPetThoughtSpaceRef = useRef(false);
+  const currentPetThoughtPlacementRef = useRef<PetThoughtPlacement>(petThoughtPlacement);
+  const petThoughtPlacementLastSwitchAtRef = useRef(0);
+
+  useEffect(() => {
+    currentPetThoughtPlacementRef.current = petThoughtPlacement;
+  }, [petThoughtPlacement]);
   useEffect(() => {
     if (!isCompactWindow) {
       return;
@@ -637,11 +712,29 @@ export function useCompactWindowController({
         return false;
       }
 
+      if (!isCharacterDraggingRef.current) {
+        setIsCharacterDragging(true);
+      }
       isCharacterDraggingRef.current = true;
       scheduleCharacterDragPosition(origin.windowX + deltaX, origin.windowY + deltaY);
+      if (shouldReservePetThoughtSpace) {
+        const now = Date.now();
+        const canSwitch = now - petThoughtPlacementLastSwitchAtRef.current >= PET_THOUGHT_SWITCH_COOLDOWN_MS;
+        const nextPlacement = resolvePetThoughtPlacementFromPointer(
+          pointerScreenX,
+          pointerScreenY,
+          currentPetThoughtPlacementRef.current,
+          canSwitch
+        );
+        if (nextPlacement !== currentPetThoughtPlacementRef.current) {
+          petThoughtPlacementLastSwitchAtRef.current = now;
+          currentPetThoughtPlacementRef.current = nextPlacement;
+          setPetThoughtPlacement(nextPlacement);
+        }
+      }
       return true;
     },
-    [scheduleCharacterDragPosition]
+    [scheduleCharacterDragPosition, setPetThoughtPlacement, shouldReservePetThoughtSpace]
   );
 
   const closeCompactMenu = useCallback(() => {
@@ -758,6 +851,7 @@ export function useCompactWindowController({
         characterDragOriginRef.current = null;
         characterPointerMovedRef.current = false;
         isCharacterDraggingRef.current = false;
+        setIsCharacterDragging(false);
         return;
       }
 
@@ -768,6 +862,7 @@ export function useCompactWindowController({
         characterPointerDownRef.current = null;
         characterDragOriginRef.current = null;
         characterPointerMovedRef.current = false;
+        setIsCharacterDragging(false);
         resetCompactFloatingUi();
         return;
       }
@@ -802,6 +897,7 @@ export function useCompactWindowController({
     }
     characterPointerMovedRef.current = false;
     isCharacterDraggingRef.current = false;
+    setIsCharacterDragging(false);
   }, []);
 
   useEffect(() => {
@@ -1001,6 +1097,7 @@ export function useCompactWindowController({
       event.stopPropagation();
       suppressCompactBlur();
       isCharacterDraggingRef.current = false;
+      setIsCharacterDragging(false);
       clearPendingDragTimer(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
 
@@ -1055,6 +1152,7 @@ export function useCompactWindowController({
     handleOpenCompactQuery,
     handleOpenExternalChat,
     handleOpenSettingsFromCompact,
+    isCharacterDragging,
     openCompactMenu,
   };
 }
