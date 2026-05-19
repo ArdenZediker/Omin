@@ -28,7 +28,6 @@ import {
   openInternalChatWindow,
   persistCompactPosition,
   showSettingsWindow,
-  type PetThoughtPlacement,
 } from "../app/window";
 import {
   resolveCompactMenuPositionFromViewport,
@@ -49,46 +48,6 @@ function getSafeCurrentWindow() {
 }
 
 const appWindow = getSafeCurrentWindow() as ReturnType<typeof getCurrentWindow>;
-const PET_THOUGHT_LAYOUT_PADDING_X = 18;
-const PET_THOUGHT_LAYOUT_PADDING_Y = 12;
-
-function getPetAnchorOffset(
-  size: { width: number; height: number },
-  compactSize: { width: number; height: number },
-  placement: PetThoughtPlacement,
-  hasThoughtBubble: boolean
-) {
-  if (!hasThoughtBubble) {
-    return {
-      x: size.width / 2,
-      y: size.height / 2,
-    };
-  }
-
-  switch (placement) {
-    case "right":
-      return {
-        x: PET_THOUGHT_LAYOUT_PADDING_X + compactSize.width / 2,
-        y: size.height / 2,
-      };
-    case "left":
-      return {
-        x: size.width - PET_THOUGHT_LAYOUT_PADDING_X - compactSize.width / 2,
-        y: size.height / 2,
-      };
-    case "bottom":
-      return {
-        x: size.width / 2,
-        y: PET_THOUGHT_LAYOUT_PADDING_Y + compactSize.height / 2,
-      };
-    case "top":
-    default:
-      return {
-        x: size.width / 2,
-        y: size.height - PET_THOUGHT_LAYOUT_PADDING_Y - compactSize.height / 2,
-      };
-  }
-}
 
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
@@ -109,9 +68,7 @@ type UseCompactWindowControllerArgs = {
   isCompactReplyLoading: boolean;
   isCompactWindow: boolean;
   onRestoreMain: (focusInput?: boolean) => Promise<void>;
-  petThoughtPlacement: PetThoughtPlacement;
   resetCompactFloatingUi: () => void;
-  shouldReservePetThoughtSpace: boolean;
   setCharacterMenuPosition: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
   setCharacterScale: React.Dispatch<React.SetStateAction<number>>;
   setCompactAppearance: React.Dispatch<React.SetStateAction<CompactAppearance>>;
@@ -146,9 +103,7 @@ export function useCompactWindowController({
   isCompactReplyLoading,
   isCompactWindow,
   onRestoreMain,
-  petThoughtPlacement,
   resetCompactFloatingUi,
-  shouldReservePetThoughtSpace,
   setCharacterMenuPosition,
   setCharacterScale,
   setCompactAppearance,
@@ -181,8 +136,6 @@ export function useCompactWindowController({
   const compactInteractionUntilRef = useRef(0);
   const compactSuppressBlurUntilRef = useRef(0);
   const lastAppliedCompactSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const lastAppliedPetThoughtPlacementRef = useRef<PetThoughtPlacement>("top");
-  const lastReservedPetThoughtSpaceRef = useRef(false);
   useEffect(() => {
     if (!isCompactWindow) {
       return;
@@ -467,44 +420,25 @@ export function useCompactWindowController({
       suppressCompactBlur();
       if (compactAppearance === "pet") {
         await appWindow.setAlwaysOnTop(true);
-        const lastSize = lastAppliedCompactSizeRef.current;
         const hasSizeChanged =
-          !lastSize ||
-          Math.round(lastSize.width) !== Math.round(targetSize.width) ||
-          Math.round(lastSize.height) !== Math.round(targetSize.height);
+          !lastAppliedCompactSizeRef.current ||
+          Math.round(lastAppliedCompactSizeRef.current.width) !== Math.round(targetSize.width) ||
+          Math.round(lastAppliedCompactSizeRef.current.height) !== Math.round(targetSize.height);
         const currentSizeChanged =
           Math.round(currentSize.width) !== Math.round(targetSize.width) ||
           Math.round(currentSize.height) !== Math.round(targetSize.height);
-        const placementChanged = lastAppliedPetThoughtPlacementRef.current !== petThoughtPlacement;
-        const petThoughtVisibilityChanged = lastReservedPetThoughtSpaceRef.current !== shouldReservePetThoughtSpace;
 
-        if (hasSizeChanged || currentSizeChanged || placementChanged || petThoughtVisibilityChanged) {
-          let nextX = Math.round(currentPosition.x - (targetSize.width - currentSize.width) / 2);
-          let nextY = Math.round(currentPosition.y);
-
-          if (shouldReservePetThoughtSpace || lastReservedPetThoughtSpaceRef.current) {
-            const currentAnchor = getPetAnchorOffset(
-              currentSize,
-              compactSize,
-              lastAppliedPetThoughtPlacementRef.current,
-              lastReservedPetThoughtSpaceRef.current
-            );
-            const nextAnchor = getPetAnchorOffset(targetSize, compactSize, petThoughtPlacement, shouldReservePetThoughtSpace);
-            nextX = Math.round(currentPosition.x + currentAnchor.x - nextAnchor.x);
-            nextY = Math.round(currentPosition.y + currentAnchor.y - nextAnchor.y);
-          }
-
-          if (nextX !== Math.round(currentPosition.x) || nextY !== Math.round(currentPosition.y)) {
+        if (hasSizeChanged || currentSizeChanged) {
+          const nextX = Math.round(currentPosition.x - (targetSize.width - currentSize.width) / 2);
+          if (nextX !== Math.round(currentPosition.x)) {
             compactInternalMoveRef.current = true;
-            await appWindow.setPosition(new LogicalPosition(nextX, nextY));
+            await appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y)));
             window.setTimeout(() => {
               compactInternalMoveRef.current = false;
             }, 120);
           }
           await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
           lastAppliedCompactSizeRef.current = { ...targetSize };
-          lastAppliedPetThoughtPlacementRef.current = petThoughtPlacement;
-          lastReservedPetThoughtSpaceRef.current = shouldReservePetThoughtSpace;
         }
         return;
       }
@@ -535,8 +469,6 @@ export function useCompactWindowController({
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
-    petThoughtPlacement,
-    shouldReservePetThoughtSpace,
     suppressCompactBlur,
   ]);
 

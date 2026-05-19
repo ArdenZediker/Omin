@@ -3,7 +3,6 @@ import type { BasicSettings, CompactReply, ExternalChatEntry, PetThoughtState } 
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
-import type { PetThoughtPlacement } from "../app/window";
 import DesktopPet from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
@@ -29,7 +28,6 @@ type CompactWindowProps = {
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
   isCharacterDragging: boolean;
-  petThoughtPlacement: PetThoughtPlacement;
   petThought: PetThoughtState | null;
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
@@ -46,7 +44,6 @@ type CompactWindowProps = {
   onOpenCompactMenu: (clientX?: number, clientY?: number) => void | Promise<void>;
   onOpenCompactQuery: () => void | Promise<void>;
   onOpenExternalChat: (entry: ExternalChatEntry) => void | Promise<void>;
-  onPetThoughtPlacementChange: (placement: PetThoughtPlacement) => void;
   onPetPrimaryClick: () => void | Promise<void>;
   onOpenSettingsFromCompact: () => void | Promise<void>;
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
@@ -77,7 +74,6 @@ export default function CompactWindow({
   isCompactQueryOpen,
   isCompactReplyLoading,
   isCharacterDragging,
-  petThoughtPlacement,
   petThought,
   omniSmallIconSrc,
   compactMenuSide,
@@ -95,7 +91,6 @@ export default function CompactWindow({
   onOpenCompactMenu,
   onOpenCompactQuery,
   onOpenExternalChat,
-  onPetThoughtPlacementChange,
   onPetPrimaryClick,
   onOpenSettingsFromCompact,
   onPointerHitTest,
@@ -126,7 +121,6 @@ export default function CompactWindow({
       !isCompactReplyLoading &&
       !compactReply
   );
-  const isPetThoughtLayout = shouldShowPetThought;
   const petState = compactReply?.isError
     ? "failed"
     : petCelebrateReply
@@ -171,7 +165,7 @@ export default function CompactWindow({
         isPetAppearance && (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply)
           ? "compact-shell--pet-expanded"
           : ""
-      } ${isPetThoughtLayout ? `compact-shell--pet-thought compact-shell--pet-thought-${petThoughtPlacement}` : ""}`}
+      }`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
         const isInsideFloatingPanel = Boolean(
@@ -203,7 +197,7 @@ export default function CompactWindow({
       <div
         className={`compact-hover-zone ${isAnimatedAppearance ? "compact-hover-zone--character" : ""} ${
           isPetAppearance ? "compact-hover-zone--pet" : ""
-        } ${isPetThoughtLayout ? "compact-hover-zone--pet-thought" : ""}`}
+        }`}
         onMouseEnter={
           !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
             ? (e) => {
@@ -232,7 +226,7 @@ export default function CompactWindow({
         <div
           className={`compact-bar ${isAnimatedAppearance ? "compact-bar--character" : ""} ${
             isPetAppearance ? "compact-bar--pet" : ""
-          } ${isPetThoughtLayout ? "compact-bar--pet-thought" : ""}`}
+          }`}
           style={compactStyle}
         >
           <div className="compact-menu-anchor no-drag" onContextMenu={isAnimatedAppearance ? onCharacterContextMenu : undefined}>
@@ -240,9 +234,9 @@ export default function CompactWindow({
               <PetThoughtBubble
                 thought={petThought}
                 anchorRef={petButtonRef}
-                placement={petThoughtPlacement}
+                placement="top"
                 lockPlacement={isCharacterDragging}
-                onPlacementChange={onPetThoughtPlacementChange}
+                onPlacementChange={() => undefined}
               />
             ) : null}
             <button

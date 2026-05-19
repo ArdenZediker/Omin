@@ -4281,26 +4281,6 @@ body,
   justify-content: center;
 }
 
-.compact-hover-zone--pet-thought {
-  width: 100%;
-  height: 100%;
-  align-items: stretch;
-  justify-content: stretch;
-  padding: 0;
-  margin: 0;
-}
-
-.compact-shell--pet-thought {
-  justify-content: flex-start;
-}
-
-.compact-shell--pet-thought .compact-hover-zone--pet {
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  margin: 0;
-}
-
 .compact-hover-zone--character {
   padding: 0;
   margin: 0;
@@ -4455,20 +4435,6 @@ body,
   will-change: left, top;
 }
 
-.pet-thought-bubble--collapsed {
-  min-width: 26px;
-  width: 26px;
-  height: 26px;
-  max-width: none;
-  padding: 0;
-  border-radius: 999px;
-  gap: 0;
-  pointer-events: auto;
-  border: 0;
-  box-shadow: none;
-  background: transparent;
-}
-
 .pet-thought-bubble::after {
   content: "";
   position: absolute;
@@ -4545,47 +4511,32 @@ body,
   filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.12));
 }
 
-.pet-thought-bubble__collapse {
+.pet-thought-toggle,
+.pet-thought-counter {
   pointer-events: auto;
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  width: 18px;
-  height: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.42);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
+  position: fixed;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.46);
+  background: rgba(255, 255, 255, 0.96);
   color: var(--omni-app-muted);
-  font-size: 11px;
-  line-height: 1;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.pet-thought-bubble__collapse:hover {
-  border-color: rgba(100, 116, 139, 0.6);
-  color: var(--omni-app-text);
-}
-
-.pet-thought-bubble__counter {
-  pointer-events: auto;
-  width: 26px;
-  height: 26px;
-  border: 0;
   border-radius: 999px;
-  background: rgba(220, 234, 248, 0.96);
-  color: #334155;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(71, 85, 105, 0.24);
+  box-shadow: 0 2px 6px rgba(71, 85, 105, 0.16);
+  z-index: 25;
+}
+
+.pet-thought-counter {
+  width: 26px;
+  height: 26px;
+  color: #334155;
+  background: rgba(220, 234, 248, 0.98);
 }
 
 .pet-thought-bubble--thinking {
@@ -5686,13 +5637,13 @@ body,
     0 2px 4px rgba(0, 0, 0, 0.14);
 }
 
-:root[data-omni-theme="dark"] .pet-thought-bubble__collapse {
+:root[data-omni-theme="dark"] .pet-thought-toggle {
   background: rgba(18, 18, 18, 0.92);
   border-color: rgba(255, 255, 255, 0.18);
   color: rgba(255, 255, 255, 0.72);
 }
 
-:root[data-omni-theme="dark"] .pet-thought-bubble__counter {
+:root[data-omni-theme="dark"] .pet-thought-counter {
   background: rgba(71, 85, 105, 0.9);
   color: rgba(219, 234, 254, 0.96);
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.48);
