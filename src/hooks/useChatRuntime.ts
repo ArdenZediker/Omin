@@ -69,8 +69,6 @@ const SILENT_LOCAL_TOOL_IDS = new Set([
   "pet",
 ]);
 
-const PET_THOUGHT_COMPLETE_CLEAR_DELAY_MS = 1200;
-
 function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -205,10 +203,6 @@ export function useChatRuntime({
         status: "complete",
         updatedAt: Date.now(),
       });
-      petThoughtClearTimerRef.current = window.setTimeout(() => {
-        petThoughtClearTimerRef.current = null;
-        emitPetThought(null);
-      }, PET_THOUGHT_COMPLETE_CLEAR_DELAY_MS);
     },
     [clearPetThoughtTimer, emitPetThought, resolvePetThoughtResponseCount, resolvePetThoughtTitle]
   );

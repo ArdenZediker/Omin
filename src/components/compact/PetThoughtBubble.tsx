@@ -1,4 +1,4 @@
-import { ChevronDown, CircleAlert } from "lucide-react";
+import { CheckCircle2, ChevronDown, CircleAlert, LoaderCircle } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { PetThoughtState } from "../../app/types";
@@ -56,6 +56,8 @@ export default function PetThoughtBubble({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [placementState, setPlacementState] = useState<PetThoughtPlacement>(placement);
   const isError = thought?.status === "error";
+  const isComplete = thought?.status === "complete";
+  const isThinking = thought?.status === "thinking";
   const previewText =
     thought?.status === "thinking" && !thought.previewText.trim()
       ? "Thinking..."
@@ -267,9 +269,27 @@ export default function PetThoughtBubble({
               </div>
             ) : null}
           </div>
+          {isThinking ? (
+            <LoaderCircle
+              className="pet-thought-bubble__badge pet-thought-bubble__badge--thinking"
+              size={16}
+              strokeWidth={2.2}
+              aria-hidden="true"
+              focusable="false"
+            />
+          ) : null}
+          {isComplete ? (
+            <CheckCircle2
+              className="pet-thought-bubble__badge pet-thought-bubble__badge--complete"
+              size={16}
+              strokeWidth={2.2}
+              aria-hidden="true"
+              focusable="false"
+            />
+          ) : null}
           {isError ? (
             <CircleAlert
-              className="pet-thought-bubble__badge"
+              className="pet-thought-bubble__badge pet-thought-bubble__badge--error"
               size={16}
               strokeWidth={2.2}
               aria-hidden="true"
