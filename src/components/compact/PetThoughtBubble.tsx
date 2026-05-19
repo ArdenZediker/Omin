@@ -15,8 +15,6 @@ type PetThoughtBubbleProps = {
 type BubbleLayout = {
   bubbleLeft: number;
   bubbleTop: number;
-  tailX: number;
-  tailY: number;
   bubblePlacement: PetThoughtPlacement;
   bubbleMaxWidth: number;
   actionLeft: number;
@@ -25,17 +23,16 @@ type BubbleLayout = {
 };
 
 const VIEWPORT_MARGIN = 12;
-const BUBBLE_GAP = 10;
-const MAX_BUBBLE_WIDTH = 280;
-const MIN_BUBBLE_WIDTH = 140;
-const MIN_BUBBLE_HEIGHT = 64;
-const MIN_TAIL_HORIZONTAL_INSET = 24;
-const MIN_TAIL_VERTICAL_INSET = 18;
+const BUBBLE_GAP = 14;
+const MAX_BUBBLE_WIDTH = 320;
+const MIN_BUBBLE_WIDTH = 168;
+const MIN_BUBBLE_HEIGHT = 52;
 const REPOSITION_POLL_MS = 180;
 const ACTION_FALLBACK_SIZE = 20;
 const COUNTER_FALLBACK_SIZE = 26;
-const BUBBLE_VERTICAL_OFFSET = 0.5;
-const ACTION_OFFSET = 10;
+const BUBBLE_VERTICAL_OFFSET = 0.68;
+const ACTION_ANCHOR_OFFSET_X = 6;
+const ACTION_ANCHOR_OFFSET_Y = 4;
 
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
@@ -68,8 +65,6 @@ export default function PetThoughtBubble({
   const [layout, setLayout] = useState<BubbleLayout>({
     bubbleLeft: VIEWPORT_MARGIN,
     bubbleTop: VIEWPORT_MARGIN,
-    tailX: 48,
-    tailY: 28,
     bubblePlacement: "top",
     bubbleMaxWidth: MAX_BUBBLE_WIDTH,
     actionLeft: VIEWPORT_MARGIN,
@@ -160,31 +155,18 @@ export default function PetThoughtBubble({
             : clamp(anchorCenterX - bubbleRect.width / 2, VIEWPORT_MARGIN, viewportWidth - bubbleRect.width - VIEWPORT_MARGIN);
       const bubbleTop =
         bubblePlacement === "top"
-          ? clamp(anchorRect.top - bubbleRect.height - BUBBLE_GAP, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN)
+          ? clamp(anchorRect.top + 6, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN)
           : bubblePlacement === "bottom"
             ? clamp(anchorRect.bottom + BUBBLE_GAP, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN)
             : clamp(anchorCenterY - bubbleRect.height * BUBBLE_VERTICAL_OFFSET, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
 
-      const tailX =
-        bubblePlacement === "top" || bubblePlacement === "bottom"
-          ? clamp(anchorCenterX - bubbleLeft, MIN_TAIL_HORIZONTAL_INSET, bubbleRect.width - MIN_TAIL_HORIZONTAL_INSET)
-          : bubblePlacement === "left"
-            ? bubbleRect.width - 1
-            : 1;
-      const tailY =
-        bubblePlacement === "left" || bubblePlacement === "right"
-          ? clamp(anchorCenterY - bubbleTop, MIN_TAIL_VERTICAL_INSET, bubbleRect.height - MIN_TAIL_VERTICAL_INSET)
-          : bubblePlacement === "top"
-            ? bubbleRect.height - 1
-            : 1;
-
       const actionLeft = clamp(
-        bubbleLeft + bubbleRect.width - actionWidth * 0.5 + ACTION_OFFSET,
+        anchorRect.right - actionWidth * 0.5 + ACTION_ANCHOR_OFFSET_X,
         VIEWPORT_MARGIN,
         viewportWidth - actionWidth - VIEWPORT_MARGIN
       );
       const actionTop = clamp(
-        bubbleTop + ACTION_OFFSET,
+        anchorRect.top + ACTION_ANCHOR_OFFSET_Y,
         VIEWPORT_MARGIN,
         viewportHeight - actionHeight - VIEWPORT_MARGIN
       );
@@ -194,8 +176,6 @@ export default function PetThoughtBubble({
           current.ready &&
           Math.abs(current.bubbleLeft - bubbleLeft) < 1 &&
           Math.abs(current.bubbleTop - bubbleTop) < 1 &&
-          Math.abs(current.tailX - tailX) < 1 &&
-          Math.abs(current.tailY - tailY) < 1 &&
           current.bubblePlacement === bubblePlacement &&
           Math.abs(current.bubbleMaxWidth - bubbleMaxWidth) < 1 &&
           Math.abs(current.actionLeft - actionLeft) < 1 &&
@@ -206,8 +186,6 @@ export default function PetThoughtBubble({
         return {
           bubbleLeft,
           bubbleTop,
-          tailX,
-          tailY,
           bubblePlacement,
           bubbleMaxWidth,
           actionLeft,
@@ -263,8 +241,6 @@ export default function PetThoughtBubble({
     maxWidth: `${Math.round(layout.bubbleMaxWidth)}px`,
     minWidth: "0px",
     visibility: layout.ready ? "visible" : "hidden",
-    "--pet-thought-tail-x": `${layout.tailX}px`,
-    "--pet-thought-tail-y": `${layout.tailY}px`,
   } as CSSProperties;
 
   const actionStyle = {

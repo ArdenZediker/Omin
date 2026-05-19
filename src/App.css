@@ -4415,34 +4415,26 @@ body,
 .pet-thought-bubble {
   --pet-thought-border: rgba(203, 213, 225, 0.9);
   min-width: 0;
-  max-width: min(280px, calc(100vw - 24px));
+  max-width: min(320px, calc(100vw - 24px));
   position: fixed;
   left: 0;
   top: 0;
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid var(--pet-thought-border);
-  box-shadow:
-    0 12px 28px rgba(15, 23, 42, 0.16),
-    0 2px 4px rgba(15, 23, 42, 0.06);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   z-index: 24;
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 8px;
   animation: petThoughtBubbleIn 180ms ease-out;
   will-change: left, top;
   pointer-events: auto;
 }
 
 .pet-thought-bubble::after {
-  content: "";
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  background: inherit;
-  box-shadow: 5px 5px 10px rgba(15, 23, 42, 0.04);
-  opacity: var(--pet-thought-arrow-opacity, 1);
+  display: none;
 }
 
 .pet-thought-bubble--top::after {
@@ -4482,21 +4474,22 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--omni-app-text);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .pet-thought-bubble__body {
   min-width: 0;
   flex: 1 1 auto;
+  padding: 4px 0 0;
 }
 
 .pet-thought-bubble__preview {
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--omni-app-muted);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -4506,7 +4499,7 @@ body,
 
 .pet-thought-bubble__badge {
   flex: 0 0 auto;
-  margin-top: 1px;
+  margin-top: 4px;
   color: #ef4444;
   filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.12));
 }
@@ -4515,8 +4508,8 @@ body,
 .pet-thought-counter {
   pointer-events: auto;
   position: fixed;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 1px solid rgba(148, 163, 184, 0.46);
   background: rgba(255, 255, 255, 0.96);
   color: var(--omni-app-muted);
@@ -4533,10 +4526,27 @@ body,
 }
 
 .pet-thought-counter {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   color: #334155;
-  background: rgba(220, 234, 248, 0.98);
+  background: rgba(219, 234, 254, 0.98);
+  box-shadow: 0 6px 18px rgba(147, 197, 253, 0.32);
+}
+
+.pet-thought-bubble--top,
+.pet-thought-bubble--bottom {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.pet-thought-bubble--left,
+.pet-thought-bubble--right {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.pet-thought-bubble__body {
+  background: transparent;
 }
 
 .pet-thought-bubble--thinking {
@@ -4554,12 +4564,12 @@ body,
 @keyframes petThoughtBubbleIn {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.98);
+    transform: translateY(6px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
