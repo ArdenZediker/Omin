@@ -217,17 +217,24 @@ export function useChatRuntime({
       return;
     }
 
-    let unlisten: (() => void) | undefined;
+    let unlistenRequest: (() => void) | undefined;
+    let unlistenViewed: (() => void) | undefined;
     void listen("omni-pet-thought-request", () => {
       void emit("omni-pet-thought-changed", petThoughtRef.current);
     }).then((cleanup) => {
-      unlisten = cleanup;
+      unlistenRequest = cleanup;
+    });
+    void listen("omni-pet-thought-viewed", () => {
+      clearPetThought();
+    }).then((cleanup) => {
+      unlistenViewed = cleanup;
     });
 
     return () => {
-      unlisten?.();
+      unlistenRequest?.();
+      unlistenViewed?.();
     };
-  }, [isCompactWindow]);
+  }, [clearPetThought, isCompactWindow]);
 
   useEffect(() => {
     return () => {

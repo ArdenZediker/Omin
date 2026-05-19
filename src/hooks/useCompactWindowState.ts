@@ -89,16 +89,24 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
       return;
     }
 
-    let unlisten: (() => void) | undefined;
+    let unlistenThought: (() => void) | undefined;
+    let unlistenViewed: (() => void) | undefined;
     void listen<PetThoughtState>("omni-pet-thought-changed", (event) => {
       setPetThought(event.payload ?? null);
     }).then((cleanup) => {
-      unlisten = cleanup;
+      unlistenThought = cleanup;
       void emit("omni-pet-thought-request");
+    });
+    void listen("omni-pet-thought-viewed", () => {
+      setPetThought(null);
+      setPetThoughtPlacement("top");
+    }).then((cleanup) => {
+      unlistenViewed = cleanup;
     });
 
     return () => {
-      unlisten?.();
+      unlistenThought?.();
+      unlistenViewed?.();
     };
   }, [isCompactWindow]);
 
