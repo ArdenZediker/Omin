@@ -53,6 +53,7 @@ export type PetThoughtState = {
   sessionId: string | null;
   sessionTitle: string;
   previewText: string;
+  responseCount: number;
   status: PetThoughtStatus;
   updatedAt: number;
 };
