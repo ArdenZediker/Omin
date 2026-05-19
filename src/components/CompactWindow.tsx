@@ -112,6 +112,7 @@ export default function CompactWindow({
   const petRenderHeight = petViewportSize.height;
   const petRenderWidth = petViewportSize.width;
   const petButtonRef = useRef<HTMLButtonElement | null>(null);
+  const petAnchorRef = useRef<HTMLDivElement | null>(null);
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
   const shouldShowPetThought = Boolean(
     isPetAppearance &&
@@ -233,7 +234,7 @@ export default function CompactWindow({
             {shouldShowPetThought ? (
               <PetThoughtBubble
                 thought={petThought}
-                anchorRef={petButtonRef}
+                anchorRef={petAnchorRef}
                 placement="top"
                 lockPlacement={isCharacterDragging}
                 onPlacementChange={() => undefined}
@@ -281,7 +282,13 @@ export default function CompactWindow({
               aria-label="\u5207\u6362\u4e3b\u754c\u9762"
             >
               {isPetAppearance ? (
-                <DesktopPet width={petRenderWidth} height={petRenderHeight} state={petState} packageData={codexPetPackage} />
+                <DesktopPet
+                  ref={petAnchorRef}
+                  width={petRenderWidth}
+                  height={petRenderHeight}
+                  state={petState}
+                  packageData={codexPetPackage}
+                />
               ) : (
                 <img src={omniSmallIconSrc} alt="Omni" className="compact-button__icon" />
               )}

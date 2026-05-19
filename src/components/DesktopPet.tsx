@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { forwardRef, useEffect, useMemo, useState } from "react";
 import { CODEX_PET_CELL_SIZE, fitCodexPetToBounds } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
 
@@ -22,7 +22,10 @@ const PET_ROWS: Record<DesktopPetProps["state"], { row: number; frames: number[]
   review: { row: 8, frames: [0, 1, 2, 3, 4, 5], durations: [150, 150, 150, 150, 150, 280] },
 };
 
-export default function DesktopPet({ width, height, state, packageData }: DesktopPetProps) {
+const DesktopPet = forwardRef<HTMLDivElement, DesktopPetProps>(function DesktopPet(
+  { width, height, state, packageData },
+  ref
+) {
   const [frameIndex, setFrameIndex] = useState(0);
   const actualState = state;
   const frameset = PET_ROWS[actualState];
@@ -57,6 +60,7 @@ export default function DesktopPet({ width, height, state, packageData }: Deskto
 
   return (
     <div
+      ref={ref}
       className="desktop-pet"
       style={{
         width,
@@ -88,4 +92,6 @@ export default function DesktopPet({ width, height, state, packageData }: Deskto
       </div>
     </div>
   );
-}
+});
+
+export default DesktopPet;
