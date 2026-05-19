@@ -49,7 +49,6 @@ type CompactWindowProps = {
   onPetPrimaryClick: () => void | Promise<void>;
   onOpenSettingsFromCompact: () => void | Promise<void>;
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
-  onPointerResizeHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
   onSetCompactQuery: Dispatch<SetStateAction<string>>;
   onSetCompactReply: Dispatch<SetStateAction<CompactReply | null>>;
   onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
@@ -98,7 +97,6 @@ export default function CompactWindow({
   onPetPrimaryClick,
   onOpenSettingsFromCompact,
   onPointerHitTest,
-  onPointerResizeHitTest,
   onSetCompactQuery,
   onSetCompactReply,
   onUpdateBasicSettings,
@@ -253,11 +251,7 @@ export default function CompactWindow({
               onMouseMove={
                 isAnimatedAppearance
                   ? (e) => {
-                      const nextCursor = onPointerResizeHitTest(e.currentTarget, e.clientX, e.clientY)
-                        ? "nwse-resize"
-                        : onPointerHitTest(e.currentTarget, e.clientX, e.clientY)
-                          ? "grab"
-                          : "default";
+                      const nextCursor = onPointerHitTest(e.currentTarget, e.clientX, e.clientY) ? "grab" : "default";
                       e.currentTarget.style.cursor = nextCursor;
                       onCharacterPointerMove(e);
                     }
@@ -268,7 +262,6 @@ export default function CompactWindow({
                 isAnimatedAppearance
                   ? (e) => {
                       e.currentTarget.style.cursor = "default";
-                      onCharacterPointerUp();
                     }
                   : undefined
               }

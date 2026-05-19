@@ -33,7 +33,6 @@ import {
   getPetThoughtViewportHeight,
   getStoredMainView,
   isCharacterPointerInHitArea,
-  isCharacterPointerInResizeArea,
   type PetThoughtPlacement,
 } from "./app/window";
 import { useChatSessions } from "./hooks/useChatSessions";
@@ -324,7 +323,6 @@ function MainApp() {
     basicSettings,
     closeCompactMenuPanels,
     closeCompactMenus,
-    characterScale,
     compactAppearance,
     compactMenuSide,
     compactSubmenuSide,
@@ -530,7 +528,6 @@ function MainApp() {
         onPetPrimaryClick={compactController.handlePetPrimaryClick}
         onOpenSettingsFromCompact={desktopActions.openSettings}
         onPointerHitTest={isCharacterPointerInHitArea}
-        onPointerResizeHitTest={isCharacterPointerInResizeArea}
         onSetCompactQuery={setCompactQuery}
         onSetCompactReply={setCompactReply}
         onUpdateBasicSettings={updateBasicSettings}
