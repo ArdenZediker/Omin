@@ -137,7 +137,6 @@ function MainApp() {
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
     [compactAppearance, effectiveCompactScale]
   );
-  const hasPetThought = Boolean(petThought && !isCompactMenuOpen && !isCompactQueryOpen && !isCompactReplyLoading && !compactReply);
   const compactViewportSize = useMemo(() => {
     if (compactAppearance === "pet") {
       return getPetCompactViewportSize({
@@ -146,7 +145,7 @@ function MainApp() {
         isCompactQueryOpen,
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
-        hasPetThought,
+        reservePetThoughtSpace: isAnimatedCompactAppearance,
       });
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
@@ -166,7 +165,6 @@ function MainApp() {
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
-    hasPetThought,
   ]);
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
@@ -181,7 +179,7 @@ function MainApp() {
         : 8;
     const inlineBarWidth = isAnimatedCompactAppearance ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
     const compactCharacterSize = getCodexPetViewportHeight(compactSize.width);
-    const compactPetThoughtHeight = hasPetThought ? getPetThoughtViewportHeight(compactSize.width) : 0;
+    const compactPetThoughtHeight = isAnimatedCompactAppearance ? getPetThoughtViewportHeight(compactSize.width) : 0;
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -194,7 +192,7 @@ function MainApp() {
       "--compact-character-reply-gap": `${characterReplyGap}px`,
       "--compact-pet-thought-height": `${compactPetThoughtHeight}px`,
     } as CSSProperties;
-  }, [compactSize.height, compactSize.width, hasPetThought, isAnimatedCompactAppearance]);
+  }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance]);
 
   const availableModels = modelRegistry.getAvailableModels();
   const hasModels = availableModels.length > 0;
@@ -307,7 +305,6 @@ function MainApp() {
     compactReply,
     compactSize,
     compactViewportSize,
-    hasPetThought,
     currentModel,
     isCompactAppearanceOpen,
     isCompactMenuOpen,

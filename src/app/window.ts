@@ -316,9 +316,16 @@ export function getPetCompactViewportSize(options: {
   isCompactQueryOpen: boolean;
   isCompactReplyLoading: boolean;
   hasCompactReply: boolean;
-  hasPetThought?: boolean;
+  reservePetThoughtSpace?: boolean;
 }) {
-  const { compactSize, isCompactMenuOpen, isCompactQueryOpen, isCompactReplyLoading, hasCompactReply, hasPetThought } = options;
+  const {
+    compactSize,
+    isCompactMenuOpen,
+    isCompactQueryOpen,
+    isCompactReplyLoading,
+    hasCompactReply,
+    reservePetThoughtSpace,
+  } = options;
 
   if (isCompactMenuOpen) {
     return getPetCompactMenuViewport(compactSize);
@@ -338,7 +345,7 @@ export function getPetCompactViewportSize(options: {
     };
   }
 
-  if (hasPetThought) {
+  if (reservePetThoughtSpace) {
     const thoughtViewportHeight = getPetThoughtViewportHeight(compactSize.width);
     // Reserve room for the bubble so it stays inside the compact window.
     return {

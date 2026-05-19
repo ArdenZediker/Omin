@@ -22,7 +22,6 @@ import {
 import {
   getMonitorForCursor,
   getPetCompactMenuViewport,
-  getPetThoughtViewportHeight,
   isCharacterPointerInHitArea,
   isCharacterPointerInResizeArea,
   isWindowRectVisible,
@@ -63,7 +62,6 @@ type UseCompactWindowControllerArgs = {
   compactReply: CompactReply | null;
   compactSize: { width: number; height: number };
   compactViewportSize: { width: number; height: number } | null;
-  hasPetThought: boolean;
   currentModel: string;
   isCompactAppearanceOpen: boolean;
   isCompactMenuOpen: boolean;
@@ -100,7 +98,6 @@ export function useCompactWindowController({
   compactReply,
   compactSize,
   compactViewportSize,
-  hasPetThought,
   currentModel,
   isCompactAppearanceOpen,
   isCompactMenuOpen,
@@ -140,7 +137,6 @@ export function useCompactWindowController({
   const compactInteractionUntilRef = useRef(0);
   const compactSuppressBlurUntilRef = useRef(0);
   const lastAppliedCompactSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const lastAppliedPetThoughtHeightRef = useRef(0);
   useEffect(() => {
     if (!isCompactWindow) {
       return;
@@ -425,10 +421,6 @@ export function useCompactWindowController({
       suppressCompactBlur();
       if (compactAppearance === "pet") {
         await appWindow.setAlwaysOnTop(true);
-        const thoughtViewportHeight = hasPetThought
-          ? getPetThoughtViewportHeight(compactSize.width)
-          : 0;
-        const thoughtDelta = thoughtViewportHeight - lastAppliedPetThoughtHeightRef.current;
         const lastSize = lastAppliedCompactSizeRef.current;
         const hasSizeChanged =
           !lastSize ||
@@ -440,17 +432,15 @@ export function useCompactWindowController({
 
         if (hasSizeChanged || currentSizeChanged) {
           const nextX = Math.round(currentPosition.x - (targetSize.width - currentSize.width) / 2);
-          const nextY = Math.round(currentPosition.y - thoughtDelta);
-          if (nextX !== Math.round(currentPosition.x) || nextY !== Math.round(currentPosition.y)) {
+          if (nextX !== Math.round(currentPosition.x)) {
             compactInternalMoveRef.current = true;
-            await appWindow.setPosition(new LogicalPosition(nextX, nextY));
+            await appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y)));
             window.setTimeout(() => {
               compactInternalMoveRef.current = false;
             }, 120);
           }
           await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
           lastAppliedCompactSizeRef.current = { ...targetSize };
-          lastAppliedPetThoughtHeightRef.current = thoughtViewportHeight;
         }
         return;
       }
