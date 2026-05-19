@@ -17,6 +17,8 @@ type BubbleLayout = {
   bubbleTop: number;
   tailX: number;
   tailY: number;
+  bubblePlacement: "left" | "top";
+  bubbleMaxWidth: number;
   actionLeft: number;
   actionTop: number;
   ready: boolean;
@@ -24,6 +26,8 @@ type BubbleLayout = {
 
 const VIEWPORT_MARGIN = 12;
 const BUBBLE_GAP = 14;
+const MIN_BUBBLE_WIDTH = 72;
+const MAX_BUBBLE_WIDTH = 280;
 const MIN_TAIL_HORIZONTAL_INSET = 24;
 const MIN_TAIL_VERTICAL_INSET = 18;
 const REPOSITION_POLL_MS = 180;
@@ -63,6 +67,8 @@ export default function PetThoughtBubble({
     bubbleTop: VIEWPORT_MARGIN,
     tailX: 48,
     tailY: 28,
+    bubblePlacement: "left",
+    bubbleMaxWidth: MAX_BUBBLE_WIDTH,
     actionLeft: VIEWPORT_MARGIN,
     actionTop: VIEWPORT_MARGIN,
     ready: false,
@@ -129,24 +135,55 @@ export default function PetThoughtBubble({
         return;
       }
 
-      const bubbleRect = bubble.getBoundingClientRect();
-      const anchorCenterY = anchorRect.top + anchorRect.height / 2;
-      const bubbleLeft = clamp(
-        anchorRect.left - bubbleRect.width - BUBBLE_GAP,
-        VIEWPORT_MARGIN,
-        viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
-      );
-      const bubbleTop = clamp(
-        anchorCenterY - bubbleRect.height * BUBBLE_VERTICAL_OFFSET,
-        VIEWPORT_MARGIN,
-        viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
-      );
       const anchorCenterX = anchorRect.left + anchorRect.width / 2;
-      const tailX = clamp(
-        anchorCenterX - bubbleLeft,
-        MIN_TAIL_HORIZONTAL_INSET,
-        bubbleRect.width - MIN_TAIL_HORIZONTAL_INSET
-      );
+      const anchorCenterY = anchorRect.top + anchorRect.height / 2;
+      const leftAvailableWidth = anchorRect.left - VIEWPORT_MARGIN - BUBBLE_GAP;
+      const canPlaceLeft = leftAvailableWidth >= MIN_BUBBLE_WIDTH;
+      const bubbleMaxWidth = canPlaceLeft
+        ? clamp(leftAvailableWidth, MIN_BUBBLE_WIDTH, MAX_BUBBLE_WIDTH)
+        : clamp(viewportWidth - VIEWPORT_MARGIN * 2, MIN_BUBBLE_WIDTH, MAX_BUBBLE_WIDTH);
+      const bubblePlacement: "left" | "top" = canPlaceLeft ? "left" : "top";
+      const bubbleWidthLimit = Math.round(bubbleMaxWidth);
+      bubble.style.maxWidth = `${bubbleWidthLimit}px`;
+      bubble.style.minWidth = "0px";
+
+      const bubbleRect = bubble.getBoundingClientRect();
+      const bubbleLeft =
+        bubblePlacement === "left"
+          ? clamp(
+              anchorRect.left - bubbleRect.width - BUBBLE_GAP,
+              VIEWPORT_MARGIN,
+              viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
+            )
+          : clamp(
+              anchorCenterX - bubbleRect.width / 2,
+              VIEWPORT_MARGIN,
+              viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
+            );
+      const bubbleTop =
+        bubblePlacement === "left"
+          ? clamp(
+              anchorCenterY - bubbleRect.height * BUBBLE_VERTICAL_OFFSET,
+              VIEWPORT_MARGIN,
+              viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
+            )
+          : clamp(
+              anchorRect.top - BUBBLE_GAP - bubbleRect.height,
+              VIEWPORT_MARGIN,
+              viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
+            );
+      const tailX =
+        bubblePlacement === "left"
+          ? clamp(
+              anchorCenterX - bubbleLeft,
+              MIN_TAIL_HORIZONTAL_INSET,
+              bubbleRect.width - MIN_TAIL_HORIZONTAL_INSET
+            )
+          : clamp(
+              anchorCenterX - bubbleLeft,
+              MIN_TAIL_HORIZONTAL_INSET,
+              bubbleRect.width - MIN_TAIL_HORIZONTAL_INSET
+            );
       const tailY = clamp(
         anchorCenterY - bubbleTop,
         MIN_TAIL_VERTICAL_INSET,
@@ -160,6 +197,8 @@ export default function PetThoughtBubble({
           Math.abs(current.bubbleTop - bubbleTop) < 1 &&
           Math.abs(current.tailX - tailX) < 1 &&
           Math.abs(current.tailY - tailY) < 1 &&
+          current.bubblePlacement === bubblePlacement &&
+          Math.abs(current.bubbleMaxWidth - bubbleMaxWidth) < 1 &&
           Math.abs(current.actionLeft - actionLeft) < 1 &&
           Math.abs(current.actionTop - actionTop) < 1
         ) {
@@ -170,6 +209,8 @@ export default function PetThoughtBubble({
           bubbleTop,
           tailX,
           tailY,
+          bubblePlacement,
+          bubbleMaxWidth,
           actionLeft,
           actionTop,
           ready: true,
@@ -220,6 +261,8 @@ export default function PetThoughtBubble({
   const bubbleStyle = {
     left: `${layout.bubbleLeft}px`,
     top: `${layout.bubbleTop}px`,
+    maxWidth: `${Math.round(layout.bubbleMaxWidth)}px`,
+    minWidth: "0px",
     visibility: layout.ready ? "visible" : "hidden",
     "--pet-thought-tail-x": `${layout.tailX}px`,
     "--pet-thought-tail-y": `${layout.tailY}px`,
@@ -236,7 +279,7 @@ export default function PetThoughtBubble({
       {!isCollapsed ? (
         <div
           ref={bubbleRef}
-          className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--left no-drag`}
+          className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.bubblePlacement} no-drag`}
           style={bubbleStyle}
         >
           <div className="pet-thought-bubble__body">
