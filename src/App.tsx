@@ -191,7 +191,6 @@ function MainApp() {
       "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
-      "--compact-pet-thought-gap": hasPetThought ? "12px" : "0px",
     } as CSSProperties;
   }, [compactSize.height, compactSize.width, hasPetThought, isAnimatedCompactAppearance]);
 
