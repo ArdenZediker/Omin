@@ -31,8 +31,8 @@ const REPOSITION_POLL_MS = 180;
 const ACTION_FALLBACK_SIZE = 20;
 const COUNTER_FALLBACK_SIZE = 26;
 const BUBBLE_VERTICAL_OFFSET = 0.68;
-const ACTION_ANCHOR_OFFSET_X = 6;
-const ACTION_ANCHOR_OFFSET_Y = 4;
+const ACTION_ANCHOR_OFFSET_X = 2;
+const ACTION_ANCHOR_OFFSET_Y = -2;
 
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
@@ -52,9 +52,11 @@ export default function PetThoughtBubble({
   void onPlacementChange;
 
   const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const titleRowRef = useRef<HTMLDivElement | null>(null);
   const actionRef = useRef<HTMLButtonElement | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [placementState, setPlacementState] = useState<PetThoughtPlacement>(placement);
+  const [previewMaxWidth, setPreviewMaxWidth] = useState<number | null>(null);
   const isError = thought?.status === "error";
   const isComplete = thought?.status === "complete";
   const isThinking = thought?.status === "thinking";
@@ -224,6 +226,39 @@ export default function PetThoughtBubble({
   }, [anchorRef, isCollapsed, lockPlacement, previewText, thought]);
 
   useLayoutEffect(() => {
+    if (!thought || isCollapsed) {
+      return;
+    }
+
+    const updatePreviewWidth = () => {
+      const titleRow = titleRowRef.current;
+      if (!titleRow) {
+        return;
+      }
+      const rowWidth = Math.floor(titleRow.getBoundingClientRect().width);
+      if (rowWidth <= 0) {
+        return;
+      }
+      setPreviewMaxWidth((current) => (current === rowWidth ? current : rowWidth));
+    };
+
+    updatePreviewWidth();
+    window.addEventListener("resize", updatePreviewWidth);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updatePreviewWidth);
+    if (titleRowRef.current) {
+      observer?.observe(titleRowRef.current);
+    }
+    if (bubbleRef.current) {
+      observer?.observe(bubbleRef.current);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updatePreviewWidth);
+      observer?.disconnect();
+    };
+  }, [isCollapsed, thought, previewText, placementState, layout.bubbleMaxWidth]);
+
+  useLayoutEffect(() => {
     if (!thought) {
       return;
     }
@@ -260,42 +295,48 @@ export default function PetThoughtBubble({
           style={bubbleStyle}
         >
           <div className="pet-thought-bubble__body">
-            <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
-              {thought.sessionTitle}
+            <div ref={titleRowRef} className="pet-thought-bubble__title-row">
+              <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
+                {thought.sessionTitle}
+              </div>
+              {isThinking ? (
+                <LoaderCircle
+                  className="pet-thought-bubble__badge pet-thought-bubble__badge--thinking"
+                  size={16}
+                  strokeWidth={2.2}
+                  aria-hidden="true"
+                  focusable="false"
+                />
+              ) : null}
+              {isComplete ? (
+                <CheckCircle2
+                  className="pet-thought-bubble__badge pet-thought-bubble__badge--complete"
+                  size={16}
+                  strokeWidth={2.2}
+                  aria-hidden="true"
+                  focusable="false"
+                />
+              ) : null}
+              {isError ? (
+                <CircleAlert
+                  className="pet-thought-bubble__badge pet-thought-bubble__badge--error"
+                  size={16}
+                  strokeWidth={2.2}
+                  aria-hidden="true"
+                  focusable="false"
+                />
+              ) : null}
             </div>
             {previewText ? (
-              <div className="pet-thought-bubble__preview" title={previewText}>
+              <div
+                className="pet-thought-bubble__preview"
+                title={previewText}
+                style={previewMaxWidth ? { maxWidth: `${previewMaxWidth}px` } : undefined}
+              >
                 {previewText}
               </div>
             ) : null}
           </div>
-          {isThinking ? (
-            <LoaderCircle
-              className="pet-thought-bubble__badge pet-thought-bubble__badge--thinking"
-              size={16}
-              strokeWidth={2.2}
-              aria-hidden="true"
-              focusable="false"
-            />
-          ) : null}
-          {isComplete ? (
-            <CheckCircle2
-              className="pet-thought-bubble__badge pet-thought-bubble__badge--complete"
-              size={16}
-              strokeWidth={2.2}
-              aria-hidden="true"
-              focusable="false"
-            />
-          ) : null}
-          {isError ? (
-            <CircleAlert
-              className="pet-thought-bubble__badge pet-thought-bubble__badge--error"
-              size={16}
-              strokeWidth={2.2}
-              aria-hidden="true"
-              focusable="false"
-            />
-          ) : null}
         </div>
       ) : null}
       {!isCollapsed ? (
@@ -322,7 +363,7 @@ export default function PetThoughtBubble({
         <button
           ref={actionRef}
           type="button"
-          className="pet-thought-counter no-drag"
+          className={`pet-thought-counter pet-thought-counter--${thought.status} no-drag`}
           style={actionStyle}
           onMouseDown={(event) => {
             event.preventDefault();

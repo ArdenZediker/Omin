@@ -108,6 +108,7 @@ export function useChatRuntime({
   const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
   const toolRegistryRef = useRef<ToolRegistry | null>(null);
   const petThoughtRef = useRef<PetThoughtState | null>(null);
+  const pendingPetThoughtSessionIdsRef = useRef<Set<string>>(new Set());
   const petThoughtBroadcastFrameRef = useRef<number | null>(null);
   const petThoughtClearTimerRef = useRef<number | null>(null);
 
@@ -134,9 +135,18 @@ export function useChatRuntime({
     [activeAssistant?.kind, activeAssistant?.title, getChatSessionById]
   );
 
-  const resolvePetThoughtResponseCount = useCallback((conversationMessages: Message[]) => {
-    const finishedAssistantReplies = conversationMessages.filter((message) => message.role === "assistant").length;
-    return Math.max(1, finishedAssistantReplies + 1);
+  const resolvePetThoughtResponseCount = useCallback((sessionId: string | null | undefined) => {
+    if (sessionId) {
+      pendingPetThoughtSessionIdsRef.current.add(sessionId);
+    }
+    return Math.max(1, pendingPetThoughtSessionIdsRef.current.size || (sessionId ? 1 : 0));
+  }, []);
+
+  const clearPetThoughtSession = useCallback((sessionId: string | null | undefined) => {
+    if (!sessionId) {
+      return;
+    }
+    pendingPetThoughtSessionIdsRef.current.delete(sessionId);
   }, []);
 
   const clearPetThoughtTimer = useCallback(() => {
@@ -163,7 +173,7 @@ export function useChatRuntime({
   const startPetThought = useCallback(
     (sessionId: string | null | undefined, conversationMessages: Message[]) => {
       clearPetThoughtTimer();
-      const responseCount = resolvePetThoughtResponseCount(conversationMessages);
+      const responseCount = resolvePetThoughtResponseCount(sessionId);
       emitPetThought({
         sessionId: sessionId ?? null,
         sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
@@ -178,7 +188,7 @@ export function useChatRuntime({
 
   const updatePetThought = useCallback(
     (sessionId: string | null | undefined, conversationMessages: Message[], previewText: string) => {
-      const responseCount = resolvePetThoughtResponseCount(conversationMessages);
+      const responseCount = resolvePetThoughtResponseCount(sessionId);
       emitPetThought({
         sessionId: sessionId ?? null,
         sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
@@ -194,7 +204,7 @@ export function useChatRuntime({
   const completePetThought = useCallback(
     (sessionId: string | null | undefined, conversationMessages: Message[], previewText: string) => {
       clearPetThoughtTimer();
-      const responseCount = resolvePetThoughtResponseCount(conversationMessages);
+      const responseCount = resolvePetThoughtResponseCount(sessionId);
       emitPetThought({
         sessionId: sessionId ?? null,
         sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
@@ -209,6 +219,7 @@ export function useChatRuntime({
 
   const clearPetThought = useCallback(() => {
     clearPetThoughtTimer();
+    pendingPetThoughtSessionIdsRef.current.clear();
     emitPetThought(null);
   }, [clearPetThoughtTimer, emitPetThought]);
 
@@ -322,6 +333,8 @@ export function useChatRuntime({
       setMessages([...conversationMessages, { role: "assistant", content: "" }]);
       setError(null);
       setIsLoading(true);
+      clearPetThoughtSession(sessionId);
+      emitPetThought(null);
       startPetThought(sessionId, conversationMessages);
 
       try {
@@ -352,14 +365,15 @@ export function useChatRuntime({
 
         if (!taskResult.finalResult && taskResult.status === "aborted") {
           setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
-          clearPetThought();
+          clearPetThoughtSession(sessionId);
+          emitPetThought(null);
           return;
         }
 
         if (!taskResult.finalResult && !taskResult.toolResult?.outputText) {
           setError(taskResult.error || "?????????");
           setMessages(conversationMessages);
-          const responseCount = resolvePetThoughtResponseCount(conversationMessages);
+          const responseCount = resolvePetThoughtResponseCount(sessionId);
           emitPetThought({
             sessionId: sessionId ?? null,
             sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
@@ -384,13 +398,14 @@ export function useChatRuntime({
         }
         if (runError instanceof DOMException && runError.name === "AbortError") {
           setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
-          clearPetThought();
+          clearPetThoughtSession(sessionId);
+          emitPetThought(null);
           return;
         }
 
         setError(runError instanceof Error ? runError.message : "??????");
         setMessages(conversationMessages);
-        const responseCount = resolvePetThoughtResponseCount(conversationMessages);
+        const responseCount = resolvePetThoughtResponseCount(sessionId);
         emitPetThought({
           sessionId: sessionId ?? null,
           sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
@@ -411,8 +426,10 @@ export function useChatRuntime({
       activeChatId,
       assistantSystemPrompt,
       clearPetThought,
+      clearPetThoughtSession,
       completePetThought,
       createSessionFromMessages,
+      emitPetThought,
       executionModel,
       finishTaskResult,
       resolvePetThoughtResponseCount,
@@ -743,7 +760,8 @@ export function useChatRuntime({
       abortControllerRef.current = abortController;
       setError(null);
       setIsLoading(true);
-      clearPetThought();
+      clearPetThoughtSession(activeChatId);
+      emitPetThought(null);
 
       let sessionId = activeChatId;
       let conversationMessagesForTask = messages;
@@ -813,7 +831,8 @@ export function useChatRuntime({
           if (taskResult.status === "aborted") {
             setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
             if (hasPetThought) {
-              clearPetThought();
+              clearPetThoughtSession(sessionId);
+              emitPetThought(null);
             }
             return;
           }
@@ -821,7 +840,7 @@ export function useChatRuntime({
           setError(taskResult.error || "任务执行失败");
           setMessages(conversationMessages);
           if (hasPetThought) {
-            const responseCount = resolvePetThoughtResponseCount(conversationMessages);
+            const responseCount = resolvePetThoughtResponseCount(sessionId);
             emitPetThought({
               sessionId: sessionId ?? null,
               sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
@@ -848,13 +867,14 @@ export function useChatRuntime({
         }
         if (sendError instanceof DOMException && sendError.name === "AbortError") {
           if (hasPetThought) {
-            clearPetThought();
+            clearPetThoughtSession(sessionId);
+            emitPetThought(null);
           }
           return;
         }
         setError(sendError instanceof Error ? sendError.message : "发送消息失败");
         if (hasPetThought) {
-          const responseCount = resolvePetThoughtResponseCount(conversationMessagesForTask);
+          const responseCount = resolvePetThoughtResponseCount(sessionId);
           emitPetThought({
             sessionId: sessionId ?? null,
             sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessagesForTask),
@@ -874,7 +894,7 @@ export function useChatRuntime({
     [
       activeChatId,
       assistantSystemPrompt,
-      clearPetThought,
+      clearPetThoughtSession,
       completePetThought,
       createSessionFromMessages,
       emitPetThought,
