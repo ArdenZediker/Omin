@@ -14,7 +14,7 @@ import {
   EXTERNAL_CHAT_ENTRIES,
   MAIN_WINDOW_LABEL,
 } from "../app/constants";
-import type { BasicSettings, CompactReply } from "../app/types";
+import type { BasicSettings, CompactReply, PetThoughtState } from "../app/types";
 import type { CompactAppearance } from "./useCompactWindowState";
 import {
   clampCharacterScale,
@@ -24,6 +24,7 @@ import {
   getMonitorForCursor,
   getCompactWindowSize,
   getPetCompactMenuViewport,
+  type PetThoughtPlacement,
   isCharacterPointerInHitArea,
   isWindowRectVisible,
   moveCompactWindowToMonitor,
@@ -63,6 +64,8 @@ type UseCompactWindowControllerArgs = {
   compactReply: CompactReply | null;
   compactSize: { width: number; height: number };
   compactViewportSize: { width: number; height: number } | null;
+  petThought: PetThoughtState | null;
+  petThoughtPlacement: PetThoughtPlacement;
   currentModel: string;
   isCompactAppearanceOpen: boolean;
   isCompactMenuOpen: boolean;
@@ -99,6 +102,8 @@ export function useCompactWindowController({
   compactReply,
   compactSize,
   compactViewportSize,
+  petThought,
+  petThoughtPlacement,
   currentModel,
   isCompactAppearanceOpen,
   isCompactMenuOpen,
@@ -150,6 +155,7 @@ export function useCompactWindowController({
   const compactInteractionUntilRef = useRef(0);
   const compactSuppressBlurUntilRef = useRef(0);
   const lastAppliedCompactSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const lastAppliedPetAnchorOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   useEffect(() => {
     if (!isCompactWindow) {
       return;
@@ -458,10 +464,44 @@ export function useCompactWindowController({
         const currentSizeChanged =
           Math.round(currentSize.width) !== Math.round(targetSize.width) ||
           Math.round(currentSize.height) !== Math.round(targetSize.height);
+        const nextAnchorOffset = {
+          x:
+            petThought &&
+            !isCompactMenuOpen &&
+            !isCompactQueryOpen &&
+            !isCompactReplyLoading &&
+            !compactReply &&
+            petThoughtPlacement === "left"
+              ? Math.max(0, Math.round(targetSize.width - previewCompactSize.width))
+              : 0,
+          y:
+            petThought &&
+            !isCompactMenuOpen &&
+            !isCompactQueryOpen &&
+            !isCompactReplyLoading &&
+            !compactReply &&
+            petThoughtPlacement === "top"
+              ? Math.max(0, Math.round(targetSize.height - previewCompactSize.height))
+              : 0,
+        };
+        const previousAnchorOffset = lastAppliedPetAnchorOffsetRef.current;
+        const anchorOffsetChanged =
+          previousAnchorOffset.x !== nextAnchorOffset.x || previousAnchorOffset.y !== nextAnchorOffset.y;
 
-        if (hasSizeChanged || currentSizeChanged) {
+        if (hasSizeChanged || currentSizeChanged || anchorOffsetChanged) {
+          const nextX = Math.round(currentPosition.x + previousAnchorOffset.x - nextAnchorOffset.x);
+          const nextY = Math.round(currentPosition.y + previousAnchorOffset.y - nextAnchorOffset.y);
+
+          if (nextX !== Math.round(currentPosition.x) || nextY !== Math.round(currentPosition.y)) {
+            compactInternalMoveRef.current = true;
+            await appWindow.setPosition(new LogicalPosition(nextX, nextY));
+            window.setTimeout(() => {
+              compactInternalMoveRef.current = false;
+            }, 120);
+          }
           await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
           lastAppliedCompactSizeRef.current = { ...targetSize };
+          lastAppliedPetAnchorOffsetRef.current = nextAnchorOffset;
         }
         return;
       }
@@ -493,6 +533,8 @@ export function useCompactWindowController({
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
+    petThought,
+    petThoughtPlacement,
     scaleGestureVersion,
     suppressCompactBlur,
   ]);

@@ -4372,39 +4372,40 @@ body,
   height: 100%;
   min-width: 100%;
   min-height: 100%;
-  padding: 12px 18px;
+  padding: 0;
   flex-direction: row;
   gap: 0;
-  justify-content: center;
-  align-items: center;
+  justify-content: flex-start;
+  align-items: flex-start;
 }
 
 .compact-bar--pet-thought .compact-menu-anchor {
+  transform: translate(var(--compact-pet-anchor-offset-x, 0px), var(--compact-pet-anchor-offset-y, 0px));
   z-index: 1;
 }
 
 .compact-shell--pet-thought-top .compact-bar--pet-thought {
-  justify-content: center;
-  align-items: flex-end;
+  justify-content: flex-start;
+  align-items: flex-start;
 }
 
 .compact-shell--pet-thought-top .compact-bar--pet-thought .compact-menu-anchor {
-  align-self: flex-end;
+  align-self: flex-start;
 }
 
 .compact-shell--pet-thought-bottom .compact-bar--pet-thought {
-  justify-content: center;
+  justify-content: flex-start;
   align-items: flex-start;
 }
 
 .compact-shell--pet-thought-right .compact-bar--pet-thought {
   justify-content: flex-start;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .compact-shell--pet-thought-left .compact-bar--pet-thought {
-  justify-content: flex-end;
-  align-items: center;
+  justify-content: flex-start;
+  align-items: flex-start;
 }
 
 .compact-menu-anchor {
