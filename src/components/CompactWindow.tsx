@@ -3,7 +3,7 @@ import type { BasicSettings, CompactReply, ExternalChatEntry, PetThoughtState } 
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
-import DesktopPet from "./DesktopPet";
+import DesktopPet, { type DesktopPetState } from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
 import CompactReplyPanel from "./compact/CompactReplyPanel";
@@ -28,6 +28,7 @@ type CompactWindowProps = {
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
   isCharacterDragging: boolean;
+  characterDragMotion: DesktopPetState | null;
   petThought: PetThoughtState | null;
   petThoughtPlacement: "top" | "right" | "left" | "bottom";
   omniSmallIconSrc: string;
@@ -76,6 +77,7 @@ export default function CompactWindow({
   isCompactQueryOpen,
   isCompactReplyLoading,
   isCharacterDragging,
+  characterDragMotion,
   petThought,
   petThoughtPlacement,
   omniSmallIconSrc,
@@ -128,13 +130,17 @@ export default function CompactWindow({
   );
   const shellPetThoughtClass = shouldShowPetThought ? `compact-shell--pet-thought compact-shell--pet-thought-${petThoughtPlacement}` : "";
   const barPetThoughtClass = shouldShowPetThought ? "compact-bar--pet-thought" : "";
-  const petState = compactReply?.isError
-    ? "failed"
-    : petCelebrateReply
-      ? "review"
-      : isCompactReplyLoading || compactReply
-        ? "waiting"
-        : "idle";
+  const petState: DesktopPetState = characterDragMotion
+    ? characterDragMotion
+    : compactReply?.isError
+      ? "failed"
+      : petCelebrateReply
+        ? "review"
+        : isCompactReplyLoading || compactReply
+          ? "waiting"
+          : isCompactMenuOpen || isCompactQueryOpen
+            ? "waving"
+            : "idle";
 
   useEffect(() => {
     if (!compactReply || compactReply.isError) {

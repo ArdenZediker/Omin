@@ -497,6 +497,7 @@ function MainApp() {
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
         isCharacterDragging={compactController.isCharacterDragging}
+        characterDragMotion={compactController.characterDragMotion}
         petThought={petThought}
         petThoughtPlacement={petThoughtPlacement}
         omniSmallIconSrc={omniSmallIconSrc}
