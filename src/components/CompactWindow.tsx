@@ -122,6 +122,7 @@ export default function CompactWindow({
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
   const [petClickBounce, setPetClickBounce] = useState(false);
   const [isPetHovered, setIsPetHovered] = useState(false);
+  const [petWavingHold, setPetWavingHold] = useState(false);
   const shouldShowPetThought = Boolean(
     isPetAppearance &&
       petThought &&
@@ -142,7 +143,7 @@ export default function CompactWindow({
         ? "review"
         : isCompactReplyLoading || compactReply
           ? "waiting"
-          : isCompactMenuOpen || isCompactQueryOpen || isPetHovered
+          : isCompactMenuOpen || isCompactQueryOpen || isPetHovered || petWavingHold
             ? "waving"
             : "idle";
 
@@ -167,6 +168,17 @@ export default function CompactWindow({
     }, 760);
     return () => window.clearTimeout(timer);
   }, [petClickBounce]);
+
+  useEffect(() => {
+    if (isCompactMenuOpen || isCompactQueryOpen || isPetHovered) {
+      setPetWavingHold(true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setPetWavingHold(false);
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [isCompactMenuOpen, isCompactQueryOpen, isPetHovered]);
 
 
   const resolveAnchorEdge = (target: HTMLElement) => {

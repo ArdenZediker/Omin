@@ -45,9 +45,6 @@ export default function PetThoughtBubble({
   lockPlacement,
   onPlacementChange,
 }: PetThoughtBubbleProps) {
-  void placement;
-  void onPlacementChange;
-
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const titleRowRef = useRef<HTMLDivElement | null>(null);
   const actionRef = useRef<HTMLButtonElement | null>(null);
@@ -132,32 +129,34 @@ export default function PetThoughtBubble({
       const leftSpace = bubbleAnchorRect.left - VIEWPORT_MARGIN - BUBBLE_GAP;
       const bottomSpace = viewportHeight - bubbleAnchorRect.bottom - VIEWPORT_MARGIN - BUBBLE_GAP;
 
-      let bubblePlacement: PetThoughtPlacement = "top";
-      if (topSpace >= bubbleHeight) {
-        bubblePlacement = "top";
-      } else if (rightSpace >= bubbleWidth) {
-        bubblePlacement = "right";
-      } else if (leftSpace >= bubbleWidth) {
-        bubblePlacement = "left";
-      } else if (bottomSpace >= bubbleHeight) {
-        bubblePlacement = "bottom";
-      } else {
-        const scores: Record<PetThoughtPlacement, number> = {
-          top: topSpace,
-          right: rightSpace,
-          left: leftSpace,
-          bottom: bottomSpace,
-        };
-        bubblePlacement = (["right", "left", "bottom", "top"] as PetThoughtPlacement[]).reduce(
-          (best, current) => (scores[current] > scores[best] ? current : best),
-          "top"
-        );
-      }
+      let bubblePlacement = placementRef.current;
+      if (!lockPlacement) {
+        if (topSpace >= bubbleHeight) {
+          bubblePlacement = "top";
+        } else if (rightSpace >= bubbleWidth) {
+          bubblePlacement = "right";
+        } else if (leftSpace >= bubbleWidth) {
+          bubblePlacement = "left";
+        } else if (bottomSpace >= bubbleHeight) {
+          bubblePlacement = "bottom";
+        } else {
+          const scores: Record<PetThoughtPlacement, number> = {
+            top: topSpace,
+            right: rightSpace,
+            left: leftSpace,
+            bottom: bottomSpace,
+          };
+          bubblePlacement = (["right", "left", "bottom", "top"] as PetThoughtPlacement[]).reduce(
+            (best, current) => (scores[current] > scores[best] ? current : best),
+            "top"
+          );
+        }
 
-      if (placementRef.current !== bubblePlacement) {
-        placementRef.current = bubblePlacement;
-        setPlacementState(bubblePlacement);
-        onPlacementChange(bubblePlacement);
+        if (placementRef.current !== bubblePlacement) {
+          placementRef.current = bubblePlacement;
+          setPlacementState(bubblePlacement);
+          onPlacementChange(bubblePlacement);
+        }
       }
 
       const bubbleLeft =

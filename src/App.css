@@ -4263,7 +4263,7 @@ body,
 }
 
 .compact-shell--pet-expanded {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .compact-hover-zone {

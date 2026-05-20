@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
+import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
@@ -52,6 +52,75 @@ function getSafeCurrentWindow() {
 
 const appWindow = getSafeCurrentWindow() as ReturnType<typeof getCurrentWindow>;
 
+const PET_THOUGHT_SCREEN_MARGIN = 12;
+const PET_THOUGHT_SCREEN_GAP = 14;
+const PET_THOUGHT_SCREEN_HEIGHT = 76;
+
+type PetThoughtScreenLayout = {
+  placement: PetThoughtPlacement;
+  anchorOffset: { x: number; y: number };
+};
+
+function getLogicalMonitorWorkArea(monitor: Monitor) {
+  const scale = monitor.scaleFactor || 1;
+  return {
+    left: monitor.workArea.position.x / scale,
+    top: monitor.workArea.position.y / scale,
+    width: monitor.workArea.size.width / scale,
+    height: monitor.workArea.size.height / scale,
+  };
+}
+
+function resolvePetThoughtLayoutFromScreen(
+  petRect: { left: number; top: number; width: number; height: number },
+  monitor: Monitor,
+  currentPlacement: PetThoughtPlacement,
+  viewportSize: { width: number; height: number },
+  compactSize: { width: number; height: number }
+): PetThoughtScreenLayout {
+  const workArea = getLogicalMonitorWorkArea(monitor);
+  const workAreaBottom = workArea.top + workArea.height;
+  const petBottom = petRect.top + petRect.height;
+  const topSpace = petRect.top - workArea.top - PET_THOUGHT_SCREEN_MARGIN - PET_THOUGHT_SCREEN_GAP;
+  const bottomSpace = workAreaBottom - petBottom - PET_THOUGHT_SCREEN_MARGIN - PET_THOUGHT_SCREEN_GAP;
+  const canKeepTop = topSpace >= PET_THOUGHT_SCREEN_HEIGHT;
+  const canKeepBottom = bottomSpace >= PET_THOUGHT_SCREEN_HEIGHT;
+  const extraWidth = Math.max(0, Math.round(viewportSize.width - compactSize.width));
+  const extraHeight = Math.max(0, Math.round(viewportSize.height - compactSize.height));
+
+  let placement: PetThoughtPlacement;
+  if (currentPlacement === "bottom" && canKeepBottom) {
+    placement = "bottom";
+  } else if (currentPlacement === "top" && canKeepTop) {
+    placement = "top";
+  } else if (canKeepTop) {
+    placement = "top";
+  } else if (canKeepBottom) {
+    placement = "bottom";
+  } else {
+    placement = topSpace >= bottomSpace ? "top" : "bottom";
+  }
+
+  return {
+    placement,
+    anchorOffset: {
+      x: Math.round(extraWidth / 2),
+      y: Math.round(extraHeight / 2),
+    },
+  };
+}
+
+function resolveCharacterDragMotion(
+  deltaX: number,
+  deltaY: number
+): "running-left" | "running-right" | "running" {
+  const horizontalDominant = Math.abs(deltaX) >= Math.abs(deltaY) * 0.7;
+  if (!horizontalDominant) {
+    return "running";
+  }
+  return deltaX < 0 ? "running-left" : "running-right";
+}
+
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
   characterScale: number;
@@ -88,6 +157,7 @@ type UseCompactWindowControllerArgs = {
   setIsCompactModelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setIsCompactQueryOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setIsCompactReplyLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  setPetThoughtPlacement: React.Dispatch<React.SetStateAction<PetThoughtPlacement>>;
 };
 
 export function useCompactWindowController({
@@ -126,14 +196,17 @@ export function useCompactWindowController({
   setIsCompactModelOpen,
   setIsCompactQueryOpen,
   setIsCompactReplyLoading,
+  setPetThoughtPlacement,
 }: UseCompactWindowControllerArgs) {
   const PET_CLICK_DRAG_THRESHOLD_PX = 4;
   const PET_CLICK_SUPPRESS_AFTER_DRAG_MS = 320;
-  const PET_DRAG_MOTION_DEADZONE_PX = 1.5;
+  const PET_DRAG_MOTION_SWITCH_PX = 9;
+  const PET_DRAG_VERTICAL_SWITCH_PX = 12;
   const [isCharacterDragging, setIsCharacterDragging] = useState(false);
   const [characterDragMotion, setCharacterDragMotion] = useState<"running-left" | "running-right" | "running" | null>(null);
   const [previewCharacterScale, setPreviewCharacterScale] = useState<number | null>(null);
   const [scaleGestureVersion, setScaleGestureVersion] = useState(0);
+  const [petThoughtAnchorOffset, setPetThoughtAnchorOffset] = useState({ x: 0, y: 0 });
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
   const isCharacterDraggingRef = useRef(false);
@@ -144,11 +217,16 @@ export function useCompactWindowController({
   const characterDragApplyingRef = useRef(false);
   const characterPointerMovedRef = useRef(false);
   const lastCharacterDragPointerRef = useRef<{ screenX: number; screenY: number } | null>(null);
+  const characterDragMotionAccumRef = useRef({ x: 0, y: 0 });
   const characterDragMotionRef = useRef<"running-left" | "running-right" | "running" | null>(null);
   const scaleWheelTimerRef = useRef<number | null>(null);
   const scaleGestureScaleRef = useRef<number | null>(null);
   const scaleGestureSequenceRef = useRef(0);
   const isScaleGestureActiveRef = useRef(false);
+  const petThoughtPlacementRef = useRef<PetThoughtPlacement>(petThoughtPlacement);
+  const petThoughtAnchorOffsetRef = useRef({ x: 0, y: 0 });
+  const petThoughtDragLayoutPendingRef = useRef<{ x: number; y: number } | null>(null);
+  const wasCompactMenuOpenRef = useRef(isCompactMenuOpen);
   const suppressPetClickUntilRef = useRef(0);
   const compactFollowMonitorRef = useRef<string | null>(null);
   const compactInternalMoveRef = useRef(false);
@@ -156,6 +234,166 @@ export function useCompactWindowController({
   const compactSuppressBlurUntilRef = useRef(0);
   const lastAppliedCompactSizeRef = useRef<{ width: number; height: number } | null>(null);
   const lastAppliedPetAnchorOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const setCharacterDragMotionFromPointer = useCallback(
+    (
+      pointerScreenX: number,
+      pointerScreenY: number,
+      fallbackMotion: "running-left" | "running-right" | "running" = "running"
+    ) => {
+      const previousPointer = lastCharacterDragPointerRef.current;
+      lastCharacterDragPointerRef.current = { screenX: pointerScreenX, screenY: pointerScreenY };
+
+      let nextMotion: "running-left" | "running-right" | "running" = fallbackMotion;
+      if (previousPointer) {
+        const instantDeltaX = pointerScreenX - previousPointer.screenX;
+        const instantDeltaY = pointerScreenY - previousPointer.screenY;
+        characterDragMotionAccumRef.current = {
+          x: characterDragMotionAccumRef.current.x + instantDeltaX,
+          y: characterDragMotionAccumRef.current.y + instantDeltaY,
+        };
+        const accumulatedX = characterDragMotionAccumRef.current.x;
+        const accumulatedY = characterDragMotionAccumRef.current.y;
+
+        if (Math.abs(accumulatedX) >= PET_DRAG_MOTION_SWITCH_PX) {
+          nextMotion = accumulatedX < 0 ? "running-left" : "running-right";
+          characterDragMotionAccumRef.current = { x: 0, y: 0 };
+        } else if (Math.abs(accumulatedY) >= PET_DRAG_VERTICAL_SWITCH_PX && Math.abs(accumulatedY) > Math.abs(accumulatedX) * 1.35) {
+          nextMotion = "running";
+          characterDragMotionAccumRef.current = { x: 0, y: 0 };
+        } else if (characterDragMotionRef.current) {
+          nextMotion = characterDragMotionRef.current;
+        }
+      }
+
+      if (characterDragMotionRef.current !== nextMotion) {
+        characterDragMotionRef.current = nextMotion;
+        setCharacterDragMotion(nextMotion);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    petThoughtPlacementRef.current = petThoughtPlacement;
+  }, [petThoughtPlacement]);
+
+  useEffect(() => {
+    petThoughtAnchorOffsetRef.current = petThoughtAnchorOffset;
+  }, [petThoughtAnchorOffset]);
+
+  const updatePetThoughtPlacementForWindow = useCallback(
+    async (windowX: number, windowY: number) => {
+      if (
+        compactAppearance !== "pet" ||
+        !petThought ||
+        isCompactMenuOpen ||
+        isCompactQueryOpen ||
+        isCompactReplyLoading ||
+        compactReply
+      ) {
+        return;
+      }
+
+      const anchorOffset = lastAppliedPetAnchorOffsetRef.current;
+      const petRect = {
+        left: windowX + anchorOffset.x,
+        top: windowY + anchorOffset.y,
+        width: compactSize.width,
+        height: compactSize.height,
+      };
+      const scaleFactor = await appWindow.scaleFactor().catch(() => 1);
+      const monitor =
+        (await monitorFromPoint(
+          Math.round((petRect.left + petRect.width / 2) * scaleFactor),
+          Math.round((petRect.top + petRect.height / 2) * scaleFactor)
+        ).catch(() => null)) ?? (await currentMonitor().catch(() => null));
+
+      if (!monitor) {
+        return;
+      }
+
+      const layout = resolvePetThoughtLayoutFromScreen(
+        petRect,
+        monitor,
+        petThoughtPlacementRef.current,
+        compactViewportSize ?? compactSize,
+        compactSize
+      );
+      if (layout.placement !== petThoughtPlacementRef.current) {
+        petThoughtPlacementRef.current = layout.placement;
+        setPetThoughtPlacement(layout.placement);
+      }
+      setPetThoughtAnchorOffset((current) => {
+        if (current.x === layout.anchorOffset.x && current.y === layout.anchorOffset.y) {
+          return current;
+        }
+        petThoughtAnchorOffsetRef.current = layout.anchorOffset;
+        return layout.anchorOffset;
+      });
+    },
+    [
+      compactAppearance,
+      compactReply,
+      compactSize.height,
+      compactSize.width,
+      compactViewportSize,
+      isCompactMenuOpen,
+      isCompactQueryOpen,
+      isCompactReplyLoading,
+      petThought,
+      setPetThoughtPlacement,
+    ]
+  );
+
+  const schedulePetThoughtDragLayout = useCallback((windowX: number, windowY: number) => {
+    petThoughtDragLayoutPendingRef.current = { x: windowX, y: windowY };
+  }, []);
+
+  useEffect(() => {
+    if (compactAppearance === "pet" && petThought) {
+      return;
+    }
+
+    petThoughtAnchorOffsetRef.current = { x: 0, y: 0 };
+    setPetThoughtAnchorOffset((current) => (current.x === 0 && current.y === 0 ? current : { x: 0, y: 0 }));
+  }, [compactAppearance, petThought]);
+
+  useEffect(() => {
+    const previousMenuOpen = wasCompactMenuOpenRef.current;
+    wasCompactMenuOpenRef.current = isCompactMenuOpen;
+
+    if (
+      compactAppearance !== "pet" ||
+      !petThought ||
+      isCompactMenuOpen ||
+      isCompactQueryOpen ||
+      isCompactReplyLoading ||
+      compactReply
+    ) {
+      return;
+    }
+
+    void (async () => {
+      if (previousMenuOpen !== isCompactMenuOpen) {
+        return;
+      }
+      const scaleFactor = await appWindow.scaleFactor();
+      const position = (await appWindow.outerPosition()).toLogical(scaleFactor);
+      await updatePetThoughtPlacementForWindow(Math.round(position.x), Math.round(position.y));
+    })();
+  }, [
+    compactAppearance,
+    compactReply,
+    compactSize.height,
+    compactSize.width,
+    isCompactMenuOpen,
+    isCompactQueryOpen,
+    isCompactReplyLoading,
+    petThought,
+    updatePetThoughtPlacementForWindow,
+  ]);
+
   useEffect(() => {
     if (!isCompactWindow) {
       return;
@@ -464,26 +702,9 @@ export function useCompactWindowController({
         const currentSizeChanged =
           Math.round(currentSize.width) !== Math.round(targetSize.width) ||
           Math.round(currentSize.height) !== Math.round(targetSize.height);
-        const nextAnchorOffset = {
-          x:
-            petThought &&
-            !isCompactMenuOpen &&
-            !isCompactQueryOpen &&
-            !isCompactReplyLoading &&
-            !compactReply &&
-            petThoughtPlacement === "left"
-              ? Math.max(0, Math.round(targetSize.width - previewCompactSize.width))
-              : 0,
-          y:
-            petThought &&
-            !isCompactMenuOpen &&
-            !isCompactQueryOpen &&
-            !isCompactReplyLoading &&
-            !compactReply &&
-            petThoughtPlacement === "top"
-              ? Math.max(0, Math.round(targetSize.height - previewCompactSize.height))
-              : 0,
-        };
+        const shouldUsePetThoughtAnchor =
+          petThought && !isCompactMenuOpen && !isCompactQueryOpen && !isCompactReplyLoading && !compactReply;
+        const nextAnchorOffset = shouldUsePetThoughtAnchor ? petThoughtAnchorOffset : { x: 0, y: 0 };
         const previousAnchorOffset = lastAppliedPetAnchorOffsetRef.current;
         const anchorOffsetChanged =
           previousAnchorOffset.x !== nextAnchorOffset.x || previousAnchorOffset.y !== nextAnchorOffset.y;
@@ -534,6 +755,7 @@ export function useCompactWindowController({
     isCompactReplyLoading,
     isCompactWindow,
     petThought,
+    petThoughtAnchorOffset,
     petThoughtPlacement,
     scaleGestureVersion,
     suppressCompactBlur,
@@ -572,6 +794,7 @@ export function useCompactWindowController({
         window.cancelAnimationFrame(characterDragRafRef.current);
         characterDragRafRef.current = null;
       }
+      petThoughtDragLayoutPendingRef.current = null;
       if (scaleWheelTimerRef.current !== null) {
         window.clearTimeout(scaleWheelTimerRef.current);
         scaleWheelTimerRef.current = null;
@@ -582,6 +805,7 @@ export function useCompactWindowController({
       isScaleGestureActiveRef.current = false;
       characterDragApplyingRef.current = false;
       lastCharacterDragPointerRef.current = null;
+      characterDragMotionAccumRef.current = { x: 0, y: 0 };
       characterDragMotionRef.current = null;
       setCharacterDragMotion(null);
     };
@@ -634,6 +858,12 @@ export function useCompactWindowController({
       }
 
       characterPointerMovedRef.current = true;
+      if (!isCharacterDraggingRef.current) {
+        setIsCharacterDragging(true);
+      }
+      isCharacterDraggingRef.current = true;
+      setCharacterDragMotionFromPointer(pointerScreenX, pointerScreenY, resolveCharacterDragMotion(deltaX, deltaY));
+
       if (!characterDragOriginRef.current) {
         characterDragOriginRef.current = {
           screenX: pointerDown.screenX,
@@ -647,32 +877,13 @@ export function useCompactWindowController({
       if (!origin) {
         return false;
       }
-
-      const previousPointer = lastCharacterDragPointerRef.current ?? pointerDown;
-      const instantDeltaX = pointerScreenX - previousPointer.screenX;
-      const instantDeltaY = pointerScreenY - previousPointer.screenY;
-      lastCharacterDragPointerRef.current = { screenX: pointerScreenX, screenY: pointerScreenY };
-      if (!isCharacterDraggingRef.current) {
-        setIsCharacterDragging(true);
-      }
-      isCharacterDraggingRef.current = true;
-      const instantDistance = Math.hypot(instantDeltaX, instantDeltaY);
-      if (instantDistance >= PET_DRAG_MOTION_DEADZONE_PX) {
-        const horizontalDominant = Math.abs(instantDeltaX) >= Math.abs(instantDeltaY) * 0.7;
-        const nextMotion = horizontalDominant
-          ? instantDeltaX < 0
-            ? "running-left"
-            : "running-right"
-          : "running";
-        if (characterDragMotionRef.current !== nextMotion) {
-          characterDragMotionRef.current = nextMotion;
-          setCharacterDragMotion(nextMotion);
-        }
-      }
-      scheduleCharacterDragPosition(origin.windowX + deltaX, origin.windowY + deltaY);
+      const nextWindowX = origin.windowX + deltaX;
+      const nextWindowY = origin.windowY + deltaY;
+      scheduleCharacterDragPosition(nextWindowX, nextWindowY);
+      schedulePetThoughtDragLayout(nextWindowX, nextWindowY);
       return true;
     },
-    [scheduleCharacterDragPosition]
+    [scheduleCharacterDragPosition, schedulePetThoughtDragLayout, setCharacterDragMotionFromPointer]
   );
 
   const closeCompactMenu = useCallback(() => {
@@ -790,6 +1001,7 @@ export function useCompactWindowController({
         isCharacterDraggingRef.current = false;
         setIsCharacterDragging(false);
         lastCharacterDragPointerRef.current = null;
+        characterDragMotionAccumRef.current = { x: 0, y: 0 };
         characterDragMotionRef.current = null;
         setCharacterDragMotion(null);
         return;
@@ -804,6 +1016,7 @@ export function useCompactWindowController({
         characterPointerMovedRef.current = false;
         setIsCharacterDragging(false);
         lastCharacterDragPointerRef.current = null;
+        characterDragMotionAccumRef.current = { x: 0, y: 0 };
         characterDragMotionRef.current = null;
         setCharacterDragMotion(null);
         resetCompactFloatingUi();
@@ -812,6 +1025,7 @@ export function useCompactWindowController({
 
       isCharacterDraggingRef.current = false;
       lastCharacterDragPointerRef.current = null;
+      characterDragMotionAccumRef.current = { x: 0, y: 0 };
       characterDragMotionRef.current = null;
       setCharacterDragMotion(null);
       characterPointerDownRef.current = { screenX: event.screenX, screenY: event.screenY };
@@ -831,12 +1045,29 @@ export function useCompactWindowController({
   );
 
   const handleCharacterPointerUp = useCallback(() => {
+    const pendingDragPosition = characterDragPendingRef.current;
+    const pendingLayoutPosition = pendingDragPosition ?? petThoughtDragLayoutPendingRef.current;
     characterPointerDownRef.current = null;
     characterDragOriginRef.current = null;
-    characterDragPendingRef.current = null;
     if (characterDragRafRef.current !== null) {
       window.cancelAnimationFrame(characterDragRafRef.current);
       characterDragRafRef.current = null;
+    }
+    petThoughtDragLayoutPendingRef.current = null;
+    if (pendingDragPosition) {
+      characterDragPendingRef.current = pendingDragPosition;
+      void flushCharacterDragPosition();
+    } else {
+      characterDragPendingRef.current = null;
+    }
+    if (pendingLayoutPosition) {
+      void updatePetThoughtPlacementForWindow(pendingLayoutPosition.x, pendingLayoutPosition.y);
+    } else {
+      void (async () => {
+        const scaleFactor = await appWindow.scaleFactor();
+        const position = (await appWindow.outerPosition()).toLogical(scaleFactor);
+        await updatePetThoughtPlacementForWindow(Math.round(position.x), Math.round(position.y));
+      })();
     }
     if (characterPointerMovedRef.current || isCharacterDraggingRef.current) {
       suppressPetClickUntilRef.current = Date.now() + PET_CLICK_SUPPRESS_AFTER_DRAG_MS;
@@ -845,9 +1076,10 @@ export function useCompactWindowController({
     isCharacterDraggingRef.current = false;
     setIsCharacterDragging(false);
     lastCharacterDragPointerRef.current = null;
+    characterDragMotionAccumRef.current = { x: 0, y: 0 };
     characterDragMotionRef.current = null;
     setCharacterDragMotion(null);
-  }, []);
+  }, [flushCharacterDragPosition, updatePetThoughtPlacementForWindow]);
 
   useEffect(() => {
     if (!isCompactWindow) {
@@ -1088,6 +1320,7 @@ export function useCompactWindowController({
       isCharacterDraggingRef.current = false;
       setIsCharacterDragging(false);
       lastCharacterDragPointerRef.current = null;
+      characterDragMotionAccumRef.current = { x: 0, y: 0 };
       characterDragMotionRef.current = null;
       setCharacterDragMotion(null);
       clearPendingDragTimer(compactMenuCloseTimerRef.current);
@@ -1147,6 +1380,7 @@ export function useCompactWindowController({
     characterDragMotion,
     isCharacterDragging,
     openCompactMenu,
+    petThoughtAnchorOffset,
     previewCharacterScale,
   };
 }
