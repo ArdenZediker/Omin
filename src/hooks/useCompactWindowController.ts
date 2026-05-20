@@ -124,7 +124,9 @@ export function useCompactWindowController({
 }: UseCompactWindowControllerArgs) {
   const PET_CLICK_DRAG_THRESHOLD_PX = 4;
   const PET_CLICK_SUPPRESS_AFTER_DRAG_MS = 320;
+  const PET_DRAG_MOTION_DEADZONE_PX = 1.5;
   const [isCharacterDragging, setIsCharacterDragging] = useState(false);
+  const [characterDragMotion, setCharacterDragMotion] = useState<"running-left" | "running-right" | "running" | null>(null);
   const [previewCharacterScale, setPreviewCharacterScale] = useState<number | null>(null);
   const [scaleGestureVersion, setScaleGestureVersion] = useState(0);
   const compactMenuCloseTimerRef = useRef<number | null>(null);
@@ -136,6 +138,8 @@ export function useCompactWindowController({
   const characterDragPendingRef = useRef<{ x: number; y: number } | null>(null);
   const characterDragApplyingRef = useRef(false);
   const characterPointerMovedRef = useRef(false);
+  const lastCharacterDragPointerRef = useRef<{ screenX: number; screenY: number } | null>(null);
+  const characterDragMotionRef = useRef<"running-left" | "running-right" | "running" | null>(null);
   const scaleWheelTimerRef = useRef<number | null>(null);
   const scaleGestureScaleRef = useRef<number | null>(null);
   const scaleGestureSequenceRef = useRef(0);
@@ -535,6 +539,9 @@ export function useCompactWindowController({
       setPreviewCharacterScale(null);
       isScaleGestureActiveRef.current = false;
       characterDragApplyingRef.current = false;
+      lastCharacterDragPointerRef.current = null;
+      characterDragMotionRef.current = null;
+      setCharacterDragMotion(null);
     };
   }, []);
 
@@ -599,10 +606,27 @@ export function useCompactWindowController({
         return false;
       }
 
+      const previousPointer = lastCharacterDragPointerRef.current ?? pointerDown;
+      const instantDeltaX = pointerScreenX - previousPointer.screenX;
+      const instantDeltaY = pointerScreenY - previousPointer.screenY;
+      lastCharacterDragPointerRef.current = { screenX: pointerScreenX, screenY: pointerScreenY };
       if (!isCharacterDraggingRef.current) {
         setIsCharacterDragging(true);
       }
       isCharacterDraggingRef.current = true;
+      const instantDistance = Math.hypot(instantDeltaX, instantDeltaY);
+      if (instantDistance >= PET_DRAG_MOTION_DEADZONE_PX) {
+        const horizontalDominant = Math.abs(instantDeltaX) >= Math.abs(instantDeltaY) * 0.7;
+        const nextMotion = horizontalDominant
+          ? instantDeltaX < 0
+            ? "running-left"
+            : "running-right"
+          : "running";
+        if (characterDragMotionRef.current !== nextMotion) {
+          characterDragMotionRef.current = nextMotion;
+          setCharacterDragMotion(nextMotion);
+        }
+      }
       scheduleCharacterDragPosition(origin.windowX + deltaX, origin.windowY + deltaY);
       return true;
     },
@@ -723,6 +747,9 @@ export function useCompactWindowController({
         characterPointerMovedRef.current = false;
         isCharacterDraggingRef.current = false;
         setIsCharacterDragging(false);
+        lastCharacterDragPointerRef.current = null;
+        characterDragMotionRef.current = null;
+        setCharacterDragMotion(null);
         return;
       }
 
@@ -734,11 +761,17 @@ export function useCompactWindowController({
         characterDragOriginRef.current = null;
         characterPointerMovedRef.current = false;
         setIsCharacterDragging(false);
+        lastCharacterDragPointerRef.current = null;
+        characterDragMotionRef.current = null;
+        setCharacterDragMotion(null);
         resetCompactFloatingUi();
         return;
       }
 
       isCharacterDraggingRef.current = false;
+      lastCharacterDragPointerRef.current = null;
+      characterDragMotionRef.current = null;
+      setCharacterDragMotion(null);
       characterPointerDownRef.current = { screenX: event.screenX, screenY: event.screenY };
       characterDragOriginRef.current = null;
       characterPointerMovedRef.current = false;
@@ -769,6 +802,9 @@ export function useCompactWindowController({
     characterPointerMovedRef.current = false;
     isCharacterDraggingRef.current = false;
     setIsCharacterDragging(false);
+    lastCharacterDragPointerRef.current = null;
+    characterDragMotionRef.current = null;
+    setCharacterDragMotion(null);
   }, []);
 
   useEffect(() => {
@@ -1009,6 +1045,9 @@ export function useCompactWindowController({
       suppressCompactBlur();
       isCharacterDraggingRef.current = false;
       setIsCharacterDragging(false);
+      lastCharacterDragPointerRef.current = null;
+      characterDragMotionRef.current = null;
+      setCharacterDragMotion(null);
       clearPendingDragTimer(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
 
@@ -1063,6 +1102,7 @@ export function useCompactWindowController({
     handleOpenCompactQuery,
     handleOpenExternalChat,
     handleOpenSettingsFromCompact,
+    characterDragMotion,
     isCharacterDragging,
     openCompactMenu,
     previewCharacterScale,

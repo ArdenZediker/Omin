@@ -5,12 +5,14 @@ import type { CodexPetPackage } from "../app/pets/codexPetTypes";
 type DesktopPetProps = {
   width: number;
   height: number;
-  state: "idle" | "running-right" | "running-left" | "waving" | "jumping" | "failed" | "waiting" | "running" | "review";
+  state: DesktopPetState;
   packageData?: CodexPetPackage | null;
 };
 
+export type DesktopPetState = "idle" | "running-right" | "running-left" | "waving" | "jumping" | "failed" | "waiting" | "running" | "review";
+
 const PET_PLAYBACK_RATE = 1.55;
-const PET_ROWS: Record<DesktopPetProps["state"], { row: number; frames: number[]; durations: number[] }> = {
+const PET_ROWS: Record<DesktopPetState, { row: number; frames: number[]; durations: number[] }> = {
   idle: { row: 0, frames: [0, 1, 2, 3, 4, 5], durations: [280, 110, 110, 140, 140, 320] },
   "running-right": { row: 1, frames: [0, 1, 2, 3, 4, 5, 6, 7], durations: [120, 120, 120, 120, 120, 120, 120, 220] },
   "running-left": { row: 2, frames: [0, 1, 2, 3, 4, 5, 6, 7], durations: [120, 120, 120, 120, 120, 120, 120, 220] },
@@ -40,8 +42,8 @@ const DesktopPet = forwardRef<HTMLDivElement, DesktopPetProps>(function DesktopP
   const scaledAtlasHeight = scaledCellHeight * atlasRows;
 
   useEffect(() => {
-    setFrameIndex(0);
-  }, [actualState]);
+    setFrameIndex((current) => current % frameset.frames.length);
+  }, [actualState, frameset.frames.length]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
