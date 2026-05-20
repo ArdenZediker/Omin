@@ -190,11 +190,10 @@ export function useCompactWindowController({
     suppressCompactBlur();
     await appWindow.show();
     try {
-      await appWindow.setAlwaysOnTop(false);
+      await appWindow.setAlwaysOnTop(true);
     } catch {
       // Ignore z-order refresh failures.
     }
-    await appWindow.setAlwaysOnTop(true);
   }, [isCompactWindow, suppressCompactBlur]);
 
   const resolveCompactMenuSides = useCallback(async (anchorX?: number, anchorY?: number) => {
@@ -381,14 +380,13 @@ export function useCompactWindowController({
     let cancelled = false;
     const ensureTopmost = async () => {
       try {
-        if (cancelled) {
+        if (cancelled || isCharacterDraggingRef.current) {
           return;
         }
         const isVisible = await appWindow.isVisible();
         if (!isVisible) {
           return;
         }
-        await appWindow.setAlwaysOnTop(false);
         await appWindow.setAlwaysOnTop(true);
       } catch {
         // Ignore visibility polling failures on platforms that don't support it.
@@ -631,7 +629,6 @@ export function useCompactWindowController({
 
   const handlePetPrimaryClick = useCallback(async () => {
     suppressCompactBlur();
-    await raiseCompactWindow();
 
     if (isCharacterDraggingRef.current || Date.now() <= suppressPetClickUntilRef.current) {
       isCharacterDraggingRef.current = false;
@@ -669,7 +666,7 @@ export function useCompactWindowController({
     } catch {
       await onRestoreMain(false);
     }
-  }, [onRestoreMain, raiseCompactWindow, suppressCompactBlur]);
+  }, [onRestoreMain, suppressCompactBlur]);
 
   const handleOpenExternalChat = useCallback(
     async (entry: (typeof EXTERNAL_CHAT_ENTRIES)[number]) => {
