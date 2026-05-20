@@ -4555,9 +4555,16 @@ body,
   width: 32px;
   height: 32px;
   color: #ffffff;
-  border-color: rgba(22, 163, 74, 0.68);
-  background: #16a34a;
-  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.36);
+  border-color: rgba(148, 163, 184, 0.46);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 6px rgba(71, 85, 105, 0.16);
+}
+
+.pet-thought-counter--thinking {
+  color: #0f172a;
+  border-color: rgba(147, 197, 253, 0.72);
+  background: rgba(219, 234, 254, 0.98);
+  box-shadow: 0 6px 16px rgba(147, 197, 253, 0.4);
 }
 
 .pet-thought-counter--complete {
@@ -5694,6 +5701,20 @@ body,
 }
 
 :root[data-omni-theme="dark"] .pet-thought-counter {
+  color: #e2e8f0;
+  border-color: rgba(148, 163, 184, 0.46);
+  background: rgba(15, 23, 42, 0.88);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.48);
+}
+
+:root[data-omni-theme="dark"] .pet-thought-counter--thinking {
+  color: #0f172a;
+  border-color: rgba(147, 197, 253, 0.72);
+  background: rgba(219, 234, 254, 0.98);
+  box-shadow: 0 6px 16px rgba(147, 197, 253, 0.4);
+}
+
+:root[data-omni-theme="dark"] .pet-thought-counter--complete {
   color: #ffffff;
   border-color: rgba(22, 163, 74, 0.78);
   background: #16a34a;

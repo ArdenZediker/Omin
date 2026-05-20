@@ -31,8 +31,8 @@ const REPOSITION_POLL_MS = 180;
 const ACTION_FALLBACK_SIZE = 20;
 const COUNTER_FALLBACK_SIZE = 26;
 const BUBBLE_VERTICAL_OFFSET = 0.68;
-const ACTION_ANCHOR_OFFSET_X = 2;
-const ACTION_ANCHOR_OFFSET_Y = -2;
+const ACTION_ANCHOR_OFFSET_X = -2;
+const ACTION_ANCHOR_OFFSET_Y = -6;
 
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
