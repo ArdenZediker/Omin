@@ -146,6 +146,13 @@ function MainApp() {
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
     [compactAppearance, effectiveCompactScale]
   );
+  const isPetThoughtViewportActive =
+    compactAppearance === "pet" &&
+    Boolean(petThought) &&
+    !isCompactMenuOpen &&
+    !isCompactQueryOpen &&
+    !isCompactReplyLoading &&
+    !compactReply;
   const compactViewportSize = useMemo(() => {
     if (compactAppearance === "pet") {
       return getPetCompactViewportSize({
@@ -155,7 +162,7 @@ function MainApp() {
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
         thoughtPlacement: petThoughtPlacement,
-        reservePetThoughtSpace: Boolean(petThought),
+        reservePetThoughtSpace: isPetThoughtViewportActive,
       });
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
@@ -174,7 +181,7 @@ function MainApp() {
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
-    petThought,
+    isPetThoughtViewportActive,
     petThoughtPlacement,
   ]);
 
@@ -289,6 +296,8 @@ function MainApp() {
     compactReply,
     compactSize,
     compactViewportSize,
+    petThought,
+    petThoughtPlacement,
     currentModel,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
@@ -331,6 +340,14 @@ function MainApp() {
     const inlineBarWidth = isAnimatedCompactAppearance ? displayCompactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
     const compactPetViewportSize = getCodexPetViewportSize(displayCompactSize);
     const compactCharacterSize = compactPetViewportSize.height;
+    const petThoughtOffsetX =
+      isPetThoughtViewportActive && compactViewportSize && petThoughtPlacement === "left"
+        ? Math.max(0, compactViewportSize.width - displayCompactSize.width)
+        : 0;
+    const petThoughtOffsetY =
+      isPetThoughtViewportActive && compactViewportSize && petThoughtPlacement === "top"
+        ? Math.max(0, compactViewportSize.height - displayCompactSize.height)
+        : 0;
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -341,8 +358,17 @@ function MainApp() {
       "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
+      "--compact-pet-anchor-offset-x": `${petThoughtOffsetX}px`,
+      "--compact-pet-anchor-offset-y": `${petThoughtOffsetY}px`,
     } as CSSProperties;
-  }, [displayCompactSize.height, displayCompactSize.width, isAnimatedCompactAppearance]);
+  }, [
+    compactViewportSize,
+    displayCompactSize.height,
+    displayCompactSize.width,
+    isPetThoughtViewportActive,
+    isAnimatedCompactAppearance,
+    petThoughtPlacement,
+  ]);
 
   const lastMessage = messages[messages.length - 1];
   const isStreaming = isLoading && lastMessage.role === "assistant";
