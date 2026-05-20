@@ -31,9 +31,6 @@ const REPOSITION_POLL_MS = 180;
 const ACTION_FALLBACK_SIZE = 20;
 const COUNTER_FALLBACK_SIZE = 26;
 const BUBBLE_VERTICAL_OFFSET = 0.68;
-const ACTION_ANCHOR_OFFSET_X = -2;
-const ACTION_ANCHOR_OFFSET_Y = -6;
-
 function clamp(value: number, min: number, max: number) {
   if (max < min) {
     return min;
@@ -99,6 +96,8 @@ export default function PetThoughtBubble({
       const bubble = bubbleRef.current;
       const action = actionRef.current;
       const anchorRect = anchor.getBoundingClientRect();
+      const petViewport = anchor.querySelector<HTMLElement>(".desktop-pet__viewport");
+      const actionAnchorRect = (petViewport ?? anchor).getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
 
@@ -164,13 +163,15 @@ export default function PetThoughtBubble({
             ? clamp(anchorRect.bottom + BUBBLE_GAP, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN)
             : clamp(anchorCenterY - bubbleRect.height * BUBBLE_VERTICAL_OFFSET, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
 
+      const actionOffsetX = clamp(Math.round(actionAnchorRect.width * -0.04), -10, -2);
+      const actionOffsetY = clamp(Math.round(actionAnchorRect.height * -0.08), -14, -4);
       const actionLeft = clamp(
-        anchorRect.right - actionWidth * 0.5 + ACTION_ANCHOR_OFFSET_X,
+        actionAnchorRect.right - actionWidth * 0.5 + actionOffsetX,
         VIEWPORT_MARGIN,
         viewportWidth - actionWidth - VIEWPORT_MARGIN
       );
       const actionTop = clamp(
-        anchorRect.top + ACTION_ANCHOR_OFFSET_Y,
+        actionAnchorRect.top + actionOffsetY,
         VIEWPORT_MARGIN,
         viewportHeight - actionHeight - VIEWPORT_MARGIN
       );

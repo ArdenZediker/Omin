@@ -3,8 +3,8 @@ import { readSqliteBackedValue } from "./sqliteStorage";
 
 export const CHARACTER_SCALE_STORAGE_KEY = "omni_character_scale";
 export const DEFAULT_CHARACTER_SCALE = 1;
-const MIN_CHARACTER_SCALE = 0.45;
-const MAX_CHARACTER_SCALE = 4.2;
+const MIN_CHARACTER_SCALE = 0.8;
+const MAX_CHARACTER_SCALE = 2.2;
 
 export function clampCharacterScale(value: number) {
   const normalized = Number(value);
