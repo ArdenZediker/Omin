@@ -3,16 +3,21 @@ export const CODEX_PET_CELL_SIZE = {
   height: 208,
 } as const;
 
-export function getCodexPetViewportHeight(compactWidth: number) {
-  return Math.max(48, Math.round(compactWidth - 18));
-}
+export const PET_WINDOW_SAFE_MARGIN_X = 8;
+export const PET_WINDOW_SAFE_MARGIN_Y = 12;
 
-export function getCodexPetViewportSize(compactWidth: number) {
-  const height = getCodexPetViewportHeight(compactWidth);
-  return {
-    width: Math.round((height * CODEX_PET_CELL_SIZE.width) / CODEX_PET_CELL_SIZE.height),
-    height,
-  };
+const PET_VIEWPORT_HORIZONTAL_INSET = 18 + PET_WINDOW_SAFE_MARGIN_X;
+const PET_VIEWPORT_VERTICAL_INSET = 24 + PET_WINDOW_SAFE_MARGIN_Y;
+const PET_VIEWPORT_MIN_EDGE = 48;
+
+export function getCodexPetViewportSize(compactSize: { width: number; height: number }) {
+  const availableWidth = Math.max(PET_VIEWPORT_MIN_EDGE, Math.round(compactSize.width - PET_VIEWPORT_HORIZONTAL_INSET));
+  const availableHeight = Math.max(PET_VIEWPORT_MIN_EDGE, Math.round(compactSize.height - PET_VIEWPORT_VERTICAL_INSET));
+
+  return fitCodexPetToBounds({
+    width: availableWidth,
+    height: availableHeight,
+  });
 }
 
 export function fitCodexPetToBounds(bounds: { width: number; height: number }) {

@@ -11,7 +11,7 @@ import KnowledgeBaseView from "./components/KnowledgeBaseView";
 import CompactWindow from "./components/CompactWindow";
 import { usePromptDialog } from "./components/PromptDialog";
 import { loadCodexPetPackages } from "./app/pets/codexPetStore";
-import { getCodexPetViewportHeight } from "./app/pets/codexPetSizing";
+import { getCodexPetViewportSize } from "./app/pets/codexPetSizing";
 import type { CodexPetPackage } from "./app/pets/codexPetTypes";
 import {
   CHARACTER_SCALE_BASELINE,
@@ -177,31 +177,6 @@ function MainApp() {
     petThought,
     petThoughtPlacement,
   ]);
-  const compactStyle = useMemo<CSSProperties>(() => {
-    const buttonSize =
-      isAnimatedCompactAppearance ? Math.max(26, Math.round(compactSize.width * 0.36)) : Math.max(30, compactSize.height - 24);
-    const iconSize =
-      isAnimatedCompactAppearance ? Math.max(14, Math.round(buttonSize * 0.48)) : Math.max(14, Math.round(buttonSize * 0.5));
-    const characterReplyGap = Math.min(108, Math.max(40, Math.round(compactSize.width * 0.3)));
-    const compactGap = isAnimatedCompactAppearance ? Math.max(4, Math.round(compactSize.width * 0.04)) : 8;
-    const compactPadding =
-      isAnimatedCompactAppearance
-        ? Math.max(3, Math.round(compactSize.width * 0.03))
-        : 8;
-    const inlineBarWidth = isAnimatedCompactAppearance ? compactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
-    const compactCharacterSize = getCodexPetViewportHeight(compactSize.width);
-
-    return {
-      "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
-      "--compact-bar-height": `${Math.max(54, buttonSize + compactPadding * 2)}px`,
-      "--compact-button-size": `${buttonSize}px`,
-      "--compact-button-icon-size": `${iconSize}px`,
-      "--compact-gap": `${compactGap}px`,
-      "--compact-padding": `${compactPadding}px`,
-      "--compact-character-size": `${compactCharacterSize}px`,
-      "--compact-character-reply-gap": `${characterReplyGap}px`,
-    } as CSSProperties;
-  }, [compactSize.height, compactSize.width, isAnimatedCompactAppearance]);
 
   const availableModels = modelRegistry.getAvailableModels();
   const hasModels = availableModels.length > 0;
@@ -304,6 +279,7 @@ function MainApp() {
 
   const compactController = useCompactWindowController({
     basicSettings,
+    characterScale,
     closeCompactMenuPanels,
     closeCompactMenus,
     compactAppearance,
@@ -336,6 +312,37 @@ function MainApp() {
     setIsCompactQueryOpen,
     setIsCompactReplyLoading,
   });
+
+  const displayCompactSize =
+    compactAppearance === "pet" && typeof compactController.previewCharacterScale === "number"
+      ? getCompactWindowSize(compactAppearance, compactController.previewCharacterScale * CHARACTER_SCALE_BASELINE)
+      : compactSize;
+  const compactStyle = useMemo<CSSProperties>(() => {
+    const buttonSize =
+      isAnimatedCompactAppearance ? Math.max(26, Math.round(displayCompactSize.width * 0.36)) : Math.max(30, displayCompactSize.height - 24);
+    const iconSize =
+      isAnimatedCompactAppearance ? Math.max(14, Math.round(buttonSize * 0.48)) : Math.max(14, Math.round(buttonSize * 0.5));
+    const characterReplyGap = Math.min(108, Math.max(40, Math.round(displayCompactSize.width * 0.3)));
+    const compactGap = isAnimatedCompactAppearance ? Math.max(4, Math.round(displayCompactSize.width * 0.04)) : 8;
+    const compactPadding =
+      isAnimatedCompactAppearance
+        ? Math.max(3, Math.round(displayCompactSize.width * 0.03))
+        : 8;
+    const inlineBarWidth = isAnimatedCompactAppearance ? displayCompactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
+    const compactPetViewportSize = getCodexPetViewportSize(displayCompactSize);
+    const compactCharacterSize = compactPetViewportSize.height;
+
+    return {
+      "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
+      "--compact-bar-height": `${Math.max(54, buttonSize + compactPadding * 2)}px`,
+      "--compact-button-size": `${buttonSize}px`,
+      "--compact-button-icon-size": `${iconSize}px`,
+      "--compact-gap": `${compactGap}px`,
+      "--compact-padding": `${compactPadding}px`,
+      "--compact-character-size": `${compactCharacterSize}px`,
+      "--compact-character-reply-gap": `${characterReplyGap}px`,
+    } as CSSProperties;
+  }, [displayCompactSize.height, displayCompactSize.width, isAnimatedCompactAppearance]);
 
   const lastMessage = messages[messages.length - 1];
   const isStreaming = isLoading && lastMessage.role === "assistant";
@@ -479,7 +486,7 @@ function MainApp() {
         compactAppearance={compactAppearance as CompactAppearance}
         compactQuery={compactQuery}
         compactReply={compactReply}
-        compactSize={compactSize}
+        compactSize={displayCompactSize}
         compactStyle={compactStyle}
         entries={compactController.entries}
         isCompactAppearanceOpen={isCompactAppearanceOpen}

@@ -7,6 +7,7 @@ import type { BasicSettings, ExternalChatEntry, ViewMode } from "./types";
 import { isCompactPetHidden } from "./compactVisibility";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
+import { PET_WINDOW_SAFE_MARGIN_X, PET_WINDOW_SAFE_MARGIN_Y } from "./pets/codexPetSizing";
 
 const PET_THOUGHT_VIEWPORT_MIN_WIDTH = 320;
 const PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT = 128;
@@ -267,6 +268,12 @@ export function isWindowRectVisible(
 
 export function getCompactWindowSize(appearance: CompactAppearance, scale: number) {
   const preset = COMPACT_APPEARANCE_PRESETS[appearance];
+  if (appearance === "pet") {
+    return {
+      width: Math.round(preset.width * scale) + PET_WINDOW_SAFE_MARGIN_X,
+      height: Math.round(preset.height * scale) + PET_WINDOW_SAFE_MARGIN_Y,
+    };
+  }
   return {
     width: Math.round(preset.width * scale),
     height: Math.round(preset.height * scale),

@@ -112,7 +112,7 @@ export default function CompactWindow({
   };
   const isPetAppearance = compactAppearance === "pet";
   const isAnimatedAppearance = isPetAppearance;
-  const petViewportSize = getCodexPetViewportSize(compactSize.width);
+  const petViewportSize = getCodexPetViewportSize(compactSize);
   const petRenderHeight = petViewportSize.height;
   const petRenderWidth = petViewportSize.width;
   const petButtonRef = useRef<HTMLButtonElement | null>(null);
