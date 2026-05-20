@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useMemo, useState } from "react";
-import { CODEX_PET_CELL_SIZE, fitCodexPetToBounds } from "../app/pets/codexPetSizing";
+import { fitCodexPetToBounds } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
 
 type DesktopPetProps = {
@@ -30,13 +30,14 @@ const DesktopPet = forwardRef<HTMLDivElement, DesktopPetProps>(function DesktopP
   const actualState = state;
   const frameset = PET_ROWS[actualState];
   const sheetSrc = packageData?.spritesheetWebPath ?? "/pets/omni-schnauzer/spritesheet.webp";
-  const cellWidth = CODEX_PET_CELL_SIZE.width;
-  const cellHeight = CODEX_PET_CELL_SIZE.height;
   const atlasColumns = 8;
   const atlasRows = 9;
-  const { width: scaledCellWidth, height: scaledCellHeight, scale } = fitCodexPetToBounds({ width, height });
-  const scaledAtlasWidth = Math.round(cellWidth * atlasColumns * scale);
-  const scaledAtlasHeight = Math.round(cellHeight * atlasRows * scale);
+  const { width: scaledCellWidth, height: scaledCellHeight } = fitCodexPetToBounds({
+    width,
+    height,
+  });
+  const scaledAtlasWidth = scaledCellWidth * atlasColumns;
+  const scaledAtlasHeight = scaledCellHeight * atlasRows;
 
   useEffect(() => {
     setFrameIndex(0);
@@ -53,10 +54,10 @@ const DesktopPet = forwardRef<HTMLDivElement, DesktopPetProps>(function DesktopP
   const spriteOffset = useMemo(() => {
     const column = frameset.frames[frameIndex] ?? 0;
     return {
-      left: -column * cellWidth,
-      top: -frameset.row * cellHeight,
+      left: -column * scaledCellWidth,
+      top: -frameset.row * scaledCellHeight,
     };
-  }, [frameIndex, frameset]);
+  }, [frameIndex, frameset, scaledCellHeight, scaledCellWidth]);
 
   return (
     <div
@@ -81,8 +82,8 @@ const DesktopPet = forwardRef<HTMLDivElement, DesktopPetProps>(function DesktopP
           className="desktop-pet__atlas"
           draggable={false}
           style={{
-            left: spriteOffset.left * scale,
-            top: spriteOffset.top * scale,
+            left: spriteOffset.left,
+            top: spriteOffset.top,
             width: scaledAtlasWidth,
             height: scaledAtlasHeight,
             minWidth: scaledAtlasWidth,

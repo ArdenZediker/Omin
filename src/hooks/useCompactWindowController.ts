@@ -7,6 +7,7 @@ import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 import { executeChatTurn } from "../chat/engine";
 import {
+  CHARACTER_SCALE_BASELINE,
   COMPACT_APPEARANCE_OPTIONS,
   COMPACT_MENU_CLOSE_DELAY_MS,
   CURRENT_MODEL_STORAGE_KEY,
@@ -21,6 +22,7 @@ import {
 } from "./useCompactWindowState";
 import {
   getMonitorForCursor,
+  getCompactWindowSize,
   getPetCompactMenuViewport,
   isCharacterPointerInHitArea,
   isWindowRectVisible,
@@ -51,6 +53,7 @@ const appWindow = getSafeCurrentWindow() as ReturnType<typeof getCurrentWindow>;
 
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
+  characterScale: number;
   closeCompactMenuPanels: () => void;
   closeCompactMenus: () => void;
   compactAppearance: CompactAppearance;
@@ -86,6 +89,7 @@ type UseCompactWindowControllerArgs = {
 
 export function useCompactWindowController({
   basicSettings,
+  characterScale,
   closeCompactMenuPanels,
   closeCompactMenus,
   compactAppearance,
@@ -121,6 +125,8 @@ export function useCompactWindowController({
   const PET_CLICK_DRAG_THRESHOLD_PX = 4;
   const PET_CLICK_SUPPRESS_AFTER_DRAG_MS = 320;
   const [isCharacterDragging, setIsCharacterDragging] = useState(false);
+  const [previewCharacterScale, setPreviewCharacterScale] = useState<number | null>(null);
+  const [scaleGestureVersion, setScaleGestureVersion] = useState(0);
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
   const isCharacterDraggingRef = useRef(false);
@@ -130,6 +136,10 @@ export function useCompactWindowController({
   const characterDragPendingRef = useRef<{ x: number; y: number } | null>(null);
   const characterDragApplyingRef = useRef(false);
   const characterPointerMovedRef = useRef(false);
+  const scaleWheelTimerRef = useRef<number | null>(null);
+  const scaleGestureScaleRef = useRef<number | null>(null);
+  const scaleGestureSequenceRef = useRef(0);
+  const isScaleGestureActiveRef = useRef(false);
   const suppressPetClickUntilRef = useRef(0);
   const compactFollowMonitorRef = useRef<string | null>(null);
   const compactInternalMoveRef = useRef(false);
@@ -419,7 +429,16 @@ export function useCompactWindowController({
       return;
     }
 
-    const targetSize = compactViewportSize ?? compactSize;
+    const previewCompactSize =
+      compactAppearance === "pet" && typeof previewCharacterScale === "number"
+        ? getCompactWindowSize("pet", previewCharacterScale * CHARACTER_SCALE_BASELINE)
+        : compactSize;
+    const targetSize =
+      compactAppearance === "pet" && typeof previewCharacterScale === "number"
+        ? previewCompactSize
+        : compactAppearance === "pet"
+        ? compactViewportSize ?? previewCompactSize
+        : compactViewportSize ?? compactSize;
     const isCompactSubmenuOpen = isCompactMenuOpen && (isCompactModelOpen || isCompactAppearanceOpen);
     void (async () => {
       const scaleFactor = await appWindow.scaleFactor();
@@ -437,14 +456,6 @@ export function useCompactWindowController({
           Math.round(currentSize.height) !== Math.round(targetSize.height);
 
         if (hasSizeChanged || currentSizeChanged) {
-          const nextX = Math.round(currentPosition.x - (targetSize.width - currentSize.width) / 2);
-          if (nextX !== Math.round(currentPosition.x)) {
-            compactInternalMoveRef.current = true;
-            await appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y)));
-            window.setTimeout(() => {
-              compactInternalMoveRef.current = false;
-            }, 120);
-          }
           await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
           lastAppliedCompactSizeRef.current = { ...targetSize };
         }
@@ -471,12 +482,14 @@ export function useCompactWindowController({
     compactMenuSide,
     compactSubmenuSide,
     compactAppearance,
+    previewCharacterScale,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
     isCompactModelOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
+    scaleGestureVersion,
     suppressCompactBlur,
   ]);
 
@@ -513,6 +526,14 @@ export function useCompactWindowController({
         window.cancelAnimationFrame(characterDragRafRef.current);
         characterDragRafRef.current = null;
       }
+      if (scaleWheelTimerRef.current !== null) {
+        window.clearTimeout(scaleWheelTimerRef.current);
+        scaleWheelTimerRef.current = null;
+      }
+      scaleGestureScaleRef.current = null;
+      scaleGestureSequenceRef.current += 1;
+      setPreviewCharacterScale(null);
+      isScaleGestureActiveRef.current = false;
       characterDragApplyingRef.current = false;
     };
   }, []);
@@ -831,10 +852,48 @@ export function useCompactWindowController({
       if (compactAppearance !== "pet") {
         return;
       }
+      markCompactInteraction();
       event.preventDefault();
-      setCharacterScale((value) => clampCharacterScale(value + (event.deltaY < 0 ? 0.08 : -0.08)));
+      if (!isScaleGestureActiveRef.current) {
+        isScaleGestureActiveRef.current = true;
+        scaleGestureScaleRef.current = null;
+      }
+
+      const nextScale = clampCharacterScale(
+        (scaleGestureScaleRef.current ?? characterScale) + (event.deltaY < 0 ? 0.08 : -0.08)
+      );
+      scaleGestureScaleRef.current = nextScale;
+      const gestureSequence = (scaleGestureSequenceRef.current += 1);
+      const previewSize = getCompactWindowSize("pet", nextScale * CHARACTER_SCALE_BASELINE);
+      void (async () => {
+        try {
+          await appWindow.setSize(new LogicalSize(previewSize.width, previewSize.height));
+          lastAppliedCompactSizeRef.current = { ...previewSize };
+        } catch {
+          // Fall back to React-driven resizing if the immediate native resize fails.
+        }
+        if (scaleGestureSequenceRef.current === gestureSequence && scaleGestureScaleRef.current === nextScale) {
+          setPreviewCharacterScale(nextScale);
+        }
+      })();
+      if (scaleWheelTimerRef.current !== null) {
+        window.clearTimeout(scaleWheelTimerRef.current);
+      }
+
+      scaleWheelTimerRef.current = window.setTimeout(() => {
+        scaleWheelTimerRef.current = null;
+        const committedScale = scaleGestureScaleRef.current;
+        scaleGestureScaleRef.current = null;
+        scaleGestureSequenceRef.current += 1;
+        setPreviewCharacterScale(null);
+        if (typeof committedScale === "number") {
+          setCharacterScale(committedScale);
+        }
+        isScaleGestureActiveRef.current = false;
+        setScaleGestureVersion((value) => value + 1);
+      }, 120);
     },
-    [compactAppearance, setCharacterScale]
+    [characterScale, compactAppearance, markCompactInteraction, setCharacterScale]
   );
 
   const handleCompactAppearanceChange = useCallback(
@@ -846,6 +905,8 @@ export function useCompactWindowController({
   );
 
   const handleCompactScaleReset = useCallback(() => {
+    scaleGestureScaleRef.current = null;
+    setPreviewCharacterScale(null);
     setCharacterScale(1);
     closeCompactMenus();
   }, [closeCompactMenus, setCharacterScale]);
@@ -1004,6 +1065,7 @@ export function useCompactWindowController({
     handleOpenSettingsFromCompact,
     isCharacterDragging,
     openCompactMenu,
+    previewCharacterScale,
   };
 }
 
