@@ -320,6 +320,7 @@ function MainApp() {
     setIsCompactModelOpen,
     setIsCompactQueryOpen,
     setIsCompactReplyLoading,
+    setPetThoughtPlacement,
   });
 
   const displayCompactSize =
@@ -340,14 +341,8 @@ function MainApp() {
     const inlineBarWidth = isAnimatedCompactAppearance ? displayCompactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
     const compactPetViewportSize = getCodexPetViewportSize(displayCompactSize);
     const compactCharacterSize = compactPetViewportSize.height;
-    const petThoughtOffsetX =
-      isPetThoughtViewportActive && compactViewportSize && petThoughtPlacement === "left"
-        ? Math.max(0, compactViewportSize.width - displayCompactSize.width)
-        : 0;
-    const petThoughtOffsetY =
-      isPetThoughtViewportActive && compactViewportSize && petThoughtPlacement === "top"
-        ? Math.max(0, compactViewportSize.height - displayCompactSize.height)
-        : 0;
+    const petThoughtOffsetX = isPetThoughtViewportActive ? compactController.petThoughtAnchorOffset.x : 0;
+    const petThoughtOffsetY = isPetThoughtViewportActive ? compactController.petThoughtAnchorOffset.y : 0;
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -367,6 +362,8 @@ function MainApp() {
     displayCompactSize.width,
     isPetThoughtViewportActive,
     isAnimatedCompactAppearance,
+    compactController.petThoughtAnchorOffset.x,
+    compactController.petThoughtAnchorOffset.y,
     petThoughtPlacement,
   ]);
 
