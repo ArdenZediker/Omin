@@ -120,6 +120,7 @@ export default function CompactWindow({
   const petButtonRef = useRef<HTMLButtonElement | null>(null);
   const petAnchorRef = useRef<HTMLDivElement | null>(null);
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
+  const [petClickBounce, setPetClickBounce] = useState(false);
   const [isPetHovered, setIsPetHovered] = useState(false);
   const shouldShowPetThought = Boolean(
     isPetAppearance &&
@@ -133,6 +134,8 @@ export default function CompactWindow({
   const barPetThoughtClass = shouldShowPetThought ? "compact-bar--pet-thought" : "";
   const petState: DesktopPetState = characterDragMotion
     ? characterDragMotion
+    : petClickBounce
+      ? "jumping"
     : compactReply?.isError
       ? "failed"
       : petCelebrateReply
@@ -154,6 +157,16 @@ export default function CompactWindow({
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [compactReply]);
+
+  useEffect(() => {
+    if (!petClickBounce) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setPetClickBounce(false);
+    }, 760);
+    return () => window.clearTimeout(timer);
+  }, [petClickBounce]);
 
 
   const resolveAnchorEdge = (target: HTMLElement) => {
@@ -288,6 +301,7 @@ export default function CompactWindow({
               onClick={(event) => {
                 if (isPetAppearance) {
                   event.stopPropagation();
+                  setPetClickBounce(true);
                   void onPetPrimaryClick();
                   return;
                 }
