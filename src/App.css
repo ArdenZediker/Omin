@@ -4277,6 +4277,7 @@ body,
 
 .compact-hover-zone--pet {
   width: 100%;
+  height: 100%;
   align-items: flex-start;
   justify-content: center;
 }
@@ -4367,6 +4368,7 @@ body,
 
 .compact-bar--pet-thought {
   width: 100%;
+  height: 100%;
   min-width: 100%;
   min-height: 100%;
   padding: 12px 18px;
@@ -4383,6 +4385,10 @@ body,
 .compact-shell--pet-thought-top .compact-bar--pet-thought {
   justify-content: center;
   align-items: flex-end;
+}
+
+.compact-shell--pet-thought-top .compact-bar--pet-thought .compact-menu-anchor {
+  align-self: flex-end;
 }
 
 .compact-shell--pet-thought-bottom .compact-bar--pet-thought {
@@ -4552,12 +4558,13 @@ body,
 }
 
 .pet-thought-counter {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   color: #ffffff;
   border-color: rgba(148, 163, 184, 0.46);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 2px 6px rgba(71, 85, 105, 0.16);
+  font-size: 10px;
 }
 
 .pet-thought-counter--thinking {
