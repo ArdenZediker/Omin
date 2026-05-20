@@ -349,8 +349,9 @@ export function useCompactWindowController({
           if (Date.now() <= compactSuppressBlurUntilRef.current) {
             return;
           }
-          void raiseCompactWindow();
-          resetCompactFloatingUi();
+          if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
+            resetCompactFloatingUi();
+          }
         }).catch(() => {
           if (payload) {
             void raiseCompactWindow();
@@ -359,8 +360,9 @@ export function useCompactWindowController({
           if (Date.now() <= compactSuppressBlurUntilRef.current) {
             return;
           }
-          void raiseCompactWindow();
-          resetCompactFloatingUi();
+          if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
+            resetCompactFloatingUi();
+          }
         });
       })
       .then((fn) => {
@@ -370,7 +372,15 @@ export function useCompactWindowController({
     return () => {
       unlisten?.();
     };
-  }, [isCompactWindow, raiseCompactWindow, resetCompactFloatingUi]);
+  }, [
+    compactReply,
+    isCompactMenuOpen,
+    isCompactQueryOpen,
+    isCompactReplyLoading,
+    isCompactWindow,
+    raiseCompactWindow,
+    resetCompactFloatingUi,
+  ]);
 
   useEffect(() => {
     if (!isCompactWindow || !basicSettings.showCompactBall) {
