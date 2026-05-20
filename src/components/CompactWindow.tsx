@@ -120,6 +120,7 @@ export default function CompactWindow({
   const petButtonRef = useRef<HTMLButtonElement | null>(null);
   const petAnchorRef = useRef<HTMLDivElement | null>(null);
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
+  const [isPetHovered, setIsPetHovered] = useState(false);
   const shouldShowPetThought = Boolean(
     isPetAppearance &&
       petThought &&
@@ -138,7 +139,7 @@ export default function CompactWindow({
         ? "review"
         : isCompactReplyLoading || compactReply
           ? "waiting"
-          : isCompactMenuOpen || isCompactQueryOpen
+          : isCompactMenuOpen || isCompactQueryOpen || isPetHovered
             ? "waving"
             : "idle";
 
@@ -212,17 +213,25 @@ export default function CompactWindow({
           isPetAppearance ? "compact-hover-zone--pet" : ""
         }`}
         onMouseEnter={
-          !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
-            ? (e) => {
+          (e) => {
+            if (isPetAppearance) {
+              setIsPetHovered(true);
+            }
+            if (!isCompactQueryOpen && basicSettings.menuOpenMode === "hover") {
                 const anchor = resolveAnchorEdge(e.currentTarget);
                 void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
-              }
-            : undefined
+            }
+          }
         }
         onMouseLeave={
-          !isCompactQueryOpen && basicSettings.menuOpenMode === "hover"
-            ? onCloseCompactMenuNow
-            : undefined
+          () => {
+            if (isPetAppearance) {
+              setIsPetHovered(false);
+            }
+            if (!isCompactQueryOpen && basicSettings.menuOpenMode === "hover") {
+              onCloseCompactMenuNow();
+            }
+          }
         }
         onClick={
           !isCompactQueryOpen && basicSettings.menuOpenMode === "click"
