@@ -324,8 +324,8 @@ export function useMainWindowController({
     }
   }, [basicSettings.showCompactBall, compactAppearance, effectiveCompactScale]);
 
-  const handleRestoreMain = useCallback(async (focusInput = false) => {
-    await restoreMainWindow(focusInput);
+  const handleRestoreMain = useCallback(async (focusInput = false, options?: { restoreGeometry?: boolean }) => {
+    await restoreMainWindow(focusInput, options);
   }, []);
 
   const lastMessagesCountRef = useRef(messages.length);
