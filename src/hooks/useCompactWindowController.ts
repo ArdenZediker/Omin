@@ -24,6 +24,7 @@ import {
   getMonitorForCursor,
   getCompactWindowSize,
   getPetCompactMenuViewport,
+  getPetThoughtAnchorOffset,
   type PetThoughtPlacement,
   isCharacterPointerInHitArea,
   isWindowRectVisible,
@@ -207,6 +208,7 @@ export function useCompactWindowController({
   const [previewCharacterScale, setPreviewCharacterScale] = useState<number | null>(null);
   const [scaleGestureVersion, setScaleGestureVersion] = useState(0);
   const [petThoughtAnchorOffset, setPetThoughtAnchorOffset] = useState({ x: 0, y: 0 });
+  const [isPetThoughtViewportReady, setIsPetThoughtViewportReady] = useState(false);
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
   const isCharacterDraggingRef = useRef(false);
@@ -351,13 +353,28 @@ export function useCompactWindowController({
   }, []);
 
   useEffect(() => {
-    if (compactAppearance === "pet" && petThought) {
+    if (
+      compactAppearance === "pet" &&
+      petThought &&
+      !isCompactMenuOpen &&
+      !isCompactQueryOpen &&
+      !isCompactReplyLoading &&
+      !compactReply
+    ) {
       return;
     }
 
+    setIsPetThoughtViewportReady(false);
     petThoughtAnchorOffsetRef.current = { x: 0, y: 0 };
     setPetThoughtAnchorOffset((current) => (current.x === 0 && current.y === 0 ? current : { x: 0, y: 0 }));
-  }, [compactAppearance, petThought]);
+  }, [
+    compactAppearance,
+    compactReply,
+    isCompactMenuOpen,
+    isCompactQueryOpen,
+    isCompactReplyLoading,
+    petThought,
+  ]);
 
   useEffect(() => {
     const previousMenuOpen = wasCompactMenuOpenRef.current;
@@ -704,7 +721,15 @@ export function useCompactWindowController({
           Math.round(currentSize.height) !== Math.round(targetSize.height);
         const shouldUsePetThoughtAnchor =
           petThought && !isCompactMenuOpen && !isCompactQueryOpen && !isCompactReplyLoading && !compactReply;
-        const nextAnchorOffset = shouldUsePetThoughtAnchor ? petThoughtAnchorOffset : { x: 0, y: 0 };
+        const fallbackPetThoughtAnchorOffset =
+          shouldUsePetThoughtAnchor && compactViewportSize
+            ? getPetThoughtAnchorOffset(compactViewportSize, previewCompactSize)
+            : { x: 0, y: 0 };
+        const resolvedPetThoughtAnchorOffset =
+          shouldUsePetThoughtAnchor && petThoughtAnchorOffset.x === 0 && petThoughtAnchorOffset.y === 0
+            ? fallbackPetThoughtAnchorOffset
+            : petThoughtAnchorOffset;
+        const nextAnchorOffset = shouldUsePetThoughtAnchor ? resolvedPetThoughtAnchorOffset : { x: 0, y: 0 };
         const previousAnchorOffset = lastAppliedPetAnchorOffsetRef.current;
         const anchorOffsetChanged =
           previousAnchorOffset.x !== nextAnchorOffset.x || previousAnchorOffset.y !== nextAnchorOffset.y;
@@ -723,6 +748,9 @@ export function useCompactWindowController({
           await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
           lastAppliedCompactSizeRef.current = { ...targetSize };
           lastAppliedPetAnchorOffsetRef.current = nextAnchorOffset;
+        }
+        if (shouldUsePetThoughtAnchor) {
+          setIsPetThoughtViewportReady(true);
         }
         return;
       }
@@ -1379,6 +1407,7 @@ export function useCompactWindowController({
     handleOpenSettingsFromCompact,
     characterDragMotion,
     isCharacterDragging,
+    isPetThoughtViewportReady,
     openCompactMenu,
     petThoughtAnchorOffset,
     previewCharacterScale,

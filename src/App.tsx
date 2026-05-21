@@ -30,6 +30,7 @@ import {
   getCompactWindowSize,
   getExpandedCompactViewportSizeForAppearance,
   getPetCompactViewportSize,
+  getPetThoughtAnchorOffset,
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
@@ -327,6 +328,8 @@ function MainApp() {
     compactAppearance === "pet" && typeof compactController.previewCharacterScale === "number"
       ? getCompactWindowSize(compactAppearance, compactController.previewCharacterScale * CHARACTER_SCALE_BASELINE)
       : compactSize;
+  const isPetThoughtViewportVisible = isPetThoughtViewportActive && compactController.isPetThoughtViewportReady;
+  const visiblePetThought = isPetThoughtViewportVisible ? petThought : null;
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
       isAnimatedCompactAppearance ? Math.max(26, Math.round(displayCompactSize.width * 0.36)) : Math.max(30, displayCompactSize.height - 24);
@@ -341,8 +344,18 @@ function MainApp() {
     const inlineBarWidth = isAnimatedCompactAppearance ? displayCompactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
     const compactPetViewportSize = getCodexPetViewportSize(displayCompactSize);
     const compactCharacterSize = compactPetViewportSize.height;
-    const petThoughtOffsetX = isPetThoughtViewportActive ? compactController.petThoughtAnchorOffset.x : 0;
-    const petThoughtOffsetY = isPetThoughtViewportActive ? compactController.petThoughtAnchorOffset.y : 0;
+    const fallbackPetThoughtAnchorOffset =
+      isPetThoughtViewportVisible && compactViewportSize
+        ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
+        : { x: 0, y: 0 };
+    const resolvedPetThoughtAnchorOffset =
+      isPetThoughtViewportVisible &&
+      compactController.petThoughtAnchorOffset.x === 0 &&
+      compactController.petThoughtAnchorOffset.y === 0
+        ? fallbackPetThoughtAnchorOffset
+        : compactController.petThoughtAnchorOffset;
+    const petThoughtOffsetX = isPetThoughtViewportVisible ? resolvedPetThoughtAnchorOffset.x : 0;
+    const petThoughtOffsetY = isPetThoughtViewportVisible ? resolvedPetThoughtAnchorOffset.y : 0;
 
     return {
       "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
@@ -360,7 +373,7 @@ function MainApp() {
     compactViewportSize,
     displayCompactSize.height,
     displayCompactSize.width,
-    isPetThoughtViewportActive,
+    isPetThoughtViewportVisible,
     isAnimatedCompactAppearance,
     compactController.petThoughtAnchorOffset.x,
     compactController.petThoughtAnchorOffset.y,
@@ -521,7 +534,7 @@ function MainApp() {
         isCompactReplyLoading={isCompactReplyLoading}
         isCharacterDragging={compactController.isCharacterDragging}
         characterDragMotion={compactController.characterDragMotion}
-        petThought={petThought}
+        petThought={visiblePetThought}
         petThoughtPlacement={petThoughtPlacement}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
