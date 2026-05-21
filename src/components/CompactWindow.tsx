@@ -27,7 +27,6 @@ type CompactWindowProps = {
   isCompactReplyLoading: boolean;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
-  isCharacterDragging: boolean;
   characterDragMotion: DesktopPetState | null;
   petThought: PetThoughtState | null;
   petThoughtPlacement: "top" | "right" | "left" | "bottom";
@@ -56,7 +55,6 @@ type CompactWindowProps = {
   onSetIsCompactModelOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactQueryOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactReplyLoading: Dispatch<SetStateAction<boolean>>;
-  onSetPetThoughtPlacement: Dispatch<SetStateAction<"top" | "right" | "left" | "bottom">>;
 };
 
 export default function CompactWindow({
@@ -76,7 +74,6 @@ export default function CompactWindow({
   isCompactModelOpen,
   isCompactQueryOpen,
   isCompactReplyLoading,
-  isCharacterDragging,
   characterDragMotion,
   petThought,
   petThoughtPlacement,
@@ -106,7 +103,6 @@ export default function CompactWindow({
   onSetIsCompactModelOpen,
   onSetIsCompactQueryOpen,
   onSetIsCompactReplyLoading,
-  onSetPetThoughtPlacement,
 }: CompactWindowProps) {
   const closeReply = () => {
     onSetCompactReply(null);
@@ -282,8 +278,6 @@ export default function CompactWindow({
                 thought={petThought}
                 anchorRef={petAnchorRef}
                 placement={petThoughtPlacement}
-                lockPlacement={isCharacterDragging}
-                onPlacementChange={onSetPetThoughtPlacement}
               />
             ) : null}
             <button

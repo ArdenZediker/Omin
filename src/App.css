@@ -4400,7 +4400,9 @@ body,
 }
 
 .compact-bar--pet-thought .compact-menu-anchor {
-  transform: translate(var(--compact-pet-anchor-offset-x, 0px), var(--compact-pet-anchor-offset-y, 0px));
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1;
 }
 
@@ -4410,12 +4412,18 @@ body,
 }
 
 .compact-shell--pet-thought-top .compact-bar--pet-thought .compact-menu-anchor {
-  align-self: flex-start;
+  top: auto;
+  bottom: 12px;
 }
 
 .compact-shell--pet-thought-bottom .compact-bar--pet-thought {
   justify-content: flex-start;
   align-items: flex-start;
+}
+
+.compact-shell--pet-thought-bottom .compact-bar--pet-thought .compact-menu-anchor {
+  top: 12px;
+  bottom: auto;
 }
 
 .compact-shell--pet-thought-right .compact-bar--pet-thought {
@@ -4442,8 +4450,9 @@ body,
 
 .pet-thought-bubble {
   --pet-thought-border: rgba(203, 213, 225, 0.9);
-  min-width: 0;
-  max-width: min(320px, calc(100vw - 24px));
+  width: 250px;
+  min-width: 250px;
+  max-width: 250px;
   position: fixed;
   left: 0;
   top: 0;
@@ -4518,6 +4527,7 @@ body,
 }
 
 .pet-thought-bubble__body {
+  width: 100%;
   min-width: 0;
   flex: 1 1 auto;
   padding: 4px 0 0;
@@ -4700,6 +4710,8 @@ body,
 }
 
 .compact-button--pet {
+  width: auto;
+  height: auto;
   align-items: flex-start;
   justify-content: flex-start;
   background: transparent !important;

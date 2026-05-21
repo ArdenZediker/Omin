@@ -25,6 +25,7 @@ import {
   getCompactWindowSize,
   getPetCompactMenuViewport,
   getPetThoughtAnchorOffset,
+  getStoredCompactPosition,
   type PetThoughtPlacement,
   isCharacterPointerInHitArea,
   moveCompactWindowToMonitor,
@@ -55,6 +56,7 @@ const appWindow = getSafeCurrentWindow() as ReturnType<typeof getCurrentWindow>;
 const PET_THOUGHT_SCREEN_MARGIN = 12;
 const PET_THOUGHT_SCREEN_GAP = 14;
 const PET_THOUGHT_SCREEN_HEIGHT = 76;
+const PET_THOUGHT_SCREEN_EDGE_BUFFER = PET_THOUGHT_SCREEN_HEIGHT + PET_THOUGHT_SCREEN_MARGIN + PET_THOUGHT_SCREEN_GAP;
 
 type PetThoughtScreenLayout = {
   placement: PetThoughtPlacement;
@@ -68,6 +70,31 @@ function getLogicalMonitorWorkArea(monitor: Monitor) {
     top: monitor.workArea.position.y / scale,
     width: monitor.workArea.size.width / scale,
     height: monitor.workArea.size.height / scale,
+  };
+}
+
+async function clampWindowPositionToWorkArea(
+  position: { x: number; y: number },
+  size: { width: number; height: number }
+) {
+  const scaleFactor = await appWindow.scaleFactor().catch(() => 1);
+  const monitor =
+    (await monitorFromPoint(
+      Math.round((position.x + size.width / 2) * scaleFactor),
+      Math.round((position.y + size.height / 2) * scaleFactor)
+    ).catch(() => null)) ?? (await currentMonitor().catch(() => null));
+
+  if (!monitor) {
+    return position;
+  }
+
+  const workArea = getLogicalMonitorWorkArea(monitor);
+  const maxX = Math.max(workArea.left, workArea.left + workArea.width - size.width);
+  const maxY = Math.max(workArea.top, workArea.top + workArea.height - size.height);
+
+  return {
+    x: Math.round(Math.min(maxX, Math.max(workArea.left, position.x))),
+    y: Math.round(Math.min(maxY, Math.max(workArea.top, position.y))),
   };
 }
 
@@ -89,7 +116,11 @@ function resolvePetThoughtLayoutFromScreen(
   const extraHeight = Math.max(0, Math.round(viewportSize.height - compactSize.height));
 
   let placement: PetThoughtPlacement;
-  if (currentPlacement === "bottom" && canKeepBottom) {
+  if (topSpace < PET_THOUGHT_SCREEN_EDGE_BUFFER && canKeepBottom) {
+    placement = "bottom";
+  } else if (bottomSpace < PET_THOUGHT_SCREEN_EDGE_BUFFER && canKeepTop) {
+    placement = "top";
+  } else if (currentPlacement === "bottom" && canKeepBottom) {
     placement = "bottom";
   } else if (currentPlacement === "top" && canKeepTop) {
     placement = "top";
@@ -208,6 +239,7 @@ export function useCompactWindowController({
   const [scaleGestureVersion, setScaleGestureVersion] = useState(0);
   const [petThoughtAnchorOffset, setPetThoughtAnchorOffset] = useState({ x: 0, y: 0 });
   const [isPetThoughtViewportReady, setIsPetThoughtViewportReady] = useState(false);
+  const hasPetThought = Boolean(petThought);
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
   const isCharacterDraggingRef = useRef(false);
@@ -287,7 +319,7 @@ export function useCompactWindowController({
     async (windowX: number, windowY: number) => {
       if (
         compactAppearance !== "pet" ||
-        !petThought ||
+        !hasPetThought ||
         isCompactMenuOpen ||
         isCompactQueryOpen ||
         isCompactReplyLoading ||
@@ -342,7 +374,7 @@ export function useCompactWindowController({
       isCompactMenuOpen,
       isCompactQueryOpen,
       isCompactReplyLoading,
-      petThought,
+      hasPetThought,
       setPetThoughtPlacement,
     ]
   );
@@ -354,7 +386,7 @@ export function useCompactWindowController({
   useEffect(() => {
     if (
       compactAppearance === "pet" &&
-      petThought &&
+      hasPetThought &&
       !isCompactMenuOpen &&
       !isCompactQueryOpen &&
       !isCompactReplyLoading &&
@@ -372,7 +404,7 @@ export function useCompactWindowController({
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
-    petThought,
+    hasPetThought,
   ]);
 
   useEffect(() => {
@@ -381,7 +413,7 @@ export function useCompactWindowController({
 
     if (
       compactAppearance !== "pet" ||
-      !petThought ||
+      !hasPetThought ||
       isCompactMenuOpen ||
       isCompactQueryOpen ||
       isCompactReplyLoading ||
@@ -406,7 +438,7 @@ export function useCompactWindowController({
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
-    petThought,
+    hasPetThought,
     updatePetThoughtPlacementForWindow,
   ]);
 
@@ -522,6 +554,42 @@ export function useCompactWindowController({
     }
 
     void appWindow.hide();
+  }, [basicSettings.showCompactBall, isCompactWindow]);
+
+  useEffect(() => {
+    if (!isCompactWindow || !basicSettings.showCompactBall) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const storedPosition = getStoredCompactPosition();
+      if (!storedPosition) {
+        return;
+      }
+      const scaleFactor = await appWindow.scaleFactor();
+      const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+      if (cancelled) {
+        return;
+      }
+
+      const shouldRestorePosition =
+        Math.abs(Math.round(currentPosition.x) - storedPosition.x) > 4 ||
+        Math.abs(Math.round(currentPosition.y) - storedPosition.y) > 4;
+      if (!shouldRestorePosition) {
+        return;
+      }
+
+      compactInternalMoveRef.current = true;
+      await appWindow.setPosition(new LogicalPosition(storedPosition.x, storedPosition.y));
+      window.setTimeout(() => {
+        compactInternalMoveRef.current = false;
+      }, 120);
+    })().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
   }, [basicSettings.showCompactBall, isCompactWindow]);
 
   useEffect(() => {
@@ -710,7 +778,6 @@ export function useCompactWindowController({
       const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
       suppressCompactBlur();
       if (compactAppearance === "pet") {
-        await appWindow.setAlwaysOnTop(true);
         const hasSizeChanged =
           !lastAppliedCompactSizeRef.current ||
           Math.round(lastAppliedCompactSizeRef.current.width) !== Math.round(targetSize.width) ||
@@ -719,7 +786,7 @@ export function useCompactWindowController({
           Math.round(currentSize.width) !== Math.round(targetSize.width) ||
           Math.round(currentSize.height) !== Math.round(targetSize.height);
         const shouldUsePetThoughtAnchor =
-          petThought && !isCompactMenuOpen && !isCompactQueryOpen && !isCompactReplyLoading && !compactReply;
+          hasPetThought && !isCompactMenuOpen && !isCompactQueryOpen && !isCompactReplyLoading && !compactReply;
         const fallbackPetThoughtAnchorOffset =
           shouldUsePetThoughtAnchor && compactViewportSize
             ? getPetThoughtAnchorOffset(compactViewportSize, previewCompactSize)
@@ -734,12 +801,15 @@ export function useCompactWindowController({
           previousAnchorOffset.x !== nextAnchorOffset.x || previousAnchorOffset.y !== nextAnchorOffset.y;
 
         if (hasSizeChanged || currentSizeChanged || anchorOffsetChanged) {
-          const nextX = Math.round(currentPosition.x + previousAnchorOffset.x - nextAnchorOffset.x);
-          const nextY = Math.round(currentPosition.y + previousAnchorOffset.y - nextAnchorOffset.y);
+          const unclampedPosition = {
+            x: Math.round(currentPosition.x + previousAnchorOffset.x - nextAnchorOffset.x),
+            y: Math.round(currentPosition.y + previousAnchorOffset.y - nextAnchorOffset.y),
+          };
+          const nextPosition = await clampWindowPositionToWorkArea(unclampedPosition, targetSize);
 
-          if (nextX !== Math.round(currentPosition.x) || nextY !== Math.round(currentPosition.y)) {
+          if (nextPosition.x !== Math.round(currentPosition.x) || nextPosition.y !== Math.round(currentPosition.y)) {
             compactInternalMoveRef.current = true;
-            await appWindow.setPosition(new LogicalPosition(nextX, nextY));
+            await appWindow.setPosition(new LogicalPosition(nextPosition.x, nextPosition.y));
             window.setTimeout(() => {
               compactInternalMoveRef.current = false;
             }, 120);
@@ -781,7 +851,7 @@ export function useCompactWindowController({
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
-    petThought,
+    hasPetThought,
     petThoughtAnchorOffset,
     petThoughtPlacement,
     scaleGestureVersion,
@@ -905,7 +975,7 @@ export function useCompactWindowController({
         return false;
       }
       const nextWindowX = origin.windowX + deltaX;
-      const nextWindowY = origin.windowY + deltaY;
+      const nextWindowY = Math.max(0, origin.windowY + deltaY);
       scheduleCharacterDragPosition(nextWindowX, nextWindowY);
       schedulePetThoughtDragLayout(nextWindowX, nextWindowY);
       return true;
@@ -1404,7 +1474,3 @@ export function useCompactWindowController({
     previewCharacterScale,
   };
 }
-
-
-
-
