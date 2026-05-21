@@ -339,6 +339,16 @@ export function getPetThoughtViewportSize(
   };
 }
 
+export function getPetThoughtAnchorOffset(
+  viewportSize: { width: number; height: number },
+  compactSize: { width: number; height: number }
+) {
+  return {
+    x: Math.max(0, Math.round((viewportSize.width - compactSize.width) / 2)),
+    y: Math.max(0, Math.round((viewportSize.height - compactSize.height) / 2)),
+  };
+}
+
 export function getPetCompactViewportSize(options: {
   compactSize: { width: number; height: number };
   isCompactMenuOpen: boolean;
