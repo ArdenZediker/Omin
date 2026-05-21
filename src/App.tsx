@@ -342,6 +342,8 @@ function MainApp() {
         ? Math.max(3, Math.round(displayCompactSize.width * 0.03))
         : 8;
     const inlineBarWidth = isAnimatedCompactAppearance ? displayCompactSize.width : buttonSize * 2 + compactGap + compactPadding * 2;
+    const minCompactBarWidth = compactAppearance === "compact" ? 96 : 104;
+    const minCompactBarHeight = compactAppearance === "compact" ? 48 : 54;
     const compactPetViewportSize = getCodexPetViewportSize(displayCompactSize);
     const compactCharacterSize = compactPetViewportSize.height;
     const fallbackPetThoughtAnchorOffset =
@@ -358,8 +360,8 @@ function MainApp() {
     const petThoughtOffsetY = isPetThoughtViewportVisible ? resolvedPetThoughtAnchorOffset.y : 0;
 
     return {
-      "--compact-bar-width": `${Math.max(104, inlineBarWidth)}px`,
-      "--compact-bar-height": `${Math.max(54, buttonSize + compactPadding * 2)}px`,
+      "--compact-bar-width": `${Math.max(minCompactBarWidth, inlineBarWidth)}px`,
+      "--compact-bar-height": `${Math.max(minCompactBarHeight, buttonSize + compactPadding * 2)}px`,
       "--compact-button-size": `${buttonSize}px`,
       "--compact-button-icon-size": `${iconSize}px`,
       "--compact-gap": `${compactGap}px`,
@@ -377,6 +379,7 @@ function MainApp() {
     isAnimatedCompactAppearance,
     compactController.petThoughtAnchorOffset.x,
     compactController.petThoughtAnchorOffset.y,
+    compactAppearance,
     petThoughtPlacement,
   ]);
 
