@@ -27,7 +27,6 @@ import {
   getPetThoughtAnchorOffset,
   type PetThoughtPlacement,
   isCharacterPointerInHitArea,
-  isWindowRectVisible,
   moveCompactWindowToMonitor,
   openInternalChatWindow,
   persistCompactPosition,
@@ -143,7 +142,7 @@ type UseCompactWindowControllerArgs = {
   isCompactQueryOpen: boolean;
   isCompactReplyLoading: boolean;
   isCompactWindow: boolean;
-  onRestoreMain: (focusInput?: boolean) => Promise<void>;
+  onRestoreMain: (focusInput?: boolean, options?: { restoreGeometry?: boolean }) => Promise<void>;
   resetCompactFloatingUi: () => void;
   setCharacterMenuPosition: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
   setCharacterScale: React.Dispatch<React.SetStateAction<number>>;
@@ -973,7 +972,7 @@ export function useCompactWindowController({
 
     const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
     if (!mainWindow) {
-      await onRestoreMain(false);
+      await onRestoreMain(false, { restoreGeometry: false });
       return;
     }
 
@@ -984,23 +983,15 @@ export function useCompactWindowController({
       ]);
 
       if (!isVisible || isMinimized) {
-        await onRestoreMain(false);
+        await onRestoreMain(false, { restoreGeometry: false });
         return;
       }
 
-      const scaleFactor = await mainWindow.scaleFactor();
-      const position = (await mainWindow.outerPosition()).toLogical(scaleFactor);
-      const size = (await mainWindow.outerSize()).toLogical(scaleFactor);
-      const isOnScreen = isWindowRectVisible(
-        { x: Math.round(position.x), y: Math.round(position.y) },
-        { width: Math.round(size.width), height: Math.round(size.height) }
-      );
+      await mainWindow.minimize();
+      return;
 
-      if (!isOnScreen) {
-        await onRestoreMain(false);
-      }
     } catch {
-      await onRestoreMain(false);
+      await onRestoreMain(false, { restoreGeometry: false });
     }
   }, [onRestoreMain, suppressCompactBlur]);
 
