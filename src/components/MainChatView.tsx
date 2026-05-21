@@ -1313,7 +1313,7 @@ export default function MainChatView({
         </div>
       )}
 
-      <section ref={setWorkspaceElement} className="main-chat-workspace" style={{ "--composer-height": `${composerHeight}px` } as CSSProperties}>
+      <section className="main-chat-stage">
         <header className="main-chat-header drag-region">
           <div className="main-chat-toolbar">
             <div className="main-chat-toolbar__session main-chat-toolbar__session--hero">
@@ -1418,10 +1418,11 @@ export default function MainChatView({
               {windowControls}
             </div>
           </div>
-          <div className="chat-topic-panel__header" />
         </header>
 
-        <main className="main-chat-pane">
+        <div className="main-chat-body">
+          <section ref={setWorkspaceElement} className="main-chat-workspace" style={{ "--composer-height": `${composerHeight}px` } as CSSProperties}>
+            <main className="main-chat-pane">
           {isAssistantSettingsMode && activeAssistant?.kind === "custom" ? (
             <div className="main-chat-scroll hide-scrollbar">
               <div className="omni-settings-dialog__sections omni-settings-dialog__sections--page">
@@ -1883,18 +1884,20 @@ export default function MainChatView({
             </>
           )}
 
-        </main>
-      </section>
+            </main>
+          </section>
 
-      <div
-        className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="调整工作台宽度"
-        onPointerDown={handleLayoutDragPointerDown}
-      />
+          {!isAssistantSettingsMode && (
+            <div
+              className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整工作台宽度"
+              onPointerDown={handleLayoutDragPointerDown}
+            />
+          )}
 
-      {!isAssistantSettingsMode && <aside className="chat-topic-panel">
+          {!isAssistantSettingsMode && <aside className="chat-topic-panel">
           <div className="chat-topic-panel__body">
             <div className="chat-topic-panel__toolbar">
               <div className="chat-topic-panel__title">
@@ -2270,7 +2273,9 @@ export default function MainChatView({
               </>
             )}
           </div>
-        </aside>}
+          </aside>}
+        </div>
+      </section>
 
     </div>
   );
