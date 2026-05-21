@@ -5101,6 +5101,9 @@ body,
   min-width: 136px;
   width: max-content;
   max-width: min(220px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 4px;
   border-radius: 12px;
   background:

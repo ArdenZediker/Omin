@@ -313,8 +313,8 @@ export function getExpandedCompactViewportSizeForAppearance(
 
 export function getPetCompactMenuViewport(size: { width: number; height: number }) {
   return {
-    width: Math.max(size.width, 430),
-    height: size.height + 260,
+    width: Math.max(size.width, 462),
+    height: Math.max(size.height + 360, 560),
   };
 }
 
