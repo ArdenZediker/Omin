@@ -289,10 +289,21 @@ export default function CompactWindow({
             <button
               ref={petButtonRef}
               type="button"
-              className={`compact-button compact-button--brand ${isAnimatedAppearance ? "compact-button--character" : ""} ${
+              className={`compact-button compact-button--brand no-drag ${isAnimatedAppearance ? "compact-button--character" : ""} ${
                 isPetAppearance ? "compact-button--pet" : ""
               }`}
-              onMouseDown={isAnimatedAppearance ? onCharacterPointerDown : (e) => e.stopPropagation()}
+              onMouseDown={
+                isAnimatedAppearance
+                  ? onCharacterPointerDown
+                  : (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+              }
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
               onMouseMove={
                 isAnimatedAppearance
                   ? (e) => {
@@ -400,8 +411,15 @@ export default function CompactWindow({
             <div className={`compact-bar__actions no-drag ${isPetAppearance ? "compact-bar__actions--pet" : ""}`}>
               <button
                 type="button"
-                className="compact-button compact-button--search-chip"
-                onMouseDown={(e) => e.stopPropagation()}
+                className="compact-button compact-button--search-chip no-drag"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
                 onClick={() => {
                   void onOpenCompactQuery();
                 }}
