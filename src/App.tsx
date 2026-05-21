@@ -535,7 +535,6 @@ function MainApp() {
         compactSubmenuSide={compactSubmenuSide}
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
-        isCharacterDragging={compactController.isCharacterDragging}
         characterDragMotion={compactController.characterDragMotion}
         petThought={visiblePetThought}
         petThoughtPlacement={petThoughtPlacement}
@@ -563,7 +562,6 @@ function MainApp() {
         onSetIsCompactModelOpen={setIsCompactModelOpen}
         onSetIsCompactQueryOpen={setIsCompactQueryOpen}
         onSetIsCompactReplyLoading={setIsCompactReplyLoading}
-        onSetPetThoughtPlacement={setPetThoughtPlacement}
       />
     );
   }

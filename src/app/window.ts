@@ -1,5 +1,5 @@
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
-import { cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
+import { availableMonitors, cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emit } from "@tauri-apps/api/event";
 import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL, SETTINGS_WINDOW_SIZE, THEME_MODE_STORAGE_KEY } from "./constants";
@@ -266,6 +266,34 @@ export function isWindowRectVisible(
   );
 }
 
+function isWindowRectVisibleInMonitor(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  monitor: Monitor
+) {
+  const scale = monitor.scaleFactor || 1;
+  const left = monitor.workArea.position.x / scale;
+  const top = monitor.workArea.position.y / scale;
+  const right = left + monitor.workArea.size.width / scale;
+  const bottom = top + monitor.workArea.size.height / scale;
+  const visibleMargin = Math.min(80, Math.max(12, Math.min(size.width, size.height) / 2));
+
+  return (
+    position.x < right - visibleMargin &&
+    position.x + size.width > left + visibleMargin &&
+    position.y < bottom - visibleMargin &&
+    position.y + size.height > top + visibleMargin
+  );
+}
+
+function isWindowRectVisibleOnAnyMonitor(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  monitors: Monitor[]
+) {
+  return monitors.some((monitor) => isWindowRectVisibleInMonitor(position, size, monitor));
+}
+
 export function getCompactWindowSize(appearance: CompactAppearance, scale: number) {
   const preset = COMPACT_APPEARANCE_PRESETS[appearance];
   if (appearance === "pet") {
@@ -333,9 +361,10 @@ export function getPetThoughtViewportSize(
     };
   }
 
+  const extraHeight = getPetThoughtViewportHeight(compactSize.width);
   return {
     width: Math.max(compactSize.width, PET_THOUGHT_VIEWPORT_MIN_WIDTH),
-    height: compactSize.height + getPetThoughtViewportHeight(compactSize.width),
+    height: compactSize.height + extraHeight * 2,
   };
 }
 
@@ -426,6 +455,9 @@ export async function ensureCompactWindow(appearance: CompactAppearance, scale: 
   const size = getCompactWindowSize(appearance, scale);
   const expandedViewport = getExpandedCompactViewportSize(true);
   const storedPosition = getStoredCompactPosition();
+  const monitors = await availableMonitors().catch(() => [] as Monitor[]);
+  const safeStoredPosition =
+    storedPosition && isWindowRectVisibleOnAnyMonitor(storedPosition, size, monitors) ? storedPosition : null;
   let compactWindow = await WebviewWindow.getByLabel(compactWindowLabel);
 
   if (!compactWindow) {
@@ -447,9 +479,9 @@ export async function ensureCompactWindow(appearance: CompactAppearance, scale: 
       resizable: false,
       visible: false,
       focus: false,
-      center: storedPosition == null,
-      x: storedPosition?.x,
-      y: storedPosition?.y,
+      center: safeStoredPosition == null,
+      x: safeStoredPosition?.x,
+      y: safeStoredPosition?.y,
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -481,21 +513,37 @@ export async function showCompactWindow(
   const settings = getBasicSettings();
   const size = getCompactWindowSize(appearance, scale);
   const storedPosition = getStoredCompactPosition();
+  const monitors = await availableMonitors().catch(() => [] as Monitor[]);
+  const safeStoredPosition =
+    storedPosition && isWindowRectVisibleOnAnyMonitor(storedPosition, size, monitors) ? storedPosition : null;
   const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
   const cursorMonitor = settings.followCursorScreen ? await getMonitorForCursor() : null;
 
   if (settings.followCursorScreen) {
     if (cursorMonitor) {
       await moveCompactWindowToMonitor(compactWindow, cursorMonitor, size);
-    } else if (storedPosition) {
-      await compactWindow.setPosition(new LogicalPosition(storedPosition.x, storedPosition.y));
+    } else if (safeStoredPosition) {
+      await compactWindow.setPosition(new LogicalPosition(safeStoredPosition.x, safeStoredPosition.y));
     }
-  } else if (storedPosition) {
-    await compactWindow.setPosition(new LogicalPosition(storedPosition.x, storedPosition.y));
+  } else if (safeStoredPosition) {
+    await compactWindow.setPosition(new LogicalPosition(safeStoredPosition.x, safeStoredPosition.y));
   }
 
   if (cursorMonitor) {
     await clampCompactWindowToMonitor(compactWindow, cursorMonitor, size);
+  }
+
+  try {
+    const scaleFactor = await compactWindow.scaleFactor();
+    const currentPosition = (await compactWindow.outerPosition()).toLogical(scaleFactor);
+    if (!isWindowRectVisibleOnAnyMonitor({ x: currentPosition.x, y: currentPosition.y }, size, monitors)) {
+      const fallbackMonitor = (await getMonitorForCursor().catch(() => null)) ?? monitors[0] ?? null;
+      if (fallbackMonitor) {
+        await moveCompactWindowToMonitor(compactWindow, fallbackMonitor, size);
+      }
+    }
+  } catch {
+    // Keep showing the compact window even if the platform cannot report geometry.
   }
 
   if (mainWindow && options.avoidMainWindowOverlap !== false) {
