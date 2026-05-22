@@ -4646,10 +4646,23 @@ body:has(.pet-thought-window),
   height: 16px;
   border-radius: 999px;
   border: 2px solid rgba(100, 116, 139, 0.18);
-  border-top-color: rgba(100, 116, 139, 0.9);
-  animation: petThoughtBadgeSpin 0.92s linear infinite;
+  transform: none;
   transform-origin: center;
   transform-box: border-box;
+}
+
+.pet-thought-bubble__badge--thinking::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  box-sizing: border-box;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  border-top-color: rgba(100, 116, 139, 0.95);
+  border-right-color: rgba(100, 116, 139, 0.72);
+  animation: petThoughtBadgeSpin 0.78s linear infinite;
+  transform-origin: center;
+  will-change: transform;
 }
 
 .pet-thought-bubble__badge--complete {

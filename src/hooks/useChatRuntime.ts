@@ -75,7 +75,11 @@ function canUseTauriEvents() {
 }
 
 function getPetThoughtKey(thought: PetThoughtState) {
-  return thought.thoughtId ?? `${thought.sessionId ?? "session"}:${thought.updatedAt}`;
+  if (thought.sessionId) {
+    return `session:${thought.sessionId}`;
+  }
+
+  return thought.thoughtId ? `thought:${thought.thoughtId}` : `adhoc:${thought.updatedAt}`;
 }
 
 function safelyEmitPetThoughtEvent(event: string, payload: unknown) {
