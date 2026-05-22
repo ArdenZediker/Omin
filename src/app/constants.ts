@@ -3,6 +3,7 @@ import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindo
 
 export const MAIN_WINDOW_LABEL = "main";
 export const COMPACT_WINDOW_LABEL = "compact";
+export const PET_THOUGHT_WINDOW_LABEL = "pet-thought";
 export const SETTINGS_WINDOW_LABEL = "settings";
 export const EXPANDED_SIZE = { width: 920, height: 820 };
 export const SETTINGS_WINDOW_SIZE = { width: 980, height: 760 };

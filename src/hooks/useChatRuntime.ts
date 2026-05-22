@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
-import { listen } from "@tauri-apps/api/event";
+import { emit, emitTo, listen } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
-import { COMPACT_WINDOW_LABEL } from "../app/constants";
+import { COMPACT_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import { getPetWindowScale } from "../app/compactPetScale";
 import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibility";
 import { saveSqliteBackedValue } from "../app/sqliteStorage";
@@ -69,8 +68,38 @@ const SILENT_LOCAL_TOOL_IDS = new Set([
   "pet",
 ]);
 
+const PET_THOUGHT_QUEUE_LIMIT = 4;
+
 function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function getPetThoughtKey(thought: PetThoughtState) {
+  return thought.thoughtId ?? `${thought.sessionId ?? "session"}:${thought.updatedAt}`;
+}
+
+function safelyEmitPetThoughtEvent(event: string, payload: unknown) {
+  if (!canUseTauriEvents()) {
+    return;
+  }
+
+  try {
+    void emit(event, payload).catch(() => undefined);
+  } catch {
+    // Pet bubble sync must never interrupt the model response stream.
+  }
+}
+
+function safelyEmitPetThoughtEventTo(windowLabel: string, event: string, payload: unknown) {
+  if (!canUseTauriEvents()) {
+    return;
+  }
+
+  try {
+    void emitTo(windowLabel, event, payload).catch(() => undefined);
+  } catch {
+    // A missing/closing auxiliary window should not affect chat execution.
+  }
 }
 
 export function useChatRuntime({
@@ -108,9 +137,11 @@ export function useChatRuntime({
   const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
   const toolRegistryRef = useRef<ToolRegistry | null>(null);
   const petThoughtRef = useRef<PetThoughtState | null>(null);
+  const petThoughtQueueRef = useRef<PetThoughtState[]>([]);
+  const activePetThoughtIdRef = useRef<string | null>(null);
   const pendingPetThoughtSessionIdsRef = useRef<Set<string>>(new Set());
-  const petThoughtBroadcastFrameRef = useRef<number | null>(null);
   const petThoughtClearTimerRef = useRef<number | null>(null);
+  const petThoughtBroadcastFrameRef = useRef<number | null>(null);
 
   const executionModel =
     activeAssistant?.defaultModelId && availableModels.some((model) => model.id === activeAssistant.defaultModelId)
@@ -156,25 +187,77 @@ export function useChatRuntime({
     }
   }, []);
 
-  const emitPetThought = useCallback((state: PetThoughtState | null) => {
-    petThoughtRef.current = state;
+  const broadcastPetThoughtQueue = useCallback((queue: PetThoughtState[], currentThought: PetThoughtState | null) => {
     if (!canUseTauriEvents()) {
       return;
     }
-    if (petThoughtBroadcastFrameRef.current !== null) {
-      window.cancelAnimationFrame(petThoughtBroadcastFrameRef.current);
+
+    safelyEmitPetThoughtEvent("omni-pet-thought-changed", currentThought);
+    safelyEmitPetThoughtEvent("omni-pet-thought-queue-changed", queue);
+    safelyEmitPetThoughtEventTo(COMPACT_WINDOW_LABEL, "omni-pet-thought-changed", currentThought);
+    safelyEmitPetThoughtEventTo(COMPACT_WINDOW_LABEL, "omni-pet-thought-queue-changed", queue);
+    safelyEmitPetThoughtEventTo(PET_THOUGHT_WINDOW_LABEL, "omni-pet-thought-queue-changed", queue);
+  }, []);
+
+  const schedulePetThoughtQueueBroadcast = useCallback(() => {
+    if (!canUseTauriEvents() || petThoughtBroadcastFrameRef.current !== null) {
+      return;
     }
+
     petThoughtBroadcastFrameRef.current = window.requestAnimationFrame(() => {
       petThoughtBroadcastFrameRef.current = null;
-      void emit("omni-pet-thought-changed", petThoughtRef.current);
+      broadcastPetThoughtQueue(petThoughtQueueRef.current, petThoughtRef.current);
     });
+  }, [broadcastPetThoughtQueue]);
+
+  const emitPetThoughtQueue = useCallback(
+    (queue: PetThoughtState[]) => {
+      petThoughtQueueRef.current = queue;
+      petThoughtRef.current = queue[0] ?? null;
+      schedulePetThoughtQueueBroadcast();
+    },
+    [schedulePetThoughtQueueBroadcast]
+  );
+
+  const emitPetThought = useCallback((state: PetThoughtState | null) => {
+    if (!state) {
+      emitPetThoughtQueue([]);
+      return;
+    }
+
+    const nextKey = getPetThoughtKey(state);
+    const currentQueue = petThoughtQueueRef.current;
+    const currentIndex = currentQueue.findIndex((item) => getPetThoughtKey(item) === nextKey);
+    const nextQueue =
+      currentIndex >= 0
+        ? currentQueue.map((item, index) => (index === currentIndex ? state : item))
+        : currentQueue[0]?.status === "thinking"
+          ? [currentQueue[0], state, ...currentQueue.slice(1)]
+          : [state, ...currentQueue];
+
+    emitPetThoughtQueue(nextQueue.slice(0, PET_THOUGHT_QUEUE_LIMIT));
+  }, [emitPetThoughtQueue]);
+
+  const createPetThoughtId = useCallback((sessionId: string | null | undefined) => {
+    return `${sessionId || "adhoc"}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  }, []);
+
+  const getActivePetThoughtPreview = useCallback((thoughtId?: string | null) => {
+    const targetThoughtId = thoughtId ?? activePetThoughtIdRef.current;
+    if (!targetThoughtId) {
+      return petThoughtRef.current?.previewText ?? "";
+    }
+    return petThoughtQueueRef.current.find((item) => item.thoughtId === targetThoughtId)?.previewText ?? "";
   }, []);
 
   const startPetThought = useCallback(
     (sessionId: string | null | undefined, conversationMessages: Message[]) => {
       clearPetThoughtTimer();
+      const thoughtId = createPetThoughtId(sessionId);
+      activePetThoughtIdRef.current = thoughtId;
       const responseCount = resolvePetThoughtResponseCount(sessionId);
       emitPetThought({
+        thoughtId,
         sessionId: sessionId ?? null,
         sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
         previewText: "",
@@ -182,14 +265,16 @@ export function useChatRuntime({
         status: "thinking",
         updatedAt: Date.now(),
       });
+      return thoughtId;
     },
-    [clearPetThoughtTimer, emitPetThought, resolvePetThoughtResponseCount, resolvePetThoughtTitle]
+    [clearPetThoughtTimer, createPetThoughtId, emitPetThought, resolvePetThoughtResponseCount, resolvePetThoughtTitle]
   );
 
   const updatePetThought = useCallback(
-    (sessionId: string | null | undefined, conversationMessages: Message[], previewText: string) => {
+    (thoughtId: string | null, sessionId: string | null | undefined, conversationMessages: Message[], previewText: string) => {
       const responseCount = resolvePetThoughtResponseCount(sessionId);
       emitPetThought({
+        thoughtId: thoughtId ?? activePetThoughtIdRef.current ?? undefined,
         sessionId: sessionId ?? null,
         sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
         previewText,
@@ -202,10 +287,11 @@ export function useChatRuntime({
   );
 
   const completePetThought = useCallback(
-    (sessionId: string | null | undefined, conversationMessages: Message[], previewText: string) => {
+    (thoughtId: string | null, sessionId: string | null | undefined, conversationMessages: Message[], previewText: string) => {
       clearPetThoughtTimer();
       const responseCount = resolvePetThoughtResponseCount(sessionId);
       emitPetThought({
+        thoughtId: thoughtId ?? activePetThoughtIdRef.current ?? undefined,
         sessionId: sessionId ?? null,
         sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
         previewText,
@@ -220,8 +306,9 @@ export function useChatRuntime({
   const clearPetThought = useCallback(() => {
     clearPetThoughtTimer();
     pendingPetThoughtSessionIdsRef.current.clear();
-    emitPetThought(null);
-  }, [clearPetThoughtTimer, emitPetThought]);
+    activePetThoughtIdRef.current = null;
+    emitPetThoughtQueue([]);
+  }, [clearPetThoughtTimer, emitPetThoughtQueue]);
 
   useEffect(() => {
     if (isCompactWindow || !canUseTauriEvents()) {
@@ -231,7 +318,9 @@ export function useChatRuntime({
     let unlistenRequest: (() => void) | undefined;
     let unlistenViewed: (() => void) | undefined;
     void listen("omni-pet-thought-request", () => {
-      void emit("omni-pet-thought-changed", petThoughtRef.current);
+      const nextThought = petThoughtRef.current;
+      const queue = petThoughtQueueRef.current;
+      broadcastPetThoughtQueue(queue, nextThought);
     }).then((cleanup) => {
       unlistenRequest = cleanup;
     });
@@ -245,12 +334,13 @@ export function useChatRuntime({
       unlistenRequest?.();
       unlistenViewed?.();
     };
-  }, [clearPetThought, isCompactWindow]);
+  }, [broadcastPetThoughtQueue, clearPetThought, isCompactWindow]);
 
   useEffect(() => {
     return () => {
       if (petThoughtBroadcastFrameRef.current !== null) {
         window.cancelAnimationFrame(petThoughtBroadcastFrameRef.current);
+        petThoughtBroadcastFrameRef.current = null;
       }
       clearPetThoughtTimer();
     };
@@ -329,13 +419,11 @@ export function useChatRuntime({
       lastRunIdRef.current = runId;
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
+      const petThoughtId = startPetThought(sessionId, conversationMessages);
 
       setMessages([...conversationMessages, { role: "assistant", content: "" }]);
       setError(null);
       setIsLoading(true);
-      clearPetThoughtSession(sessionId);
-      emitPetThought(null);
-      startPetThought(sessionId, conversationMessages);
 
       try {
         const taskResult = await executeTask({
@@ -347,7 +435,7 @@ export function useChatRuntime({
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
             }
-            updatePetThought(sessionId, conversationMessages, `${petThoughtRef.current?.previewText ?? ""}${chunk}`);
+            updatePetThought(petThoughtId, sessionId, conversationMessages, `${getActivePetThoughtPreview(petThoughtId)}${chunk}`);
             setMessages((prev) => {
               const updated = [...prev];
               const lastIdx = updated.length - 1;
@@ -366,7 +454,6 @@ export function useChatRuntime({
         if (!taskResult.finalResult && taskResult.status === "aborted") {
           setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
           clearPetThoughtSession(sessionId);
-          emitPetThought(null);
           return;
         }
 
@@ -375,6 +462,7 @@ export function useChatRuntime({
           setMessages(conversationMessages);
           const responseCount = resolvePetThoughtResponseCount(sessionId);
           emitPetThought({
+            thoughtId: petThoughtId,
             sessionId: sessionId ?? null,
             sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
             previewText: "",
@@ -386,9 +474,10 @@ export function useChatRuntime({
         }
 
         completePetThought(
+          petThoughtId,
           sessionId,
           conversationMessages,
-          taskResult.finalResult?.content || taskResult.toolResult?.outputText || petThoughtRef.current?.previewText || ""
+          taskResult.finalResult?.content || taskResult.toolResult?.outputText || getActivePetThoughtPreview(petThoughtId) || ""
         );
         finishTaskResult(taskResult, sessionId, conversationMessages);
         return;
@@ -399,7 +488,6 @@ export function useChatRuntime({
         if (runError instanceof DOMException && runError.name === "AbortError") {
           setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
           clearPetThoughtSession(sessionId);
-          emitPetThought(null);
           return;
         }
 
@@ -407,6 +495,7 @@ export function useChatRuntime({
         setMessages(conversationMessages);
         const responseCount = resolvePetThoughtResponseCount(sessionId);
         emitPetThought({
+          thoughtId: petThoughtId,
           sessionId: sessionId ?? null,
           sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
           previewText: "",
@@ -425,13 +514,13 @@ export function useChatRuntime({
     [
       activeChatId,
       assistantSystemPrompt,
-      clearPetThought,
       clearPetThoughtSession,
       completePetThought,
       createSessionFromMessages,
       emitPetThought,
       executionModel,
       finishTaskResult,
+      getActivePetThoughtPreview,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
       setMessages,
@@ -760,12 +849,11 @@ export function useChatRuntime({
       abortControllerRef.current = abortController;
       setError(null);
       setIsLoading(true);
-      clearPetThoughtSession(activeChatId);
-      emitPetThought(null);
 
       let sessionId = activeChatId;
       let conversationMessagesForTask = messages;
       let hasPetThought = false;
+      let petThoughtId: string | null = null;
 
       try {
         const taskResult = await executeInputTask({
@@ -781,7 +869,7 @@ export function useChatRuntime({
               sessionId = nextSession.id;
             }
             setMessages([...preparedMessages, { role: "assistant", content: "" }]);
-            startPetThought(sessionId, preparedMessages);
+            petThoughtId = startPetThought(sessionId, preparedMessages);
             hasPetThought = true;
           },
           signal: abortController.signal,
@@ -791,7 +879,7 @@ export function useChatRuntime({
               return;
             }
             if (hasPetThought) {
-              updatePetThought(sessionId, conversationMessagesForTask, `${petThoughtRef.current?.previewText ?? ""}${chunk}`);
+              updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, `${getActivePetThoughtPreview(petThoughtId)}${chunk}`);
             }
             setMessages((prev) => {
               const updated = [...prev];
@@ -832,7 +920,6 @@ export function useChatRuntime({
             setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
             if (hasPetThought) {
               clearPetThoughtSession(sessionId);
-              emitPetThought(null);
             }
             return;
           }
@@ -842,6 +929,7 @@ export function useChatRuntime({
           if (hasPetThought) {
             const responseCount = resolvePetThoughtResponseCount(sessionId);
             emitPetThought({
+              thoughtId: petThoughtId ?? undefined,
               sessionId: sessionId ?? null,
               sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
               previewText: "",
@@ -855,9 +943,10 @@ export function useChatRuntime({
 
         if (hasPetThought) {
           completePetThought(
+            petThoughtId,
             sessionId,
             conversationMessages,
-            taskResult.finalResult?.content || taskResult.toolResult?.outputText || petThoughtRef.current?.previewText || ""
+            taskResult.finalResult?.content || taskResult.toolResult?.outputText || getActivePetThoughtPreview(petThoughtId) || ""
           );
         }
         finishTaskResult(taskResult, sessionId, conversationMessages);
@@ -868,7 +957,6 @@ export function useChatRuntime({
         if (sendError instanceof DOMException && sendError.name === "AbortError") {
           if (hasPetThought) {
             clearPetThoughtSession(sessionId);
-            emitPetThought(null);
           }
           return;
         }
@@ -876,6 +964,7 @@ export function useChatRuntime({
         if (hasPetThought) {
           const responseCount = resolvePetThoughtResponseCount(sessionId);
           emitPetThought({
+            thoughtId: petThoughtId ?? undefined,
             sessionId: sessionId ?? null,
             sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessagesForTask),
             previewText: "",
@@ -901,6 +990,7 @@ export function useChatRuntime({
       executeTool,
       executionModel,
       finishTaskResult,
+      getActivePetThoughtPreview,
       isLoading,
       messages,
       resolvePetThoughtResponseCount,

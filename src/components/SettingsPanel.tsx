@@ -24,6 +24,7 @@ import {
 import type { BasicSettings } from "../app/types";
 import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../app/settings";
 import { COMPACT_WINDOW_LABEL } from "../app/constants";
+import { saveSqliteBackedValue } from "../app/sqliteStorage";
 import {
   loadBasicSettings,
   loadUsagePreferences,
@@ -230,10 +231,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
         const visible = await compactWindow.isVisible();
         if (visible && isDesktopPetAwake) {
           setCompactPetHidden(true);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("omni_compact_appearance", "default");
-            window.dispatchEvent(new StorageEvent("storage", { key: "omni_compact_appearance", newValue: "default" }));
-          }
+          saveSqliteBackedValue("omni_compact_appearance", "default");
           await emit("omni-compact-appearance-changed", { appearance: "default" });
           await showCompactWindow("default", 1, COMPACT_WINDOW_LABEL);
           setIsDesktopPetAwake(false);
@@ -249,10 +247,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       activePetId: codexPetLibraryState.activePetId,
       updatedAt: Date.now(),
     });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("omni_compact_appearance", "pet");
-      window.dispatchEvent(new StorageEvent("storage", { key: "omni_compact_appearance", newValue: "pet" }));
-    }
+    saveSqliteBackedValue("omni_compact_appearance", "pet");
     setCompactPetHidden(false);
     await emit("omni-compact-appearance-changed", { appearance: "pet" });
     await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);

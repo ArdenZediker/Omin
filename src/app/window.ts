@@ -2,17 +2,21 @@ import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { availableMonitors, cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emit } from "@tauri-apps/api/event";
-import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL, SETTINGS_WINDOW_SIZE, THEME_MODE_STORAGE_KEY } from "./constants";
+import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL, SETTINGS_WINDOW_LABEL, SETTINGS_WINDOW_SIZE, THEME_MODE_STORAGE_KEY } from "./constants";
 import type { BasicSettings, ExternalChatEntry, ViewMode } from "./types";
 import { isCompactPetHidden } from "./compactVisibility";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
-import { PET_WINDOW_SAFE_MARGIN_X, PET_WINDOW_SAFE_MARGIN_Y } from "./pets/codexPetSizing";
+import { PET_WINDOW_DECORATION_MARGIN_RIGHT, PET_WINDOW_DECORATION_MARGIN_TOP, PET_WINDOW_SAFE_MARGIN_X, PET_WINDOW_SAFE_MARGIN_Y } from "./pets/codexPetSizing";
 
 const PET_THOUGHT_VIEWPORT_MIN_WIDTH = 320;
 const PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT = 128;
 const PET_THOUGHT_VIEWPORT_SIDE_EXTRA_WIDTH = 316;
 const PET_THOUGHT_VIEWPORT_SIDE_MIN_HEIGHT = 188;
+export const PET_THOUGHT_WINDOW_SIZE = {
+  width: 336,
+  height: 360,
+} as const;
 
 export type PetThoughtPlacement = "top" | "right" | "left" | "bottom";
 
@@ -99,6 +103,12 @@ export function persistCompactPosition(position: { x: number; y: number }) {
       y: Math.round(position.y),
     })
   );
+}
+
+function toNativePetCompactPosition(appearance: CompactAppearance, position: { x: number; y: number }) {
+  return appearance === "pet"
+    ? { x: position.x, y: Math.max(0, Math.round(position.y - PET_WINDOW_DECORATION_MARGIN_TOP)) }
+    : position;
 }
 
 export function getCompactAnchorPositionForMonitor(monitor: Monitor, size: { width: number; height: number }) {
@@ -298,8 +308,8 @@ export function getCompactWindowSize(appearance: CompactAppearance, scale: numbe
   const preset = COMPACT_APPEARANCE_PRESETS[appearance];
   if (appearance === "pet") {
     return {
-      width: Math.round(preset.width * scale) + PET_WINDOW_SAFE_MARGIN_X,
-      height: Math.round(preset.height * scale) + PET_WINDOW_SAFE_MARGIN_Y,
+      width: Math.round(preset.width * scale) + PET_WINDOW_SAFE_MARGIN_X + PET_WINDOW_DECORATION_MARGIN_RIGHT,
+      height: Math.round(preset.height * scale) + PET_WINDOW_SAFE_MARGIN_Y + PET_WINDOW_DECORATION_MARGIN_TOP,
     };
   }
   return {
@@ -441,6 +451,42 @@ export async function applyCompactWindowChrome(targetWindow: ReturnType<typeof g
   }
 }
 
+export async function ensurePetThoughtWindow() {
+  let petThoughtWindow = await WebviewWindow.getByLabel(PET_THOUGHT_WINDOW_LABEL);
+
+  if (!petThoughtWindow) {
+    petThoughtWindow = new WebviewWindow(PET_THOUGHT_WINDOW_LABEL, {
+      url: "/?petThought=1",
+      title: "Omni Pet Thought",
+      width: PET_THOUGHT_WINDOW_SIZE.width,
+      height: PET_THOUGHT_WINDOW_SIZE.height,
+      minWidth: PET_THOUGHT_WINDOW_SIZE.width,
+      minHeight: PET_THOUGHT_WINDOW_SIZE.height,
+      maxWidth: PET_THOUGHT_WINDOW_SIZE.width,
+      maxHeight: PET_THOUGHT_WINDOW_SIZE.height,
+      decorations: false,
+      transparent: true,
+      shadow: false,
+      alwaysOnTop: true,
+      visibleOnAllWorkspaces: true,
+      skipTaskbar: true,
+      resizable: false,
+      visible: false,
+      focus: false,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      petThoughtWindow?.once("tauri://created", () => resolve());
+      petThoughtWindow?.once("tauri://error", (event) => reject(event.payload));
+    });
+  }
+
+  await applyCompactWindowChrome(petThoughtWindow);
+  await petThoughtWindow.setIgnoreCursorEvents(true).catch(() => undefined);
+  await petThoughtWindow.setSize(new LogicalSize(PET_THOUGHT_WINDOW_SIZE.width, PET_THOUGHT_WINDOW_SIZE.height));
+  return petThoughtWindow;
+}
+
 export async function applyExpandedWindowChrome(targetWindow: ReturnType<typeof getCurrentWindow>) {
   await Promise.all([
     targetWindow.setShadow(false),
@@ -523,10 +569,12 @@ export async function showCompactWindow(
     if (cursorMonitor) {
       await moveCompactWindowToMonitor(compactWindow, cursorMonitor, size);
     } else if (safeStoredPosition) {
-      await compactWindow.setPosition(new LogicalPosition(safeStoredPosition.x, safeStoredPosition.y));
+      const nativePosition = toNativePetCompactPosition(appearance, safeStoredPosition);
+      await compactWindow.setPosition(new LogicalPosition(nativePosition.x, nativePosition.y));
     }
   } else if (safeStoredPosition) {
-    await compactWindow.setPosition(new LogicalPosition(safeStoredPosition.x, safeStoredPosition.y));
+    const nativePosition = toNativePetCompactPosition(appearance, safeStoredPosition);
+    await compactWindow.setPosition(new LogicalPosition(nativePosition.x, nativePosition.y));
   }
 
   if (cursorMonitor) {

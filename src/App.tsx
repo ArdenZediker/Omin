@@ -9,6 +9,7 @@ import SettingsWindow from "./components/SettingsWindow";
 import MainChatView from "./components/MainChatView";
 import KnowledgeBaseView from "./components/KnowledgeBaseView";
 import CompactWindow from "./components/CompactWindow";
+import PetThoughtWindow from "./components/PetThoughtWindow";
 import { usePromptDialog } from "./components/PromptDialog";
 import { loadCodexPetPackages } from "./app/pets/codexPetStore";
 import { getCodexPetViewportSize } from "./app/pets/codexPetSizing";
@@ -19,18 +20,19 @@ import {
   CODEX_PET_LIBRARY_STATE_STORAGE_KEY,
   CURRENT_MODEL_STORAGE_KEY,
   EMPTY_CHAT_PROMPTS,
+  PET_THOUGHT_WINDOW_LABEL,
   omniIconSrc,
   omniSmallIconSrc,
 } from "./app/constants";
 import type { BasicSettings } from "./app/types";
 import { saveBasicSettings } from "./app/settingsStore";
 import { saveSqliteBackedValue } from "./app/sqliteStorage";
+import { getPetWindowScale } from "./app/compactPetScale";
 import {
   getBasicSettings,
   getCompactWindowSize,
   getExpandedCompactViewportSizeForAppearance,
   getPetCompactViewportSize,
-  getPetThoughtAnchorOffset,
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
@@ -55,11 +57,16 @@ function getSafeCurrentWindow() {
 
 const appWindow = getSafeCurrentWindow();
 const isCompactWindow = appWindow?.label === "compact";
+const isPetThoughtWindow = appWindow?.label === PET_THOUGHT_WINDOW_LABEL;
 const isSettingsWindow = appWindow?.label === "settings";
 
 function App() {
   if (isSettingsWindow) {
     return <SettingsWindow />;
+  }
+
+  if (isPetThoughtWindow) {
+    return <PetThoughtWindow petSize={getCompactWindowSize("pet", getPetWindowScale())} />;
   }
 
   return <MainApp />;
@@ -113,6 +120,8 @@ function MainApp() {
     isCompactReplyLoading,
     resetCompactFloatingUi,
     petThoughtPlacement,
+    petThoughtCount,
+    arePetThoughtsCollapsed,
     setCharacterMenuPosition,
     setCharacterScale,
     setCompactAppearance,
@@ -127,6 +136,7 @@ function MainApp() {
     setIsCompactReplyLoading,
     petThought,
     setPetThoughtPlacement,
+    setArePetThoughtsCollapsed,
   } = useCompactWindowState({ isCompactWindow });
 
   const [currentModel, setCurrentModel] = useState("gpt-4o");
@@ -147,13 +157,6 @@ function MainApp() {
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
     [compactAppearance, effectiveCompactScale]
   );
-  const isPetThoughtViewportActive =
-    compactAppearance === "pet" &&
-    Boolean(petThought) &&
-    !isCompactMenuOpen &&
-    !isCompactQueryOpen &&
-    !isCompactReplyLoading &&
-    !compactReply;
   const compactViewportSize = useMemo(() => {
     if (compactAppearance === "pet") {
       return getPetCompactViewportSize({
@@ -163,7 +166,7 @@ function MainApp() {
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
         thoughtPlacement: petThoughtPlacement,
-        reservePetThoughtSpace: isPetThoughtViewportActive,
+        reservePetThoughtSpace: false,
       });
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
@@ -182,7 +185,6 @@ function MainApp() {
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
-    isPetThoughtViewportActive,
     petThoughtPlacement,
   ]);
 
@@ -299,6 +301,7 @@ function MainApp() {
     compactViewportSize,
     petThought,
     petThoughtPlacement,
+    arePetThoughtsCollapsed,
     currentModel,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
@@ -328,8 +331,6 @@ function MainApp() {
     compactAppearance === "pet" && typeof compactController.previewCharacterScale === "number"
       ? getCompactWindowSize(compactAppearance, compactController.previewCharacterScale * CHARACTER_SCALE_BASELINE)
       : compactSize;
-  const isPetThoughtViewportVisible = isPetThoughtViewportActive && compactController.isPetThoughtViewportReady;
-  const visiblePetThought = isPetThoughtViewportVisible ? petThought : null;
   const compactStyle = useMemo<CSSProperties>(() => {
     const buttonSize =
       isAnimatedCompactAppearance ? Math.max(26, Math.round(displayCompactSize.width * 0.36)) : Math.max(30, displayCompactSize.height - 24);
@@ -346,19 +347,6 @@ function MainApp() {
     const minCompactBarHeight = compactAppearance === "compact" ? 48 : 54;
     const compactPetViewportSize = getCodexPetViewportSize(displayCompactSize);
     const compactCharacterSize = compactPetViewportSize.height;
-    const fallbackPetThoughtAnchorOffset =
-      isPetThoughtViewportVisible && compactViewportSize
-        ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
-        : { x: 0, y: 0 };
-    const resolvedPetThoughtAnchorOffset =
-      isPetThoughtViewportVisible &&
-      compactController.petThoughtAnchorOffset.x === 0 &&
-      compactController.petThoughtAnchorOffset.y === 0
-        ? fallbackPetThoughtAnchorOffset
-        : compactController.petThoughtAnchorOffset;
-    const petThoughtOffsetX = isPetThoughtViewportVisible ? resolvedPetThoughtAnchorOffset.x : 0;
-    const petThoughtOffsetY = isPetThoughtViewportVisible ? resolvedPetThoughtAnchorOffset.y : 0;
-
     return {
       "--compact-bar-width": `${Math.max(minCompactBarWidth, inlineBarWidth)}px`,
       "--compact-bar-height": `${Math.max(minCompactBarHeight, buttonSize + compactPadding * 2)}px`,
@@ -368,17 +356,12 @@ function MainApp() {
       "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
-      "--compact-pet-anchor-offset-x": `${petThoughtOffsetX}px`,
-      "--compact-pet-anchor-offset-y": `${petThoughtOffsetY}px`,
     } as CSSProperties;
   }, [
     compactViewportSize,
     displayCompactSize.height,
     displayCompactSize.width,
-    isPetThoughtViewportVisible,
     isAnimatedCompactAppearance,
-    compactController.petThoughtAnchorOffset.x,
-    compactController.petThoughtAnchorOffset.y,
     compactAppearance,
     petThoughtPlacement,
   ]);
@@ -525,6 +508,8 @@ function MainApp() {
         compactAppearance={compactAppearance as CompactAppearance}
         compactQuery={compactQuery}
         compactReply={compactReply}
+        petThoughtCount={petThoughtCount}
+        arePetThoughtsCollapsed={arePetThoughtsCollapsed}
         compactSize={displayCompactSize}
         compactStyle={compactStyle}
         entries={compactController.entries}
@@ -536,8 +521,6 @@ function MainApp() {
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
         characterDragMotion={compactController.characterDragMotion}
-        petThought={visiblePetThought}
-        petThoughtPlacement={petThoughtPlacement}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
@@ -557,6 +540,7 @@ function MainApp() {
         onPointerHitTest={isCharacterPointerInHitArea}
         onSetCompactQuery={setCompactQuery}
         onSetCompactReply={setCompactReply}
+        onSetArePetThoughtsCollapsed={setArePetThoughtsCollapsed}
         onUpdateBasicSettings={updateBasicSettings}
         onSetIsCompactAppearanceOpen={setIsCompactAppearanceOpen}
         onSetIsCompactModelOpen={setIsCompactModelOpen}
