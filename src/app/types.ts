@@ -50,6 +50,7 @@ export type CompactReply = {
 export type PetThoughtStatus = "thinking" | "complete" | "error" | "cleared";
 
 export type PetThoughtState = {
+  thoughtId?: string;
   sessionId: string | null;
   sessionTitle: string;
   previewText: string;

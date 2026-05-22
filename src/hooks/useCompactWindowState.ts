@@ -48,7 +48,9 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
   const [compactReply, setCompactReply] = useState<{ question: string; answer: string } | null>(null);
   const [isCompactReplyLoading, setIsCompactReplyLoading] = useState(false);
   const [petThought, setPetThought] = useState<PetThoughtState | null>(null);
+  const [petThoughtCount, setPetThoughtCount] = useState(0);
   const [petThoughtPlacement, setPetThoughtPlacement] = useState<PetThoughtPlacement>("top");
+  const [arePetThoughtsCollapsed, setArePetThoughtsCollapsed] = useState(false);
 
   useEffect(() => {
     const onStorage = () => {
@@ -90,22 +92,44 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     }
 
     let unlistenThought: (() => void) | undefined;
+    let unlistenThoughtQueue: (() => void) | undefined;
     let unlistenViewed: (() => void) | undefined;
-    void listen<PetThoughtState>("omni-pet-thought-changed", (event) => {
-      setPetThought(event.payload ?? null);
+    void listen<PetThoughtState | null>("omni-pet-thought-changed", (event) => {
+      const nextThought = event.payload ?? null;
+      setPetThought((currentThought) => {
+        if (!nextThought) {
+          return null;
+        }
+        if (currentThought && currentThought.updatedAt > nextThought.updatedAt) {
+          return currentThought;
+        }
+        return nextThought;
+      });
     }).then((cleanup) => {
       unlistenThought = cleanup;
       void emit("omni-pet-thought-request");
     });
+    void listen<PetThoughtState[]>("omni-pet-thought-queue-changed", (event) => {
+      const queue = Array.isArray(event.payload) ? event.payload : [];
+      setPetThoughtCount(queue.length);
+      if (queue.length === 0) {
+        setArePetThoughtsCollapsed(false);
+      }
+    }).then((cleanup) => {
+      unlistenThoughtQueue = cleanup;
+    });
     void listen("omni-pet-thought-viewed", () => {
       setPetThought(null);
+      setPetThoughtCount(0);
       setPetThoughtPlacement("top");
+      setArePetThoughtsCollapsed(false);
     }).then((cleanup) => {
       unlistenViewed = cleanup;
     });
 
     return () => {
       unlistenThought?.();
+      unlistenThoughtQueue?.();
       unlistenViewed?.();
     };
   }, [isCompactWindow]);
@@ -159,7 +183,9 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     compactQuery,
     compactReply,
     petThought,
+    petThoughtCount,
     petThoughtPlacement,
+    arePetThoughtsCollapsed,
     isCompactAppearanceOpen,
     isCompactMenuOpen,
     isCompactModelOpen,
@@ -182,5 +208,6 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     setIsCompactReplyLoading,
     setPetThought,
     setPetThoughtPlacement,
+    setArePetThoughtsCollapsed,
   };
 }

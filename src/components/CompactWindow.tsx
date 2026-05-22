@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
-import type { BasicSettings, CompactReply, ExternalChatEntry, PetThoughtState } from "../app/types";
+import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
+import { emit, emitTo } from "@tauri-apps/api/event";
+import { ChevronDown } from "lucide-react";
+import { PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
@@ -7,7 +11,6 @@ import DesktopPet, { type DesktopPetState } from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
 import CompactReplyPanel from "./compact/CompactReplyPanel";
-import PetThoughtBubble from "./compact/PetThoughtBubble";
 
 type CompactWindowProps = {
   basicSettings: BasicSettings;
@@ -17,6 +20,8 @@ type CompactWindowProps = {
   compactAppearance: CompactAppearance;
   compactQuery: string;
   compactReply: CompactReply | null;
+  petThoughtCount: number;
+  arePetThoughtsCollapsed: boolean;
   compactSize: { width: number; height: number };
   compactStyle: CSSProperties;
   entries: ExternalChatEntry[];
@@ -28,8 +33,6 @@ type CompactWindowProps = {
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
   characterDragMotion: DesktopPetState | null;
-  petThought: PetThoughtState | null;
-  petThoughtPlacement: "top" | "right" | "left" | "bottom";
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   onCharacterContextMenu: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
@@ -50,6 +53,7 @@ type CompactWindowProps = {
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
   onSetCompactQuery: Dispatch<SetStateAction<string>>;
   onSetCompactReply: Dispatch<SetStateAction<CompactReply | null>>;
+  onSetArePetThoughtsCollapsed: Dispatch<SetStateAction<boolean>>;
   onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
   onSetIsCompactAppearanceOpen: Dispatch<SetStateAction<boolean>>;
   onSetIsCompactModelOpen: Dispatch<SetStateAction<boolean>>;
@@ -66,6 +70,8 @@ export default function CompactWindow({
   compactAppearance,
   compactQuery,
   compactReply,
+  petThoughtCount,
+  arePetThoughtsCollapsed,
   compactSize,
   compactStyle,
   entries,
@@ -75,8 +81,6 @@ export default function CompactWindow({
   isCompactQueryOpen,
   isCompactReplyLoading,
   characterDragMotion,
-  petThought,
-  petThoughtPlacement,
   omniSmallIconSrc,
   compactMenuSide,
   compactSubmenuSide,
@@ -98,6 +102,7 @@ export default function CompactWindow({
   onPointerHitTest,
   onSetCompactQuery,
   onSetCompactReply,
+  onSetArePetThoughtsCollapsed,
   onUpdateBasicSettings,
   onSetIsCompactAppearanceOpen,
   onSetIsCompactModelOpen,
@@ -119,16 +124,6 @@ export default function CompactWindow({
   const [petClickBounce, setPetClickBounce] = useState(false);
   const [isPetHovered, setIsPetHovered] = useState(false);
   const [petWavingHold, setPetWavingHold] = useState(false);
-  const shouldShowPetThought = Boolean(
-    isPetAppearance &&
-      petThought &&
-      !isCompactMenuOpen &&
-      !isCompactQueryOpen &&
-      !isCompactReplyLoading &&
-      !compactReply
-  );
-  const shellPetThoughtClass = shouldShowPetThought ? `compact-shell--pet-thought compact-shell--pet-thought-${petThoughtPlacement}` : "";
-  const barPetThoughtClass = shouldShowPetThought ? "compact-bar--pet-thought" : "";
   const petState: DesktopPetState = characterDragMotion
     ? characterDragMotion
     : petClickBounce
@@ -176,6 +171,12 @@ export default function CompactWindow({
     return () => window.clearTimeout(timer);
   }, [isCompactMenuOpen, isCompactQueryOpen, isPetHovered]);
 
+  useEffect(() => {
+    if (petThoughtCount <= 0) {
+      onSetArePetThoughtsCollapsed(false);
+    }
+  }, [onSetArePetThoughtsCollapsed, petThoughtCount]);
+
 
   const resolveAnchorEdge = (target: HTMLElement) => {
     const anchor = target.querySelector<HTMLElement>(".compact-menu-anchor");
@@ -200,7 +201,7 @@ export default function CompactWindow({
         isPetAppearance && (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply)
           ? "compact-shell--pet-expanded"
           : ""
-      } ${shellPetThoughtClass}`}
+      }`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
         const isInsideFloatingPanel = Boolean(
@@ -269,17 +270,19 @@ export default function CompactWindow({
         <div
           className={`compact-bar ${isAnimatedAppearance ? "compact-bar--character" : ""} ${
             isPetAppearance ? "compact-bar--pet" : ""
-          } ${barPetThoughtClass}`}
-          style={compactStyle}
+          }`}
+          style={
+            isPetAppearance
+              ? ({
+                  ...compactStyle,
+                  "--pet-decoration-offset-top": "16px",
+                  "--pet-thought-toggle-x": `${Math.round(petRenderWidth * 1.02)}px`,
+                  "--pet-thought-toggle-y": `${Math.round(petRenderHeight * 0.02)}px`,
+                } as CSSProperties)
+              : compactStyle
+          }
         >
           <div className="compact-menu-anchor no-drag" onContextMenu={isAnimatedAppearance ? onCharacterContextMenu : undefined}>
-            {shouldShowPetThought ? (
-              <PetThoughtBubble
-                thought={petThought}
-                anchorRef={petAnchorRef}
-                placement={petThoughtPlacement}
-              />
-            ) : null}
             <button
               ref={petButtonRef}
               type="button"
@@ -345,6 +348,35 @@ export default function CompactWindow({
                 <img src={omniSmallIconSrc} alt="Omni" className="compact-button__icon" />
               )}
             </button>
+
+            {isPetAppearance && petThoughtCount > 0 ? (
+              <button
+                type="button"
+                className={`pet-thought-compact-toggle ${arePetThoughtsCollapsed ? "pet-thought-compact-toggle--collapsed" : ""} no-drag`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const nextCollapsed = !arePetThoughtsCollapsed;
+                  onSetArePetThoughtsCollapsed(nextCollapsed);
+                  void emit("omni-pet-thought-collapse-changed", { collapsed: nextCollapsed });
+                  void emitTo(PET_THOUGHT_WINDOW_LABEL, "omni-pet-thought-collapse-changed", { collapsed: nextCollapsed });
+                  void WebviewWindow.getByLabel(PET_THOUGHT_WINDOW_LABEL).then((thoughtWindow) => {
+                    if (!thoughtWindow) {
+                      return;
+                    }
+                    void (nextCollapsed ? thoughtWindow.hide() : thoughtWindow.show()).catch(() => undefined);
+                  });
+                }}
+                aria-label={arePetThoughtsCollapsed ? `Expand ${petThoughtCount} thought bubbles` : "Collapse thought bubbles"}
+                title={arePetThoughtsCollapsed ? `${petThoughtCount} topics` : "Collapse thought bubbles"}
+              >
+                {arePetThoughtsCollapsed ? petThoughtCount : <ChevronDown size={16} strokeWidth={2.25} aria-hidden="true" focusable="false" />}
+              </button>
+            ) : null}
 
             {isCompactMenuOpen && (
               <CompactMenu

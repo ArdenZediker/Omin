@@ -1,51 +1,34 @@
-import { CheckCircle2, ChevronDown, CircleAlert, LoaderCircle } from "lucide-react";
+import { CheckCircle2, CircleAlert } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { PetThoughtState } from "../../app/types";
 import type { PetThoughtPlacement } from "../../app/window";
 
 type PetThoughtBubbleProps = {
   thought: PetThoughtState | null;
-  anchorRef: RefObject<HTMLElement | null>;
   placement: PetThoughtPlacement;
+  usePortal?: boolean;
+  stacked?: boolean;
+  collapsed?: boolean;
 };
 
 type BubbleLayout = {
-  bubbleLeft: number;
-  bubbleTop: number;
   bubblePlacement: PetThoughtPlacement;
-  bubbleMaxWidth: number;
-  actionLeft: number;
-  actionTop: number;
   ready: boolean;
 };
 
-const VIEWPORT_MARGIN = 12;
-const BUBBLE_GAP = 14;
 const FIXED_BUBBLE_WIDTH = 250;
-const REPOSITION_POLL_MS = 180;
-const ACTION_FALLBACK_SIZE = 20;
-const COUNTER_FALLBACK_SIZE = 26;
-const BUBBLE_VERTICAL_OFFSET = 0.68;
-
-function clamp(value: number, min: number, max: number) {
-  if (max < min) {
-    return min;
-  }
-  return Math.min(max, Math.max(min, value));
-}
 
 export default function PetThoughtBubble({
   thought,
-  anchorRef,
   placement,
+  usePortal = true,
+  stacked = false,
+  collapsed = false,
 }: PetThoughtBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const titleRowRef = useRef<HTMLDivElement | null>(null);
-  const actionRef = useRef<HTMLButtonElement | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const [placementState, setPlacementState] = useState<PetThoughtPlacement>(placement);
-  const placementRef = useRef<PetThoughtPlacement>(placement);
   const [previewMaxWidth, setPreviewMaxWidth] = useState<number | null>(null);
   const isError = thought?.status === "error";
   const isComplete = thought?.status === "complete";
@@ -57,12 +40,7 @@ export default function PetThoughtBubble({
         ? "Response failed"
         : thought?.previewText.trim() ?? "";
   const [layout, setLayout] = useState<BubbleLayout>({
-    bubbleLeft: VIEWPORT_MARGIN,
-    bubbleTop: VIEWPORT_MARGIN,
     bubblePlacement: "top",
-    bubbleMaxWidth: FIXED_BUBBLE_WIDTH,
-    actionLeft: VIEWPORT_MARGIN,
-    actionTop: VIEWPORT_MARGIN,
     ready: false,
   });
 
@@ -71,145 +49,15 @@ export default function PetThoughtBubble({
       return;
     }
     setPlacementState(placement);
-    placementRef.current = placement;
+    setLayout((current) =>
+      current.ready && current.bubblePlacement === placement
+        ? current
+        : { bubblePlacement: placement, ready: true }
+    );
   }, [placement, thought]);
 
   useLayoutEffect(() => {
-    if (!thought) {
-      return;
-    }
-
-    const anchor = anchorRef.current;
-    if (!anchor) {
-      return;
-    }
-
-    let frame = 0;
-
-    const reposition = () => {
-      const bubble = bubbleRef.current;
-      const action = actionRef.current;
-      const petViewport = anchor.querySelector<HTMLElement>(".desktop-pet__viewport");
-      const bubbleAnchorRect = (petViewport ?? anchor).getBoundingClientRect();
-      const actionAnchorRect = bubbleAnchorRect;
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-
-      const actionWidth =
-        action?.getBoundingClientRect().width ?? (isCollapsed ? COUNTER_FALLBACK_SIZE : ACTION_FALLBACK_SIZE);
-      const actionHeight =
-        action?.getBoundingClientRect().height ?? (isCollapsed ? COUNTER_FALLBACK_SIZE : ACTION_FALLBACK_SIZE);
-      const anchorCenterX = bubbleAnchorRect.left + bubbleAnchorRect.width / 2;
-      const anchorCenterY = bubbleAnchorRect.top + bubbleAnchorRect.height / 2;
-      const bubbleWidth = FIXED_BUBBLE_WIDTH;
-
-      if (bubble) {
-        bubble.style.width = `${bubbleWidth}px`;
-        bubble.style.maxWidth = `${bubbleWidth}px`;
-        bubble.style.minWidth = `${bubbleWidth}px`;
-      }
-
-      const bubbleRect = bubble?.getBoundingClientRect();
-      if (!bubbleRect) {
-        return;
-      }
-
-      const bubblePlacement = placementRef.current;
-
-      const bubbleLeft =
-        bubblePlacement === "left"
-          ? clamp(
-              bubbleAnchorRect.left - bubbleRect.width - BUBBLE_GAP,
-              VIEWPORT_MARGIN,
-              viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
-            )
-          : bubblePlacement === "right"
-            ? clamp(
-                bubbleAnchorRect.right + BUBBLE_GAP,
-                VIEWPORT_MARGIN,
-                viewportWidth - bubbleRect.width - VIEWPORT_MARGIN
-              )
-            : clamp(anchorCenterX - bubbleRect.width / 2, VIEWPORT_MARGIN, viewportWidth - bubbleRect.width - VIEWPORT_MARGIN);
-      const bubbleTop =
-        bubblePlacement === "top"
-          ? clamp(
-              bubbleAnchorRect.top - bubbleRect.height - BUBBLE_GAP,
-              VIEWPORT_MARGIN,
-              viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
-            )
-          : bubblePlacement === "bottom"
-            ? clamp(
-                bubbleAnchorRect.bottom + BUBBLE_GAP,
-                VIEWPORT_MARGIN,
-                viewportHeight - bubbleRect.height - VIEWPORT_MARGIN
-              )
-            : clamp(anchorCenterY - bubbleRect.height * BUBBLE_VERTICAL_OFFSET, VIEWPORT_MARGIN, viewportHeight - bubbleRect.height - VIEWPORT_MARGIN);
-
-      const actionOffsetX = clamp(Math.round(actionAnchorRect.width * -0.04), -10, -2);
-      const actionOffsetY = clamp(Math.round(actionAnchorRect.height * -0.08), -14, -4);
-      const actionLeft = clamp(
-        actionAnchorRect.right - actionWidth * 0.5 + actionOffsetX,
-        VIEWPORT_MARGIN,
-        viewportWidth - actionWidth - VIEWPORT_MARGIN
-      );
-      const actionTop = clamp(
-        actionAnchorRect.top + actionOffsetY,
-        VIEWPORT_MARGIN,
-        viewportHeight - actionHeight - VIEWPORT_MARGIN
-      );
-
-      setLayout((current) => {
-        if (
-          current.ready &&
-          Math.abs(current.bubbleLeft - bubbleLeft) < 1 &&
-          Math.abs(current.bubbleTop - bubbleTop) < 1 &&
-          current.bubblePlacement === bubblePlacement &&
-          Math.abs(current.bubbleMaxWidth - bubbleWidth) < 1 &&
-          Math.abs(current.actionLeft - actionLeft) < 1 &&
-          Math.abs(current.actionTop - actionTop) < 1
-        ) {
-          return current;
-        }
-        return {
-          bubbleLeft,
-          bubbleTop,
-          bubblePlacement,
-          bubbleMaxWidth: bubbleWidth,
-          actionLeft,
-          actionTop,
-          ready: true,
-        };
-      });
-    };
-
-    const scheduleReposition = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(reposition);
-    };
-
-    scheduleReposition();
-    window.addEventListener("resize", scheduleReposition);
-    const pollTimer = window.setInterval(scheduleReposition, REPOSITION_POLL_MS);
-
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleReposition);
-    observer?.observe(anchor);
-    if (bubbleRef.current) {
-      observer?.observe(bubbleRef.current);
-    }
-    if (actionRef.current) {
-      observer?.observe(actionRef.current);
-    }
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", scheduleReposition);
-      window.clearInterval(pollTimer);
-      observer?.disconnect();
-    };
-  }, [anchorRef, isCollapsed, previewText, thought]);
-
-  useLayoutEffect(() => {
-    if (!thought || isCollapsed) {
+    if (!thought || collapsed) {
       return;
     }
 
@@ -239,57 +87,46 @@ export default function PetThoughtBubble({
       window.removeEventListener("resize", updatePreviewWidth);
       observer?.disconnect();
     };
-  }, [isCollapsed, thought, previewText, placementState, layout.bubbleMaxWidth]);
-
-  useLayoutEffect(() => {
-    if (!thought) {
-      return;
-    }
-    setIsCollapsed(false);
-  }, [thought?.responseCount, thought?.sessionId]);
+  }, [collapsed, thought, previewText, placementState]);
 
   if (!thought) {
     return null;
   }
 
-  const responseCount = Math.max(1, thought.responseCount || 1);
-  const portalTarget = typeof document === "undefined" ? null : document.body;
+  const portalTarget = usePortal && !stacked && typeof document !== "undefined" ? document.body : null;
 
   const bubbleStyle = {
-    left: `${layout.bubbleLeft}px`,
-    top: `${layout.bubbleTop}px`,
-    width: `${Math.round(layout.bubbleMaxWidth)}px`,
-    maxWidth: `${Math.round(layout.bubbleMaxWidth)}px`,
-    minWidth: `${Math.round(layout.bubbleMaxWidth)}px`,
+    width: `${FIXED_BUBBLE_WIDTH}px`,
+    maxWidth: `${FIXED_BUBBLE_WIDTH}px`,
+    minWidth: `${FIXED_BUBBLE_WIDTH}px`,
     visibility: layout.ready ? "visible" : "hidden",
+    position: stacked ? ("relative" as const) : ("fixed" as const),
+    left: stacked ? "auto" : "50%",
+    top: stacked ? "auto" : undefined,
+    bottom: stacked ? "auto" : undefined,
+    transform: stacked
+      ? "none"
+      : `translateX(-50%)${collapsed ? " scale(0.96)" : ""}`,
   } as CSSProperties;
 
-  const actionStyle = {
-    left: `${layout.actionLeft}px`,
-    top: `${layout.actionTop}px`,
-    visibility: layout.ready ? "visible" : "hidden",
-  } as CSSProperties;
-
-  const content = (
-    <>
-      {!isCollapsed ? (
-        <div
-          ref={bubbleRef}
-          className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.bubblePlacement} no-drag`}
-          style={bubbleStyle}
-        >
-          <div className="pet-thought-bubble__body">
-            <div ref={titleRowRef} className="pet-thought-bubble__title-row">
-              <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
-                {thought.sessionTitle}
-              </div>
+  const bubbleNode = (
+    <div
+      ref={bubbleRef}
+      className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.bubblePlacement} ${stacked ? "pet-thought-bubble--stacked" : ""} ${collapsed ? "pet-thought-bubble--collapsed" : ""} no-drag`}
+      style={bubbleStyle}
+      aria-hidden={collapsed}
+    >
+      <div className="pet-thought-bubble__body">
+        <div ref={titleRowRef} className="pet-thought-bubble__title-row">
+          <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
+            {thought.sessionTitle}
+          </div>
+          <span className="pet-thought-bubble__right-actions">
+            <span className="pet-thought-bubble__action-slot">
               {isThinking ? (
-                <LoaderCircle
+                <span
                   className="pet-thought-bubble__badge pet-thought-bubble__badge--thinking"
-                  size={16}
-                  strokeWidth={2.2}
                   aria-hidden="true"
-                  focusable="false"
                 />
               ) : null}
               {isComplete ? (
@@ -310,66 +147,32 @@ export default function PetThoughtBubble({
                   focusable="false"
                 />
               ) : null}
-            </div>
-            {previewText ? (
-              <div
-                className="pet-thought-bubble__preview"
-                title={previewText}
-                style={previewMaxWidth ? { maxWidth: `${previewMaxWidth}px` } : undefined}
-              >
-                {previewText}
-              </div>
-            ) : null}
-          </div>
+            </span>
+          </span>
         </div>
-      ) : null}
-      {!isCollapsed ? (
-        <button
-          ref={actionRef}
-          type="button"
-          className="pet-thought-toggle no-drag"
-          style={actionStyle}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setIsCollapsed(true);
-          }}
-          aria-label="Collapse thought bubble"
-          title="Collapse thought bubble"
-        >
-          <ChevronDown size={11} strokeWidth={2.5} aria-hidden="true" focusable="false" />
-        </button>
-      ) : (
-        <button
-          ref={actionRef}
-          type="button"
-          className={`pet-thought-counter pet-thought-counter--${thought.status} no-drag`}
-          style={actionStyle}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setIsCollapsed(false);
-          }}
-          aria-label={`Expand thought bubble, response ${responseCount}`}
-          title={`Response ${responseCount}`}
-        >
-          {responseCount}
-        </button>
-      )}
-    </>
+        {previewText ? (
+          <div
+            className="pet-thought-bubble__preview"
+            title={previewText}
+            style={previewMaxWidth ? { maxWidth: `${previewMaxWidth}px` } : undefined}
+          >
+            {previewText}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const content = stacked ? (
+    <div className={`pet-thought-stack-item ${collapsed ? "pet-thought-stack-item--collapsed" : ""}`}>
+      {bubbleNode}
+    </div>
+  ) : (
+    bubbleNode
   );
 
   if (!portalTarget) {
     return content;
   }
-
   return createPortal(content, portalTarget);
 }
