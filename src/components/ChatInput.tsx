@@ -21,6 +21,7 @@ interface ChatInputProps {
   onStartNewTopic?: () => void;
   onSend: (content: string, images?: string[], hiddenContext?: string) => void;
   isLoading: boolean;
+  isSendBlocked?: boolean;
   onStop: () => void;
   focusSignal?: number;
   draftValue?: string;
@@ -55,6 +56,7 @@ export default function ChatInput({
   onStartNewTopic,
   onSend,
   isLoading,
+  isSendBlocked = false,
   onStop,
   focusSignal,
   draftValue,
@@ -162,7 +164,7 @@ export default function ChatInput({
   };
 
   const handleSubmit = () => {
-    if ((!trimmedInput && images.length === 0) || isLoading) {
+    if ((!trimmedInput && images.length === 0) || isLoading || isSendBlocked) {
       return;
     }
 
@@ -174,7 +176,7 @@ export default function ChatInput({
   };
 
   const submitImmediateCommand = (command: string) => {
-    if (isLoading) {
+    if (isLoading || isSendBlocked) {
       return;
     }
 
@@ -418,7 +420,13 @@ export default function ChatInput({
                   <Square className="w-4 h-4" fill="currentColor" strokeWidth={1.8} />
                 </button>
               ) : (
-                <button onClick={handleSubmit} disabled={!trimmedInput && images.length === 0} className="chat-composer__submit" title="发送消息" type="button">
+                <button
+                  onClick={handleSubmit}
+                  disabled={isSendBlocked || (!trimmedInput && images.length === 0)}
+                  className="chat-composer__submit"
+                  title={isSendBlocked ? "其他会话正在生成" : "发送消息"}
+                  type="button"
+                >
                   <span>发送</span>
                   <ArrowRight className="chat-composer__submit-icon" strokeWidth={2} />
                 </button>

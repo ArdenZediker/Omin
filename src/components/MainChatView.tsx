@@ -109,6 +109,7 @@ type MainChatViewProps = {
   inputDraftKey: number;
   inputFocusKey: number;
   isLoading: boolean;
+  isSendBlocked?: boolean;
   isStreaming: boolean;
   relatedContext: {
     summaries: Array<{ sessionId: string; title: string; summary: string }>;
@@ -262,6 +263,7 @@ export default function MainChatView({
   inputDraftKey,
   inputFocusKey,
   isLoading,
+  isSendBlocked = false,
   isStreaming,
   relatedContext,
   latestTaskResult,
@@ -1873,6 +1875,7 @@ export default function MainChatView({
                   hasConversation={messages.some((message) => message.role === "user")}
                   usageLabel={activeSession ? formatUsageLabel(activeSession.usage) : null}
                   isLoading={isLoading}
+                  isSendBlocked={isSendBlocked}
                   onStop={onStop}
                   onStartNewTopic={onNewChat}
                   focusSignal={inputFocusKey}

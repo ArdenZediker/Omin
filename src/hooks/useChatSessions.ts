@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "../adapters/types";
 import {
   getInitialAssistantMemories,
@@ -94,6 +94,11 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const [activeChatId, setActiveChatId] = useState<string | null>(initialState.activeChatId);
   const [messages, setMessages] = useState<Message[]>(initialState.messages);
   const [isStorageHydrated, setIsStorageHydrated] = useState(!persist);
+  const activeChatIdRef = useRef(activeChatId);
+
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
 
   useEffect(() => {
     if (!persist || !activeChatId) return;
@@ -206,6 +211,29 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     },
     [activeAssistantId]
   );
+
+  const updateChatSessionMessages = useCallback((sessionId: string, nextMessages: Message[] | ((current: Message[]) => Message[])) => {
+    const now = Date.now();
+    let resolvedMessages: Message[] | null = null;
+
+    setChatSessions((sessions) =>
+      sessions.map((session) => {
+        if (session.id !== sessionId) return session;
+        const messagesForSession = typeof nextMessages === "function" ? nextMessages(session.messages) : nextMessages;
+        resolvedMessages = messagesForSession;
+        return {
+          ...session,
+          title: getChatSessionTitle(messagesForSession),
+          messages: messagesForSession,
+          updatedAt: now,
+        };
+      })
+    );
+
+    if (activeChatIdRef.current === sessionId && resolvedMessages) {
+      setMessages(resolvedMessages);
+    }
+  }, []);
 
   const selectAssistant = useCallback(
     (assistantId: string) => {
@@ -542,6 +570,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     setAssistantMemories,
     setChatSessions,
     setMessages,
+    updateChatSessionMessages,
     setSessionSummaries,
     setScheduledTasks,
     setUserPreferences,
