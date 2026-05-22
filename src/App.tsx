@@ -94,12 +94,14 @@ function MainApp() {
     selectAssistant,
     selectChatSession,
     searchChatSessions,
+    setActiveAssistantId,
     setActiveChatId,
     setScheduledTasks,
     setMessages,
     scheduledTasks,
     toggleFavoriteChatSession,
     togglePinnedChatSession,
+    updateChatSessionMessages,
     updateAssistantProfile,
   } = useChatSessions({ persist: !isCompactWindow });
 
@@ -210,6 +212,11 @@ function MainApp() {
     });
   }, []);
 
+  const getAssistantById = useCallback(
+    (assistantId: string) => assistants.find((assistant) => assistant.id === assistantId) ?? null,
+    [assistants]
+  );
+
   const {
     editingMessageIndex,
     error,
@@ -223,6 +230,7 @@ function MainApp() {
     handleSubmitEditedUserMessage,
     handleUseEmptyPrompt,
     isLoading,
+    loadingSessionId,
     latestTaskResult,
     taskRuntimeState,
     setEditingMessageIndex,
@@ -235,11 +243,13 @@ function MainApp() {
     commitAssistantMemory,
     createSessionFromMessages,
     currentModel,
+    getAssistantById,
     handleModelChange,
     messages,
     renameChatSession,
     getChatSessionById,
     searchChatSessions,
+    setActiveAssistantId,
     setActiveChatId,
     setInputDraft,
     setInputDraftImages,
@@ -247,6 +257,7 @@ function MainApp() {
     setMessages,
     setOpenChatMenu,
     togglePinnedChatSession,
+    updateChatSessionMessages,
     isCompactWindow,
   });
 
@@ -300,6 +311,7 @@ function MainApp() {
     compactSize,
     compactViewportSize,
     petThought,
+    petThoughtCount,
     petThoughtPlacement,
     arePetThoughtsCollapsed,
     currentModel,
@@ -366,8 +378,10 @@ function MainApp() {
     petThoughtPlacement,
   ]);
 
+  const isActiveSessionLoading = isLoading && activeChatId === loadingSessionId;
+  const isSendBlockedByOtherSession = isLoading && !isActiveSessionLoading;
   const lastMessage = messages[messages.length - 1];
-  const isStreaming = isLoading && lastMessage.role === "assistant";
+  const isStreaming = isActiveSessionLoading && lastMessage.role === "assistant";
 
   const handleCopyMessage = useCallback(async (message: Message) => {
     await navigator.clipboard.writeText(message.content);
@@ -413,7 +427,7 @@ function MainApp() {
 
   const handleSelectChat = useCallback(
     (sessionId: string) => {
-      if (sessionId === activeChatId || isLoading) {
+      if (sessionId === activeChatId || (isLoading && loadingSessionId === sessionId)) {
         return;
       }
       const session = selectChatSession(sessionId);
@@ -423,7 +437,7 @@ function MainApp() {
       setError(null);
       setEditingMessageIndex(null);
     },
-    [activeChatId, isLoading, selectChatSession, setEditingMessageIndex, setError]
+    [activeChatId, isLoading, loadingSessionId, selectChatSession, setEditingMessageIndex, setError]
   );
 
   const handleRenameChat = useCallback(
@@ -570,7 +584,8 @@ function MainApp() {
           inputDraftImages={inputDraftImages}
           inputDraftKey={inputDraftKey}
           inputFocusKey={inputFocusKey}
-          isLoading={isLoading}
+          isLoading={isActiveSessionLoading}
+          isSendBlocked={isSendBlockedByOtherSession}
           isStreaming={isStreaming}
           relatedContext={relatedContext}
           latestTaskResult={latestTaskResult}

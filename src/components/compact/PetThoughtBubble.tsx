@@ -1,6 +1,7 @@
-import { CheckCircle2, CircleAlert } from "lucide-react";
+import { CheckCircle2, ChevronRight, CircleAlert, X } from "lucide-react";
+import { emit } from "@tauri-apps/api/event";
 import { createPortal } from "react-dom";
-import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import type { PetThoughtState } from "../../app/types";
 import type { PetThoughtPlacement } from "../../app/window";
 
@@ -30,6 +31,10 @@ export default function PetThoughtBubble({
   const titleRowRef = useRef<HTMLDivElement | null>(null);
   const [placementState, setPlacementState] = useState<PetThoughtPlacement>(placement);
   const [previewMaxWidth, setPreviewMaxWidth] = useState<number | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isReplying, setIsReplying] = useState(false);
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+  const [replyDraft, setReplyDraft] = useState("");
   const isError = thought?.status === "error";
   const isComplete = thought?.status === "complete";
   const isThinking = thought?.status === "thinking";
@@ -93,6 +98,29 @@ export default function PetThoughtBubble({
     return null;
   }
 
+  const closeBubble = () => {
+    void emit("omni-pet-thought-close", {
+      sessionId: thought.sessionId,
+      thoughtId: thought.thoughtId ?? null,
+    });
+  };
+
+  const submitReply = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const content = replyDraft.trim();
+    if (!content || !thought.sessionId) {
+      return;
+    }
+
+    setIsSubmittingReply(true);
+    setReplyDraft("");
+    setIsReplying(false);
+    void emit("omni-pet-thought-reply", {
+      sessionId: thought.sessionId,
+      content,
+    }).finally(() => setIsSubmittingReply(false));
+  };
+
   const portalTarget = usePortal && !stacked && typeof document !== "undefined" ? document.body : null;
 
   const bubbleStyle = {
@@ -112,16 +140,34 @@ export default function PetThoughtBubble({
   const bubbleNode = (
     <div
       ref={bubbleRef}
-      className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.bubblePlacement} ${stacked ? "pet-thought-bubble--stacked" : ""} ${collapsed ? "pet-thought-bubble--collapsed" : ""} no-drag`}
+      className={`pet-thought-bubble pet-thought-bubble--${thought.status} pet-thought-bubble--${layout.bubblePlacement} ${stacked ? "pet-thought-bubble--stacked" : ""} ${collapsed ? "pet-thought-bubble--collapsed" : ""} ${isExpanded ? "pet-thought-bubble--expanded" : ""} ${isReplying ? "pet-thought-bubble--replying" : ""} no-drag`}
       style={bubbleStyle}
       aria-hidden={collapsed}
     >
       <div className="pet-thought-bubble__body">
         <div ref={titleRowRef} className="pet-thought-bubble__title-row">
+          <button
+            type="button"
+            className="pet-thought-bubble__hover-button pet-thought-bubble__hover-button--close"
+            onClick={closeBubble}
+            aria-label="关闭这个气泡"
+            title="关闭"
+          >
+            <X size={11} strokeWidth={2.2} aria-hidden="true" focusable="false" />
+          </button>
           <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
             {thought.sessionTitle}
           </div>
           <span className="pet-thought-bubble__right-actions">
+            <button
+              type="button"
+              className="pet-thought-bubble__hover-button pet-thought-bubble__hover-button--expand"
+              onClick={() => setIsExpanded((value) => !value)}
+              aria-label={isExpanded ? "收起回复" : "展开全部回复"}
+              title={isExpanded ? "收起" : "展开"}
+            >
+              <ChevronRight size={14} strokeWidth={2.1} aria-hidden="true" focusable="false" />
+            </button>
             <span className="pet-thought-bubble__action-slot">
               {isThinking ? (
                 <span
@@ -159,6 +205,36 @@ export default function PetThoughtBubble({
             {previewText}
           </div>
         ) : null}
+        {isReplying ? (
+          <form className="pet-thought-bubble__reply-form" onSubmit={submitReply}>
+            <input
+              className="pet-thought-bubble__reply-input"
+              value={replyDraft}
+              onChange={(event) => setReplyDraft(event.currentTarget.value)}
+              placeholder="回复"
+              aria-label="回复这个话题"
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="pet-thought-bubble__reply-submit"
+              disabled={!replyDraft.trim() || !thought.sessionId || isSubmittingReply}
+            >
+              回复
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="pet-thought-bubble__reply-trigger"
+            onClick={() => setIsReplying(true)}
+            disabled={!thought.sessionId}
+            aria-label="回复这个话题"
+            title="回复"
+          >
+            回复
+          </button>
+        )}
       </div>
     </div>
   );

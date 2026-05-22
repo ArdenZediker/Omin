@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import type { PetThoughtState } from "../app/types";
-import type { PetThoughtPlacement } from "../app/window";
+import { PET_THOUGHT_WINDOW_SIZE, type PetThoughtPlacement } from "../app/window";
+import { getPetThoughtKey } from "../app/petThoughts";
 import PetThoughtBubble from "./compact/PetThoughtBubble";
 
 type PetThoughtWindowProps = {
@@ -9,20 +10,22 @@ type PetThoughtWindowProps = {
 };
 
 const BUBBLE_WIDTH = 250;
-const TAIL_ANCHOR_RATIO = 0.76;
+const STACK_PADDING_X = 0;
 
 function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 export default function PetThoughtWindow({ petSize }: PetThoughtWindowProps) {
+  const stackRef = useRef<HTMLDivElement | null>(null);
   const [thoughts, setThoughts] = useState<PetThoughtState[]>([]);
   const [placement, setPlacement] = useState<PetThoughtPlacement>("top");
   const [anchor, setAnchor] = useState({ x: 168, y: placement === "top" ? 352 : 8 });
   const [badgeAnchor, setBadgeAnchor] = useState({ x: 186, y: 42 });
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const stackLeft = Math.max(6, Math.min(336 - BUBBLE_WIDTH - 6, anchor.x - BUBBLE_WIDTH * TAIL_ANCHOR_RATIO));
+  const stackLeft = STACK_PADDING_X;
   const tailX = Math.max(18, Math.min(BUBBLE_WIDTH - 18, anchor.x - stackLeft));
+  const effectiveAnchorY = placement === "top" ? PET_THOUGHT_WINDOW_SIZE.height - 4 : anchor.y;
   const visibleThoughts = useMemo(() => (placement === "top" ? [...thoughts].reverse() : thoughts), [placement, thoughts]);
   const windowStyle = useMemo(
     () =>
@@ -31,13 +34,13 @@ export default function PetThoughtWindow({ petSize }: PetThoughtWindowProps) {
         "--pet-thought-action-top-y": `${Math.max(4, Math.round(petSize.height * 0.05))}px`,
         "--pet-thought-action-bottom-y": `${Math.max(4, Math.round(petSize.height * 0.05))}px`,
         "--pet-thought-anchor-x": `${anchor.x}px`,
-        "--pet-thought-anchor-y": `${anchor.y}px`,
+        "--pet-thought-anchor-y": `${effectiveAnchorY}px`,
         "--pet-thought-badge-anchor-x": `${badgeAnchor.x}px`,
         "--pet-thought-badge-anchor-y": `${badgeAnchor.y}px`,
         "--pet-thought-stack-left": `${Math.round(stackLeft)}px`,
         "--pet-thought-tail-x": `${Math.round(tailX)}px`,
       }) as CSSProperties,
-    [anchor.x, anchor.y, badgeAnchor.x, badgeAnchor.y, petSize.height, petSize.width, stackLeft, tailX]
+    [anchor.x, effectiveAnchorY, badgeAnchor.x, badgeAnchor.y, petSize.height, petSize.width, stackLeft, tailX]
   );
 
   useEffect(() => {
@@ -89,12 +92,21 @@ export default function PetThoughtWindow({ petSize }: PetThoughtWindowProps) {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    const stack = stackRef.current;
+    if (!stack || placement !== "top") {
+      return;
+    }
+
+    stack.scrollTop = stack.scrollHeight;
+  }, [placement, visibleThoughts.length]);
+
   return (
     <div className="pet-thought-window" style={windowStyle}>
-      <div className={`pet-thought-window__stack pet-thought-window__stack--${placement}`}>
-        {visibleThoughts.map((thought, index) => (
+      <div ref={stackRef} className={`pet-thought-window__stack pet-thought-window__stack--${placement}`}>
+        {visibleThoughts.map((thought) => (
           <PetThoughtBubble
-            key={thought.thoughtId ?? `${thought.sessionId ?? "session"}:${thought.updatedAt}:${index}`}
+            key={getPetThoughtKey(thought)}
             thought={thought}
             placement={placement}
             usePortal={false}

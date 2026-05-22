@@ -14,8 +14,8 @@ const PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT = 128;
 const PET_THOUGHT_VIEWPORT_SIDE_EXTRA_WIDTH = 316;
 const PET_THOUGHT_VIEWPORT_SIDE_MIN_HEIGHT = 188;
 export const PET_THOUGHT_WINDOW_SIZE = {
-  width: 336,
-  height: 360,
+  width: 276,
+  height: 258,
 } as const;
 
 export type PetThoughtPlacement = "top" | "right" | "left" | "bottom";
@@ -482,7 +482,7 @@ export async function ensurePetThoughtWindow() {
   }
 
   await applyCompactWindowChrome(petThoughtWindow);
-  await petThoughtWindow.setIgnoreCursorEvents(true).catch(() => undefined);
+  await petThoughtWindow.setIgnoreCursorEvents(false).catch(() => undefined);
   await petThoughtWindow.setSize(new LogicalSize(PET_THOUGHT_WINDOW_SIZE.width, PET_THOUGHT_WINDOW_SIZE.height));
   return petThoughtWindow;
 }
