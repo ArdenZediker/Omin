@@ -3,7 +3,6 @@ import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/type
 import { emit, emitTo } from "@tauri-apps/api/event";
 import { ChevronDown } from "lucide-react";
 import { PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
@@ -364,12 +363,6 @@ export default function CompactWindow({
                   onSetArePetThoughtsCollapsed(nextCollapsed);
                   void emit("omni-pet-thought-collapse-changed", { collapsed: nextCollapsed });
                   void emitTo(PET_THOUGHT_WINDOW_LABEL, "omni-pet-thought-collapse-changed", { collapsed: nextCollapsed });
-                  void WebviewWindow.getByLabel(PET_THOUGHT_WINDOW_LABEL).then((thoughtWindow) => {
-                    if (!thoughtWindow) {
-                      return;
-                    }
-                    void (nextCollapsed ? thoughtWindow.hide() : thoughtWindow.show()).catch(() => undefined);
-                  });
                 }}
                 aria-label={arePetThoughtsCollapsed ? `Expand ${petThoughtCount} thought bubbles` : "Collapse thought bubbles"}
                 title={arePetThoughtsCollapsed ? `${petThoughtCount} topics` : "Collapse thought bubbles"}
