@@ -19,7 +19,7 @@ interface ChatInputProps {
   usageLabel?: string | null;
   contextPresetText?: string;
   onStartNewTopic?: () => void;
-  onSend: (content: string, images?: string[], hiddenContext?: string) => void;
+  onSend: (content: string, images?: string[], hiddenContext?: string) => void | Promise<void>;
   isLoading: boolean;
   isSendBlocked?: boolean;
   onStop: () => void;
@@ -169,7 +169,7 @@ export default function ChatInput({
     }
 
     const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
-    onSend(trimmedInput, images.length > 0 ? images : undefined, hiddenContext);
+    void onSend(trimmedInput, images.length > 0 ? images : undefined, hiddenContext);
     setInput("");
     setImages([]);
     clearSuggestionDismissal();
@@ -181,7 +181,7 @@ export default function ChatInput({
     }
 
     const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
-    onSend(command, undefined, hiddenContext);
+    void onSend(command, undefined, hiddenContext);
     setInput("");
     setImages([]);
     clearSuggestionDismissal();

@@ -95,6 +95,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const [messages, setMessages] = useState<Message[]>(initialState.messages);
   const [isStorageHydrated, setIsStorageHydrated] = useState(!persist);
   const activeChatIdRef = useRef(activeChatId);
+  const persistTimerRef = useRef<number | null>(null);
+  const activeMessagesSyncTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -103,19 +105,32 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   useEffect(() => {
     if (!persist || !activeChatId) return;
 
-    const now = Date.now();
-    setChatSessions((sessions) =>
-      sessions.map((session) => {
-        if (session.id !== activeChatId) return session;
-        if (session.messages === messages) return session;
-        return {
-          ...session,
-          title: getChatSessionTitle(messages),
-          messages,
-          updatedAt: now,
-        };
-      })
-    );
+    if (activeMessagesSyncTimerRef.current !== null) {
+      window.clearTimeout(activeMessagesSyncTimerRef.current);
+      activeMessagesSyncTimerRef.current = null;
+    }
+
+    // Coalesce high-frequency stream updates to avoid re-rendering session lists
+    // for every token chunk while keeping the active conversation in sync.
+    activeMessagesSyncTimerRef.current = window.setTimeout(() => {
+      activeMessagesSyncTimerRef.current = null;
+      const now = Date.now();
+      setChatSessions((sessions) => {
+        let changed = false;
+        const next = sessions.map((session) => {
+          if (session.id !== activeChatId) return session;
+          if (session.messages === messages) return session;
+          changed = true;
+          return {
+            ...session,
+            title: getChatSessionTitle(messages),
+            messages,
+            updatedAt: now,
+          };
+        });
+        return changed ? next : sessions;
+      });
+    }, 90);
   }, [activeChatId, messages, persist]);
 
   useEffect(() => {
@@ -158,10 +173,35 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   useEffect(() => {
     if (!persist || !isStorageHydrated) return;
-    void savePersistedChatState(assistants, chatSessions);
-    void savePersistedMemoryState(assistantMemories, sessionSummaries, userPreferences);
-    void savePersistedAutomationState(scheduledTasks);
+
+    if (persistTimerRef.current !== null) {
+      window.clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+
+    // Streaming replies can update message state very frequently. Persist with debounce
+    // to avoid high-frequency IPC/storage writes that cause UI and drag stutter.
+    persistTimerRef.current = window.setTimeout(() => {
+      persistTimerRef.current = null;
+      void savePersistedChatState(assistants, chatSessions);
+      void savePersistedMemoryState(assistantMemories, sessionSummaries, userPreferences);
+      void savePersistedAutomationState(scheduledTasks);
+    }, 260);
   }, [assistants, chatSessions, assistantMemories, sessionSummaries, scheduledTasks, userPreferences, isStorageHydrated, persist]);
+
+  useEffect(
+    () => () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+      if (activeMessagesSyncTimerRef.current !== null) {
+        window.clearTimeout(activeMessagesSyncTimerRef.current);
+        activeMessagesSyncTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   const activeAssistant = useMemo(
     () => assistants.find((assistant) => assistant.id === activeAssistantId) ?? assistants[0] ?? null,

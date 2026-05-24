@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import {
+  ArrowDown,
   ArrowRight,
   Bot,
   Check,
@@ -497,6 +498,7 @@ export default function MainChatView({
   const [assistantDescriptionDraft, setAssistantDescriptionDraft] = useState(activeAssistant?.description ?? "");
   const [assistantPromptDraft, setAssistantPromptDraft] = useState(activeAssistant?.systemPrompt ?? "");
   const [assistantModelDraft, setAssistantModelDraft] = useState(activeAssistant?.defaultModelId ?? "");
+  const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
   const selectedAssistantModel = availableModels.find((model) => model.id === assistantModelDraft) ?? null;
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
@@ -523,6 +525,38 @@ export default function MainChatView({
     observer.observe(composerElement);
     return () => observer.disconnect();
   }, [composerElement]);
+
+  useEffect(() => {
+    const scrollElement = messagesScrollRef.current;
+    if (!scrollElement) return;
+
+    const updateAtBottom = () => {
+      const distanceToBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
+      setIsMessagesAtBottom(distanceToBottom < 36);
+    };
+
+    updateAtBottom();
+    scrollElement.addEventListener("scroll", updateAtBottom, { passive: true });
+    const resizeObserver = new ResizeObserver(updateAtBottom);
+    resizeObserver.observe(scrollElement);
+    return () => {
+      scrollElement.removeEventListener("scroll", updateAtBottom);
+      resizeObserver.disconnect();
+    };
+  }, [messagesScrollRef]);
+
+  useEffect(() => {
+    const scrollElement = messagesScrollRef.current;
+    if (!scrollElement || !isStreaming || !isMessagesAtBottom) {
+      return;
+    }
+    scrollElement.scrollTo({ top: scrollElement.scrollHeight, behavior: "smooth" });
+  }, [isMessagesAtBottom, isStreaming, messages, messagesScrollRef]);
+
+  const scrollMessagesToBottom = useCallback(() => {
+    const scrollElement = messagesScrollRef.current;
+    scrollElement?.scrollTo({ top: scrollElement.scrollHeight, behavior: "smooth" });
+  }, [messagesScrollRef]);
 
   useEffect(() => {
     setAssistantTitleDraft(activeAssistant?.title ?? "");
@@ -1849,23 +1883,42 @@ export default function MainChatView({
                   </div>
                 )}
 
-                {messages.map((msg, index) => (
-                  <ChatMessage
-                    key={index}
-                    message={msg}
-                    index={index}
-                    isStreaming={isStreaming && index === messages.length - 1}
-                    isEditing={editingMessageIndex === index}
-                    onCopy={onCopyMessage}
-                    onEdit={onEditUserMessage}
-                    onCancelEdit={onCancelEditUserMessage}
-                    onSubmitEdit={onSubmitEditedUserMessage}
-                    onRegenerate={onRegenerateMessage}
-                  />
-                ))}
+                {messages.map((msg, index) => {
+                  const isCurrentStreamingMessage = isStreaming && index === messages.length - 1;
+                  if (msg.role === "assistant" && !msg.content.trim() && !isCurrentStreamingMessage) {
+                    return null;
+                  }
+
+                  return (
+                    <ChatMessage
+                      key={index}
+                      message={msg}
+                      index={index}
+                      isStreaming={isCurrentStreamingMessage}
+                      isEditing={editingMessageIndex === index}
+                      onCopy={onCopyMessage}
+                      onEdit={onEditUserMessage}
+                      onCancelEdit={onCancelEditUserMessage}
+                      onSubmitEdit={onSubmitEditedUserMessage}
+                      onRegenerate={onRegenerateMessage}
+                    />
+                  );
+                })}
 
                 {error && <div className="main-chat-error animate-fade-in">{error}</div>}
               </div>
+
+              {messages.length > 0 && !isMessagesAtBottom && (
+                <button
+                  type="button"
+                  className="main-chat-scroll-bottom no-drag"
+                  aria-label="滚动到底部"
+                  title="滚动到底部"
+                  onClick={scrollMessagesToBottom}
+                >
+                  <ArrowDown size={17} strokeWidth={2.2} />
+                </button>
+              )}
 
               <div ref={setComposerElement}>
                 <ChatInput

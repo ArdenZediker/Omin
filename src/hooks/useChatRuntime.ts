@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, emitTo, listen } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
+import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
-import { COMPACT_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
+import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import { getPetWindowScale } from "../app/compactPetScale";
 import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibility";
-import { saveSqliteBackedValue } from "../app/sqliteStorage";
+import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
@@ -159,6 +160,28 @@ export function useChatRuntime({
     [setMessages, updateChatSessionMessages]
   );
 
+  const setLastAssistantContent = useCallback(
+    (content: string) => {
+      setMessages((prev) => {
+        if (prev.length === 0) {
+          return prev;
+        }
+        const lastIdx = prev.length - 1;
+        const lastMessage = prev[lastIdx];
+        if (lastMessage.role !== "assistant") {
+          return prev;
+        }
+        if (lastMessage.content === content) {
+          return prev;
+        }
+        const updated = [...prev];
+        updated[lastIdx] = { ...lastMessage, content };
+        return updated;
+      });
+    },
+    [setMessages]
+  );
+
   const executionModel =
     activeAssistant?.defaultModelId && availableModels.some((model) => model.id === activeAssistant.defaultModelId)
       ? activeAssistant.defaultModelId
@@ -272,14 +295,6 @@ export function useChatRuntime({
 
   const createPetThoughtId = useCallback((sessionId: string | null | undefined) => {
     return `${sessionId || "adhoc"}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-  }, []);
-
-  const getActivePetThoughtPreview = useCallback((thoughtId?: string | null) => {
-    const targetThoughtId = thoughtId ?? activePetThoughtIdRef.current;
-    if (!targetThoughtId) {
-      return petThoughtRef.current?.previewText ?? "";
-    }
-    return petThoughtQueueRef.current.find((item) => item.thoughtId === targetThoughtId)?.previewText ?? "";
   }, []);
 
   const isCurrentPetThought = useCallback((thoughtId: string | null | undefined, sessionId: string | null | undefined) => {
@@ -462,6 +477,19 @@ export function useChatRuntime({
     [applyUsageToSession, commitAssistantMemory, setConversationMessagesForSession]
   );
 
+  const applyAssistantReplyToTaskResult = useCallback((taskResult: TaskExecutionResult, assistantReply: string): TaskExecutionResult => {
+    if (!taskResult.finalResult) {
+      return taskResult;
+    }
+    return {
+      ...taskResult,
+      finalResult: {
+        ...taskResult.finalResult,
+        content: assistantReply,
+      },
+    };
+  }, []);
+
   const runConversationTurn = useCallback(
     async (
       conversationMessages: Message[],
@@ -479,6 +507,25 @@ export function useChatRuntime({
       abortControllerRef.current = abortController;
       const petThoughtId = startPetThought(sessionId, conversationMessages);
       const systemPrompt = resolveAssistantSystemPrompt(options.assistantOverride);
+      let streamedAssistantReply = "";
+      let lastUiUpdateAt = 0;
+      let lastThoughtUpdateAt = 0;
+      const updateStreamPreview = (force = false) => {
+        const now = performance.now();
+        if (!force && now - lastUiUpdateAt < 16) {
+          return;
+        }
+        lastUiUpdateAt = now;
+        setLastAssistantContent(streamedAssistantReply);
+      };
+      const updateThoughtPreview = (force = false) => {
+        const now = performance.now();
+        if (!force && now - lastThoughtUpdateAt < 66) {
+          return;
+        }
+        lastThoughtUpdateAt = now;
+        updatePetThought(petThoughtId, sessionId, conversationMessages, streamedAssistantReply);
+      };
 
       setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "assistant", content: "" }]);
       setError(null);
@@ -495,15 +542,9 @@ export function useChatRuntime({
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
             }
-            updatePetThought(petThoughtId, sessionId, conversationMessages, `${getActivePetThoughtPreview(petThoughtId)}${chunk}`);
-            setMessages((prev) => {
-              const updated = [...prev];
-              const lastIdx = updated.length - 1;
-              if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-                updated[lastIdx] = { ...updated[lastIdx], content: updated[lastIdx].content + chunk };
-              }
-              return updated;
-            });
+            streamedAssistantReply += chunk;
+            updateThoughtPreview();
+            updateStreamPreview();
           },
         });
 
@@ -535,13 +576,16 @@ export function useChatRuntime({
           return;
         }
 
+        const assistantReply = streamedAssistantReply || taskResult.finalResult?.content || taskResult.toolResult?.outputText || "";
+        updateStreamPreview(true);
+        updateThoughtPreview(true);
         completePetThought(
           petThoughtId,
           sessionId,
           conversationMessages,
-          taskResult.finalResult?.content || taskResult.toolResult?.outputText || getActivePetThoughtPreview(petThoughtId) || ""
+          assistantReply
         );
-        finishTaskResult(taskResult, sessionId, conversationMessages);
+        finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), sessionId, conversationMessages);
         return;
       } catch (runError) {
         if (runId !== lastRunIdRef.current) {
@@ -578,18 +622,19 @@ export function useChatRuntime({
     },
     [
       activeChatId,
+      applyAssistantReplyToTaskResult,
       clearPetThoughtSession,
       completePetThought,
       createSessionFromMessages,
       emitPetThought,
       executionModel,
       finishTaskResult,
-      getActivePetThoughtPreview,
       isCurrentPetThought,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
       resolveAssistantSystemPrompt,
       setConversationMessagesForSession,
+      setLastAssistantContent,
       setMessages,
       startPetThought,
       updatePetThought,
@@ -921,6 +966,29 @@ export function useChatRuntime({
         setActiveAssistantId(targetAssistant.id);
       }
       setActiveChatId(session.id);
+      // Keep the visible chat pane aligned with the replied session immediately.
+      setMessages(session.messages);
+      try {
+        await loadProviderConfigs();
+      } catch {
+        // Keep fallback model resolution below; reply should not fail on config hydration glitches.
+      }
+
+      const preferredAssistantModelId = targetAssistant?.defaultModelId?.trim() ?? "";
+      const savedModelId = readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY)?.trim() ?? "";
+      const registryCurrentModelId = modelRegistry.getCurrentModel()?.trim() ?? "";
+      const registryFallbackModelId = modelRegistry.getAvailableModels()[0]?.id ?? executionModel;
+      const resolvedModelId =
+        (preferredAssistantModelId && modelRegistry.getModelConfig(preferredAssistantModelId)
+          ? preferredAssistantModelId
+          : null) ??
+        (savedModelId && modelRegistry.getModelConfig(savedModelId)
+          ? savedModelId
+          : null) ??
+        (registryCurrentModelId && modelRegistry.getModelConfig(registryCurrentModelId)
+          ? registryCurrentModelId
+          : null) ??
+        (executionModel && modelRegistry.getModelConfig(executionModel) ? executionModel : registryFallbackModelId);
 
       const runId = lastRunIdRef.current + 1;
       lastRunIdRef.current = runId;
@@ -928,20 +996,41 @@ export function useChatRuntime({
       abortControllerRef.current = abortController;
       setError(null);
       setIsLoading(true);
-      setLoadingSessionId(activeChatId);
+      setLoadingSessionId(session.id);
 
       let conversationMessagesForTask = session.messages;
       let petThoughtId: string | null = null;
+      let streamedAssistantReply = "";
+      let lastUiUpdateAt = 0;
+      let lastThoughtUpdateAt = 0;
+      const updateStreamPreview = (force = false) => {
+        const now = performance.now();
+        if (!force && now - lastUiUpdateAt < 16) {
+          return;
+        }
+        lastUiUpdateAt = now;
+        setLastAssistantContent(streamedAssistantReply);
+      };
+      const updateThoughtPreview = (force = false) => {
+        const now = performance.now();
+        if (!force && now - lastThoughtUpdateAt < 66) {
+          return;
+        }
+        lastThoughtUpdateAt = now;
+        updatePetThought(petThoughtId, session.id, conversationMessagesForTask, streamedAssistantReply);
+      };
 
       try {
         const taskResult = await executeInputTask({
           input: content,
           currentMessages: session.messages,
-          model: executionModel,
+          model: resolvedModelId,
           onPrepareConversation: (preparedMessages) => {
             conversationMessagesForTask = preparedMessages;
             setLoadingSessionId(sessionId ?? null);
-            setConversationMessagesForSession(sessionId, [...preparedMessages, { role: "assistant", content: "" }]);
+            const nextMessages: Message[] = [...preparedMessages, { role: "assistant", content: "" }];
+            setConversationMessagesForSession(sessionId, nextMessages);
+            setMessages(nextMessages);
             petThoughtId = startPetThought(session.id, preparedMessages);
           },
           signal: abortController.signal,
@@ -950,15 +1039,9 @@ export function useChatRuntime({
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
             }
-            updatePetThought(petThoughtId, session.id, conversationMessagesForTask, `${getActivePetThoughtPreview(petThoughtId)}${chunk}`);
-            setConversationMessagesForSession(sessionId, (prev) => {
-              const updated = [...prev];
-              const lastIdx = updated.length - 1;
-              if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-                updated[lastIdx] = { ...updated[lastIdx], content: updated[lastIdx].content + chunk };
-              }
-              return updated;
-            });
+            streamedAssistantReply += chunk;
+            updateThoughtPreview();
+            updateStreamPreview();
           },
           executeTool,
         });
@@ -992,15 +1075,18 @@ export function useChatRuntime({
           return;
         }
 
+        const assistantReply = streamedAssistantReply || taskResult.finalResult?.content || taskResult.toolResult?.outputText || "";
+        updateStreamPreview(true);
+        updateThoughtPreview(true);
         if (isCurrentPetThought(petThoughtId, session.id)) {
           completePetThought(
             petThoughtId,
             session.id,
             conversationMessages,
-            taskResult.finalResult?.content || taskResult.toolResult?.outputText || getActivePetThoughtPreview(petThoughtId) || ""
+            assistantReply
           );
         }
-        finishTaskResult(taskResult, session.id, conversationMessages);
+        finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), session.id, conversationMessages);
       } catch (replyError) {
         if (runId !== lastRunIdRef.current) {
           return;
@@ -1034,12 +1120,12 @@ export function useChatRuntime({
       }
     },
     [
+      applyAssistantReplyToTaskResult,
       clearPetThoughtSession,
       completePetThought,
       executeTool,
       executionModel,
       finishTaskResult,
-      getActivePetThoughtPreview,
       getAssistantById,
       getChatSessionById,
       isCurrentPetThought,
@@ -1050,6 +1136,7 @@ export function useChatRuntime({
       setActiveAssistantId,
       setActiveChatId,
       setConversationMessagesForSession,
+      setLastAssistantContent,
       startPetThought,
       updatePetThought,
     ]
@@ -1095,6 +1182,28 @@ export function useChatRuntime({
       let conversationMessagesForTask = messages;
       let hasPetThought = false;
       let petThoughtId: string | null = null;
+      let streamedAssistantReply = "";
+      let lastUiUpdateAt = 0;
+      let lastThoughtUpdateAt = 0;
+      const updateStreamPreview = (force = false) => {
+        const now = performance.now();
+        if (!force && now - lastUiUpdateAt < 16) {
+          return;
+        }
+        lastUiUpdateAt = now;
+        setLastAssistantContent(streamedAssistantReply);
+      };
+      const updateThoughtPreview = (force = false) => {
+        if (!hasPetThought) {
+          return;
+        }
+        const now = performance.now();
+        if (!force && now - lastThoughtUpdateAt < 66) {
+          return;
+        }
+        lastThoughtUpdateAt = now;
+        updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, streamedAssistantReply);
+      };
 
       try {
         const taskResult = await executeInputTask({
@@ -1109,6 +1218,7 @@ export function useChatRuntime({
               const nextSession = createSessionFromMessages(preparedMessages);
               sessionId = nextSession.id;
             }
+            setLoadingSessionId(sessionId ?? null);
             setMessages([...preparedMessages, { role: "assistant", content: "" }]);
             petThoughtId = startPetThought(sessionId, preparedMessages);
             hasPetThought = true;
@@ -1119,17 +1229,9 @@ export function useChatRuntime({
             if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
               return;
             }
-            if (hasPetThought) {
-              updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, `${getActivePetThoughtPreview(petThoughtId)}${chunk}`);
-            }
-            setConversationMessagesForSession(sessionId, (prev) => {
-              const updated = [...prev];
-              const lastIdx = updated.length - 1;
-              if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
-                updated[lastIdx] = { ...updated[lastIdx], content: updated[lastIdx].content + chunk };
-              }
-              return updated;
-            });
+            streamedAssistantReply += chunk;
+            updateThoughtPreview();
+            updateStreamPreview();
           },
           executeTool,
         });
@@ -1182,15 +1284,18 @@ export function useChatRuntime({
           return;
         }
 
+        const assistantReply = streamedAssistantReply || taskResult.finalResult?.content || taskResult.toolResult?.outputText || "";
+        updateStreamPreview(true);
+        updateThoughtPreview(true);
         if (hasPetThought && isCurrentPetThought(petThoughtId, sessionId)) {
           completePetThought(
             petThoughtId,
             sessionId,
             conversationMessages,
-            taskResult.finalResult?.content || taskResult.toolResult?.outputText || getActivePetThoughtPreview(petThoughtId) || ""
+            assistantReply
           );
         }
-        finishTaskResult(taskResult, sessionId, conversationMessages);
+        finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), sessionId, conversationMessages);
       } catch (sendError) {
         if (runId !== lastRunIdRef.current) {
           return;
@@ -1224,6 +1329,7 @@ export function useChatRuntime({
     },
     [
       activeChatId,
+      applyAssistantReplyToTaskResult,
       assistantSystemPrompt,
       clearPetThoughtSession,
       completePetThought,
@@ -1232,13 +1338,13 @@ export function useChatRuntime({
       executeTool,
       executionModel,
       finishTaskResult,
-      getActivePetThoughtPreview,
       isCurrentPetThought,
       isLoading,
       messages,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
       setConversationMessagesForSession,
+      setLastAssistantContent,
       setMessages,
       startPetThought,
       updatePetThought,

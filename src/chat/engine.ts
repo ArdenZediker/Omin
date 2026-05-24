@@ -123,7 +123,7 @@ export async function executeChatTurn(options: {
     const promptTokens = estimatePromptTokens(requestMessages);
     const completionTokens = estimateTokens(streamedContent || response.content);
     return {
-      content: response.content || streamedContent,
+      content: streamedContent || response.content,
       model: response.model,
       usage: {
         promptTokens,
