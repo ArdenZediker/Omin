@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import type { PetThoughtState } from "../app/types";
-import { PET_THOUGHT_WINDOW_SIZE, type PetThoughtPlacement } from "../app/window";
+import type { PetThoughtPlacement } from "../app/window";
 import { getPetThoughtKey } from "../app/petThoughts";
 import PetThoughtBubble from "./compact/PetThoughtBubble";
 
@@ -10,7 +10,7 @@ type PetThoughtWindowProps = {
 };
 
 const BUBBLE_WIDTH = 250;
-const STACK_PADDING_X = 0;
+const STACK_PADDING_X = 12;
 
 function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -25,7 +25,7 @@ export default function PetThoughtWindow({ petSize }: PetThoughtWindowProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const stackLeft = STACK_PADDING_X;
   const tailX = Math.max(18, Math.min(BUBBLE_WIDTH - 18, anchor.x - stackLeft));
-  const effectiveAnchorY = placement === "top" ? PET_THOUGHT_WINDOW_SIZE.height - 4 : anchor.y;
+  const effectiveAnchorY = anchor.y;
   const visibleThoughts = useMemo(() => (placement === "top" ? [...thoughts].reverse() : thoughts), [placement, thoughts]);
   const windowStyle = useMemo(
     () =>
@@ -91,6 +91,18 @@ export default function PetThoughtWindow({ petSize }: PetThoughtWindowProps) {
       unlistenCollapse?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!canUseTauriEvents()) {
+      return;
+    }
+    if (thoughts.length === 0) {
+      return;
+    }
+    // When this window re-mounts (or events race), ask main window to re-broadcast
+    // latest thought queue and placement so bubbles don't stay empty.
+    void emit("omni-pet-thought-request");
+  }, [thoughts.length]);
 
   useLayoutEffect(() => {
     const stack = stackRef.current;

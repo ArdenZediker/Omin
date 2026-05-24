@@ -112,6 +112,16 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     void listen<PetThoughtState[]>("omni-pet-thought-queue-changed", (event) => {
       const queue = Array.isArray(event.payload) ? event.payload : [];
       setPetThoughtCount(queue.length);
+      setPetThought((currentThought) => {
+        const nextThought = queue[0] ?? null;
+        if (!nextThought) {
+          return null;
+        }
+        if (currentThought && currentThought.updatedAt > nextThought.updatedAt) {
+          return currentThought;
+        }
+        return nextThought;
+      });
       if (queue.length === 0) {
         setArePetThoughtsCollapsed(false);
       }

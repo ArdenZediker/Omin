@@ -14,8 +14,8 @@ const PET_THOUGHT_VIEWPORT_EXTRA_HEIGHT = 128;
 const PET_THOUGHT_VIEWPORT_SIDE_EXTRA_WIDTH = 316;
 const PET_THOUGHT_VIEWPORT_SIDE_MIN_HEIGHT = 188;
 export const PET_THOUGHT_WINDOW_SIZE = {
-  width: 276,
-  height: 258,
+  width: 300,
+  height: 278,
 } as const;
 
 export type PetThoughtPlacement = "top" | "right" | "left" | "bottom";

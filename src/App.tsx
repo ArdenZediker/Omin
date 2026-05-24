@@ -378,9 +378,10 @@ function MainApp() {
     petThoughtPlacement,
   ]);
 
-  const isActiveSessionLoading = isLoading && activeChatId === loadingSessionId;
-  const isSendBlockedByOtherSession = isLoading && !isActiveSessionLoading;
   const lastMessage = messages[messages.length - 1];
+  const hasPendingAssistantPlaceholder = lastMessage?.role === "assistant" && !lastMessage.content.trim();
+  const isActiveSessionLoading = isLoading && (activeChatId === loadingSessionId || hasPendingAssistantPlaceholder);
+  const isSendBlockedByOtherSession = isLoading && !isActiveSessionLoading;
   const isStreaming = isActiveSessionLoading && lastMessage.role === "assistant";
 
   const handleCopyMessage = useCallback(async (message: Message) => {

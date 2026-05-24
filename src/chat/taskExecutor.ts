@@ -315,6 +315,7 @@ export async function executeInputTask(options: {
   images?: string[];
   hiddenContext?: string;
   currentMessages: Message[];
+  preparedMessages?: Message[];
   model: string;
   signal?: AbortSignal;
   systemPrompt?: string;
@@ -322,7 +323,7 @@ export async function executeInputTask(options: {
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown } | void>;
 }): Promise<TaskExecutionResult> {
-  const { input, images, hiddenContext, currentMessages, model, signal, systemPrompt, onChunk, onPrepareConversation, executeTool } = options;
+  const { input, images, hiddenContext, currentMessages, preparedMessages: preparedMessagesOverride, model, signal, systemPrompt, onChunk, onPrepareConversation, executeTool } = options;
   const localCommand = !images || images.length === 0 ? resolveLocalSlashCommand(input) : null;
 
   if (localCommand) {
@@ -344,9 +345,10 @@ export async function executeInputTask(options: {
     });
   }
 
-  const userMessage: Message = { role: "user", content: input, images };
-  const preparedMessages: Message[] = [...currentMessages, userMessage];
-  onPrepareConversation?.(preparedMessages);
+  const preparedMessages: Message[] = preparedMessagesOverride ?? [...currentMessages, { role: "user", content: input, images }];
+  if (!preparedMessagesOverride) {
+    onPrepareConversation?.(preparedMessages);
+  }
 
   const plan = createTaskPlan({
     intent: "chat",

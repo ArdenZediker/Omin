@@ -103,19 +103,28 @@ export class OpenAIAdapter implements ModelAdapter {
     const decoder = new TextDecoder();
     let fullContent = "";
     let model = request.model;
+    let buffer = "";
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        buffer += decoder.decode();
+      } else {
+        buffer += decoder.decode(value, { stream: true });
+      }
 
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
-      for (const line of lines) {
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line.startsWith("data: ")) {
+          continue;
+        }
         const data = line.slice(6);
         if (data === "[DONE]") {
           onChunk({ content: "", done: true, model });
-          break;
+          continue;
         }
         try {
           const parsed = JSON.parse(data);
@@ -129,6 +138,7 @@ export class OpenAIAdapter implements ModelAdapter {
           // 跳过格式异常的块
         }
       }
+      if (done) break;
     }
 
     return { content: fullContent, model };
