@@ -2193,7 +2193,7 @@ body:has(.pet-thought-window),
 .chat-composer__panel {
   width: 100%;
   min-height: 0;
-  height: 100%;
+  height: auto;
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -2237,7 +2237,7 @@ body:has(.pet-thought-window),
 .chat-composer__body {
   position: relative;
   z-index: 1;
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
   padding: 0 16px 8px;
   display: flex;
@@ -2398,6 +2398,7 @@ body:has(.pet-thought-window),
   min-height: 0;
   padding: 0;
   display: flex;
+  align-items: flex-start;
 }
 
 .chat-composer__skills {
@@ -2539,7 +2540,8 @@ body:has(.pet-thought-window),
 
 .chat-composer__textarea {
   width: 100%;
-  min-height: 100%;
+  min-height: 36px;
+  height: 36px;
   max-height: 260px;
   resize: none;
   overflow-y: auto;
