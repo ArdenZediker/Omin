@@ -284,6 +284,8 @@ export function useCompactWindowController({
   const petThoughtStateRef = useRef<PetThoughtState | null>(petThought);
   const petThoughtDragLayoutPendingRef = useRef<{ x: number; y: number } | null>(null);
   const petThoughtDragLayoutRafRef = useRef<number | null>(null);
+  const petThoughtDragSessionRef = useRef(0);
+  const petThoughtLayoutRequestRef = useRef(0);
   const petThoughtDragMoveOriginRef = useRef<{
     petX: number;
     petY: number;
@@ -362,6 +364,8 @@ export function useCompactWindowController({
       if (!isCompactWindow) {
         return;
       }
+      const requestId = ++petThoughtLayoutRequestRef.current;
+      const isLatestRequest = () => requestId === petThoughtLayoutRequestRef.current;
 
       const currentThought = petThoughtStateRef.current;
       const hasThoughtQueue = petThoughtCount > 0;
@@ -375,6 +379,9 @@ export function useCompactWindowController({
         !compactReply;
       if (!shouldShowThoughtWindow) {
         const thoughtWindow = await WebviewWindow.getByLabel(PET_THOUGHT_WINDOW_LABEL);
+        if (!isLatestRequest()) {
+          return;
+        }
         if (!thoughtWindow) {
           return;
         }
@@ -398,6 +405,9 @@ export function useCompactWindowController({
         }
 
         petThoughtCollapseHideVersionRef.current += 1;
+        if (!isLatestRequest()) {
+          return;
+        }
         await thoughtWindow.hide().catch(() => undefined);
         return;
       }
@@ -409,12 +419,18 @@ export function useCompactWindowController({
       }
 
       const thoughtWindow = await ensurePetThoughtWindow();
+      if (!isLatestRequest()) {
+        return;
+      }
       const scaleFactor = await appWindow.scaleFactor();
       const monitor =
         (await monitorFromPoint(
           Math.round((petRect.left + petRect.width / 2) * scaleFactor),
           Math.round((petRect.top + petRect.height / 2) * scaleFactor)
         ).catch(() => null)) ?? (await currentMonitor().catch(() => null));
+      if (!isLatestRequest()) {
+        return;
+      }
       if (!monitor) {
         return;
       }
@@ -430,11 +446,20 @@ export function useCompactWindowController({
         Math.abs(previousLayout.x - layout.position.x) > PET_THOUGHT_POSITION_EPSILON ||
         Math.abs(previousLayout.y - layout.position.y) > PET_THOUGHT_POSITION_EPSILON;
       if (shouldMove) {
+        if (!isLatestRequest()) {
+          return;
+        }
         await thoughtWindow.setPosition(new LogicalPosition(layout.position.x, layout.position.y));
+      }
+      if (!isLatestRequest()) {
+        return;
       }
       await thoughtWindow.setSize(new LogicalSize(PET_THOUGHT_WINDOW_SIZE.width, layout.size.height)).catch(() => undefined);
       // Always sync placement when the thought window is shown.
       // The thought webview can be recreated independently and lose in-memory anchor state.
+      if (!isLatestRequest()) {
+        return;
+      }
       await thoughtWindow.emit("omni-pet-thought-placement", {
         placement: layout.placement,
         anchor: layout.anchor,
@@ -450,6 +475,9 @@ export function useCompactWindowController({
         badgeAnchorY: layout.badgeAnchor.y,
         placement: layout.placement,
       };
+      if (!isLatestRequest()) {
+        return;
+      }
       await thoughtWindow.show();
       await thoughtWindow.setAlwaysOnTop(true).catch(() => undefined);
       await thoughtWindow.setIgnoreCursorEvents(false).catch(() => undefined);
@@ -467,7 +495,10 @@ export function useCompactWindowController({
     ]
   );
 
-  const movePetThoughtWindowDuringDrag = useCallback(async (petX: number, petY: number) => {
+  const movePetThoughtWindowDuringDrag = useCallback(async (petX: number, petY: number, dragSessionId: number) => {
+    if (dragSessionId !== petThoughtDragSessionRef.current) {
+      return;
+    }
     if (!isCompactWindow || !petThoughtStateRef.current || arePetThoughtsCollapsed) {
       return;
     }
@@ -492,6 +523,9 @@ export function useCompactWindowController({
 
     petThoughtDragMoveOriginRef.current = origin;
     const thoughtWindow = await WebviewWindow.getByLabel(PET_THOUGHT_WINDOW_LABEL);
+    if (dragSessionId !== petThoughtDragSessionRef.current) {
+      return;
+    }
     await thoughtWindow
       ?.setPosition(
         new LogicalPosition(
@@ -508,8 +542,9 @@ export function useCompactWindowController({
       return;
     }
 
+    const dragSessionId = petThoughtDragSessionRef.current;
     petThoughtDragLayoutPendingRef.current = null;
-    void movePetThoughtWindowDuringDrag(Math.round(pending.x), Math.round(pending.y)).catch(() => undefined);
+    void movePetThoughtWindowDuringDrag(Math.round(pending.x), Math.round(pending.y), dragSessionId).catch(() => undefined);
   }, [movePetThoughtWindowDuringDrag]);
 
   const schedulePetThoughtDragLayout = useCallback(
@@ -1296,6 +1331,7 @@ export function useCompactWindowController({
         characterDragOriginRef.current = null;
         characterDragLastTargetRef.current = null;
         petThoughtDragMoveOriginRef.current = null;
+        petThoughtDragSessionRef.current += 1;
         characterPointerMovedRef.current = false;
         isCharacterDraggingRef.current = false;
         setIsCharacterDragging(false);
@@ -1314,6 +1350,7 @@ export function useCompactWindowController({
         characterDragOriginRef.current = null;
         characterDragLastTargetRef.current = null;
         petThoughtDragMoveOriginRef.current = null;
+        petThoughtDragSessionRef.current += 1;
         characterPointerMovedRef.current = false;
         setIsCharacterDragging(false);
         lastCharacterDragPointerRef.current = null;
@@ -1327,6 +1364,7 @@ export function useCompactWindowController({
       isCharacterDraggingRef.current = false;
       characterDragLastTargetRef.current = null;
       petThoughtDragMoveOriginRef.current = null;
+      petThoughtDragSessionRef.current += 1;
       lastCharacterDragPointerRef.current = null;
       characterDragMotionAccumRef.current = { x: 0, y: 0 };
       characterDragMotionRef.current = null;
@@ -1359,6 +1397,11 @@ export function useCompactWindowController({
       window.cancelAnimationFrame(characterDragRafRef.current);
       characterDragRafRef.current = null;
     }
+    if (petThoughtDragLayoutRafRef.current !== null) {
+      window.cancelAnimationFrame(petThoughtDragLayoutRafRef.current);
+      petThoughtDragLayoutRafRef.current = null;
+    }
+    petThoughtDragSessionRef.current += 1;
     petThoughtDragLayoutPendingRef.current = null;
     petThoughtDragMoveOriginRef.current = null;
     if (pendingDragPosition) {
