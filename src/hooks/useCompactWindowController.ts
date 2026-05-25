@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
+import { availableMonitors, currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
@@ -423,11 +423,15 @@ export function useCompactWindowController({
         return;
       }
       const scaleFactor = await appWindow.scaleFactor();
-      const monitor =
+      let monitor =
         (await monitorFromPoint(
           Math.round((petRect.left + petRect.width / 2) * scaleFactor),
           Math.round((petRect.top + petRect.height / 2) * scaleFactor)
         ).catch(() => null)) ?? (await currentMonitor().catch(() => null));
+      if (!monitor) {
+        const monitors = await availableMonitors().catch(() => []);
+        monitor = monitors[0] ?? null;
+      }
       if (!isLatestRequest()) {
         return;
       }
@@ -480,7 +484,6 @@ export function useCompactWindowController({
       }
       await thoughtWindow.show();
       await thoughtWindow.setAlwaysOnTop(true).catch(() => undefined);
-      await thoughtWindow.setIgnoreCursorEvents(false).catch(() => undefined);
     },
     [
       compactAppearance,
@@ -494,6 +497,17 @@ export function useCompactWindowController({
       setPetThoughtPlacement,
     ]
   );
+
+  const updatePetThoughtWindowFromCurrentPosition = useCallback(async () => {
+    const scaleFactor = await appWindow.scaleFactor();
+    const position = (await appWindow.outerPosition()).toLogical(scaleFactor);
+    await updatePetThoughtWindowForRect({
+      left: Math.round(position.x),
+      top: toVisualPetWindowY(position.y),
+      width: compactSize.width,
+      height: compactSize.height,
+    });
+  }, [compactSize.height, compactSize.width, updatePetThoughtWindowForRect]);
 
   const movePetThoughtWindowDuringDrag = useCallback(async (petX: number, petY: number, dragSessionId: number) => {
     if (dragSessionId !== petThoughtDragSessionRef.current) {
@@ -569,17 +583,10 @@ export function useCompactWindowController({
 
     let cancelled = false;
     void (async () => {
-      const scaleFactor = await appWindow.scaleFactor();
-      const position = (await appWindow.outerPosition()).toLogical(scaleFactor);
       if (cancelled) {
         return;
       }
-      await updatePetThoughtWindowForRect({
-        left: Math.round(position.x),
-        top: toVisualPetWindowY(position.y),
-        width: compactSize.width,
-        height: compactSize.height,
-      });
+      await updatePetThoughtWindowFromCurrentPosition();
     })().catch(() => undefined);
 
     return () => {
@@ -596,7 +603,7 @@ export function useCompactWindowController({
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
-    updatePetThoughtWindowForRect,
+    updatePetThoughtWindowFromCurrentPosition,
   ]);
 
   useEffect(() => {
@@ -615,17 +622,10 @@ export function useCompactWindowController({
 
     let cancelled = false;
     void (async () => {
-      const scaleFactor = await appWindow.scaleFactor();
-      const position = (await appWindow.outerPosition()).toLogical(scaleFactor);
       if (cancelled) {
         return;
       }
-      await updatePetThoughtWindowForRect({
-        left: Math.round(position.x),
-        top: toVisualPetWindowY(position.y),
-        width: compactSize.width,
-        height: compactSize.height,
-      });
+      await updatePetThoughtWindowFromCurrentPosition();
     })().catch(() => undefined);
 
     return () => {
@@ -642,7 +642,45 @@ export function useCompactWindowController({
     isCompactReplyLoading,
     isCompactWindow,
     petThoughtCount,
-    updatePetThoughtWindowForRect,
+    updatePetThoughtWindowFromCurrentPosition,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isCompactWindow ||
+      petThoughtCount <= 0 ||
+      arePetThoughtsCollapsed ||
+      compactAppearance !== "pet" ||
+      isCompactMenuOpen ||
+      isCompactQueryOpen ||
+      isCompactReplyLoading ||
+      compactReply
+    ) {
+      return;
+    }
+
+    const timers = [80, 260, 620].map((delayMs) =>
+      window.setTimeout(() => {
+        if (isCharacterDraggingRef.current) {
+          return;
+        }
+        void updatePetThoughtWindowFromCurrentPosition().catch(() => undefined);
+      }, delayMs)
+    );
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [
+    arePetThoughtsCollapsed,
+    compactAppearance,
+    compactReply,
+    isCompactMenuOpen,
+    isCompactQueryOpen,
+    isCompactReplyLoading,
+    isCompactWindow,
+    petThoughtCount,
+    updatePetThoughtWindowFromCurrentPosition,
   ]);
 
   useEffect(() => {

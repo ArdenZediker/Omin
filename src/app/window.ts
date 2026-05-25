@@ -482,7 +482,7 @@ export async function ensurePetThoughtWindow() {
   }
 
   await applyCompactWindowChrome(petThoughtWindow);
-  await petThoughtWindow.setIgnoreCursorEvents(false).catch(() => undefined);
+  await petThoughtWindow.setIgnoreCursorEvents(true).catch(() => undefined);
   await petThoughtWindow.setSize(new LogicalSize(PET_THOUGHT_WINDOW_SIZE.width, PET_THOUGHT_WINDOW_SIZE.height));
   return petThoughtWindow;
 }

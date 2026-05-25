@@ -416,6 +416,8 @@ export function useChatRuntime({
         queue,
         currentThought,
       };
+      safelyEmitPetThoughtEventTo(requesterLabel, "omni-pet-thought-changed", currentThought);
+      safelyEmitPetThoughtEventTo(requesterLabel, "omni-pet-thought-queue-changed", queue);
       safelyEmitPetThoughtEventTo(requesterLabel, "omni-pet-thought-sync-response", responsePayload);
     }).then((cleanup) => {
       unlistenSyncRequest = cleanup;
@@ -1492,4 +1494,3 @@ export function useChatRuntime({
     loadingSessionId,
   };
 }
-
