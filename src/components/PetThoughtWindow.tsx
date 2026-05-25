@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import type { PetThoughtState } from "../app/types";
 import type { PetThoughtPlacement } from "../app/window";
@@ -12,8 +13,8 @@ type PetThoughtWindowProps = {
 
 const BUBBLE_WIDTH = 250;
 const STACK_PADDING_X = 12;
-const PET_THOUGHT_SYNC_RETRY_LIMIT = 3;
-const PET_THOUGHT_SYNC_RETRY_DELAY_MS = 120;
+const PET_THOUGHT_SYNC_RETRY_LIMIT = 40;
+const PET_THOUGHT_SYNC_RETRY_DELAY_MS = 250;
 
 type PetThoughtSyncResponsePayload = {
   requestId?: string;
@@ -167,6 +168,14 @@ export default function PetThoughtWindow({ petSize }: PetThoughtWindowProps) {
       unlistenCollapse?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!canUseTauriEvents()) {
+      return;
+    }
+
+    void getCurrentWindow().setIgnoreCursorEvents(thoughts.length === 0 || isCollapsed).catch(() => undefined);
+  }, [isCollapsed, thoughts.length]);
 
   useLayoutEffect(() => {
     const stack = stackRef.current;
