@@ -76,6 +76,17 @@ const SILENT_LOCAL_TOOL_IDS = new Set([
 
 const PET_THOUGHT_QUEUE_LIMIT = 12;
 
+type PetThoughtSyncRequestPayload = {
+  requesterLabel?: string;
+  requestId?: string;
+};
+
+type PetThoughtSyncResponsePayload = {
+  requestId?: string;
+  queue: PetThoughtState[];
+  currentThought: PetThoughtState | null;
+};
+
 function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -382,6 +393,7 @@ export function useChatRuntime({
     }
 
     let unlistenRequest: (() => void) | undefined;
+    let unlistenSyncRequest: (() => void) | undefined;
     let unlistenViewed: (() => void) | undefined;
     let unlistenClose: (() => void) | undefined;
     void listen("omni-pet-thought-request", () => {
@@ -390,6 +402,23 @@ export function useChatRuntime({
       broadcastPetThoughtQueue(queue, nextThought);
     }).then((cleanup) => {
       unlistenRequest = cleanup;
+    });
+    void listen<PetThoughtSyncRequestPayload>("omni-pet-thought-sync-request", (event) => {
+      const queue = [...petThoughtQueueRef.current];
+      const currentThought = petThoughtRef.current;
+      const requesterLabel = event.payload?.requesterLabel?.trim();
+      if (!requesterLabel) {
+        broadcastPetThoughtQueue(queue, currentThought);
+        return;
+      }
+      const responsePayload: PetThoughtSyncResponsePayload = {
+        requestId: event.payload?.requestId,
+        queue,
+        currentThought,
+      };
+      safelyEmitPetThoughtEventTo(requesterLabel, "omni-pet-thought-sync-response", responsePayload);
+    }).then((cleanup) => {
+      unlistenSyncRequest = cleanup;
     });
     void listen("omni-pet-thought-viewed", () => {
       clearPetThought();
@@ -404,6 +433,7 @@ export function useChatRuntime({
 
     return () => {
       unlistenRequest?.();
+      unlistenSyncRequest?.();
       unlistenViewed?.();
       unlistenClose?.();
     };

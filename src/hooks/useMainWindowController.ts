@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import {
@@ -23,6 +24,8 @@ import {
   applyThemeFromStorage,
   getBasicSettings,
   getMainWindowSizeForView,
+  getStoredMainPosition,
+  isMainPositionVisible,
   normalizeShortcutKey,
   persistMainPosition,
   resizeWindow,
@@ -77,6 +80,8 @@ export function useMainWindowController({
   view,
   onModelChange,
 }: UseMainWindowControllerArgs) {
+  const hasAppliedInitialMainGeometryRef = useRef(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -176,17 +181,32 @@ export function useMainWindowController({
 
     const win = appWindow;
     saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, view);
-    const shouldResize = true;
+    const targetSize = getMainWindowSizeForView(view);
 
-    if (shouldResize) {
-      const targetSize = getMainWindowSizeForView(view);
-      void win.isMaximized().then((isMaximized) => {
-        if (isMaximized) {
+    void (async () => {
+      const isMaximized = await win.isMaximized();
+      if (isMaximized) {
+        return;
+      }
+
+      await resizeWindow(win, targetSize.width, targetSize.height);
+
+      if (hasAppliedInitialMainGeometryRef.current) {
+        return;
+      }
+      hasAppliedInitialMainGeometryRef.current = true;
+
+      const settings = getBasicSettings();
+      if (settings.mainWindowPositionMode === "remember") {
+        const storedMainPos = getStoredMainPosition();
+        if (storedMainPos && isMainPositionVisible(storedMainPos)) {
+          await win.setPosition(new LogicalPosition(storedMainPos.x, storedMainPos.y));
           return;
         }
-        void resizeWindow(win, targetSize.width, targetSize.height);
-      });
-    }
+      }
+
+      await win.center();
+    })().catch(() => undefined);
   }, [
     isCompactWindow,
     view,
@@ -378,4 +398,3 @@ export function useMainWindowController({
     handleRestoreMain,
   };
 }
-

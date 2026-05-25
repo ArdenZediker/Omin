@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Bot,
@@ -71,6 +71,23 @@ export default function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
+  const syncTextareaHeight = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    if (input.length === 0) {
+      textarea.style.height = "36px";
+      return;
+    }
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 36), 280);
+    const currentHeight = Number.parseFloat(textarea.style.height || "0");
+    if (!Number.isFinite(currentHeight) || Math.abs(currentHeight - nextHeight) > 0.5) {
+      textarea.style.height = `${nextHeight}px`;
+    }
+  };
+
   const matchedSuggestions = getMatchingSlashSuggestions(input);
   const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
   const trimmedInput = input.trim();
@@ -85,12 +102,8 @@ export default function ChatInput({
     trimmedInput.startsWith("/") &&
     input !== dismissedSlashInput;
 
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = "auto";
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 280)}px`;
-    }
+  useLayoutEffect(() => {
+    syncTextareaHeight();
   }, [input]);
 
   useEffect(() => {

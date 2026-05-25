@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import type { PetThoughtState } from "../app/types";
 import type { PetThoughtPlacement } from "../app/window";
 import { getPetThoughtKey } from "../app/petThoughts";
@@ -11,6 +12,14 @@ type PetThoughtWindowProps = {
 
 const BUBBLE_WIDTH = 250;
 const STACK_PADDING_X = 12;
+const PET_THOUGHT_SYNC_RETRY_LIMIT = 3;
+const PET_THOUGHT_SYNC_RETRY_DELAY_MS = 120;
+
+type PetThoughtSyncResponsePayload = {
+  requestId?: string;
+  queue?: PetThoughtState[] | null;
+  currentThought?: PetThoughtState | null;
+};
 
 function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -51,58 +60,113 @@ export default function PetThoughtWindow({ petSize }: PetThoughtWindowProps) {
     let unlistenQueue: (() => void) | undefined;
     let unlistenPlacement: (() => void) | undefined;
     let unlistenCollapse: (() => void) | undefined;
+    let unlistenSyncResponse: (() => void) | undefined;
+    let disposed = false;
+    let syncRetryTimer: number | null = null;
+    let syncRetryCount = 0;
+    let hasReceivedInitialThought = false;
 
-    void listen<PetThoughtState[]>("omni-pet-thought-queue-changed", (event) => {
-      setThoughts(Array.isArray(event.payload) ? event.payload : []);
-    }).then((cleanup) => {
-      unlistenQueue = cleanup;
-      void emit("omni-pet-thought-request");
-    });
+    const clearSyncRetryTimer = () => {
+      if (syncRetryTimer !== null) {
+        window.clearTimeout(syncRetryTimer);
+        syncRetryTimer = null;
+      }
+    };
 
-    void listen<{
-      placement?: PetThoughtPlacement;
-      anchor?: { x?: number; y?: number };
-      badgeAnchor?: { x?: number; y?: number };
-    }>("omni-pet-thought-placement", (event) => {
-      const nextPlacement = event.payload?.placement;
-      if (nextPlacement === "top" || nextPlacement === "bottom" || nextPlacement === "left" || nextPlacement === "right") {
-        setPlacement(nextPlacement);
+    const markInitialThoughtSynced = () => {
+      if (hasReceivedInitialThought) {
+        return;
       }
-      const nextAnchor = event.payload?.anchor;
-      if (Number.isFinite(nextAnchor?.x) && Number.isFinite(nextAnchor?.y)) {
-        setAnchor({ x: Math.round(nextAnchor?.x as number), y: Math.round(nextAnchor?.y as number) });
+      hasReceivedInitialThought = true;
+      clearSyncRetryTimer();
+    };
+
+    const applyThoughtQueue = (queue: PetThoughtState[]) => {
+      setThoughts(queue);
+    };
+
+    const requestThoughtSnapshot = () => {
+      if (disposed || hasReceivedInitialThought) {
+        return;
       }
-      const nextBadgeAnchor = event.payload?.badgeAnchor;
-      if (Number.isFinite(nextBadgeAnchor?.x) && Number.isFinite(nextBadgeAnchor?.y)) {
-        setBadgeAnchor({ x: Math.round(nextBadgeAnchor?.x as number), y: Math.round(nextBadgeAnchor?.y as number) });
+      syncRetryCount += 1;
+      const requestId = `${PET_THOUGHT_WINDOW_LABEL}:${Date.now()}:${syncRetryCount}`;
+      void emit("omni-pet-thought-sync-request", {
+        requesterLabel: PET_THOUGHT_WINDOW_LABEL,
+        requestId,
+      }).catch(() => undefined);
+      if (syncRetryCount === 1) {
+        void emit("omni-pet-thought-request").catch(() => undefined);
       }
-    }).then((cleanup) => {
-      unlistenPlacement = cleanup;
-    });
-    void listen<{ collapsed?: boolean }>("omni-pet-thought-collapse-changed", (event) => {
-      setIsCollapsed(Boolean(event.payload?.collapsed));
-    }).then((cleanup) => {
-      unlistenCollapse = cleanup;
+      if (syncRetryCount >= PET_THOUGHT_SYNC_RETRY_LIMIT) {
+        return;
+      }
+      clearSyncRetryTimer();
+      syncRetryTimer = window.setTimeout(() => {
+        requestThoughtSnapshot();
+      }, PET_THOUGHT_SYNC_RETRY_DELAY_MS);
+    };
+
+    void Promise.all([
+      listen<PetThoughtState[]>("omni-pet-thought-queue-changed", (event) => {
+        const queue = Array.isArray(event.payload) ? event.payload : [];
+        if (queue.length > 0) {
+          markInitialThoughtSynced();
+        }
+        applyThoughtQueue(queue);
+      }),
+      listen<PetThoughtSyncResponsePayload>("omni-pet-thought-sync-response", (event) => {
+        const queue = Array.isArray(event.payload?.queue) ? event.payload?.queue : [];
+        if (queue.length > 0 || event.payload?.currentThought) {
+          markInitialThoughtSynced();
+        }
+        applyThoughtQueue(queue);
+      }),
+      listen<{
+        placement?: PetThoughtPlacement;
+        anchor?: { x?: number; y?: number };
+        badgeAnchor?: { x?: number; y?: number };
+      }>("omni-pet-thought-placement", (event) => {
+        const nextPlacement = event.payload?.placement;
+        if (nextPlacement === "top" || nextPlacement === "bottom" || nextPlacement === "left" || nextPlacement === "right") {
+          setPlacement(nextPlacement);
+        }
+        const nextAnchor = event.payload?.anchor;
+        if (Number.isFinite(nextAnchor?.x) && Number.isFinite(nextAnchor?.y)) {
+          setAnchor({ x: Math.round(nextAnchor?.x as number), y: Math.round(nextAnchor?.y as number) });
+        }
+        const nextBadgeAnchor = event.payload?.badgeAnchor;
+        if (Number.isFinite(nextBadgeAnchor?.x) && Number.isFinite(nextBadgeAnchor?.y)) {
+          setBadgeAnchor({ x: Math.round(nextBadgeAnchor?.x as number), y: Math.round(nextBadgeAnchor?.y as number) });
+        }
+      }),
+      listen<{ collapsed?: boolean }>("omni-pet-thought-collapse-changed", (event) => {
+        setIsCollapsed(Boolean(event.payload?.collapsed));
+      }),
+    ]).then(([queueCleanup, syncResponseCleanup, placementCleanup, collapseCleanup]) => {
+      if (disposed) {
+        queueCleanup();
+        syncResponseCleanup();
+        placementCleanup();
+        collapseCleanup();
+        return;
+      }
+      unlistenQueue = queueCleanup;
+      unlistenSyncResponse = syncResponseCleanup;
+      unlistenPlacement = placementCleanup;
+      unlistenCollapse = collapseCleanup;
+      requestThoughtSnapshot();
     });
 
     return () => {
+      disposed = true;
+      clearSyncRetryTimer();
       unlistenQueue?.();
+      unlistenSyncResponse?.();
       unlistenPlacement?.();
       unlistenCollapse?.();
     };
   }, []);
-
-  useEffect(() => {
-    if (!canUseTauriEvents()) {
-      return;
-    }
-    if (thoughts.length === 0) {
-      return;
-    }
-    // When this window re-mounts (or events race), ask main window to re-broadcast
-    // latest thought queue and placement so bubbles don't stay empty.
-    void emit("omni-pet-thought-request");
-  }, [thoughts.length]);
 
   useLayoutEffect(() => {
     const stack = stackRef.current;

@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import { useLayoutEffect } from "react";
 import {
   ArrowDown,
   ArrowRight,
@@ -499,6 +500,8 @@ export default function MainChatView({
   const [assistantPromptDraft, setAssistantPromptDraft] = useState(activeAssistant?.systemPrompt ?? "");
   const [assistantModelDraft, setAssistantModelDraft] = useState(activeAssistant?.defaultModelId ?? "");
   const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
+  const isMessagesAtBottomRef = useRef(true);
+  const lastAutoScrolledSessionRef = useRef<string | null>(null);
   const selectedAssistantModel = availableModels.find((model) => model.id === assistantModelDraft) ?? null;
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
@@ -518,13 +521,62 @@ export default function MainChatView({
   );
 
   useEffect(() => {
+    isMessagesAtBottomRef.current = isMessagesAtBottom;
+  }, [isMessagesAtBottom]);
+
+  useEffect(() => {
     if (!composerElement) return;
-    const updateComposerHeight = () => setComposerHeight(composerElement.getBoundingClientRect().height || 0);
-    updateComposerHeight();
-    const observer = new ResizeObserver(updateComposerHeight);
+    let frameId = 0;
+    const updateComposerHeight = () => {
+      const nextHeight = Math.max(0, Math.round(composerElement.getBoundingClientRect().height || 0));
+      setComposerHeight((current) => (current === nextHeight ? current : nextHeight));
+
+      const scrollElement = messagesScrollRef.current;
+      if (scrollElement && isMessagesAtBottomRef.current) {
+        scrollElement.scrollTop = scrollElement.scrollHeight;
+      }
+    };
+    const scheduleComposerHeightUpdate = () => {
+      if (frameId) {
+        cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        updateComposerHeight();
+      });
+    };
+    scheduleComposerHeightUpdate();
+    const observer = new ResizeObserver(scheduleComposerHeightUpdate);
     observer.observe(composerElement);
-    return () => observer.disconnect();
-  }, [composerElement]);
+    return () => {
+      if (frameId) {
+        cancelAnimationFrame(frameId);
+      }
+      observer.disconnect();
+    };
+  }, [composerElement, messagesScrollRef]);
+
+  useLayoutEffect(() => {
+    const scrollElement = messagesScrollRef.current;
+    if (!scrollElement) {
+      return;
+    }
+
+    const sessionKey = activeChatId ?? "__empty__";
+    if (lastAutoScrolledSessionRef.current !== sessionKey) {
+      lastAutoScrolledSessionRef.current = sessionKey;
+      scrollElement.scrollTop = scrollElement.scrollHeight;
+      setIsMessagesAtBottom(true);
+      isMessagesAtBottomRef.current = true;
+      return;
+    }
+
+    if (messages.length > 0 && scrollElement.scrollTop <= 0) {
+      scrollElement.scrollTop = scrollElement.scrollHeight;
+      setIsMessagesAtBottom(true);
+      isMessagesAtBottomRef.current = true;
+    }
+  }, [activeChatId, messages.length, messagesScrollRef]);
 
   useEffect(() => {
     const scrollElement = messagesScrollRef.current;
