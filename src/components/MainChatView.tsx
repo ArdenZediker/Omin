@@ -110,6 +110,7 @@ type MainChatViewProps = {
   inputDraftImages: string[];
   inputDraftKey: number;
   inputFocusKey: number;
+  inputDraftScopeKey: string;
   isLoading: boolean;
   isSendBlocked?: boolean;
   isStreaming: boolean;
@@ -140,6 +141,7 @@ type MainChatViewProps = {
   }) => void;
   onDeleteAssistant: (assistantId: string) => boolean;
   onDeleteChat: (session: ChatSession) => void;
+  onDraftChange: (text: string, images: string[]) => void;
   onEditUserMessage: (messageIndex: number) => void;
   onModelChange: (modelId: string) => void;
   onNewChat: () => void;
@@ -264,6 +266,7 @@ export default function MainChatView({
   inputDraftImages,
   inputDraftKey,
   inputFocusKey,
+  inputDraftScopeKey,
   isLoading,
   isSendBlocked = false,
   isStreaming,
@@ -280,6 +283,7 @@ export default function MainChatView({
   onCreateCustomAssistant,
   onDeleteAssistant,
   onDeleteChat,
+  onDraftChange,
   onEditUserMessage,
   onModelChange,
   onNewChat,
@@ -1984,9 +1988,11 @@ export default function MainChatView({
                   onStop={onStop}
                   onStartNewTopic={onNewChat}
                   focusSignal={inputFocusKey}
+                  draftScopeKey={inputDraftScopeKey}
                   draftValue={inputDraft}
                   draftImages={inputDraftImages}
                   draftSignal={inputDraftKey}
+                  onDraftChange={onDraftChange}
                 />
               </div>
             </>

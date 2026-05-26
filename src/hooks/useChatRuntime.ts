@@ -32,12 +32,11 @@ type UseChatRuntimeArgs = {
   availableModels: ModelConfig[];
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
   commitAssistantMemory: (sessionId: string, conversationMessages: Message[], assistantReply: string) => void;
-  createSessionFromMessages: (conversationMessages: Message[]) => { id: string };
+  createSessionFromMessages: (conversationMessages: Message[], assistantId?: string) => { id: string };
   currentModel: string;
   getAssistantById: (assistantId: string) => AssistantProfile | null;
   getChatSessionById: (sessionId: string) => SessionLite | null;
   handleModelChange: (modelId: string) => void;
-  messages: Message[];
   renameChatSession: (sessionId: string, title: string) => boolean;
   searchChatSessions: (query: string) => SessionLite[];
   setActiveAssistantId: React.Dispatch<React.SetStateAction<string>>;
@@ -126,7 +125,6 @@ export function useChatRuntime({
   getAssistantById,
   getChatSessionById,
   handleModelChange,
-  messages,
   renameChatSession,
   searchChatSessions,
   setActiveAssistantId,
@@ -198,6 +196,23 @@ export function useChatRuntime({
       ? activeAssistant.defaultModelId
       : currentModel;
   const assistantSystemPrompt = activeAssistant?.systemPrompt?.trim() ? activeAssistant.systemPrompt.trim() : undefined;
+
+  const getScopedConversationMessages = useCallback(() => {
+    if (!activeChatId) {
+      return [] as Message[];
+    }
+
+    const session = getChatSessionById(activeChatId);
+    if (!session) {
+      return [] as Message[];
+    }
+
+    if (activeAssistant?.id && session.assistantId && session.assistantId !== activeAssistant.id) {
+      return [] as Message[];
+    }
+
+    return session.messages;
+  }, [activeAssistant?.id, activeChatId, getChatSessionById]);
 
   const resolveAssistantSystemPrompt = useCallback(
     (assistantOverride?: AssistantProfile | null) => {
@@ -529,7 +544,7 @@ export function useChatRuntime({
     ) => {
       let sessionId = options.sessionId ?? activeChatId;
       if (!sessionId && options.createSession) {
-        const nextSession = createSessionFromMessages(conversationMessages);
+        const nextSession = createSessionFromMessages(conversationMessages, options.assistantOverride?.id ?? activeAssistant?.id ?? undefined);
         sessionId = nextSession.id;
       }
 
@@ -1211,7 +1226,8 @@ export function useChatRuntime({
       setIsLoading(true);
 
       let sessionId = activeChatId;
-      let conversationMessagesForTask = messages;
+      const scopedCurrentMessages = getScopedConversationMessages();
+      let conversationMessagesForTask = scopedCurrentMessages;
       let hasPetThought = false;
       let petThoughtId: string | null = null;
       let streamedAssistantReply = "";
@@ -1242,12 +1258,12 @@ export function useChatRuntime({
           input: content,
           images,
           hiddenContext,
-          currentMessages: messages,
+          currentMessages: scopedCurrentMessages,
           model: executionModel,
           onPrepareConversation: (preparedMessages) => {
             conversationMessagesForTask = preparedMessages;
             if (!sessionId) {
-              const nextSession = createSessionFromMessages(preparedMessages);
+              const nextSession = createSessionFromMessages(preparedMessages, activeAssistant?.id ?? undefined);
               sessionId = nextSession.id;
             }
             setLoadingSessionId(sessionId ?? null);
@@ -1284,7 +1300,7 @@ export function useChatRuntime({
           }
           const localCommandToolId = taskResult.plan.metadata?.toolId;
           if (taskResult.toolResult?.outputText && !SILENT_LOCAL_TOOL_IDS.has(String(localCommandToolId || ""))) {
-            setConversationMessagesForSession(sessionId, [...messages, { role: "assistant", content: taskResult.toolResult.outputText }]);
+            setConversationMessagesForSession(sessionId, [...scopedCurrentMessages, { role: "assistant", content: taskResult.toolResult.outputText }]);
           }
           return;
         }
@@ -1370,9 +1386,9 @@ export function useChatRuntime({
       executeTool,
       executionModel,
       finishTaskResult,
+      getScopedConversationMessages,
       isCurrentPetThought,
       isLoading,
-      messages,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
       setConversationMessagesForSession,
@@ -1397,14 +1413,15 @@ export function useChatRuntime({
       if (isLoading) {
         return;
       }
-      const targetMessage = messages[messageIndex];
+      const scopedMessages = getScopedConversationMessages();
+      const targetMessage = scopedMessages[messageIndex];
       if (!targetMessage || targetMessage.role !== "user") {
         return;
       }
       setEditingMessageIndex(messageIndex);
       setError(null);
     },
-    [isLoading, messages]
+    [getScopedConversationMessages, isLoading]
   );
 
   const handleCancelEditUserMessage = useCallback(() => {
@@ -1416,15 +1433,16 @@ export function useChatRuntime({
       if (isLoading) {
         return;
       }
-      const targetMessage = messages[messageIndex];
+      const scopedMessages = getScopedConversationMessages();
+      const targetMessage = scopedMessages[messageIndex];
       if (!targetMessage || targetMessage.role !== "user" || !content.trim()) {
         return;
       }
-      const conversationMessages = [...messages.slice(0, messageIndex), { ...targetMessage, content: content.trim() }];
+      const conversationMessages = [...scopedMessages.slice(0, messageIndex), { ...targetMessage, content: content.trim() }];
       setEditingMessageIndex(null);
       await runConversationTurn(conversationMessages, { sessionId: activeChatId });
     },
-    [activeChatId, isLoading, messages, runConversationTurn]
+    [activeChatId, getScopedConversationMessages, isLoading, runConversationTurn]
   );
 
   const handleRegenerateMessage = useCallback(
@@ -1432,17 +1450,18 @@ export function useChatRuntime({
       if (isLoading) {
         return;
       }
-      const targetMessage = messages[messageIndex];
+      const scopedMessages = getScopedConversationMessages();
+      const targetMessage = scopedMessages[messageIndex];
       if (!targetMessage || targetMessage.role !== "assistant") {
         return;
       }
-      const conversationMessages = messages.slice(0, messageIndex);
+      const conversationMessages = scopedMessages.slice(0, messageIndex);
       if (!conversationMessages.some((message) => message.role === "user")) {
         return;
       }
       await runConversationTurn(conversationMessages, { sessionId: activeChatId });
     },
-    [activeChatId, isLoading, messages, runConversationTurn]
+    [activeChatId, getScopedConversationMessages, isLoading, runConversationTurn]
   );
 
   const handleClearChat = useCallback(() => {
@@ -1461,7 +1480,7 @@ export function useChatRuntime({
   );
 
   const handleNewChat = useCallback(() => {
-    createSessionFromMessages([]);
+    createSessionFromMessages([], activeAssistant?.id ?? undefined);
     setMessages([]);
     setInputDraft("");
     setInputDraftImages([]);
@@ -1469,7 +1488,7 @@ export function useChatRuntime({
     setError(null);
     setOpenChatMenu(null);
     setEditingMessageIndex(null);
-  }, [createSessionFromMessages, setEditingMessageIndex, setError, setInputDraft, setInputDraftImages, setInputDraftKey, setMessages, setOpenChatMenu]);
+  }, [activeAssistant?.id, createSessionFromMessages, setEditingMessageIndex, setError, setInputDraft, setInputDraftImages, setInputDraftKey, setMessages, setOpenChatMenu]);
 
   return {
     abortControllerRef,
