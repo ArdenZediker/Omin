@@ -139,16 +139,16 @@ export function useChatRuntime({
   isCompactWindow,
 }: UseChatRuntimeArgs) {
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
+  const [loadingSessionIds, setLoadingSessionIds] = useState<string[]>([]);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [latestTaskResult, setLatestTaskResult] = useState<TaskExecutionResult | null>(null);
   const [taskRuntimeState, setTaskRuntimeState] = useState<TaskRuntimeState>({
     activeTask: null,
     history: [],
   });
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const lastRunIdRef = useRef(0);
+  const loadingSessionIdsRef = useRef<Set<string>>(new Set());
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const sessionRunIdsRef = useRef<Map<string, number>>(new Map());
   const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
   const toolRegistryRef = useRef<ToolRegistry | null>(null);
   const petThoughtRef = useRef<PetThoughtState | null>(null);
@@ -157,6 +157,51 @@ export function useChatRuntime({
   const pendingPetThoughtSessionIdsRef = useRef<Set<string>>(new Set());
   const petThoughtClearTimerRef = useRef<number | null>(null);
   const petThoughtBroadcastFrameRef = useRef<number | null>(null);
+  const isLoading = loadingSessionIds.length > 0;
+  const loadingSessionId = loadingSessionIds[0] ?? null;
+
+  const setSessionLoading = useCallback((sessionId: string, loading: boolean) => {
+    const next = new Set(loadingSessionIdsRef.current);
+    if (loading) {
+      next.add(sessionId);
+    } else {
+      next.delete(sessionId);
+    }
+    loadingSessionIdsRef.current = next;
+    setLoadingSessionIds(Array.from(next));
+  }, []);
+
+  const isSessionLoading = useCallback((sessionId: string | null | undefined) => {
+    return Boolean(sessionId && loadingSessionIdsRef.current.has(sessionId));
+  }, []);
+
+  const startSessionRun = useCallback(
+    (sessionId: string | null | undefined, abortController: AbortController) => {
+      if (!sessionId) return 0;
+      const runId = (sessionRunIdsRef.current.get(sessionId) ?? 0) + 1;
+      sessionRunIdsRef.current.set(sessionId, runId);
+      abortControllersRef.current.set(sessionId, abortController);
+      setSessionLoading(sessionId, true);
+      return runId;
+    },
+    [setSessionLoading]
+  );
+
+  const isCurrentSessionRun = useCallback((sessionId: string | null | undefined, runId: number, abortController: AbortController) => {
+    if (!sessionId) return !abortController.signal.aborted;
+    return sessionRunIdsRef.current.get(sessionId) === runId && !abortController.signal.aborted;
+  }, []);
+
+  const finishSessionRun = useCallback(
+    (sessionId: string | null | undefined, runId: number, abortController: AbortController) => {
+      if (!sessionId) return;
+      if (sessionRunIdsRef.current.get(sessionId) !== runId) return;
+      if (abortControllersRef.current.get(sessionId) !== abortController) return;
+      abortControllersRef.current.delete(sessionId);
+      setSessionLoading(sessionId, false);
+    },
+    [setSessionLoading]
+  );
 
   const setConversationMessagesForSession = useCallback(
     (sessionId: string | null | undefined, nextMessages: Message[] | ((current: Message[]) => Message[])) => {
@@ -170,8 +215,8 @@ export function useChatRuntime({
   );
 
   const setLastAssistantContent = useCallback(
-    (content: string) => {
-      setMessages((prev) => {
+    (sessionId: string | null | undefined, content: string) => {
+      const updateLastAssistant = (prev: Message[]) => {
         if (prev.length === 0) {
           return prev;
         }
@@ -186,9 +231,16 @@ export function useChatRuntime({
         const updated = [...prev];
         updated[lastIdx] = { ...lastMessage, content };
         return updated;
-      });
+      };
+
+      if (sessionId) {
+        updateChatSessionMessages(sessionId, updateLastAssistant);
+        return;
+      }
+
+      setMessages(updateLastAssistant);
     },
-    [setMessages]
+    [setMessages, updateChatSessionMessages]
   );
 
   const executionModel =
@@ -548,10 +600,8 @@ export function useChatRuntime({
         sessionId = nextSession.id;
       }
 
-      const runId = lastRunIdRef.current + 1;
-      lastRunIdRef.current = runId;
       const abortController = new AbortController();
-      abortControllerRef.current = abortController;
+      const runId = startSessionRun(sessionId, abortController);
       const petThoughtId = startPetThought(sessionId, conversationMessages);
       const systemPrompt = resolveAssistantSystemPrompt(options.assistantOverride);
       let streamedAssistantReply = "";
@@ -563,7 +613,7 @@ export function useChatRuntime({
           return;
         }
         lastUiUpdateAt = now;
-        setLastAssistantContent(streamedAssistantReply);
+        setLastAssistantContent(sessionId, streamedAssistantReply);
       };
       const updateThoughtPreview = (force = false) => {
         const now = performance.now();
@@ -576,8 +626,6 @@ export function useChatRuntime({
 
       setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "assistant", content: "" }]);
       setError(null);
-      setIsLoading(true);
-      setLoadingSessionId(sessionId ?? null);
 
       try {
         const taskResult = await executeTask({
@@ -586,7 +634,7 @@ export function useChatRuntime({
           signal: abortController.signal,
           systemPrompt: [systemPrompt, options.hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
           onChunk: (chunk) => {
-            if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
+            if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
             }
             streamedAssistantReply += chunk;
@@ -595,19 +643,19 @@ export function useChatRuntime({
           },
         });
 
-        if (runId !== lastRunIdRef.current) {
+        if (!isCurrentSessionRun(sessionId, runId, abortController)) {
           return;
         }
 
         if (!taskResult.finalResult && taskResult.status === "aborted") {
-          setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+          setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
           clearPetThoughtSession(sessionId);
           return;
         }
 
         if (!taskResult.finalResult && !taskResult.toolResult?.outputText) {
           setError(taskResult.error || "?????????");
-          setMessages(conversationMessages);
+          setConversationMessagesForSession(sessionId, conversationMessages);
           if (isCurrentPetThought(petThoughtId, sessionId)) {
             const responseCount = resolvePetThoughtResponseCount(sessionId);
             emitPetThought({
@@ -635,17 +683,17 @@ export function useChatRuntime({
         finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), sessionId, conversationMessages);
         return;
       } catch (runError) {
-        if (runId !== lastRunIdRef.current) {
+        if (!isCurrentSessionRun(sessionId, runId, abortController)) {
           return;
         }
         if (runError instanceof DOMException && runError.name === "AbortError") {
-          setMessages((prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+          setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
           clearPetThoughtSession(sessionId);
           return;
         }
 
         setError(runError instanceof Error ? runError.message : "??????");
-        setMessages(conversationMessages);
+        setConversationMessagesForSession(sessionId, conversationMessages);
         if (isCurrentPetThought(petThoughtId, sessionId)) {
           const errorPreview = runError instanceof Error ? runError.message : "Response failed";
           const responseCount = resolvePetThoughtResponseCount(sessionId);
@@ -661,10 +709,7 @@ export function useChatRuntime({
         }
         return;
       } finally {
-        if (runId === lastRunIdRef.current) {
-          abortControllerRef.current = null;
-          setIsLoading(false);
-        }
+        finishSessionRun(sessionId, runId, abortController);
       }
     },
     [
@@ -676,13 +721,15 @@ export function useChatRuntime({
       emitPetThought,
       executionModel,
       finishTaskResult,
+      finishSessionRun,
+      isCurrentSessionRun,
       isCurrentPetThought,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
       resolveAssistantSystemPrompt,
       setConversationMessagesForSession,
       setLastAssistantContent,
-      setMessages,
+      startSessionRun,
       startPetThought,
       updatePetThought,
     ]
@@ -998,7 +1045,7 @@ export function useChatRuntime({
 
   const handlePetThoughtReply = useCallback(
     async (sessionId: string, content: string) => {
-      if (isLoading) {
+      if (isSessionLoading(sessionId)) {
         return;
       }
 
@@ -1037,13 +1084,9 @@ export function useChatRuntime({
           : null) ??
         (executionModel && modelRegistry.getModelConfig(executionModel) ? executionModel : registryFallbackModelId);
 
-      const runId = lastRunIdRef.current + 1;
-      lastRunIdRef.current = runId;
       const abortController = new AbortController();
-      abortControllerRef.current = abortController;
+      const runId = startSessionRun(session.id, abortController);
       setError(null);
-      setIsLoading(true);
-      setLoadingSessionId(session.id);
 
       let conversationMessagesForTask = session.messages;
       let petThoughtId: string | null = null;
@@ -1056,7 +1099,7 @@ export function useChatRuntime({
           return;
         }
         lastUiUpdateAt = now;
-        setLastAssistantContent(streamedAssistantReply);
+        setLastAssistantContent(session.id, streamedAssistantReply);
       };
       const updateThoughtPreview = (force = false) => {
         const now = performance.now();
@@ -1074,16 +1117,14 @@ export function useChatRuntime({
           model: resolvedModelId,
           onPrepareConversation: (preparedMessages) => {
             conversationMessagesForTask = preparedMessages;
-            setLoadingSessionId(sessionId ?? null);
             const nextMessages: Message[] = [...preparedMessages, { role: "assistant", content: "" }];
             setConversationMessagesForSession(sessionId, nextMessages);
-            setMessages(nextMessages);
             petThoughtId = startPetThought(session.id, preparedMessages);
           },
           signal: abortController.signal,
           systemPrompt,
           onChunk: (chunk) => {
-            if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
+            if (!isCurrentSessionRun(session.id, runId, abortController)) {
               return;
             }
             streamedAssistantReply += chunk;
@@ -1093,7 +1134,7 @@ export function useChatRuntime({
           executeTool,
         });
 
-        if (runId !== lastRunIdRef.current) {
+        if (!isCurrentSessionRun(session.id, runId, abortController)) {
           return;
         }
 
@@ -1135,7 +1176,7 @@ export function useChatRuntime({
         }
         finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), session.id, conversationMessages);
       } catch (replyError) {
-        if (runId !== lastRunIdRef.current) {
+        if (!isCurrentSessionRun(session.id, runId, abortController)) {
           return;
         }
         if (replyError instanceof DOMException && replyError.name === "AbortError") {
@@ -1159,11 +1200,7 @@ export function useChatRuntime({
           });
         }
       } finally {
-        if (runId === lastRunIdRef.current) {
-          abortControllerRef.current = null;
-          setIsLoading(false);
-          setLoadingSessionId(null);
-        }
+        finishSessionRun(session.id, runId, abortController);
       }
     },
     [
@@ -1173,10 +1210,12 @@ export function useChatRuntime({
       executeTool,
       executionModel,
       finishTaskResult,
+      finishSessionRun,
       getAssistantById,
       getChatSessionById,
+      isCurrentSessionRun,
       isCurrentPetThought,
-      isLoading,
+      isSessionLoading,
       resolveAssistantSystemPrompt,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
@@ -1184,6 +1223,7 @@ export function useChatRuntime({
       setActiveChatId,
       setConversationMessagesForSession,
       setLastAssistantContent,
+      startSessionRun,
       startPetThought,
       updatePetThought,
     ]
@@ -1214,18 +1254,15 @@ export function useChatRuntime({
 
   const handleSend = useCallback(
     async (content: string, images?: string[], hiddenContext?: string) => {
-      if (isLoading) {
+      if (isSessionLoading(activeChatId)) {
         return;
       }
 
-      const runId = lastRunIdRef.current + 1;
-      lastRunIdRef.current = runId;
       const abortController = new AbortController();
-      abortControllerRef.current = abortController;
       setError(null);
-      setIsLoading(true);
 
       let sessionId = activeChatId;
+      let runId = startSessionRun(sessionId, abortController);
       const scopedCurrentMessages = getScopedConversationMessages();
       let conversationMessagesForTask = scopedCurrentMessages;
       let hasPetThought = false;
@@ -1239,7 +1276,7 @@ export function useChatRuntime({
           return;
         }
         lastUiUpdateAt = now;
-        setLastAssistantContent(streamedAssistantReply);
+        setLastAssistantContent(sessionId, streamedAssistantReply);
       };
       const updateThoughtPreview = (force = false) => {
         if (!hasPetThought) {
@@ -1265,16 +1302,16 @@ export function useChatRuntime({
             if (!sessionId) {
               const nextSession = createSessionFromMessages(preparedMessages, activeAssistant?.id ?? undefined);
               sessionId = nextSession.id;
+              runId = startSessionRun(sessionId, abortController);
             }
-            setLoadingSessionId(sessionId ?? null);
-            setMessages([...preparedMessages, { role: "assistant", content: "" }]);
+            setConversationMessagesForSession(sessionId, [...preparedMessages, { role: "assistant", content: "" }]);
             petThoughtId = startPetThought(sessionId, preparedMessages);
             hasPetThought = true;
           },
           signal: abortController.signal,
           systemPrompt: [assistantSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
           onChunk: (chunk) => {
-            if (runId !== lastRunIdRef.current || abortController.signal.aborted) {
+            if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
             }
             streamedAssistantReply += chunk;
@@ -1284,7 +1321,7 @@ export function useChatRuntime({
           executeTool,
         });
 
-        if (runId !== lastRunIdRef.current) {
+        if (!isCurrentSessionRun(sessionId, runId, abortController)) {
           return;
         }
 
@@ -1345,7 +1382,7 @@ export function useChatRuntime({
         }
         finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), sessionId, conversationMessages);
       } catch (sendError) {
-        if (runId !== lastRunIdRef.current) {
+        if (!isCurrentSessionRun(sessionId, runId, abortController)) {
           return;
         }
         if (sendError instanceof DOMException && sendError.name === "AbortError") {
@@ -1368,11 +1405,7 @@ export function useChatRuntime({
           });
         }
       } finally {
-        if (runId === lastRunIdRef.current) {
-          abortControllerRef.current = null;
-          setIsLoading(false);
-          setLoadingSessionId(null);
-        }
+        finishSessionRun(sessionId, runId, abortController);
       }
     },
     [
@@ -1386,31 +1419,34 @@ export function useChatRuntime({
       executeTool,
       executionModel,
       finishTaskResult,
+      finishSessionRun,
       getScopedConversationMessages,
+      isCurrentSessionRun,
       isCurrentPetThought,
-      isLoading,
+      isSessionLoading,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
       setConversationMessagesForSession,
       setLastAssistantContent,
-      setMessages,
+      startSessionRun,
       startPetThought,
       updatePetThought,
     ]
   );
 
   const handleStop = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
+    if (!activeChatId) {
+      return;
     }
-    setIsLoading(false);
-    setLoadingSessionId(null);
-  }, []);
+    const abortController = abortControllersRef.current.get(activeChatId);
+    abortController?.abort();
+    abortControllersRef.current.delete(activeChatId);
+    setSessionLoading(activeChatId, false);
+  }, [activeChatId, setSessionLoading]);
 
   const handleEditUserMessage = useCallback(
     (messageIndex: number) => {
-      if (isLoading) {
+      if (isSessionLoading(activeChatId)) {
         return;
       }
       const scopedMessages = getScopedConversationMessages();
@@ -1421,7 +1457,7 @@ export function useChatRuntime({
       setEditingMessageIndex(messageIndex);
       setError(null);
     },
-    [getScopedConversationMessages, isLoading]
+    [activeChatId, getScopedConversationMessages, isSessionLoading]
   );
 
   const handleCancelEditUserMessage = useCallback(() => {
@@ -1430,7 +1466,7 @@ export function useChatRuntime({
 
   const handleSubmitEditedUserMessage = useCallback(
     async (messageIndex: number, content: string) => {
-      if (isLoading) {
+      if (isSessionLoading(activeChatId)) {
         return;
       }
       const scopedMessages = getScopedConversationMessages();
@@ -1442,12 +1478,12 @@ export function useChatRuntime({
       setEditingMessageIndex(null);
       await runConversationTurn(conversationMessages, { sessionId: activeChatId });
     },
-    [activeChatId, getScopedConversationMessages, isLoading, runConversationTurn]
+    [activeChatId, getScopedConversationMessages, isSessionLoading, runConversationTurn]
   );
 
   const handleRegenerateMessage = useCallback(
     async (messageIndex: number) => {
-      if (isLoading) {
+      if (isSessionLoading(activeChatId)) {
         return;
       }
       const scopedMessages = getScopedConversationMessages();
@@ -1461,7 +1497,7 @@ export function useChatRuntime({
       }
       await runConversationTurn(conversationMessages, { sessionId: activeChatId });
     },
-    [activeChatId, getScopedConversationMessages, isLoading, runConversationTurn]
+    [activeChatId, getScopedConversationMessages, isSessionLoading, runConversationTurn]
   );
 
   const handleClearChat = useCallback(() => {
@@ -1491,7 +1527,6 @@ export function useChatRuntime({
   }, [activeAssistant?.id, createSessionFromMessages, setEditingMessageIndex, setError, setInputDraft, setInputDraftImages, setInputDraftKey, setMessages, setOpenChatMenu]);
 
   return {
-    abortControllerRef,
     editingMessageIndex,
     error,
     handleCancelEditUserMessage,
@@ -1504,6 +1539,7 @@ export function useChatRuntime({
     handleSubmitEditedUserMessage,
     handleUseEmptyPrompt,
     isLoading,
+    loadingSessionIds,
     latestTaskResult,
     taskRuntimeState,
     lastTaskResultRef,
