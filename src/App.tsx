@@ -301,8 +301,7 @@ function MainApp() {
     handleStop,
     handleSubmitEditedUserMessage,
     handleUseEmptyPrompt,
-    isLoading,
-    loadingSessionId,
+    loadingSessionIds,
     latestTaskResult,
     taskRuntimeState,
     setEditingMessageIndex,
@@ -451,9 +450,9 @@ function MainApp() {
 
   const lastMessage = visibleMessages[visibleMessages.length - 1];
   const hasPendingAssistantPlaceholder = lastMessage?.role === "assistant" && !lastMessage.content.trim();
-  const isActiveSessionLoading = isLoading && (activeChatId === loadingSessionId || hasPendingAssistantPlaceholder);
-  const isSendBlockedByOtherSession = isLoading && !isActiveSessionLoading;
-  const isStreaming = isActiveSessionLoading && lastMessage.role === "assistant";
+  const isActiveSessionLoading = Boolean((activeChatId && loadingSessionIds.includes(activeChatId)) || hasPendingAssistantPlaceholder);
+  const isSendBlockedByOtherSession = false;
+  const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "assistant");
 
   const handleCopyMessage = useCallback(async (message: Message) => {
     await navigator.clipboard.writeText(message.content);
@@ -499,7 +498,7 @@ function MainApp() {
 
   const handleSelectChat = useCallback(
     (sessionId: string) => {
-      if (sessionId === activeChatId || (isLoading && loadingSessionId === sessionId)) {
+      if (sessionId === activeChatId) {
         return;
       }
       const session = selectChatSession(sessionId);
@@ -509,7 +508,7 @@ function MainApp() {
       setError(null);
       setEditingMessageIndex(null);
     },
-    [activeChatId, isLoading, loadingSessionId, selectChatSession, setEditingMessageIndex, setError]
+    [activeChatId, selectChatSession, setEditingMessageIndex, setError]
   );
 
   const handleRenameChat = useCallback(
