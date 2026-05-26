@@ -282,16 +282,7 @@ export function useCompactWindowController({
   const isScaleGestureActiveRef = useRef(false);
   const petThoughtPlacementRef = useRef<PetThoughtPlacement>(petThoughtPlacement);
   const petThoughtStateRef = useRef<PetThoughtState | null>(petThought);
-  const petThoughtDragLayoutPendingRef = useRef<{ x: number; y: number } | null>(null);
-  const petThoughtDragLayoutRafRef = useRef<number | null>(null);
-  const petThoughtDragSessionRef = useRef(0);
   const petThoughtLayoutRequestRef = useRef(0);
-  const petThoughtDragMoveOriginRef = useRef<{
-    petX: number;
-    petY: number;
-    thoughtX: number;
-    thoughtY: number;
-  } | null>(null);
   const lastPetThoughtWindowLayoutRef = useRef<{
     x: number;
     y: number;
@@ -373,6 +364,7 @@ export function useCompactWindowController({
         compactAppearance === "pet" &&
         (hasThoughtQueue || Boolean(currentThought)) &&
         !arePetThoughtsCollapsed &&
+        !isCharacterDraggingRef.current &&
         !isCompactMenuOpen &&
         !isCompactQueryOpen &&
         !isCompactReplyLoading &&
@@ -398,6 +390,7 @@ export function useCompactWindowController({
             if (petThoughtCollapseHideVersionRef.current !== actionVersion) {
               return;
             }
+            void thoughtWindow.setIgnoreCursorEvents(true).catch(() => undefined);
             void thoughtWindow.hide().catch(() => undefined);
             petThoughtCollapseHideTimerRef.current = null;
           }, PET_THOUGHT_COLLAPSE_HIDE_DELAY_MS);
@@ -408,6 +401,7 @@ export function useCompactWindowController({
         if (!isLatestRequest()) {
           return;
         }
+        await thoughtWindow.setIgnoreCursorEvents(true).catch(() => undefined);
         await thoughtWindow.hide().catch(() => undefined);
         return;
       }
@@ -483,6 +477,7 @@ export function useCompactWindowController({
         return;
       }
       await thoughtWindow.show();
+      await thoughtWindow.setIgnoreCursorEvents(true).catch(() => undefined);
       await thoughtWindow.setAlwaysOnTop(true).catch(() => undefined);
     },
     [
@@ -509,72 +504,11 @@ export function useCompactWindowController({
     });
   }, [compactSize.height, compactSize.width, updatePetThoughtWindowForRect]);
 
-  const movePetThoughtWindowDuringDrag = useCallback(async (petX: number, petY: number, dragSessionId: number) => {
-    if (dragSessionId !== petThoughtDragSessionRef.current) {
-      return;
-    }
-    if (!isCompactWindow || !petThoughtStateRef.current || arePetThoughtsCollapsed) {
-      return;
-    }
-
-    const origin = petThoughtDragMoveOriginRef.current ?? (() => {
-      const previousLayout = lastPetThoughtWindowLayoutRef.current;
-      if (!previousLayout) {
-        return null;
-      }
-
-      return {
-        petX,
-        petY,
-        thoughtX: previousLayout.x,
-        thoughtY: previousLayout.y,
-      };
-    })();
-
-    if (!origin) {
-      return;
-    }
-
-    petThoughtDragMoveOriginRef.current = origin;
+  const hidePetThoughtWindowForDrag = useCallback(async () => {
+    petThoughtLayoutRequestRef.current += 1;
     const thoughtWindow = await WebviewWindow.getByLabel(PET_THOUGHT_WINDOW_LABEL);
-    if (dragSessionId !== petThoughtDragSessionRef.current) {
-      return;
-    }
-    await thoughtWindow
-      ?.setPosition(
-        new LogicalPosition(
-          Math.round(origin.thoughtX + petX - origin.petX),
-          Math.round(origin.thoughtY + petY - origin.petY)
-        )
-      )
-      .catch(() => undefined);
-  }, [arePetThoughtsCollapsed, isCompactWindow]);
-
-  const flushPetThoughtDragLayout = useCallback(() => {
-    const pending = petThoughtDragLayoutPendingRef.current;
-    if (!pending) {
-      return;
-    }
-
-    const dragSessionId = petThoughtDragSessionRef.current;
-    petThoughtDragLayoutPendingRef.current = null;
-    void movePetThoughtWindowDuringDrag(Math.round(pending.x), Math.round(pending.y), dragSessionId).catch(() => undefined);
-  }, [movePetThoughtWindowDuringDrag]);
-
-  const schedulePetThoughtDragLayout = useCallback(
-    (windowX: number, windowY: number) => {
-      petThoughtDragLayoutPendingRef.current = { x: windowX, y: windowY };
-      if (petThoughtDragLayoutRafRef.current !== null) {
-        return;
-      }
-
-      petThoughtDragLayoutRafRef.current = window.requestAnimationFrame(() => {
-        petThoughtDragLayoutRafRef.current = null;
-        void flushPetThoughtDragLayout();
-      });
-    },
-    [flushPetThoughtDragLayout]
-  );
+    await thoughtWindow?.hide().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!isCompactWindow) {
@@ -1135,9 +1069,6 @@ export function useCompactWindowController({
     let unlisten: (() => void) | undefined;
     void appWindow
       .onMoved(async (event) => {
-        if (compactInternalMoveRef.current) {
-          return;
-        }
         if (isCharacterDraggingRef.current) {
           return;
         }
@@ -1147,8 +1078,10 @@ export function useCompactWindowController({
           x: Math.round(pos.x),
           y: compactAppearance === "pet" ? toVisualPetWindowY(pos.y) : Math.round(pos.y),
         };
-        persistCompactPosition(visualPos);
-        characterDragLastPersistedRef.current = visualPos;
+        if (!compactInternalMoveRef.current) {
+          persistCompactPosition(visualPos);
+          characterDragLastPersistedRef.current = visualPos;
+        }
         await updatePetThoughtWindowForRect({
           left: visualPos.x,
           top: visualPos.y,
@@ -1163,7 +1096,7 @@ export function useCompactWindowController({
     return () => {
       unlisten?.();
     };
-  }, [compactSize.height, compactSize.width, isCompactWindow, updatePetThoughtWindowForRect]);
+  }, [compactAppearance, compactSize.height, compactSize.width, isCompactWindow, updatePetThoughtWindowForRect]);
 
   useEffect(() => {
     return () => {
@@ -1174,13 +1107,7 @@ export function useCompactWindowController({
         window.cancelAnimationFrame(characterDragRafRef.current);
         characterDragRafRef.current = null;
       }
-      if (petThoughtDragLayoutRafRef.current !== null) {
-        window.cancelAnimationFrame(petThoughtDragLayoutRafRef.current);
-        petThoughtDragLayoutRafRef.current = null;
-      }
-      petThoughtDragLayoutPendingRef.current = null;
       characterDragLastTargetRef.current = null;
-      petThoughtDragMoveOriginRef.current = null;
       if (scaleWheelTimerRef.current !== null) {
         window.clearTimeout(scaleWheelTimerRef.current);
         scaleWheelTimerRef.current = null;
@@ -1237,6 +1164,7 @@ export function useCompactWindowController({
       characterPointerMovedRef.current = true;
       if (!isCharacterDraggingRef.current) {
         setIsCharacterDragging(true);
+        void hidePetThoughtWindowForDrag();
       }
       isCharacterDraggingRef.current = true;
       setCharacterDragMotionFromPointer(pointerScreenX, pointerScreenY, resolveCharacterDragMotion(deltaX, deltaY));
@@ -1258,10 +1186,9 @@ export function useCompactWindowController({
       const nextWindowY = Math.max(0, origin.windowY + deltaY);
       characterDragLastTargetRef.current = { x: nextWindowX, y: nextWindowY };
       scheduleCharacterDragPosition(nextWindowX, nextWindowY);
-      schedulePetThoughtDragLayout(nextWindowX, nextWindowY);
       return true;
     },
-    [scheduleCharacterDragPosition, schedulePetThoughtDragLayout, setCharacterDragMotionFromPointer]
+    [hidePetThoughtWindowForDrag, scheduleCharacterDragPosition, setCharacterDragMotionFromPointer]
   );
 
   const closeCompactMenu = useCallback(() => {
@@ -1368,8 +1295,6 @@ export function useCompactWindowController({
         characterPointerDownRef.current = null;
         characterDragOriginRef.current = null;
         characterDragLastTargetRef.current = null;
-        petThoughtDragMoveOriginRef.current = null;
-        petThoughtDragSessionRef.current += 1;
         characterPointerMovedRef.current = false;
         isCharacterDraggingRef.current = false;
         setIsCharacterDragging(false);
@@ -1387,8 +1312,6 @@ export function useCompactWindowController({
         characterPointerDownRef.current = null;
         characterDragOriginRef.current = null;
         characterDragLastTargetRef.current = null;
-        petThoughtDragMoveOriginRef.current = null;
-        petThoughtDragSessionRef.current += 1;
         characterPointerMovedRef.current = false;
         setIsCharacterDragging(false);
         lastCharacterDragPointerRef.current = null;
@@ -1401,8 +1324,6 @@ export function useCompactWindowController({
 
       isCharacterDraggingRef.current = false;
       characterDragLastTargetRef.current = null;
-      petThoughtDragMoveOriginRef.current = null;
-      petThoughtDragSessionRef.current += 1;
       lastCharacterDragPointerRef.current = null;
       characterDragMotionAccumRef.current = { x: 0, y: 0 };
       characterDragMotionRef.current = null;
@@ -1425,7 +1346,6 @@ export function useCompactWindowController({
 
   const handleCharacterPointerUp = useCallback(() => {
     const pendingDragPosition = characterDragPendingRef.current ?? characterDragLastTargetRef.current;
-    const pendingLayoutPosition = pendingDragPosition ?? petThoughtDragLayoutPendingRef.current;
     const shouldSuppressPetClick = characterPointerMovedRef.current || isCharacterDraggingRef.current;
     characterPointerDownRef.current = null;
     characterDragOriginRef.current = null;
@@ -1435,23 +1355,16 @@ export function useCompactWindowController({
       window.cancelAnimationFrame(characterDragRafRef.current);
       characterDragRafRef.current = null;
     }
-    if (petThoughtDragLayoutRafRef.current !== null) {
-      window.cancelAnimationFrame(petThoughtDragLayoutRafRef.current);
-      petThoughtDragLayoutRafRef.current = null;
-    }
-    petThoughtDragSessionRef.current += 1;
-    petThoughtDragLayoutPendingRef.current = null;
-    petThoughtDragMoveOriginRef.current = null;
     if (pendingDragPosition) {
       characterDragPendingRef.current = pendingDragPosition;
       void flushCharacterDragPosition();
     } else {
       characterDragPendingRef.current = null;
     }
-    if (pendingLayoutPosition) {
+    if (pendingDragPosition) {
       const finalVisualPosition = {
-        x: Math.round(pendingLayoutPosition.x),
-        y: Math.round(pendingLayoutPosition.y),
+        x: Math.round(pendingDragPosition.x),
+        y: Math.round(pendingDragPosition.y),
       };
       const lastPersisted = characterDragLastPersistedRef.current;
       if (!lastPersisted || lastPersisted.x !== finalVisualPosition.x || lastPersisted.y !== finalVisualPosition.y) {

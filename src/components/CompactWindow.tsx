@@ -29,6 +29,7 @@ type CompactWindowProps = {
   isCompactModelOpen: boolean;
   isCompactQueryOpen: boolean;
   isCompactReplyLoading: boolean;
+  isCharacterDragging: boolean;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
   characterDragMotion: DesktopPetState | null;
@@ -79,6 +80,7 @@ export default function CompactWindow({
   isCompactModelOpen,
   isCompactQueryOpen,
   isCompactReplyLoading,
+  isCharacterDragging,
   characterDragMotion,
   omniSmallIconSrc,
   compactMenuSide,
@@ -348,7 +350,7 @@ export default function CompactWindow({
               )}
             </button>
 
-            {isPetAppearance && petThoughtCount > 0 ? (
+            {isPetAppearance && petThoughtCount > 0 && !isCharacterDragging ? (
               <button
                 type="button"
                 className={`pet-thought-compact-toggle ${arePetThoughtsCollapsed ? "pet-thought-compact-toggle--collapsed" : ""} no-drag`}
