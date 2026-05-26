@@ -535,6 +535,7 @@ function MainApp() {
         compactSubmenuSide={compactSubmenuSide}
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
+        isCharacterDragging={compactController.isCharacterDragging}
         characterDragMotion={compactController.characterDragMotion}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}

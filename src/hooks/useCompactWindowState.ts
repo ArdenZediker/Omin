@@ -35,8 +35,8 @@ type UseCompactWindowStateArgs = {
   isCompactWindow: boolean;
 };
 
-const PET_THOUGHT_SYNC_RETRY_LIMIT = 3;
-const PET_THOUGHT_SYNC_RETRY_DELAY_MS = 120;
+const PET_THOUGHT_SYNC_RETRY_LIMIT = 40;
+const PET_THOUGHT_SYNC_RETRY_DELAY_MS = 250;
 
 type PetThoughtSyncResponsePayload = {
   requestId?: string;
