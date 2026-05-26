@@ -24,9 +24,11 @@ interface ChatInputProps {
   isSendBlocked?: boolean;
   onStop: () => void;
   focusSignal?: number;
+  draftScopeKey?: string;
   draftValue?: string;
   draftImages?: string[];
   draftSignal?: number;
+  onDraftChange?: (text: string, images: string[]) => void;
 }
 
 const LOCAL_COMMAND_ICON_MAP: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
@@ -59,9 +61,11 @@ export default function ChatInput({
   isSendBlocked = false,
   onStop,
   focusSignal,
+  draftScopeKey,
   draftValue,
   draftImages,
   draftSignal,
+  onDraftChange,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -70,6 +74,9 @@ export default function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const lastDraftScopeRef = useRef<string | undefined>(undefined);
+  const lastDraftSignalRef = useRef<number | undefined>(undefined);
+  const suppressNextDraftReportRef = useRef(false);
 
   const syncTextareaHeight = () => {
     const textarea = textareaRef.current;
@@ -113,12 +120,35 @@ export default function ChatInput({
   }, [focusSignal]);
 
   useEffect(() => {
-    if (typeof draftSignal === "number" && typeof draftValue === "string") {
+    const scopeChanged = draftScopeKey !== lastDraftScopeRef.current;
+    const signalChanged = draftSignal !== lastDraftSignalRef.current;
+
+    if (!scopeChanged && !signalChanged) {
+      return;
+    }
+
+    lastDraftScopeRef.current = draftScopeKey;
+    lastDraftSignalRef.current = draftSignal;
+
+    if (typeof draftValue === "string") {
+      suppressNextDraftReportRef.current = true;
       setInput(draftValue);
       setImages(draftImages ?? []);
-      textareaRef.current?.focus();
+
+      if (signalChanged && !scopeChanged) {
+        textareaRef.current?.focus();
+      }
     }
-  }, [draftImages, draftSignal, draftValue]);
+  }, [draftImages, draftScopeKey, draftSignal, draftValue]);
+
+  useEffect(() => {
+    if (suppressNextDraftReportRef.current) {
+      suppressNextDraftReportRef.current = false;
+      return;
+    }
+
+    onDraftChange?.(input, images);
+  }, [images, input, onDraftChange]);
 
   useEffect(() => {
     suggestionItemRefs.current = suggestionItemRefs.current.slice(0, localSuggestions.length);

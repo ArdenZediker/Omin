@@ -94,21 +94,26 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const [activeChatId, setActiveChatId] = useState<string | null>(initialState.activeChatId);
   const [messages, setMessages] = useState<Message[]>(initialState.messages);
   const [isStorageHydrated, setIsStorageHydrated] = useState(!persist);
+  const activeAssistantIdRef = useRef(activeAssistantId);
   const activeChatIdRef = useRef(activeChatId);
   const persistTimerRef = useRef<number | null>(null);
   const activeMessagesSyncTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    activeAssistantIdRef.current = activeAssistantId;
+  }, [activeAssistantId]);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
   }, [activeChatId]);
 
   useEffect(() => {
-    if (!persist || !activeChatId) return;
-
     if (activeMessagesSyncTimerRef.current !== null) {
       window.clearTimeout(activeMessagesSyncTimerRef.current);
       activeMessagesSyncTimerRef.current = null;
     }
+
+    if (!persist || !activeChatId) return;
 
     // Coalesce high-frequency stream updates to avoid re-rendering session lists
     // for every token chunk while keeping the active conversation in sync.
@@ -155,6 +160,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         setSessionSummaries(nextSummaries);
         setScheduledTasks(nextScheduledTasks);
         setUserPreferences(nextPreferences);
+        activeAssistantIdRef.current = nextActiveAssistantId;
+        activeChatIdRef.current = nextActiveSession?.id ?? null;
         setActiveAssistantId(nextActiveAssistantId);
         setActiveChatId(nextActiveSession?.id ?? null);
         setMessages(nextActiveSession?.messages ?? []);
@@ -214,9 +221,26 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   );
 
   const activeSession = useMemo(
-    () => chatSessions.find((session) => session.id === activeChatId) ?? null,
-    [activeChatId, chatSessions]
+    () => chatSessions.find((session) => session.id === activeChatId && session.assistantId === activeAssistantId) ?? null,
+    [activeAssistantId, activeChatId, chatSessions]
   );
+
+  useEffect(() => {
+    if (!activeChatId) {
+      if (messages.length > 0) {
+        setMessages([]);
+      }
+      return;
+    }
+
+    if (activeSession) {
+      return;
+    }
+
+    activeChatIdRef.current = null;
+    setActiveChatId(null);
+    setMessages([]);
+  }, [activeChatId, activeSession, messages.length]);
 
   const applyUsageToSession = useCallback((sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => {
     const now = Date.now();
@@ -243,13 +267,14 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   }, []);
 
   const createSessionFromMessages = useCallback(
-    (conversationMessages: Message[]) => {
-      const nextSession = createChatSession(conversationMessages, activeAssistantId);
+    (conversationMessages: Message[], assistantId = activeAssistantIdRef.current) => {
+      const nextSession = createChatSession(conversationMessages, assistantId);
+      activeChatIdRef.current = nextSession.id;
       setActiveChatId(nextSession.id);
       setChatSessions((sessions) => [nextSession, ...sessions]);
       return nextSession;
     },
-    [activeAssistantId]
+    []
   );
 
   const updateChatSessionMessages = useCallback((sessionId: string, nextMessages: Message[] | ((current: Message[]) => Message[])) => {
@@ -277,11 +302,13 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const selectAssistant = useCallback(
     (assistantId: string) => {
+      activeAssistantIdRef.current = assistantId;
       setActiveAssistantId(assistantId);
       const latestSession = [...chatSessions]
         .filter((session) => session.assistantId === assistantId)
         .sort((a, b) => b.updatedAt - a.updatedAt)[0];
 
+      activeChatIdRef.current = latestSession?.id ?? null;
       setActiveChatId(latestSession?.id ?? null);
       setMessages(latestSession?.messages ?? []);
     },
@@ -297,6 +324,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     const nextAssistant = createCustomAssistant(nextInput);
 
     setAssistants((current) => [...current, nextAssistant]);
+    activeAssistantIdRef.current = nextAssistant.id;
+    activeChatIdRef.current = null;
     setActiveAssistantId(nextAssistant.id);
     setActiveChatId(null);
     setMessages([]);
@@ -363,13 +392,16 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       setScheduledTasks((current) => current.filter((task) => !task.sessionId || !relatedSessionIds.has(task.sessionId)));
 
       if (activeAssistantId === assistantId) {
+        activeAssistantIdRef.current = DEFAULT_ASSISTANT_ID;
         setActiveAssistantId(DEFAULT_ASSISTANT_ID);
         const fallbackSession = chatSessions
           .filter((session) => session.assistantId === DEFAULT_ASSISTANT_ID)
           .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+        activeChatIdRef.current = fallbackSession?.id ?? null;
         setActiveChatId(fallbackSession?.id ?? null);
         setMessages(fallbackSession?.messages ?? []);
       } else if (activeChatId && chatSessions.some((session) => session.id === activeChatId && session.assistantId === assistantId)) {
+        activeChatIdRef.current = null;
         setActiveChatId(null);
         setMessages([]);
       }
@@ -380,6 +412,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   );
 
   const resetActiveChat = useCallback(() => {
+    activeChatIdRef.current = null;
     setActiveChatId(null);
     setMessages([]);
   }, []);
@@ -388,6 +421,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     (sessionId: string) => {
       const session = chatSessions.find((item) => item.id === sessionId);
       if (!session) return null;
+      activeAssistantIdRef.current = session.assistantId;
+      activeChatIdRef.current = session.id;
       setActiveAssistantId(session.assistantId);
       setActiveChatId(session.id);
       setMessages(session.messages);
@@ -431,6 +466,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     (sessionId: string) => {
       setChatSessions((sessions) => sessions.filter((session) => session.id !== sessionId));
       if (sessionId === activeChatId) {
+        activeChatIdRef.current = null;
         setActiveChatId(null);
         setMessages([]);
       }

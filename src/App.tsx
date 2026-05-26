@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Message } from "./adapters/types";
 import { createDesktopActions } from "./app/desktopActions";
@@ -46,6 +46,16 @@ import {
   useCompactWindowState,
 } from "./hooks/useCompactWindowState";
 import "./App.css";
+
+type ComposerDraft = {
+  text: string;
+  images: string[];
+};
+
+const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
+  text: "",
+  images: [],
+};
 
 function getSafeCurrentWindow() {
   try {
@@ -144,8 +154,7 @@ function MainApp() {
   const [currentModel, setCurrentModel] = useState("gpt-4o");
   const [view, setView] = useState<"chat" | "knowledge">(getStoredMainView);
   const [inputFocusKey, setInputFocusKey] = useState(0);
-  const [inputDraft, setInputDraft] = useState("");
-  const [inputDraftImages, setInputDraftImages] = useState<string[]>([]);
+  const [assistantDrafts, setAssistantDrafts] = useState<Record<string, ComposerDraft>>({});
   const [inputDraftKey, setInputDraftKey] = useState(0);
   const [basicSettings, setBasicSettings] = useState<BasicSettings>(getBasicSettings);
   const [previousModel, setPreviousModel] = useState<string | null>(null);
@@ -192,6 +201,69 @@ function MainApp() {
 
   const availableModels = modelRegistry.getAvailableModels();
   const hasModels = availableModels.length > 0;
+  const visibleMessages = activeSession ? messages : [];
+  const activeComposerDraft = assistantDrafts[activeAssistantId] ?? EMPTY_COMPOSER_DRAFT;
+
+  const updateAssistantDraft = useCallback((assistantId: string, updater: (draft: ComposerDraft) => ComposerDraft) => {
+    setAssistantDrafts((current) => {
+      const previousDraft = current[assistantId] ?? EMPTY_COMPOSER_DRAFT;
+      const nextDraft = updater(previousDraft);
+      const hasSameText = previousDraft.text === nextDraft.text;
+      const hasSameImages =
+        previousDraft.images.length === nextDraft.images.length &&
+        previousDraft.images.every((image, index) => image === nextDraft.images[index]);
+
+      if (hasSameText && hasSameImages) {
+        return current;
+      }
+
+      if (!nextDraft.text && nextDraft.images.length === 0) {
+        if (!(assistantId in current)) {
+          return current;
+        }
+        const { [assistantId]: _removed, ...rest } = current;
+        return rest;
+      }
+
+      return {
+        ...current,
+        [assistantId]: {
+          text: nextDraft.text,
+          images: [...nextDraft.images],
+        },
+      };
+    });
+  }, []);
+
+  const setInputDraft = useCallback<Dispatch<SetStateAction<string>>>(
+    (value) => {
+      updateAssistantDraft(activeAssistantId, (draft) => ({
+        ...draft,
+        text: typeof value === "function" ? value(draft.text) : value,
+      }));
+    },
+    [activeAssistantId, updateAssistantDraft]
+  );
+
+  const setInputDraftImages = useCallback<Dispatch<SetStateAction<string[]>>>(
+    (value) => {
+      updateAssistantDraft(activeAssistantId, (draft) => ({
+        ...draft,
+        images: typeof value === "function" ? value(draft.images) : value,
+      }));
+    },
+    [activeAssistantId, updateAssistantDraft]
+  );
+
+  const handleComposerDraftChange = useCallback(
+    (text: string, images: string[]) => {
+      updateAssistantDraft(activeAssistantId, () => ({
+        text,
+        images,
+      }));
+    },
+    [activeAssistantId, updateAssistantDraft]
+  );
 
   const handleModelChange = useCallback((modelId: string) => {
     setCurrentModel((current) => {
@@ -245,7 +317,6 @@ function MainApp() {
     currentModel,
     getAssistantById,
     handleModelChange,
-    messages,
     renameChatSession,
     getChatSessionById,
     searchChatSessions,
@@ -378,7 +449,7 @@ function MainApp() {
     petThoughtPlacement,
   ]);
 
-  const lastMessage = messages[messages.length - 1];
+  const lastMessage = visibleMessages[visibleMessages.length - 1];
   const hasPendingAssistantPlaceholder = lastMessage?.role === "assistant" && !lastMessage.content.trim();
   const isActiveSessionLoading = isLoading && (activeChatId === loadingSessionId || hasPendingAssistantPlaceholder);
   const isSendBlockedByOtherSession = isLoading && !isActiveSessionLoading;
@@ -582,9 +653,10 @@ function MainApp() {
           error={error}
           groupedChatSessions={groupedChatSessions}
           hasModels={hasModels}
-          inputDraft={inputDraft}
-          inputDraftImages={inputDraftImages}
+          inputDraft={activeComposerDraft.text}
+          inputDraftImages={activeComposerDraft.images}
           inputDraftKey={inputDraftKey}
+          inputDraftScopeKey={activeAssistantId}
           inputFocusKey={inputFocusKey}
           isLoading={isActiveSessionLoading}
           isSendBlocked={isSendBlockedByOtherSession}
@@ -592,7 +664,7 @@ function MainApp() {
           relatedContext={relatedContext}
           latestTaskResult={latestTaskResult}
           taskRuntimeState={taskRuntimeState}
-          messages={messages}
+          messages={visibleMessages}
           messagesScrollRef={messagesScrollRef}
           omniIconSrc={omniIconSrc}
           openChatMenu={openChatMenu}
@@ -620,6 +692,7 @@ function MainApp() {
           onToggleFavoriteChat={handleToggleFavoriteChat}
           onTogglePinChat={handleTogglePinChat}
           onUseEmptyPrompt={handleUseEmptyPrompt}
+          onDraftChange={handleComposerDraftChange}
           onOpenKnowledge={() => setView("knowledge")}
         />
       ) : (
