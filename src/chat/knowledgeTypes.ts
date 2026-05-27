@@ -155,6 +155,13 @@ export type KnowledgeProcessingJobDetail = {
   logs: KnowledgeProcessingLog[];
 };
 
+export type PipelineImportResult = {
+  documentId: string;
+  jobId?: string | null;
+  duplicateDocumentId?: string | null;
+  status: "queued" | "duplicate";
+};
+
 export type KnowledgeContextResult = {
   query: string;
   block: string;

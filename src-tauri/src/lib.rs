@@ -2747,6 +2747,15 @@ fn import_knowledge_document_command(
 }
 
 #[tauri::command]
+fn import_knowledge_document_pipeline_command(
+    app: tauri::AppHandle,
+    input: knowledge_pipeline::PipelineImportInput,
+) -> Result<knowledge_pipeline::PipelineImportResult, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::create_pipeline_import(&app, &connection, input)
+}
+
+#[tauri::command]
 fn rebuild_knowledge_document_embeddings_command(
     app: tauri::AppHandle,
     input: RevectorizeKnowledgeDocumentInput,
@@ -3385,6 +3394,7 @@ pub fn run() {
             delete_knowledge_collection_command,
             delete_knowledge_document_command,
             import_knowledge_document_command,
+            import_knowledge_document_pipeline_command,
             rebuild_knowledge_document_embeddings_command,
             search_knowledge_chunks_command,
             load_chat_storage,
