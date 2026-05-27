@@ -26,11 +26,17 @@ import {
 } from "lucide-react";
 import type {
   KnowledgeCollection,
+  DeadLetterQueryInput,
+  KnowledgeProcessingDeadLetter,
+  DeadLetterQueryResult,
   KnowledgeDocumentBinaryPayload,
   KnowledgeDocumentDetail,
   KnowledgeLibraryPayload,
-  KnowledgeProcessingJob,
+  KnowledgePipelineSettings,
+  KnowledgeProcessingStatusSummary,
   PipelineImportResult,
+  ReplayDeadLettersResult,
+  RetryFailedJobsResult,
 } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { usePromptDialog } from "./PromptDialog";
@@ -54,6 +60,7 @@ type KnowledgeBaseViewProps = {
 type KnowledgeDocumentDetailView = "preview" | "chunks" | "processing";
 type KnowledgePageMode = "empty" | "list" | "detail";
 type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "unsupported";
+type DeadLetterScope = "all" | "activeCollection";
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
 const TEXT_EXTENSIONS = new Set([
@@ -518,10 +525,22 @@ async function loadKnowledgeDocumentBinary(documentId: string) {
   });
 }
 
-async function loadKnowledgeProcessingJobs() {
-  return invoke<KnowledgeProcessingJob[]>("load_knowledge_processing_jobs_command", {
-    documentId: null,
+async function loadKnowledgeProcessingStatusSummary(collectionId?: string | null) {
+  return invoke<KnowledgeProcessingStatusSummary>("load_knowledge_processing_status_summary_command", {
+    collectionId: collectionId ?? null,
   });
+}
+
+async function loadKnowledgePipelineSettings() {
+  return invoke<KnowledgePipelineSettings>("load_knowledge_pipeline_settings_command");
+}
+
+async function saveKnowledgePipelineSettings(settings: KnowledgePipelineSettings) {
+  return invoke<KnowledgePipelineSettings>("save_knowledge_pipeline_settings_command", { settings });
+}
+
+async function loadKnowledgeProcessingDeadLetters(input: DeadLetterQueryInput) {
+  return invoke<DeadLetterQueryResult>("load_knowledge_processing_dead_letters_command", { input });
 }
 
 async function convertDocxBytesToHtml(bytes: Uint8Array) {
@@ -827,9 +846,38 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [selectedDocumentDetailView, setSelectedDocumentDetailView] = useState<KnowledgeDocumentDetailView>("preview");
   const [isLoadingDocumentDetail, setIsLoadingDocumentDetail] = useState(false);
   const [documentDetailError, setDocumentDetailError] = useState<string | null>(null);
-  const [processingJobs, setProcessingJobs] = useState<KnowledgeProcessingJob[]>([]);
+  const [globalTaskSummary, setGlobalTaskSummary] = useState<KnowledgeProcessingStatusSummary>({
+    scope: "global",
+    collectionId: null,
+    queued: 0,
+    running: 0,
+    failed: 0,
+  });
+  const [activeCollectionTaskSummary, setActiveCollectionTaskSummary] = useState<KnowledgeProcessingStatusSummary>({
+    scope: "collection",
+    collectionId: null,
+    queued: 0,
+    running: 0,
+    failed: 0,
+  });
   const [taskCenterError, setTaskCenterError] = useState<string | null>(null);
+  const [taskCenterNotice, setTaskCenterNotice] = useState<string | null>(null);
   const [isTaskCenterBusy, setIsTaskCenterBusy] = useState(false);
+  const [globalDeadLetterCount, setGlobalDeadLetterCount] = useState(0);
+  const [activeCollectionDeadLetterCount, setActiveCollectionDeadLetterCount] = useState(0);
+  const [pipelineSettings, setPipelineSettings] = useState<KnowledgePipelineSettings | null>(null);
+  const [isSavingPipelineSettings, setIsSavingPipelineSettings] = useState(false);
+  const [deadLetterScope, setDeadLetterScope] = useState<DeadLetterScope>("all");
+  const [deadLetterStatusFilter, setDeadLetterStatusFilter] = useState<"failed" | "replayed" | "all">("failed");
+  const [deadLetterItems, setDeadLetterItems] = useState<KnowledgeProcessingDeadLetter[]>([]);
+  const [deadLetterTotal, setDeadLetterTotal] = useState(0);
+  const [deadLetterPage, setDeadLetterPage] = useState(1);
+  const [isDeadLetterLoading, setIsDeadLetterLoading] = useState(false);
+  const [deadLetterReplayBusyId, setDeadLetterReplayBusyId] = useState<string | null>(null);
+  const settingsSaveTimerRef = useRef<number | null>(null);
+  const pendingPipelineSettingsRef = useRef<KnowledgePipelineSettings | null>(null);
+  const isSavingPipelineSettingsRef = useRef(false);
+  const deadLetterListRequestSeqRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -859,6 +907,13 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const selectedDocument = selectedDocumentDetail?.document ?? selectedDocumentRecord;
   const activeCollectionName = activeCollection?.name ?? "未选择知识库";
   const selectedVectorizationLabel = getVectorizationLabel(selectedDocument?.vectorizationState ?? null);
+  const documentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const document of library.documents) {
+      map.set(document.id, document.sourceName);
+    }
+    return map;
+  }, [library.documents]);
   const selectedDocumentCollectionName = useMemo(() => {
     if (!selectedDocument) {
       return activeCollectionName;
@@ -869,15 +924,9 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     );
   }, [activeCollectionName, library.collections, selectedDocument]);
   const pageMode: KnowledgePageMode = selectedDocumentId ? "detail" : activeCollectionDocuments.length > 0 ? "list" : "empty";
-  const taskCounts = useMemo(
-    () => ({
-      queued: processingJobs.filter((job) => job.status === "queued").length,
-      running: processingJobs.filter((job) => job.status === "running").length,
-      failed: processingJobs.filter((job) => job.status === "failed").length,
-    }),
-    [processingJobs]
-  );
-  const failedJobs = useMemo(() => processingJobs.filter((job) => job.status === "failed"), [processingJobs]);
+  const taskCounts = globalTaskSummary;
+  const activeCollectionTaskCounts = activeCollectionTaskSummary;
+  const deadLetterPageSize = 6;
 
   const activeCategories = useMemo(() => {
     const counts = { all: activeCollectionDocuments.length, docs: 0, images: 0, audio: 0, video: 0 };
@@ -979,10 +1028,37 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
     void (async () => {
       try {
-        const [payload, jobs] = await Promise.all([loadKnowledgeLibrary(), loadKnowledgeProcessingJobs()]);
+        const [payload, globalSummary] = await Promise.all([
+          loadKnowledgeLibrary(),
+          loadKnowledgeProcessingStatusSummary(null),
+        ]);
+        const initialCollectionId = payload.collections[0]?.id ?? null;
+        const initialCollectionSummary = initialCollectionId
+          ? await loadKnowledgeProcessingStatusSummary(initialCollectionId)
+          : {
+              scope: "collection" as const,
+              collectionId: null,
+              queued: 0,
+              running: 0,
+              failed: 0,
+            };
         if (!cancelled) {
           setLibrary(payload);
-          setProcessingJobs(jobs);
+          setGlobalTaskSummary(globalSummary);
+          const settings = await loadKnowledgePipelineSettings();
+          if (!cancelled) {
+            setPipelineSettings(settings);
+          }
+          const globalDeadLetters = await loadKnowledgeProcessingDeadLetters({
+            collectionId: null,
+            status: "failed",
+            limit: 1,
+            offset: 0,
+          });
+          if (!cancelled) {
+            setGlobalDeadLetterCount(globalDeadLetters.total);
+          }
+          setActiveCollectionTaskSummary(initialCollectionSummary);
           setSelectedCollectionId((current) => {
             if (!current || !payload.collections.some((collection) => collection.id === current)) {
               return payload.collections[0]?.id ?? "";
@@ -1010,7 +1086,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     }, 2500);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [activeCollection?.id]);
 
   useEffect(() => {
     if (!isUploadMenuOpen) {
@@ -1042,17 +1118,112 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [isDocumentMenuOpen]);
 
+  useEffect(() => {
+    deadLetterListRequestSeqRef.current += 1;
+    setIsDeadLetterLoading(false);
+    return () => {
+      if (settingsSaveTimerRef.current) {
+        window.clearTimeout(settingsSaveTimerRef.current);
+        settingsSaveTimerRef.current = null;
+      }
+    };
+  }, []);
+
   async function refreshLibrary() {
-    const [payload, jobs] = await Promise.all([loadKnowledgeLibrary(), loadKnowledgeProcessingJobs()]);
+    const [payload, globalSummary] = await Promise.all([
+      loadKnowledgeLibrary(),
+      loadKnowledgeProcessingStatusSummary(null),
+    ]);
+    const collectionId = selectedCollectionId || payload.collections[0]?.id || null;
+    const collectionSummary = collectionId
+      ? await loadKnowledgeProcessingStatusSummary(collectionId)
+      : {
+          scope: "collection" as const,
+          collectionId: null,
+          queued: 0,
+          running: 0,
+          failed: 0,
+        };
     setLibrary(payload);
-    setProcessingJobs(jobs);
+    setGlobalTaskSummary(globalSummary);
+    setActiveCollectionTaskSummary(collectionSummary);
+    const settings = await loadKnowledgePipelineSettings();
+    if (!settingsSaveTimerRef.current && !pendingPipelineSettingsRef.current && !isSavingPipelineSettingsRef.current) {
+      setPipelineSettings(settings);
+    }
+    const [globalDeadLetters, collectionDeadLetters] = await Promise.all([
+      loadKnowledgeProcessingDeadLetters({
+        collectionId: null,
+        status: "failed",
+        limit: 1,
+        offset: 0,
+      }),
+      collectionId
+        ? loadKnowledgeProcessingDeadLetters({
+            collectionId,
+            status: "failed",
+            limit: 1,
+            offset: 0,
+          })
+        : Promise.resolve({
+            scope: "collection" as const,
+            collectionId: null,
+            status: "failed",
+            total: 0,
+            hasMore: false,
+            items: [],
+          }),
+    ]);
+    setGlobalDeadLetterCount(globalDeadLetters.total);
+    setActiveCollectionDeadLetterCount(collectionDeadLetters.total);
     return payload;
   }
 
   async function refreshProcessingJobs(options?: { syncLibrary?: boolean }) {
     try {
-      const jobs = await loadKnowledgeProcessingJobs();
-      setProcessingJobs(jobs);
+      const [globalSummary, collectionSummary] = await Promise.all([
+        loadKnowledgeProcessingStatusSummary(null),
+        activeCollection?.id
+          ? loadKnowledgeProcessingStatusSummary(activeCollection.id)
+          : Promise.resolve({
+              scope: "collection" as const,
+              collectionId: null,
+              queued: 0,
+              running: 0,
+              failed: 0,
+            }),
+      ]);
+      setGlobalTaskSummary(globalSummary);
+      setActiveCollectionTaskSummary(collectionSummary);
+      const settings = await loadKnowledgePipelineSettings();
+      if (!settingsSaveTimerRef.current && !pendingPipelineSettingsRef.current && !isSavingPipelineSettingsRef.current) {
+        setPipelineSettings(settings);
+      }
+      const [globalDeadLetters, collectionDeadLetters] = await Promise.all([
+        loadKnowledgeProcessingDeadLetters({
+          collectionId: null,
+          status: "failed",
+          limit: 1,
+          offset: 0,
+        }),
+        activeCollection?.id
+          ? loadKnowledgeProcessingDeadLetters({
+              collectionId: activeCollection.id,
+              status: "failed",
+              limit: 1,
+              offset: 0,
+            })
+          : Promise.resolve({
+              scope: "collection" as const,
+              collectionId: null,
+              status: "failed",
+              total: 0,
+              hasMore: false,
+              items: [],
+            }),
+      ]);
+      setGlobalDeadLetterCount(globalDeadLetters.total);
+      setActiveCollectionDeadLetterCount(collectionDeadLetters.total);
       setTaskCenterError(null);
       if (options?.syncLibrary) {
         try {
@@ -1067,6 +1238,110 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       setTaskCenterError(error instanceof Error ? error.message : "加载处理队列失败");
     }
   }
+
+  async function refreshDeadLetterList(options?: { resetPage?: boolean }) {
+    const requestSeq = deadLetterListRequestSeqRef.current + 1;
+    deadLetterListRequestSeqRef.current = requestSeq;
+    const pageSize = deadLetterPageSize;
+    const nextPage = options?.resetPage ? 1 : deadLetterPage;
+    const scopeCollectionId = deadLetterScope === "activeCollection" ? activeCollection?.id ?? null : null;
+    const statusFilter = deadLetterStatusFilter === "all" ? null : deadLetterStatusFilter;
+    if (deadLetterScope === "activeCollection" && !activeCollection?.id) {
+      setDeadLetterItems([]);
+      setDeadLetterTotal(0);
+      if (options?.resetPage) {
+        setDeadLetterPage(1);
+      }
+      return;
+    }
+
+    setIsDeadLetterLoading(true);
+    try {
+      const result = await loadKnowledgeProcessingDeadLetters({
+        collectionId: scopeCollectionId,
+        status: statusFilter,
+        limit: pageSize,
+        offset: (nextPage - 1) * pageSize,
+      });
+      if (requestSeq !== deadLetterListRequestSeqRef.current) {
+        return;
+      }
+      const totalPages = Math.max(1, Math.ceil(result.total / pageSize));
+      if (result.total <= 0 && nextPage !== 1) {
+        setDeadLetterPage(1);
+        return;
+      }
+      if (result.total > 0 && nextPage > totalPages) {
+        setDeadLetterPage(totalPages);
+        return;
+      }
+      setDeadLetterItems(result.items);
+      setDeadLetterTotal(result.total);
+      setTaskCenterError(null);
+      if (options?.resetPage) {
+        setDeadLetterPage(1);
+      }
+    } catch (error) {
+      console.error(error);
+      if (requestSeq === deadLetterListRequestSeqRef.current) {
+        setTaskCenterError(error instanceof Error ? error.message : "加载死信列表失败");
+      }
+    } finally {
+      if (requestSeq === deadLetterListRequestSeqRef.current) {
+        setIsDeadLetterLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const summary = activeCollection?.id
+          ? await loadKnowledgeProcessingStatusSummary(activeCollection.id)
+          : {
+              scope: "collection" as const,
+              collectionId: null,
+              queued: 0,
+              running: 0,
+              failed: 0,
+            };
+        if (!cancelled) {
+          setActiveCollectionTaskSummary(summary);
+        }
+        const collectionDeadLetters = activeCollection?.id
+          ? await loadKnowledgeProcessingDeadLetters({
+              collectionId: activeCollection.id,
+              status: "failed",
+              limit: 1,
+              offset: 0,
+            })
+          : {
+              scope: "collection" as const,
+              collectionId: null,
+              status: "failed",
+              total: 0,
+              hasMore: false,
+              items: [],
+            };
+        if (!cancelled) {
+          setActiveCollectionDeadLetterCount(collectionDeadLetters.total);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCollection?.id]);
+
+  useEffect(() => {
+    if (!isKnowledgeLibraryReady) {
+      return;
+    }
+    void refreshDeadLetterList();
+  }, [deadLetterScope, deadLetterStatusFilter, deadLetterPage, activeCollection?.id, isKnowledgeLibraryReady]);
 
   async function importFile(file: File, collectionId: string) {
     const extension = getExtension(file.name) || null;
@@ -1209,16 +1484,29 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     }
   }
 
-  async function retryFailedJobs() {
-    if (failedJobs.length === 0) {
+  async function retryFailedJobs(scope: "all" | "activeCollection") {
+    if (scope === "activeCollection" && !activeCollection?.id) {
+      setTaskCenterNotice("当前没有可用知识库");
+      setTaskCenterError(null);
       return;
     }
-
     setTaskCenterError(null);
+    setTaskCenterNotice(null);
     setIsTaskCenterBusy(true);
     try {
-      for (const job of failedJobs) {
-        await invoke("retry_knowledge_processing_job_command", { jobId: job.id });
+      const result = await invoke<RetryFailedJobsResult>("retry_failed_knowledge_processing_jobs_command", {
+        input: {
+          collectionId: scope === "activeCollection" ? activeCollection?.id ?? null : null,
+          limit: 500,
+        },
+      });
+      if (result.attempted <= 0) {
+        setTaskCenterNotice("没有可重试的失败任务");
+        return;
+      }
+      setTaskCenterNotice(`已重试 ${result.retried}/${result.attempted}，跳过 ${result.skipped}`);
+      if (result.errors.length > 0) {
+        setTaskCenterError(result.errors.slice(0, 2).join(" | "));
       }
       await refreshLibrary();
     } catch (error) {
@@ -1231,15 +1519,110 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
   async function cleanupCompletedLogs() {
     setTaskCenterError(null);
+    setTaskCenterNotice(null);
     setIsTaskCenterBusy(true);
     try {
       await invoke("cleanup_knowledge_processing_logs_command");
+      setTaskCenterNotice("日志清理完成");
       await refreshProcessingJobs();
     } catch (error) {
       console.error(error);
       setTaskCenterError(error instanceof Error ? error.message : "清理处理日志失败");
     } finally {
       setIsTaskCenterBusy(false);
+    }
+  }
+
+  async function replayDeadLetters(scope: "all" | "activeCollection") {
+    if (scope === "activeCollection" && !activeCollection?.id) {
+      setTaskCenterNotice("当前没有可用知识库");
+      setTaskCenterError(null);
+      return;
+    }
+    setTaskCenterError(null);
+    setTaskCenterNotice(null);
+    setIsTaskCenterBusy(true);
+    try {
+      const result = await invoke<ReplayDeadLettersResult>("replay_knowledge_processing_dead_letters_command", {
+        input: {
+          collectionId: scope === "activeCollection" ? activeCollection?.id ?? null : null,
+          status: deadLetterStatusFilter === "all" ? null : deadLetterStatusFilter,
+          limit: 300,
+        },
+      });
+      if (result.attempted <= 0) {
+        setTaskCenterNotice("没有可回放的死信任务");
+        return;
+      }
+      setTaskCenterNotice(`死信回放完成：${result.replayed}/${result.attempted}，跳过 ${result.skipped}`);
+      if (result.errors.length > 0) {
+        setTaskCenterError(result.errors.slice(0, 2).join(" | "));
+      }
+      await refreshLibrary();
+      await refreshDeadLetterList({ resetPage: true });
+    } catch (error) {
+      console.error(error);
+      setTaskCenterError(error instanceof Error ? error.message : "回放死信任务失败");
+    } finally {
+      setIsTaskCenterBusy(false);
+    }
+  }
+
+  async function updatePipelineSettings(patch: Partial<KnowledgePipelineSettings>) {
+    if (!pipelineSettings) {
+      return;
+    }
+    setTaskCenterError(null);
+    const nextSettings = {
+      ...pipelineSettings,
+      ...patch,
+    };
+    setPipelineSettings(nextSettings);
+    pendingPipelineSettingsRef.current = nextSettings;
+    if (settingsSaveTimerRef.current) {
+      window.clearTimeout(settingsSaveTimerRef.current);
+      settingsSaveTimerRef.current = null;
+    }
+    settingsSaveTimerRef.current = window.setTimeout(() => {
+      settingsSaveTimerRef.current = null;
+      void (async () => {
+        try {
+          isSavingPipelineSettingsRef.current = true;
+          setIsSavingPipelineSettings(true);
+          const draft = pendingPipelineSettingsRef.current ?? nextSettings;
+          const saved = await saveKnowledgePipelineSettings(draft);
+          setPipelineSettings(saved);
+          pendingPipelineSettingsRef.current = null;
+          setTaskCenterNotice("调度参数已保存");
+        } catch (error) {
+          console.error(error);
+          setTaskCenterError(error instanceof Error ? error.message : "保存调度设置失败");
+        } finally {
+          isSavingPipelineSettingsRef.current = false;
+          setIsSavingPipelineSettings(false);
+        }
+      })();
+    }, 450);
+  }
+
+  async function replayDeadLetterItem(item: KnowledgeProcessingDeadLetter) {
+    if (item.status !== "failed") {
+      setTaskCenterNotice("仅失败状态的死信支持回放");
+      return;
+    }
+    setTaskCenterError(null);
+    setTaskCenterNotice(null);
+    setDeadLetterReplayBusyId(item.id);
+    try {
+      await invoke("retry_knowledge_processing_job_command", { jobId: item.jobId });
+      setTaskCenterNotice("单条死信已回放");
+      await refreshLibrary();
+      await refreshDeadLetterList();
+    } catch (error) {
+      console.error(error);
+      setTaskCenterError(error instanceof Error ? error.message : "单条死信回放失败");
+    } finally {
+      setDeadLetterReplayBusyId(null);
     }
   }
 
@@ -1437,7 +1820,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="text-xs font-semibold text-slate-950">任务中心</div>
-                    <div className="mt-0.5 text-[11px] text-slate-400">处理队列与日志维护</div>
+                    <div className="mt-0.5 text-[11px] text-slate-400">全局队列 + 当前知识库视角</div>
                   </div>
                   <button
                     type="button"
@@ -1448,7 +1831,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   </button>
                 </div>
 
-                <div className="mt-3 grid grid-cols-3 gap-1.5 text-center">
+                <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">全局</div>
+                <div className="mt-1 grid grid-cols-3 gap-1.5 text-center">
                   <div className="rounded-none border border-slate-200 bg-slate-50 px-2 py-2">
                     <div className="text-sm font-semibold text-slate-950">{taskCounts.queued}</div>
                     <div className="mt-0.5 text-[10px] text-slate-400">排队</div>
@@ -1462,27 +1846,221 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     <div className="mt-0.5 text-[10px] text-slate-400">失败</div>
                   </div>
                 </div>
+                <div className="mt-1 text-[11px] text-slate-500">死信: {globalDeadLetterCount}</div>
 
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  当前知识库{activeCollection ? ` · ${activeCollection.name}` : ""}
+                </div>
+                <div className="mt-1 grid grid-cols-3 gap-1.5 text-center">
+                  <div className="rounded-none border border-slate-200 bg-white px-2 py-2">
+                    <div className="text-sm font-semibold text-slate-900">{activeCollectionTaskCounts.queued}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">排队</div>
+                  </div>
+                  <div className="rounded-none border border-slate-200 bg-white px-2 py-2">
+                    <div className="text-sm font-semibold text-slate-900">{activeCollectionTaskCounts.running}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">运行</div>
+                  </div>
+                  <div className="rounded-none border border-slate-200 bg-white px-2 py-2">
+                    <div className="text-sm font-semibold text-rose-600">{activeCollectionTaskCounts.failed}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">失败</div>
+                  </div>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-500">当前库死信: {activeCollectionDeadLetterCount}</div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    disabled={isTaskCenterBusy || failedJobs.length === 0}
-                    onClick={() => void retryFailedJobs()}
+                    disabled={isTaskCenterBusy || activeCollectionTaskCounts.failed <= 0}
+                    onClick={() => void retryFailedJobs("activeCollection")}
+                    className="no-drag rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    重试当前库失败
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isTaskCenterBusy || taskCounts.failed <= 0}
+                    onClick={() => void retryFailedJobs("all")}
+                    className="no-drag rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    重试全部失败
+                  </button>
+                </div>
+
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={isTaskCenterBusy || activeCollectionDeadLetterCount <= 0}
+                    onClick={() => void replayDeadLetters("activeCollection")}
                     className="no-drag flex-1 rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
                   >
-                    重试失败
+                    回放当前库死信
                   </button>
+                  <button
+                    type="button"
+                    disabled={isTaskCenterBusy || globalDeadLetterCount <= 0}
+                    onClick={() => void replayDeadLetters("all")}
+                    className="no-drag flex-1 rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    回放全部死信
+                  </button>
+                </div>
+
+                <div className="mt-2 flex gap-2">
                   <button
                     type="button"
                     disabled={isTaskCenterBusy}
                     onClick={() => void cleanupCompletedLogs()}
-                    className="no-drag flex-1 rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                    className="no-drag w-full rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
                   >
                     清理日志
                   </button>
                 </div>
 
-                {taskCenterError ? <div className="mt-2 line-clamp-2 text-xs text-rose-500">{taskCenterError}</div> : null}
+                {pipelineSettings ? (
+                  <div className="mt-3 space-y-2 border-t border-slate-200 pt-2">
+                    <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                      <span>调度设置</span>
+                      <span>{isSavingPipelineSettings ? "保存中..." : "自动保存"}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                      <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                        <span>总并发</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={4}
+                          value={pipelineSettings.maxConcurrentJobs}
+                          onChange={(event) => void updatePipelineSettings({ maxConcurrentJobs: Number(event.target.value || 1) })}
+                          className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                        <span>单库并发</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={4}
+                          value={pipelineSettings.perCollectionMaxRunning}
+                          onChange={(event) => void updatePipelineSettings({ perCollectionMaxRunning: Number(event.target.value || 1) })}
+                          className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                        <span>自动重试</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          value={pipelineSettings.maxAutoRetries}
+                          onChange={(event) => void updatePipelineSettings({ maxAutoRetries: Number(event.target.value || 0) })}
+                          className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                        <span>任务超时(s)</span>
+                        <input
+                          type="number"
+                          min={10}
+                          max={3600}
+                          value={Math.floor(pipelineSettings.jobTimeoutMs / 1000)}
+                          onChange={(event) =>
+                            void updatePipelineSettings({
+                              jobTimeoutMs: Number(event.target.value || 10) * 1000,
+                            })
+                          }
+                          className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-3 space-y-2 border-t border-slate-200 pt-2">
+                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                    <span>死信列表</span>
+                    <span>
+                      {deadLetterTotal} 条
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={deadLetterScope}
+                      onChange={(event) => {
+                        setDeadLetterPage(1);
+                        setDeadLetterScope(event.target.value as DeadLetterScope);
+                      }}
+                      className="rounded-none border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-700 outline-none"
+                    >
+                      <option value="all">全局范围</option>
+                      <option value="activeCollection">当前知识库</option>
+                    </select>
+                    <select
+                      value={deadLetterStatusFilter}
+                      onChange={(event) => {
+                        setDeadLetterPage(1);
+                        setDeadLetterStatusFilter(event.target.value as "failed" | "replayed" | "all");
+                      }}
+                      className="rounded-none border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-700 outline-none"
+                    >
+                      <option value="failed">仅失败</option>
+                      <option value="replayed">仅已回放</option>
+                      <option value="all">全部状态</option>
+                    </select>
+                  </div>
+                  <div className="max-h-44 space-y-1 overflow-y-auto rounded-none border border-slate-200 bg-white p-2">
+                    {isDeadLetterLoading ? (
+                      <div className="px-1 py-2 text-[11px] text-slate-500">加载死信中...</div>
+                    ) : deadLetterItems.length === 0 ? (
+                      <div className="px-1 py-2 text-[11px] text-slate-500">当前筛选下暂无死信任务</div>
+                    ) : (
+                      deadLetterItems.map((item) => (
+                        <div key={item.id} className="rounded-none border border-slate-200 bg-slate-50 px-2 py-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-[11px] font-medium text-slate-800" title={documentNameById.get(item.documentId) ?? item.documentId}>
+                              {(documentNameById.get(item.documentId) ?? item.documentId)} · {item.status}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={deadLetterReplayBusyId === item.id || item.status !== "failed"}
+                              onClick={() => void replayDeadLetterItem(item)}
+                              className="rounded-none border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                            >
+                              {deadLetterReplayBusyId === item.id ? "回放中" : "回放"}
+                            </button>
+                          </div>
+                          <div className="mt-1 text-[10px] text-slate-400">
+                            {item.jobType} · {formatTimestamp(item.lastFailedAt)}
+                          </div>
+                          <div className="mt-1 truncate text-[10px] text-slate-500" title={item.errorMessage ?? ""}>
+                            {item.errorMessage ?? "无错误详情"}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      disabled={deadLetterPage <= 1 || isDeadLetterLoading}
+                      onClick={() => setDeadLetterPage((current) => Math.max(1, current - 1))}
+                      className="rounded-none border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                    >
+                      上一页
+                    </button>
+                    <span className="text-[11px] text-slate-500">第 {deadLetterPage} 页</span>
+                    <button
+                      type="button"
+                      disabled={deadLetterPage * deadLetterPageSize >= deadLetterTotal || isDeadLetterLoading}
+                      onClick={() => setDeadLetterPage((current) => current + 1)}
+                      className="rounded-none border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                    >
+                      下一页
+                    </button>
+                  </div>
+                </div>
+
+                {taskCenterNotice ? <div className="mt-2 line-clamp-2 text-xs text-emerald-600">{taskCenterNotice}</div> : null}
+                {taskCenterError ? <div className="mt-1 line-clamp-2 text-xs text-rose-500">{taskCenterError}</div> : null}
               </div>
             </div>
           ) : null}

@@ -741,6 +741,14 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
     connection
         .execute_batch(
             r#"
+        PRAGMA busy_timeout = 2000;
+        PRAGMA journal_mode = WAL;
+        "#,
+        )
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute_batch(
+            r#"
         CREATE TABLE IF NOT EXISTS app_kv (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL,
@@ -2997,6 +3005,51 @@ fn load_knowledge_processing_job_detail_command(
 }
 
 #[tauri::command]
+fn load_knowledge_processing_status_summary_command(
+    app: tauri::AppHandle,
+    collection_id: Option<String>,
+) -> Result<knowledge_pipeline::KnowledgeProcessingStatusSummary, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::load_processing_status_summary(&connection, collection_id)
+}
+
+#[tauri::command]
+fn load_failed_knowledge_processing_jobs_command(
+    app: tauri::AppHandle,
+    input: knowledge_pipeline::FailedJobQueryInput,
+) -> Result<knowledge_pipeline::FailedJobQueryResult, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::list_failed_processing_jobs(&connection, input)
+}
+
+#[tauri::command]
+fn retry_failed_knowledge_processing_jobs_command(
+    app: tauri::AppHandle,
+    input: knowledge_pipeline::RetryFailedJobsInput,
+) -> Result<knowledge_pipeline::RetryFailedJobsResult, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::retry_failed_jobs(&connection, input)
+}
+
+#[tauri::command]
+fn load_knowledge_processing_dead_letters_command(
+    app: tauri::AppHandle,
+    input: knowledge_pipeline::DeadLetterQueryInput,
+) -> Result<knowledge_pipeline::DeadLetterQueryResult, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::list_dead_letters(&connection, input)
+}
+
+#[tauri::command]
+fn replay_knowledge_processing_dead_letters_command(
+    app: tauri::AppHandle,
+    input: knowledge_pipeline::ReplayDeadLettersInput,
+) -> Result<knowledge_pipeline::ReplayDeadLettersResult, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::replay_dead_letters(&connection, input)
+}
+
+#[tauri::command]
 fn pause_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
@@ -3761,6 +3814,11 @@ pub fn run() {
             import_knowledge_document_pipeline_command,
             load_knowledge_processing_jobs_command,
             load_knowledge_processing_job_detail_command,
+            load_knowledge_processing_status_summary_command,
+            load_failed_knowledge_processing_jobs_command,
+            retry_failed_knowledge_processing_jobs_command,
+            load_knowledge_processing_dead_letters_command,
+            replay_knowledge_processing_dead_letters_command,
             pause_knowledge_processing_job_command,
             resume_knowledge_processing_job_command,
             cancel_knowledge_processing_job_command,
