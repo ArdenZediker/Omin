@@ -604,6 +604,7 @@ export function useChatRuntime({
       const runId = startSessionRun(sessionId, abortController);
       const petThoughtId = startPetThought(sessionId, conversationMessages);
       const systemPrompt = resolveAssistantSystemPrompt(options.assistantOverride);
+      const knowledgeCollectionId = options.assistantOverride?.knowledgeCollectionId ?? activeAssistant?.knowledgeCollectionId ?? null;
       let streamedAssistantReply = "";
       let lastUiUpdateAt = 0;
       let lastThoughtUpdateAt = 0;
@@ -633,6 +634,7 @@ export function useChatRuntime({
           messages: conversationMessages,
           signal: abortController.signal,
           systemPrompt: [systemPrompt, options.hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+          knowledgeCollectionId,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
@@ -713,6 +715,8 @@ export function useChatRuntime({
       }
     },
     [
+      activeAssistant?.id,
+      activeAssistant?.knowledgeCollectionId,
       activeChatId,
       applyAssistantReplyToTaskResult,
       clearPetThoughtSession,
@@ -1123,6 +1127,7 @@ export function useChatRuntime({
           },
           signal: abortController.signal,
           systemPrompt,
+          knowledgeCollectionId: targetAssistant?.knowledgeCollectionId ?? null,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(session.id, runId, abortController)) {
               return;
@@ -1310,6 +1315,7 @@ export function useChatRuntime({
           },
           signal: abortController.signal,
           systemPrompt: [assistantSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+          knowledgeCollectionId: activeAssistant?.knowledgeCollectionId ?? null,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
@@ -1409,6 +1415,8 @@ export function useChatRuntime({
       }
     },
     [
+      activeAssistant?.id,
+      activeAssistant?.knowledgeCollectionId,
       activeChatId,
       applyAssistantReplyToTaskResult,
       assistantSystemPrompt,

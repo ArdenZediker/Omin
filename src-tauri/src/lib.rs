@@ -3195,6 +3195,14 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|err| err.to_string())?;
     }
+    if !table_has_column(connection, "knowledge_chunks", "embedding_model_key")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_chunks ADD COLUMN embedding_model_key TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
 
     if !table_has_column(connection, "knowledge_documents", "tags_json")? {
         connection
@@ -3838,13 +3846,11 @@ pub fn run() {
             }
 
             let worker_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    if let Err(err) = knowledge_pipeline::run_pipeline_worker_tick(&worker_app) {
-                        eprintln!("[Omni] knowledge pipeline worker error: {err}");
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+            std::thread::spawn(move || loop {
+                if let Err(err) = knowledge_pipeline::run_pipeline_worker_tick(&worker_app) {
+                    eprintln!("[Omni] knowledge pipeline worker error: {err}");
                 }
+                std::thread::sleep(std::time::Duration::from_millis(750));
             });
 
             Ok(())
