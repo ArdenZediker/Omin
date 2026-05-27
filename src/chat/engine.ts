@@ -46,6 +46,7 @@ export async function executeChatTurn(options: {
   systemPrompt?: string;
   onChunk?: (chunk: string) => void;
   knowledgeQuery?: string | null;
+  knowledgeCollectionId?: string | null;
   enableKnowledgeContext?: boolean;
 }): Promise<ChatExecutionResult> {
   const {
@@ -55,6 +56,7 @@ export async function executeChatTurn(options: {
     systemPrompt = DEFAULT_SYSTEM_PROMPT,
     onChunk,
     knowledgeQuery,
+    knowledgeCollectionId,
     enableKnowledgeContext = true,
   } = options;
 
@@ -85,6 +87,7 @@ export async function executeChatTurn(options: {
           model,
           messages,
           knowledgeQuery,
+          knowledgeCollectionId,
           signal,
         })
       : null;

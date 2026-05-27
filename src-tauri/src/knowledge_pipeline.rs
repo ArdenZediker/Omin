@@ -1663,7 +1663,8 @@ fn complete_partial_job(
     }
 
     start_step(connection, job, "embed", 65)?;
-    let (chunk_embeddings, embedding_model_key) = crate::generate_chunk_embeddings(connection, &chunks);
+    let (chunk_embeddings, embedding_model_key) =
+        crate::generate_chunk_embeddings(connection, &chunks);
     let vectorized_chunk_count = crate::count_vectorized_chunks(&chunk_embeddings);
     let embedding_error = if chunks.is_empty() {
         None
@@ -1792,13 +1793,7 @@ fn complete_partial_job(
             SET status = ?2, progress = 100, error_message = ?3, finished_at = ?4, updated_at = ?5
             WHERE id = ?1
             "#,
-            params![
-                job.id,
-                JOB_STATUS_SUCCEEDED,
-                document_error,
-                now,
-                now,
-            ],
+            params![job.id, JOB_STATUS_SUCCEEDED, document_error, now, now,],
         )
         .map_err(|err| err.to_string())?;
     finish_step(
@@ -1822,6 +1817,84 @@ fn complete_partial_job(
         },
         None,
     )
+}
+
+fn recover_timed_out_running_jobs(connection: &Connection, timeout_ms: i64) -> Result<i64, String> {
+    let now = current_timestamp_ms();
+    let cutoff = now.saturating_sub(timeout_ms.max(10_000));
+    let timeout_message = format!("job timed out after {} ms", timeout_ms.max(10_000));
+
+    let mut stmt = connection
+        .prepare(
+            r#"
+            SELECT id, document_id, current_step
+            FROM knowledge_processing_jobs
+            WHERE status = ?1 AND updated_at < ?2
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+    let stale_jobs = stmt
+        .query_map(params![JOB_STATUS_RUNNING, cutoff], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
+    for (job_id, document_id, step_name) in &stale_jobs {
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_processing_steps
+                SET status = ?2, error_message = ?3, finished_at = ?4, updated_at = ?5
+                WHERE job_id = ?1 AND status = ?6
+                "#,
+                params![
+                    job_id,
+                    STEP_STATUS_FAILED,
+                    timeout_message,
+                    now,
+                    now,
+                    STEP_STATUS_RUNNING
+                ],
+            )
+            .map_err(|err| err.to_string())?;
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_processing_jobs
+                SET status = ?2, progress = 100, error_message = ?3, finished_at = ?4, updated_at = ?5
+                WHERE id = ?1
+                "#,
+                params![job_id, JOB_STATUS_FAILED, timeout_message, now, now],
+            )
+            .map_err(|err| err.to_string())?;
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_documents
+                SET processing_status = ?2, error_message = ?3, active_job_id = NULL, updated_at = ?4
+                WHERE id = ?1 AND active_job_id = ?5
+                "#,
+                params![document_id, DOCUMENT_STATUS_FAILED, timeout_message, now, job_id],
+            )
+            .map_err(|err| err.to_string())?;
+        log_job(
+            connection,
+            job_id,
+            document_id,
+            "error",
+            step_name.as_deref(),
+            &timeout_message,
+            None,
+        )?;
+    }
+
+    Ok(stale_jobs.len() as i64)
 }
 
 pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
@@ -1906,6 +1979,12 @@ pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
 }
 
 pub fn run_pipeline_worker_tick(app: &tauri::AppHandle) -> Result<bool, String> {
+    let connection = open_pipeline_connection(app)?;
+    let settings = load_pipeline_settings(&connection)?;
+    if !settings.enabled {
+        return Ok(false);
+    }
+    recover_timed_out_running_jobs(&connection, settings.job_timeout_ms)?;
     run_next_pipeline_job(app)
 }
 

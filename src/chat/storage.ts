@@ -75,6 +75,7 @@ export function createDefaultAssistant(): AssistantProfile {
     avatarType: "emoji",
     avatarValue: "emoji:1F4AC",
     defaultModelId: null,
+    knowledgeCollectionId: null,
     systemPrompt: `## 角色定位
 你是 Omni，是这个桌面 AI 工作台中的默认通用助手。
 
@@ -143,6 +144,7 @@ export function createCustomAssistant(input?: AssistantProfileDraft): AssistantP
     avatarValue: input?.avatarValue ?? "emoji:1F916",
     systemPrompt: input?.systemPrompt ?? "",
     defaultModelId: input?.defaultModelId ?? null,
+    knowledgeCollectionId: input?.knowledgeCollectionId?.trim() || null,
     allowedToolIds: input?.allowedToolIds?.length ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
     allowedSkillIds: input?.allowedSkillIds?.length ? [...input.allowedSkillIds] : [...DEFAULT_ASSISTANT_SKILL_IDS],
     memoryScope: input?.memoryScope ?? DEFAULT_ASSISTANT_MEMORY_SCOPE,
@@ -252,6 +254,7 @@ function normalizeAssistant(input: Partial<AssistantProfile> & Pick<AssistantPro
           ? input.systemPrompt
           : "",
     defaultModelId: input.defaultModelId ?? null,
+    knowledgeCollectionId: typeof input.knowledgeCollectionId === "string" && input.knowledgeCollectionId.trim() ? input.knowledgeCollectionId.trim() : null,
     allowedToolIds: Array.isArray(input.allowedToolIds) && input.allowedToolIds.length > 0 ? [...input.allowedToolIds] : [...DEFAULT_ASSISTANT_TOOL_IDS],
     allowedSkillIds: Array.isArray(input.allowedSkillIds) && input.allowedSkillIds.length > 0 ? [...input.allowedSkillIds] : [...DEFAULT_ASSISTANT_SKILL_IDS],
     memoryScope:

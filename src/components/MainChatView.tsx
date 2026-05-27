@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { CSSProperties, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useLayoutEffect } from "react";
 import {
@@ -10,8 +11,8 @@ import {
   Compass,
   Cpu,
   FolderOpen,
-  Hash,
   History,
+  LayoutDashboard,
   MessageSquare,
   MoreHorizontal,
   PawPrint,
@@ -35,6 +36,7 @@ import {
 import type { Message } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
+import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { AssistantProfile, ChatSession } from "../chat/types";
 import type { AssistantMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
@@ -503,10 +505,12 @@ export default function MainChatView({
   const [assistantDescriptionDraft, setAssistantDescriptionDraft] = useState(activeAssistant?.description ?? "");
   const [assistantPromptDraft, setAssistantPromptDraft] = useState(activeAssistant?.systemPrompt ?? "");
   const [assistantModelDraft, setAssistantModelDraft] = useState(activeAssistant?.defaultModelId ?? "");
+  const [knowledgeCollections, setKnowledgeCollections] = useState<KnowledgeCollection[]>([]);
   const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
   const isMessagesAtBottomRef = useRef(true);
   const lastAutoScrolledSessionRef = useRef<string | null>(null);
   const selectedAssistantModel = availableModels.find((model) => model.id === assistantModelDraft) ?? null;
+  const selectedAssistantKnowledgeCollection = knowledgeCollections.find((collection) => collection.id === activeAssistant?.knowledgeCollectionId) ?? null;
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
     if (assistantPanelManualVisible === true) classNames.push("main-chat-layout--assistant-forced-open");
@@ -527,6 +531,27 @@ export default function MainChatView({
   useEffect(() => {
     isMessagesAtBottomRef.current = isMessagesAtBottom;
   }, [isMessagesAtBottom]);
+
+  useEffect(() => {
+    if (!isAssistantSettingsMode) return;
+    let cancelled = false;
+
+    void invoke<{ collections: KnowledgeCollection[] }>("load_knowledge_library_command")
+      .then((payload) => {
+        if (!cancelled) {
+          setKnowledgeCollections(Array.isArray(payload.collections) ? payload.collections : []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setKnowledgeCollections([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAssistantSettingsMode]);
 
   useEffect(() => {
     if (!composerElement) return;
@@ -1662,6 +1687,32 @@ export default function MainChatView({
                           </div>
                         </label>
                         <label className="chat-topic-panel__field">
+                          <span>绑定知识库</span>
+                          <div className="omni-settings-dialog__model-select">
+                            <select
+                              value={activeAssistant.knowledgeCollectionId ?? ""}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                onUpdateAssistantProfile(activeAssistant.id, { knowledgeCollectionId: nextValue || null });
+                              }}
+                            >
+                              <option value="">全部知识库</option>
+                              {knowledgeCollections.map((collection) => (
+                                <option key={collection.id} value={collection.id}>
+                                  {collection.name}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="omni-settings-dialog__model-select-meta">
+                              {selectedAssistantKnowledgeCollection
+                                ? `仅检索：${selectedAssistantKnowledgeCollection.name}`
+                                : knowledgeCollections.length > 0
+                                  ? "未绑定时会从全部知识库召回"
+                                  : "还没有可绑定的知识库"}
+                            </div>
+                          </div>
+                        </label>
+                        <label className="chat-topic-panel__field">
                           <span>所属分组</span>
                           <select
                             value={activeAssistant.groupName ?? ""}
@@ -2015,7 +2066,7 @@ export default function MainChatView({
           <div className="chat-topic-panel__body">
             <div className="chat-topic-panel__toolbar">
               <div className="chat-topic-panel__title">
-                <Hash size={14} strokeWidth={2} />
+                <LayoutDashboard size={14} strokeWidth={2} />
                 <span>工作台</span>
               </div>
               <div className="chat-topic-panel__header-actions">

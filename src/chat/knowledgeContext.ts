@@ -72,6 +72,7 @@ export async function buildKnowledgeContextBlock(options: {
   model: string;
   messages: Message[];
   knowledgeQuery?: string | null;
+  knowledgeCollectionId?: string | null;
   limit?: number;
   signal?: AbortSignal;
 }): Promise<KnowledgeContextResult | null> {
@@ -106,6 +107,7 @@ export async function buildKnowledgeContextBlock(options: {
   const input: {
     query: string;
     limit: number;
+    collectionId?: string;
     queryEmbedding?: number[];
     queryEmbeddingModelKey?: string;
   } = {
@@ -113,6 +115,9 @@ export async function buildKnowledgeContextBlock(options: {
     limit,
   };
 
+  if (options.knowledgeCollectionId?.trim()) {
+    input.collectionId = options.knowledgeCollectionId.trim();
+  }
   if (queryEmbedding && queryEmbedding.length > 0) {
     input.queryEmbedding = queryEmbedding;
   }

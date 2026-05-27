@@ -32,6 +32,7 @@ export type AssistantProfileDraft = {
   avatarValue?: string;
   systemPrompt?: string;
   defaultModelId?: string | null;
+  knowledgeCollectionId?: string | null;
   allowedToolIds?: string[];
   allowedSkillIds?: string[];
   memoryScope?: AssistantMemoryScope;
@@ -50,6 +51,7 @@ export type AssistantProfile = {
   avatarValue?: string;
   systemPrompt?: string;
   defaultModelId?: string | null;
+  knowledgeCollectionId?: string | null;
   allowedToolIds: string[];
   allowedSkillIds: string[];
   memoryScope: AssistantMemoryScope;

@@ -67,10 +67,11 @@ export async function executeTask(options: {
   signal?: AbortSignal;
   systemPrompt?: string;
   onChunk?: (chunk: string) => void;
+  knowledgeCollectionId?: string | null;
   intent?: TaskIntent;
   plan?: TaskPlan;
 }): Promise<TaskExecutionResult> {
-  const { model, messages, signal, systemPrompt, onChunk } = options;
+  const { model, messages, signal, systemPrompt, onChunk, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
   const plan = options.plan ?? createTaskPlan({ intent, model, messages });
 
@@ -99,6 +100,7 @@ export async function executeTask(options: {
           signal,
           systemPrompt,
           onChunk,
+          knowledgeCollectionId,
           enableKnowledgeContext: intent === "chat",
         });
         api.setFinalResult(finalResult);
@@ -320,10 +322,11 @@ export async function executeInputTask(options: {
   signal?: AbortSignal;
   systemPrompt?: string;
   onChunk?: (chunk: string) => void;
+  knowledgeCollectionId?: string | null;
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown } | void>;
 }): Promise<TaskExecutionResult> {
-  const { input, images, hiddenContext, currentMessages, preparedMessages: preparedMessagesOverride, model, signal, systemPrompt, onChunk, onPrepareConversation, executeTool } = options;
+  const { input, images, hiddenContext, currentMessages, preparedMessages: preparedMessagesOverride, model, signal, systemPrompt, onChunk, knowledgeCollectionId, onPrepareConversation, executeTool } = options;
   const localCommand = !images || images.length === 0 ? resolveLocalSlashCommand(input) : null;
 
   if (localCommand) {
@@ -362,6 +365,7 @@ export async function executeInputTask(options: {
     signal,
     systemPrompt: [systemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
     onChunk,
+    knowledgeCollectionId,
     intent: "chat",
     plan,
   });

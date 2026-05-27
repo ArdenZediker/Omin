@@ -1006,7 +1006,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      void refreshProcessingJobs();
+      void refreshProcessingJobs({ syncLibrary: true });
     }, 2500);
 
     return () => window.clearInterval(interval);
@@ -1049,11 +1049,19 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     return payload;
   }
 
-  async function refreshProcessingJobs() {
+  async function refreshProcessingJobs(options?: { syncLibrary?: boolean }) {
     try {
       const jobs = await loadKnowledgeProcessingJobs();
       setProcessingJobs(jobs);
       setTaskCenterError(null);
+      if (options?.syncLibrary) {
+        try {
+          const payload = await loadKnowledgeLibrary();
+          setLibrary(payload);
+        } catch (error) {
+          console.error(error);
+        }
+      }
     } catch (error) {
       console.error(error);
       setTaskCenterError(error instanceof Error ? error.message : "加载处理队列失败");
