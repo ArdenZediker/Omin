@@ -97,6 +97,50 @@ pub struct KnowledgeProcessingJobDetail {
     pub logs: Vec<KnowledgeProcessingLogRecord>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgePipelineSettings {
+    pub enabled: bool,
+    pub max_concurrent_jobs: i64,
+    pub max_file_size_mb: i64,
+    pub max_attempts: i64,
+    pub job_timeout_ms: i64,
+    pub step_timeout_ms: i64,
+    pub keep_successful_logs_days: i64,
+    pub keep_failed_logs_days: i64,
+}
+
+impl Default for KnowledgePipelineSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_concurrent_jobs: 1,
+            max_file_size_mb: 100,
+            max_attempts: 3,
+            job_timeout_ms: 300_000,
+            step_timeout_ms: 120_000,
+            keep_successful_logs_days: 7,
+            keep_failed_logs_days: 30,
+        }
+    }
+}
+
+impl KnowledgePipelineSettings {
+    fn clamped(mut self) -> Self {
+        const MIN_TIMEOUT_MS: i64 = 10_000;
+
+        self.max_concurrent_jobs = self.max_concurrent_jobs.clamp(1, 4);
+        self.max_file_size_mb = self.max_file_size_mb.clamp(1, 1024);
+        self.max_attempts = self.max_attempts.clamp(0, 10);
+        self.job_timeout_ms = self.job_timeout_ms.max(MIN_TIMEOUT_MS);
+        self.step_timeout_ms = self.step_timeout_ms.max(MIN_TIMEOUT_MS);
+        self.keep_successful_logs_days = self.keep_successful_logs_days.max(0);
+        self.keep_failed_logs_days = self.keep_failed_logs_days.max(0);
+
+        self
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineImportInput {
@@ -914,6 +958,87 @@ pub fn load_processing_job_detail(
         .map_err(|err| err.to_string())?;
 
     Ok(KnowledgeProcessingJobDetail { job, steps, logs })
+}
+
+pub fn load_pipeline_settings(
+    connection: &Connection,
+) -> Result<KnowledgePipelineSettings, String> {
+    let settings_json = connection
+        .query_row(
+            "SELECT settings_json FROM knowledge_pipeline_settings WHERE id = 'default'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?;
+
+    let settings = settings_json
+        .as_deref()
+        .and_then(|value| serde_json::from_str::<KnowledgePipelineSettings>(value).ok())
+        .unwrap_or_default()
+        .clamped();
+
+    Ok(settings)
+}
+
+pub fn save_pipeline_settings(
+    connection: &Connection,
+    settings: KnowledgePipelineSettings,
+) -> Result<KnowledgePipelineSettings, String> {
+    let settings = settings.clamped();
+    let settings_json = serde_json::to_string(&settings).map_err(|err| err.to_string())?;
+    let now = current_timestamp_ms();
+
+    connection
+        .execute(
+            r#"
+            INSERT INTO knowledge_pipeline_settings (id, settings_json, updated_at)
+            VALUES ('default', ?1, ?2)
+            ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = excluded.updated_at
+            "#,
+            params![settings_json, now],
+        )
+        .map_err(|err| err.to_string())?;
+
+    Ok(settings)
+}
+
+pub fn cleanup_processing_logs(connection: &Connection) -> Result<i64, String> {
+    let settings = load_pipeline_settings(connection)?;
+    let now = current_timestamp_ms();
+    let day_ms = 86_400_000_i64;
+    let successful_cutoff =
+        now.saturating_sub(settings.keep_successful_logs_days.saturating_mul(day_ms));
+    let failed_cutoff = now.saturating_sub(settings.keep_failed_logs_days.saturating_mul(day_ms));
+
+    let deleted_successful = connection
+        .execute(
+            r#"
+            DELETE FROM knowledge_processing_logs
+            WHERE created_at < ?1
+              AND job_id IN (
+                SELECT id FROM knowledge_processing_jobs
+                WHERE status = ?2
+              )
+            "#,
+            params![successful_cutoff, JOB_STATUS_SUCCEEDED],
+        )
+        .map_err(|err| err.to_string())?;
+    let deleted_failed = connection
+        .execute(
+            r#"
+            DELETE FROM knowledge_processing_logs
+            WHERE created_at < ?1
+              AND job_id IN (
+                SELECT id FROM knowledge_processing_jobs
+                WHERE status IN (?2, ?3)
+              )
+            "#,
+            params![failed_cutoff, JOB_STATUS_FAILED, JOB_STATUS_CANCELED],
+        )
+        .map_err(|err| err.to_string())?;
+
+    Ok((deleted_successful + deleted_failed) as i64)
 }
 
 pub fn request_job_pause(connection: &Connection, job_id: &str) -> Result<(), String> {
@@ -1782,11 +1907,16 @@ mod tests {
 
     #[test]
     fn parse_pdf_uses_frontend_bridge_content() {
-        let parsed = parse_simple_document("report.pdf", Some("pdf"), b"%PDF", Some("Extracted text")).unwrap();
+        let parsed =
+            parse_simple_document("report.pdf", Some("pdf"), b"%PDF", Some("Extracted text"))
+                .unwrap();
 
         assert_eq!(parsed.preview_type, "pdf");
         assert_eq!(parsed.content, "Extracted text");
-        assert_eq!(parsed.metadata_json.as_deref(), Some("{\"mode\":\"frontend_bridge\"}"));
+        assert_eq!(
+            parsed.metadata_json.as_deref(),
+            Some("{\"mode\":\"frontend_bridge\"}")
+        );
     }
 
     #[test]

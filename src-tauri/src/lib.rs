@@ -3060,6 +3060,29 @@ fn revectorize_knowledge_document_command(
 }
 
 #[tauri::command]
+fn load_knowledge_pipeline_settings_command(
+    app: tauri::AppHandle,
+) -> Result<knowledge_pipeline::KnowledgePipelineSettings, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::load_pipeline_settings(&connection)
+}
+
+#[tauri::command]
+fn save_knowledge_pipeline_settings_command(
+    app: tauri::AppHandle,
+    settings: knowledge_pipeline::KnowledgePipelineSettings,
+) -> Result<knowledge_pipeline::KnowledgePipelineSettings, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::save_pipeline_settings(&connection, settings)
+}
+
+#[tauri::command]
+fn cleanup_knowledge_processing_logs_command(app: tauri::AppHandle) -> Result<i64, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::cleanup_processing_logs(&connection)
+}
+
+#[tauri::command]
 fn rebuild_knowledge_document_embeddings_command(
     app: tauri::AppHandle,
     input: RevectorizeKnowledgeDocumentInput,
@@ -3737,6 +3760,9 @@ pub fn run() {
             reparse_knowledge_document_command,
             rechunk_knowledge_document_command,
             revectorize_knowledge_document_command,
+            load_knowledge_pipeline_settings_command,
+            save_knowledge_pipeline_settings_command,
+            cleanup_knowledge_processing_logs_command,
             rebuild_knowledge_document_embeddings_command,
             search_knowledge_chunks_command,
             load_chat_storage,
