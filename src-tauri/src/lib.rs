@@ -1506,7 +1506,7 @@ fn derive_vectorization_state(chunk_count: i64, vectorized_chunk_count: i64) -> 
     }
 }
 
-fn count_vectorized_chunks(chunks: &[Option<String>]) -> i64 {
+pub(crate) fn count_vectorized_chunks(chunks: &[Option<String>]) -> i64 {
     chunks.iter().filter(|value| value.is_some()).count() as i64
 }
 
@@ -1778,7 +1778,7 @@ fn load_legacy_knowledge_embedding_config(
     )))
 }
 
-fn generate_chunk_embeddings(
+pub(crate) fn generate_chunk_embeddings(
     connection: &Connection,
     chunks: &[knowledge_chunker::ChunkSlice],
 ) -> (Vec<Option<String>>, Option<String>) {

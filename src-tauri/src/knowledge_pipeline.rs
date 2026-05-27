@@ -1663,16 +1663,40 @@ fn complete_partial_job(
     }
 
     start_step(connection, job, "embed", 65)?;
-    finish_step(connection, job, "embed", STEP_STATUS_SKIPPED, 100, None)?;
-    log_job(
+    let (chunk_embeddings, embedding_model_key) = crate::generate_chunk_embeddings(connection, &chunks);
+    let vectorized_chunk_count = crate::count_vectorized_chunks(&chunk_embeddings);
+    let embedding_error = if chunks.is_empty() {
+        None
+    } else if vectorized_chunk_count <= 0 {
+        Some("indexed without embeddings")
+    } else if vectorized_chunk_count < chunks.len() as i64 {
+        Some("partially vectorized")
+    } else {
+        None
+    };
+    finish_step(
         connection,
-        &job.id,
-        &job.document_id,
-        "warn",
-        Some("embed"),
-        "embedding skipped; document indexed without vectors",
-        parsed.metadata_json.as_deref(),
+        job,
+        "embed",
+        if embedding_error.is_some() {
+            STEP_STATUS_SKIPPED
+        } else {
+            STEP_STATUS_SUCCEEDED
+        },
+        100,
+        embedding_error,
     )?;
+    if let Some(message) = embedding_error {
+        log_job(
+            connection,
+            &job.id,
+            &job.document_id,
+            "warn",
+            Some("embed"),
+            message,
+            parsed.metadata_json.as_deref(),
+        )?;
+    }
     if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
         return Ok(());
     }
@@ -1681,6 +1705,12 @@ fn complete_partial_job(
     let now = current_timestamp_ms();
     let content_preview = preview_text(&parsed.content, 240);
     let chunk_count = chunks.len() as i64;
+    let document_status = if chunk_count <= 0 || vectorized_chunk_count >= chunk_count {
+        DOCUMENT_STATUS_SEARCHABLE
+    } else {
+        DOCUMENT_STATUS_PARTIAL
+    };
+    let document_error = embedding_error;
     let tx = connection
         .unchecked_transaction()
         .map_err(|err| err.to_string())?;
@@ -1696,7 +1726,7 @@ fn complete_partial_job(
                 INSERT INTO knowledge_chunks (
                   id, document_id, collection_id, chunk_index, title, content,
                   embedding_json, embedding_model_key, created_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                 "#,
             )
             .map_err(|err| err.to_string())?;
@@ -1708,6 +1738,8 @@ fn complete_partial_job(
                 index as i64,
                 chunk.title,
                 chunk.content,
+                chunk_embeddings.get(index).cloned().unwrap_or(None),
+                embedding_model_key.clone(),
                 now,
             ])
             .map_err(|err| err.to_string())?;
@@ -1727,8 +1759,8 @@ fn complete_partial_job(
             parsed.content,
             content_preview,
             chunk_count,
-            DOCUMENT_STATUS_PARTIAL,
-            "indexed without embeddings",
+            document_status,
+            document_error,
             now,
             now,
         ],
@@ -1746,11 +1778,11 @@ fn complete_partial_job(
         .execute(
             r#"
             UPDATE knowledge_documents
-            SET processing_status = ?2, active_job_id = NULL, last_processed_at = ?3,
-                updated_at = ?4
+            SET processing_status = ?2, error_message = ?3, active_job_id = NULL, last_processed_at = ?4,
+                updated_at = ?5
             WHERE id = ?1
             "#,
-            params![job.document_id, DOCUMENT_STATUS_PARTIAL, now, now],
+            params![job.document_id, document_status, document_error, now, now],
         )
         .map_err(|err| err.to_string())?;
     connection
@@ -1763,7 +1795,7 @@ fn complete_partial_job(
             params![
                 job.id,
                 JOB_STATUS_SUCCEEDED,
-                "indexed without embeddings",
+                document_error,
                 now,
                 now,
             ],
@@ -1783,7 +1815,11 @@ fn complete_partial_job(
         &job.document_id,
         "info",
         Some("finalize"),
-        "job completed as partial",
+        if document_status == DOCUMENT_STATUS_SEARCHABLE {
+            "job completed as searchable"
+        } else {
+            "job completed as partial"
+        },
         None,
     )
 }
