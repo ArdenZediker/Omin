@@ -704,7 +704,7 @@ fn sqlite_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir.join("omni.sqlite3"))
 }
 
-fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> {
+pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> {
     let connection = Connection::open(sqlite_db_path(app)?).map_err(|err| err.to_string())?;
     connection.execute_batch(
         r#"
@@ -3468,6 +3468,16 @@ pub fn run() {
             } else {
                 eprintln!("[Omni] Ctrl+Shift+Space 和 Ctrl+Alt+Space 都注册失败");
             }
+
+            let worker_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    if let Err(err) = knowledge_pipeline::run_pipeline_worker_tick(&worker_app) {
+                        eprintln!("[Omni] knowledge pipeline worker error: {err}");
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+                }
+            });
 
             Ok(())
         })

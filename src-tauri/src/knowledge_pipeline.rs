@@ -112,6 +112,29 @@ pub struct PipelineImportResult {
     pub status: String,
 }
 
+#[derive(Debug, Clone)]
+struct ParsedDocument {
+    content: String,
+    preview_type: String,
+    metadata_json: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PipelineJobClaim {
+    id: String,
+    document_id: String,
+    collection_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct PipelineDocumentSource {
+    id: String,
+    collection_id: String,
+    source_name: String,
+    stored_file_path: Option<String>,
+    file_extension: Option<String>,
+}
+
 pub fn ensure_pipeline_schema(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(
@@ -538,4 +561,685 @@ pub fn create_pipeline_import(
         duplicate_document_id: None,
         status: "queued".to_string(),
     })
+}
+
+fn parse_simple_document(
+    source_name: &str,
+    file_extension: Option<&str>,
+    bytes: &[u8],
+) -> Result<ParsedDocument, String> {
+    let ext = file_extension
+        .unwrap_or_default()
+        .trim_start_matches('.')
+        .to_lowercase();
+    let text = String::from_utf8_lossy(bytes).to_string();
+
+    match ext.as_str() {
+        "md" | "markdown" => Ok(ParsedDocument {
+            content: text,
+            preview_type: "markdown".into(),
+            metadata_json: None,
+        }),
+        "txt" | "text" | "log" | "html" | "htm" | "xml" | "yml" | "yaml" | "json" => {
+            Ok(ParsedDocument {
+                content: text,
+                preview_type: "text".into(),
+                metadata_json: None,
+            })
+        }
+        "csv" => Ok(ParsedDocument {
+            content: csv_to_markdown(&text, ','),
+            preview_type: "markdown".into(),
+            metadata_json: None,
+        }),
+        "tsv" => Ok(ParsedDocument {
+            content: csv_to_markdown(&text, '\t'),
+            preview_type: "markdown".into(),
+            metadata_json: None,
+        }),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" => Ok(ParsedDocument {
+            content: format!("![{}]({})", source_name, source_name),
+            preview_type: "image".into(),
+            metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
+        }),
+        "" => Err("unable to identify file extension".into()),
+        other => Err(format!(
+            "unsupported file extension .{other}; original file has been stored"
+        )),
+    }
+}
+
+fn csv_to_markdown(text: &str, delimiter: char) -> String {
+    let mut rows = Vec::new();
+    for line in text.lines() {
+        let cells = line
+            .split(delimiter)
+            .map(|cell| cell.trim().replace('|', "\\|"))
+            .collect::<Vec<_>>();
+        if !cells.is_empty() {
+            rows.push(cells);
+        }
+    }
+    if rows.is_empty() {
+        return String::new();
+    }
+
+    let width = rows.iter().map(|row| row.len()).max().unwrap_or(0);
+    for row in &mut rows {
+        while row.len() < width {
+            row.push(String::new());
+        }
+    }
+
+    let mut out = String::new();
+    out.push_str("| ");
+    out.push_str(&rows[0].join(" | "));
+    out.push_str(" |\n|");
+    for _ in 0..width {
+        out.push_str(" --- |");
+    }
+    out.push('\n');
+    for row in rows.iter().skip(1) {
+        out.push_str("| ");
+        out.push_str(&row.join(" | "));
+        out.push_str(" |\n");
+    }
+    out
+}
+
+fn open_pipeline_connection(app: &tauri::AppHandle) -> Result<Connection, String> {
+    crate::open_sqlite_connection(app)
+}
+
+fn claim_next_job(connection: &Connection) -> Result<Option<PipelineJobClaim>, String> {
+    let Some(job) = connection
+        .query_row(
+            r#"
+            SELECT id, document_id, collection_id
+            FROM knowledge_processing_jobs
+            WHERE status = ?1 AND cancel_requested = 0 AND pause_requested = 0
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            "#,
+            params![JOB_STATUS_QUEUED],
+            |row| {
+                Ok(PipelineJobClaim {
+                    id: row.get(0)?,
+                    document_id: row.get(1)?,
+                    collection_id: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+    else {
+        return Ok(None);
+    };
+
+    let now = current_timestamp_ms();
+    let changed = connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_jobs
+            SET status = ?2, current_step = ?3, progress = 1, started_at = COALESCE(started_at, ?4),
+                updated_at = ?5
+            WHERE id = ?1 AND status = ?6 AND cancel_requested = 0 AND pause_requested = 0
+            "#,
+            params![
+                job.id,
+                JOB_STATUS_RUNNING,
+                PIPELINE_STEPS[0],
+                now,
+                now,
+                JOB_STATUS_QUEUED
+            ],
+        )
+        .map_err(|err| err.to_string())?;
+
+    if changed == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(job))
+    }
+}
+
+fn load_document_source(
+    connection: &Connection,
+    document_id: &str,
+) -> Result<PipelineDocumentSource, String> {
+    connection
+        .query_row(
+            r#"
+            SELECT id, collection_id, source_name, stored_file_path, file_extension
+            FROM knowledge_documents
+            WHERE id = ?1
+            "#,
+            params![document_id],
+            |row| {
+                Ok(PipelineDocumentSource {
+                    id: row.get(0)?,
+                    collection_id: row.get(1)?,
+                    source_name: row.get(2)?,
+                    stored_file_path: row.get(3)?,
+                    file_extension: row.get(4)?,
+                })
+            },
+        )
+        .map_err(|err| err.to_string())
+}
+
+fn log_job(
+    connection: &Connection,
+    job_id: &str,
+    document_id: &str,
+    level: &str,
+    step_name: Option<&str>,
+    message: &str,
+    details_json: Option<&str>,
+) -> Result<(), String> {
+    connection
+        .execute(
+            r#"
+            INSERT INTO knowledge_processing_logs (
+              id, job_id, document_id, level, step_name, message, details_json, created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "#,
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                job_id,
+                document_id,
+                level,
+                step_name,
+                message,
+                details_json,
+                current_timestamp_ms(),
+            ],
+        )
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn start_step(
+    connection: &Connection,
+    job: &PipelineJobClaim,
+    step_name: &str,
+    progress: i64,
+) -> Result<(), String> {
+    let now = current_timestamp_ms();
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_steps
+            SET status = ?3, progress = 0, error_message = NULL,
+                started_at = COALESCE(started_at, ?4), finished_at = NULL, updated_at = ?5
+            WHERE job_id = ?1 AND step_name = ?2
+            "#,
+            params![job.id, step_name, STEP_STATUS_RUNNING, now, now],
+        )
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_jobs
+            SET current_step = ?2, progress = ?3, updated_at = ?4
+            WHERE id = ?1
+            "#,
+            params![job.id, step_name, progress, now],
+        )
+        .map_err(|err| err.to_string())?;
+    log_job(connection, &job.id, &job.document_id, "info", Some(step_name), "step started", None)
+}
+
+fn finish_step(
+    connection: &Connection,
+    job: &PipelineJobClaim,
+    step_name: &str,
+    status: &str,
+    progress: i64,
+    error_message: Option<&str>,
+) -> Result<(), String> {
+    let now = current_timestamp_ms();
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_steps
+            SET status = ?3, progress = ?4, error_message = ?5, finished_at = ?6, updated_at = ?7
+            WHERE job_id = ?1 AND step_name = ?2
+            "#,
+            params![job.id, step_name, status, progress, error_message, now, now],
+        )
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn skip_step(
+    connection: &Connection,
+    job: &PipelineJobClaim,
+    step_name: &str,
+    message: &str,
+) -> Result<(), String> {
+    finish_step(connection, job, step_name, STEP_STATUS_SKIPPED, 100, None)?;
+    log_job(connection, &job.id, &job.document_id, "info", Some(step_name), message, None)
+}
+
+enum ControlFlow {
+    Continue,
+    Stop,
+}
+
+fn check_job_control(connection: &Connection, job: &PipelineJobClaim) -> Result<ControlFlow, String> {
+    let (cancel_requested, pause_requested): (i64, i64) = connection
+        .query_row(
+            "SELECT cancel_requested, pause_requested FROM knowledge_processing_jobs WHERE id = ?1",
+            params![job.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|err| err.to_string())?;
+
+    if cancel_requested != 0 {
+        let now = current_timestamp_ms();
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_processing_steps
+                SET status = ?2, finished_at = ?3, updated_at = ?4
+                WHERE job_id = ?1 AND status = ?5
+                "#,
+                params![job.id, STEP_STATUS_SKIPPED, now, now, STEP_STATUS_RUNNING],
+            )
+            .map_err(|err| err.to_string())?;
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_processing_jobs
+                SET status = ?2, progress = 100, finished_at = ?3, updated_at = ?4
+                WHERE id = ?1
+                "#,
+                params![job.id, JOB_STATUS_CANCELED, now, now],
+            )
+            .map_err(|err| err.to_string())?;
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_documents
+                SET processing_status = ?2, error_message = NULL, active_job_id = NULL, updated_at = ?3
+                WHERE id = ?1
+                "#,
+                params![job.document_id, DOCUMENT_STATUS_CANCELED, now],
+            )
+            .map_err(|err| err.to_string())?;
+        log_job(connection, &job.id, &job.document_id, "warn", None, "job canceled", None)?;
+        return Ok(ControlFlow::Stop);
+    }
+
+    if pause_requested != 0 {
+        let now = current_timestamp_ms();
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_processing_jobs
+                SET status = ?2, updated_at = ?3
+                WHERE id = ?1
+                "#,
+                params![job.id, JOB_STATUS_PAUSED, now],
+            )
+            .map_err(|err| err.to_string())?;
+        log_job(connection, &job.id, &job.document_id, "info", None, "job paused", None)?;
+        return Ok(ControlFlow::Stop);
+    }
+
+    Ok(ControlFlow::Continue)
+}
+
+fn fail_job(
+    connection: &Connection,
+    job: &PipelineJobClaim,
+    step_name: Option<&str>,
+    error_message: &str,
+) -> Result<(), String> {
+    let now = current_timestamp_ms();
+    if let Some(step_name) = step_name {
+        finish_step(
+            connection,
+            job,
+            step_name,
+            STEP_STATUS_FAILED,
+            100,
+            Some(error_message),
+        )?;
+    } else {
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_processing_steps
+                SET status = ?2, error_message = ?3, finished_at = ?4, updated_at = ?5
+                WHERE job_id = ?1 AND status = ?6
+                "#,
+                params![
+                    job.id,
+                    STEP_STATUS_FAILED,
+                    error_message,
+                    now,
+                    now,
+                    STEP_STATUS_RUNNING
+                ],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_jobs
+            SET status = ?2, progress = 100, error_message = ?3, finished_at = ?4, updated_at = ?5
+            WHERE id = ?1
+            "#,
+            params![job.id, JOB_STATUS_FAILED, error_message, now, now],
+        )
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_documents
+            SET processing_status = ?2, error_message = ?3, active_job_id = NULL, updated_at = ?4
+            WHERE id = ?1
+            "#,
+            params![job.document_id, DOCUMENT_STATUS_FAILED, error_message, now],
+        )
+        .map_err(|err| err.to_string())?;
+    log_job(connection, &job.id, &job.document_id, "error", step_name, error_message, None)
+}
+
+fn mark_unsupported(
+    connection: &Connection,
+    job: &PipelineJobClaim,
+    error_message: &str,
+) -> Result<(), String> {
+    let now = current_timestamp_ms();
+    finish_step(
+        connection,
+        job,
+        "parse",
+        STEP_STATUS_SKIPPED,
+        100,
+        Some(error_message),
+    )?;
+    for step_name in ["extract_assets", "chunk", "embed", "index", "finalize"] {
+        finish_step(connection, job, step_name, STEP_STATUS_SKIPPED, 100, None)?;
+    }
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_documents
+            SET processing_status = ?2, error_message = ?3, last_processed_at = ?4,
+                active_job_id = NULL, updated_at = ?5
+            WHERE id = ?1
+            "#,
+            params![job.document_id, DOCUMENT_STATUS_UNSUPPORTED, error_message, now, now],
+        )
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_jobs
+            SET status = ?2, progress = 100, error_message = ?3, finished_at = ?4, updated_at = ?5
+            WHERE id = ?1
+            "#,
+            params![job.id, JOB_STATUS_SUCCEEDED, error_message, now, now],
+        )
+        .map_err(|err| err.to_string())?;
+    log_job(connection, &job.id, &job.document_id, "warn", Some("parse"), error_message, None)
+}
+
+fn complete_partial_job(
+    connection: &Connection,
+    job: &PipelineJobClaim,
+    parsed: ParsedDocument,
+) -> Result<(), String> {
+    start_step(connection, job, "chunk", 45)?;
+    let chunks = crate::knowledge_chunker::split_document_text(
+        &parsed.content,
+        "",
+        Some(parsed.preview_type.as_str()),
+        None,
+        crate::knowledge_chunker::DEFAULT_CHUNK_SIZE,
+        crate::knowledge_chunker::DEFAULT_CHUNK_OVERLAP,
+    );
+    finish_step(connection, job, "chunk", STEP_STATUS_SUCCEEDED, 100, None)?;
+    if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
+        return Ok(());
+    }
+
+    start_step(connection, job, "embed", 65)?;
+    finish_step(connection, job, "embed", STEP_STATUS_SKIPPED, 100, None)?;
+    log_job(
+        connection,
+        &job.id,
+        &job.document_id,
+        "warn",
+        Some("embed"),
+        "embedding skipped; document indexed without vectors",
+        parsed.metadata_json.as_deref(),
+    )?;
+    if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
+        return Ok(());
+    }
+
+    start_step(connection, job, "index", 80)?;
+    let now = current_timestamp_ms();
+    let content_preview = preview_text(&parsed.content, 240);
+    let chunk_count = chunks.len() as i64;
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_chunks WHERE document_id = ?1",
+        params![job.document_id],
+    )
+    .map_err(|err| err.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare(
+                r#"
+                INSERT INTO knowledge_chunks (
+                  id, document_id, collection_id, chunk_index, title, content,
+                  embedding_json, embedding_model_key, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7)
+                "#,
+            )
+            .map_err(|err| err.to_string())?;
+        for (index, chunk) in chunks.into_iter().enumerate() {
+            stmt.execute(params![
+                uuid::Uuid::new_v4().to_string(),
+                job.document_id,
+                job.collection_id,
+                index as i64,
+                chunk.title,
+                chunk.content,
+                now,
+            ])
+            .map_err(|err| err.to_string())?;
+        }
+    }
+    tx.execute(
+        r#"
+        UPDATE knowledge_documents
+        SET preview_type = ?2, content = ?3, content_preview = ?4, chunk_count = ?5,
+            processing_status = ?6, error_message = ?7, content_version = content_version + 1,
+            last_processed_at = ?8, updated_at = ?9
+        WHERE id = ?1
+        "#,
+        params![
+            job.document_id,
+            parsed.preview_type,
+            parsed.content,
+            content_preview,
+            chunk_count,
+            DOCUMENT_STATUS_PARTIAL,
+            "indexed without embeddings",
+            now,
+            now,
+        ],
+    )
+    .map_err(|err| err.to_string())?;
+    tx.commit().map_err(|err| err.to_string())?;
+    finish_step(connection, job, "index", STEP_STATUS_SUCCEEDED, 100, None)?;
+    if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
+        return Ok(());
+    }
+
+    start_step(connection, job, "finalize", 95)?;
+    let now = current_timestamp_ms();
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_documents
+            SET processing_status = ?2, active_job_id = NULL, last_processed_at = ?3,
+                updated_at = ?4
+            WHERE id = ?1
+            "#,
+            params![job.document_id, DOCUMENT_STATUS_PARTIAL, now, now],
+        )
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_jobs
+            SET status = ?2, progress = 100, error_message = ?3, finished_at = ?4, updated_at = ?5
+            WHERE id = ?1
+            "#,
+            params![
+                job.id,
+                JOB_STATUS_SUCCEEDED,
+                "indexed without embeddings",
+                now,
+                now,
+            ],
+        )
+        .map_err(|err| err.to_string())?;
+    finish_step(connection, job, "finalize", STEP_STATUS_SUCCEEDED, 100, None)?;
+    log_job(connection, &job.id, &job.document_id, "info", Some("finalize"), "job completed as partial", None)
+}
+
+pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
+    let connection = open_pipeline_connection(app)?;
+    let Some(job) = claim_next_job(&connection)? else {
+        return Ok(false);
+    };
+
+    let result = (|| -> Result<(), String> {
+        let now = current_timestamp_ms();
+        connection
+            .execute(
+                r#"
+                UPDATE knowledge_documents
+                SET processing_status = ?2, error_message = NULL, active_job_id = ?3, updated_at = ?4
+                WHERE id = ?1
+                "#,
+                params![job.document_id, DOCUMENT_STATUS_PROCESSING, job.id, now],
+            )
+            .map_err(|err| err.to_string())?;
+
+        start_step(&connection, &job, "validate", 5)?;
+        let document = load_document_source(&connection, &job.document_id)?;
+        if document.collection_id != job.collection_id || document.id != job.document_id {
+            return Err("document/job mismatch".into());
+        }
+        let stored_file_path = document
+            .stored_file_path
+            .as_ref()
+            .ok_or_else(|| "stored file path is missing".to_string())?;
+        let bytes = fs::read(stored_file_path).map_err(|err| err.to_string())?;
+        validate_upload_size(&bytes)?;
+        finish_step(&connection, &job, "validate", STEP_STATUS_SUCCEEDED, 100, None)?;
+        if matches!(check_job_control(&connection, &job)?, ControlFlow::Stop) {
+            return Ok(());
+        }
+
+        start_step(&connection, &job, "parse", 20)?;
+        let parsed = match parse_simple_document(
+            &document.source_name,
+            document.file_extension.as_deref(),
+            &bytes,
+        ) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                mark_unsupported(&connection, &job, &err)?;
+                return Ok(());
+            }
+        };
+        finish_step(&connection, &job, "parse", STEP_STATUS_SUCCEEDED, 100, None)?;
+        if matches!(check_job_control(&connection, &job)?, ControlFlow::Stop) {
+            return Ok(());
+        }
+
+        start_step(&connection, &job, "extract_assets", 35)?;
+        skip_step(&connection, &job, "extract_assets", "no asset extraction needed for simple parser")?;
+        if matches!(check_job_control(&connection, &job)?, ControlFlow::Stop) {
+            return Ok(());
+        }
+
+        complete_partial_job(&connection, &job, parsed)
+    })();
+
+    if let Err(err) = result {
+        fail_job(&connection, &job, None, &err)?;
+    }
+
+    Ok(true)
+}
+
+pub fn run_pipeline_worker_tick(app: &tauri::AppHandle) -> Result<bool, String> {
+    run_next_pipeline_job(app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_to_markdown_pads_and_escapes_cells() {
+        let markdown = csv_to_markdown("name,value\nalpha,1\npipe,a|b", ',');
+
+        assert_eq!(
+            markdown,
+            "| name | value |\n| --- | --- |\n| alpha | 1 |\n| pipe | a\\|b |\n"
+        );
+    }
+
+    #[test]
+    fn parse_markdown_keeps_markdown_preview() {
+        let parsed = parse_simple_document("notes.md", Some("md"), b"# Title\nBody").unwrap();
+
+        assert_eq!(parsed.content, "# Title\nBody");
+        assert_eq!(parsed.preview_type, "markdown");
+        assert!(parsed.metadata_json.is_none());
+    }
+
+    #[test]
+    fn parse_csv_converts_to_markdown_table() {
+        let parsed = parse_simple_document("data.csv", Some(".csv"), b"a,b\n1,2").unwrap();
+
+        assert_eq!(parsed.preview_type, "markdown");
+        assert!(parsed.content.contains("| a | b |"));
+        assert!(parsed.content.contains("| 1 | 2 |"));
+    }
+
+    #[test]
+    fn parse_image_uses_placeholder() {
+        let parsed = parse_simple_document("photo.png", Some("png"), &[1, 2, 3]).unwrap();
+
+        assert_eq!(parsed.preview_type, "image");
+        assert_eq!(parsed.content, "![photo.png](photo.png)");
+        assert_eq!(
+            parsed.metadata_json.as_deref(),
+            Some("{\"mode\":\"store_with_placeholder\"}")
+        );
+    }
+
+    #[test]
+    fn parse_unknown_extension_is_unsupported() {
+        let err = parse_simple_document("archive.zip", Some("zip"), &[1, 2, 3]).unwrap_err();
+
+        assert!(err.contains(".zip"));
+    }
 }
