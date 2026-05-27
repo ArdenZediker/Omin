@@ -89,6 +89,14 @@ pub struct KnowledgeProcessingLogRecord {
     pub created_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeProcessingJobDetail {
+    pub job: KnowledgeProcessingJobRecord,
+    pub steps: Vec<KnowledgeProcessingStepRecord>,
+    pub logs: Vec<KnowledgeProcessingLogRecord>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineImportInput {
@@ -651,6 +659,444 @@ fn open_pipeline_connection(app: &tauri::AppHandle) -> Result<Connection, String
     crate::open_sqlite_connection(app)
 }
 
+fn read_job_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeProcessingJobRecord> {
+    Ok(KnowledgeProcessingJobRecord {
+        id: row.get(0)?,
+        document_id: row.get(1)?,
+        collection_id: row.get(2)?,
+        job_type: row.get(3)?,
+        status: row.get(4)?,
+        current_step: row.get(5)?,
+        progress: row.get(6)?,
+        attempt: row.get(7)?,
+        max_attempts: row.get(8)?,
+        cancel_requested: row.get(9)?,
+        pause_requested: row.get(10)?,
+        error_message: row.get(11)?,
+        created_at: row.get(12)?,
+        started_at: row.get(13)?,
+        finished_at: row.get(14)?,
+        updated_at: row.get(15)?,
+    })
+}
+
+fn read_step_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeProcessingStepRecord> {
+    Ok(KnowledgeProcessingStepRecord {
+        id: row.get(0)?,
+        job_id: row.get(1)?,
+        document_id: row.get(2)?,
+        step_name: row.get(3)?,
+        status: row.get(4)?,
+        progress: row.get(5)?,
+        error_message: row.get(6)?,
+        started_at: row.get(7)?,
+        finished_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+fn read_log_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeProcessingLogRecord> {
+    Ok(KnowledgeProcessingLogRecord {
+        id: row.get(0)?,
+        job_id: row.get(1)?,
+        document_id: row.get(2)?,
+        level: row.get(3)?,
+        step_name: row.get(4)?,
+        message: row.get(5)?,
+        details_json: row.get(6)?,
+        created_at: row.get(7)?,
+    })
+}
+
+fn load_job_record(
+    connection: &Connection,
+    job_id: &str,
+) -> Result<KnowledgeProcessingJobRecord, String> {
+    connection
+        .query_row(
+            r#"
+            SELECT id, document_id, collection_id, job_type, status, current_step, progress,
+                   attempt, max_attempts, cancel_requested, pause_requested, error_message,
+                   created_at, started_at, finished_at, updated_at
+            FROM knowledge_processing_jobs
+            WHERE id = ?1
+            "#,
+            params![job_id],
+            read_job_record,
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| format!("knowledge processing job not found: {job_id}"))
+}
+
+fn insert_default_step_rows(
+    connection: &Connection,
+    job_id: &str,
+    document_id: &str,
+    now: i64,
+) -> Result<(), String> {
+    let mut stmt = connection
+        .prepare(
+            r#"
+            INSERT INTO knowledge_processing_steps (
+              id, job_id, document_id, step_name, status, progress, error_message,
+              started_at, finished_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, 0, NULL, NULL, NULL, ?6)
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+
+    for step_name in PIPELINE_STEPS {
+        stmt.execute(params![
+            uuid::Uuid::new_v4().to_string(),
+            job_id,
+            document_id,
+            step_name,
+            STEP_STATUS_PENDING,
+            now,
+        ])
+        .map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn insert_job_record(
+    connection: &Connection,
+    document_id: &str,
+    collection_id: &str,
+    job_type: &str,
+    attempt: i64,
+    max_attempts: i64,
+    now: i64,
+) -> Result<KnowledgeProcessingJobRecord, String> {
+    let job_id = uuid::Uuid::new_v4().to_string();
+    connection
+        .execute(
+            r#"
+            INSERT INTO knowledge_processing_jobs (
+              id, document_id, collection_id, job_type, status, current_step, progress, attempt,
+              max_attempts, cancel_requested, pause_requested, error_message, created_at,
+              started_at, finished_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, 0, 0, NULL, ?9, NULL, NULL, ?10)
+            "#,
+            params![
+                job_id,
+                document_id,
+                collection_id,
+                job_type,
+                JOB_STATUS_QUEUED,
+                PIPELINE_STEPS[0],
+                attempt,
+                max_attempts,
+                now,
+                now,
+            ],
+        )
+        .map_err(|err| err.to_string())?;
+    insert_default_step_rows(connection, &job_id, document_id, now)?;
+    load_job_record(connection, &job_id)
+}
+
+pub fn list_processing_jobs(
+    connection: &Connection,
+    document_id: Option<String>,
+) -> Result<Vec<KnowledgeProcessingJobRecord>, String> {
+    let normalized_document_id = document_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let sql = if normalized_document_id.is_some() {
+        r#"
+        SELECT id, document_id, collection_id, job_type, status, current_step, progress,
+               attempt, max_attempts, cancel_requested, pause_requested, error_message,
+               created_at, started_at, finished_at, updated_at
+        FROM knowledge_processing_jobs
+        WHERE document_id = ?1
+        ORDER BY created_at DESC, id DESC
+        "#
+    } else {
+        r#"
+        SELECT id, document_id, collection_id, job_type, status, current_step, progress,
+               attempt, max_attempts, cancel_requested, pause_requested, error_message,
+               created_at, started_at, finished_at, updated_at
+        FROM knowledge_processing_jobs
+        ORDER BY created_at DESC, id DESC
+        "#
+    };
+
+    let mut stmt = connection.prepare(sql).map_err(|err| err.to_string())?;
+    let rows = if let Some(document_id) = normalized_document_id {
+        stmt.query_map(params![document_id], read_job_record)
+            .map_err(|err| err.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+    } else {
+        stmt.query_map([], read_job_record)
+            .map_err(|err| err.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+    };
+
+    rows.map_err(|err| err.to_string())
+}
+
+pub fn load_processing_job_detail(
+    connection: &Connection,
+    job_id: &str,
+) -> Result<KnowledgeProcessingJobDetail, String> {
+    let job = load_job_record(connection, job_id)?;
+
+    let mut steps_stmt = connection
+        .prepare(
+            r#"
+            SELECT id, job_id, document_id, step_name, status, progress, error_message,
+                   started_at, finished_at, updated_at
+            FROM knowledge_processing_steps
+            WHERE job_id = ?1
+            ORDER BY
+              CASE step_name
+                WHEN 'validate' THEN 0
+                WHEN 'parse' THEN 1
+                WHEN 'extract_assets' THEN 2
+                WHEN 'chunk' THEN 3
+                WHEN 'embed' THEN 4
+                WHEN 'index' THEN 5
+                WHEN 'finalize' THEN 6
+                ELSE 99
+              END,
+              updated_at ASC
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+    let steps = steps_stmt
+        .query_map(params![job_id], read_step_record)
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
+    let mut logs_stmt = connection
+        .prepare(
+            r#"
+            SELECT id, job_id, document_id, level, step_name, message, details_json, created_at
+            FROM knowledge_processing_logs
+            WHERE job_id = ?1
+            ORDER BY created_at ASC, id ASC
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+    let logs = logs_stmt
+        .query_map(params![job_id], read_log_record)
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
+    Ok(KnowledgeProcessingJobDetail { job, steps, logs })
+}
+
+pub fn request_job_pause(connection: &Connection, job_id: &str) -> Result<(), String> {
+    let job = load_job_record(connection, job_id)?;
+    let now = current_timestamp_ms();
+    let status = if job.status == JOB_STATUS_QUEUED {
+        JOB_STATUS_PAUSED
+    } else {
+        job.status.as_str()
+    };
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_jobs
+            SET pause_requested = 1, status = ?2, updated_at = ?3
+            WHERE id = ?1
+            "#,
+            params![job_id, status, now],
+        )
+        .map_err(|err| err.to_string())?;
+    log_job(
+        connection,
+        job_id,
+        &job.document_id,
+        "info",
+        None,
+        "pause requested",
+        None,
+    )
+}
+
+pub fn request_job_resume(connection: &Connection, job_id: &str) -> Result<(), String> {
+    let job = load_job_record(connection, job_id)?;
+    let now = current_timestamp_ms();
+    let status = if job.status == JOB_STATUS_PAUSED {
+        JOB_STATUS_QUEUED
+    } else {
+        job.status.as_str()
+    };
+    connection
+        .execute(
+            r#"
+            UPDATE knowledge_processing_jobs
+            SET pause_requested = 0, status = ?2, updated_at = ?3
+            WHERE id = ?1
+            "#,
+            params![job_id, status, now],
+        )
+        .map_err(|err| err.to_string())?;
+    log_job(
+        connection,
+        job_id,
+        &job.document_id,
+        "info",
+        None,
+        "resume requested",
+        None,
+    )
+}
+
+pub fn request_job_cancel(connection: &Connection, job_id: &str) -> Result<(), String> {
+    let job = load_job_record(connection, job_id)?;
+    let now = current_timestamp_ms();
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+    tx.execute(
+        r#"
+        UPDATE knowledge_processing_jobs
+        SET cancel_requested = 1, updated_at = ?2
+        WHERE id = ?1
+        "#,
+        params![job_id, now],
+    )
+    .map_err(|err| err.to_string())?;
+
+    if matches!(job.status.as_str(), JOB_STATUS_QUEUED | JOB_STATUS_PAUSED) {
+        tx.execute(
+            r#"
+            UPDATE knowledge_processing_steps
+            SET status = ?2, finished_at = ?3, updated_at = ?4
+            WHERE job_id = ?1 AND status = ?5
+            "#,
+            params![job_id, STEP_STATUS_SKIPPED, now, now, STEP_STATUS_PENDING],
+        )
+        .map_err(|err| err.to_string())?;
+        tx.execute(
+            r#"
+            UPDATE knowledge_processing_jobs
+            SET status = ?2, progress = 100, finished_at = ?3, updated_at = ?4
+            WHERE id = ?1
+            "#,
+            params![job_id, JOB_STATUS_CANCELED, now, now],
+        )
+        .map_err(|err| err.to_string())?;
+        tx.execute(
+            r#"
+            UPDATE knowledge_documents
+            SET processing_status = ?2, error_message = NULL, active_job_id = NULL, updated_at = ?3
+            WHERE id = ?1 AND active_job_id = ?4
+            "#,
+            params![job.document_id, DOCUMENT_STATUS_CANCELED, now, job_id],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    tx.commit().map_err(|err| err.to_string())?;
+    log_job(
+        connection,
+        job_id,
+        &job.document_id,
+        "warn",
+        None,
+        "cancel requested",
+        None,
+    )
+}
+
+pub fn retry_job(
+    connection: &Connection,
+    job_id: &str,
+) -> Result<KnowledgeProcessingJobRecord, String> {
+    let old_job = load_job_record(connection, job_id)?;
+    let now = current_timestamp_ms();
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+    let job = insert_job_record(
+        &tx,
+        &old_job.document_id,
+        &old_job.collection_id,
+        &old_job.job_type,
+        old_job.attempt + 1,
+        old_job.max_attempts,
+        now,
+    )?;
+    tx.execute(
+        r#"
+        UPDATE knowledge_documents
+        SET processing_status = ?2, error_message = NULL, active_job_id = ?3, updated_at = ?4
+        WHERE id = ?1
+        "#,
+        params![old_job.document_id, DOCUMENT_STATUS_PENDING, job.id, now],
+    )
+    .map_err(|err| err.to_string())?;
+    tx.commit().map_err(|err| err.to_string())?;
+    log_job(
+        connection,
+        &job.id,
+        &job.document_id,
+        "info",
+        None,
+        "job queued as retry",
+        Some(&format!("{{\"sourceJobId\":\"{job_id}\"}}")),
+    )?;
+    Ok(job)
+}
+
+pub fn create_document_job(
+    connection: &Connection,
+    document_id: &str,
+    job_type: &str,
+) -> Result<KnowledgeProcessingJobRecord, String> {
+    if !matches!(
+        job_type,
+        "reparse" | "rechunk" | "revectorize" | "full_rebuild"
+    ) {
+        return Err(format!("unsupported document job type: {job_type}"));
+    }
+
+    let (document_id, collection_id): (String, String) = connection
+        .query_row(
+            "SELECT id, collection_id FROM knowledge_documents WHERE id = ?1",
+            params![document_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| format!("knowledge document not found: {document_id}"))?;
+
+    let now = current_timestamp_ms();
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+    let job = insert_job_record(&tx, &document_id, &collection_id, job_type, 0, 3, now)?;
+    tx.execute(
+        r#"
+        UPDATE knowledge_documents
+        SET processing_status = ?2, error_message = NULL, active_job_id = ?3, updated_at = ?4
+        WHERE id = ?1
+        "#,
+        params![document_id, DOCUMENT_STATUS_PENDING, job.id, now],
+    )
+    .map_err(|err| err.to_string())?;
+    tx.commit().map_err(|err| err.to_string())?;
+    log_job(
+        connection,
+        &job.id,
+        &job.document_id,
+        "info",
+        None,
+        "document job queued",
+        None,
+    )?;
+    Ok(job)
+}
+
 fn claim_next_job(connection: &Connection) -> Result<Option<PipelineJobClaim>, String> {
     let Some(job) = connection
         .query_row(
@@ -787,7 +1233,15 @@ fn start_step(
             params![job.id, step_name, progress, now],
         )
         .map_err(|err| err.to_string())?;
-    log_job(connection, &job.id, &job.document_id, "info", Some(step_name), "step started", None)
+    log_job(
+        connection,
+        &job.id,
+        &job.document_id,
+        "info",
+        Some(step_name),
+        "step started",
+        None,
+    )
 }
 
 fn finish_step(
@@ -819,7 +1273,15 @@ fn skip_step(
     message: &str,
 ) -> Result<(), String> {
     finish_step(connection, job, step_name, STEP_STATUS_SKIPPED, 100, None)?;
-    log_job(connection, &job.id, &job.document_id, "info", Some(step_name), message, None)
+    log_job(
+        connection,
+        &job.id,
+        &job.document_id,
+        "info",
+        Some(step_name),
+        message,
+        None,
+    )
 }
 
 enum ControlFlow {
@@ -827,7 +1289,10 @@ enum ControlFlow {
     Stop,
 }
 
-fn check_job_control(connection: &Connection, job: &PipelineJobClaim) -> Result<ControlFlow, String> {
+fn check_job_control(
+    connection: &Connection,
+    job: &PipelineJobClaim,
+) -> Result<ControlFlow, String> {
     let (cancel_requested, pause_requested): (i64, i64) = connection
         .query_row(
             "SELECT cancel_requested, pause_requested FROM knowledge_processing_jobs WHERE id = ?1",
@@ -868,7 +1333,15 @@ fn check_job_control(connection: &Connection, job: &PipelineJobClaim) -> Result<
                 params![job.document_id, DOCUMENT_STATUS_CANCELED, now],
             )
             .map_err(|err| err.to_string())?;
-        log_job(connection, &job.id, &job.document_id, "warn", None, "job canceled", None)?;
+        log_job(
+            connection,
+            &job.id,
+            &job.document_id,
+            "warn",
+            None,
+            "job canceled",
+            None,
+        )?;
         return Ok(ControlFlow::Stop);
     }
 
@@ -884,7 +1357,15 @@ fn check_job_control(connection: &Connection, job: &PipelineJobClaim) -> Result<
                 params![job.id, JOB_STATUS_PAUSED, now],
             )
             .map_err(|err| err.to_string())?;
-        log_job(connection, &job.id, &job.document_id, "info", None, "job paused", None)?;
+        log_job(
+            connection,
+            &job.id,
+            &job.document_id,
+            "info",
+            None,
+            "job paused",
+            None,
+        )?;
         return Ok(ControlFlow::Stop);
     }
 
@@ -946,7 +1427,15 @@ fn fail_job(
             params![job.document_id, DOCUMENT_STATUS_FAILED, error_message, now],
         )
         .map_err(|err| err.to_string())?;
-    log_job(connection, &job.id, &job.document_id, "error", step_name, error_message, None)
+    log_job(
+        connection,
+        &job.id,
+        &job.document_id,
+        "error",
+        step_name,
+        error_message,
+        None,
+    )
 }
 
 fn mark_unsupported(
@@ -974,7 +1463,13 @@ fn mark_unsupported(
                 active_job_id = NULL, updated_at = ?5
             WHERE id = ?1
             "#,
-            params![job.document_id, DOCUMENT_STATUS_UNSUPPORTED, error_message, now, now],
+            params![
+                job.document_id,
+                DOCUMENT_STATUS_UNSUPPORTED,
+                error_message,
+                now,
+                now
+            ],
         )
         .map_err(|err| err.to_string())?;
     connection
@@ -987,7 +1482,15 @@ fn mark_unsupported(
             params![job.id, JOB_STATUS_SUCCEEDED, error_message, now, now],
         )
         .map_err(|err| err.to_string())?;
-    log_job(connection, &job.id, &job.document_id, "warn", Some("parse"), error_message, None)
+    log_job(
+        connection,
+        &job.id,
+        &job.document_id,
+        "warn",
+        Some("parse"),
+        error_message,
+        None,
+    )
 }
 
 fn complete_partial_job(
@@ -1116,8 +1619,23 @@ fn complete_partial_job(
             ],
         )
         .map_err(|err| err.to_string())?;
-    finish_step(connection, job, "finalize", STEP_STATUS_SUCCEEDED, 100, None)?;
-    log_job(connection, &job.id, &job.document_id, "info", Some("finalize"), "job completed as partial", None)
+    finish_step(
+        connection,
+        job,
+        "finalize",
+        STEP_STATUS_SUCCEEDED,
+        100,
+        None,
+    )?;
+    log_job(
+        connection,
+        &job.id,
+        &job.document_id,
+        "info",
+        Some("finalize"),
+        "job completed as partial",
+        None,
+    )
 }
 
 pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
@@ -1150,7 +1668,14 @@ pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
             .ok_or_else(|| "stored file path is missing".to_string())?;
         let bytes = fs::read(stored_file_path).map_err(|err| err.to_string())?;
         validate_upload_size(&bytes)?;
-        finish_step(&connection, &job, "validate", STEP_STATUS_SUCCEEDED, 100, None)?;
+        finish_step(
+            &connection,
+            &job,
+            "validate",
+            STEP_STATUS_SUCCEEDED,
+            100,
+            None,
+        )?;
         if matches!(check_job_control(&connection, &job)?, ControlFlow::Stop) {
             return Ok(());
         }
@@ -1173,7 +1698,12 @@ pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
         }
 
         start_step(&connection, &job, "extract_assets", 35)?;
-        skip_step(&connection, &job, "extract_assets", "no asset extraction needed for simple parser")?;
+        skip_step(
+            &connection,
+            &job,
+            "extract_assets",
+            "no asset extraction needed for simple parser",
+        )?;
         if matches!(check_job_control(&connection, &job)?, ControlFlow::Stop) {
             return Ok(());
         }

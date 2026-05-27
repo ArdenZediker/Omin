@@ -1,19 +1,18 @@
-﻿use rusqlite::{params, Connection, OptionalExtension};
+use reqwest::blocking::Client as BlockingHttpClient;
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::{
     cmp::Ordering,
+    collections::HashMap,
     fs,
     path::{Component, Path, PathBuf},
-    collections::HashMap,
     time::{SystemTime, UNIX_EPOCH},
 };
-use reqwest::blocking::Client as BlockingHttpClient;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter,
-    Manager,
+    Emitter, Manager,
 };
 
 mod knowledge_chunker;
@@ -333,7 +332,9 @@ fn validate_codex_pet_id(value: &str) -> Result<String, String> {
         .chars()
         .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_')
     {
-        return Err("pet id may only contain lowercase letters, digits, hyphen, or underscore".into());
+        return Err(
+            "pet id may only contain lowercase letters, digits, hyphen, or underscore".into(),
+        );
     }
 
     Ok(normalized)
@@ -345,7 +346,8 @@ fn read_codex_pet_manifest(path: &Path) -> Result<Option<CodexPetManifestInput>,
     }
 
     let raw = fs::read_to_string(path).map_err(|err| err.to_string())?;
-    let manifest = serde_json::from_str::<CodexPetManifestInput>(&raw).map_err(|err| err.to_string())?;
+    let manifest =
+        serde_json::from_str::<CodexPetManifestInput>(&raw).map_err(|err| err.to_string())?;
     Ok(Some(manifest))
 }
 
@@ -375,7 +377,9 @@ fn copy_codex_pet_template(target: &Path) -> Result<(), String> {
     Err("no spritesheet template was found for a new pet package".into())
 }
 
-fn load_codex_pet_package_record(package_dir: &Path) -> Result<Option<CodexPetPackageRecord>, String> {
+fn load_codex_pet_package_record(
+    package_dir: &Path,
+) -> Result<Option<CodexPetPackageRecord>, String> {
     let manifest_path = package_dir.join("pet.json");
     let Some(manifest) = read_codex_pet_manifest(&manifest_path)? else {
         return Ok(None);
@@ -391,7 +395,10 @@ fn load_codex_pet_package_record(package_dir: &Path) -> Result<Option<CodexPetPa
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(&id);
-    let spritesheet_web_path = format!("/pets/{package_name}/{}", spritesheet_path.replace('\\', "/"));
+    let spritesheet_web_path = format!(
+        "/pets/{package_name}/{}",
+        spritesheet_path.replace('\\', "/")
+    );
 
     Ok(Some(CodexPetPackageRecord {
         id,
@@ -571,7 +578,30 @@ fn infer_preview_type(extension: Option<&str>, mime_type: Option<&str>) -> Strin
 
     if matches!(
         extension.as_str(),
-        "md" | "markdown" | "txt" | "log" | "json" | "csv" | "tsv" | "html" | "htm" | "xml" | "yml" | "yaml" | "js" | "jsx" | "ts" | "tsx" | "py" | "rs" | "css" | "toml" | "ini" | "sql" | "sh" | "bat" | "cmd"
+        "md" | "markdown"
+            | "txt"
+            | "log"
+            | "json"
+            | "csv"
+            | "tsv"
+            | "html"
+            | "htm"
+            | "xml"
+            | "yml"
+            | "yaml"
+            | "js"
+            | "jsx"
+            | "ts"
+            | "tsx"
+            | "py"
+            | "rs"
+            | "css"
+            | "toml"
+            | "ini"
+            | "sql"
+            | "sh"
+            | "bat"
+            | "cmd"
     ) || mime_type.starts_with("text/")
         || mime_type == "application/json"
     {
@@ -586,7 +616,9 @@ fn infer_preview_type(extension: Option<&str>, mime_type: Option<&str>) -> Strin
         return "pdf".to_string();
     }
 
-    if matches!(extension.as_str(), "docx") || mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+    if matches!(extension.as_str(), "docx")
+        || mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    {
         return "docx".to_string();
     }
 
@@ -706,8 +738,9 @@ fn sqlite_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> {
     let connection = Connection::open(sqlite_db_path(app)?).map_err(|err| err.to_string())?;
-    connection.execute_batch(
-        r#"
+    connection
+        .execute_batch(
+            r#"
         CREATE TABLE IF NOT EXISTS app_kv (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL,
@@ -864,7 +897,8 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
           UNIQUE(document_id, chunk_index)
         );
         "#,
-    ).map_err(|err| err.to_string())?;
+        )
+        .map_err(|err| err.to_string())?;
     run_database_migrations(&connection)?;
     ensure_storage_migrations(&connection)?;
     ensure_knowledge_schema(&connection)?;
@@ -874,7 +908,11 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
 
 fn read_kv(connection: &Connection, key: &str) -> Result<Option<String>, String> {
     connection
-        .query_row("SELECT value FROM app_kv WHERE key = ?1", params![key], |row| row.get(0))
+        .query_row(
+            "SELECT value FROM app_kv WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
         .optional()
         .map_err(|err| err.to_string())
 }
@@ -903,7 +941,10 @@ fn remove_kv(connection: &Connection, key: &str) -> Result<(), String> {
 }
 
 fn is_window_state_key(key: &str) -> bool {
-    matches!(key, "omni_main_view" | "omni_compact_position" | "omni_main_position")
+    matches!(
+        key,
+        "omni_main_view" | "omni_compact_position" | "omni_main_position"
+    )
 }
 
 fn is_provider_config_key(key: &str) -> bool {
@@ -918,7 +959,11 @@ fn is_knowledge_embedding_config_key(key: &str) -> bool {
     key == "omni_knowledge_embedding_profile"
 }
 
-fn read_simple_table_value(connection: &Connection, table: &str, key: &str) -> Result<Option<String>, String> {
+fn read_simple_table_value(
+    connection: &Connection,
+    table: &str,
+    key: &str,
+) -> Result<Option<String>, String> {
     let sql = format!("SELECT value FROM {table} WHERE key = ?1");
     connection
         .query_row(&sql, params![key], |row| row.get(0))
@@ -926,7 +971,12 @@ fn read_simple_table_value(connection: &Connection, table: &str, key: &str) -> R
         .map_err(|err| err.to_string())
 }
 
-fn write_simple_table_value(connection: &Connection, table: &str, key: &str, value: &str) -> Result<(), String> {
+fn write_simple_table_value(
+    connection: &Connection,
+    table: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
     let sql = format!(
         r#"
         INSERT INTO {table} (key, value, updated_at)
@@ -943,7 +993,11 @@ fn write_simple_table_value(connection: &Connection, table: &str, key: &str, val
     Ok(())
 }
 
-fn remove_simple_table_value(connection: &Connection, table: &str, key: &str) -> Result<(), String> {
+fn remove_simple_table_value(
+    connection: &Connection,
+    table: &str,
+    key: &str,
+) -> Result<(), String> {
     let sql = format!("DELETE FROM {table} WHERE key = ?1");
     connection
         .execute(&sql, params![key])
@@ -991,19 +1045,26 @@ fn read_provider_configs_value(connection: &Connection) -> Result<Option<String>
             item.insert("name".into(), JsonValue::String(name));
         }
         if let Some(custom_models_json) = custom_models_json {
-            let parsed = serde_json::from_str::<JsonValue>(&custom_models_json).unwrap_or(JsonValue::Array(Vec::new()));
+            let parsed = serde_json::from_str::<JsonValue>(&custom_models_json)
+                .unwrap_or(JsonValue::Array(Vec::new()));
             item.insert("customModels".into(), parsed);
         }
         result.insert(provider, JsonValue::Object(item));
     }
 
-    Ok(Some(serde_json::to_string(&JsonValue::Object(result)).map_err(|err| err.to_string())?))
+    Ok(Some(
+        serde_json::to_string(&JsonValue::Object(result)).map_err(|err| err.to_string())?,
+    ))
 }
 
 fn write_provider_configs_value(connection: &Connection, value: &str) -> Result<(), String> {
-    let parsed: JsonMap<String, JsonValue> = serde_json::from_str(value).map_err(|err| err.to_string())?;
-    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM provider_configs", []).map_err(|err| err.to_string())?;
+    let parsed: JsonMap<String, JsonValue> =
+        serde_json::from_str(value).map_err(|err| err.to_string())?;
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM provider_configs", [])
+        .map_err(|err| err.to_string())?;
 
     {
         let mut stmt = tx
@@ -1016,13 +1077,18 @@ fn write_provider_configs_value(connection: &Connection, value: &str) -> Result<
             .map_err(|err| err.to_string())?;
 
         for (provider, item) in parsed {
-            let record: DbProviderConfigRecord = serde_json::from_value(item).map_err(|err| err.to_string())?;
+            let record: DbProviderConfigRecord =
+                serde_json::from_value(item).map_err(|err| err.to_string())?;
             stmt.execute(params![
                 provider,
                 record.api_key,
                 record.base_url,
                 record.name,
-                record.custom_models.map(|value| serde_json::to_string(&value)).transpose().map_err(|err| err.to_string())?,
+                record
+                    .custom_models
+                    .map(|value| serde_json::to_string(&value))
+                    .transpose()
+                    .map_err(|err| err.to_string())?,
                 current_timestamp_ms(),
             ])
             .map_err(|err| err.to_string())?;
@@ -1045,7 +1111,9 @@ fn read_model_connection_status_value(connection: &Connection) -> Result<Option<
         .prepare("SELECT model_id, connected FROM model_connection_status ORDER BY model_id ASC")
         .map_err(|err| err.to_string())?;
     let rows = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? != 0)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? != 0))
+        })
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
@@ -1059,13 +1127,19 @@ fn read_model_connection_status_value(connection: &Connection) -> Result<Option<
         result.insert(model_id, JsonValue::Bool(connected));
     }
 
-    Ok(Some(serde_json::to_string(&JsonValue::Object(result)).map_err(|err| err.to_string())?))
+    Ok(Some(
+        serde_json::to_string(&JsonValue::Object(result)).map_err(|err| err.to_string())?,
+    ))
 }
 
 fn write_model_connection_status_value(connection: &Connection, value: &str) -> Result<(), String> {
-    let parsed: HashMap<String, bool> = serde_json::from_str(value).map_err(|err| err.to_string())?;
-    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM model_connection_status", []).map_err(|err| err.to_string())?;
+    let parsed: HashMap<String, bool> =
+        serde_json::from_str(value).map_err(|err| err.to_string())?;
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM model_connection_status", [])
+        .map_err(|err| err.to_string())?;
 
     {
         let mut stmt = tx
@@ -1075,8 +1149,12 @@ fn write_model_connection_status_value(connection: &Connection, value: &str) -> 
             .map_err(|err| err.to_string())?;
 
         for (model_id, connected) in parsed {
-            stmt.execute(params![model_id, if connected { 1_i64 } else { 0_i64 }, current_timestamp_ms()])
-                .map_err(|err| err.to_string())?;
+            stmt.execute(params![
+                model_id,
+                if connected { 1_i64 } else { 0_i64 },
+                current_timestamp_ms()
+            ])
+            .map_err(|err| err.to_string())?;
         }
     }
 
@@ -1107,7 +1185,11 @@ fn read_structured_app_value(connection: &Connection, key: &str) -> Result<Optio
     read_simple_table_value(connection, "app_settings", key)
 }
 
-fn write_structured_app_value(connection: &Connection, key: &str, value: &str) -> Result<(), String> {
+fn write_structured_app_value(
+    connection: &Connection,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
     if is_provider_config_key(key) {
         return write_provider_configs_value(connection, value);
     }
@@ -1175,7 +1257,8 @@ fn load_structured_chat_storage(connection: &Connection) -> Result<ChatStoragePa
                 system_prompt: row.get(5)?,
                 default_model_id: row.get(6)?,
                 allowed_tool_ids: serde_json::from_str(&allowed_tool_ids_json).unwrap_or_default(),
-                allowed_skill_ids: serde_json::from_str(&allowed_skill_ids_json).unwrap_or_default(),
+                allowed_skill_ids: serde_json::from_str(&allowed_skill_ids_json)
+                    .unwrap_or_default(),
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
             })
@@ -1203,7 +1286,8 @@ fn load_structured_chat_storage(connection: &Connection) -> Result<ChatStoragePa
                 id: row.get(0)?,
                 assistant_id: row.get(1)?,
                 title: row.get(2)?,
-                messages: serde_json::from_str(&messages_json).unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
+                messages: serde_json::from_str(&messages_json)
+                    .unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
                 pinned: Some(row.get::<_, i64>(4)? != 0),
                 favorite: Some(row.get::<_, i64>(5)? != 0),
                 created_at: row.get(6)?,
@@ -1235,12 +1319,18 @@ fn save_structured_chat_storage(
     assistants_json: &str,
     sessions_json: &str,
 ) -> Result<(), String> {
-    let assistants: Vec<DbAssistantProfile> = serde_json::from_str(assistants_json).map_err(|err| err.to_string())?;
-    let sessions: Vec<DbChatSession> = serde_json::from_str(sessions_json).map_err(|err| err.to_string())?;
+    let assistants: Vec<DbAssistantProfile> =
+        serde_json::from_str(assistants_json).map_err(|err| err.to_string())?;
+    let sessions: Vec<DbChatSession> =
+        serde_json::from_str(sessions_json).map_err(|err| err.to_string())?;
 
-    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM assistants", []).map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM chat_sessions", []).map_err(|err| err.to_string())?;
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM assistants", [])
+        .map_err(|err| err.to_string())?;
+    tx.execute("DELETE FROM chat_sessions", [])
+        .map_err(|err| err.to_string())?;
 
     {
         let mut stmt = tx
@@ -1264,7 +1354,8 @@ fn save_structured_chat_storage(
                 assistant.system_prompt,
                 assistant.default_model_id,
                 serde_json::to_string(&assistant.allowed_tool_ids).map_err(|err| err.to_string())?,
-                serde_json::to_string(&assistant.allowed_skill_ids).map_err(|err| err.to_string())?,
+                serde_json::to_string(&assistant.allowed_skill_ids)
+                    .map_err(|err| err.to_string())?,
                 assistant.created_at,
                 assistant.updated_at,
             ])
@@ -1289,8 +1380,16 @@ fn save_structured_chat_storage(
                 session.assistant_id,
                 session.title,
                 serde_json::to_string(&session.messages).map_err(|err| err.to_string())?,
-                if session.pinned.unwrap_or(false) { 1_i64 } else { 0_i64 },
-                if session.favorite.unwrap_or(false) { 1_i64 } else { 0_i64 },
+                if session.pinned.unwrap_or(false) {
+                    1_i64
+                } else {
+                    0_i64
+                },
+                if session.favorite.unwrap_or(false) {
+                    1_i64
+                } else {
+                    0_i64
+                },
                 session.created_at,
                 session.updated_at,
                 serde_json::to_string(&session.usage).map_err(|err| err.to_string())?,
@@ -1304,7 +1403,8 @@ fn save_structured_chat_storage(
 }
 
 fn load_manifest_storage(connection: &Connection) -> Result<ManifestStoragePayload, String> {
-    let assistant_presets_json = read_simple_table_value(connection, "assistant_presets", "builtin")?;
+    let assistant_presets_json =
+        read_simple_table_value(connection, "assistant_presets", "builtin")?;
     let tool_manifests_json = read_simple_table_value(connection, "tool_manifests", "builtin")?;
     let skill_manifests_json = read_simple_table_value(connection, "skill_manifests", "builtin")?;
 
@@ -1334,9 +1434,11 @@ fn save_manifest_storage(
 }
 
 fn load_memory_storage(connection: &Connection) -> Result<MemoryStoragePayload, String> {
-    let assistant_memories_json = read_simple_table_value(connection, "assistant_memories", "builtin")?;
+    let assistant_memories_json =
+        read_simple_table_value(connection, "assistant_memories", "builtin")?;
     let user_preferences_json = read_simple_table_value(connection, "user_preferences", "builtin")?;
-    let session_summaries_json = read_simple_table_value(connection, "session_summaries", "builtin")?;
+    let session_summaries_json =
+        read_simple_table_value(connection, "session_summaries", "builtin")?;
 
     Ok(MemoryStoragePayload {
         assistant_memories_json,
@@ -1365,10 +1467,15 @@ fn save_memory_storage(
 
 fn load_automation_storage(connection: &Connection) -> Result<AutomationStoragePayload, String> {
     let scheduled_tasks_json = read_simple_table_value(connection, "scheduled_tasks", "builtin")?;
-    Ok(AutomationStoragePayload { scheduled_tasks_json })
+    Ok(AutomationStoragePayload {
+        scheduled_tasks_json,
+    })
 }
 
-fn save_automation_storage(connection: &Connection, scheduled_tasks_json: Option<&str>) -> Result<(), String> {
+fn save_automation_storage(
+    connection: &Connection,
+    scheduled_tasks_json: Option<&str>,
+) -> Result<(), String> {
     if let Some(value) = scheduled_tasks_json {
         write_simple_table_value(connection, "scheduled_tasks", "builtin", value)?;
     }
@@ -1521,25 +1628,36 @@ fn normalize_knowledge_embedding_config_record(
         default_model_id.clone()
     };
 
-    KnowledgeEmbeddingConfigRecord { enabled: input.enabled, active_model_id, models }
+    KnowledgeEmbeddingConfigRecord {
+        enabled: input.enabled,
+        active_model_id,
+        models,
+    }
 }
 
-fn load_knowledge_embedding_config(connection: &Connection) -> Result<KnowledgeEmbeddingConfigRecord, String> {
+fn load_knowledge_embedding_config(
+    connection: &Connection,
+) -> Result<KnowledgeEmbeddingConfigRecord, String> {
     let raw = read_kv(connection, KNOWLEDGE_EMBEDDING_CONFIG_KEY)?;
     match raw {
-        Some(value) => {
-            match serde_json::from_str::<KnowledgeEmbeddingConfigRecord>(&value) {
-                Ok(parsed) => Ok(normalize_knowledge_embedding_config_record(parsed)),
-                Err(_) => load_legacy_knowledge_embedding_config(connection).map(|value| value.unwrap_or_else(default_knowledge_embedding_config)),
-            }
-        }
+        Some(value) => match serde_json::from_str::<KnowledgeEmbeddingConfigRecord>(&value) {
+            Ok(parsed) => Ok(normalize_knowledge_embedding_config_record(parsed)),
+            Err(_) => load_legacy_knowledge_embedding_config(connection)
+                .map(|value| value.unwrap_or_else(default_knowledge_embedding_config)),
+        },
         None => Ok(default_knowledge_embedding_config()),
     }
 }
 
 fn load_knowledge_embedding_active_model(
     connection: &Connection,
-) -> Result<Option<(KnowledgeEmbeddingConfigRecord, KnowledgeEmbeddingModelConfigRecord)>, String> {
+) -> Result<
+    Option<(
+        KnowledgeEmbeddingConfigRecord,
+        KnowledgeEmbeddingModelConfigRecord,
+    )>,
+    String,
+> {
     let config = load_knowledge_embedding_config(connection)?;
     if !config.enabled {
         return Ok(None);
@@ -1551,12 +1669,16 @@ fn load_knowledge_embedding_active_model(
         .find(|model| model.id == config.active_model_id)
         .cloned()
         .or_else(|| config.models.first().cloned())
-        .filter(|model| !model.api_key.trim().is_empty() && provider_supports_embeddings(&model.provider));
+        .filter(|model| {
+            !model.api_key.trim().is_empty() && provider_supports_embeddings(&model.provider)
+        });
 
     Ok(active.map(|model| (config, model)))
 }
 
-fn load_legacy_knowledge_embedding_config(connection: &Connection) -> Result<Option<KnowledgeEmbeddingConfigRecord>, String> {
+fn load_legacy_knowledge_embedding_config(
+    connection: &Connection,
+) -> Result<Option<KnowledgeEmbeddingConfigRecord>, String> {
     let raw = read_kv(connection, KNOWLEDGE_EMBEDDING_CONFIG_KEY)?;
     let Some(value) = raw else {
         return Ok(None);
@@ -1567,7 +1689,10 @@ fn load_legacy_knowledge_embedding_config(connection: &Connection) -> Result<Opt
         return Ok(None);
     };
 
-    let enabled = object.get("enabled").and_then(JsonValue::as_bool).unwrap_or(false);
+    let enabled = object
+        .get("enabled")
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(false);
     let active_model_id = object
         .get("activeModelId")
         .and_then(JsonValue::as_str)
@@ -1625,22 +1750,32 @@ fn load_legacy_knowledge_embedding_config(connection: &Connection) -> Result<Opt
                         } else {
                             model_id
                         },
-                        name: if model_name.is_empty() { model_value.clone() } else { model_name },
+                        name: if model_name.is_empty() {
+                            model_value.clone()
+                        } else {
+                            model_name
+                        },
                         provider: model_provider,
                         base_url: model_base_url,
                         model: model_value,
-                        api_key: if model_api_key.is_empty() { api_key.clone() } else { model_api_key },
+                        api_key: if model_api_key.is_empty() {
+                            api_key.clone()
+                        } else {
+                            model_api_key
+                        },
                     }
                 })
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 
-    Ok(Some(normalize_knowledge_embedding_config_record(KnowledgeEmbeddingConfigRecord {
-        enabled,
-        active_model_id,
-        models,
-    })))
+    Ok(Some(normalize_knowledge_embedding_config_record(
+        KnowledgeEmbeddingConfigRecord {
+            enabled,
+            active_model_id,
+            models,
+        },
+    )))
 }
 
 fn generate_chunk_embeddings(
@@ -1651,7 +1786,10 @@ fn generate_chunk_embeddings(
         return (Vec::new(), None);
     }
 
-    let Some((_, active_model)) = load_knowledge_embedding_active_model(connection).ok().flatten() else {
+    let Some((_, active_model)) = load_knowledge_embedding_active_model(connection)
+        .ok()
+        .flatten()
+    else {
         return (vec![None; chunks.len()], None);
     };
     let provider = active_model.provider.clone();
@@ -1729,7 +1867,12 @@ fn generate_chunk_embeddings(
         embeddings[index] = serde_json::to_string(&item.embedding).ok();
     }
 
-    let model_key = format!("{}:{}:{}", active_model.provider, active_model.model, fingerprint_text(active_model.api_key.trim()));
+    let model_key = format!(
+        "{}:{}:{}",
+        active_model.provider,
+        active_model.model,
+        fingerprint_text(active_model.api_key.trim())
+    );
     (embeddings, Some(model_key))
 }
 
@@ -1854,7 +1997,10 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
                 parser_profile_id: row.get(25)?,
                 last_processed_at: row.get(26)?,
                 vectorized_chunk_count,
-                vectorization_state: derive_vectorization_state(chunk_count, vectorized_chunk_count),
+                vectorization_state: derive_vectorization_state(
+                    chunk_count,
+                    vectorized_chunk_count,
+                ),
                 tags: parse_tags_json(&tags_json),
                 favorite: row.get::<_, i64>(13)? != 0,
                 access_count: row.get(14)?,
@@ -1868,7 +2014,10 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
 
-    Ok(KnowledgeLibraryPayload { collections, documents })
+    Ok(KnowledgeLibraryPayload {
+        collections,
+        documents,
+    })
 }
 
 fn load_knowledge_document(
@@ -1987,7 +2136,11 @@ fn load_knowledge_document_file(
     Ok(KnowledgeDocumentBinaryPayload { bytes })
 }
 
-fn create_knowledge_collection(connection: &Connection, name: &str, description: &str) -> Result<KnowledgeCollectionRecord, String> {
+fn create_knowledge_collection(
+    connection: &Connection,
+    name: &str,
+    description: &str,
+) -> Result<KnowledgeCollectionRecord, String> {
     let now = current_timestamp_ms();
     let id = uuid::Uuid::new_v4().to_string();
     let name = name.trim();
@@ -2052,7 +2205,11 @@ fn update_knowledge_collection(
         .ok_or_else(|| format!("知识库不存在: {collection_id}"))?;
 
     let name = input.name.unwrap_or(existing.name).trim().to_string();
-    let description = input.description.unwrap_or(existing.description).trim().to_string();
+    let description = input
+        .description
+        .unwrap_or(existing.description)
+        .trim()
+        .to_string();
     let retrieval_mode = input
         .retrieval_mode
         .map(|value| normalize_knowledge_retrieval_mode(&value))
@@ -2097,20 +2254,34 @@ fn delete_knowledge_collection(connection: &Connection, collection_id: &str) -> 
                 "#,
             )
             .map_err(|err| err.to_string())?;
-        let rows = stmt.query_map(params![collection_id], |row| row.get::<_, Option<String>>(0))
+        let rows = stmt
+            .query_map(params![collection_id], |row| {
+                row.get::<_, Option<String>>(0)
+            })
             .map_err(|err| err.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err| err.to_string())?;
         rows
     };
 
-    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM knowledge_chunks WHERE collection_id = ?1", params![collection_id])
+    let tx = connection
+        .unchecked_transaction()
         .map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM knowledge_documents WHERE collection_id = ?1", params![collection_id])
-        .map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM knowledge_collections WHERE id = ?1", params![collection_id])
-        .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_chunks WHERE collection_id = ?1",
+        params![collection_id],
+    )
+    .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_documents WHERE collection_id = ?1",
+        params![collection_id],
+    )
+    .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_collections WHERE id = ?1",
+        params![collection_id],
+    )
+    .map_err(|err| err.to_string())?;
     tx.commit().map_err(|err| err.to_string())?;
 
     for path in stored_paths {
@@ -2136,11 +2307,19 @@ fn delete_knowledge_document(connection: &Connection, document_id: &str) -> Resu
         .map_err(|err| err.to_string())?
         .flatten();
 
-    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM knowledge_chunks WHERE document_id = ?1", params![document_id])
+    let tx = connection
+        .unchecked_transaction()
         .map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM knowledge_documents WHERE id = ?1", params![document_id])
-        .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_chunks WHERE document_id = ?1",
+        params![document_id],
+    )
+    .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_documents WHERE id = ?1",
+        params![document_id],
+    )
+    .map_err(|err| err.to_string())?;
     tx.commit().map_err(|err| err.to_string())?;
 
     delete_stored_document_file(stored_file_path.as_deref());
@@ -2170,7 +2349,10 @@ fn import_knowledge_document(
     let document_id = uuid::Uuid::new_v4().to_string();
     let tags = input.tags.unwrap_or_default();
     let tags_json = serde_json::to_string(&tags).map_err(|err| err.to_string())?;
-    let title_hierarchy = input.title_hierarchy.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let title_hierarchy = input
+        .title_hierarchy
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     let file_extension = normalize_file_extension(input.file_extension, source_name);
     let mime_type = input
         .mime_type
@@ -2210,7 +2392,9 @@ fn import_knowledge_document(
         .content_bytes
         .as_ref()
         .filter(|bytes| !bytes.is_empty())
-        .map(|bytes| store_knowledge_document_bytes(app, &collection_id, &document_id, source_name, bytes))
+        .map(|bytes| {
+            store_knowledge_document_bytes(app, &collection_id, &document_id, source_name, bytes)
+        })
         .transpose()?
         .map(|path| path.to_string_lossy().to_string());
     let stored_file_size = input
@@ -2219,7 +2403,9 @@ fn import_knowledge_document(
         .filter(|_| stored_file_path.is_some())
         .map(|bytes| bytes.len() as i64);
 
-    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     tx.execute(
         r#"
         INSERT INTO knowledge_documents (
@@ -2296,7 +2482,11 @@ fn import_knowledge_document(
         mime_type,
         file_extension,
         preview_type: Some(preview_type),
-        content: if content.trim().is_empty() { None } else { Some(content) },
+        content: if content.trim().is_empty() {
+            None
+        } else {
+            Some(content)
+        },
         content_preview,
         thumbnail_data_url,
         file_hash: None,
@@ -2348,21 +2538,31 @@ fn rebuild_document_embeddings(
 
     let chunk_slices = chunk_rows
         .into_iter()
-        .map(|(_, content)| knowledge_chunker::ChunkSlice { content, title: None })
+        .map(|(_, content)| knowledge_chunker::ChunkSlice {
+            content,
+            title: None,
+        })
         .collect::<Vec<_>>();
 
     let (embeddings, embedding_model_key) = generate_chunk_embeddings(connection, &chunk_slices);
     let vectorized_chunk_count = count_vectorized_chunks(&embeddings);
     let now = current_timestamp_ms();
 
-    let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     {
         let mut stmt = tx
             .prepare("UPDATE knowledge_chunks SET embedding_json = ?2, embedding_model_key = ?3 WHERE document_id = ?1 AND chunk_index = ?4")
             .map_err(|err| err.to_string())?;
         for (index, embedding_json) in embeddings.into_iter().enumerate() {
-            stmt.execute(params![document_id, embedding_json, embedding_model_key.clone(), index as i64])
-                .map_err(|err| err.to_string())?;
+            stmt.execute(params![
+                document_id,
+                embedding_json,
+                embedding_model_key.clone(),
+                index as i64
+            ])
+            .map_err(|err| err.to_string())?;
         }
     }
 
@@ -2375,7 +2575,10 @@ fn rebuild_document_embeddings(
 
     Ok(KnowledgeDocumentRecord {
         vectorized_chunk_count,
-        vectorization_state: derive_vectorization_state(document.chunk_count, vectorized_chunk_count),
+        vectorization_state: derive_vectorization_state(
+            document.chunk_count,
+            vectorized_chunk_count,
+        ),
         updated_at: now,
         ..document
     })
@@ -2426,7 +2629,11 @@ fn score_search_candidate(
     let allow_embedding = matches!(retrieval_mode, "hybrid" | "vector");
     if allow_embedding {
         if let Some(query_embedding) = query_embedding {
-            if let Some(candidate_embedding) = candidate.embedding_json.as_deref().and_then(parse_embedding_json) {
+            if let Some(candidate_embedding) = candidate
+                .embedding_json
+                .as_deref()
+                .and_then(parse_embedding_json)
+            {
                 score += cosine_similarity(query_embedding, &candidate_embedding) * 2.0;
             }
         }
@@ -2592,7 +2799,13 @@ fn search_knowledge_chunks(
         let retrieval_mode = normalize_knowledge_retrieval_mode(candidate.retrieval_mode.as_str());
         let embedding_matches = query_model_key
             .as_deref()
-            .map(|model_key| candidate.embedding_model_key.as_deref().map(|value| value == model_key).unwrap_or(false))
+            .map(|model_key| {
+                candidate
+                    .embedding_model_key
+                    .as_deref()
+                    .map(|value| value == model_key)
+                    .unwrap_or(false)
+            })
             .unwrap_or(true);
         if !embedding_matches {
             continue;
@@ -2603,7 +2816,13 @@ fn search_knowledge_chunks(
         } else {
             None
         };
-        let score = score_search_candidate(&query, &query_terms, effective_embedding, &retrieval_mode, &candidate);
+        let score = score_search_candidate(
+            &query,
+            &query_terms,
+            effective_embedding,
+            &retrieval_mode,
+            &candidate,
+        );
         if score <= 0.0 && !candidate.content.to_lowercase().contains(&query) {
             continue;
         }
@@ -2649,7 +2868,9 @@ fn search_knowledge_chunks(
 }
 
 #[tauri::command]
-fn load_knowledge_library_command(app: tauri::AppHandle) -> Result<KnowledgeLibraryPayload, String> {
+fn load_knowledge_library_command(
+    app: tauri::AppHandle,
+) -> Result<KnowledgeLibraryPayload, String> {
     let connection = open_sqlite_connection(&app)?;
     load_knowledge_library(&connection)
 }
@@ -2683,7 +2904,9 @@ fn create_knowledge_collection_command(
 }
 
 #[tauri::command]
-fn ensure_default_knowledge_collection_command(app: tauri::AppHandle) -> Result<KnowledgeCollectionRecord, String> {
+fn ensure_default_knowledge_collection_command(
+    app: tauri::AppHandle,
+) -> Result<KnowledgeCollectionRecord, String> {
     let connection = open_sqlite_connection(&app)?;
     ensure_knowledge_defaults(&connection)?;
 
@@ -2753,6 +2976,87 @@ fn import_knowledge_document_pipeline_command(
 ) -> Result<knowledge_pipeline::PipelineImportResult, String> {
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::create_pipeline_import(&app, &connection, input)
+}
+
+#[tauri::command]
+fn load_knowledge_processing_jobs_command(
+    app: tauri::AppHandle,
+    document_id: Option<String>,
+) -> Result<Vec<knowledge_pipeline::KnowledgeProcessingJobRecord>, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::list_processing_jobs(&connection, document_id)
+}
+
+#[tauri::command]
+fn load_knowledge_processing_job_detail_command(
+    app: tauri::AppHandle,
+    job_id: String,
+) -> Result<knowledge_pipeline::KnowledgeProcessingJobDetail, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::load_processing_job_detail(&connection, &job_id)
+}
+
+#[tauri::command]
+fn pause_knowledge_processing_job_command(
+    app: tauri::AppHandle,
+    job_id: String,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::request_job_pause(&connection, &job_id)
+}
+
+#[tauri::command]
+fn resume_knowledge_processing_job_command(
+    app: tauri::AppHandle,
+    job_id: String,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::request_job_resume(&connection, &job_id)
+}
+
+#[tauri::command]
+fn cancel_knowledge_processing_job_command(
+    app: tauri::AppHandle,
+    job_id: String,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::request_job_cancel(&connection, &job_id)
+}
+
+#[tauri::command]
+fn retry_knowledge_processing_job_command(
+    app: tauri::AppHandle,
+    job_id: String,
+) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::retry_job(&connection, &job_id)
+}
+
+#[tauri::command]
+fn reparse_knowledge_document_command(
+    app: tauri::AppHandle,
+    document_id: String,
+) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::create_document_job(&connection, &document_id, "reparse")
+}
+
+#[tauri::command]
+fn rechunk_knowledge_document_command(
+    app: tauri::AppHandle,
+    document_id: String,
+) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::create_document_job(&connection, &document_id, "rechunk")
+}
+
+#[tauri::command]
+fn revectorize_knowledge_document_command(
+    app: tauri::AppHandle,
+    document_id: String,
+) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    knowledge_pipeline::create_document_job(&connection, &document_id, "revectorize")
 }
 
 #[tauri::command]
@@ -2961,13 +3265,19 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
 
     if !table_has_column(connection, "knowledge_documents", "file_hash")? {
         connection
-            .execute("ALTER TABLE knowledge_documents ADD COLUMN file_hash TEXT", [])
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN file_hash TEXT",
+                [],
+            )
             .map_err(|err| err.to_string())?;
     }
 
     if !table_has_column(connection, "knowledge_documents", "file_size")? {
         connection
-            .execute("ALTER TABLE knowledge_documents ADD COLUMN file_size INTEGER", [])
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN file_size INTEGER",
+                [],
+            )
             .map_err(|err| err.to_string())?;
     }
 
@@ -2982,13 +3292,19 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
 
     if !table_has_column(connection, "knowledge_documents", "error_message")? {
         connection
-            .execute("ALTER TABLE knowledge_documents ADD COLUMN error_message TEXT", [])
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN error_message TEXT",
+                [],
+            )
             .map_err(|err| err.to_string())?;
     }
 
     if !table_has_column(connection, "knowledge_documents", "active_job_id")? {
         connection
-            .execute("ALTER TABLE knowledge_documents ADD COLUMN active_job_id TEXT", [])
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN active_job_id TEXT",
+                [],
+            )
             .map_err(|err| err.to_string())?;
     }
 
@@ -3003,13 +3319,19 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
 
     if !table_has_column(connection, "knowledge_documents", "parser_profile_id")? {
         connection
-            .execute("ALTER TABLE knowledge_documents ADD COLUMN parser_profile_id TEXT", [])
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN parser_profile_id TEXT",
+                [],
+            )
             .map_err(|err| err.to_string())?;
     }
 
     if !table_has_column(connection, "knowledge_documents", "last_processed_at")? {
         connection
-            .execute("ALTER TABLE knowledge_documents ADD COLUMN last_processed_at INTEGER", [])
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN last_processed_at INTEGER",
+                [],
+            )
             .map_err(|err| err.to_string())?;
     }
 
@@ -3151,7 +3473,10 @@ fn collect_workspace_matches(
 }
 
 #[tauri::command]
-fn list_workspace_files(query: Option<String>, limit: Option<usize>) -> Result<Vec<WorkspaceFileEntry>, String> {
+fn list_workspace_files(
+    query: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<WorkspaceFileEntry>, String> {
     let root = workspace_root()?;
     let normalized_query = query.unwrap_or_default().trim().to_lowercase();
     let limit = limit.unwrap_or(100).clamp(1, 500);
@@ -3186,7 +3511,10 @@ fn read_workspace_file(path: String, max_chars: Option<usize>) -> Result<String,
 }
 
 #[tauri::command]
-fn search_workspace_files(query: String, limit: Option<usize>) -> Result<Vec<WorkspaceSearchMatch>, String> {
+fn search_workspace_files(
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<WorkspaceSearchMatch>, String> {
     let normalized_query = query.trim().to_lowercase();
     if normalized_query.is_empty() {
         return Err("Query cannot be empty".into());
@@ -3284,7 +3612,9 @@ fn save_memory_storage_command(
 }
 
 #[tauri::command]
-fn load_automation_storage_command(app: tauri::AppHandle) -> Result<AutomationStoragePayload, String> {
+fn load_automation_storage_command(
+    app: tauri::AppHandle,
+) -> Result<AutomationStoragePayload, String> {
     let connection = open_sqlite_connection(&app)?;
     load_automation_storage(&connection)
 }
@@ -3311,7 +3641,10 @@ fn load_app_kv(
     for key in keys {
         let mut value = read_structured_app_value(&connection, &key)?;
         if value.is_none() {
-            if let Some(legacy_value) = legacy_entries.get(&key).filter(|value| !value.trim().is_empty()) {
+            if let Some(legacy_value) = legacy_entries
+                .get(&key)
+                .filter(|value| !value.trim().is_empty())
+            {
                 write_structured_app_value(&connection, &key, legacy_value)?;
                 value = Some(legacy_value.clone());
             }
@@ -3395,6 +3728,15 @@ pub fn run() {
             delete_knowledge_document_command,
             import_knowledge_document_command,
             import_knowledge_document_pipeline_command,
+            load_knowledge_processing_jobs_command,
+            load_knowledge_processing_job_detail_command,
+            pause_knowledge_processing_job_command,
+            resume_knowledge_processing_job_command,
+            cancel_knowledge_processing_job_command,
+            retry_knowledge_processing_job_command,
+            reparse_knowledge_document_command,
+            rechunk_knowledge_document_command,
+            revectorize_knowledge_document_command,
             rebuild_knowledge_document_embeddings_command,
             search_knowledge_chunks_command,
             load_chat_storage,
