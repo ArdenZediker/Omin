@@ -116,6 +116,10 @@ export type KnowledgeProcessingJob = {
   progress: number;
   attempt: number;
   maxAttempts: number;
+  priority: number;
+  failCount: number;
+  nextRunAt?: number | null;
+  sourceJobId?: string | null;
   cancelRequested: boolean;
   pauseRequested: boolean;
   errorMessage?: string | null;
@@ -153,6 +157,105 @@ export type KnowledgeProcessingJobDetail = {
   job: KnowledgeProcessingJob;
   steps: KnowledgeProcessingStep[];
   logs: KnowledgeProcessingLog[];
+};
+
+export type KnowledgeProcessingStatusSummary = {
+  scope: "global" | "collection";
+  collectionId?: string | null;
+  queued: number;
+  running: number;
+  failed: number;
+};
+
+export type FailedJobQueryInput = {
+  collectionId?: string | null;
+  limit?: number;
+  offset?: number;
+};
+
+export type FailedJobQueryResult = {
+  scope: "global" | "collection";
+  collectionId?: string | null;
+  total: number;
+  hasMore: boolean;
+  jobs: KnowledgeProcessingJob[];
+};
+
+export type RetryFailedJobsInput = {
+  collectionId?: string | null;
+  limit?: number;
+};
+
+export type RetryFailedJobsResult = {
+  scope: "global" | "collection";
+  collectionId?: string | null;
+  attempted: number;
+  retried: number;
+  skipped: number;
+  errors: string[];
+};
+
+export type KnowledgeProcessingDeadLetter = {
+  id: string;
+  jobId: string;
+  documentId: string;
+  collectionId: string;
+  jobType: string;
+  status: string;
+  errorMessage?: string | null;
+  failCount: number;
+  attempt: number;
+  maxAttempts: number;
+  firstFailedAt: number;
+  lastFailedAt: number;
+  replayedAt?: number | null;
+  replayedJobId?: string | null;
+  resolvedAt?: number | null;
+  metadataJson?: string | null;
+};
+
+export type DeadLetterQueryInput = {
+  collectionId?: string | null;
+  status?: string | null;
+  limit?: number;
+  offset?: number;
+};
+
+export type DeadLetterQueryResult = {
+  scope: "global" | "collection";
+  collectionId?: string | null;
+  status?: string | null;
+  total: number;
+  hasMore: boolean;
+  items: KnowledgeProcessingDeadLetter[];
+};
+
+export type ReplayDeadLettersInput = {
+  collectionId?: string | null;
+  status?: string | null;
+  limit?: number;
+};
+
+export type ReplayDeadLettersResult = {
+  scope: "global" | "collection";
+  collectionId?: string | null;
+  attempted: number;
+  replayed: number;
+  skipped: number;
+  errors: string[];
+};
+
+export type KnowledgePipelineSettings = {
+  enabled: boolean;
+  maxConcurrentJobs: number;
+  perCollectionMaxRunning: number;
+  maxFileSizeMb: number;
+  maxAttempts: number;
+  maxAutoRetries: number;
+  jobTimeoutMs: number;
+  stepTimeoutMs: number;
+  keepSuccessfulLogsDays: number;
+  keepFailedLogsDays: number;
 };
 
 export type PipelineImportResult = {
