@@ -60,6 +60,14 @@ export type KnowledgeDocument = {
   content?: string;
   contentPreview: string;
   thumbnailDataUrl?: string | null;
+  fileHash?: string | null;
+  fileSize?: number | null;
+  processingStatus?: "pending" | "processing" | "searchable" | "partial" | "failed" | "canceled" | "unsupported" | null;
+  errorMessage?: string | null;
+  activeJobId?: string | null;
+  contentVersion?: number | null;
+  parserProfileId?: string | null;
+  lastProcessedAt?: number | null;
   chunkCount: number;
   vectorizedChunkCount?: number;
   vectorizationState?: "empty" | "unvectorized" | "partial" | "vectorized";
@@ -96,6 +104,55 @@ export type KnowledgeDocumentDetail = {
 
 export type KnowledgeDocumentBinaryPayload = {
   bytes: number[];
+};
+
+export type KnowledgeProcessingJob = {
+  id: string;
+  documentId: string;
+  collectionId: string;
+  jobType: "initial_import" | "reparse" | "rechunk" | "revectorize" | "full_rebuild";
+  status: "queued" | "running" | "paused" | "succeeded" | "failed" | "canceled";
+  currentStep?: string | null;
+  progress: number;
+  attempt: number;
+  maxAttempts: number;
+  cancelRequested: boolean;
+  pauseRequested: boolean;
+  errorMessage?: string | null;
+  createdAt: number;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  updatedAt: number;
+};
+
+export type KnowledgeProcessingStep = {
+  id: string;
+  jobId: string;
+  documentId: string;
+  stepName: string;
+  status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+  progress: number;
+  errorMessage?: string | null;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  updatedAt: number;
+};
+
+export type KnowledgeProcessingLog = {
+  id: string;
+  jobId: string;
+  documentId: string;
+  level: "info" | "warn" | "error";
+  stepName?: string | null;
+  message: string;
+  detailsJson?: string | null;
+  createdAt: number;
+};
+
+export type KnowledgeProcessingJobDetail = {
+  job: KnowledgeProcessingJob;
+  steps: KnowledgeProcessingStep[];
+  logs: KnowledgeProcessingLog[];
 };
 
 export type KnowledgeContextResult = {

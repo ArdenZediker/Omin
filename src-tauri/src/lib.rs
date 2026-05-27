@@ -17,6 +17,7 @@ use tauri::{
 };
 
 mod knowledge_chunker;
+mod knowledge_pipeline;
 
 #[derive(Serialize)]
 struct WorkspaceFileEntry {
@@ -175,6 +176,14 @@ struct KnowledgeDocumentRecord {
     content: Option<String>,
     content_preview: String,
     thumbnail_data_url: Option<String>,
+    file_hash: Option<String>,
+    file_size: Option<i64>,
+    processing_status: Option<String>,
+    error_message: Option<String>,
+    active_job_id: Option<String>,
+    content_version: Option<i64>,
+    parser_profile_id: Option<String>,
+    last_processed_at: Option<i64>,
     chunk_count: i64,
     vectorized_chunk_count: i64,
     vectorization_state: String,
@@ -1804,6 +1813,8 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
             SELECT id, collection_id, source_name, source_path, stored_file_path, mime_type, file_extension, preview_type,
                    content, content_preview, chunk_count, thumbnail_data_url, tags_json, favorite,
                    access_count, last_accessed_at, title_hierarchy, created_at, updated_at,
+                   file_hash, file_size, processing_status, error_message, active_job_id, content_version,
+                   parser_profile_id, last_processed_at,
                    (
                      SELECT COUNT(1)
                      FROM knowledge_chunks c
@@ -1820,7 +1831,7 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
         .query_map([], |row| {
             let tags_json: String = row.get(12)?;
             let chunk_count: i64 = row.get(10)?;
-            let vectorized_chunk_count: i64 = row.get(19)?;
+            let vectorized_chunk_count: i64 = row.get(27)?;
             Ok(KnowledgeDocumentRecord {
                 id: row.get(0)?,
                 collection_id: row.get(1)?,
@@ -1834,6 +1845,14 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
                 content_preview: row.get(9)?,
                 chunk_count,
                 thumbnail_data_url: row.get(11)?,
+                file_hash: row.get(19)?,
+                file_size: row.get(20)?,
+                processing_status: row.get(21)?,
+                error_message: row.get(22)?,
+                active_job_id: row.get(23)?,
+                content_version: row.get(24)?,
+                parser_profile_id: row.get(25)?,
+                last_processed_at: row.get(26)?,
                 vectorized_chunk_count,
                 vectorization_state: derive_vectorization_state(chunk_count, vectorized_chunk_count),
                 tags: parse_tags_json(&tags_json),
@@ -1864,6 +1883,8 @@ fn load_knowledge_document(
             SELECT id, collection_id, source_name, source_path, stored_file_path, mime_type, file_extension, preview_type,
                    content, content_preview, chunk_count, thumbnail_data_url, tags_json, favorite,
                    access_count, last_accessed_at, title_hierarchy, created_at, updated_at,
+                   file_hash, file_size, processing_status, error_message, active_job_id, content_version,
+                   parser_profile_id, last_processed_at,
                    (
                      SELECT COUNT(1)
                      FROM knowledge_chunks c
@@ -1878,7 +1899,7 @@ fn load_knowledge_document(
             |row| {
                 let tags_json: String = row.get(12)?;
                 let chunk_count: i64 = row.get(10)?;
-                let vectorized_chunk_count: i64 = row.get(19)?;
+                let vectorized_chunk_count: i64 = row.get(27)?;
                 Ok(KnowledgeDocumentRecord {
                     id: row.get(0)?,
                     collection_id: row.get(1)?,
@@ -1892,6 +1913,14 @@ fn load_knowledge_document(
                     content_preview: row.get(9)?,
                     chunk_count,
                     thumbnail_data_url: row.get(11)?,
+                    file_hash: row.get(19)?,
+                    file_size: row.get(20)?,
+                    processing_status: row.get(21)?,
+                    error_message: row.get(22)?,
+                    active_job_id: row.get(23)?,
+                    content_version: row.get(24)?,
+                    parser_profile_id: row.get(25)?,
+                    last_processed_at: row.get(26)?,
                     vectorized_chunk_count,
                     vectorization_state: derive_vectorization_state(chunk_count, vectorized_chunk_count),
                     tags: parse_tags_json(&tags_json),
@@ -2184,6 +2213,11 @@ fn import_knowledge_document(
         .map(|bytes| store_knowledge_document_bytes(app, &collection_id, &document_id, source_name, bytes))
         .transpose()?
         .map(|path| path.to_string_lossy().to_string());
+    let stored_file_size = input
+        .content_bytes
+        .as_ref()
+        .filter(|_| stored_file_path.is_some())
+        .map(|bytes| bytes.len() as i64);
 
     let tx = connection.unchecked_transaction().map_err(|err| err.to_string())?;
     tx.execute(
@@ -2265,6 +2299,14 @@ fn import_knowledge_document(
         content: if content.trim().is_empty() { None } else { Some(content) },
         content_preview,
         thumbnail_data_url,
+        file_hash: None,
+        file_size: stored_file_size,
+        processing_status: Some(knowledge_pipeline::DOCUMENT_STATUS_SEARCHABLE.to_string()),
+        error_message: None,
+        active_job_id: None,
+        content_version: Some(1),
+        parser_profile_id: None,
+        last_processed_at: Some(now),
         chunk_count,
         vectorized_chunk_count,
         vectorization_state: derive_vectorization_state(chunk_count, vectorized_chunk_count),
@@ -2908,6 +2950,60 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
 
+    if !table_has_column(connection, "knowledge_documents", "file_hash")? {
+        connection
+            .execute("ALTER TABLE knowledge_documents ADD COLUMN file_hash TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "file_size")? {
+        connection
+            .execute("ALTER TABLE knowledge_documents ADD COLUMN file_size INTEGER", [])
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "processing_status")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN processing_status TEXT NOT NULL DEFAULT 'searchable'",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "error_message")? {
+        connection
+            .execute("ALTER TABLE knowledge_documents ADD COLUMN error_message TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "active_job_id")? {
+        connection
+            .execute("ALTER TABLE knowledge_documents ADD COLUMN active_job_id TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "content_version")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN content_version INTEGER NOT NULL DEFAULT 1",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "parser_profile_id")? {
+        connection
+            .execute("ALTER TABLE knowledge_documents ADD COLUMN parser_profile_id TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_documents", "last_processed_at")? {
+        connection
+            .execute("ALTER TABLE knowledge_documents ADD COLUMN last_processed_at INTEGER", [])
+            .map_err(|err| err.to_string())?;
+    }
+
     if !table_has_column(connection, "knowledge_collections", "retrieval_mode")? {
         connection
             .execute(
@@ -2926,6 +3022,7 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
 
+    knowledge_pipeline::ensure_pipeline_schema(connection)?;
     ensure_knowledge_defaults(connection)?;
 
     Ok(())
