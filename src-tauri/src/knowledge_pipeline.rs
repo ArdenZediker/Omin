@@ -103,6 +103,7 @@ pub struct PipelineImportInput {
     pub collection_id: Option<String>,
     pub source_name: String,
     pub source_path: Option<String>,
+    pub content: Option<String>,
     pub content_bytes: Vec<u8>,
     pub mime_type: Option<String>,
     pub file_extension: Option<String>,
@@ -141,6 +142,7 @@ struct PipelineDocumentSource {
     source_name: String,
     stored_file_path: Option<String>,
     file_extension: Option<String>,
+    content: Option<String>,
 }
 
 pub fn ensure_pipeline_schema(connection: &Connection) -> Result<(), String> {
@@ -473,7 +475,14 @@ pub fn create_pipeline_import(
     )?
     .to_string_lossy()
     .to_string();
-    let content_preview = preview_text(&source_name, 240);
+    let extracted_content = input
+        .content
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let content_preview = extracted_content
+        .as_deref()
+        .map(|content| preview_text(content, 240))
+        .unwrap_or_else(|| preview_text(&source_name, 240));
     let file_size = input.content_bytes.len() as i64;
 
     let tx = connection
@@ -489,10 +498,10 @@ pub fn create_pipeline_import(
           last_processed_at, created_at, updated_at
         ) VALUES (
           ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-          ?8, NULL, ?9, 0, ?10, '[]',
-          0, 0, NULL, NULL, ?11, ?12,
-          ?13, NULL, ?14, 1, ?15,
-          NULL, ?16, ?17
+          ?8, ?9, ?10, 0, ?11, '[]',
+          0, 0, NULL, NULL, ?12, ?13,
+          ?14, NULL, ?15, 1, ?16,
+          NULL, ?17, ?18
         )
         "#,
         params![
@@ -504,6 +513,7 @@ pub fn create_pipeline_import(
             mime_type,
             file_extension,
             preview_type,
+            extracted_content,
             content_preview,
             thumbnail_data_url,
             file_hash,
@@ -575,6 +585,7 @@ fn parse_simple_document(
     source_name: &str,
     file_extension: Option<&str>,
     bytes: &[u8],
+    bridged_content: Option<&str>,
 ) -> Result<ParsedDocument, String> {
     let ext = file_extension
         .unwrap_or_default()
@@ -605,6 +616,19 @@ fn parse_simple_document(
             preview_type: "markdown".into(),
             metadata_json: None,
         }),
+        "pdf" | "docx" => {
+            let content = bridged_content
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    format!("unsupported file extension .{ext}; original file has been stored")
+                })?;
+            Ok(ParsedDocument {
+                content: content.to_string(),
+                preview_type: ext.clone(),
+                metadata_json: Some("{\"mode\":\"frontend_bridge\"}".into()),
+            })
+        }
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" => Ok(ParsedDocument {
             content: format!("![{}]({})", source_name, source_name),
             preview_type: "image".into(),
@@ -1156,7 +1180,7 @@ fn load_document_source(
     connection
         .query_row(
             r#"
-            SELECT id, collection_id, source_name, stored_file_path, file_extension
+            SELECT id, collection_id, source_name, stored_file_path, file_extension, content
             FROM knowledge_documents
             WHERE id = ?1
             "#,
@@ -1168,6 +1192,7 @@ fn load_document_source(
                     source_name: row.get(2)?,
                     stored_file_path: row.get(3)?,
                     file_extension: row.get(4)?,
+                    content: row.get(5)?,
                 })
             },
         )
@@ -1685,6 +1710,7 @@ pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
             &document.source_name,
             document.file_extension.as_deref(),
             &bytes,
+            document.content.as_deref(),
         ) {
             Ok(parsed) => parsed,
             Err(err) => {
@@ -1738,7 +1764,7 @@ mod tests {
 
     #[test]
     fn parse_markdown_keeps_markdown_preview() {
-        let parsed = parse_simple_document("notes.md", Some("md"), b"# Title\nBody").unwrap();
+        let parsed = parse_simple_document("notes.md", Some("md"), b"# Title\nBody", None).unwrap();
 
         assert_eq!(parsed.content, "# Title\nBody");
         assert_eq!(parsed.preview_type, "markdown");
@@ -1747,7 +1773,7 @@ mod tests {
 
     #[test]
     fn parse_csv_converts_to_markdown_table() {
-        let parsed = parse_simple_document("data.csv", Some(".csv"), b"a,b\n1,2").unwrap();
+        let parsed = parse_simple_document("data.csv", Some(".csv"), b"a,b\n1,2", None).unwrap();
 
         assert_eq!(parsed.preview_type, "markdown");
         assert!(parsed.content.contains("| a | b |"));
@@ -1755,8 +1781,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_pdf_uses_frontend_bridge_content() {
+        let parsed = parse_simple_document("report.pdf", Some("pdf"), b"%PDF", Some("Extracted text")).unwrap();
+
+        assert_eq!(parsed.preview_type, "pdf");
+        assert_eq!(parsed.content, "Extracted text");
+        assert_eq!(parsed.metadata_json.as_deref(), Some("{\"mode\":\"frontend_bridge\"}"));
+    }
+
+    #[test]
     fn parse_image_uses_placeholder() {
-        let parsed = parse_simple_document("photo.png", Some("png"), &[1, 2, 3]).unwrap();
+        let parsed = parse_simple_document("photo.png", Some("png"), &[1, 2, 3], None).unwrap();
 
         assert_eq!(parsed.preview_type, "image");
         assert_eq!(parsed.content, "![photo.png](photo.png)");
@@ -1768,7 +1803,7 @@ mod tests {
 
     #[test]
     fn parse_unknown_extension_is_unsupported() {
-        let err = parse_simple_document("archive.zip", Some("zip"), &[1, 2, 3]).unwrap_err();
+        let err = parse_simple_document("archive.zip", Some("zip"), &[1, 2, 3], None).unwrap_err();
 
         assert!(err.contains(".zip"));
     }

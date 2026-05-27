@@ -29,6 +29,7 @@ import type {
   KnowledgeDocumentBinaryPayload,
   KnowledgeDocumentDetail,
   KnowledgeLibraryPayload,
+  PipelineImportResult,
 } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { usePromptDialog } from "./PromptDialog";
@@ -49,7 +50,7 @@ type KnowledgeBaseViewProps = {
   windowControls?: ReactNode;
 };
 
-type KnowledgeDocumentDetailView = "preview" | "chunks";
+type KnowledgeDocumentDetailView = "preview" | "chunks" | "processing";
 type KnowledgePageMode = "empty" | "list" | "detail";
 type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "unsupported";
 
@@ -250,6 +251,27 @@ function getVectorizationLabel(state?: string | null) {
       return "无内容";
     default:
       return "未知状态";
+  }
+}
+
+function getProcessingStatusLabel(status?: KnowledgeLibraryPayload["documents"][number]["processingStatus"] | null) {
+  switch (status) {
+    case "pending":
+      return "等待处理";
+    case "processing":
+      return "处理中";
+    case "searchable":
+      return "可检索";
+    case "partial":
+      return "部分可用";
+    case "failed":
+      return "处理失败";
+    case "canceled":
+      return "已取消";
+    case "unsupported":
+      return "仅保存";
+    default:
+      return "可检索";
   }
 }
 
@@ -491,12 +513,6 @@ async function loadKnowledgeDocumentDetail(documentId: string) {
 
 async function loadKnowledgeDocumentBinary(documentId: string) {
   return invoke<KnowledgeDocumentBinaryPayload>("load_knowledge_document_file_command", {
-    input: { documentId },
-  });
-}
-
-async function rebuildKnowledgeDocumentEmbeddings(documentId: string) {
-  return invoke<KnowledgeDocumentDetail>("rebuild_knowledge_document_embeddings_command", {
     input: { documentId },
   });
 }
@@ -1024,17 +1040,18 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     }
 
     const thumbnailDataUrl = (await createThumbnailDataUrl(file, content || file.name)) ?? undefined;
-    await invoke("import_knowledge_document_command", {
+    await invoke<PipelineImportResult>("import_knowledge_document_pipeline_command", {
       input: {
         collectionId,
         sourceName: file.name,
         sourcePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
-        content,
-        contentBytes: bytes,
+        content: content || null,
+        contentBytes: Array.from(bytes),
         mimeType: file.type || null,
         fileExtension: extension,
         previewType,
         thumbnailDataUrl,
+        parserProfileId: null,
       },
     });
   }
@@ -1066,7 +1083,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       setSearchQuery("");
     } catch (error) {
       console.error(error);
-      setUploadError(error instanceof Error ? error.message : "????");
+      setUploadError(error instanceof Error ? error.message : "文件上传失败");
     }
   }
 
@@ -1121,16 +1138,24 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setSelectedDocumentDetailView("preview");
   }
 
-  async function rebuildDocumentEmbeddings(documentId: string) {
+  async function refreshSelectedDocumentDetail(documentId: string) {
+    await refreshLibrary();
+    const detail = await loadKnowledgeDocumentDetail(documentId);
+    setSelectedDocumentDetail(detail);
+  }
+
+  async function runSelectedDocumentAction(action: () => Promise<unknown>, fallbackMessage: string) {
+    if (!selectedDocument) {
+      return;
+    }
+
     setDocumentDetailError(null);
     setIsLoadingDocumentDetail(true);
     try {
-      await rebuildKnowledgeDocumentEmbeddings(documentId);
-      await refreshLibrary();
-      const detail = await loadKnowledgeDocumentDetail(documentId);
-      setSelectedDocumentDetail(detail);
+      await action();
+      await refreshSelectedDocumentDetail(selectedDocument.id);
     } catch (error) {
-      setDocumentDetailError(error instanceof Error ? error.message : "重建向量化失败");
+      setDocumentDetailError(error instanceof Error ? error.message : fallbackMessage);
     } finally {
       setIsLoadingDocumentDetail(false);
     }
@@ -1359,6 +1384,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </div>
                     {selectedDocument ? (
                       <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600">
+                        <span>{getProcessingStatusLabel(selectedDocument.processingStatus)}</span>
+                        <span>·</span>
                         <span>{selectedVectorizationLabel}</span>
                         {selectedDocument.vectorizedChunkCount !== undefined ? (
                           <span>· {selectedDocument.vectorizedChunkCount}/{selectedDocument.chunkCount}</span>
@@ -1392,16 +1419,74 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     >
                       <Layers3 size={15} strokeWidth={2} />
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDocumentDetailView("processing")}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
+                        selectedDocumentDetailView === "processing" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                      }`}
+                      title="处理"
+                      aria-pressed={selectedDocumentDetailView === "processing"}
+                    >
+                      <Settings size={15} strokeWidth={2} />
+                    </button>
                   </div>
 
                   {selectedDocument ? (
-                    <button
-                      type="button"
-                      onClick={() => void rebuildDocumentEmbeddings(selectedDocument.id)}
-                      className="no-drag rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                    >
-                      重置向量化
-                    </button>
+                    <div className="no-drag flex items-center gap-1">
+                      {selectedDocument.activeJobId ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void runSelectedDocumentAction(
+                                () => invoke("cancel_knowledge_processing_job_command", { jobId: selectedDocument.activeJobId }),
+                                "取消处理任务失败"
+                              )
+                            }
+                            className="rounded-none border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                          >
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void runSelectedDocumentAction(
+                                () => invoke("retry_knowledge_processing_job_command", { jobId: selectedDocument.activeJobId }),
+                                "重试处理任务失败"
+                              )
+                            }
+                            className="rounded-none border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                          >
+                            重试
+                          </button>
+                        </>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void runSelectedDocumentAction(
+                            () => invoke("reparse_knowledge_document_command", { documentId: selectedDocument.id }),
+                            "重新解析文档失败"
+                          )
+                        }
+                        className="rounded-none border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                      >
+                        重解析
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void runSelectedDocumentAction(
+                            () => invoke("revectorize_knowledge_document_command", { documentId: selectedDocument.id }),
+                            "重新向量化失败"
+                          )
+                        }
+                        className="rounded-none border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                      >
+                        重向量化
+                      </button>
+                    </div>
                   ) : null}
 
                   <div className="no-drag">{windowControls}</div>
@@ -1555,6 +1640,48 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                       <div className="flex min-h-0 flex-1">
                         <DocumentPreviewArea key={selectedDocumentId} document={selectedDocument} onOpenExternal={openSelectedDocumentExternal} />
                       </div>
+                    ) : selectedDocumentDetailView === "processing" ? (
+                      <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-950">处理状态</div>
+                            <div className="mt-1 text-xs text-slate-500">查看当前文档的处理进度与错误摘要</div>
+                          </div>
+                          <span className="rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                            {getProcessingStatusLabel(selectedDocument.processingStatus)}
+                          </span>
+                        </div>
+
+                        <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                          <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                            <div className="text-xs text-slate-400">当前状态</div>
+                            <div className="mt-1 font-medium text-slate-900">{getProcessingStatusLabel(selectedDocument.processingStatus)}</div>
+                          </div>
+                          <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                            <div className="text-xs text-slate-400">活动任务 ID</div>
+                            <div className="mt-1 truncate font-medium text-slate-900" title={selectedDocument.activeJobId ?? "无"}>
+                              {selectedDocument.activeJobId ?? "无"}
+                            </div>
+                          </div>
+                          <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                            <div className="text-xs text-slate-400">分片数</div>
+                            <div className="mt-1 font-medium text-slate-900">{selectedDocument.chunkCount}</div>
+                          </div>
+                          <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                            <div className="text-xs text-slate-400">已向量化</div>
+                            <div className="mt-1 font-medium text-slate-900">
+                              {selectedDocument.vectorizedChunkCount ?? 0}/{selectedDocument.chunkCount}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-none border border-slate-200 bg-white px-4 py-3 text-sm">
+                          <div className="text-xs text-slate-400">错误信息</div>
+                          <div className={selectedDocument.errorMessage ? "mt-1 text-red-500" : "mt-1 text-slate-500"}>
+                            {selectedDocument.errorMessage ?? "无"}
+                          </div>
+                        </div>
+                      </section>
                     ) : (
                       <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
                         <div className="mb-3 flex items-center justify-between gap-3">
@@ -1626,9 +1753,15 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                               <div className="mt-1 truncate text-[10px] leading-4 text-slate-500" title={document.contentPreview || "暂无内容摘要"}>
                                 {document.contentPreview?.replace(/\s+/g, " ").trim() || "暂无内容摘要"}
                               </div>
-                              <div className="mt-1 inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
-                                {getVectorizationLabel(document.vectorizationState ?? null)}
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                <span className="rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                                  {getProcessingStatusLabel(document.processingStatus)}
+                                </span>
+                                <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
+                                  {getVectorizationLabel(document.vectorizationState ?? null)}
+                                </span>
                               </div>
+                              {document.errorMessage ? <div className="mt-1 line-clamp-1 text-xs text-red-500">{document.errorMessage}</div> : null}
                             </div>
                           </button>
 
