@@ -29,6 +29,7 @@ import type {
   KnowledgeDocumentBinaryPayload,
   KnowledgeDocumentDetail,
   KnowledgeLibraryPayload,
+  KnowledgeProcessingJob,
   PipelineImportResult,
 } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
@@ -517,6 +518,12 @@ async function loadKnowledgeDocumentBinary(documentId: string) {
   });
 }
 
+async function loadKnowledgeProcessingJobs() {
+  return invoke<KnowledgeProcessingJob[]>("load_knowledge_processing_jobs_command", {
+    documentId: null,
+  });
+}
+
 async function convertDocxBytesToHtml(bytes: Uint8Array) {
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const result = await mammoth.convertToHtml({ arrayBuffer });
@@ -820,6 +827,9 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [selectedDocumentDetailView, setSelectedDocumentDetailView] = useState<KnowledgeDocumentDetailView>("preview");
   const [isLoadingDocumentDetail, setIsLoadingDocumentDetail] = useState(false);
   const [documentDetailError, setDocumentDetailError] = useState<string | null>(null);
+  const [processingJobs, setProcessingJobs] = useState<KnowledgeProcessingJob[]>([]);
+  const [taskCenterError, setTaskCenterError] = useState<string | null>(null);
+  const [isTaskCenterBusy, setIsTaskCenterBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -859,6 +869,15 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     );
   }, [activeCollectionName, library.collections, selectedDocument]);
   const pageMode: KnowledgePageMode = selectedDocumentId ? "detail" : activeCollectionDocuments.length > 0 ? "list" : "empty";
+  const taskCounts = useMemo(
+    () => ({
+      queued: processingJobs.filter((job) => job.status === "queued").length,
+      running: processingJobs.filter((job) => job.status === "running").length,
+      failed: processingJobs.filter((job) => job.status === "failed").length,
+    }),
+    [processingJobs]
+  );
+  const failedJobs = useMemo(() => processingJobs.filter((job) => job.status === "failed"), [processingJobs]);
 
   const activeCategories = useMemo(() => {
     const counts = { all: activeCollectionDocuments.length, docs: 0, images: 0, audio: 0, video: 0 };
@@ -960,9 +979,10 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
     void (async () => {
       try {
-        const payload = await loadKnowledgeLibrary();
+        const [payload, jobs] = await Promise.all([loadKnowledgeLibrary(), loadKnowledgeProcessingJobs()]);
         if (!cancelled) {
           setLibrary(payload);
+          setProcessingJobs(jobs);
           setSelectedCollectionId((current) => {
             if (!current || !payload.collections.some((collection) => collection.id === current)) {
               return payload.collections[0]?.id ?? "";
@@ -982,6 +1002,14 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void refreshProcessingJobs();
+    }, 2500);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -1015,9 +1043,21 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   }, [isDocumentMenuOpen]);
 
   async function refreshLibrary() {
-    const payload = await loadKnowledgeLibrary();
+    const [payload, jobs] = await Promise.all([loadKnowledgeLibrary(), loadKnowledgeProcessingJobs()]);
     setLibrary(payload);
+    setProcessingJobs(jobs);
     return payload;
+  }
+
+  async function refreshProcessingJobs() {
+    try {
+      const jobs = await loadKnowledgeProcessingJobs();
+      setProcessingJobs(jobs);
+      setTaskCenterError(null);
+    } catch (error) {
+      console.error(error);
+      setTaskCenterError(error instanceof Error ? error.message : "加载处理队列失败");
+    }
   }
 
   async function importFile(file: File, collectionId: string) {
@@ -1158,6 +1198,40 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       setDocumentDetailError(error instanceof Error ? error.message : fallbackMessage);
     } finally {
       setIsLoadingDocumentDetail(false);
+    }
+  }
+
+  async function retryFailedJobs() {
+    if (failedJobs.length === 0) {
+      return;
+    }
+
+    setTaskCenterError(null);
+    setIsTaskCenterBusy(true);
+    try {
+      for (const job of failedJobs) {
+        await invoke("retry_knowledge_processing_job_command", { jobId: job.id });
+      }
+      await refreshLibrary();
+    } catch (error) {
+      console.error(error);
+      setTaskCenterError(error instanceof Error ? error.message : "重试失败任务失败");
+    } finally {
+      setIsTaskCenterBusy(false);
+    }
+  }
+
+  async function cleanupCompletedLogs() {
+    setTaskCenterError(null);
+    setIsTaskCenterBusy(true);
+    try {
+      await invoke("cleanup_knowledge_processing_logs_command");
+      await refreshProcessingJobs();
+    } catch (error) {
+      console.error(error);
+      setTaskCenterError(error instanceof Error ? error.message : "清理处理日志失败");
+    } finally {
+      setIsTaskCenterBusy(false);
     }
   }
 
@@ -1348,6 +1422,62 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               </div>
             </div>
           </div>
+
+          {!isSidebarCollapsed ? (
+            <div className="border-t border-slate-200 px-3 py-3">
+              <div className="rounded-none border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-950">任务中心</div>
+                    <div className="mt-0.5 text-[11px] text-slate-400">处理队列与日志维护</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void refreshProcessingJobs()}
+                    className="no-drag rounded-none border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                  >
+                    刷新
+                  </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-1.5 text-center">
+                  <div className="rounded-none border border-slate-200 bg-slate-50 px-2 py-2">
+                    <div className="text-sm font-semibold text-slate-950">{taskCounts.queued}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">排队</div>
+                  </div>
+                  <div className="rounded-none border border-slate-200 bg-slate-50 px-2 py-2">
+                    <div className="text-sm font-semibold text-slate-950">{taskCounts.running}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">运行</div>
+                  </div>
+                  <div className="rounded-none border border-slate-200 bg-slate-50 px-2 py-2">
+                    <div className="text-sm font-semibold text-rose-600">{taskCounts.failed}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">失败</div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={isTaskCenterBusy || failedJobs.length === 0}
+                    onClick={() => void retryFailedJobs()}
+                    className="no-drag flex-1 rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    重试失败
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isTaskCenterBusy}
+                    onClick={() => void cleanupCompletedLogs()}
+                    className="no-drag flex-1 rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    清理日志
+                  </button>
+                </div>
+
+                {taskCenterError ? <div className="mt-2 line-clamp-2 text-xs text-rose-500">{taskCenterError}</div> : null}
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-auto border-t border-slate-200 p-3">
             <button
