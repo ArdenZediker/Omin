@@ -25,7 +25,11 @@ impl ChunkSlice {
 
     fn with_title(mut self, title: Option<String>) -> Self {
         if let Some(title) = title {
-            self.title = if title.trim().is_empty() { None } else { Some(title) };
+            self.title = if title.trim().is_empty() {
+                None
+            } else {
+                Some(title)
+            };
         }
         self
     }
@@ -54,7 +58,11 @@ impl DocProfile {
     }
 
     fn heuristic_total(&self) -> usize {
-        self.form_feeds + self.chapter_markers + self.all_caps + self.visual_separators + self.blank_bursts
+        self.form_feeds
+            + self.chapter_markers
+            + self.all_caps
+            + self.visual_separators
+            + self.blank_bursts
     }
 }
 
@@ -86,9 +94,19 @@ pub fn split_document_text(
 
     for tier in chain {
         let chunks = match tier {
-            StrategyTier::Heading => split_by_heading_strategy(&normalized, source_name, chunk_size, chunk_overlap, &profile),
-            StrategyTier::Heuristic => split_by_heuristic_strategy(&normalized, source_name, chunk_size, chunk_overlap),
-            StrategyTier::Legacy => split_by_legacy_strategy(&normalized, source_name, chunk_size, chunk_overlap),
+            StrategyTier::Heading => split_by_heading_strategy(
+                &normalized,
+                source_name,
+                chunk_size,
+                chunk_overlap,
+                &profile,
+            ),
+            StrategyTier::Heuristic => {
+                split_by_heuristic_strategy(&normalized, source_name, chunk_size, chunk_overlap)
+            }
+            StrategyTier::Legacy => {
+                split_by_legacy_strategy(&normalized, source_name, chunk_size, chunk_overlap)
+            }
         };
 
         if validate_chunks(&chunks, total_chars, chunk_size) {
@@ -108,8 +126,8 @@ fn resolve_strategy_chain(
     let extension = normalize_hint(file_extension);
     let heading_hint = matches!(preview.as_str(), "md" | "markdown")
         || matches!(extension.as_str(), "md" | "markdown");
-    let heuristic_hint = matches!(preview.as_str(), "pdf" | "docx")
-        || matches!(extension.as_str(), "pdf" | "docx");
+    let heuristic_hint =
+        matches!(preview.as_str(), "pdf" | "docx") || matches!(extension.as_str(), "pdf" | "docx");
 
     let heading_score = profile.heading_total();
     let heuristic_score = profile.heuristic_total();
@@ -161,7 +179,8 @@ fn split_by_heading_strategy(
         }
 
         let section_title = derive_section_title(&segment, source_name);
-        let section_chunks = split_by_legacy_strategy(&segment, source_name, chunk_size, chunk_overlap);
+        let section_chunks =
+            split_by_legacy_strategy(&segment, source_name, chunk_size, chunk_overlap);
         if section_chunks.len() <= 1 {
             out.extend(section_chunks);
         } else {
@@ -210,11 +229,15 @@ fn split_by_heuristic_strategy(
         let seg_len = rune_len(&segment);
         if seg_len > chunk_size {
             if !current.trim().is_empty() {
-                out.push(ChunkSlice::from_content(std::mem::take(&mut current), source_name));
+                out.push(ChunkSlice::from_content(
+                    std::mem::take(&mut current),
+                    source_name,
+                ));
             }
 
             let block_title = derive_section_title(&segment, source_name);
-            let block_chunks = split_by_legacy_strategy(&segment, source_name, chunk_size, chunk_overlap);
+            let block_chunks =
+                split_by_legacy_strategy(&segment, source_name, chunk_size, chunk_overlap);
             if block_chunks.len() <= 1 {
                 out.extend(block_chunks);
             } else {
@@ -269,7 +292,8 @@ fn split_by_legacy_strategy(
     }
 
     let protected = protected_spans(&normalized);
-    let units = build_units_with_protection(&normalized, &protected, &DEFAULT_SEPARATORS, chunk_size);
+    let units =
+        build_units_with_protection(&normalized, &protected, &DEFAULT_SEPARATORS, chunk_size);
     let merged = merge_units(&units, chunk_size, chunk_overlap);
 
     if merged.is_empty() {
@@ -438,7 +462,10 @@ fn find_heuristic_boundaries(text: &str) -> Vec<usize> {
             continue;
         }
 
-        if is_chapter_marker(trimmed) || is_visual_separator(trimmed) || is_all_caps_heading(trimmed) {
+        if is_chapter_marker(trimmed)
+            || is_visual_separator(trimmed)
+            || is_all_caps_heading(trimmed)
+        {
             bounds.push(line.start);
         }
     }
@@ -647,7 +674,12 @@ fn merge_units(units: &[String], chunk_size: usize, chunk_overlap: usize) -> Vec
     chunks
 }
 
-fn compute_overlap(current: &[String], chunk_overlap: usize, chunk_size: usize, next_len: usize) -> Vec<String> {
+fn compute_overlap(
+    current: &[String],
+    chunk_overlap: usize,
+    chunk_size: usize,
+    next_len: usize,
+) -> Vec<String> {
     if chunk_overlap == 0 || current.is_empty() {
         return Vec::new();
     }
@@ -757,7 +789,11 @@ fn first_heading_line(text: &str) -> Option<String> {
 fn first_meaningful_line(text: &str) -> Option<String> {
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || is_separator_only(trimmed) || trimmed.starts_with("```") || looks_like_table_row(trimmed) {
+        if trimmed.is_empty()
+            || is_separator_only(trimmed)
+            || trimmed.starts_with("```")
+            || looks_like_table_row(trimmed)
+        {
             continue;
         }
         if let Some(heading) = strip_markdown_heading(trimmed) {
@@ -815,7 +851,12 @@ fn is_chapter_marker(line: &str) -> bool {
     for prefix in patterns {
         if lower.starts_with(prefix) {
             let rest = lower[prefix.len()..].trim_start();
-            if rest.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            if rest
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            {
                 return true;
             }
         }
@@ -872,7 +913,10 @@ fn is_visual_separator(line: &str) -> bool {
         return false;
     }
 
-    if trimmed.chars().all(|c| matches!(c, '-' | '=' | '_' | '*' | '~' | '─' | '—' | '•' | '·' | '.')) {
+    if trimmed
+        .chars()
+        .all(|c| matches!(c, '-' | '=' | '_' | '*' | '~' | '─' | '—' | '•' | '·' | '.'))
+    {
         return true;
     }
 
@@ -890,8 +934,26 @@ fn is_visual_separator(line: &str) -> bool {
 }
 
 fn is_separator_only(line: &str) -> bool {
-    line.chars()
-        .all(|c| matches!(c, '\n' | '\r' | '\t' | ' ' | '。' | '！' | '？' | '.' | '!' | '?' | ';' | '；' | ':' | '：' | ',' | '，'))
+    line.chars().all(|c| {
+        matches!(
+            c,
+            '\n' | '\r'
+                | '\t'
+                | ' '
+                | '。'
+                | '！'
+                | '？'
+                | '.'
+                | '!'
+                | '?'
+                | ';'
+                | '；'
+                | ':'
+                | '：'
+                | ','
+                | '，'
+        )
+    })
 }
 
 fn looks_like_table_row(line: &str) -> bool {
@@ -951,7 +1013,10 @@ fn line_ranges(text: &str) -> Vec<LineRange> {
             start = idx + 1;
         }
     }
-    ranges.push(LineRange { start, end: text.len() });
+    ranges.push(LineRange {
+        start,
+        end: text.len(),
+    });
     ranges
 }
 
@@ -1030,7 +1095,8 @@ fn protected_patterns() -> &'static [Regex] {
                 Regex::new(r"(?s)\$\$.*?\$\$").expect("valid latex pattern"),
                 Regex::new(r"!\[[^\]]*\]\([^)]+\)").expect("valid markdown image pattern"),
                 Regex::new(r"\[[^\]]*\]\([^)]+\)").expect("valid markdown link pattern"),
-                Regex::new(r"(?m)^[ ]*(?:\|[^|\n]*)+\|\n\s*(?:\|\s*:?-{3,}:?\s*)+\|?\n").expect("valid table header pattern"),
+                Regex::new(r"(?m)^[ ]*(?:\|[^|\n]*)+\|\n\s*(?:\|\s*:?-{3,}:?\s*)+\|?\n")
+                    .expect("valid table header pattern"),
                 Regex::new(r"(?m)^[ ]*(?:\|[^|\n]*)+\|\n").expect("valid table row pattern"),
                 Regex::new(r"(?s)```(?:\w+)?\n.*?```").expect("valid fenced code pattern"),
             ]
@@ -1047,7 +1113,9 @@ mod tests {
         let text = "# Intro\nFirst paragraph.\n\n## Deep\nMore text.\n\n# Next\nFinal.";
         let chunks = split_document_text(text, "sample.md", Some("markdown"), Some("md"), 512, 80);
         assert!(!chunks.is_empty());
-        assert!(chunks.iter().any(|chunk| chunk.title.as_deref() == Some("Intro")));
+        assert!(chunks
+            .iter()
+            .any(|chunk| chunk.title.as_deref() == Some("Intro")));
         assert!(chunks.iter().any(|chunk| chunk.content.contains("Final.")));
     }
 
