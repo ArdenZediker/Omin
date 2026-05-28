@@ -3134,6 +3134,17 @@ body:has(.pet-thought-window),
   border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
 }
 
+.omni-knowledge-main > .main-chat-layout__splitter.main-chat-layout__splitter--topic {
+  margin: 12px 0;
+}
+
+.omni-knowledge-task-panel {
+  margin-right: 12px;
+  margin-bottom: 12px;
+  margin-top: 12px;
+  align-self: stretch;
+}
+
 .omni-knowledge-main .knowledge-upload-input,
 .omni-knowledge-main input,
 .omni-knowledge-main select,
