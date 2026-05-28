@@ -23,6 +23,7 @@ import {
   PanelRightOpen,
   Plus,
   PlaySquare,
+  SquarePlus,
   Search,
   Settings,
   Sparkles,
@@ -878,12 +879,14 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [isDeadLetterLoading, setIsDeadLetterLoading] = useState(false);
   const [deadLetterReplayBusyId, setDeadLetterReplayBusyId] = useState<string | null>(null);
   const [isTaskCenterPanelOpen, setIsTaskCenterPanelOpen] = useState(true);
+  const [isSearchToolbarOpen, setIsSearchToolbarOpen] = useState(false);
   const settingsSaveTimerRef = useRef<number | null>(null);
   const pendingPipelineSettingsRef = useRef<KnowledgePipelineSettings | null>(null);
   const isSavingPipelineSettingsRef = useRef(false);
   const deadLetterListRequestSeqRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeCollection = useMemo(() => {
     if (selectedCollectionId) {
@@ -1101,6 +1104,26 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [isUploadMenuOpen]);
+
+  useEffect(() => {
+    if (!isSearchToolbarOpen || searchQuery) {
+      return;
+    }
+
+    const handlePointerDown = () => {
+      setIsSearchToolbarOpen(false);
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [isSearchToolbarOpen, searchQuery]);
+
+  useEffect(() => {
+    if (!isSearchToolbarOpen) {
+      return;
+    }
+    const timer = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [isSearchToolbarOpen]);
 
   useEffect(() => {
     if (!isCollectionMenuOpen) {
@@ -2079,7 +2102,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
         </aside>
 
         <main className="omni-knowledge-main flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-          <header className="drag-region flex min-h-20 shrink-0 flex-col border-b border-slate-200 bg-white">
+          <header className="drag-region relative z-40 flex min-h-20 shrink-0 flex-col overflow-visible border-b border-slate-200 bg-white">
             {detailView ? (
               <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
                 <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
@@ -2221,43 +2244,62 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     >
                       {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
                     </button>
-
-                    <div className="no-drag flex h-10 min-w-0 flex-1 items-center gap-2 rounded-none border border-slate-200 bg-white px-3 text-sm shadow-sm">
-                      <Search size={14} strokeWidth={1.8} className="shrink-0 text-slate-400" />
-                      <input
-                        value={searchQuery}
-                        onChange={(event) => setSearchQuery(event.target.value)}
-                        placeholder="搜索文档"
-                        className="w-full min-w-0 border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
-                      />
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-semibold text-slate-950">{activeCollectionName}</div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {pageMode === "empty" ? "当前知识库还没有文档" : `${activeCategoryData.title} · ${visibleDocuments.length} 个文档`}
+                      </div>
                     </div>
                   </div>
 
                 <div className="drag-region flex shrink-0 items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setIsTaskCenterPanelOpen((current) => !current)}
-                      className="no-drag inline-flex h-9 w-9 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                      title={isTaskCenterPanelOpen ? "收起工作台" : "展开工作台"}
-                    >
-                    {isTaskCenterPanelOpen ? <PanelRightClose size={16} strokeWidth={2} /> : <PanelRightOpen size={16} strokeWidth={2} />}
-                  </button>
+                    <div className="no-drag flex items-center gap-2" onPointerDown={(event) => event.stopPropagation()}>
+                      {isSearchToolbarOpen || searchQuery ? (
+                        <div className="flex h-8 w-64 items-center gap-2 rounded-none border border-slate-200 bg-white px-2.5 transition-all duration-150 md:w-72">
+                          <Search size={14} strokeWidth={1.8} className="shrink-0 text-slate-400" />
+                          <input
+                            ref={searchInputRef}
+                            value={searchQuery}
+                            onChange={(event) => setSearchQuery(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                setIsSearchToolbarOpen(false);
+                                event.currentTarget.blur();
+                              }
+                            }}
+                            placeholder="搜索文档"
+                            className="w-full min-w-0 border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                          />
+                        </div>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => setIsSearchToolbarOpen((current) => !current)}
+                        className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800 ${
+                          searchQuery ? "text-slate-800" : ""
+                        }`}
+                        title="搜索文档"
+                        aria-pressed={isSearchToolbarOpen || Boolean(searchQuery)}
+                      >
+                        <Search size={17} strokeWidth={1.9} />
+                      </button>
+                    </div>
+
                   <div className="no-drag relative">
                     <button
                       type="button"
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={() => setIsUploadMenuOpen((current) => !current)}
-                        className="inline-flex h-10 items-center gap-2 rounded-none border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800"
+                        title="上传"
                       >
-                        <span className="flex h-4 w-4 items-center justify-center rounded-none border border-slate-400">
-                          <Plus size={10} strokeWidth={2.2} />
-                        </span>
-                        上传
+                        <SquarePlus size={17} strokeWidth={1.9} />
                       </button>
 
                       {isUploadMenuOpen ? (
                         <div
-                          className="absolute right-0 top-12 z-20 w-40 rounded-none border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
+                          className="absolute right-0 top-10 z-[130] w-40 rounded-none border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
                           onPointerDown={(event) => event.stopPropagation()}
                         >
                           <button
@@ -2286,16 +2328,16 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                       ) : null}
                     </div>
 
-                    <div className="no-drag">{windowControls}</div>
-                  </div>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsTaskCenterPanelOpen((current) => !current)}
+                      className="no-drag inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800"
+                      title={isTaskCenterPanelOpen ? "收起工作台" : "展开工作台"}
+                    >
+                    {isTaskCenterPanelOpen ? <PanelRightClose size={17} strokeWidth={1.9} /> : <PanelRightOpen size={17} strokeWidth={1.9} />}
+                  </button>
 
-                <div className="drag-region flex min-h-14 items-center justify-between gap-3 px-4 pb-3 md:px-6">
-                  <div className="min-w-0">
-                    <div className="truncate text-base font-semibold text-slate-950">{activeCollectionName}</div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {pageMode === "empty" ? "当前知识库还没有文档" : `${activeCategoryData.title} · ${visibleDocuments.length} 个文档`}
-                    </div>
+                    <div className="no-drag">{windowControls}</div>
                   </div>
                 </div>
               </>
