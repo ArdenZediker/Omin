@@ -13,11 +13,14 @@ import {
   FileText as LucideFileText,
   FolderOpen,
   Grid2x2,
+  History,
   Layers3,
   MessageSquare,
   Mic,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   PlaySquare,
   Search,
@@ -551,7 +554,7 @@ async function convertDocxBytesToHtml(bytes: Uint8Array) {
 
 async function convertDocxBytesToText(bytes: Uint8Array) {
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const result = await mammoth.convertToMarkdown({ arrayBuffer });
+  const result = await mammoth.extractRawText({ arrayBuffer });
   return result.value;
 }
 
@@ -874,6 +877,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [deadLetterPage, setDeadLetterPage] = useState(1);
   const [isDeadLetterLoading, setIsDeadLetterLoading] = useState(false);
   const [deadLetterReplayBusyId, setDeadLetterReplayBusyId] = useState<string | null>(null);
+  const [isTaskCenterPanelOpen, setIsTaskCenterPanelOpen] = useState(true);
   const settingsSaveTimerRef = useRef<number | null>(null);
   const pendingPipelineSettingsRef = useRef<KnowledgePipelineSettings | null>(null);
   const isSavingPipelineSettingsRef = useRef(false);
@@ -1653,6 +1657,254 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   }
 
   const detailView = pageMode === "detail";
+  const shouldShowTaskCenterPanel = isTaskCenterPanelOpen && !detailView;
+  const taskCenterPanel = (
+    <aside className="chat-topic-panel no-drag !w-[360px] !min-w-[360px] !basis-[360px] omni-knowledge-task-panel">
+      <div className="chat-topic-panel__body">
+        <>
+            <div className="chat-topic-panel__section chat-topic-panel__section--task">
+              <div className="chat-topic-panel__section-title">
+                <History size={13} strokeWidth={2} />
+                <span>任务中心</span>
+              </div>
+
+              <div className="chat-topic-panel__group-list">
+                <div className="chat-topic-panel__task">
+                  <div className="chat-topic-panel__task-head">
+                    <strong>全局队列</strong>
+                    <span className={`chat-topic-panel__task-status ${taskCounts.failed > 0 ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed"}`}>
+                      失败 {taskCounts.failed}
+                    </span>
+                  </div>
+                  <div className="chat-topic-panel__task-meta">
+                    <span>排队 {taskCounts.queued}</span>
+                    <span>运行 {taskCounts.running}</span>
+                    <span>死信 {globalDeadLetterCount}</span>
+                  </div>
+                </div>
+
+                <div className="chat-topic-panel__task">
+                  <div className="chat-topic-panel__task-head">
+                    <strong>当前知识库 · {activeCollection ? activeCollection.name : "未选择"}</strong>
+                    <span className={`chat-topic-panel__task-status ${activeCollectionTaskCounts.failed > 0 ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed"}`}>
+                      失败 {activeCollectionTaskCounts.failed}
+                    </span>
+                  </div>
+                  <div className="chat-topic-panel__task-meta">
+                    <span>排队 {activeCollectionTaskCounts.queued}</span>
+                    <span>运行 {activeCollectionTaskCounts.running}</span>
+                    <span>死信 {activeCollectionDeadLetterCount}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="chat-topic-panel__section">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={isTaskCenterBusy || activeCollectionTaskCounts.failed <= 0}
+                  onClick={() => void retryFailedJobs("activeCollection")}
+                  className="chat-topic-panel__inline-action"
+                >
+                  重试当前库失败
+                </button>
+                <button
+                  type="button"
+                  disabled={isTaskCenterBusy || taskCounts.failed <= 0}
+                  onClick={() => void retryFailedJobs("all")}
+                  className="chat-topic-panel__inline-action"
+                >
+                  重试全部失败
+                </button>
+                <button
+                  type="button"
+                  disabled={isTaskCenterBusy || activeCollectionDeadLetterCount <= 0}
+                  onClick={() => void replayDeadLetters("activeCollection")}
+                  className="chat-topic-panel__inline-action"
+                >
+                  回放当前库死信
+                </button>
+                <button
+                  type="button"
+                  disabled={isTaskCenterBusy || globalDeadLetterCount <= 0}
+                  onClick={() => void replayDeadLetters("all")}
+                  className="chat-topic-panel__inline-action"
+                >
+                  回放全部死信
+                </button>
+              </div>
+              <button
+                type="button"
+                disabled={isTaskCenterBusy}
+                onClick={() => void cleanupCompletedLogs()}
+                className="chat-topic-panel__inline-action"
+              >
+                清理日志
+              </button>
+            </div>
+
+            {pipelineSettings ? (
+              <div className="chat-topic-panel__section">
+                <div className="chat-topic-panel__section-title">
+                  <History size={13} strokeWidth={2} />
+                  <span>调度设置</span>
+                </div>
+                <div className="chat-topic-panel__task chat-topic-panel__task--form">
+                  <div className="chat-topic-panel__task-meta">
+                    <span>{isSavingPipelineSettings ? "保存中..." : "自动保存"}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                      <span>总并发</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={4}
+                        value={pipelineSettings.maxConcurrentJobs}
+                        onChange={(event) => void updatePipelineSettings({ maxConcurrentJobs: Number(event.target.value || 1) })}
+                        className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                      <span>单库并发</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={4}
+                        value={pipelineSettings.perCollectionMaxRunning}
+                        onChange={(event) => void updatePipelineSettings({ perCollectionMaxRunning: Number(event.target.value || 1) })}
+                        className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                      <span>自动重试</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={pipelineSettings.maxAutoRetries}
+                        onChange={(event) => void updatePipelineSettings({ maxAutoRetries: Number(event.target.value || 0) })}
+                        className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                      <span>任务超时(s)</span>
+                      <input
+                        type="number"
+                        min={10}
+                        max={3600}
+                        value={Math.floor(pipelineSettings.jobTimeoutMs / 1000)}
+                        onChange={(event) =>
+                          void updatePipelineSettings({
+                            jobTimeoutMs: Number(event.target.value || 10) * 1000,
+                          })
+                        }
+                        className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="chat-topic-panel__section">
+              <div className="chat-topic-panel__section-title">
+                <History size={13} strokeWidth={2} />
+                <span>死信列表</span>
+                <span className="chat-topic-panel__item-meta">{deadLetterTotal} 条</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={deadLetterScope}
+                  onChange={(event) => {
+                    setDeadLetterPage(1);
+                    setDeadLetterScope(event.target.value as DeadLetterScope);
+                  }}
+                  className="chat-topic-panel__form-input"
+                >
+                  <option value="all">全局范围</option>
+                  <option value="activeCollection">当前知识库</option>
+                </select>
+                <select
+                  value={deadLetterStatusFilter}
+                  onChange={(event) => {
+                    setDeadLetterPage(1);
+                    setDeadLetterStatusFilter(event.target.value as "failed" | "replayed" | "all");
+                  }}
+                  className="chat-topic-panel__form-input"
+                >
+                  <option value="failed">仅失败</option>
+                  <option value="replayed">仅已回放</option>
+                  <option value="all">全部状态</option>
+                </select>
+              </div>
+              <div className="chat-topic-panel__group-list">
+                {isDeadLetterLoading ? (
+                  <div className="chat-topic-panel__empty">加载死信中...</div>
+                ) : deadLetterItems.length === 0 ? (
+                  <div className="chat-topic-panel__empty">当前筛选下暂无死信任务</div>
+                ) : (
+                  deadLetterItems.map((item) => (
+                    <div key={item.id} className="chat-topic-panel__task">
+                      <div className="chat-topic-panel__task-head">
+                        <strong title={documentNameById.get(item.documentId) ?? item.documentId}>
+                          {documentNameById.get(item.documentId) ?? item.documentId}
+                        </strong>
+                        <span className={`chat-topic-panel__task-status ${item.status === "failed" ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed"}`}>
+                          {item.status}
+                        </span>
+                      </div>
+                      <div className="chat-topic-panel__task-meta">
+                        <span>{item.jobType}</span>
+                        <span>{formatTimestamp(item.lastFailedAt)}</span>
+                      </div>
+                      <div className="chat-topic-panel__task-meta">
+                        <span title={item.errorMessage ?? ""}>{item.errorMessage ?? "无错误详情"}</span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={deadLetterReplayBusyId === item.id || item.status !== "failed"}
+                        onClick={() => void replayDeadLetterItem(item)}
+                        className="chat-topic-panel__inline-action"
+                      >
+                        {deadLetterReplayBusyId === item.id ? "回放中" : "回放"}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  disabled={deadLetterPage <= 1 || isDeadLetterLoading}
+                  onClick={() => setDeadLetterPage((current) => Math.max(1, current - 1))}
+                  className="chat-topic-panel__inline-action"
+                >
+                  上一页
+                </button>
+                <span className="chat-topic-panel__item-meta">第 {deadLetterPage} 页</span>
+                <button
+                  type="button"
+                  disabled={deadLetterPage * deadLetterPageSize >= deadLetterTotal || isDeadLetterLoading}
+                  onClick={() => setDeadLetterPage((current) => current + 1)}
+                  className="chat-topic-panel__inline-action"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+
+            {taskCenterNotice ? (
+              <div className="chat-topic-panel__task-status chat-topic-panel__task-status--completed">{taskCenterNotice}</div>
+            ) : null}
+            {taskCenterError ? (
+              <div className="chat-topic-panel__task-status chat-topic-panel__task-status--failed">{taskCenterError}</div>
+            ) : null}
+        </>
+      </div>
+    </aside>
+  );
 
   return (
     <div className="omni-knowledge-root flex h-full min-h-0 flex-col bg-white text-slate-900">
@@ -1813,257 +2065,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               </div>
             </div>
           </div>
-
-          {!isSidebarCollapsed ? (
-            <div className="border-t border-slate-200 px-3 py-3">
-              <div className="rounded-none border border-slate-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <div className="text-xs font-semibold text-slate-950">任务中心</div>
-                    <div className="mt-0.5 text-[11px] text-slate-400">全局队列 + 当前知识库视角</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void refreshProcessingJobs()}
-                    className="no-drag rounded-none border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                  >
-                    刷新
-                  </button>
-                </div>
-
-                <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">全局</div>
-                <div className="mt-1 grid grid-cols-3 gap-1.5 text-center">
-                  <div className="rounded-none border border-slate-200 bg-slate-50 px-2 py-2">
-                    <div className="text-sm font-semibold text-slate-950">{taskCounts.queued}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">排队</div>
-                  </div>
-                  <div className="rounded-none border border-slate-200 bg-slate-50 px-2 py-2">
-                    <div className="text-sm font-semibold text-slate-950">{taskCounts.running}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">运行</div>
-                  </div>
-                  <div className="rounded-none border border-slate-200 bg-slate-50 px-2 py-2">
-                    <div className="text-sm font-semibold text-rose-600">{taskCounts.failed}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">失败</div>
-                  </div>
-                </div>
-                <div className="mt-1 text-[11px] text-slate-500">死信: {globalDeadLetterCount}</div>
-
-                <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  当前知识库{activeCollection ? ` · ${activeCollection.name}` : ""}
-                </div>
-                <div className="mt-1 grid grid-cols-3 gap-1.5 text-center">
-                  <div className="rounded-none border border-slate-200 bg-white px-2 py-2">
-                    <div className="text-sm font-semibold text-slate-900">{activeCollectionTaskCounts.queued}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">排队</div>
-                  </div>
-                  <div className="rounded-none border border-slate-200 bg-white px-2 py-2">
-                    <div className="text-sm font-semibold text-slate-900">{activeCollectionTaskCounts.running}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">运行</div>
-                  </div>
-                  <div className="rounded-none border border-slate-200 bg-white px-2 py-2">
-                    <div className="text-sm font-semibold text-rose-600">{activeCollectionTaskCounts.failed}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">失败</div>
-                  </div>
-                </div>
-                <div className="mt-1 text-[11px] text-slate-500">当前库死信: {activeCollectionDeadLetterCount}</div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={isTaskCenterBusy || activeCollectionTaskCounts.failed <= 0}
-                    onClick={() => void retryFailedJobs("activeCollection")}
-                    className="no-drag rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-                  >
-                    重试当前库失败
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isTaskCenterBusy || taskCounts.failed <= 0}
-                    onClick={() => void retryFailedJobs("all")}
-                    className="no-drag rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-                  >
-                    重试全部失败
-                  </button>
-                </div>
-
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={isTaskCenterBusy || activeCollectionDeadLetterCount <= 0}
-                    onClick={() => void replayDeadLetters("activeCollection")}
-                    className="no-drag flex-1 rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-                  >
-                    回放当前库死信
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isTaskCenterBusy || globalDeadLetterCount <= 0}
-                    onClick={() => void replayDeadLetters("all")}
-                    className="no-drag flex-1 rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-                  >
-                    回放全部死信
-                  </button>
-                </div>
-
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={isTaskCenterBusy}
-                    onClick={() => void cleanupCompletedLogs()}
-                    className="no-drag w-full rounded-none border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-                  >
-                    清理日志
-                  </button>
-                </div>
-
-                {pipelineSettings ? (
-                  <div className="mt-3 space-y-2 border-t border-slate-200 pt-2">
-                    <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                      <span>调度设置</span>
-                      <span>{isSavingPipelineSettings ? "保存中..." : "自动保存"}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-                      <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                        <span>总并发</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={4}
-                          value={pipelineSettings.maxConcurrentJobs}
-                          onChange={(event) => void updatePipelineSettings({ maxConcurrentJobs: Number(event.target.value || 1) })}
-                          className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                        <span>单库并发</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={4}
-                          value={pipelineSettings.perCollectionMaxRunning}
-                          onChange={(event) => void updatePipelineSettings({ perCollectionMaxRunning: Number(event.target.value || 1) })}
-                          className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                        <span>自动重试</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={10}
-                          value={pipelineSettings.maxAutoRetries}
-                          onChange={(event) => void updatePipelineSettings({ maxAutoRetries: Number(event.target.value || 0) })}
-                          className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                        <span>任务超时(s)</span>
-                        <input
-                          type="number"
-                          min={10}
-                          max={3600}
-                          value={Math.floor(pipelineSettings.jobTimeoutMs / 1000)}
-                          onChange={(event) =>
-                            void updatePipelineSettings({
-                              jobTimeoutMs: Number(event.target.value || 10) * 1000,
-                            })
-                          }
-                          className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="mt-3 space-y-2 border-t border-slate-200 pt-2">
-                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                    <span>死信列表</span>
-                    <span>
-                      {deadLetterTotal} 条
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <select
-                      value={deadLetterScope}
-                      onChange={(event) => {
-                        setDeadLetterPage(1);
-                        setDeadLetterScope(event.target.value as DeadLetterScope);
-                      }}
-                      className="rounded-none border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-700 outline-none"
-                    >
-                      <option value="all">全局范围</option>
-                      <option value="activeCollection">当前知识库</option>
-                    </select>
-                    <select
-                      value={deadLetterStatusFilter}
-                      onChange={(event) => {
-                        setDeadLetterPage(1);
-                        setDeadLetterStatusFilter(event.target.value as "failed" | "replayed" | "all");
-                      }}
-                      className="rounded-none border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-700 outline-none"
-                    >
-                      <option value="failed">仅失败</option>
-                      <option value="replayed">仅已回放</option>
-                      <option value="all">全部状态</option>
-                    </select>
-                  </div>
-                  <div className="max-h-44 space-y-1 overflow-y-auto rounded-none border border-slate-200 bg-white p-2">
-                    {isDeadLetterLoading ? (
-                      <div className="px-1 py-2 text-[11px] text-slate-500">加载死信中...</div>
-                    ) : deadLetterItems.length === 0 ? (
-                      <div className="px-1 py-2 text-[11px] text-slate-500">当前筛选下暂无死信任务</div>
-                    ) : (
-                      deadLetterItems.map((item) => (
-                        <div key={item.id} className="rounded-none border border-slate-200 bg-slate-50 px-2 py-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-[11px] font-medium text-slate-800" title={documentNameById.get(item.documentId) ?? item.documentId}>
-                              {(documentNameById.get(item.documentId) ?? item.documentId)} · {item.status}
-                            </span>
-                            <button
-                              type="button"
-                              disabled={deadLetterReplayBusyId === item.id || item.status !== "failed"}
-                              onClick={() => void replayDeadLetterItem(item)}
-                              className="rounded-none border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-                            >
-                              {deadLetterReplayBusyId === item.id ? "回放中" : "回放"}
-                            </button>
-                          </div>
-                          <div className="mt-1 text-[10px] text-slate-400">
-                            {item.jobType} · {formatTimestamp(item.lastFailedAt)}
-                          </div>
-                          <div className="mt-1 truncate text-[10px] text-slate-500" title={item.errorMessage ?? ""}>
-                            {item.errorMessage ?? "无错误详情"}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      disabled={deadLetterPage <= 1 || isDeadLetterLoading}
-                      onClick={() => setDeadLetterPage((current) => Math.max(1, current - 1))}
-                      className="rounded-none border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-                    >
-                      上一页
-                    </button>
-                    <span className="text-[11px] text-slate-500">第 {deadLetterPage} 页</span>
-                    <button
-                      type="button"
-                      disabled={deadLetterPage * deadLetterPageSize >= deadLetterTotal || isDeadLetterLoading}
-                      onClick={() => setDeadLetterPage((current) => current + 1)}
-                      className="rounded-none border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-                    >
-                      下一页
-                    </button>
-                  </div>
-                </div>
-
-                {taskCenterNotice ? <div className="mt-2 line-clamp-2 text-xs text-emerald-600">{taskCenterNotice}</div> : null}
-                {taskCenterError ? <div className="mt-1 line-clamp-2 text-xs text-rose-500">{taskCenterError}</div> : null}
-              </div>
-            </div>
-          ) : null}
 
           <div className="mt-auto border-t border-slate-200 p-3">
             <button
@@ -2232,10 +2233,18 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </div>
                   </div>
 
-                  <div className="drag-region flex shrink-0 items-center gap-3">
-                    <div className="no-drag relative">
-                      <button
-                        type="button"
+                <div className="drag-region flex shrink-0 items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsTaskCenterPanelOpen((current) => !current)}
+                      className="no-drag inline-flex h-9 w-9 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                      title={isTaskCenterPanelOpen ? "收起工作台" : "展开工作台"}
+                    >
+                    {isTaskCenterPanelOpen ? <PanelRightClose size={16} strokeWidth={2} /> : <PanelRightOpen size={16} strokeWidth={2} />}
+                  </button>
+                  <div className="no-drag relative">
+                    <button
+                      type="button"
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={() => setIsUploadMenuOpen((current) => !current)}
                         className="inline-flex h-10 items-center gap-2 rounded-none border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
@@ -2322,121 +2331,123 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
             }}
           />
 
-          <div className="drag-region flex min-h-0 flex-1 px-5 py-4">
-            {detailView ? (
-              <div className="no-drag flex min-h-0 w-full flex-1 flex-col">
-                <KnowledgeBaseDetailBoundary
-                  key={selectedDocumentId ?? "detail-empty"}
-                  onBackToList={backToDocumentList}
-                  onRetry={() => {
-                    if (selectedDocumentId) {
-                      openDocument(selectedDocumentId);
-                    }
-                  }}
-                >
-                  <div className="flex min-h-0 flex-1 flex-col gap-4">
-                    {documentDetailError ? (
-                      <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
-                        <div className="space-y-3">
-                          <div>{documentDetailError}</div>
-                          <button
-                            type="button"
-                            onClick={() => selectedDocumentId && openDocument(selectedDocumentId)}
-                            className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                          >
-                            重新加载
-                          </button>
-                        </div>
-                      </div>
-                    ) : isLoadingDocumentDetail || !selectedDocument || !selectedDocumentDetail ? (
-                      <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
-                        正在加载文档详情...
-                      </div>
-                    ) : selectedDocumentDetailView === "preview" ? (
-                      <div className="flex min-h-0 flex-1">
-                        <DocumentPreviewArea key={selectedDocumentId} document={selectedDocument} onOpenExternal={openSelectedDocumentExternal} />
-                      </div>
-                    ) : selectedDocumentDetailView === "processing" ? (
-                      <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
-                        <div className="mb-4 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-950">处理状态</div>
-                            <div className="mt-1 text-xs text-slate-500">查看当前文档的处理进度与错误摘要</div>
-                          </div>
-                          <span className="rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                            {getProcessingStatusLabel(selectedDocument.processingStatus)}
-                          </span>
-                        </div>
-
-                        <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                          <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="text-xs text-slate-400">当前状态</div>
-                            <div className="mt-1 font-medium text-slate-900">{getProcessingStatusLabel(selectedDocument.processingStatus)}</div>
-                          </div>
-                          <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="text-xs text-slate-400">活动任务 ID</div>
-                            <div className="mt-1 truncate font-medium text-slate-900" title={selectedDocument.activeJobId ?? "无"}>
-                              {selectedDocument.activeJobId ?? "无"}
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="drag-region flex min-h-0 flex-1 px-5 py-4">
+                {detailView ? (
+                  <div className="no-drag flex min-h-0 w-full flex-1 flex-col">
+                    <KnowledgeBaseDetailBoundary
+                      key={selectedDocumentId ?? "detail-empty"}
+                      onBackToList={backToDocumentList}
+                      onRetry={() => {
+                        if (selectedDocumentId) {
+                          openDocument(selectedDocumentId);
+                        }
+                      }}
+                    >
+                      <div className="flex min-h-0 flex-1 flex-col gap-4">
+                        {documentDetailError ? (
+                          <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                            <div className="space-y-3">
+                              <div>{documentDetailError}</div>
+                              <button
+                                type="button"
+                                onClick={() => selectedDocumentId && openDocument(selectedDocumentId)}
+                                className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                              >
+                                重新加载
+                              </button>
                             </div>
                           </div>
-                          <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="text-xs text-slate-400">分片数</div>
-                            <div className="mt-1 font-medium text-slate-900">{selectedDocument.chunkCount}</div>
+                        ) : isLoadingDocumentDetail || !selectedDocument || !selectedDocumentDetail ? (
+                          <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                            正在加载文档详情...
                           </div>
-                          <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="text-xs text-slate-400">已向量化</div>
-                            <div className="mt-1 font-medium text-slate-900">
-                              {selectedDocument.vectorizedChunkCount ?? 0}/{selectedDocument.chunkCount}
-                            </div>
+                        ) : selectedDocumentDetailView === "preview" ? (
+                          <div className="flex min-h-0 flex-1">
+                            <DocumentPreviewArea key={selectedDocumentId} document={selectedDocument} onOpenExternal={openSelectedDocumentExternal} />
                           </div>
-                        </div>
-
-                        <div className="mt-3 rounded-none border border-slate-200 bg-white px-4 py-3 text-sm">
-                          <div className="text-xs text-slate-400">错误信息</div>
-                          <div className={selectedDocument.errorMessage ? "mt-1 text-red-500" : "mt-1 text-slate-500"}>
-                            {selectedDocument.errorMessage ?? "无"}
-                          </div>
-                        </div>
-                      </section>
-                    ) : (
-                      <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-950">分片</div>
-                            <div className="mt-1 text-xs text-slate-500">共 {selectedDocumentDetail.chunks.length} 个分片</div>
-                          </div>
-                        </div>
-
-                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-                          {selectedDocumentDetail.chunks.map((chunk) => (
-                            <div key={chunk.id} className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-medium text-slate-950">
-                                    第 {chunk.chunkIndex + 1} 片{chunk.title ? ` · ${chunk.title}` : ""}
-                                  </div>
-                                </div>
-                                <div className="shrink-0 text-xs text-slate-400">{formatTimestamp(chunk.createdAt)}</div>
+                        ) : selectedDocumentDetailView === "processing" ? (
+                          <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
+                            <div className="mb-4 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-slate-950">处理状态</div>
+                                <div className="mt-1 text-xs text-slate-500">查看当前文档的处理进度与错误摘要</div>
                               </div>
-                              <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{chunk.content}</div>
+                              <span className="rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                                {getProcessingStatusLabel(selectedDocument.processingStatus)}
+                              </span>
                             </div>
-                          ))}
 
-                          {selectedDocumentDetail.chunks.length === 0 ? (
-                            <div className="rounded-none border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-                              当前文档还没有分片
+                            <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                                <div className="text-xs text-slate-400">当前状态</div>
+                                <div className="mt-1 font-medium text-slate-900">{getProcessingStatusLabel(selectedDocument.processingStatus)}</div>
+                              </div>
+                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                                <div className="text-xs text-slate-400">活动任务 ID</div>
+                                <div className="mt-1 truncate font-medium text-slate-900" title={selectedDocument.activeJobId ?? "无"}>
+                                  {selectedDocument.activeJobId ?? "无"}
+                                </div>
+                              </div>
+                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                                <div className="text-xs text-slate-400">分片数</div>
+                                <div className="mt-1 font-medium text-slate-900">{selectedDocument.chunkCount}</div>
+                              </div>
+                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                                <div className="text-xs text-slate-400">已向量化</div>
+                                <div className="mt-1 font-medium text-slate-900">
+                                  {selectedDocument.vectorizedChunkCount ?? 0}/{selectedDocument.chunkCount}
+                                </div>
+                              </div>
                             </div>
-                          ) : null}
-                        </div>
-                      </section>
-                    )}
+
+                            <div className="mt-3 rounded-none border border-slate-200 bg-white px-4 py-3 text-sm">
+                              <div className="text-xs text-slate-400">错误信息</div>
+                              <div className={selectedDocument.errorMessage ? "mt-1 text-red-500" : "mt-1 text-slate-500"}>
+                                {selectedDocument.errorMessage ?? "无"}
+                              </div>
+                            </div>
+                          </section>
+                        ) : (
+                          <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-slate-950">分片</div>
+                                <div className="mt-1 text-xs text-slate-500">共 {selectedDocumentDetail.chunks.length} 个分片</div>
+                              </div>
+                            </div>
+
+                            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                              {selectedDocumentDetail.chunks.map((chunk) => (
+                                <div key={chunk.id} className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium text-slate-950">
+                                        第 {chunk.chunkIndex + 1} 片{chunk.title ? ` · ${chunk.title}` : ""}
+                                      </div>
+                                    </div>
+                                    <div className="shrink-0 text-xs text-slate-400">{formatTimestamp(chunk.createdAt)}</div>
+                                  </div>
+                                  <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{chunk.content}</div>
+                                </div>
+                              ))}
+
+                              {selectedDocumentDetail.chunks.length === 0 ? (
+                                <div className="rounded-none border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+                                  当前文档还没有分片
+                                </div>
+                              ) : null}
+                            </div>
+                          </section>
+                        )}
+                      </div>
+                    </KnowledgeBaseDetailBoundary>
                   </div>
-                </KnowledgeBaseDetailBoundary>
-              </div>
-            ) : pageMode === "list" ? (
-              <section className="no-drag flex min-h-0 min-w-0 flex-1 flex-col">
-                <div className="flex min-h-0 flex-1 overflow-y-auto">
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,140px))] content-start gap-3">
+                ) : pageMode === "list" ? (
+                  <section className="no-drag flex min-h-0 min-w-0 flex-1 flex-col">
+                    <div className="flex min-h-0 flex-1 overflow-y-auto">
+                      <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(168px,1fr))] content-start gap-3">
                     {visibleDocuments.map((document) => {
                       const isActive = document.id === selectedDocumentId;
                       const fileBadge = document.thumbnailDataUrl ? (
@@ -2450,7 +2461,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                       return (
                         <div
                           key={document.id}
-                          className={`group relative flex h-[155px] w-[140px] flex-col rounded-none border p-2 text-left transition ${
+                          className={`group relative flex h-[170px] min-w-0 flex-col rounded-none border p-2 text-left transition ${
                             isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
                           }`}
                           onContextMenu={(event) => {
@@ -2507,57 +2518,61 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         没有符合当前筛选条件的文档。你可以先上传文件，或者切换分类。
                       </div>
                     ) : null}
-                  </div>
-                </div>
-              </section>
-            ) : (
-              <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
-                {!isKnowledgeLibraryReady ? (
-                  <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-                    <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">正在加载知识库</div>
-                    <div className="mt-2 text-sm text-slate-500">请稍候，系统会读取当前已有的知识库。</div>
-                  </div>
-                ) : library.collections.length === 0 ? (
-                  <div className="flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
-                    <div className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">还没有知识库</div>
-                    <div className="mt-2 text-sm text-slate-500">先新建一个知识库，再上传文件或文件夹。</div>
-                    {uploadError ? (
-                      <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-                        {uploadError}
                       </div>
-                    ) : null}
-                    {createCollectionError ? (
-                      <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-                        {createCollectionError}
-                      </div>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="mt-8 inline-flex items-center gap-2 rounded-none border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                      onClick={createCollection}
-                    >
-                      <Plus size={16} strokeWidth={2} />
-                      新建知识库
-                    </button>
-                  </div>
+                    </div>
+                  </section>
                 ) : (
-                  <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-                    <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">当前知识库暂无文档</div>
-                    <div className="mt-2 text-sm text-slate-500">请使用右上角上传按钮导入文件。</div>
-                    {uploadError ? (
-                      <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-                        {uploadError}
+                  <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
+                    {!isKnowledgeLibraryReady ? (
+                      <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+                        <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">正在加载知识库</div>
+                        <div className="mt-2 text-sm text-slate-500">请稍候，系统会读取当前已有的知识库。</div>
                       </div>
-                    ) : null}
-                    {createCollectionError ? (
-                      <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-                        {createCollectionError}
+                    ) : library.collections.length === 0 ? (
+                      <div className="flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
+                        <div className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">还没有知识库</div>
+                        <div className="mt-2 text-sm text-slate-500">先新建一个知识库，再上传文件或文件夹。</div>
+                        {uploadError ? (
+                          <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                            {uploadError}
+                          </div>
+                        ) : null}
+                        {createCollectionError ? (
+                          <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                            {createCollectionError}
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="mt-8 inline-flex items-center gap-2 rounded-none border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                          onClick={createCollection}
+                        >
+                          <Plus size={16} strokeWidth={2} />
+                          新建知识库
+                        </button>
                       </div>
-                    ) : null}
-                  </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+                        <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">当前知识库暂无文档</div>
+                        <div className="mt-2 text-sm text-slate-500">请使用右上角上传按钮导入文件。</div>
+                        {uploadError ? (
+                          <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                            {uploadError}
+                          </div>
+                        ) : null}
+                        {createCollectionError ? (
+                          <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                            {createCollectionError}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </section>
                 )}
-              </section>
-            )}
+              </div>
+            </section>
+            {shouldShowTaskCenterPanel ? <div className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag" aria-hidden /> : null}
+            {shouldShowTaskCenterPanel ? taskCenterPanel : null}
           </div>
         </main>
       </div>
