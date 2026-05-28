@@ -3066,6 +3066,7 @@ body:has(.pet-thought-window),
 .omni-knowledge-root {
   display: flex;
   flex-direction: column;
+  background: var(--omni-app-bg) !important;
 }
 
 .omni-settings-sidebar,
@@ -3108,6 +3109,7 @@ body:has(.pet-thought-window),
 .omni-knowledge-layout {
   gap: 12px;
   padding: 12px;
+  background: var(--omni-app-bg) !important;
 }
 
 .omni-knowledge-sidebar {
@@ -3122,27 +3124,67 @@ body:has(.pet-thought-window),
 }
 
 .omni-knowledge-main {
-  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
-  border-radius: var(--omni-radius-xl);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-app-bg) 98%, transparent)),
-    var(--omni-app-bg) !important;
-  overflow: hidden;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  overflow: visible;
+  box-shadow: none;
 }
 
 .omni-knowledge-main > header {
-  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
+  border-radius: var(--omni-radius-xl);
+  overflow: hidden;
+  box-shadow: var(--omni-surface-shadow);
+  background: var(--omni-panel-bg) !important;
 }
 
-.omni-knowledge-main > .main-chat-layout__splitter.main-chat-layout__splitter--topic {
-  margin: 12px 0;
+.omni-knowledge-body-shell {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  box-shadow: none;
+  align-items: stretch;
+}
+
+.omni-knowledge-content-panel {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
+  border-radius: var(--omni-radius-xl);
+  background: var(--omni-app-bg);
+  overflow: hidden;
+  box-shadow: var(--omni-surface-shadow);
+}
+
+.omni-knowledge-topic-shell {
+  min-width: 0;
+  min-height: 0;
 }
 
 .omni-knowledge-task-panel {
-  margin-right: 12px;
-  margin-bottom: 12px;
-  margin-top: 12px;
+  margin: 0;
   align-self: stretch;
+}
+
+.omni-knowledge-topic-shell > .omni-knowledge-task-panel {
+  margin: 0 !important;
+}
+
+.omni-knowledge-topic-shell .chat-topic-panel__body::before {
+  display: none;
+}
+
+.omni-knowledge-task-panel .chat-topic-panel__body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.omni-knowledge-task-panel .chat-topic-panel__body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .omni-knowledge-main .knowledge-upload-input,
@@ -6374,6 +6416,11 @@ body:has(.pet-thought-window),
 :root[data-omni-theme="light"] .omni-settings-root {
   background: #f5f5f5 !important;
   color: #1f2329 !important;
+}
+
+:root[data-omni-theme="light"] .omni-knowledge-root,
+:root[data-omni-theme="light"] .omni-knowledge-layout {
+  background: #f5f5f5 !important;
 }
 
 :root[data-omni-theme="light"] .omni-settings-sidebar {
