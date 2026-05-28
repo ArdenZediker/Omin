@@ -403,27 +403,15 @@ function createThumbnailDataUrlFromContent(content: string) {
   context.lineWidth = 1;
   context.stroke();
 
-  context.fillStyle = "#0f172a";
-  roundRectPath(context, 30, 28, 76, 8, 4);
-  context.fill();
-
-  context.fillStyle = "#cbd5e1";
-  roundRectPath(context, 30, 48, 160, 4, 2);
-  context.fill();
-
-  const lines = extractThumbnailPreviewLines(content, 5, 54);
-  const lineTop = 64;
+  const lines = extractThumbnailPreviewLines(content, 7, 56);
+  const lineTop = 30;
   lines.forEach((line, index) => {
-    context.fillStyle = index === 0 ? "#0f172a" : "#334155";
-    context.font = index === 0 ? "600 14px 'Segoe UI', sans-serif" : "12px 'Segoe UI', sans-serif";
+    context.fillStyle = index === 0 ? "#111827" : "#374151";
+    context.font = index === 0 ? "600 12px 'Segoe UI', sans-serif" : "11px 'Segoe UI', sans-serif";
     context.textAlign = "left";
     context.textBaseline = "top";
-    context.fillText(line, 30, lineTop + index * 20);
+    context.fillText(line, 30, lineTop + index * 16);
   });
-
-  context.fillStyle = "#e2e8f0";
-  roundRectPath(context, 30, 146, 98, 6, 3);
-  context.fill();
 
   return canvas.toDataURL("image/png");
 }
@@ -970,6 +958,24 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       ).includes(normalizedQuery);
     });
   }, [activeCategory, activeCollectionDocuments, searchQuery]);
+
+  const listThumbnailDataUrlById = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    for (const document of visibleDocuments) {
+      const previewKind = (document.previewType ?? "").toLowerCase();
+      const mimeType = (document.mimeType ?? "").toLowerCase();
+      const isImageDocument = previewKind === "image" || mimeType.startsWith("image/");
+      if (isImageDocument) {
+        map.set(document.id, document.thumbnailDataUrl ?? undefined);
+        continue;
+      }
+
+      const previewSeed = [document.titleHierarchy ?? "", document.contentPreview ?? "", document.sourceName].filter(Boolean).join("\n");
+      const regenerated = createThumbnailDataUrlFromContent(previewSeed);
+      map.set(document.id, regenerated ?? document.thumbnailDataUrl ?? undefined);
+    }
+    return map;
+  }, [visibleDocuments]);
 
   useEffect(() => {
     if (library.collections.length === 0) {
@@ -2101,8 +2107,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
           </div>
         </aside>
 
-        <main className="omni-knowledge-main flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-          <header className="drag-region relative z-40 flex min-h-20 shrink-0 flex-col overflow-visible border-b border-slate-200 bg-white">
+        <main className="omni-knowledge-main flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          <header className="drag-region relative z-40 flex min-h-20 shrink-0 flex-col overflow-visible bg-white">
             {detailView ? (
               <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
                 <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
@@ -2343,7 +2349,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               </>
             )}
           </header>
-
           <input
             ref={fileInputRef}
             type="file"
@@ -2373,9 +2378,9 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
             }}
           />
 
-          <div className="flex min-h-0 min-w-0 flex-1">
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="drag-region flex min-h-0 flex-1 px-5 py-4">
+          <div className="omni-knowledge-body-shell flex min-h-0 min-w-0 flex-1 gap-3">
+            <section className="omni-knowledge-content-panel flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="drag-region flex min-h-0 flex-1 px-5 pb-4 pt-0">
                 {detailView ? (
                   <div className="no-drag flex min-h-0 w-full flex-1 flex-col">
                     <KnowledgeBaseDetailBoundary
@@ -2488,12 +2493,13 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   </div>
                 ) : pageMode === "list" ? (
                   <section className="no-drag flex min-h-0 min-w-0 flex-1 flex-col">
-                    <div className="flex min-h-0 flex-1 overflow-y-auto">
+                    <div className="flex min-h-0 flex-1 overflow-y-auto pt-3">
                       <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(168px,1fr))] content-start gap-3">
                     {visibleDocuments.map((document) => {
                       const isActive = document.id === selectedDocumentId;
-                      const fileBadge = document.thumbnailDataUrl ? (
-                        <img src={document.thumbnailDataUrl} alt={document.sourceName} className="h-full w-full object-cover" />
+                      const thumbnailDataUrl = listThumbnailDataUrlById.get(document.id);
+                      const fileBadge = thumbnailDataUrl ? (
+                        <img src={thumbnailDataUrl} alt={document.sourceName} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[10px] font-semibold text-white">
                           {document.sourceName.slice(0, 2).toUpperCase()}
@@ -2503,7 +2509,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                       return (
                         <div
                           key={document.id}
-                          className={`group relative flex h-[170px] min-w-0 flex-col rounded-none border p-2 text-left transition ${
+                          className={`group relative flex h-[170px] min-w-0 flex-col rounded-lg border p-2 text-left transition ${
                             isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
                           }`}
                           onContextMenu={(event) => {
@@ -2516,12 +2522,9 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             onClick={() => openDocument(document.id)}
                             className="flex min-w-0 flex-1 flex-col items-stretch gap-1.5 text-left"
                           >
-                            <div className="h-[86px] w-full overflow-hidden rounded-none bg-slate-100">{fileBadge}</div>
+                            <div className="h-[86px] w-full overflow-hidden rounded-md bg-slate-100">{fileBadge}</div>
                             <div className="min-w-0">
                               <div className="truncate text-[12px] font-medium leading-4">{document.sourceName}</div>
-                              <div className="mt-1 truncate text-[10px] leading-4 text-slate-500" title={document.contentPreview || "暂无内容摘要"}>
-                                {document.contentPreview?.replace(/\s+/g, " ").trim() || "暂无内容摘要"}
-                              </div>
                               <div className="mt-1 flex flex-wrap gap-1">
                                 <span className="rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
                                   {getProcessingStatusLabel(document.processingStatus)}
@@ -2613,8 +2616,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                 )}
               </div>
             </section>
-            {shouldShowTaskCenterPanel ? <div className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag" aria-hidden /> : null}
-            {shouldShowTaskCenterPanel ? taskCenterPanel : null}
+            {shouldShowTaskCenterPanel ? <div className="omni-knowledge-topic-shell flex min-h-0 shrink-0">{taskCenterPanel}</div> : null}
           </div>
         </main>
       </div>
