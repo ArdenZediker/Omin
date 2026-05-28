@@ -1534,6 +1534,7 @@ const OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS: [&str; 6] = [
 const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
 const KNOWLEDGE_EMBEDDING_CONFIG_KEY: &str = "omni_knowledge_embedding_profile";
 const DEFAULT_BASE_URL_FALLBACK: &str = "https://api.openai.com/v1";
+const EMBEDDING_BATCH_SIZE: usize = 24;
 
 fn provider_supports_embeddings(provider: &str) -> bool {
     OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS.contains(&provider)
@@ -1819,32 +1820,6 @@ pub(crate) fn generate_chunk_embeddings(
         }
     };
 
-    let input: Vec<&str> = chunks.iter().map(|chunk| chunk.content.as_str()).collect();
-    let request_body = serde_json::json!({
-        "model": active_model.model,
-        "input": input,
-    });
-
-    let response = match client
-        .post(format!("{}/embeddings", base_url.trim_end_matches('/')))
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&request_body)
-        .send()
-    {
-        Ok(response) => response,
-        Err(err) => {
-            eprintln!("知识库 embedding 请求失败 ({provider}): {err}");
-            return (vec![None; chunks.len()], None);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err_text = response.text().unwrap_or_default();
-        eprintln!("知识库 embedding API 返回错误 ({provider}): {err_text}");
-        return (vec![None; chunks.len()], None);
-    }
-
     #[derive(Deserialize)]
     struct EmbeddingApiItem {
         embedding: Vec<f64>,
@@ -1856,23 +1831,58 @@ pub(crate) fn generate_chunk_embeddings(
         data: Vec<EmbeddingApiItem>,
     }
 
-    let payload: EmbeddingApiResponse = match response.json() {
-        Ok(payload) => payload,
-        Err(err) => {
-            eprintln!("知识库 embedding 响应解析失败 ({provider}): {err}");
-            return (vec![None; chunks.len()], None);
-        }
-    };
-
-    let mut ordered = payload.data;
-    ordered.sort_by_key(|item| item.index);
-
     let mut embeddings = vec![None; chunks.len()];
-    for (index, item) in ordered.into_iter().enumerate() {
-        if index >= embeddings.len() {
-            break;
+    for (batch_index, batch) in chunks.chunks(EMBEDDING_BATCH_SIZE).enumerate() {
+        let batch_start = batch_index * EMBEDDING_BATCH_SIZE;
+        let input: Vec<&str> = batch.iter().map(|chunk| chunk.content.as_str()).collect();
+        let request_body = serde_json::json!({
+            "model": active_model.model,
+            "input": input,
+        });
+
+        let response = match client
+            .post(format!("{}/embeddings", base_url.trim_end_matches('/')))
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&request_body)
+            .send()
+        {
+            Ok(response) => response,
+            Err(err) => {
+                eprintln!(
+                    "知识库 embedding 批次请求失败 ({provider}) batch={batch_index} size={}: {err}",
+                    batch.len()
+                );
+                continue;
+            }
+        };
+
+        if !response.status().is_success() {
+            let err_text = response.text().unwrap_or_default();
+            eprintln!(
+                "知识库 embedding 批次 API 错误 ({provider}) batch={batch_index} size={}: {err_text}",
+                batch.len()
+            );
+            continue;
         }
-        embeddings[index] = serde_json::to_string(&item.embedding).ok();
+
+        let payload: EmbeddingApiResponse = match response.json() {
+            Ok(payload) => payload,
+            Err(err) => {
+                eprintln!(
+                    "知识库 embedding 批次响应解析失败 ({provider}) batch={batch_index}: {err}"
+                );
+                continue;
+            }
+        };
+
+        for item in payload.data {
+            let target = batch_start + item.index;
+            if target >= embeddings.len() {
+                continue;
+            }
+            embeddings[target] = serde_json::to_string(&item.embedding).ok();
+        }
     }
 
     let model_key = format!(

@@ -11,6 +11,7 @@ declare module "mammoth/mammoth.browser" {
   type Mammoth = {
     convertToHtml(input: MammothInput): Promise<MammothResult>;
     convertToMarkdown(input: MammothInput): Promise<MammothResult>;
+    extractRawText(input: MammothInput): Promise<MammothResult>;
   };
 
   const mammoth: Mammoth;

@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
+use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
@@ -868,11 +870,13 @@ fn parse_simple_document(
             let content = bridged_content
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
+                .map(sanitize_frontend_bridged_content)
+                .filter(|value| !value.is_empty())
                 .ok_or_else(|| {
                     format!("unsupported file extension .{ext}; original file has been stored")
                 })?;
             Ok(ParsedDocument {
-                content: content.to_string(),
+                content,
                 preview_type: ext.clone(),
                 metadata_json: Some("{\"mode\":\"frontend_bridge\"}".into()),
             })
@@ -887,6 +891,43 @@ fn parse_simple_document(
             "unsupported file extension .{other}; original file has been stored"
         )),
     }
+}
+
+fn sanitize_frontend_bridged_content(content: &str) -> String {
+    let without_data_images = markdown_data_image_regex()
+        .replace_all(content, "")
+        .to_string();
+    let normalized = without_data_images
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+
+    let mut out = String::with_capacity(normalized.len());
+    let mut previous_blank = false;
+    for line in normalized.lines() {
+        let trimmed_end = line.trim_end();
+        if trimmed_end.trim().is_empty() {
+            if !previous_blank {
+                out.push('\n');
+                previous_blank = true;
+            }
+            continue;
+        }
+
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(trimmed_end);
+        previous_blank = false;
+    }
+    out.trim().to_string()
+}
+
+fn markdown_data_image_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r"!\[[^\]]*\]\(\s*data:image/[^)]+?\)")
+            .expect("valid markdown data image regex")
+    })
 }
 
 fn csv_to_markdown(text: &str, delimiter: char) -> String {
@@ -3112,6 +3153,20 @@ mod tests {
             parsed.metadata_json.as_deref(),
             Some("{\"mode\":\"frontend_bridge\"}")
         );
+    }
+
+    #[test]
+    fn parse_docx_strips_markdown_data_images() {
+        let parsed = parse_simple_document(
+            "report.docx",
+            Some("docx"),
+            b"PK",
+            Some("标题\n\n![](data:image/png;base64,AAAA)\n\n正文"),
+        )
+        .unwrap();
+
+        assert_eq!(parsed.preview_type, "docx");
+        assert_eq!(parsed.content, "标题\n正文");
     }
 
     #[test]
