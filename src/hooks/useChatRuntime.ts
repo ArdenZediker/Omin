@@ -156,10 +156,15 @@ export function useChatRuntime({
   const petThoughtRef = useRef<PetThoughtState | null>(null);
   const petThoughtQueueRef = useRef<PetThoughtState[]>([]);
   const activePetThoughtIdRef = useRef<string | null>(null);
+  const activeChatIdRef = useRef<string | null>(activeChatId);
   const pendingPetThoughtSessionIdsRef = useRef<Set<string>>(new Set());
   const petThoughtClearTimerRef = useRef<number | null>(null);
   const isLoading = loadingSessionIds.length > 0;
   const loadingSessionId = loadingSessionIds[0] ?? null;
+
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
 
   const setSessionLoading = useCallback((sessionId: string, loading: boolean) => {
     const next = new Set(loadingSessionIdsRef.current);
@@ -452,6 +457,27 @@ export function useChatRuntime({
     emitPetThoughtQueue([]);
   }, [clearPetThoughtTimer, emitPetThoughtQueue]);
 
+  const dismissPetThoughtWhenSessionVisible = useCallback(
+    (sessionId: string | null | undefined, thoughtId: string | null | undefined) => {
+      if (!sessionId) {
+        return;
+      }
+      if (isCompactWindow) {
+        return;
+      }
+      if (activeChatIdRef.current !== sessionId) {
+        return;
+      }
+
+      removePetThought({
+        sessionId,
+        thoughtId: thoughtId ?? undefined,
+      });
+      clearPetThoughtSession(sessionId);
+    },
+    [clearPetThoughtSession, isCompactWindow, removePetThought]
+  );
+
   useEffect(() => {
     if (isCompactWindow || !canUseTauriEvents()) {
       return;
@@ -676,6 +702,7 @@ export function useChatRuntime({
           conversationMessages,
           assistantReply
         );
+        dismissPetThoughtWhenSessionVisible(sessionId, petThoughtId);
         finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), sessionId, conversationMessages);
         return;
       } catch (runError) {
@@ -720,6 +747,7 @@ export function useChatRuntime({
       executionModel,
       finishTaskResult,
       finishSessionRun,
+      dismissPetThoughtWhenSessionVisible,
       isCurrentSessionRun,
       isCurrentPetThought,
       resolvePetThoughtResponseCount,
@@ -1173,6 +1201,7 @@ export function useChatRuntime({
             assistantReply
           );
         }
+        dismissPetThoughtWhenSessionVisible(session.id, petThoughtId);
         finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), session.id, conversationMessages);
       } catch (replyError) {
         if (!isCurrentSessionRun(session.id, runId, abortController)) {
@@ -1210,6 +1239,7 @@ export function useChatRuntime({
       executionModel,
       finishTaskResult,
       finishSessionRun,
+      dismissPetThoughtWhenSessionVisible,
       getAssistantById,
       getChatSessionById,
       isCurrentSessionRun,
@@ -1380,6 +1410,7 @@ export function useChatRuntime({
             assistantReply
           );
         }
+        dismissPetThoughtWhenSessionVisible(sessionId, petThoughtId);
         finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), sessionId, conversationMessages);
       } catch (sendError) {
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {
@@ -1422,6 +1453,7 @@ export function useChatRuntime({
       executionModel,
       finishTaskResult,
       finishSessionRun,
+      dismissPetThoughtWhenSessionVisible,
       getScopedConversationMessages,
       isCurrentSessionRun,
       isCurrentPetThought,
