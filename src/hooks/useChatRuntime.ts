@@ -75,6 +75,7 @@ const SILENT_LOCAL_TOOL_IDS = new Set([
 ]);
 
 const PET_THOUGHT_QUEUE_LIMIT = 12;
+const PET_THOUGHT_DISMISS_DELAY_MS = 900;
 
 type PetThoughtSyncRequestPayload = {
   requesterLabel?: string;
@@ -468,14 +469,23 @@ export function useChatRuntime({
       if (activeChatIdRef.current !== sessionId) {
         return;
       }
-
-      removePetThought({
-        sessionId,
-        thoughtId: thoughtId ?? undefined,
-      });
-      clearPetThoughtSession(sessionId);
+      clearPetThoughtTimer();
+      petThoughtClearTimerRef.current = window.setTimeout(() => {
+        petThoughtClearTimerRef.current = null;
+        if (activeChatIdRef.current !== sessionId) {
+          return;
+        }
+        if (!isCurrentPetThought(thoughtId ?? null, sessionId)) {
+          return;
+        }
+        removePetThought({
+          sessionId,
+          thoughtId: thoughtId ?? undefined,
+        });
+        clearPetThoughtSession(sessionId);
+      }, PET_THOUGHT_DISMISS_DELAY_MS);
     },
-    [clearPetThoughtSession, isCompactWindow, removePetThought]
+    [clearPetThoughtSession, clearPetThoughtTimer, isCompactWindow, isCurrentPetThought, removePetThought]
   );
 
   useEffect(() => {
