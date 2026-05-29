@@ -2019,6 +2019,13 @@ body:has(.pet-thought-window),
   color: var(--omni-app-text);
 }
 
+.empty-chat-state--compact {
+  justify-content: center;
+  gap: 14px;
+  padding-top: clamp(84px, 18vh, 150px);
+  padding-bottom: clamp(44px, 8vh, 96px);
+}
+
 .empty-chat-state__hero {
   max-width: 520px;
   text-align: center;
@@ -2081,6 +2088,31 @@ body:has(.pet-thought-window),
   color: var(--omni-app-muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.empty-chat-state__actions {
+  width: min(640px, 100%);
+  display: flex;
+  justify-content: center;
+}
+
+.empty-chat-state__secondary {
+  min-height: 34px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 84%, transparent);
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.empty-chat-state__secondary:hover {
+  color: var(--omni-app-text);
+  border-color: color-mix(in srgb, #8b5cf6 36%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-panel-bg) 92%, transparent);
 }
 
 .chat-recall-banner {
