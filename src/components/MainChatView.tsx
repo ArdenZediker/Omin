@@ -2003,7 +2003,7 @@ export default function MainChatView({
 
               <div ref={setComposerElement}>
                 <ChatInput
-                  canStartNewTopic={activeAssistant?.kind === "basic"}
+                  canStartNewTopic={Boolean(activeAssistant)}
                   contextPresetText={composerContextPresetText}
                   onSend={onSend}
                   hasConversation={messages.some((message) => message.role === "user")}
