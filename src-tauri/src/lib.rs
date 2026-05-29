@@ -3365,6 +3365,15 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|err| err.to_string())?;
     }
+    connection
+        .execute(
+            "UPDATE knowledge_documents
+             SET file_hash = NULL
+             WHERE file_hash IS NOT NULL
+               AND substr(file_hash, 1, length('fnv1a64:')) = 'fnv1a64:'",
+            [],
+        )
+        .map_err(|err| err.to_string())?;
 
     if !table_has_column(connection, "knowledge_documents", "file_size")? {
         connection
