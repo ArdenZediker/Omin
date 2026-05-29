@@ -290,6 +290,7 @@ export default function MainChatView({
   onEditUserMessage,
   onModelChange,
   onNewChat,
+  onRenameChat,
   onRegenerateMessage,
   onSelectAssistant,
   onSelectChat,
@@ -348,6 +349,7 @@ export default function MainChatView({
   const [assistantAvatarCategory, setAssistantAvatarCategory] = useState("recent");
   const [customAssistantsCollapsed, setCustomAssistantsCollapsed] = useState(false);
   const [openAssistantCardMenuId, setOpenAssistantCardMenuId] = useState<string | null>(null);
+  const [topicItemMenuSessionId, setTopicItemMenuSessionId] = useState<string | null>(null);
   const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
   const topicSearchInputRef = useRef<HTMLInputElement | null>(null);
   const topicMenuRef = useRef<HTMLDivElement | null>(null);
@@ -358,6 +360,8 @@ export default function MainChatView({
   const assistantAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const assistantAvatarPanelRef = useRef<HTMLDivElement | null>(null);
   const assistantAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const topicItemMenuRef = useRef<HTMLDivElement | null>(null);
+  const topicItemActionRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const layoutDragRef = useRef<{
     startX: number;
     startWidth: number;
@@ -735,6 +739,22 @@ export default function MainChatView({
   }, [openAssistantCardMenuId]);
 
   useEffect(() => {
+    if (!topicItemMenuSessionId) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (topicItemMenuRef.current?.contains(target)) return;
+      const trigger = topicItemActionRefs.current[topicItemMenuSessionId];
+      if (trigger?.contains(target)) return;
+      setTopicItemMenuSessionId(null);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [topicItemMenuSessionId]);
+
+  useEffect(() => {
     if (!assistantAvatarPanelOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -828,6 +848,131 @@ export default function MainChatView({
     setAssistantDeleteConfirm(null);
     setOpenAssistantCardMenuId(null);
   };
+
+  const renderTopicItemActionMenu = (session: ChatSession) => (
+    <span
+      ref={(node) => {
+        topicItemActionRefs.current[session.id] = node;
+      }}
+      className={`chat-topic-panel__pin chat-topic-panel__pin--menu ${topicItemMenuSessionId === session.id ? "chat-topic-panel__pin--menu-open" : ""}`}
+      title="更多操作"
+      aria-label="更多操作"
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        event.stopPropagation();
+        setTopicItemMenuSessionId((current) => (current === session.id ? null : session.id));
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setTopicItemMenuSessionId(null);
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          setTopicItemMenuSessionId((current) => (current === session.id ? null : session.id));
+        }
+      }}
+    >
+      <MoreHorizontal size={12} strokeWidth={2} />
+      {topicItemMenuSessionId === session.id && (
+        <div
+          ref={topicItemMenuRef}
+          className="chat-topic-panel__item-menu"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <span
+            className="chat-topic-panel__item-menu-action"
+            role="button"
+            tabIndex={0}
+            onClick={(event) => {
+              event.stopPropagation();
+              onTogglePinChat(session);
+              setTopicItemMenuSessionId(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                onTogglePinChat(session);
+                setTopicItemMenuSessionId(null);
+              }
+            }}
+          >
+            <Pin size={12} strokeWidth={2} />
+            <span>{session.pinned ? "取消置顶" : "置顶话题"}</span>
+          </span>
+          <span
+            className="chat-topic-panel__item-menu-action"
+            role="button"
+            tabIndex={0}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleFavoriteChat(session);
+              setTopicItemMenuSessionId(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                onToggleFavoriteChat(session);
+                setTopicItemMenuSessionId(null);
+              }
+            }}
+          >
+            <Star size={12} strokeWidth={2} fill={session.favorite ? "currentColor" : "none"} />
+            <span>{session.favorite ? "取消收藏" : "收藏话题"}</span>
+          </span>
+          <span
+            className="chat-topic-panel__item-menu-action"
+            role="button"
+            tabIndex={0}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRenameChat(session);
+              setTopicItemMenuSessionId(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                onRenameChat(session);
+                setTopicItemMenuSessionId(null);
+              }
+            }}
+          >
+            <Pencil size={12} strokeWidth={2} />
+            <span>重命名话题</span>
+          </span>
+          <span
+            className="chat-topic-panel__item-menu-action chat-topic-panel__item-menu-action--danger"
+            role="button"
+            tabIndex={0}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDeleteChat(session);
+              setTopicItemMenuSessionId(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                onDeleteChat(session);
+                setTopicItemMenuSessionId(null);
+              }
+            }}
+          >
+            <Trash2 size={12} strokeWidth={2} />
+            <span>删除话题</span>
+          </span>
+        </div>
+      )}
+    </span>
+  );
 
 
   return (
@@ -2211,6 +2356,7 @@ export default function MainChatView({
                             onClick={() => {
                               setAssistantSettingsId(null);
                               setAssistantAvatarPanelOpen(false);
+                              setTopicItemMenuSessionId(null);
                               onSelectChat(session.id);
                             }}
                           >
@@ -2218,66 +2364,7 @@ export default function MainChatView({
                             <span className="chat-topic-panel__item-copy">
                               <span className="chat-topic-panel__item-title">{session.title}</span>
                             </span>
-                            <span
-                              className={`chat-topic-panel__badge ${session.pinned ? "chat-topic-panel__badge--active" : ""}`}
-                              title={session.pinned ? "取消置顶" : "置顶话题"}
-                              aria-label={session.pinned ? "取消置顶" : "置顶话题"}
-                              role="button"
-                              tabIndex={0}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onTogglePinChat(session);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  onTogglePinChat(session);
-                                }
-                              }}
-                            >
-                              <Pin size={11} strokeWidth={2} />
-                            </span>
-                            <span
-                              className={`chat-topic-panel__pin ${session.favorite ? "chat-topic-panel__pin--active" : ""}`}
-                              title={session.favorite ? "取消收藏" : "收藏话题"}
-                              aria-label={session.favorite ? "取消收藏" : "收藏话题"}
-                              role="button"
-                              tabIndex={0}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onToggleFavoriteChat(session);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  onToggleFavoriteChat(session);
-                                }
-                              }}
-                            >
-                              <Star size={12} strokeWidth={2} fill={session.favorite ? "currentColor" : "none"} />
-                            </span>
-                            <span
-                              className="chat-topic-panel__pin chat-topic-panel__pin--danger"
-                              title="删除话题"
-                              aria-label="删除话题"
-                              role="button"
-                              tabIndex={0}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onDeleteChat(session);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  onDeleteChat(session);
-                                }
-                              }}
-                            >
-                              <Trash2 size={12} strokeWidth={2} />
-                            </span>
+                            {renderTopicItemActionMenu(session)}
                           </button>
                         ))}
                       </div>
@@ -2294,6 +2381,7 @@ export default function MainChatView({
                       onClick={() => {
                         setAssistantSettingsId(null);
                         setAssistantAvatarPanelOpen(false);
+                        setTopicItemMenuSessionId(null);
                         onSelectChat(session.id);
                       }}
                     >
@@ -2301,66 +2389,7 @@ export default function MainChatView({
                       <span className="chat-topic-panel__item-copy">
                         <span className="chat-topic-panel__item-title">{session.title}</span>
                       </span>
-                      <span
-                        className={`chat-topic-panel__badge ${session.pinned ? "chat-topic-panel__badge--active" : ""}`}
-                        title={session.pinned ? "取消置顶" : "置顶话题"}
-                        aria-label={session.pinned ? "取消置顶" : "置顶话题"}
-                        role="button"
-                        tabIndex={0}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onTogglePinChat(session);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onTogglePinChat(session);
-                          }
-                        }}
-                      >
-                        <Pin size={11} strokeWidth={2} />
-                      </span>
-                      <span
-                        className={`chat-topic-panel__pin ${session.favorite ? "chat-topic-panel__pin--active" : ""}`}
-                        title={session.favorite ? "取消收藏" : "收藏话题"}
-                        aria-label={session.favorite ? "取消收藏" : "收藏话题"}
-                        role="button"
-                        tabIndex={0}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onToggleFavoriteChat(session);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onToggleFavoriteChat(session);
-                          }
-                        }}
-                      >
-                        <Star size={12} strokeWidth={2} fill={session.favorite ? "currentColor" : "none"} />
-                      </span>
-                      <span
-                        className="chat-topic-panel__pin chat-topic-panel__pin--danger"
-                        title="删除话题"
-                        aria-label="删除话题"
-                        role="button"
-                        tabIndex={0}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onDeleteChat(session);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onDeleteChat(session);
-                          }
-                        }}
-                      >
-                        <Trash2 size={12} strokeWidth={2} />
-                      </span>
+                      {renderTopicItemActionMenu(session)}
                     </button>
                   ))}
                 </div>
