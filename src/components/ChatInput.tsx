@@ -446,11 +446,11 @@ export default function ChatInput({
           <div className="chat-composer__footer-row">
             <div className="chat-composer__footer-hint">Enter 发送 / Shift + Enter 换行</div>
             <div className="chat-composer__footer-actions">
-              {canStartNewTopic && hasConversation ? (
+              {canStartNewTopic ? (
                 <button
                   type="button"
                   className="chat-composer__aux-button chat-composer__aux-button--topic"
-                  title="开启新话题"
+                  title={hasConversation ? "开启新话题" : "创建新话题"}
                   onClick={onStartNewTopic}
                 >
                   <CirclePlus size={16} strokeWidth={1.8} />

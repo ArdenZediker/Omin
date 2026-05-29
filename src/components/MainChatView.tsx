@@ -54,6 +54,7 @@ import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 const MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY = "main_layout_topic_width";
+const EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY = "main_empty_chat_guide_compact";
 const DEFAULT_TOPIC_PANEL_WIDTH = 240;
 const MIN_TOPIC_PANEL_WIDTH = 220;
 const MAX_TOPIC_PANEL_WIDTH = 360;
@@ -363,6 +364,11 @@ export default function MainChatView({
   } | null>(null);
 
   const recommendedPrompts = emptyChatPrompts.slice(0, 4);
+  const [isEmptyGuideCompact, setIsEmptyGuideCompact] = useState(() => readSqliteBackedValue(EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY) === "1");
+  const updateEmptyGuideCompact = useCallback((nextCompact: boolean) => {
+    setIsEmptyGuideCompact(nextCompact);
+    saveSqliteBackedValue(EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY, nextCompact ? "1" : "0");
+  }, []);
   const normalizedTopicSearchQuery = normalizeSearchText(topicSearchQuery);
   const filteredTopicGroups = useMemo(
     () =>
@@ -435,6 +441,8 @@ export default function MainChatView({
   const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
+  const hasVisibleContextRecallBanner = showContextRecallBanner && !isContextRecallBannerDismissed;
+  const useCompactEmptyGuideLayout = isEmptyGuideCompact && !hasVisibleContextRecallBanner;
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
   const showTaskPanel = sidePanelTab === "tasks";
   const composerContextPresetText = useMemo(() => "", []);
@@ -505,6 +513,13 @@ export default function MainChatView({
   useEffect(() => {
     isMessagesAtBottomRef.current = isMessagesAtBottom;
   }, [isMessagesAtBottom]);
+
+  useEffect(() => {
+    if (messages.length === 0 || isEmptyGuideCompact) {
+      return;
+    }
+    updateEmptyGuideCompact(true);
+  }, [isEmptyGuideCompact, messages.length, updateEmptyGuideCompact]);
 
   useEffect(() => {
     if (!isAssistantSettingsMode) return;
@@ -1872,7 +1887,7 @@ export default function MainChatView({
                 )}
 
                 {hasModels && messages.length === 0 && (
-                  <div className="empty-chat-state">
+                  <div className={`empty-chat-state${useCompactEmptyGuideLayout ? " empty-chat-state--compact" : ""}`}>
                     {showContextRecallBanner && !isContextRecallBannerDismissed && (
                       <div className="chat-recall-banner">
                         <div className="chat-recall-banner__copy">
@@ -1906,61 +1921,78 @@ export default function MainChatView({
                         <img src={omniIconSrc} alt="Omni" />
                       </div>
                       <h2>从当前助手开始</h2>
-                      <p>你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前助手。</p>
+                      <p>
+                        {isEmptyGuideCompact
+                          ? "直接输入问题开始对话。需要推荐模板时可展开引导。"
+                          : "你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前助手。"}
+                      </p>
                     </div>
-                    <div className="empty-chat-state__subhead">
-                      <Sparkles size={14} strokeWidth={1.9} />
-                      <span>推荐起步方式</span>
+                    <div className="empty-chat-state__actions">
+                      <button
+                        type="button"
+                        className="empty-chat-state__secondary"
+                        onClick={() => updateEmptyGuideCompact(!isEmptyGuideCompact)}
+                      >
+                        {isEmptyGuideCompact ? "展开推荐" : "收起推荐"}
+                      </button>
                     </div>
-                    <div className="empty-chat-state__cards">
-                      {recommendedPrompts.map((prompt, index) => (
-                        <button key={prompt} type="button" className="empty-chat-state__card" onClick={() => onUseEmptyPrompt(prompt)}>
-                          <div className="empty-chat-state__card-icon">
-                            {index % 2 === 0 ? <Compass size={18} strokeWidth={1.8} /> : <Sparkles size={18} strokeWidth={1.8} />}
-                          </div>
-                          <div className="empty-chat-state__card-copy">
-                            <strong>{RECOMMENDED_ASSISTANT_PRESETS[index]?.title || "快速开始"}</strong>
-                            <span>{RECOMMENDED_ASSISTANT_PRESETS[index]?.description || prompt}</span>
-                          </div>
-                          <ArrowRight size={16} strokeWidth={1.8} />
-                        </button>
-                      ))}
-                    </div>
-                    <div className="empty-chat-state__subhead">
-                      <Sparkles size={14} strokeWidth={1.9} />
-                      <span>快速创建助手</span>
-                    </div>
-                    <div className="empty-chat-state__cards">
-                      {AVATAR_PRESETS.slice(0, 4).map((preset) => (
-                        <button
-                          key={preset.code}
-                          type="button"
-                          className="empty-chat-state__card"
-                          onClick={() =>
-                          onCreateCustomAssistant({
-                              sourcePresetId: preset.code,
-                              title: preset.label,
-                              description: preset.hint,
-                              systemPrompt: enhancePresetPromptIfNeeded(preset.code, preset.prompt),
-                              avatarType: "emoji",
-                              avatarValue: `emoji:${preset.code}`,
-                              defaultModelId: preset.defaultModelId ?? null,
-                              allowedToolIds: preset.allowedToolIds,
-                              allowedSkillIds: preset.allowedSkillIds,
-                            })
-                          }
-                        >
-                          <div className="empty-chat-state__card-icon">
-                            <img src={getEmojiAssetSrc(preset.code)} alt={preset.label} className="chat-history-panel__avatar-option-image" />
-                          </div>
-                          <div className="empty-chat-state__card-copy">
-                            <strong>{preset.label}</strong>
-                            <span>{preset.hint}</span>
-                          </div>
-                          <ArrowRight size={16} strokeWidth={1.8} />
-                        </button>
-                      ))}
-                    </div>
+                    {!isEmptyGuideCompact && (
+                      <>
+                        <div className="empty-chat-state__subhead">
+                          <Sparkles size={14} strokeWidth={1.9} />
+                          <span>推荐起步方式</span>
+                        </div>
+                        <div className="empty-chat-state__cards">
+                          {recommendedPrompts.map((prompt, index) => (
+                            <button key={prompt} type="button" className="empty-chat-state__card" onClick={() => onUseEmptyPrompt(prompt)}>
+                              <div className="empty-chat-state__card-icon">
+                                {index % 2 === 0 ? <Compass size={18} strokeWidth={1.8} /> : <Sparkles size={18} strokeWidth={1.8} />}
+                              </div>
+                              <div className="empty-chat-state__card-copy">
+                                <strong>{RECOMMENDED_ASSISTANT_PRESETS[index]?.title || "快速开始"}</strong>
+                                <span>{RECOMMENDED_ASSISTANT_PRESETS[index]?.description || prompt}</span>
+                              </div>
+                              <ArrowRight size={16} strokeWidth={1.8} />
+                            </button>
+                          ))}
+                        </div>
+                        <div className="empty-chat-state__subhead">
+                          <Sparkles size={14} strokeWidth={1.9} />
+                          <span>快速创建助手</span>
+                        </div>
+                        <div className="empty-chat-state__cards">
+                          {AVATAR_PRESETS.slice(0, 4).map((preset) => (
+                            <button
+                              key={preset.code}
+                              type="button"
+                              className="empty-chat-state__card"
+                              onClick={() =>
+                              onCreateCustomAssistant({
+                                  sourcePresetId: preset.code,
+                                  title: preset.label,
+                                  description: preset.hint,
+                                  systemPrompt: enhancePresetPromptIfNeeded(preset.code, preset.prompt),
+                                  avatarType: "emoji",
+                                  avatarValue: `emoji:${preset.code}`,
+                                  defaultModelId: preset.defaultModelId ?? null,
+                                  allowedToolIds: preset.allowedToolIds,
+                                  allowedSkillIds: preset.allowedSkillIds,
+                                })
+                              }
+                            >
+                              <div className="empty-chat-state__card-icon">
+                                <img src={getEmojiAssetSrc(preset.code)} alt={preset.label} className="chat-history-panel__avatar-option-image" />
+                              </div>
+                              <div className="empty-chat-state__card-copy">
+                                <strong>{preset.label}</strong>
+                                <span>{preset.hint}</span>
+                              </div>
+                              <ArrowRight size={16} strokeWidth={1.8} />
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
