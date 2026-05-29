@@ -3,6 +3,7 @@
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -485,12 +486,8 @@ fn collection_exists(connection: &Connection, collection_id: &str) -> Result<boo
 }
 
 fn content_hash(bytes: &[u8]) -> String {
-    let mut hash = 0xcbf29ce484222325_u64;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    format!("fnv1a64:{hash:016x}")
+    let digest = Sha256::digest(bytes);
+    format!("sha256:{:x}", digest)
 }
 
 fn validate_upload_size(bytes: &[u8]) -> Result<(), String> {

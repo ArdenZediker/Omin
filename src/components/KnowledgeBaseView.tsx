@@ -23,6 +23,7 @@ import {
   PanelRightOpen,
   Plus,
   PlaySquare,
+  Trash2,
   SquarePlus,
   Search,
   Settings,
@@ -65,6 +66,15 @@ type KnowledgeDocumentDetailView = "preview" | "chunks" | "processing";
 type KnowledgePageMode = "empty" | "list" | "detail";
 type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "unsupported";
 type DeadLetterScope = "all" | "activeCollection";
+type UploadNotice = {
+  tone: "success" | "error";
+  message: string;
+};
+type TaskScopeMenuState = {
+  scope: DeadLetterScope;
+  x: number;
+  y: number;
+};
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
 const TEXT_EXTENSIONS = new Set([
@@ -343,6 +353,35 @@ function splitPreviewLines(value: string, maxLines: number, maxChars: number) {
   return lines.slice(0, maxLines).map((line) => line.slice(0, maxChars));
 }
 
+function fitCanvasTextToWidth(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (context.measureText(normalized).width <= maxWidth) {
+    return normalized;
+  }
+
+  const ellipsis = "...";
+  if (context.measureText(ellipsis).width > maxWidth) {
+    return "";
+  }
+
+  let low = 0;
+  let high = normalized.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const candidate = `${normalized.slice(0, mid).trimEnd()}${ellipsis}`;
+    if (context.measureText(candidate).width <= maxWidth) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return `${normalized.slice(0, Math.max(0, low)).trimEnd()}${ellipsis}`;
+}
+
 function extractThumbnailPreviewLines(content: string, maxLines: number, maxChars: number) {
   const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   const lines: string[] = [];
@@ -392,26 +431,42 @@ function createThumbnailDataUrlFromContent(content: string) {
   context.fillStyle = "#f8fafc";
   context.fillRect(0, 0, width, height);
 
+  const cardX = 16;
+  const cardY = 14;
+  const cardWidth = 288;
+  const cardHeight = 152;
+
   context.shadowColor = "rgba(15, 23, 42, 0.08)";
   context.shadowBlur = 10;
   context.shadowOffsetY = 3;
   context.fillStyle = "#ffffff";
-  roundRectPath(context, 16, 14, 288, 152, 14);
+  roundRectPath(context, cardX, cardY, cardWidth, cardHeight, 14);
   context.fill();
   context.shadowColor = "transparent";
   context.strokeStyle = "#dbe3ee";
   context.lineWidth = 1;
   context.stroke();
 
-  const lines = extractThumbnailPreviewLines(content, 7, 56);
+  const lineHeight = 16;
   const lineTop = 30;
+  const lineLeft = 30;
+  const maxLines = 7;
+  const maxLineWidth = 248;
+  const lines = extractThumbnailPreviewLines(content, maxLines, 96);
+
+  context.save();
+  roundRectPath(context, cardX + 10, cardY + 10, cardWidth - 20, cardHeight - 20, 10);
+  context.clip();
+
   lines.forEach((line, index) => {
     context.fillStyle = index === 0 ? "#111827" : "#374151";
     context.font = index === 0 ? "600 12px 'Segoe UI', sans-serif" : "11px 'Segoe UI', sans-serif";
     context.textAlign = "left";
     context.textBaseline = "top";
-    context.fillText(line, 30, lineTop + index * 16);
+    const fittedLine = fitCanvasTextToWidth(context, line, maxLineWidth);
+    context.fillText(fittedLine, lineLeft, lineTop + index * lineHeight);
   });
+  context.restore();
 
   return canvas.toDataURL("image/png");
 }
@@ -476,17 +531,8 @@ function openFilePicker(input: HTMLInputElement | null) {
   if (!input) {
     return;
   }
-
-  const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
-  if (typeof pickerInput.showPicker === "function") {
-    try {
-      pickerInput.showPicker();
-      return;
-    } catch {
-      // Fallback to click() below.
-    }
-  }
-
+  // In desktop webviews, showPicker() may exist but fail silently for file inputs.
+  // click() is the most reliable way to trigger the native file chooser.
   input.click();
 }
 
@@ -830,6 +876,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [isDocumentMenuOpen, setIsDocumentMenuOpen] = useState<string | null>(null);
   const [createCollectionError, setCreateCollectionError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [library, setLibrary] = useState<KnowledgeLibraryPayload>({ collections: [], documents: [] });
   const [isKnowledgeLibraryReady, setIsKnowledgeLibraryReady] = useState(false);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>("");
@@ -866,15 +913,19 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [deadLetterPage, setDeadLetterPage] = useState(1);
   const [isDeadLetterLoading, setIsDeadLetterLoading] = useState(false);
   const [deadLetterReplayBusyId, setDeadLetterReplayBusyId] = useState<string | null>(null);
-  const [isTaskCenterPanelOpen, setIsTaskCenterPanelOpen] = useState(true);
+  const [taskScopeMenu, setTaskScopeMenu] = useState<TaskScopeMenuState | null>(null);
+  const [isTaskCenterPanelOpen, setIsTaskCenterPanelOpen] = useState(false);
   const [isSearchToolbarOpen, setIsSearchToolbarOpen] = useState(false);
   const settingsSaveTimerRef = useRef<number | null>(null);
+  const uploadNoticeTimerRef = useRef<number | null>(null);
   const pendingPipelineSettingsRef = useRef<KnowledgePipelineSettings | null>(null);
   const isSavingPipelineSettingsRef = useRef(false);
   const deadLetterListRequestSeqRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadMenuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const taskScopeMenuRef = useRef<HTMLDivElement | null>(null);
 
   const activeCollection = useMemo(() => {
     if (selectedCollectionId) {
@@ -1106,7 +1157,13 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       return;
     }
 
-    const handlePointerDown = () => setIsUploadMenuOpen(false);
+    const handlePointerDown = (event: PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (targetNode && uploadMenuRef.current?.contains(targetNode)) {
+        return;
+      }
+      setIsUploadMenuOpen(false);
+    };
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [isUploadMenuOpen]);
@@ -1152,6 +1209,38 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   }, [isDocumentMenuOpen]);
 
   useEffect(() => {
+    if (!taskScopeMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const targetNode = event.target as Node | null;
+      if (targetNode && taskScopeMenuRef.current?.contains(targetNode)) {
+        return;
+      }
+      setTaskScopeMenu(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setTaskScopeMenu(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [taskScopeMenu]);
+
+  useEffect(() => {
+    if (!isTaskCenterPanelOpen || pageMode === "detail") {
+      setTaskScopeMenu(null);
+    }
+  }, [isTaskCenterPanelOpen, pageMode]);
+
+  useEffect(() => {
     deadLetterListRequestSeqRef.current += 1;
     setIsDeadLetterLoading(false);
     return () => {
@@ -1159,8 +1248,26 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
         window.clearTimeout(settingsSaveTimerRef.current);
         settingsSaveTimerRef.current = null;
       }
+      if (uploadNoticeTimerRef.current) {
+        window.clearTimeout(uploadNoticeTimerRef.current);
+        uploadNoticeTimerRef.current = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!uploadNotice) {
+      return;
+    }
+    if (uploadNoticeTimerRef.current) {
+      window.clearTimeout(uploadNoticeTimerRef.current);
+      uploadNoticeTimerRef.current = null;
+    }
+    uploadNoticeTimerRef.current = window.setTimeout(() => {
+      setUploadNotice(null);
+      uploadNoticeTimerRef.current = null;
+    }, 2600);
+  }, [uploadNotice]);
 
   async function refreshLibrary() {
     const [payload, globalSummary] = await Promise.all([
@@ -1396,7 +1503,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     }
 
     const thumbnailDataUrl = (await createThumbnailDataUrl(file, content || file.name)) ?? undefined;
-    await invoke<PipelineImportResult>("import_knowledge_document_pipeline_command", {
+    return await invoke<PipelineImportResult>("import_knowledge_document_pipeline_command", {
       input: {
         collectionId,
         sourceName: file.name,
@@ -1419,14 +1526,22 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     }
 
     setUploadError(null);
+    setUploadNotice(null);
 
     try {
       const targetCollectionId = activeCollection?.id;
       if (!targetCollectionId) {
         throw new Error("请先创建知识库后再上传文件");
       }
+      let queuedCount = 0;
+      let duplicateCount = 0;
       for (const file of items) {
-        await importFile(file, targetCollectionId);
+        const result = await importFile(file, targetCollectionId);
+        if (result.status === "duplicate") {
+          duplicateCount += 1;
+        } else {
+          queuedCount += 1;
+        }
       }
 
       await refreshLibrary();
@@ -1437,9 +1552,18 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       setSelectedDocumentDetailView("preview");
       setActiveCategory("all");
       setSearchQuery("");
+      if (duplicateCount > 0 && queuedCount > 0) {
+        setUploadNotice({ tone: "success", message: `上传完成：新增 ${queuedCount} 个，重复跳过 ${duplicateCount} 个` });
+      } else if (duplicateCount > 0) {
+        setUploadNotice({ tone: "success", message: `未新增文档：所选 ${duplicateCount} 个文件在当前知识库中已存在` });
+      } else {
+        setUploadNotice({ tone: "success", message: `上传完成：新增 ${queuedCount} 个文档` });
+      }
     } catch (error) {
       console.error(error);
-      setUploadError(error instanceof Error ? error.message : "文件上传失败");
+      const message = error instanceof Error ? error.message : "文件上传失败";
+      setUploadError(message);
+      setUploadNotice({ tone: "error", message });
     }
   }
 
@@ -1555,12 +1679,22 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setTaskCenterNotice(null);
     setIsTaskCenterBusy(true);
     try {
-      await invoke("cleanup_knowledge_processing_logs_command");
-      setTaskCenterNotice("日志清理完成");
-      await refreshProcessingJobs();
+      const deletedLogs = await invoke<number>("cleanup_knowledge_processing_logs_command");
+      if (deletedLogs > 0) {
+        const message = `日志清理完成：已删除 ${deletedLogs} 条`;
+        setTaskCenterNotice(message);
+        setUploadNotice({ tone: "success", message });
+      } else {
+        const message = "暂无可清理日志（当前保留周期内）";
+        setTaskCenterNotice(message);
+        setUploadNotice({ tone: "success", message });
+      }
+      await Promise.all([refreshProcessingJobs(), refreshDeadLetterList()]);
     } catch (error) {
       console.error(error);
-      setTaskCenterError(error instanceof Error ? error.message : "清理处理日志失败");
+      const message = error instanceof Error ? error.message : "清理处理日志失败";
+      setTaskCenterError(message);
+      setUploadNotice({ tone: "error", message });
     } finally {
       setIsTaskCenterBusy(false);
     }
@@ -1687,6 +1821,29 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
   const detailView = pageMode === "detail";
   const shouldShowTaskCenterPanel = isTaskCenterPanelOpen && !detailView;
+  const switchDeadLetterScopeFromTask = (scope: DeadLetterScope) => {
+    if (scope === "activeCollection" && !activeCollection?.id) {
+      setTaskCenterNotice("当前没有可用知识库");
+      return;
+    }
+    setDeadLetterPage(1);
+    setDeadLetterScope(scope);
+  };
+  const openTaskScopeMenu = (scope: DeadLetterScope, clientX: number, clientY: number) => {
+    if (scope === "activeCollection" && !activeCollection?.id) {
+      setTaskCenterNotice("当前没有可用知识库");
+      setTaskCenterError(null);
+      setTaskScopeMenu(null);
+      return;
+    }
+
+    switchDeadLetterScopeFromTask(scope);
+    const menuWidth = 192;
+    const menuHeight = 148;
+    const x = Math.min(Math.max(12, clientX), window.innerWidth - menuWidth - 12);
+    const y = Math.min(Math.max(12, clientY), window.innerHeight - menuHeight - 12);
+    setTaskScopeMenu({ scope, x, y });
+  };
   const taskCenterPanel = (
     <aside className="chat-topic-panel no-drag !w-[360px] !min-w-[360px] !basis-[360px] omni-knowledge-task-panel">
       <div className="chat-topic-panel__body">
@@ -1698,7 +1855,18 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               </div>
 
               <div className="chat-topic-panel__group-list">
-                <div className="chat-topic-panel__task">
+                <button
+                  type="button"
+                  className={`chat-topic-panel__task chat-topic-panel__task--scope ${
+                    deadLetterScope === "all" ? "chat-topic-panel__task--scope-active" : ""
+                  }`}
+                  onClick={() => switchDeadLetterScopeFromTask("all")}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    openTaskScopeMenu("all", event.clientX, event.clientY);
+                  }}
+                  aria-pressed={deadLetterScope === "all"}
+                >
                   <div className="chat-topic-panel__task-head">
                     <strong>全局队列</strong>
                     <span className={`chat-topic-panel__task-status ${taskCounts.failed > 0 ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed"}`}>
@@ -1710,9 +1878,21 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     <span>运行 {taskCounts.running}</span>
                     <span>死信 {globalDeadLetterCount}</span>
                   </div>
-                </div>
+                </button>
 
-                <div className="chat-topic-panel__task">
+                <button
+                  type="button"
+                  className={`chat-topic-panel__task chat-topic-panel__task--scope ${
+                    deadLetterScope === "activeCollection" ? "chat-topic-panel__task--scope-active" : ""
+                  }`}
+                  onClick={() => switchDeadLetterScopeFromTask("activeCollection")}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    openTaskScopeMenu("activeCollection", event.clientX, event.clientY);
+                  }}
+                  aria-pressed={deadLetterScope === "activeCollection"}
+                  disabled={!activeCollection?.id}
+                >
                   <div className="chat-topic-panel__task-head">
                     <strong>当前知识库 · {activeCollection ? activeCollection.name : "未选择"}</strong>
                     <span className={`chat-topic-panel__task-status ${activeCollectionTaskCounts.failed > 0 ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed"}`}>
@@ -1724,53 +1904,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     <span>运行 {activeCollectionTaskCounts.running}</span>
                     <span>死信 {activeCollectionDeadLetterCount}</span>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="chat-topic-panel__section">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled={isTaskCenterBusy || activeCollectionTaskCounts.failed <= 0}
-                  onClick={() => void retryFailedJobs("activeCollection")}
-                  className="chat-topic-panel__inline-action"
-                >
-                  重试当前库失败
-                </button>
-                <button
-                  type="button"
-                  disabled={isTaskCenterBusy || taskCounts.failed <= 0}
-                  onClick={() => void retryFailedJobs("all")}
-                  className="chat-topic-panel__inline-action"
-                >
-                  重试全部失败
-                </button>
-                <button
-                  type="button"
-                  disabled={isTaskCenterBusy || activeCollectionDeadLetterCount <= 0}
-                  onClick={() => void replayDeadLetters("activeCollection")}
-                  className="chat-topic-panel__inline-action"
-                >
-                  回放当前库死信
-                </button>
-                <button
-                  type="button"
-                  disabled={isTaskCenterBusy || globalDeadLetterCount <= 0}
-                  onClick={() => void replayDeadLetters("all")}
-                  className="chat-topic-panel__inline-action"
-                >
-                  回放全部死信
                 </button>
               </div>
-              <button
-                type="button"
-                disabled={isTaskCenterBusy}
-                onClick={() => void cleanupCompletedLogs()}
-                className="chat-topic-panel__inline-action"
-              >
-                清理日志
-              </button>
             </div>
 
             {pipelineSettings ? (
@@ -2107,7 +2242,98 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
           </div>
         </aside>
 
-        <main className="omni-knowledge-main flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+        <main className="omni-knowledge-main relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          {taskScopeMenu ? (
+            <div
+              ref={taskScopeMenuRef}
+              className="omni-knowledge-task-scope-menu no-drag"
+              style={{ left: `${taskScopeMenu.x}px`, top: `${taskScopeMenu.y}px` }}
+              onContextMenu={(event) => event.preventDefault()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <div className="omni-knowledge-task-scope-menu__title">
+                {taskScopeMenu.scope === "all" ? "全局队列操作" : "当前知识库操作"}
+              </div>
+              <div className="omni-knowledge-task-scope-menu__group">
+              {taskScopeMenu.scope === "all" ? (
+                <>
+                  <button
+                    type="button"
+                    className="omni-knowledge-task-scope-menu__item"
+                    disabled={isTaskCenterBusy || taskCounts.failed <= 0}
+                    onClick={() => {
+                      setTaskScopeMenu(null);
+                      void retryFailedJobs("all");
+                    }}
+                  >
+                    重试全部失败
+                  </button>
+                  <button
+                    type="button"
+                    className="omni-knowledge-task-scope-menu__item"
+                    disabled={isTaskCenterBusy || globalDeadLetterCount <= 0}
+                    onClick={() => {
+                      setTaskScopeMenu(null);
+                      void replayDeadLetters("all");
+                    }}
+                  >
+                    回放全部死信
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="omni-knowledge-task-scope-menu__item"
+                    disabled={isTaskCenterBusy || activeCollectionTaskCounts.failed <= 0}
+                    onClick={() => {
+                      setTaskScopeMenu(null);
+                      void retryFailedJobs("activeCollection");
+                    }}
+                  >
+                    重试当前库失败
+                  </button>
+                  <button
+                    type="button"
+                    className="omni-knowledge-task-scope-menu__item"
+                    disabled={isTaskCenterBusy || activeCollectionDeadLetterCount <= 0}
+                    onClick={() => {
+                      setTaskScopeMenu(null);
+                      void replayDeadLetters("activeCollection");
+                    }}
+                  >
+                    回放当前库死信
+                  </button>
+                </>
+              )}
+              </div>
+              <div className="omni-knowledge-task-scope-menu__divider" />
+              <button
+                type="button"
+                className="omni-knowledge-task-scope-menu__item omni-knowledge-task-scope-menu__item--ghost"
+                disabled={isTaskCenterBusy}
+                onClick={() => {
+                  setTaskScopeMenu(null);
+                  void cleanupCompletedLogs();
+                }}
+              >
+                清理日志
+              </button>
+            </div>
+          ) : null}
+          {uploadNotice ? (
+            <div className="pointer-events-none absolute left-1/2 top-24 z-[180] -translate-x-1/2">
+              <div
+                className={`max-w-[min(680px,calc(100vw-220px))] rounded-xl border px-4 py-2 text-sm shadow-lg backdrop-blur-sm ${
+                  uploadNotice.tone === "error"
+                    ? "border-rose-200 bg-rose-50/95 text-rose-700"
+                    : "border-emerald-200 bg-emerald-50/95 text-emerald-700"
+                }`}
+              >
+                {uploadNotice.message}
+              </div>
+            </div>
+          ) : null}
           <header className="drag-region relative z-40 flex min-h-20 shrink-0 flex-col overflow-visible bg-white">
             {detailView ? (
               <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
@@ -2305,15 +2531,17 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
                       {isUploadMenuOpen ? (
                         <div
-                          className="absolute right-0 top-10 z-[130] w-40 rounded-none border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
+                          ref={uploadMenuRef}
+                          className="no-drag absolute right-0 top-10 z-[130] w-40 rounded-none border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
                           onPointerDown={(event) => event.stopPropagation()}
                         >
                           <button
                             type="button"
-                            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            onPointerDown={(event) => event.stopPropagation()}
                             onClick={() => {
-                              setIsUploadMenuOpen(false);
                               openFilePicker(fileInputRef.current);
+                              setIsUploadMenuOpen(false);
                             }}
                           >
                             <LucideFileText size={15} strokeWidth={1.8} className="text-slate-500" />
@@ -2321,10 +2549,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                           </button>
                           <button
                             type="button"
-                            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            onPointerDown={(event) => event.stopPropagation()}
                             onClick={() => {
-                              setIsUploadMenuOpen(false);
                               openFilePicker(folderInputRef.current);
+                              setIsUploadMenuOpen(false);
                             }}
                           >
                             <FolderOpen size={15} strokeWidth={1.8} className="text-slate-500" />
@@ -2539,17 +2768,19 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
                           {isDocumentMenuOpen === document.id ? (
                             <div
-                              className="absolute right-0 top-6 z-20 w-32 overflow-hidden rounded-none border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
+                              className="omni-knowledge-doc-menu no-drag absolute right-0 top-6 z-20 w-40 overflow-hidden"
                               onPointerDown={(event) => event.stopPropagation()}
                             >
                               <button
                                 type="button"
-                                className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+                                className="omni-knowledge-doc-menu__danger no-drag"
+                                onPointerDown={(event) => event.stopPropagation()}
                                 onClick={() => {
                                   setIsDocumentMenuOpen(null);
                                   void deleteDocument(document.id);
                                 }}
                               >
+                                <Trash2 size={14} strokeWidth={1.9} />
                                 删除
                               </button>
                             </div>
