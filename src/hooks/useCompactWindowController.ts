@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { availableMonitors, currentMonitor, cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -186,6 +186,7 @@ type UseCompactWindowControllerArgs = {
   compactSize: { width: number; height: number };
   compactViewportSize: { width: number; height: number } | null;
   petThought: PetThoughtState | null;
+  petThoughtQueue: PetThoughtState[];
   petThoughtCount: number;
   petThoughtPlacement: PetThoughtPlacement;
   arePetThoughtsCollapsed: boolean;
@@ -227,6 +228,7 @@ export function useCompactWindowController({
   compactSize,
   compactViewportSize,
   petThought,
+  petThoughtQueue,
   petThoughtCount,
   petThoughtPlacement,
   arePetThoughtsCollapsed,
@@ -282,6 +284,7 @@ export function useCompactWindowController({
   const isScaleGestureActiveRef = useRef(false);
   const petThoughtPlacementRef = useRef<PetThoughtPlacement>(petThoughtPlacement);
   const petThoughtStateRef = useRef<PetThoughtState | null>(petThought);
+  const petThoughtQueueRef = useRef<PetThoughtState[]>(petThoughtQueue);
   const petThoughtLayoutRequestRef = useRef(0);
   const lastPetThoughtWindowLayoutRef = useRef<{
     x: number;
@@ -350,6 +353,10 @@ export function useCompactWindowController({
     petThoughtStateRef.current = petThought;
   }, [petThought]);
 
+  useEffect(() => {
+    petThoughtQueueRef.current = petThoughtQueue;
+  }, [petThoughtQueue]);
+
   const updatePetThoughtWindowForRect = useCallback(
     async (petRect: { left: number; top: number; width: number; height: number }) => {
       if (!isCompactWindow) {
@@ -359,7 +366,8 @@ export function useCompactWindowController({
       const isLatestRequest = () => requestId === petThoughtLayoutRequestRef.current;
 
       const currentThought = petThoughtStateRef.current;
-      const hasThoughtQueue = petThoughtCount > 0;
+      const currentQueue = petThoughtQueueRef.current;
+      const hasThoughtQueue = currentQueue.length > 0;
       const shouldShowThoughtWindow =
         compactAppearance === "pet" &&
         (hasThoughtQueue || Boolean(currentThought)) &&
@@ -458,6 +466,11 @@ export function useCompactWindowController({
       if (!isLatestRequest()) {
         return;
       }
+      const synchronizedQueue = currentQueue.length > 0 ? currentQueue : currentThought ? [currentThought] : [];
+      await emitTo(PET_THOUGHT_WINDOW_LABEL, "omni-pet-thought-queue-changed", synchronizedQueue).catch(() => undefined);
+      if (!isLatestRequest()) {
+        return;
+      }
       await thoughtWindow.emit("omni-pet-thought-placement", {
         placement: layout.placement,
         anchor: layout.anchor,
@@ -479,6 +492,11 @@ export function useCompactWindowController({
       await thoughtWindow.show();
       await thoughtWindow.setIgnoreCursorEvents(true).catch(() => undefined);
       await thoughtWindow.setAlwaysOnTop(true).catch(() => undefined);
+      // Some platforms may transiently lose click-through right after show.
+      // Re-apply once on the next tick to keep pet interactions responsive.
+      window.setTimeout(() => {
+        void thoughtWindow.setIgnoreCursorEvents(true).catch(() => undefined);
+      }, 0);
     },
     [
       compactAppearance,
@@ -488,6 +506,7 @@ export function useCompactWindowController({
       isCompactQueryOpen,
       isCompactReplyLoading,
       isCompactWindow,
+      petThoughtQueue,
       petThoughtCount,
       setPetThoughtPlacement,
     ]

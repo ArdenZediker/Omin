@@ -30,6 +30,7 @@ type UseChatRuntimeArgs = {
   activeChatId: string | null;
   activeAssistant: AssistantProfile | null;
   availableModels: ModelConfig[];
+  messages: Message[];
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
   commitAssistantMemory: (sessionId: string, conversationMessages: Message[], assistantReply: string) => void;
   createSessionFromMessages: (conversationMessages: Message[], assistantId?: string) => { id: string };
@@ -118,6 +119,7 @@ export function useChatRuntime({
   activeChatId,
   activeAssistant,
   availableModels,
+  messages,
   applyUsageToSession,
   commitAssistantMemory,
   createSessionFromMessages,
@@ -156,7 +158,6 @@ export function useChatRuntime({
   const activePetThoughtIdRef = useRef<string | null>(null);
   const pendingPetThoughtSessionIdsRef = useRef<Set<string>>(new Set());
   const petThoughtClearTimerRef = useRef<number | null>(null);
-  const petThoughtBroadcastFrameRef = useRef<number | null>(null);
   const isLoading = loadingSessionIds.length > 0;
   const loadingSessionId = loadingSessionIds[0] ?? null;
 
@@ -251,20 +252,22 @@ export function useChatRuntime({
 
   const getScopedConversationMessages = useCallback(() => {
     if (!activeChatId) {
-      return [] as Message[];
+      return messages;
     }
 
     const session = getChatSessionById(activeChatId);
     if (!session) {
-      return [] as Message[];
+      return messages;
     }
 
     if (activeAssistant?.id && session.assistantId && session.assistantId !== activeAssistant.id) {
       return [] as Message[];
     }
 
-    return session.messages;
-  }, [activeAssistant?.id, activeChatId, getChatSessionById]);
+    // Use the visible pane messages as the source of truth to avoid
+    // stale-session races right after switching/creating conversations.
+    return messages;
+  }, [activeAssistant?.id, activeChatId, getChatSessionById, messages]);
 
   const resolveAssistantSystemPrompt = useCallback(
     (assistantOverride?: AssistantProfile | null) => {
@@ -277,13 +280,18 @@ export function useChatRuntime({
   const resolvePetThoughtTitle = useCallback(
     (sessionId: string | null | undefined, conversationMessages: Message[]) => {
       const sessionTitle = sessionId ? getChatSessionById(sessionId)?.title?.trim() : "";
-      if (sessionTitle) {
+      const placeholderTitle = getChatSessionTitle([]).trim();
+      if (sessionTitle && sessionTitle !== placeholderTitle) {
         return sessionTitle;
       }
 
       const inferredTitle = getChatSessionTitle(conversationMessages).trim();
-      if (inferredTitle) {
+      if (inferredTitle && inferredTitle !== placeholderTitle) {
         return inferredTitle;
+      }
+
+      if (sessionTitle) {
+        return sessionTitle;
       }
 
       return activeAssistant?.kind === "basic" ? "Omni" : activeAssistant?.title?.trim() || "Omni";
@@ -324,24 +332,14 @@ export function useChatRuntime({
     safelyEmitPetThoughtEventTo(PET_THOUGHT_WINDOW_LABEL, "omni-pet-thought-queue-changed", queue);
   }, []);
 
-  const schedulePetThoughtQueueBroadcast = useCallback(() => {
-    if (!canUseTauriEvents() || petThoughtBroadcastFrameRef.current !== null) {
-      return;
-    }
-
-    petThoughtBroadcastFrameRef.current = window.requestAnimationFrame(() => {
-      petThoughtBroadcastFrameRef.current = null;
-      broadcastPetThoughtQueue(petThoughtQueueRef.current, petThoughtRef.current);
-    });
-  }, [broadcastPetThoughtQueue]);
-
   const emitPetThoughtQueue = useCallback(
     (queue: PetThoughtState[]) => {
       petThoughtQueueRef.current = queue;
-      petThoughtRef.current = queue[0] ?? null;
-      schedulePetThoughtQueueBroadcast();
+      const currentThought = queue[0] ?? null;
+      petThoughtRef.current = currentThought;
+      broadcastPetThoughtQueue(queue, currentThought);
     },
-    [schedulePetThoughtQueueBroadcast]
+    [broadcastPetThoughtQueue]
   );
 
   const emitPetThought = useCallback((state: PetThoughtState | null) => {
@@ -510,10 +508,6 @@ export function useChatRuntime({
 
   useEffect(() => {
     return () => {
-      if (petThoughtBroadcastFrameRef.current !== null) {
-        window.cancelAnimationFrame(petThoughtBroadcastFrameRef.current);
-        petThoughtBroadcastFrameRef.current = null;
-      }
       clearPetThoughtTimer();
     };
   }, [clearPetThoughtTimer]);
@@ -673,7 +667,7 @@ export function useChatRuntime({
           return;
         }
 
-        const assistantReply = streamedAssistantReply || taskResult.finalResult?.content || taskResult.toolResult?.outputText || "";
+        const assistantReply = taskResult.finalResult?.content || streamedAssistantReply || taskResult.toolResult?.outputText || "";
         updateStreamPreview(true);
         updateThoughtPreview(true);
         completePetThought(
@@ -1168,7 +1162,7 @@ export function useChatRuntime({
           return;
         }
 
-        const assistantReply = streamedAssistantReply || taskResult.finalResult?.content || taskResult.toolResult?.outputText || "";
+        const assistantReply = taskResult.finalResult?.content || streamedAssistantReply || taskResult.toolResult?.outputText || "";
         updateStreamPreview(true);
         updateThoughtPreview(true);
         if (isCurrentPetThought(petThoughtId, session.id)) {
@@ -1375,7 +1369,7 @@ export function useChatRuntime({
           return;
         }
 
-        const assistantReply = streamedAssistantReply || taskResult.finalResult?.content || taskResult.toolResult?.outputText || "";
+        const assistantReply = taskResult.finalResult?.content || streamedAssistantReply || taskResult.toolResult?.outputText || "";
         updateStreamPreview(true);
         updateThoughtPreview(true);
         if (hasPetThought && isCurrentPetThought(petThoughtId, sessionId)) {

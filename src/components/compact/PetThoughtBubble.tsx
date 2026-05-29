@@ -146,25 +146,25 @@ export default function PetThoughtBubble({
     >
       <div className="pet-thought-bubble__body">
         <div ref={titleRowRef} className="pet-thought-bubble__title-row">
-          <button
-            type="button"
-            className="pet-thought-bubble__hover-button pet-thought-bubble__hover-button--close"
-            onClick={closeBubble}
-            aria-label="关闭这个气泡"
-            title="关闭"
-          >
-            <X size={11} strokeWidth={2.2} aria-hidden="true" focusable="false" />
-          </button>
           <div className="pet-thought-bubble__title" title={thought.sessionTitle}>
             {thought.sessionTitle}
           </div>
           <span className="pet-thought-bubble__right-actions">
             <button
               type="button"
+              className="pet-thought-bubble__hover-button pet-thought-bubble__hover-button--close"
+              onClick={closeBubble}
+              aria-label="Close bubble"
+              title="Close"
+            >
+              <X size={11} strokeWidth={2.2} aria-hidden="true" focusable="false" />
+            </button>
+            <button
+              type="button"
               className="pet-thought-bubble__hover-button pet-thought-bubble__hover-button--expand"
               onClick={() => setIsExpanded((value) => !value)}
-              aria-label={isExpanded ? "收起回复" : "展开全部回复"}
-              title={isExpanded ? "收起" : "展开"}
+              aria-label={isExpanded ? "Collapse reply" : "Expand reply"}
+              title={isExpanded ? "Collapse" : "Expand"}
             >
               <ChevronRight size={14} strokeWidth={2.1} aria-hidden="true" focusable="false" />
             </button>

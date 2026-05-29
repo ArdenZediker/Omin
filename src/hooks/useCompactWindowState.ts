@@ -58,6 +58,7 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
   const [compactReply, setCompactReply] = useState<{ question: string; answer: string } | null>(null);
   const [isCompactReplyLoading, setIsCompactReplyLoading] = useState(false);
   const [petThought, setPetThought] = useState<PetThoughtState | null>(null);
+  const [petThoughtQueue, setPetThoughtQueue] = useState<PetThoughtState[]>([]);
   const [petThoughtCount, setPetThoughtCount] = useState(0);
   const [petThoughtPlacement, setPetThoughtPlacement] = useState<PetThoughtPlacement>("top");
   const [arePetThoughtsCollapsed, setArePetThoughtsCollapsed] = useState(false);
@@ -126,6 +127,7 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     };
 
     const applyThoughtQueue = (queue: PetThoughtState[], preferredThought?: PetThoughtState | null) => {
+      setPetThoughtQueue(queue);
       setPetThoughtCount(queue.length);
       setPetThought((currentThought) => {
         const snapshotThought = preferredThought ?? queue[0] ?? null;
@@ -138,6 +140,10 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
         return snapshotThought;
       });
       if (queue.length === 0) {
+        setArePetThoughtsCollapsed(false);
+      } else {
+        // Always expand on new queue updates so pending collapsed state does not
+        // suppress fresh thought bubbles.
         setArePetThoughtsCollapsed(false);
       }
     };
@@ -197,6 +203,7 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
       }),
       listen("omni-pet-thought-viewed", () => {
         setPetThought(null);
+        setPetThoughtQueue([]);
         setPetThoughtCount(0);
         setPetThoughtPlacement("top");
         setArePetThoughtsCollapsed(false);
@@ -275,6 +282,7 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     compactQuery,
     compactReply,
     petThought,
+    petThoughtQueue,
     petThoughtCount,
     petThoughtPlacement,
     arePetThoughtsCollapsed,

@@ -437,33 +437,7 @@ export default function MainChatView({
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
   const showTaskPanel = sidePanelTab === "tasks";
-  const composerContextPresetText = useMemo(() => {
-    const sections: string[] = [];
-
-    if (activeSession?.title) {
-      sections.push(`当前话题：${activeSession.title}`);
-    }
-
-    if (relatedContext.memories.length > 0) {
-      sections.push(
-        `助手记忆：\n${relatedContext.memories
-          .slice(0, 3)
-          .map((memory, index) => `${index + 1}. ${memory.content}`)
-          .join("\n")}`
-      );
-    }
-
-    if (relatedContext.summaries.length > 0) {
-      sections.push(
-        `相关话题摘要：\n${relatedContext.summaries
-          .slice(0, 3)
-          .map((summary, index) => `${index + 1}. ${summary.title}：${summary.summary}`)
-          .join("\n")}`
-      );
-    }
-
-    return sections.join("\n\n");
-  }, [activeSession?.title, relatedContext.memories, relatedContext.summaries]);
+  const composerContextPresetText = useMemo(() => "", []);
   const normalizedAssistantSearchQuery = normalizeSearchText(assistantSearchQuery);
   const isBasicAssistantVisible = Boolean(
     basicAssistant &&
