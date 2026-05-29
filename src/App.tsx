@@ -147,6 +147,7 @@ function MainApp() {
     setIsCompactQueryOpen,
     setIsCompactReplyLoading,
     petThought,
+    petThoughtQueue,
     setPetThoughtPlacement,
     setArePetThoughtsCollapsed,
   } = useCompactWindowState({ isCompactWindow });
@@ -201,8 +202,12 @@ function MainApp() {
 
   const availableModels = modelRegistry.getAvailableModels();
   const hasModels = availableModels.length > 0;
-  const visibleMessages = activeSession ? messages : [];
+  const visibleMessages = messages;
   const activeComposerDraft = assistantDrafts[activeAssistantId] ?? EMPTY_COMPOSER_DRAFT;
+  const relatedContextQuery = useMemo(() => {
+    const latestUserMessage = [...visibleMessages].reverse().find((message) => message.role === "user")?.content ?? "";
+    return latestUserMessage.trim();
+  }, [visibleMessages]);
 
   const updateAssistantDraft = useCallback((assistantId: string, updater: (draft: ComposerDraft) => ComposerDraft) => {
     setAssistantDrafts((current) => {
@@ -310,6 +315,7 @@ function MainApp() {
     activeChatId,
     activeAssistant,
     availableModels,
+    messages,
     applyUsageToSession,
     commitAssistantMemory,
     createSessionFromMessages,
@@ -332,8 +338,8 @@ function MainApp() {
   });
 
   const relatedContext = useMemo(
-    () => getRelatedContextForAssistant(activeSession?.title ?? ""),
-    [activeSession?.title, getRelatedContextForAssistant]
+    () => getRelatedContextForAssistant(relatedContextQuery),
+    [getRelatedContextForAssistant, relatedContextQuery]
   );
 
   useEffect(() => {
@@ -381,6 +387,7 @@ function MainApp() {
     compactSize,
     compactViewportSize,
     petThought,
+    petThoughtQueue,
     petThoughtCount,
     petThoughtPlacement,
     arePetThoughtsCollapsed,

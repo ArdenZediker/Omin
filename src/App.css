@@ -3134,7 +3134,7 @@ body:has(.pet-thought-window),
 .omni-knowledge-main > header {
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
-  overflow: hidden;
+  overflow: visible;
   box-shadow: var(--omni-surface-shadow);
   background: var(--omni-panel-bg) !important;
 }
@@ -3942,6 +3942,103 @@ body:has(.pet-thought-window),
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
 }
 
+.chat-topic-panel__task--scope {
+  width: 100%;
+  border: 1px solid var(--omni-panel-border);
+  appearance: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.chat-topic-panel__task--scope:hover {
+  border-color: color-mix(in srgb, #60a5fa 30%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-panel-bg) 92%, #60a5fa 4%);
+}
+
+.chat-topic-panel__task--scope:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.chat-topic-panel__task--scope-active {
+  border-color: color-mix(in srgb, #60a5fa 44%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-panel-bg) 88%, #60a5fa 8%);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.08);
+}
+
+.omni-knowledge-task-scope-menu {
+  position: fixed;
+  z-index: 220;
+  min-width: 214px;
+  max-width: 248px;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 84%, transparent);
+  border-radius: 14px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 96%, #ffffff 4%);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.omni-knowledge-task-scope-menu__title {
+  padding: 4px 8px 7px;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.omni-knowledge-task-scope-menu__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.omni-knowledge-task-scope-menu__divider {
+  margin: 7px 4px;
+  border-top: 1px solid color-mix(in srgb, var(--omni-panel-border) 78%, transparent);
+}
+
+.omni-knowledge-task-scope-menu__item {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: transparent;
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 120ms ease;
+}
+
+.omni-knowledge-task-scope-menu__item:hover {
+  background: color-mix(in srgb, var(--omni-soft-bg) 74%, transparent);
+  transform: translateY(-0.5px);
+}
+
+.omni-knowledge-task-scope-menu__item--ghost {
+  color: color-mix(in srgb, var(--omni-app-text) 88%, transparent);
+}
+
+.omni-knowledge-task-scope-menu__item:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .chat-topic-panel__task-head {
   display: flex;
   align-items: flex-start;
@@ -4611,6 +4708,7 @@ body:has(.pet-thought-window),
   display: flex;
   align-items: center;
   gap: 5px;
+  padding-left: 0;
 }
 
 .pet-thought-bubble__body {
@@ -4783,8 +4881,10 @@ body:has(.pet-thought-window),
 }
 
 .pet-thought-bubble__hover-button--close {
-  flex: 0 0 16px;
-  margin-left: -5px;
+  flex: 0 0 auto;
+  position: static;
+  margin-left: 0;
+  z-index: 3;
 }
 
 .pet-thought-bubble__hover-button--expand {
@@ -6669,4 +6769,37 @@ body:has(.pet-thought-window),
   .omni-settings-dialog__toggle-list {
     grid-template-columns: 1fr;
   }
+}
+
+.omni-knowledge-doc-menu {
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 84%, transparent);
+  border-radius: 12px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 96%, #ffffff 4%);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.omni-knowledge-doc-menu__danger {
+  width: 100%;
+  border: 0;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  color: #dc2626;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.omni-knowledge-doc-menu__danger:hover {
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: #b91c1c;
 }

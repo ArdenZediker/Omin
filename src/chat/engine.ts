@@ -39,6 +39,16 @@ function estimateCost(model: string, promptTokens: number, completionTokens: num
   return (promptTokens / 1000) * pricing.input + (completionTokens / 1000) * pricing.output;
 }
 
+function shouldSkipKnowledgeContext(messages: Message[]) {
+  const latestUser = [...messages].reverse().find((message) => message.role === "user")?.content?.trim().toLowerCase() ?? "";
+  if (!latestUser) return false;
+  if (latestUser.length <= 8) {
+    return true;
+  }
+  // Keep greeting turns lightweight and avoid pulling unrelated knowledge chunks.
+  return /^(hi|hello|hey|你好|您好|在吗|在嘛|嗨|哈喽|早上好|下午好|晚上好)[!?。,.！]*$/.test(latestUser);
+}
+
 export async function executeChatTurn(options: {
   model: string;
   messages: Message[];
@@ -82,7 +92,9 @@ export async function executeChatTurn(options: {
   }
 
   const knowledgeContext =
-    enableKnowledgeContext && !signal?.aborted
+    enableKnowledgeContext &&
+    !shouldSkipKnowledgeContext(messages) &&
+    !signal?.aborted
       ? await buildKnowledgeContextBlock({
           model,
           messages,

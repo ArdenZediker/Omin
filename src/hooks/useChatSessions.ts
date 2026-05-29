@@ -220,9 +220,14 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     [activeAssistantId, chatSessions]
   );
 
+  const activeSessionById = useMemo(
+    () => chatSessions.find((session) => session.id === activeChatId) ?? null,
+    [activeChatId, chatSessions]
+  );
+
   const activeSession = useMemo(
-    () => chatSessions.find((session) => session.id === activeChatId && session.assistantId === activeAssistantId) ?? null,
-    [activeAssistantId, activeChatId, chatSessions]
+    () => (activeSessionById && activeSessionById.assistantId === activeAssistantId ? activeSessionById : null),
+    [activeAssistantId, activeSessionById]
   );
 
   useEffect(() => {
@@ -233,14 +238,20 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       return;
     }
 
-    if (activeSession) {
+    // Keep the active chat stable while session/assistant state is still converging.
+    // Clear only when the chat id truly does not exist anymore.
+    if (activeSessionById) {
+      if (activeSessionById.assistantId !== activeAssistantId) {
+        activeAssistantIdRef.current = activeSessionById.assistantId;
+        setActiveAssistantId(activeSessionById.assistantId);
+      }
       return;
     }
 
     activeChatIdRef.current = null;
     setActiveChatId(null);
     setMessages([]);
-  }, [activeChatId, activeSession, messages.length]);
+  }, [activeAssistantId, activeChatId, activeSessionById, messages.length]);
 
   const applyUsageToSession = useCallback((sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => {
     const now = Date.now();
@@ -272,6 +283,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       activeChatIdRef.current = nextSession.id;
       setActiveChatId(nextSession.id);
       setChatSessions((sessions) => [nextSession, ...sessions]);
+      setMessages(conversationMessages);
       return nextSession;
     },
     []
@@ -279,13 +291,16 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const updateChatSessionMessages = useCallback((sessionId: string, nextMessages: Message[] | ((current: Message[]) => Message[])) => {
     const now = Date.now();
-    let resolvedMessages: Message[] | null = null;
+    const isActiveTarget = activeChatIdRef.current === sessionId;
+
+    if (isActiveTarget) {
+      setMessages((current) => (typeof nextMessages === "function" ? nextMessages(current) : nextMessages));
+    }
 
     setChatSessions((sessions) =>
       sessions.map((session) => {
         if (session.id !== sessionId) return session;
         const messagesForSession = typeof nextMessages === "function" ? nextMessages(session.messages) : nextMessages;
-        resolvedMessages = messagesForSession;
         return {
           ...session,
           title: getChatSessionTitle(messagesForSession),
@@ -294,10 +309,6 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         };
       })
     );
-
-    if (activeChatIdRef.current === sessionId && resolvedMessages) {
-      setMessages(resolvedMessages);
-    }
   }, []);
 
   const selectAssistant = useCallback(
@@ -524,7 +535,15 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         };
       }
 
-      const summaryMatches = searchSessionSummaries(sessionSummaries, query)
+      const normalizedQuery = query.trim();
+      if (!normalizedQuery) {
+        return {
+          summaries: [],
+          memories: [],
+        };
+      }
+
+      const summaryMatches = searchSessionSummaries(sessionSummaries, normalizedQuery)
         .filter((item) => {
           if (activeAssistant.memoryScope === "session") {
             return item.sessionId === activeChatId;
@@ -532,7 +551,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
           return item.assistantId === activeAssistantId;
         })
         .slice(0, 5);
-      const memoryMatches = searchAssistantMemories(assistantMemories, activeAssistantId, query)
+      const memoryMatches = searchAssistantMemories(assistantMemories, activeAssistantId, normalizedQuery)
         .filter((item) => {
           if (activeAssistant.memoryScope === "session") {
             return item.sourceSessionId === activeChatId;
