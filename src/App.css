@@ -4438,6 +4438,65 @@ body:has(.pet-thought-window),
   flex: 0 0 auto;
 }
 
+.chat-topic-panel__pin--menu {
+  margin-left: auto;
+  position: relative;
+  opacity: 0;
+  transform: translateX(4px);
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.chat-topic-panel__item:hover .chat-topic-panel__pin--menu,
+.chat-topic-panel__item:focus-within .chat-topic-panel__pin--menu,
+.chat-topic-panel__pin--menu-open {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.chat-topic-panel__item-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 44;
+  min-width: 152px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  padding: 4px;
+  background: var(--omni-panel-bg);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-topic-panel__item-menu-action {
+  min-height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  color: var(--omni-app-text);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chat-topic-panel__item-menu-action:hover {
+  background: var(--omni-soft-bg);
+}
+
+.chat-topic-panel__item-menu-action--danger {
+  color: #ef4444;
+}
+
+.chat-topic-panel__item-menu-action--danger:hover {
+  color: #dc2626;
+}
+
 .chat-topic-panel__pin:hover {
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
   color: var(--omni-app-text);
