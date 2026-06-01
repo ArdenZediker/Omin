@@ -116,6 +116,14 @@ export default function CompactWindow({
   };
   const isPetAppearance = compactAppearance === "pet";
   const isAnimatedAppearance = isPetAppearance;
+  const isPetThoughtToggleVisible =
+    isPetAppearance &&
+    petThoughtCount > 0 &&
+    !isCharacterDragging &&
+    !isCompactMenuOpen &&
+    !isCompactQueryOpen &&
+    !isCompactReplyLoading &&
+    !compactReply;
   const petViewportSize = getCodexPetViewportSize(compactSize);
   const petRenderHeight = petViewportSize.height;
   const petRenderWidth = petViewportSize.width;
@@ -350,7 +358,7 @@ export default function CompactWindow({
               )}
             </button>
 
-            {isPetAppearance && petThoughtCount > 0 && !isCharacterDragging ? (
+            {isPetThoughtToggleVisible ? (
               <button
                 type="button"
                 className={`pet-thought-compact-toggle ${arePetThoughtsCollapsed ? "pet-thought-compact-toggle--collapsed" : ""} no-drag`}
@@ -460,4 +468,3 @@ export default function CompactWindow({
     </div>
   );
 }
-
