@@ -17,6 +17,7 @@ import {
   Layers3,
   MessageSquare,
   Mic,
+  X,
   RotateCcw,
   TriangleAlert,
   PanelLeftClose,
@@ -928,7 +929,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [isTaskCenterPanelOpen, setIsTaskCenterPanelOpen] = useState(false);
   const [isSearchToolbarOpen, setIsSearchToolbarOpen] = useState(false);
   const settingsSaveTimerRef = useRef<number | null>(null);
-  const uploadNoticeTimerRef = useRef<number | null>(null);
   const pendingPipelineSettingsRef = useRef<KnowledgePipelineSettings | null>(null);
   const isSavingPipelineSettingsRef = useRef(false);
   const deadLetterListRequestSeqRef = useRef(0);
@@ -1225,26 +1225,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
         window.clearTimeout(settingsSaveTimerRef.current);
         settingsSaveTimerRef.current = null;
       }
-      if (uploadNoticeTimerRef.current) {
-        window.clearTimeout(uploadNoticeTimerRef.current);
-        uploadNoticeTimerRef.current = null;
-      }
     };
   }, []);
-
-  useEffect(() => {
-    if (!uploadNotice) {
-      return;
-    }
-    if (uploadNoticeTimerRef.current) {
-      window.clearTimeout(uploadNoticeTimerRef.current);
-      uploadNoticeTimerRef.current = null;
-    }
-    uploadNoticeTimerRef.current = window.setTimeout(() => {
-      setUploadNotice(null);
-      uploadNoticeTimerRef.current = null;
-    }, 2600);
-  }, [uploadNotice]);
 
   async function refreshLibrary() {
     const [payload, globalSummary] = await Promise.all([
@@ -1618,7 +1600,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     }
   }
 
-  async function retryFailedJobs(scope: "all" | "activeCollection") {
+  async function reprocessFailedItems(scope: "all" | "activeCollection") {
     if (scope === "activeCollection" && !activeCollection?.id) {
       setTaskCenterNotice("当前没有可用知识库");
       setTaskCenterError(null);
@@ -1628,59 +1610,39 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setTaskCenterNotice(null);
     setIsTaskCenterBusy(true);
     try {
-      const result = await invoke<RetryFailedJobsResult>("retry_failed_knowledge_processing_jobs_command", {
+      const retryResult = await invoke<RetryFailedJobsResult>("retry_failed_knowledge_processing_jobs_command", {
         input: {
           collectionId: scope === "activeCollection" ? activeCollection?.id ?? null : null,
           limit: 500,
         },
       });
-      if (result.attempted <= 0) {
-        setTaskCenterNotice("没有可重试的失败任务");
-        return;
-      }
-      setTaskCenterNotice(`已重试 ${result.retried}/${result.attempted}，跳过 ${result.skipped}`);
-      if (result.errors.length > 0) {
-        setTaskCenterError(result.errors.slice(0, 2).join(" | "));
-      }
-      await refreshLibrary();
-    } catch (error) {
-      console.error(error);
-      setTaskCenterError(error instanceof Error ? error.message : "重试失败任务失败");
-    } finally {
-      setIsTaskCenterBusy(false);
-    }
-  }
-
-  async function replayDeadLetters(scope: "all" | "activeCollection") {
-    if (scope === "activeCollection" && !activeCollection?.id) {
-      setTaskCenterNotice("当前没有可用知识库");
-      setTaskCenterError(null);
-      return;
-    }
-    setTaskCenterError(null);
-    setTaskCenterNotice(null);
-    setIsTaskCenterBusy(true);
-    try {
-      const result = await invoke<ReplayDeadLettersResult>("replay_knowledge_processing_dead_letters_command", {
+      const replayResult = await invoke<ReplayDeadLettersResult>("replay_knowledge_processing_dead_letters_command", {
         input: {
           collectionId: scope === "activeCollection" ? activeCollection?.id ?? null : null,
-          status: deadLetterStatusFilter === "all" ? null : deadLetterStatusFilter,
+          status: "failed",
           limit: 300,
         },
       });
-      if (result.attempted <= 0) {
-        setTaskCenterNotice("没有可回放的死信任务");
+
+      if (retryResult.attempted <= 0 && replayResult.attempted <= 0) {
+        setTaskCenterNotice("没有可重新处理的失败项");
         return;
       }
-      setTaskCenterNotice(`死信回放完成：${result.replayed}/${result.attempted}，跳过 ${result.skipped}`);
-      if (result.errors.length > 0) {
-        setTaskCenterError(result.errors.slice(0, 2).join(" | "));
+
+      const retriedSummary =
+        retryResult.attempted > 0 ? `队列重试 ${retryResult.retried}/${retryResult.attempted}` : "队列无需重试";
+      const replayedSummary =
+        replayResult.attempted > 0 ? `死信回投 ${replayResult.replayed}/${replayResult.attempted}` : "死信无需回投";
+      setTaskCenterNotice(`已重新处理失败项：${retriedSummary}，${replayedSummary}`);
+
+      const errors = [...retryResult.errors, ...replayResult.errors];
+      if (errors.length > 0) {
+        setTaskCenterError(errors.slice(0, 2).join(" | "));
       }
-      await refreshLibrary();
-      await refreshDeadLetterList({ resetPage: true });
+      await Promise.all([refreshProcessingJobs({ syncLibrary: true }), refreshDeadLetterList({ resetPage: true })]);
     } catch (error) {
       console.error(error);
-      setTaskCenterError(error instanceof Error ? error.message : "回放死信任务失败");
+      setTaskCenterError(error instanceof Error ? error.message : "重新处理失败项失败");
     } finally {
       setIsTaskCenterBusy(false);
     }
@@ -1805,7 +1767,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               <select
                 value={deadLetterScope}
                 onChange={(event) => {
@@ -1835,21 +1797,17 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                disabled={isTaskCenterBusy || (deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.failed <= 0 : taskCounts.failed <= 0)}
-                onClick={() => void retryFailedJobs(deadLetterScope)}
+                disabled={
+                  isTaskCenterBusy ||
+                  ((deadLetterScope === "activeCollection"
+                    ? activeCollectionTaskCounts.failed + activeCollectionDeadLetterCount
+                    : taskCounts.failed + globalDeadLetterCount) <= 0)
+                }
+                onClick={() => void reprocessFailedItems(deadLetterScope)}
                 className="chat-topic-panel__inline-action"
               >
                 <RotateCcw size={14} strokeWidth={2} />
-                <span>重试失败</span>
-              </button>
-              <button
-                type="button"
-                disabled={isTaskCenterBusy || (deadLetterScope === "activeCollection" ? activeCollectionDeadLetterCount <= 0 : globalDeadLetterCount <= 0)}
-                onClick={() => void replayDeadLetters(deadLetterScope)}
-                className="chat-topic-panel__inline-action"
-              >
-                <PlaySquare size={14} strokeWidth={2} />
-                <span>回放死信</span>
+                <span>重新处理失败项</span>
               </button>
             </div>
           </div>
@@ -2202,19 +2160,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
         </aside>
 
         <main className="omni-knowledge-main relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          {uploadNotice ? (
-            <div className="pointer-events-none absolute left-1/2 top-24 z-[180] -translate-x-1/2">
-              <div
-                className={`max-w-[min(680px,calc(100vw-220px))] rounded-xl border px-4 py-2 text-sm shadow-lg backdrop-blur-sm ${
-                  uploadNotice.tone === "error"
-                    ? "border-rose-200 bg-rose-50/95 text-rose-700"
-                    : "border-emerald-200 bg-emerald-50/95 text-emerald-700"
-                }`}
-              >
-                {uploadNotice.message}
-              </div>
-            </div>
-          ) : null}
           <header className="drag-region relative z-40 flex min-h-20 shrink-0 flex-col overflow-visible bg-white">
             {detailView ? (
               <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
@@ -2459,6 +2404,28 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               </>
             )}
           </header>
+
+          {uploadNotice ? (
+            <div className="no-drag px-4 pt-3 md:px-6">
+              <div
+                className={`flex items-start justify-between gap-3 rounded-none border px-4 py-3 text-sm ${
+                  uploadNotice.tone === "error"
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                }`}
+              >
+                <div className="min-w-0 flex-1 leading-6">{uploadNotice.message}</div>
+                <button
+                  type="button"
+                  onClick={() => setUploadNotice(null)}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-none border border-current/15 bg-white/60 text-current hover:bg-white"
+                  title="关闭提示"
+                >
+                  <X size={14} strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+          ) : null}
           <input
             ref={fileInputRef}
             type="file"
