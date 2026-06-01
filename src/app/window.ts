@@ -674,6 +674,20 @@ export async function showSettingsWindow() {
   await settingsWindow.setFocus();
 }
 
+export async function isMainWindowUserVisible() {
+  const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
+  if (!mainWindow) {
+    return false;
+  }
+
+  const [isVisible, isMinimized] = await Promise.all([
+    mainWindow.isVisible().catch(() => false),
+    mainWindow.isMinimized().catch(() => true),
+  ]);
+
+  return isVisible && !isMinimized;
+}
+
 export async function openInternalChatWindow(entry: ExternalChatEntry) {
   if (entry.kind !== "external" || !entry.url) return;
 

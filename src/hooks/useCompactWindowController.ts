@@ -457,16 +457,15 @@ export function useCompactWindowController({
         !previousLayout ||
         Math.abs(previousLayout.x - layout.position.x) > PET_THOUGHT_POSITION_EPSILON ||
         Math.abs(previousLayout.y - layout.position.y) > PET_THOUGHT_POSITION_EPSILON;
-      if (shouldMove) {
-        if (!isLatestRequest()) {
-          return;
-        }
-        await thoughtWindow.setPosition(new LogicalPosition(layout.position.x, layout.position.y));
-      }
       if (!isLatestRequest()) {
         return;
       }
-      await thoughtWindow.setSize(new LogicalSize(PET_THOUGHT_WINDOW_SIZE.width, layout.size.height)).catch(() => undefined);
+      await Promise.all([
+        shouldMove
+          ? thoughtWindow.setPosition(new LogicalPosition(layout.position.x, layout.position.y))
+          : Promise.resolve(),
+        thoughtWindow.setSize(new LogicalSize(PET_THOUGHT_WINDOW_SIZE.width, layout.size.height)).catch(() => undefined),
+      ]);
       // Always sync placement when the thought window is shown.
       // The thought webview can be recreated independently and lose in-memory anchor state.
       if (!isLatestRequest()) {
@@ -516,16 +515,20 @@ export function useCompactWindowController({
     ]
   );
 
-  const updatePetThoughtWindowFromCurrentPosition = useCallback(async () => {
+  const updatePetThoughtWindowForCurrentPositionAndSize = useCallback(async (size: { width: number; height: number }) => {
     const scaleFactor = await appWindow.scaleFactor();
     const position = (await appWindow.outerPosition()).toLogical(scaleFactor);
     await updatePetThoughtWindowForRect({
       left: Math.round(position.x),
       top: toVisualPetWindowY(position.y),
-      width: compactSize.width,
-      height: compactSize.height,
+      width: size.width,
+      height: size.height,
     });
-  }, [compactSize.height, compactSize.width, updatePetThoughtWindowForRect]);
+  }, [updatePetThoughtWindowForRect]);
+
+  const updatePetThoughtWindowFromCurrentPosition = useCallback(async () => {
+    await updatePetThoughtWindowForCurrentPositionAndSize(compactSize);
+  }, [compactSize, updatePetThoughtWindowForCurrentPositionAndSize]);
 
   const hidePetThoughtWindowForDrag = useCallback(async () => {
     petThoughtLayoutRequestRef.current += 1;
@@ -1046,7 +1049,10 @@ export function useCompactWindowController({
           Math.round(currentSize.width) !== Math.round(targetSize.width) ||
           Math.round(currentSize.height) !== Math.round(targetSize.height);
         if (hasSizeChanged || currentSizeChanged) {
-          await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
+          await Promise.all([
+            appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height)),
+            updatePetThoughtWindowForCurrentPositionAndSize(targetSize),
+          ]);
           lastAppliedCompactSizeRef.current = { ...targetSize };
         }
         return;
@@ -1082,6 +1088,7 @@ export function useCompactWindowController({
     petThoughtPlacement,
     scaleGestureVersion,
     suppressCompactBlur,
+    updatePetThoughtWindowForCurrentPositionAndSize,
   ]);
 
   useEffect(() => {
@@ -1531,6 +1538,8 @@ export function useCompactWindowController({
       scaleGestureScaleRef.current = nextScale;
       const gestureSequence = (scaleGestureSequenceRef.current += 1);
       const previewSize = getCompactWindowSize("pet", nextScale * CHARACTER_SCALE_BASELINE);
+      setPreviewCharacterScale(nextScale);
+      void updatePetThoughtWindowForCurrentPositionAndSize(previewSize).catch(() => undefined);
       void (async () => {
         try {
           await appWindow.setSize(new LogicalSize(previewSize.width, previewSize.height));
@@ -1538,9 +1547,10 @@ export function useCompactWindowController({
         } catch {
           // Fall back to React-driven resizing if the immediate native resize fails.
         }
-        if (scaleGestureSequenceRef.current === gestureSequence && scaleGestureScaleRef.current === nextScale) {
-          setPreviewCharacterScale(nextScale);
+        if (scaleGestureSequenceRef.current !== gestureSequence || scaleGestureScaleRef.current !== nextScale) {
+          return;
         }
+        void updatePetThoughtWindowForCurrentPositionAndSize(previewSize).catch(() => undefined);
       })();
       if (scaleWheelTimerRef.current !== null) {
         window.clearTimeout(scaleWheelTimerRef.current);
@@ -1559,7 +1569,7 @@ export function useCompactWindowController({
         setScaleGestureVersion((value) => value + 1);
       }, 120);
     },
-    [characterScale, compactAppearance, markCompactInteraction, setCharacterScale]
+    [characterScale, compactAppearance, markCompactInteraction, setCharacterScale, updatePetThoughtWindowForCurrentPositionAndSize]
   );
 
   const handleCompactAppearanceChange = useCallback(
