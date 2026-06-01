@@ -4122,11 +4122,18 @@ body:has(.pet-thought-window),
   align-self: flex-start;
   border: 0;
   border-radius: 8px;
-  padding: 4px 8px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
   background: color-mix(in srgb, var(--omni-app-text) 7%, transparent);
   color: var(--omni-app-text);
+  line-height: 1;
   font-size: 10px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .chat-topic-panel__inline-action:hover {

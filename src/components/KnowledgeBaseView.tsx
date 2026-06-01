@@ -17,6 +17,8 @@ import {
   Layers3,
   MessageSquare,
   Mic,
+  RotateCcw,
+  TriangleAlert,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -27,6 +29,8 @@ import {
   SquarePlus,
   Search,
   Settings,
+  ChevronDown,
+  ChevronUp,
   Sparkles,
 } from "lucide-react";
 import type {
@@ -70,12 +74,6 @@ type UploadNotice = {
   tone: "success" | "error";
   message: string;
 };
-type TaskScopeMenuState = {
-  scope: DeadLetterScope;
-  x: number;
-  y: number;
-};
-
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
 const TEXT_EXTENSIONS = new Set([
   "txt",
@@ -351,6 +349,18 @@ function splitPreviewLines(value: string, maxLines: number, maxChars: number) {
   }
 
   return lines.slice(0, maxLines).map((line) => line.slice(0, maxChars));
+}
+
+function getDeadLetterDisplayName(item: KnowledgeProcessingDeadLetter, documentNameById: Map<string, string>) {
+  return item.documentName?.trim() || documentNameById.get(item.documentId) || `文档 ${item.documentId.slice(0, 8)}`;
+}
+
+function getDeadLetterStatusClassName(status: string) {
+  return status === "failed" ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed";
+}
+
+function formatDeadLetterAttempts(item: KnowledgeProcessingDeadLetter) {
+  return `第 ${Math.max(1, item.attempt)}/${Math.max(1, item.maxAttempts)} 次尝试`;
 }
 
 function fitCanvasTextToWidth(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
@@ -906,14 +916,15 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [activeCollectionDeadLetterCount, setActiveCollectionDeadLetterCount] = useState(0);
   const [pipelineSettings, setPipelineSettings] = useState<KnowledgePipelineSettings | null>(null);
   const [isSavingPipelineSettings, setIsSavingPipelineSettings] = useState(false);
-  const [deadLetterScope, setDeadLetterScope] = useState<DeadLetterScope>("all");
+  const [deadLetterScope, setDeadLetterScope] = useState<DeadLetterScope>("activeCollection");
   const [deadLetterStatusFilter, setDeadLetterStatusFilter] = useState<"failed" | "replayed" | "all">("failed");
   const [deadLetterItems, setDeadLetterItems] = useState<KnowledgeProcessingDeadLetter[]>([]);
   const [deadLetterTotal, setDeadLetterTotal] = useState(0);
   const [deadLetterPage, setDeadLetterPage] = useState(1);
   const [isDeadLetterLoading, setIsDeadLetterLoading] = useState(false);
   const [deadLetterReplayBusyId, setDeadLetterReplayBusyId] = useState<string | null>(null);
-  const [taskScopeMenu, setTaskScopeMenu] = useState<TaskScopeMenuState | null>(null);
+  const [isTaskSettingsOpen, setIsTaskSettingsOpen] = useState(false);
+  const [expandedDeadLetterId, setExpandedDeadLetterId] = useState<string | null>(null);
   const [isTaskCenterPanelOpen, setIsTaskCenterPanelOpen] = useState(false);
   const [isSearchToolbarOpen, setIsSearchToolbarOpen] = useState(false);
   const settingsSaveTimerRef = useRef<number | null>(null);
@@ -925,8 +936,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const uploadMenuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const taskScopeMenuRef = useRef<HTMLDivElement | null>(null);
-
   const activeCollection = useMemo(() => {
     if (selectedCollectionId) {
       const selected = library.collections.find((collection) => collection.id === selectedCollectionId);
@@ -1207,38 +1216,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [isDocumentMenuOpen]);
-
-  useEffect(() => {
-    if (!taskScopeMenu) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const targetNode = event.target as Node | null;
-      if (targetNode && taskScopeMenuRef.current?.contains(targetNode)) {
-        return;
-      }
-      setTaskScopeMenu(null);
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setTaskScopeMenu(null);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [taskScopeMenu]);
-
-  useEffect(() => {
-    if (!isTaskCenterPanelOpen || pageMode === "detail") {
-      setTaskScopeMenu(null);
-    }
-  }, [isTaskCenterPanelOpen, pageMode]);
 
   useEffect(() => {
     deadLetterListRequestSeqRef.current += 1;
@@ -1674,32 +1651,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     }
   }
 
-  async function cleanupCompletedLogs() {
-    setTaskCenterError(null);
-    setTaskCenterNotice(null);
-    setIsTaskCenterBusy(true);
-    try {
-      const deletedLogs = await invoke<number>("cleanup_knowledge_processing_logs_command");
-      if (deletedLogs > 0) {
-        const message = `日志清理完成：已删除 ${deletedLogs} 条`;
-        setTaskCenterNotice(message);
-        setUploadNotice({ tone: "success", message });
-      } else {
-        const message = "暂无可清理日志（当前保留周期内）";
-        setTaskCenterNotice(message);
-        setUploadNotice({ tone: "success", message });
-      }
-      await Promise.all([refreshProcessingJobs(), refreshDeadLetterList()]);
-    } catch (error) {
-      console.error(error);
-      const message = error instanceof Error ? error.message : "清理处理日志失败";
-      setTaskCenterError(message);
-      setUploadNotice({ tone: "error", message });
-    } finally {
-      setIsTaskCenterBusy(false);
-    }
-  }
-
   async function replayDeadLetters(scope: "all" | "activeCollection") {
     if (scope === "activeCollection" && !activeCollection?.id) {
       setTaskCenterNotice("当前没有可用知识库");
@@ -1821,250 +1772,258 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
   const detailView = pageMode === "detail";
   const shouldShowTaskCenterPanel = isTaskCenterPanelOpen && !detailView;
-  const switchDeadLetterScopeFromTask = (scope: DeadLetterScope) => {
-    if (scope === "activeCollection" && !activeCollection?.id) {
-      setTaskCenterNotice("当前没有可用知识库");
-      return;
-    }
-    setDeadLetterPage(1);
-    setDeadLetterScope(scope);
-  };
-  const openTaskScopeMenu = (scope: DeadLetterScope, clientX: number, clientY: number) => {
-    if (scope === "activeCollection" && !activeCollection?.id) {
-      setTaskCenterNotice("当前没有可用知识库");
-      setTaskCenterError(null);
-      setTaskScopeMenu(null);
-      return;
-    }
-
-    switchDeadLetterScopeFromTask(scope);
-    const menuWidth = 192;
-    const menuHeight = 148;
-    const x = Math.min(Math.max(12, clientX), window.innerWidth - menuWidth - 12);
-    const y = Math.min(Math.max(12, clientY), window.innerHeight - menuHeight - 12);
-    setTaskScopeMenu({ scope, x, y });
-  };
   const taskCenterPanel = (
     <aside className="chat-topic-panel no-drag !w-[360px] !min-w-[360px] !basis-[360px] omni-knowledge-task-panel">
       <div className="chat-topic-panel__body">
         <>
-            <div className="chat-topic-panel__section chat-topic-panel__section--task">
-              <div className="chat-topic-panel__section-title">
-                <History size={13} strokeWidth={2} />
-                <span>任务中心</span>
+          <div className="chat-topic-panel__section chat-topic-panel__section--task">
+            <div className="chat-topic-panel__section-title">
+              <History size={13} strokeWidth={2} />
+              <span>任务中心</span>
+            </div>
+
+            <div className="chat-topic-panel__task">
+              <div className="chat-topic-panel__task-head">
+                <strong>{deadLetterScope === "activeCollection" ? `当前知识库 · ${activeCollectionName}` : "全局处理概览"}</strong>
+                <span
+                  className={`chat-topic-panel__task-status ${
+                    (deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.failed : taskCounts.failed) > 0
+                      ? "chat-topic-panel__task-status--failed"
+                      : "chat-topic-panel__task-status--completed"
+                  }`}
+                >
+                  失败 {deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.failed : taskCounts.failed}
+                </span>
               </div>
-
-              <div className="chat-topic-panel__group-list">
-                <button
-                  type="button"
-                  className={`chat-topic-panel__task chat-topic-panel__task--scope ${
-                    deadLetterScope === "all" ? "chat-topic-panel__task--scope-active" : ""
-                  }`}
-                  onClick={() => switchDeadLetterScopeFromTask("all")}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    openTaskScopeMenu("all", event.clientX, event.clientY);
-                  }}
-                  aria-pressed={deadLetterScope === "all"}
-                >
-                  <div className="chat-topic-panel__task-head">
-                    <strong>全局队列</strong>
-                    <span className={`chat-topic-panel__task-status ${taskCounts.failed > 0 ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed"}`}>
-                      失败 {taskCounts.failed}
-                    </span>
-                  </div>
-                  <div className="chat-topic-panel__task-meta">
-                    <span>排队 {taskCounts.queued}</span>
-                    <span>运行 {taskCounts.running}</span>
-                    <span>死信 {globalDeadLetterCount}</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`chat-topic-panel__task chat-topic-panel__task--scope ${
-                    deadLetterScope === "activeCollection" ? "chat-topic-panel__task--scope-active" : ""
-                  }`}
-                  onClick={() => switchDeadLetterScopeFromTask("activeCollection")}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    openTaskScopeMenu("activeCollection", event.clientX, event.clientY);
-                  }}
-                  aria-pressed={deadLetterScope === "activeCollection"}
-                  disabled={!activeCollection?.id}
-                >
-                  <div className="chat-topic-panel__task-head">
-                    <strong>当前知识库 · {activeCollection ? activeCollection.name : "未选择"}</strong>
-                    <span className={`chat-topic-panel__task-status ${activeCollectionTaskCounts.failed > 0 ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed"}`}>
-                      失败 {activeCollectionTaskCounts.failed}
-                    </span>
-                  </div>
-                  <div className="chat-topic-panel__task-meta">
-                    <span>排队 {activeCollectionTaskCounts.queued}</span>
-                    <span>运行 {activeCollectionTaskCounts.running}</span>
-                    <span>死信 {activeCollectionDeadLetterCount}</span>
-                  </div>
-                </button>
+              <div className="chat-topic-panel__task-meta">
+                <span>排队 {deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.queued : taskCounts.queued}</span>
+                <span>运行 {deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.running : taskCounts.running}</span>
+                <span>死信 {deadLetterScope === "activeCollection" ? activeCollectionDeadLetterCount : globalDeadLetterCount}</span>
+              </div>
+              <div className="mt-3 rounded-none border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                全局失败 {taskCounts.failed} · 当前库失败 {activeCollectionTaskCounts.failed} · 当前展示 {deadLetterScope === "activeCollection" ? "当前知识库" : "全局范围"}
               </div>
             </div>
 
-            {pipelineSettings ? (
-              <div className="chat-topic-panel__section">
-                <div className="chat-topic-panel__section-title">
-                  <History size={13} strokeWidth={2} />
-                  <span>调度设置</span>
-                </div>
-                <div className="chat-topic-panel__task chat-topic-panel__task--form">
-                  <div className="chat-topic-panel__task-meta">
-                    <span>{isSavingPipelineSettings ? "保存中..." : "自动保存"}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-[11px]">
-                    <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                      <span>总并发</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={4}
-                        value={pipelineSettings.maxConcurrentJobs}
-                        onChange={(event) => void updatePipelineSettings({ maxConcurrentJobs: Number(event.target.value || 1) })}
-                        className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                      <span>单库并发</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={4}
-                        value={pipelineSettings.perCollectionMaxRunning}
-                        onChange={(event) => void updatePipelineSettings({ perCollectionMaxRunning: Number(event.target.value || 1) })}
-                        className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                      <span>自动重试</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={10}
-                        value={pipelineSettings.maxAutoRetries}
-                        onChange={(event) => void updatePipelineSettings({ maxAutoRetries: Number(event.target.value || 0) })}
-                        className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                      <span>任务超时(s)</span>
-                      <input
-                        type="number"
-                        min={10}
-                        max={3600}
-                        value={Math.floor(pipelineSettings.jobTimeoutMs / 1000)}
-                        onChange={(event) =>
-                          void updatePipelineSettings({
-                            jobTimeoutMs: Number(event.target.value || 10) * 1000,
-                          })
-                        }
-                        className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                      />
-                    </label>
-                  </div>
-                </div>
-              </div>
-            ) : null}
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={deadLetterScope}
+                onChange={(event) => {
+                  const nextScope = event.target.value as DeadLetterScope;
+                  if (nextScope === "activeCollection" && !activeCollection?.id) {
+                    setTaskCenterNotice("当前没有可用知识库");
+                    return;
+                  }
+                  setDeadLetterPage(1);
+                  setDeadLetterScope(nextScope);
+                }}
+                className="chat-topic-panel__form-input"
+              >
+                <option value="activeCollection">当前知识库</option>
+                <option value="all">全局范围</option>
+              </select>
+              <button
+                type="button"
+                className="chat-topic-panel__inline-action"
+                onClick={() => setIsTaskSettingsOpen((current) => !current)}
+              >
+                {isTaskSettingsOpen ? <ChevronUp size={14} strokeWidth={2} /> : <ChevronDown size={14} strokeWidth={2} />}
+                <span>{isTaskSettingsOpen ? "收起调度设置" : "调度设置"}</span>
+              </button>
+            </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={isTaskCenterBusy || (deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.failed <= 0 : taskCounts.failed <= 0)}
+                onClick={() => void retryFailedJobs(deadLetterScope)}
+                className="chat-topic-panel__inline-action"
+              >
+                <RotateCcw size={14} strokeWidth={2} />
+                <span>重试失败</span>
+              </button>
+              <button
+                type="button"
+                disabled={isTaskCenterBusy || (deadLetterScope === "activeCollection" ? activeCollectionDeadLetterCount <= 0 : globalDeadLetterCount <= 0)}
+                onClick={() => void replayDeadLetters(deadLetterScope)}
+                className="chat-topic-panel__inline-action"
+              >
+                <PlaySquare size={14} strokeWidth={2} />
+                <span>回放死信</span>
+              </button>
+            </div>
+          </div>
+
+          {pipelineSettings && isTaskSettingsOpen ? (
             <div className="chat-topic-panel__section">
               <div className="chat-topic-panel__section-title">
-                <History size={13} strokeWidth={2} />
-                <span>死信列表</span>
-                <span className="chat-topic-panel__item-meta">{deadLetterTotal} 条</span>
+                <Settings size={13} strokeWidth={2} />
+                <span>调度设置</span>
+                <span className="chat-topic-panel__item-meta">{isSavingPipelineSettings ? "保存中..." : "自动保存"}</span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={deadLetterScope}
-                  onChange={(event) => {
-                    setDeadLetterPage(1);
-                    setDeadLetterScope(event.target.value as DeadLetterScope);
-                  }}
-                  className="chat-topic-panel__form-input"
-                >
-                  <option value="all">全局范围</option>
-                  <option value="activeCollection">当前知识库</option>
-                </select>
-                <select
-                  value={deadLetterStatusFilter}
-                  onChange={(event) => {
-                    setDeadLetterPage(1);
-                    setDeadLetterStatusFilter(event.target.value as "failed" | "replayed" | "all");
-                  }}
-                  className="chat-topic-panel__form-input"
-                >
-                  <option value="failed">仅失败</option>
-                  <option value="replayed">仅已回放</option>
-                  <option value="all">全部状态</option>
-                </select>
+              <div className="chat-topic-panel__task chat-topic-panel__task--form">
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                    <span>总并发</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={4}
+                      value={pipelineSettings.maxConcurrentJobs}
+                      onChange={(event) => void updatePipelineSettings({ maxConcurrentJobs: Number(event.target.value || 1) })}
+                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                    <span>单库并发</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={4}
+                      value={pipelineSettings.perCollectionMaxRunning}
+                      onChange={(event) => void updatePipelineSettings({ perCollectionMaxRunning: Number(event.target.value || 1) })}
+                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                    <span>自动重试</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={pipelineSettings.maxAutoRetries}
+                      onChange={(event) => void updatePipelineSettings({ maxAutoRetries: Number(event.target.value || 0) })}
+                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                    <span>任务超时(s)</span>
+                    <input
+                      type="number"
+                      min={10}
+                      max={3600}
+                      value={Math.floor(pipelineSettings.jobTimeoutMs / 1000)}
+                      onChange={(event) =>
+                        void updatePipelineSettings({
+                          jobTimeoutMs: Number(event.target.value || 10) * 1000,
+                        })
+                      }
+                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                    />
+                  </label>
+                </div>
               </div>
-              <div className="chat-topic-panel__group-list">
-                {isDeadLetterLoading ? (
-                  <div className="chat-topic-panel__empty">加载死信中...</div>
-                ) : deadLetterItems.length === 0 ? (
-                  <div className="chat-topic-panel__empty">当前筛选下暂无死信任务</div>
-                ) : (
-                  deadLetterItems.map((item) => (
+            </div>
+          ) : null}
+
+          <div className="chat-topic-panel__section">
+            <div className="chat-topic-panel__section-title">
+              <TriangleAlert size={13} strokeWidth={2} />
+              <span>待处理失败</span>
+              <span className="chat-topic-panel__item-meta">{deadLetterTotal} 条</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={deadLetterStatusFilter}
+                onChange={(event) => {
+                  setDeadLetterPage(1);
+                  setDeadLetterStatusFilter(event.target.value as "failed" | "replayed" | "all");
+                }}
+                className="chat-topic-panel__form-input"
+              >
+                <option value="failed">仅失败</option>
+                <option value="replayed">仅已回放</option>
+                <option value="all">全部状态</option>
+              </select>
+              <div className="rounded-none border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                优先处理失败文档，再看详情排查原因
+              </div>
+            </div>
+            <div className="chat-topic-panel__group-list">
+              {isDeadLetterLoading ? (
+                <div className="chat-topic-panel__empty">加载失败任务中...</div>
+              ) : deadLetterItems.length === 0 ? (
+                <div className="chat-topic-panel__empty">当前筛选下没有需要处理的失败任务</div>
+              ) : (
+                deadLetterItems.map((item) => {
+                  const documentName = getDeadLetterDisplayName(item, documentNameById);
+                  const isExpanded = expandedDeadLetterId === item.id;
+                  return (
                     <div key={item.id} className="chat-topic-panel__task">
                       <div className="chat-topic-panel__task-head">
-                        <strong title={documentNameById.get(item.documentId) ?? item.documentId}>
-                          {documentNameById.get(item.documentId) ?? item.documentId}
-                        </strong>
-                        <span className={`chat-topic-panel__task-status ${item.status === "failed" ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed"}`}>
-                          {item.status}
+                        <strong title={documentName}>{documentName}</strong>
+                        <span className={`chat-topic-panel__task-status ${getDeadLetterStatusClassName(item.status)}`}>
+                          {item.statusLabel}
                         </span>
                       </div>
                       <div className="chat-topic-panel__task-meta">
-                        <span>{item.jobType}</span>
+                        <span>{item.collectionName ?? activeCollectionName}</span>
+                        <span>{item.jobTypeLabel}</span>
                         <span>{formatTimestamp(item.lastFailedAt)}</span>
                       </div>
-                      <div className="chat-topic-panel__task-meta">
-                        <span title={item.errorMessage ?? ""}>{item.errorMessage ?? "无错误详情"}</span>
+                      <div className="mt-2 text-sm font-medium leading-6 text-slate-900">{item.userMessage}</div>
+                      {item.userAction ? <div className="mt-1 text-xs leading-5 text-slate-500">{item.userAction}</div> : null}
+                      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                        <span>{formatDeadLetterAttempts(item)}</span>
+                        <span>{item.documentName ? "已识别文档" : `文档 ID ${item.documentId.slice(0, 8)}`}</span>
                       </div>
-                      <button
-                        type="button"
-                        disabled={deadLetterReplayBusyId === item.id || item.status !== "failed"}
-                        onClick={() => void replayDeadLetterItem(item)}
-                        className="chat-topic-panel__inline-action"
-                      >
-                        {deadLetterReplayBusyId === item.id ? "回放中" : "回放"}
-                      </button>
+                      <div className="mt-3 flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={deadLetterReplayBusyId === item.id || item.status !== "failed"}
+                          onClick={() => void replayDeadLetterItem(item)}
+                          className="chat-topic-panel__inline-action"
+                        >
+                          {deadLetterReplayBusyId === item.id ? "回放中" : "回放"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedDeadLetterId((current) => (current === item.id ? null : item.id))}
+                          className="chat-topic-panel__inline-action"
+                        >
+                          {isExpanded ? "收起详情" : "查看详情"}
+                        </button>
+                      </div>
+                      {isExpanded ? (
+                        <div className="mt-3 space-y-2 rounded-none border border-slate-200 bg-slate-50 px-3 py-3 text-[11px] leading-5 text-slate-600">
+                          <div><strong className="text-slate-900">原始错误：</strong>{item.errorMessage ?? "无原始错误详情"}</div>
+                          <div><strong className="text-slate-900">文档 ID：</strong>{item.documentId}</div>
+                          <div><strong className="text-slate-900">任务 ID：</strong>{item.jobId}</div>
+                          <div><strong className="text-slate-900">知识库 ID：</strong>{item.collectionId}</div>
+                        </div>
+                      ) : null}
                     </div>
-                  ))
-                )}
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  disabled={deadLetterPage <= 1 || isDeadLetterLoading}
-                  onClick={() => setDeadLetterPage((current) => Math.max(1, current - 1))}
-                  className="chat-topic-panel__inline-action"
-                >
-                  上一页
-                </button>
-                <span className="chat-topic-panel__item-meta">第 {deadLetterPage} 页</span>
-                <button
-                  type="button"
-                  disabled={deadLetterPage * deadLetterPageSize >= deadLetterTotal || isDeadLetterLoading}
-                  onClick={() => setDeadLetterPage((current) => current + 1)}
-                  className="chat-topic-panel__inline-action"
-                >
-                  下一页
-                </button>
-              </div>
+                  );
+                })
+              )}
             </div>
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                disabled={deadLetterPage <= 1 || isDeadLetterLoading}
+                onClick={() => setDeadLetterPage((current) => Math.max(1, current - 1))}
+                className="chat-topic-panel__inline-action"
+              >
+                上一页
+              </button>
+              <span className="chat-topic-panel__item-meta">第 {deadLetterPage} 页</span>
+              <button
+                type="button"
+                disabled={deadLetterPage * deadLetterPageSize >= deadLetterTotal || isDeadLetterLoading}
+                onClick={() => setDeadLetterPage((current) => current + 1)}
+                className="chat-topic-panel__inline-action"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
 
-            {taskCenterNotice ? (
-              <div className="chat-topic-panel__task-status chat-topic-panel__task-status--completed">{taskCenterNotice}</div>
-            ) : null}
-            {taskCenterError ? (
-              <div className="chat-topic-panel__task-status chat-topic-panel__task-status--failed">{taskCenterError}</div>
-            ) : null}
+          {taskCenterNotice ? (
+            <div className="chat-topic-panel__task-status chat-topic-panel__task-status--completed">{taskCenterNotice}</div>
+          ) : null}
+          {taskCenterError ? (
+            <div className="chat-topic-panel__task-status chat-topic-panel__task-status--failed">{taskCenterError}</div>
+          ) : null}
         </>
       </div>
     </aside>
@@ -2243,84 +2202,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
         </aside>
 
         <main className="omni-knowledge-main relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          {taskScopeMenu ? (
-            <div
-              ref={taskScopeMenuRef}
-              className="omni-knowledge-task-scope-menu no-drag"
-              style={{ left: `${taskScopeMenu.x}px`, top: `${taskScopeMenu.y}px` }}
-              onContextMenu={(event) => event.preventDefault()}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              <div className="omni-knowledge-task-scope-menu__title">
-                {taskScopeMenu.scope === "all" ? "全局队列操作" : "当前知识库操作"}
-              </div>
-              <div className="omni-knowledge-task-scope-menu__group">
-              {taskScopeMenu.scope === "all" ? (
-                <>
-                  <button
-                    type="button"
-                    className="omni-knowledge-task-scope-menu__item"
-                    disabled={isTaskCenterBusy || taskCounts.failed <= 0}
-                    onClick={() => {
-                      setTaskScopeMenu(null);
-                      void retryFailedJobs("all");
-                    }}
-                  >
-                    重试全部失败
-                  </button>
-                  <button
-                    type="button"
-                    className="omni-knowledge-task-scope-menu__item"
-                    disabled={isTaskCenterBusy || globalDeadLetterCount <= 0}
-                    onClick={() => {
-                      setTaskScopeMenu(null);
-                      void replayDeadLetters("all");
-                    }}
-                  >
-                    回放全部死信
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="omni-knowledge-task-scope-menu__item"
-                    disabled={isTaskCenterBusy || activeCollectionTaskCounts.failed <= 0}
-                    onClick={() => {
-                      setTaskScopeMenu(null);
-                      void retryFailedJobs("activeCollection");
-                    }}
-                  >
-                    重试当前库失败
-                  </button>
-                  <button
-                    type="button"
-                    className="omni-knowledge-task-scope-menu__item"
-                    disabled={isTaskCenterBusy || activeCollectionDeadLetterCount <= 0}
-                    onClick={() => {
-                      setTaskScopeMenu(null);
-                      void replayDeadLetters("activeCollection");
-                    }}
-                  >
-                    回放当前库死信
-                  </button>
-                </>
-              )}
-              </div>
-              <div className="omni-knowledge-task-scope-menu__divider" />
-              <button
-                type="button"
-                className="omni-knowledge-task-scope-menu__item omni-knowledge-task-scope-menu__item--ghost"
-                disabled={isTaskCenterBusy}
-                onClick={() => {
-                  setTaskScopeMenu(null);
-                  void cleanupCompletedLogs();
-                }}
-              >
-                清理日志
-              </button>
-            </div>
-          ) : null}
           {uploadNotice ? (
             <div className="pointer-events-none absolute left-1/2 top-24 z-[180] -translate-x-1/2">
               <div

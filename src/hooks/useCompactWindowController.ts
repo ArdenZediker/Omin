@@ -907,7 +907,7 @@ export function useCompactWindowController({
         compactFollowMonitorRef.current = nextMonitorKey;
         await moveCompactWindowToMonitor(appWindow, monitor, compactSize);
       } catch {
-        // 闂傚倸鍊搁崐鎼佸磹閹间讲鈧箓顢楅崟顐わ紱闂佸憡娲﹂崐瀣洪鍕庘晠鏌嶆潪鎷屽厡闁哄睙鍐炬富闁靛牆妫楁慨褏绱掗悩鍐茬仴閺佸牓鏌＄仦璇插姕闁绘挻鐟╅弻锝呂旈埀顒勬偋婵犲嫭顐介柡灞诲劜閻撴洘绻涢崱妤呯崪闂婎剦鍓熼弻锛勪沪閸撗勫垱濡ょ姷鍋為敋妞ゎ亜鍟撮幃娆擃敆婢跺鏋堢紓鍌氬€风欢锟犲窗濮樿泛鏋侀悹鍥ф▕濞兼牗绻涘顔荤凹妞ゃ儱鐗撻弻宥夊传閸曨偅娈堕梺闈涚墢閸忔ê顫忓ú顏勫窛濠电姴鍟伴崣鍡涙⒑濞茶骞栭柛濠傛健閹即顢氶埀顒€鐣峰鈧、娆撴嚃閳哄﹤鏅梻鍌欑缂嶅﹪銆傞敃鍌涘€块柨鏇楀亾妞も晛銈告俊鎼佸煛閸屾瀚奸梻鍌氬€搁悧濠冪瑹濡も偓鍗遍柛顐ｆ礃閻撴洟骞栭幖顓炴灈闁诲骏绱曠槐鎺楀磼濮樻瘷锝囩磼鏉炴壆鐭欑€规洏鍔嶇换婵嬪磼濞嗗繐顕?
+        // Ignore monitor sync failures and keep the current compact position.
       }
     };
 

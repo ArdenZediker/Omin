@@ -150,9 +150,15 @@ pub struct KnowledgeProcessingDeadLetterRecord {
     pub id: String,
     pub job_id: String,
     pub document_id: String,
+    pub document_name: Option<String>,
     pub collection_id: String,
+    pub collection_name: Option<String>,
     pub job_type: String,
+    pub job_type_label: String,
     pub status: String,
+    pub status_label: String,
+    pub user_message: String,
+    pub user_action: Option<String>,
     pub error_message: Option<String>,
     pub fail_count: i64,
     pub attempt: i64,
@@ -239,7 +245,7 @@ impl Default for KnowledgePipelineSettings {
             max_auto_retries: 3,
             job_timeout_ms: 300_000,
             step_timeout_ms: 120_000,
-            keep_successful_logs_days: 7,
+            keep_successful_logs_days: 1,
             keep_failed_logs_days: 30,
         }
     }
@@ -494,10 +500,10 @@ fn validate_upload_size(bytes: &[u8]) -> Result<(), String> {
     const DEFAULT_MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
 
     if bytes.is_empty() {
-        return Err("文件为空，无法上传".into());
+        return Err("文件为空，无法上传。".into());
     }
     if bytes.len() > DEFAULT_MAX_FILE_SIZE {
-        return Err("文件超过 100MB 上限".into());
+        return Err("文件超过 100MB 上限。".into());
     }
 
     Ok(())
@@ -1022,29 +1028,136 @@ fn read_log_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeProcess
     })
 }
 
+fn dead_letter_job_type_label(job_type: &str) -> &'static str {
+    match job_type {
+        "initial_import" => "初次导入",
+        "reindex" => "重新处理",
+        "refresh_preview" => "刷新预览",
+        "refresh_embeddings" => "刷新向量索引",
+        _ => "处理任务",
+    }
+}
+
+fn dead_letter_status_label(status: &str) -> &'static str {
+    match status {
+        "failed" => "失败",
+        "replayed" => "已回放",
+        "running" => "处理中",
+        "queued" => "排队中",
+        "canceled" => "已取消",
+        _ => "未知状态",
+    }
+}
+
+fn dead_letter_snapshot_text(metadata_json: Option<&str>, field: &str) -> Option<String> {
+    metadata_json
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .and_then(|value| value.get(field).and_then(|item| item.as_str()).map(str::trim).map(str::to_string))
+        .filter(|value| !value.is_empty())
+}
+
+fn dead_letter_user_message(error_message: Option<&str>) -> String {
+    let Some(message) = error_message.map(str::trim).filter(|value| !value.is_empty()) else {
+        return "处理失败，请查看详情。".to_string();
+    };
+
+    let lower = message.to_lowercase();
+    if lower.contains("query returned no rows") || lower.contains("job not found") {
+        return "没有找到对应的处理记录。".to_string();
+    }
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return "任务处理超时。".to_string();
+    }
+    if lower.contains("permission denied") || lower.contains("access is denied") {
+        return "没有足够权限访问这个文件。".to_string();
+    }
+    if lower.contains("not found") || lower.contains("no such file") {
+        return "找不到对应文件，可能已被移动或删除。".to_string();
+    }
+    if lower.contains("parse") || lower.contains("decode") {
+        return "文档解析失败。".to_string();
+    }
+    if lower.contains("sqlite") || lower.contains("database") {
+        return "处理记录写入失败。".to_string();
+    }
+    "处理失败，请查看详情。".to_string()
+}
+
+fn dead_letter_user_action(error_message: Option<&str>, status: &str) -> Option<String> {
+    if status == "replayed" {
+        return Some("该任务已回放，可稍后刷新查看最新状态。".to_string());
+    }
+
+    let lower = error_message.unwrap_or_default().to_lowercase();
+    if lower.contains("query returned no rows") || lower.contains("job not found") {
+        return Some("建议确认文档和任务记录仍存在，再尝试回放。".to_string());
+    }
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return Some("建议先回放一次；若仍失败，再检查文档内容或超时设置。".to_string());
+    }
+    if lower.contains("permission denied") || lower.contains("access is denied") {
+        return Some("请检查文件权限或文件是否被其他程序占用。".to_string());
+    }
+    if lower.contains("not found") || lower.contains("no such file") {
+        return Some("请确认原文件路径有效，必要时重新导入文档。".to_string());
+    }
+    Some("可尝试回放一次；若仍失败，请展开详情查看原始错误。".to_string())
+}
+
 fn read_dead_letter_record(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<KnowledgeProcessingDeadLetterRecord> {
+    let job_type: String = row.get(6)?;
+    let status: String = row.get(7)?;
+    let error_message: Option<String> = row.get(8)?;
+    let metadata_json: Option<String> = row.get(17)?;
+    let document_name = row
+        .get::<_, Option<String>>(3)?
+        .and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .or_else(|| dead_letter_snapshot_text(metadata_json.as_deref(), "sourceName"));
+    let collection_name = row
+        .get::<_, Option<String>>(5)?
+        .and_then(|value| {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .or_else(|| dead_letter_snapshot_text(metadata_json.as_deref(), "collectionName"));
     Ok(KnowledgeProcessingDeadLetterRecord {
         id: row.get(0)?,
         job_id: row.get(1)?,
         document_id: row.get(2)?,
-        collection_id: row.get(3)?,
-        job_type: row.get(4)?,
-        status: row.get(5)?,
-        error_message: row.get(6)?,
-        fail_count: row.get(7)?,
-        attempt: row.get(8)?,
-        max_attempts: row.get(9)?,
-        first_failed_at: row.get(10)?,
-        last_failed_at: row.get(11)?,
-        replayed_at: row.get(12)?,
-        replayed_job_id: row.get(13)?,
-        resolved_at: row.get(14)?,
-        metadata_json: row.get(15)?,
+        document_name,
+        collection_id: row.get(4)?,
+        collection_name,
+        job_type: job_type.clone(),
+        job_type_label: dead_letter_job_type_label(&job_type).to_string(),
+        status: status.clone(),
+        status_label: dead_letter_status_label(&status).to_string(),
+        user_message: dead_letter_user_message(error_message.as_deref()),
+        user_action: dead_letter_user_action(error_message.as_deref(), &status),
+        error_message,
+        fail_count: row.get(9)?,
+        attempt: row.get(10)?,
+        max_attempts: row.get(11)?,
+        first_failed_at: row.get(12)?,
+        last_failed_at: row.get(13)?,
+        replayed_at: row.get(14)?,
+        replayed_job_id: row.get(15)?,
+        resolved_at: row.get(16)?,
+        metadata_json,
     })
 }
-
 fn load_job_record(
     connection: &Connection,
     job_id: &str,
@@ -1509,18 +1622,21 @@ pub fn list_dead_letters(
     };
 
     let base_select = r#"
-        SELECT id, job_id, document_id, collection_id, job_type, status, error_message,
-               fail_count, attempt, max_attempts, first_failed_at, last_failed_at,
-               replayed_at, replayed_job_id, resolved_at, metadata_json
-        FROM knowledge_processing_dead_letters
+        SELECT dl.id, dl.job_id, dl.document_id, d.source_name, dl.collection_id, c.name,
+               dl.job_type, dl.status, dl.error_message, dl.fail_count, dl.attempt,
+               dl.max_attempts, dl.first_failed_at, dl.last_failed_at, dl.replayed_at,
+               dl.replayed_job_id, dl.resolved_at, dl.metadata_json
+        FROM knowledge_processing_dead_letters dl
+        LEFT JOIN knowledge_documents d ON d.id = dl.document_id
+        LEFT JOIN knowledge_collections c ON c.id = dl.collection_id
     "#;
     let base_count = "SELECT COUNT(1) FROM knowledge_processing_dead_letters";
-    let order = " ORDER BY last_failed_at DESC, first_failed_at DESC, id DESC ";
+    let order = " ORDER BY dl.last_failed_at DESC, dl.first_failed_at DESC, dl.id DESC ";
 
     let (total, items) = match (collection_id.as_ref(), normalized_status.as_ref()) {
         (Some(collection_id), Some(status)) => {
             let count_sql = format!("{base_count} WHERE collection_id = ?1 AND status = ?2");
-            let list_sql = format!("{base_select} WHERE collection_id = ?1 AND status = ?2 {order} LIMIT ?3 OFFSET ?4");
+            let list_sql = format!("{base_select} WHERE dl.collection_id = ?1 AND dl.status = ?2 {order} LIMIT ?3 OFFSET ?4");
             let total: i64 = connection
                 .query_row(&count_sql, params![collection_id, status], |row| row.get(0))
                 .map_err(|err| err.to_string())?;
@@ -1534,7 +1650,7 @@ pub fn list_dead_letters(
         }
         (Some(collection_id), None) => {
             let count_sql = format!("{base_count} WHERE collection_id = ?1");
-            let list_sql = format!("{base_select} WHERE collection_id = ?1 {order} LIMIT ?2 OFFSET ?3");
+            let list_sql = format!("{base_select} WHERE dl.collection_id = ?1 {order} LIMIT ?2 OFFSET ?3");
             let total: i64 = connection
                 .query_row(&count_sql, params![collection_id], |row| row.get(0))
                 .map_err(|err| err.to_string())?;
@@ -1548,7 +1664,7 @@ pub fn list_dead_letters(
         }
         (None, Some(status)) => {
             let count_sql = format!("{base_count} WHERE status = ?1");
-            let list_sql = format!("{base_select} WHERE status = ?1 {order} LIMIT ?2 OFFSET ?3");
+            let list_sql = format!("{base_select} WHERE dl.status = ?1 {order} LIMIT ?2 OFFSET ?3");
             let total: i64 = connection
                 .query_row(&count_sql, params![status], |row| row.get(0))
                 .map_err(|err| err.to_string())?;
@@ -1697,11 +1813,19 @@ pub fn load_pipeline_settings(
         .optional()
         .map_err(|err| err.to_string())?;
 
-    let settings = settings_json
+    let mut settings = settings_json
         .as_deref()
         .and_then(|value| serde_json::from_str::<KnowledgePipelineSettings>(value).ok())
-        .unwrap_or_default()
-        .clamped();
+        .unwrap_or_default();
+
+    // Migrate the old success-log default (7 days) down to the new leaner default.
+    // This setting is not user-facing today, so preserving the legacy value mostly
+    // means keeping invisible success logs longer than we need.
+    if settings.keep_successful_logs_days == 7 {
+        settings.keep_successful_logs_days = 1;
+    }
+
+    let settings = settings.clamped();
 
     Ok(settings)
 }
@@ -2327,6 +2451,35 @@ fn upsert_dead_letter(
     error_message: &str,
     now: i64,
 ) -> Result<(), String> {
+    let source_name = connection
+        .query_row(
+            "SELECT source_name FROM knowledge_documents WHERE id = ?1",
+            params![job.document_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let collection_name = connection
+        .query_row(
+            "SELECT name FROM knowledge_collections WHERE id = ?1",
+            params![job.collection_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let metadata_json = serde_json::json!({
+        "source": "pipeline",
+        "final": true,
+        "jobStatus": JOB_STATUS_FAILED,
+        "sourceName": source_name,
+        "collectionName": collection_name,
+    })
+    .to_string();
+
     connection
         .execute(
             r#"
@@ -2356,16 +2509,12 @@ fn upsert_dead_letter(
                 job_record.max_attempts,
                 now,
                 now,
-                Some(format!(
-                    "{{\"source\":\"pipeline\",\"final\":true,\"jobStatus\":\"{}\"}}",
-                    JOB_STATUS_FAILED
-                )),
+                Some(metadata_json),
             ],
         )
         .map_err(|err| err.to_string())?;
     Ok(())
 }
-
 fn fail_job(
     connection: &Connection,
     job: &PipelineJobClaim,

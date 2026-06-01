@@ -199,9 +199,15 @@ export type KnowledgeProcessingDeadLetter = {
   id: string;
   jobId: string;
   documentId: string;
+  documentName?: string | null;
   collectionId: string;
+  collectionName?: string | null;
   jobType: string;
+  jobTypeLabel: string;
   status: string;
+  statusLabel: string;
+  userMessage: string;
+  userAction?: string | null;
   errorMessage?: string | null;
   failCount: number;
   attempt: number;

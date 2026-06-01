@@ -49,7 +49,7 @@ export const COMPACT_APPEARANCE_OPTIONS: Array<{
   description: string;
 }> = [
   { id: "default", title: "默认外观", description: "标准胶囊尺寸" },
-  { id: "compact", title: "紧凑外观", description: "更小更轻量" },
+  { id: "compact", title: "紧凑外观", description: "更小更轻巧" },
   { id: "large", title: "大号外观", description: "更醒目的尺寸" },
   { id: "pet", title: "桌宠", description: "桌宠精灵模式" },
 ];
@@ -69,7 +69,7 @@ export const EXTERNAL_CHAT_ENTRIES: ExternalChatEntry[] = [
   { id: "baichuan", title: "百川大模型", description: "打开百川大模型官网界面", group: "domestic", url: "https://platform.baichuan-ai.com/", kind: "external", icon: "baichuan" },
   { id: "qwen", title: "通义千问", description: "打开 Qwen Chat", group: "domestic", url: "https://chat.qwen.ai/", kind: "external", icon: "qwen" },
   { id: "yuanbao", title: "腾讯元宝", description: "打开腾讯元宝官方界面", group: "domestic", url: "https://yuanbao.tencent.com/AI", kind: "external", icon: "yuanbao" },
-  { id: "doubao", title: "抖音豆包", description: "打开豆包官方界面", group: "domestic", url: "https://www.doubao.com/", kind: "external", icon: "doubao" },
+  { id: "doubao", title: "豆包", description: "打开豆包官方界面", group: "domestic", url: "https://www.doubao.com/", kind: "external", icon: "doubao" },
   { id: "deepseek", title: "DeepSeek", description: "打开 DeepSeek 官方聊天界面", group: "domestic", url: "https://chat.deepseek.com/", kind: "external", icon: "deepseek" },
 ];
 
