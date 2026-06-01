@@ -335,6 +335,7 @@ function MainApp() {
     togglePinnedChatSession,
     updateChatSessionMessages,
     isCompactWindow,
+    view,
   });
 
   const relatedContext = useMemo(
@@ -713,7 +714,6 @@ function MainApp() {
 }
 
 export default App;
-
 
 
 

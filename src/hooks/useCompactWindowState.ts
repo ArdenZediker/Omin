@@ -5,6 +5,7 @@ import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStora
 import { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale, getStoredCharacterScale } from "../app/compactPetScale";
 import type { PetThoughtState } from "../app/types";
 import type { PetThoughtPlacement } from "../app/window";
+import { matchesPetThought } from "../app/petThoughts";
 export { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale } from "../app/compactPetScale";
 
 export type CompactAppearance = "default" | "compact" | "large" | "pet";
@@ -201,12 +202,25 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
         }
         applyThoughtQueue(queue, snapshotThought);
       }),
-      listen("omni-pet-thought-viewed", () => {
-        setPetThought(null);
-        setPetThoughtQueue([]);
-        setPetThoughtCount(0);
-        setPetThoughtPlacement("top");
-        setArePetThoughtsCollapsed(false);
+      listen<{ sessionId?: string | null; thoughtId?: string | null; clearAll?: boolean }>("omni-pet-thought-viewed", (event) => {
+        const payload = event.payload;
+        if (!payload?.clearAll && !payload?.sessionId && !payload?.thoughtId) {
+          return;
+        }
+        if (payload?.clearAll) {
+          setPetThought(null);
+          setPetThoughtQueue([]);
+          setPetThoughtCount(0);
+          setPetThoughtPlacement("top");
+          setArePetThoughtsCollapsed(false);
+          return;
+        }
+        setPetThoughtQueue((currentQueue) => {
+          const nextQueue = currentQueue.filter((thought) => !matchesPetThought(thought, payload));
+          setPetThought(nextQueue[0] ?? null);
+          setPetThoughtCount(nextQueue.length);
+          return nextQueue;
+        });
       }),
     ]).then(([thoughtCleanup, queueCleanup, syncResponseCleanup, viewedCleanup]) => {
       if (disposed) {

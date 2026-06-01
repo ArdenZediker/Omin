@@ -3,8 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, emitTo, listen } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
-import { showCompactWindow, showSettingsWindow } from "../app/window";
-import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
+import { isMainWindowUserVisible, showCompactWindow, showSettingsWindow } from "../app/window";
+import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import { getPetWindowScale } from "../app/compactPetScale";
 import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibility";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
@@ -17,6 +17,7 @@ import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { AssistantProfile, ChatExecutionResult } from "../chat/types";
 import { getToolManifestById } from "../config/manifests/tools";
 import type { PetThoughtState } from "../app/types";
+import type { ViewMode } from "../app/types";
 import { getPetThoughtKey, matchesPetThought } from "../app/petThoughts";
 
 type SessionLite = {
@@ -50,6 +51,7 @@ type UseChatRuntimeArgs = {
   togglePinnedChatSession: (sessionId: string) => boolean;
   updateChatSessionMessages: (sessionId: string, nextMessages: Message[] | ((current: Message[]) => Message[])) => void;
   isCompactWindow: boolean;
+  view: ViewMode;
 };
 
 function requireTool(id: string) {
@@ -140,6 +142,7 @@ export function useChatRuntime({
   togglePinnedChatSession,
   updateChatSessionMessages,
   isCompactWindow,
+  view,
 }: UseChatRuntimeArgs) {
   const [error, setError] = useState<string | null>(null);
   const [loadingSessionIds, setLoadingSessionIds] = useState<string[]>([]);
@@ -390,6 +393,42 @@ export function useChatRuntime({
     return !currentThought || currentThought.thoughtId === thoughtId;
   }, []);
 
+  const dismissPetThoughtForVisibleMainSession = useCallback(
+    async (target: { sessionId?: string | null; thoughtId?: string | null } = {}) => {
+      if (isCompactWindow) {
+        return;
+      }
+
+      const sessionId = target.sessionId ?? activeChatIdRef.current;
+      if (!sessionId || activeChatIdRef.current !== sessionId) {
+        return;
+      }
+      if (view !== "chat" || !(await isMainWindowUserVisible())) {
+        return;
+      }
+
+      const matchingThought = target.thoughtId
+        ? petThoughtQueueRef.current.find((thought) => matchesPetThought(thought, target))
+        : petThoughtQueueRef.current.find((thought) => thought.sessionId === sessionId);
+      if (!matchingThought) {
+        return;
+      }
+      if (matchingThought.status === "thinking") {
+        return;
+      }
+      if (!isCurrentPetThought(target.thoughtId ?? matchingThought.thoughtId ?? null, sessionId)) {
+        return;
+      }
+
+      removePetThought({
+        sessionId,
+        thoughtId: target.thoughtId ?? matchingThought.thoughtId,
+      });
+      clearPetThoughtSession(sessionId);
+    },
+    [clearPetThoughtSession, isCompactWindow, isCurrentPetThought, removePetThought, view]
+  );
+
   const startPetThought = useCallback(
     (sessionId: string | null | undefined, conversationMessages: Message[]) => {
       clearPetThoughtTimer();
@@ -451,13 +490,6 @@ export function useChatRuntime({
     [clearPetThoughtTimer, emitPetThought, isCurrentPetThought, resolvePetThoughtResponseCount, resolvePetThoughtTitle]
   );
 
-  const clearPetThought = useCallback(() => {
-    clearPetThoughtTimer();
-    pendingPetThoughtSessionIdsRef.current.clear();
-    activePetThoughtIdRef.current = null;
-    emitPetThoughtQueue([]);
-  }, [clearPetThoughtTimer, emitPetThoughtQueue]);
-
   const dismissPetThoughtWhenSessionVisible = useCallback(
     (sessionId: string | null | undefined, thoughtId: string | null | undefined) => {
       if (!sessionId) {
@@ -472,20 +504,13 @@ export function useChatRuntime({
       clearPetThoughtTimer();
       petThoughtClearTimerRef.current = window.setTimeout(() => {
         petThoughtClearTimerRef.current = null;
-        if (activeChatIdRef.current !== sessionId) {
-          return;
-        }
-        if (!isCurrentPetThought(thoughtId ?? null, sessionId)) {
-          return;
-        }
-        removePetThought({
+        void dismissPetThoughtForVisibleMainSession({
           sessionId,
           thoughtId: thoughtId ?? undefined,
         });
-        clearPetThoughtSession(sessionId);
       }, PET_THOUGHT_DISMISS_DELAY_MS);
     },
-    [clearPetThoughtSession, clearPetThoughtTimer, isCompactWindow, isCurrentPetThought, removePetThought]
+    [clearPetThoughtTimer, dismissPetThoughtForVisibleMainSession, isCompactWindow]
   );
 
   useEffect(() => {
@@ -497,6 +522,7 @@ export function useChatRuntime({
     let unlistenSyncRequest: (() => void) | undefined;
     let unlistenViewed: (() => void) | undefined;
     let unlistenClose: (() => void) | undefined;
+    let unlistenFocus: (() => void) | undefined;
     void listen("omni-pet-thought-request", () => {
       const nextThought = petThoughtRef.current;
       const queue = petThoughtQueueRef.current;
@@ -523,8 +549,8 @@ export function useChatRuntime({
     }).then((cleanup) => {
       unlistenSyncRequest = cleanup;
     });
-    void listen("omni-pet-thought-viewed", () => {
-      clearPetThought();
+    void listen<{ sessionId?: string | null; thoughtId?: string | null }>("omni-pet-thought-viewed", (event) => {
+      void dismissPetThoughtForVisibleMainSession(event.payload ?? {});
     }).then((cleanup) => {
       unlistenViewed = cleanup;
     });
@@ -533,14 +559,34 @@ export function useChatRuntime({
     }).then((cleanup) => {
       unlistenClose = cleanup;
     });
+    void WebviewWindow.getByLabel(MAIN_WINDOW_LABEL)
+      .then((mainWindow) =>
+        mainWindow?.onFocusChanged(({ payload }) => {
+          if (payload) {
+            void dismissPetThoughtForVisibleMainSession();
+          }
+        })
+      )
+      .then((cleanup) => {
+        unlistenFocus = cleanup;
+      });
 
     return () => {
       unlistenRequest?.();
       unlistenSyncRequest?.();
       unlistenViewed?.();
       unlistenClose?.();
+      unlistenFocus?.();
     };
-  }, [broadcastPetThoughtQueue, clearPetThought, isCompactWindow, removePetThought]);
+  }, [broadcastPetThoughtQueue, dismissPetThoughtForVisibleMainSession, isCompactWindow, removePetThought]);
+
+  useEffect(() => {
+    if (isCompactWindow || view !== "chat" || !activeChatId) {
+      return;
+    }
+
+    void dismissPetThoughtForVisibleMainSession({ sessionId: activeChatId });
+  }, [activeChatId, dismissPetThoughtForVisibleMainSession, isCompactWindow, view]);
 
   useEffect(() => {
     return () => {
