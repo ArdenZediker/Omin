@@ -285,6 +285,7 @@ export function useCompactWindowController({
   const petThoughtPlacementRef = useRef<PetThoughtPlacement>(petThoughtPlacement);
   const petThoughtStateRef = useRef<PetThoughtState | null>(petThought);
   const petThoughtQueueRef = useRef<PetThoughtState[]>(petThoughtQueue);
+  const petThoughtCountRef = useRef<number>(petThoughtCount);
   const petThoughtLayoutRequestRef = useRef(0);
   const lastPetThoughtWindowLayoutRef = useRef<{
     x: number;
@@ -356,6 +357,10 @@ export function useCompactWindowController({
   useEffect(() => {
     petThoughtQueueRef.current = petThoughtQueue;
   }, [petThoughtQueue]);
+
+  useEffect(() => {
+    petThoughtCountRef.current = petThoughtCount;
+  }, [petThoughtCount]);
 
   const updatePetThoughtWindowForRect = useCallback(
     async (petRect: { left: number; top: number; width: number; height: number }) => {
@@ -441,7 +446,8 @@ export function useCompactWindowController({
         return;
       }
 
-      const layout = resolvePetThoughtWindowLayout(petRect, monitor, petThoughtCount);
+      const resolvedThoughtCount = Math.max(currentQueue.length, currentThought ? 1 : 0, petThoughtCountRef.current);
+      const layout = resolvePetThoughtWindowLayout(petRect, monitor, resolvedThoughtCount);
       if (layout.placement !== petThoughtPlacementRef.current) {
         petThoughtPlacementRef.current = layout.placement;
         setPetThoughtPlacement(layout.placement);
@@ -506,8 +512,6 @@ export function useCompactWindowController({
       isCompactQueryOpen,
       isCompactReplyLoading,
       isCompactWindow,
-      petThoughtQueue,
-      petThoughtCount,
       setPetThoughtPlacement,
     ]
   );
