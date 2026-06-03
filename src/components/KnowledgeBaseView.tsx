@@ -1,6 +1,7 @@
-﻿import { Component, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
 import mammoth from "mammoth/mammoth.browser";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
@@ -48,6 +49,13 @@ import type {
   ReplayDeadLettersResult,
   RetryFailedJobsResult,
 } from "../chat/knowledgeTypes";
+import {
+  getDefaultCollectionMultimodalConfig,
+  getKnowledgeMultimodalModelsByCapability,
+  loadKnowledgeMultimodalConfig,
+  type KnowledgeCollectionMultimodalConfig,
+  type KnowledgeMultimodalConfig,
+} from "../chat/knowledgeMultimodal";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { usePromptDialog } from "./PromptDialog";
 
@@ -69,13 +77,69 @@ type KnowledgeBaseViewProps = {
 
 type KnowledgeDocumentDetailView = "preview" | "chunks" | "processing";
 type KnowledgePageMode = "empty" | "list" | "detail";
-type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "unsupported";
+type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "audio" | "video" | "unsupported";
 type DeadLetterScope = "all" | "activeCollection";
+type CollectionSettingsDraft = {
+  id: string;
+  name: string;
+  description: string;
+  retrievalMode: string;
+  multimodalConfig: KnowledgeCollectionMultimodalConfig;
+};
 type UploadNotice = {
   tone: "success" | "error";
   message: string;
 };
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
+const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v", "mpeg", "mpg"]);
+const KNOWLEDGE_UPLOAD_ACCEPT = [
+  ".txt",
+  ".md",
+  ".markdown",
+  ".json",
+  ".csv",
+  ".tsv",
+  ".log",
+  ".html",
+  ".htm",
+  ".js",
+  ".ts",
+  ".tsx",
+  ".py",
+  ".rs",
+  ".css",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".pdf",
+  ".docx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".svg",
+  ".avif",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".oga",
+  ".m4a",
+  ".flac",
+  ".aac",
+  ".mp4",
+  ".mov",
+  ".webm",
+  ".mkv",
+  ".avi",
+  ".m4v",
+  ".mpeg",
+  ".mpg",
+  "audio/*",
+  "video/*",
+].join(",");
 const TEXT_EXTENSIONS = new Set([
   "txt",
   "log",
@@ -191,6 +255,12 @@ function getPreviewKindFromFile(file: File): PreviewKind {
   if (IMAGE_EXTENSIONS.has(ext) || mimeType.startsWith("image/")) {
     return "image";
   }
+  if (AUDIO_EXTENSIONS.has(ext) || mimeType.startsWith("audio/")) {
+    return "audio";
+  }
+  if (VIDEO_EXTENSIONS.has(ext) || mimeType.startsWith("video/")) {
+    return "video";
+  }
   if (ext === "pdf" || mimeType === "application/pdf") {
     return "pdf";
   }
@@ -211,13 +281,71 @@ function classifyResource(sourceName: string, sourcePath?: string | null) {
   if (IMAGE_EXTENSIONS.has(ext)) {
     return "images";
   }
-  if (["mp3", "wav", "ogg", "m4a", "flac", "aac"].includes(ext)) {
+  if (AUDIO_EXTENSIONS.has(ext)) {
     return "audio";
   }
-  if (["mp4", "mov", "webm", "mkv", "avi"].includes(ext)) {
+  if (VIDEO_EXTENSIONS.has(ext)) {
     return "video";
   }
   return "docs";
+}
+
+function hasUsableKnowledgeMultimodalModel(
+  config: KnowledgeMultimodalConfig,
+  capability: "image" | "audio",
+  modelId: string
+) {
+  const normalizedModelId = modelId.trim();
+  if (!config.enabled || !normalizedModelId) {
+    return false;
+  }
+
+  return config.models.some(
+    (model) =>
+      model.id === normalizedModelId &&
+      model.capability === capability &&
+      model.baseUrl.trim() &&
+      model.model.trim() &&
+      model.apiKey.trim()
+  );
+}
+
+function getKnowledgeUploadBlockMessage(
+  file: File,
+  collection: KnowledgeCollection,
+  globalMultimodalConfig: KnowledgeMultimodalConfig
+) {
+  const previewKind = getPreviewKindFromFile(file);
+  const collectionMultimodalConfig = normalizeCollectionMultimodalConfig(collection.multimodalConfig);
+
+  if (previewKind === "video") {
+    return "已阻止本次上传：当前版本暂不支持视频上传到知识库，请先移除视频文件后再上传。";
+  }
+
+  if (previewKind !== "image" && previewKind !== "audio") {
+    return null;
+  }
+
+  const label = previewKind === "image" ? "图片" : "音频";
+  const capabilityConfig = previewKind === "image" ? collectionMultimodalConfig.image : collectionMultimodalConfig.audio;
+
+  if (!collectionMultimodalConfig.enabled) {
+    return `已阻止本次上传：当前知识库未开启多模态分析，请先到知识库设置 -> 多模态中启用并配置${label}模型后再上传${label}。`;
+  }
+
+  if (!capabilityConfig.enabled) {
+    return `已阻止本次上传：当前知识库未开启${label}多模态分析，请先到知识库设置 -> 多模态中开启并配置${label}模型后再上传${label}。`;
+  }
+
+  if (!capabilityConfig.modelId.trim()) {
+    return `已阻止本次上传：当前知识库尚未选择${label}模型，请先到知识库设置 -> 多模态中完成${label}模型配置后再上传${label}。`;
+  }
+
+  if (!hasUsableKnowledgeMultimodalModel(globalMultimodalConfig, previewKind, capabilityConfig.modelId)) {
+    return `已阻止本次上传：当前知识库缺少可用的${label}多模态模型，请先到设置 -> 模型配置 -> 多模态中补充可用模型，并确认知识库设置里已选中对应${label}模型后再上传。`;
+  }
+
+  return null;
 }
 
 function getPreviewKindFromDocument(document: KnowledgeLibraryPayload["documents"][number] | KnowledgeDocumentDetail["document"]) {
@@ -250,8 +378,11 @@ function getDocumentTypeLabel(document?: KnowledgeLibraryPayload["documents"][nu
 
   const ext = (document.fileExtension ?? getExtension(document.sourceName)).toLowerCase();
   const kind = getPreviewKindFromDocument(document);
+  const resourceCategory = classifyResource(document.sourceName, document.sourcePath);
 
   if (kind === "image") return "图片";
+  if (resourceCategory === "audio") return "音频";
+  if (resourceCategory === "video") return "视频";
   if (kind === "pdf") return "PDF";
   if (kind === "docx") return "DOCX";
   if (kind === "markdown") return "MD";
@@ -294,6 +425,35 @@ function getProcessingStatusLabel(status?: KnowledgeLibraryPayload["documents"][
     default:
       return "可检索";
   }
+}
+
+function normalizeCollectionMultimodalConfig(
+  config?: KnowledgeCollection["multimodalConfig"] | null
+): KnowledgeCollectionMultimodalConfig {
+  const defaults = getDefaultCollectionMultimodalConfig();
+  return {
+    ...defaults,
+    ...config,
+    image: {
+      ...defaults.image,
+      ...(config?.image ?? {}),
+    },
+    audio: {
+      ...defaults.audio,
+      ...(config?.audio ?? {}),
+    },
+    mergeMode: "append",
+  };
+}
+
+function createCollectionSettingsDraft(collection: KnowledgeCollection): CollectionSettingsDraft {
+  return {
+    id: collection.id,
+    name: collection.name,
+    description: collection.description,
+    retrievalMode: collection.retrievalMode ?? "hybrid",
+    multimodalConfig: normalizeCollectionMultimodalConfig(collection.multimodalConfig),
+  };
 }
 
 function formatTimestamp(timestamp?: number | null) {
@@ -538,6 +698,57 @@ async function createThumbnailDataUrl(file: File, content: string) {
   return createThumbnailDataUrlFromContent(content || file.name);
 }
 
+async function createImageKnowledgeContent(file: File) {
+  if (!file.type.startsWith("image/")) {
+    return null;
+  }
+
+  return await new Promise<string | null>((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const source = String(reader.result ?? "");
+      const image = new Image();
+      image.onload = () => {
+        const extension = (getExtension(file.name) || "image").toUpperCase();
+        const sizeKb = Math.max(1, Math.round(file.size / 1024));
+        const mimeLine = file.type ? `MIME: ${file.type}` : null;
+        resolve(
+          [
+            "图片文件",
+            `文件名: ${file.name}`,
+            `格式: ${extension}`,
+            mimeLine,
+            `尺寸: ${image.width} x ${image.height} 像素`,
+            `大小: ${sizeKb} KB`,
+            "说明: 该图片已上传到知识库，可按文件名、格式、尺寸等信息检索。",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        );
+      };
+      image.onerror = () => {
+        const extension = (getExtension(file.name) || "image").toUpperCase();
+        const sizeKb = Math.max(1, Math.round(file.size / 1024));
+        resolve(
+          [
+            "图片文件",
+            `文件名: ${file.name}`,
+            `格式: ${extension}`,
+            file.type ? `MIME: ${file.type}` : null,
+            `大小: ${sizeKb} KB`,
+            "说明: 该图片已上传到知识库，可按文件名和格式信息检索。",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        );
+      };
+      image.src = source;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
 function openFilePicker(input: HTMLInputElement | null) {
   if (!input) {
     return;
@@ -559,7 +770,35 @@ function KnowledgeCollectionIcon({ className }: { className?: string }) {
 }
 
 async function loadKnowledgeLibrary() {
-  return invoke<KnowledgeLibraryPayload>("load_knowledge_library_command");
+  const payload = await invoke<
+    Omit<KnowledgeLibraryPayload, "collections"> & {
+      collections: Array<KnowledgeCollection & { multimodalConfigJson?: string | null }>;
+    }
+  >("load_knowledge_library_command");
+
+  return {
+    ...payload,
+    collections: payload.collections.map((collection) => {
+      const parsed =
+        collection.multimodalConfig ??
+        (() => {
+          const raw = collection.multimodalConfigJson;
+          if (!raw) {
+            return null;
+          }
+          try {
+            return normalizeCollectionMultimodalConfig(JSON.parse(raw) as KnowledgeCollectionMultimodalConfig);
+          } catch {
+            return normalizeCollectionMultimodalConfig();
+          }
+        })();
+
+      return {
+        ...collection,
+        multimodalConfig: parsed ? normalizeCollectionMultimodalConfig(parsed) : normalizeCollectionMultimodalConfig(),
+      };
+    }),
+  };
 }
 
 async function loadKnowledgeDocumentDetail(documentId: string) {
@@ -917,6 +1156,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [activeCollectionDeadLetterCount, setActiveCollectionDeadLetterCount] = useState(0);
   const [pipelineSettings, setPipelineSettings] = useState<KnowledgePipelineSettings | null>(null);
   const [isSavingPipelineSettings, setIsSavingPipelineSettings] = useState(false);
+  const [knowledgeMultimodalConfig, setKnowledgeMultimodalConfig] = useState<KnowledgeMultimodalConfig>(loadKnowledgeMultimodalConfig);
+  const [isCollectionSettingsOpen, setIsCollectionSettingsOpen] = useState(false);
+  const [editingCollection, setEditingCollection] = useState<KnowledgeCollection | null>(null);
+  const [collectionSettingsDraft, setCollectionSettingsDraft] = useState<CollectionSettingsDraft | null>(null);
+  const [collectionSettingsError, setCollectionSettingsError] = useState<string | null>(null);
+  const [isSavingCollectionSettings, setIsSavingCollectionSettings] = useState(false);
   const [deadLetterScope, setDeadLetterScope] = useState<DeadLetterScope>("activeCollection");
   const [deadLetterStatusFilter, setDeadLetterStatusFilter] = useState<"failed" | "replayed" | "all">("failed");
   const [deadLetterItems, setDeadLetterItems] = useState<KnowledgeProcessingDeadLetter[]>([]);
@@ -946,6 +1191,14 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
     return library.collections[0] ?? null;
   }, [library.collections, selectedCollectionId]);
+  const imageMultimodalModels = useMemo(
+    () => getKnowledgeMultimodalModelsByCapability(knowledgeMultimodalConfig, "image"),
+    [knowledgeMultimodalConfig]
+  );
+  const audioMultimodalModels = useMemo(
+    () => getKnowledgeMultimodalModelsByCapability(knowledgeMultimodalConfig, "audio"),
+    [knowledgeMultimodalConfig]
+  );
 
   const activeCollectionDocuments = useMemo(() => {
     if (!activeCollection) {
@@ -978,6 +1231,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       "未命名知识库"
     );
   }, [activeCollectionName, library.collections, selectedDocument]);
+  const selectedDocumentCollection = useMemo(() => {
+    if (!selectedDocument) {
+      return activeCollection;
+    }
+    return library.collections.find((collection) => collection.id === selectedDocument.collectionId) ?? null;
+  }, [activeCollection, library.collections, selectedDocument]);
   const pageMode: KnowledgePageMode = selectedDocumentId ? "detail" : activeCollectionDocuments.length > 0 ? "list" : "empty";
   const taskCounts = globalTaskSummary;
   const activeCollectionTaskCounts = activeCollectionTaskSummary;
@@ -1097,6 +1356,20 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   }, [selectedDocumentId]);
 
   useEffect(() => {
+    let cleanup: (() => void) | undefined;
+
+    void listen("omni-knowledge-multimodal-profile-changed", () => {
+      setKnowledgeMultimodalConfig(loadKnowledgeMultimodalConfig());
+    }).then((unlisten) => {
+      cleanup = unlisten;
+    });
+
+    return () => {
+      cleanup?.();
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     void (async () => {
@@ -1206,6 +1479,24 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [isCollectionMenuOpen]);
+
+  useEffect(() => {
+    if (!isCollectionSettingsOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !isSavingCollectionSettings) {
+        setIsCollectionSettingsOpen(false);
+        setEditingCollection(null);
+        setCollectionSettingsDraft(null);
+        setCollectionSettingsError(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isCollectionSettingsOpen, isSavingCollectionSettings]);
 
   useEffect(() => {
     if (!isDocumentMenuOpen) {
@@ -1455,6 +1746,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
         content = await convertDocxBytesToText(bytes);
       } else if (previewType === "pdf") {
         content = await convertPdfBytesToText(bytes);
+      } else if (previewType === "image") {
+        content = (await createImageKnowledgeContent(file)) ?? "";
       }
     } catch (error) {
       console.error(error);
@@ -1488,9 +1781,18 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setUploadNotice(null);
 
     try {
-      const targetCollectionId = activeCollection?.id;
-      if (!targetCollectionId) {
+      const targetCollection = activeCollection;
+      const targetCollectionId = targetCollection?.id;
+      if (!targetCollectionId || !targetCollection) {
         throw new Error("请先创建知识库后再上传文件");
+      }
+      for (const file of items) {
+        const blockedMessage = getKnowledgeUploadBlockMessage(file, targetCollection, knowledgeMultimodalConfig);
+        if (blockedMessage) {
+          setUploadError(blockedMessage);
+          setUploadNotice({ tone: "error", message: blockedMessage });
+          return;
+        }
       }
       let queuedCount = 0;
       let duplicateCount = 0;
@@ -1567,6 +1869,119 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setSelectedDocumentId(null);
     setSelectedDocumentDetail(null);
     setSelectedDocumentDetailView("preview");
+  }
+
+  function openCollectionSettings(collection: KnowledgeCollection) {
+    setKnowledgeMultimodalConfig(loadKnowledgeMultimodalConfig());
+    setIsCollectionMenuOpen(null);
+    setEditingCollection(collection);
+    setCollectionSettingsDraft(createCollectionSettingsDraft(collection));
+    setCollectionSettingsError(null);
+    setIsCollectionSettingsOpen(true);
+  }
+
+  function closeCollectionSettings() {
+    if (isSavingCollectionSettings) {
+      return;
+    }
+    setIsCollectionSettingsOpen(false);
+    setEditingCollection(null);
+    setCollectionSettingsDraft(null);
+    setCollectionSettingsError(null);
+  }
+
+  function updateCollectionDraft(patch: Partial<CollectionSettingsDraft>) {
+    setCollectionSettingsDraft((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function updateCollectionImageConfig(patch: Partial<KnowledgeCollectionMultimodalConfig["image"]>) {
+    setCollectionSettingsDraft((current) =>
+      current
+        ? {
+            ...current,
+            multimodalConfig: {
+              ...current.multimodalConfig,
+              image: {
+                ...current.multimodalConfig.image,
+                ...patch,
+              },
+            },
+          }
+        : current
+    );
+  }
+
+  function updateCollectionAudioConfig(patch: Partial<KnowledgeCollectionMultimodalConfig["audio"]>) {
+    setCollectionSettingsDraft((current) =>
+      current
+        ? {
+            ...current,
+            multimodalConfig: {
+              ...current.multimodalConfig,
+              audio: {
+                ...current.multimodalConfig.audio,
+                ...patch,
+              },
+            },
+          }
+        : current
+    );
+  }
+
+  async function saveCollectionSettings() {
+    if (!collectionSettingsDraft) {
+      return;
+    }
+
+    const draft = collectionSettingsDraft;
+    const trimmedName = draft.name.trim();
+    if (!trimmedName) {
+      setCollectionSettingsError("知识库名称不能为空");
+      return;
+    }
+
+    if (
+      draft.multimodalConfig.enabled &&
+      draft.multimodalConfig.image.enabled &&
+      !imageMultimodalModels.some((model) => model.id === draft.multimodalConfig.image.modelId)
+    ) {
+      setCollectionSettingsError("已开启图片分析，但当前知识库还没有选择可用的图片模型");
+      return;
+    }
+
+    if (
+      draft.multimodalConfig.enabled &&
+      draft.multimodalConfig.audio.enabled &&
+      !audioMultimodalModels.some((model) => model.id === draft.multimodalConfig.audio.modelId)
+    ) {
+      setCollectionSettingsError("已开启音频分析，但当前知识库还没有选择可用的音频模型");
+      return;
+    }
+
+    setCollectionSettingsError(null);
+    setIsSavingCollectionSettings(true);
+    try {
+      await invoke<KnowledgeCollection>("update_knowledge_collection_command", {
+        input: {
+          collectionId: draft.id,
+          name: trimmedName,
+          description: draft.description.trim() || "用于组织上传文件",
+          retrievalMode: draft.retrievalMode,
+          multimodalConfigJson: JSON.stringify(draft.multimodalConfig),
+        },
+      });
+      await refreshLibrary();
+      setUploadNotice({ tone: "success", message: `知识库设置已保存：${trimmedName}` });
+      setIsCollectionSettingsOpen(false);
+      setEditingCollection(null);
+      setCollectionSettingsDraft(null);
+      setCollectionSettingsError(null);
+    } catch (error) {
+      console.error(error);
+      setCollectionSettingsError(error instanceof Error ? error.message : "保存知识库设置失败");
+    } finally {
+      setIsSavingCollectionSettings(false);
+    }
   }
 
   async function deleteDocument(documentId: string) {
@@ -2128,6 +2543,13 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             >
                               <button
                                 type="button"
+                                className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                onClick={() => openCollectionSettings(collection)}
+                              >
+                                设置
+                              </button>
+                              <button
+                                type="button"
                                 className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
                                 onClick={() => {
                                   setIsCollectionMenuOpen(null);
@@ -2429,7 +2851,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
           <input
             ref={fileInputRef}
             type="file"
-            accept=".txt,.md,.markdown,.json,.csv,.tsv,.log,.html,.htm,.js,.ts,.tsx,.py,.rs,.css,.xml,.yaml,.yml,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.avif"
+            accept={KNOWLEDGE_UPLOAD_ACCEPT}
             multiple
             className="knowledge-upload-input"
             onChange={(event) => {
@@ -2443,6 +2865,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
           <input
             ref={folderInputRef}
             type="file"
+            accept={KNOWLEDGE_UPLOAD_ACCEPT}
             multiple
             className="knowledge-upload-input"
             {...({ webkitdirectory: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
@@ -2531,6 +2954,32 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                               <div className={selectedDocument.errorMessage ? "mt-1 text-red-500" : "mt-1 text-slate-500"}>
                                 {selectedDocument.errorMessage ?? "无"}
                               </div>
+                            </div>
+
+                            <div className="mt-3 rounded-none border border-slate-200 bg-white px-4 py-3 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-xs text-slate-400">多模态策略</div>
+                                  <div className="mt-1 font-medium text-slate-900">
+                                    {selectedDocumentCollection?.multimodalConfig?.enabled ? "已启用知识库多模态分析" : "当前知识库未启用多模态分析"}
+                                  </div>
+                                </div>
+                                {selectedDocumentCollection?.multimodalConfig?.enabled ? (
+                                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                    多模态
+                                  </span>
+                                ) : null}
+                              </div>
+                              {selectedDocumentCollection?.multimodalConfig?.enabled ? (
+                                <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                                    图片分析 {selectedDocumentCollection.multimodalConfig.image.enabled ? "开启" : "关闭"}
+                                  </span>
+                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                                    音频分析 {selectedDocumentCollection.multimodalConfig.audio.enabled ? "开启" : "关闭"}
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
                           </section>
                         ) : (
@@ -2699,6 +3148,229 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
           </div>
         </main>
       </div>
+      {isCollectionSettingsOpen && collectionSettingsDraft ? (
+        <div
+          className="omni-confirm-overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeCollectionSettings();
+            }
+          }}
+        >
+          <div className="omni-knowledge-collection-settings">
+            <div className="omni-knowledge-collection-settings__header">
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-slate-950">
+                  {editingCollection?.name ?? collectionSettingsDraft.name} · 知识库设置
+                </div>
+                <div className="mt-1 text-sm text-slate-500">
+                  配置当前知识库的基础信息，以及图片 / 音频多模态分析策略。
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeCollectionSettings}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                title="关闭"
+              >
+                <X size={16} strokeWidth={2} />
+              </button>
+            </div>
+
+            <div className="omni-knowledge-collection-settings__body">
+              <section className="omni-knowledge-collection-settings__section">
+                <div className="omni-knowledge-collection-settings__section-title">基础信息</div>
+                <div className="omni-knowledge-collection-settings__grid">
+                  <label className="omni-knowledge-collection-settings__label">知识库名称</label>
+                  <input
+                    value={collectionSettingsDraft.name}
+                    onChange={(event) => updateCollectionDraft({ name: event.target.value })}
+                    className="rounded-none border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="请输入知识库名称"
+                  />
+
+                  <label className="omni-knowledge-collection-settings__label">知识库描述</label>
+                  <textarea
+                    value={collectionSettingsDraft.description}
+                    onChange={(event) => updateCollectionDraft({ description: event.target.value })}
+                    className="min-h-24 rounded-none border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="用于组织上传文件"
+                  />
+                </div>
+              </section>
+
+              <section className="omni-knowledge-collection-settings__section">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="omni-knowledge-collection-settings__section-title">多模态</div>
+                    <div className="mt-1 text-sm text-slate-500">分析结果会并入知识内容，继续沿用当前的检索和问答链路。</div>
+                  </div>
+                  <label className="omni-knowledge-collection-settings__switch">
+                    <input
+                      type="checkbox"
+                      checked={collectionSettingsDraft.multimodalConfig.enabled}
+                      onChange={(event) =>
+                        updateCollectionDraft({
+                          multimodalConfig: {
+                            ...collectionSettingsDraft.multimodalConfig,
+                            enabled: event.target.checked,
+                          },
+                        })
+                      }
+                    />
+                    <span>启用多模态</span>
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div className="omni-knowledge-collection-settings__capability-card">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <LucideFileImage size={16} strokeWidth={1.9} className="text-amber-600" />
+                        <strong className="text-sm text-slate-900">图片分析</strong>
+                      </div>
+                      <label className="omni-knowledge-collection-settings__switch">
+                        <input
+                          type="checkbox"
+                          checked={collectionSettingsDraft.multimodalConfig.image.enabled}
+                          onChange={(event) => updateCollectionImageConfig({ enabled: event.target.checked })}
+                          disabled={!collectionSettingsDraft.multimodalConfig.enabled}
+                        />
+                        <span>{collectionSettingsDraft.multimodalConfig.image.enabled ? "开启" : "关闭"}</span>
+                      </label>
+                    </div>
+
+                    <div className="mt-3 space-y-3">
+                      <label className="block text-xs font-medium text-slate-500">模型</label>
+                      <select
+                        value={collectionSettingsDraft.multimodalConfig.image.modelId}
+                        onChange={(event) => updateCollectionImageConfig({ modelId: event.target.value })}
+                        disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.image.enabled}
+                        className="w-full rounded-none border border-slate-300 px-3 py-2 text-sm"
+                      >
+                        <option value="">请选择图片模型</option>
+                        {imageMultimodalModels.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.name} · {model.provider}
+                          </option>
+                        ))}
+                      </select>
+
+                      <label className="omni-knowledge-collection-settings__toggle">
+                        <input
+                          type="checkbox"
+                          checked={collectionSettingsDraft.multimodalConfig.image.extractText}
+                          onChange={(event) => updateCollectionImageConfig({ extractText: event.target.checked })}
+                          disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.image.enabled}
+                        />
+                        <span>提取图片文字</span>
+                      </label>
+                      <label className="omni-knowledge-collection-settings__toggle">
+                        <input
+                          type="checkbox"
+                          checked={collectionSettingsDraft.multimodalConfig.image.generateSummary}
+                          onChange={(event) => updateCollectionImageConfig({ generateSummary: event.target.checked })}
+                          disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.image.enabled}
+                        />
+                        <span>生成图片摘要</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="omni-knowledge-collection-settings__capability-card">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Mic size={16} strokeWidth={1.9} className="text-sky-600" />
+                        <strong className="text-sm text-slate-900">音频分析</strong>
+                      </div>
+                      <label className="omni-knowledge-collection-settings__switch">
+                        <input
+                          type="checkbox"
+                          checked={collectionSettingsDraft.multimodalConfig.audio.enabled}
+                          onChange={(event) => updateCollectionAudioConfig({ enabled: event.target.checked })}
+                          disabled={!collectionSettingsDraft.multimodalConfig.enabled}
+                        />
+                        <span>{collectionSettingsDraft.multimodalConfig.audio.enabled ? "开启" : "关闭"}</span>
+                      </label>
+                    </div>
+
+                    <div className="mt-3 space-y-3">
+                      <label className="block text-xs font-medium text-slate-500">模型</label>
+                      <select
+                        value={collectionSettingsDraft.multimodalConfig.audio.modelId}
+                        onChange={(event) => updateCollectionAudioConfig({ modelId: event.target.value })}
+                        disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.audio.enabled}
+                        className="w-full rounded-none border border-slate-300 px-3 py-2 text-sm"
+                      >
+                        <option value="">请选择音频模型</option>
+                        {audioMultimodalModels.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.name} · {model.provider}
+                          </option>
+                        ))}
+                      </select>
+
+                      <label className="omni-knowledge-collection-settings__toggle">
+                        <input
+                          type="checkbox"
+                          checked={collectionSettingsDraft.multimodalConfig.audio.keepTranscript}
+                          onChange={(event) => updateCollectionAudioConfig({ keepTranscript: event.target.checked })}
+                          disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.audio.enabled}
+                        />
+                        <span>保留全文转写</span>
+                      </label>
+                      <label className="omni-knowledge-collection-settings__toggle">
+                        <input
+                          type="checkbox"
+                          checked={collectionSettingsDraft.multimodalConfig.audio.generateSummary}
+                          onChange={(event) => updateCollectionAudioConfig({ generateSummary: event.target.checked })}
+                          disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.audio.enabled}
+                        />
+                        <span>生成音频摘要</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-none border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <div className="flex items-center gap-2 font-medium text-slate-900">
+                    <Sparkles size={15} strokeWidth={1.9} className="text-amber-600" />
+                    <span>当前入库策略</span>
+                  </div>
+                  <div className="mt-2 leading-6">
+                    原始文件照常保存，图片和音频分析结果会作为附加文本并入知识内容，再进入当前分片与向量检索链路。
+                  </div>
+                </div>
+              </section>
+
+              {collectionSettingsError ? (
+                <div className="rounded-none border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {collectionSettingsError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="omni-knowledge-collection-settings__footer">
+              <button
+                type="button"
+                onClick={closeCollectionSettings}
+                disabled={isSavingCollectionSettings}
+                className="rounded-none border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveCollectionSettings()}
+                disabled={isSavingCollectionSettings}
+                className="rounded-none border border-slate-950 bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSavingCollectionSettings ? "保存中..." : "保存设置"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

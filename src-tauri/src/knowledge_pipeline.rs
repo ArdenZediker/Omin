@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::{infer_preview_type, validate_knowledge_multimodal_upload};
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -547,65 +548,23 @@ fn normalize_file_extension(extension: Option<String>, source_name: &str) -> Opt
         .or_else(|| file_extension_from_name(source_name))
 }
 
-fn infer_preview_type(extension: Option<&str>, mime_type: Option<&str>) -> String {
-    let extension = extension.unwrap_or_default().to_lowercase();
-    let mime_type = mime_type.unwrap_or_default().to_lowercase();
-
-    if matches!(
-        extension.as_str(),
-        "md" | "markdown"
-            | "txt"
-            | "log"
-            | "json"
-            | "csv"
-            | "tsv"
-            | "html"
-            | "htm"
-            | "xml"
-            | "yml"
-            | "yaml"
-            | "js"
-            | "jsx"
-            | "ts"
-            | "tsx"
-            | "py"
-            | "rs"
-            | "css"
-            | "toml"
-            | "ini"
-            | "sql"
-            | "sh"
-            | "bat"
-            | "cmd"
-    ) || mime_type.starts_with("text/")
-        || mime_type == "application/json"
-    {
-        return if extension == "md" || extension == "markdown" {
-            "markdown".to_string()
-        } else {
-            "text".to_string()
-        };
-    }
-
-    if extension == "pdf" || mime_type == "application/pdf" {
-        return "pdf".to_string();
-    }
-
-    if extension == "docx"
-        || mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    {
-        return "docx".to_string();
-    }
-
-    if matches!(
-        extension.as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" | "ico"
-    ) || mime_type.starts_with("image/")
-    {
-        return "image".to_string();
-    }
-
-    "unsupported".to_string()
+fn resolve_preview_types(
+    provided_preview_type: Option<&str>,
+    extension: Option<&str>,
+    mime_type: Option<&str>,
+) -> (String, String) {
+    let inferred_preview_type = infer_preview_type(extension, mime_type);
+    let preview_type = provided_preview_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| inferred_preview_type.clone());
+    let upload_guard_preview_type = if inferred_preview_type == "unsupported" {
+        preview_type.clone()
+    } else {
+        inferred_preview_type
+    };
+    (preview_type, upload_guard_preview_type)
 }
 
 fn preview_text(value: &str, max_chars: usize) -> String {
@@ -670,6 +629,17 @@ pub fn create_pipeline_import(
     }
 
     validate_upload_size(&input.content_bytes)?;
+    let file_extension = normalize_file_extension(input.file_extension, &source_name);
+    let mime_type = input
+        .mime_type
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let (preview_type, upload_guard_preview_type) = resolve_preview_types(
+        input.preview_type.as_deref(),
+        file_extension.as_deref(),
+        mime_type.as_deref(),
+    );
+    validate_knowledge_multimodal_upload(connection, &collection_id, &upload_guard_preview_type)?;
     let file_hash = content_hash(&input.content_bytes);
     if let Some(duplicate_document_id) = connection
         .query_row(
@@ -696,16 +666,6 @@ pub fn create_pipeline_import(
     let now = current_timestamp_ms();
     let document_id = uuid::Uuid::new_v4().to_string();
     let job_id = uuid::Uuid::new_v4().to_string();
-    let file_extension = normalize_file_extension(input.file_extension, &source_name);
-    let mime_type = input
-        .mime_type
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let preview_type = input
-        .preview_type
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| infer_preview_type(file_extension.as_deref(), mime_type.as_deref()));
     let source_path = input
         .source_path
         .map(|value| value.trim().to_string())
@@ -3177,7 +3137,14 @@ mod tests {
                   description TEXT NOT NULL,
                   retrieval_mode TEXT NOT NULL DEFAULT 'hybrid',
                   embedding_profile_id TEXT,
+                  multimodal_config_json TEXT,
                   created_at INTEGER NOT NULL,
+                  updated_at INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS app_kv (
+                  key TEXT PRIMARY KEY,
+                  value TEXT NOT NULL,
                   updated_at INTEGER NOT NULL
                 );
 
@@ -3259,6 +3226,34 @@ mod tests {
         (collection_id, document_id)
     }
 
+    fn set_collection_multimodal_config(
+        connection: &Connection,
+        collection_id: &str,
+        config_json: &str,
+    ) {
+        connection
+            .execute(
+                "UPDATE knowledge_collections SET multimodal_config_json = ?2 WHERE id = ?1",
+                params![collection_id, config_json],
+            )
+            .unwrap();
+    }
+
+    fn set_global_multimodal_config(connection: &Connection, config_json: &str) {
+        connection
+            .execute(
+                r#"
+                INSERT INTO app_kv (key, value, updated_at)
+                VALUES ('omni_knowledge_multimodal_profile', ?1, ?2)
+                ON CONFLICT(key) DO UPDATE SET
+                  value = excluded.value,
+                  updated_at = excluded.updated_at
+                "#,
+                params![config_json, current_timestamp_ms()],
+            )
+            .unwrap();
+    }
+
     #[test]
     fn csv_to_markdown_pads_and_escapes_cells() {
         let markdown = csv_to_markdown("name,value\nalpha,1\npipe,a|b", ',');
@@ -3332,6 +3327,98 @@ mod tests {
         let err = parse_simple_document("archive.zip", Some("zip"), &[1, 2, 3], None).unwrap_err();
 
         assert!(err.contains(".zip"));
+    }
+
+    #[test]
+    fn resolve_preview_types_uses_audio_video_inference_for_upload_guard() {
+        let (audio_preview_type, audio_guard_preview_type) =
+            resolve_preview_types(None, Some("mp3"), None);
+        assert_eq!(audio_preview_type, "audio");
+        assert_eq!(audio_guard_preview_type, "audio");
+
+        let (video_preview_type, video_guard_preview_type) =
+            resolve_preview_types(None, None, Some("video/mp4"));
+        assert_eq!(video_preview_type, "video");
+        assert_eq!(video_guard_preview_type, "video");
+    }
+
+    #[test]
+    fn resolve_preview_types_keeps_explicit_type_when_inference_is_unsupported() {
+        let (preview_type, upload_guard_preview_type) =
+            resolve_preview_types(Some("video"), Some("bin"), None);
+
+        assert_eq!(preview_type, "video");
+        assert_eq!(upload_guard_preview_type, "video");
+    }
+
+    #[test]
+    fn validate_multimodal_upload_rejects_image_without_collection_enablement() {
+        let connection = new_test_connection();
+        let (collection_id, _) = seed_collection_and_document(&connection);
+
+        let err =
+            crate::validate_knowledge_multimodal_upload(&connection, &collection_id, "image")
+                .unwrap_err();
+
+        assert!(!err.trim().is_empty());
+    }
+
+    #[test]
+    fn validate_multimodal_upload_accepts_ready_audio_model() {
+        let connection = new_test_connection();
+        let (collection_id, _) = seed_collection_and_document(&connection);
+        set_collection_multimodal_config(
+            &connection,
+            &collection_id,
+            &serde_json::json!({
+                "enabled": true,
+                "mergeMode": "append",
+                "image": {
+                    "enabled": false,
+                    "modelId": null,
+                    "extractText": true,
+                    "generateSummary": true
+                },
+                "audio": {
+                    "enabled": true,
+                    "modelId": "audio:test",
+                    "keepTranscript": true,
+                    "generateSummary": true
+                }
+            })
+            .to_string(),
+        );
+        set_global_multimodal_config(
+            &connection,
+            &serde_json::json!({
+                "enabled": true,
+                "activeImageModelId": null,
+                "activeAudioModelId": "audio:test",
+                "models": [{
+                    "id": "audio:test",
+                    "name": "Audio Test",
+                    "capability": "audio",
+                    "provider": "openai",
+                    "baseUrl": "https://api.openai.com/v1",
+                    "model": "gpt-4o-mini-transcribe",
+                    "apiKey": "test-key"
+                }]
+            })
+            .to_string(),
+        );
+
+        crate::validate_knowledge_multimodal_upload(&connection, &collection_id, "audio")
+            .unwrap();
+    }
+
+    #[test]
+    fn validate_multimodal_upload_rejects_video_even_without_config_lookup() {
+        let connection = new_test_connection();
+
+        let err = crate::validate_knowledge_multimodal_upload(&connection, "missing", "video")
+            .unwrap_err();
+
+        assert!(!err.trim().is_empty());
     }
 
     #[test]
