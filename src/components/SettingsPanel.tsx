@@ -4,7 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showCompactWindow } from "../app/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { Cuboid, MessageSquareText, Settings } from "lucide-react";
+import { Cuboid, MessageSquareText, Settings, Sparkles } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
@@ -38,8 +38,14 @@ import {
   saveKnowledgeEmbeddingConfig,
   type KnowledgeEmbeddingConfig,
 } from "../chat/knowledgeEmbedding";
+import {
+  loadKnowledgeMultimodalConfig,
+  saveKnowledgeMultimodalConfig,
+  type KnowledgeMultimodalConfig,
+} from "../chat/knowledgeMultimodal";
 import BasicSettingsSection from "./settings/BasicSettingsSection";
 import KnowledgeEmbeddingSection from "./settings/KnowledgeEmbeddingSection";
+import KnowledgeMultimodalSection from "./settings/KnowledgeMultimodalSection";
 import ModelSettingsSection from "./settings/ModelSettingsSection";
 import TitleBar from "./TitleBar";
 
@@ -49,7 +55,7 @@ interface SettingsPanelProps {
   onModelChange: (modelId: string) => void;
 }
 type SettingsSection = "basic" | "models";
-type ModelConfigSection = "chat" | "embedding";
+type ModelConfigSection = "chat" | "embedding" | "multimodal";
 type ModelSectionCard = {
   title: string;
   description: string;
@@ -95,6 +101,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [prefs, setPrefs] = useState(loadUsagePreferences);
   const [prefsSaveStatus, setPrefsSaveStatus] = useState<"idle" | "saved" | "error">("idle");
   const [knowledgeEmbeddingConfig, setKnowledgeEmbeddingConfig] = useState<KnowledgeEmbeddingConfig>(loadKnowledgeEmbeddingConfig);
+  const [knowledgeMultimodalConfig, setKnowledgeMultimodalConfig] = useState<KnowledgeMultimodalConfig>(loadKnowledgeMultimodalConfig);
   const [recordingShortcut, setRecordingShortcut] = useState<"openMainShortcut" | "switchPreviousModelShortcut" | null>(null);
   const [endpointName, setEndpointName] = useState("OpenAI 官方");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
@@ -133,6 +140,12 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       description: "管理知识库向量化供应商、API Key 和多个嵌入模型。",
       icon: Cuboid,
       count: knowledgeEmbeddingConfig.models.length,
+    },
+    multimodal: {
+      title: "多模态模型",
+      description: "管理知识库图片、音频分析模型及默认能力映射。",
+      icon: Sparkles,
+      count: knowledgeMultimodalConfig.models.length,
     },
   };
   const currentModelSectionCard = modelSectionCards[modelSection];
@@ -449,6 +462,12 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     void emit("omni-knowledge-embedding-profile-changed", { config });
   };
 
+  const updateKnowledgeMultimodalConfig = (config: KnowledgeMultimodalConfig) => {
+    setKnowledgeMultimodalConfig(config);
+    saveKnowledgeMultimodalConfig(config);
+    void emit("omni-knowledge-multimodal-profile-changed", { config });
+  };
+
   useEffect(() => {
     if (section === "models") {
       return;
@@ -615,10 +634,10 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                 <aside className="min-w-0 self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <div className="px-2 pb-3">
                     <div className="text-xs font-semibold text-slate-500">模型分类</div>
-                    <div className="mt-1 text-[11px] leading-5 text-slate-400">聊天模型和向量模型分开配置，切换不会互相干扰。</div>
+                    <div className="mt-1 text-[11px] leading-5 text-slate-400">聊天、向量和多模态模型分开配置，切换不会互相干扰。</div>
                   </div>
                   <div className="space-y-1">
-                    {(["chat", "embedding"] as const).map((key) => {
+                    {(["chat", "embedding", "multimodal"] as const).map((key) => {
                       const item = modelSectionCards[key];
                       const isActive = modelSection === key;
                       const Icon = item.icon;
@@ -699,8 +718,10 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                       testResult={testResult}
                       testingConnection={testingConnection}
                     />
-                  ) : (
+                  ) : modelSection === "embedding" ? (
                     <KnowledgeEmbeddingSection config={knowledgeEmbeddingConfig} onChangeConfig={updateKnowledgeEmbeddingConfig} />
+                  ) : (
+                    <KnowledgeMultimodalSection config={knowledgeMultimodalConfig} onChangeConfig={updateKnowledgeMultimodalConfig} />
                   )}
                 </div>
               </div>

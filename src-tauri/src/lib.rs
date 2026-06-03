@@ -157,6 +157,7 @@ struct KnowledgeCollectionRecord {
     description: String,
     retrieval_mode: String,
     embedding_profile_id: Option<String>,
+    multimodal_config_json: Option<String>,
     created_at: i64,
     updated_at: i64,
 }
@@ -247,6 +248,7 @@ struct UpdateKnowledgeCollectionInput {
     name: Option<String>,
     description: Option<String>,
     retrieval_mode: Option<String>,
+    multimodal_config_json: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -266,6 +268,54 @@ struct KnowledgeEmbeddingConfigRecord {
     enabled: bool,
     active_model_id: String,
     models: Vec<KnowledgeEmbeddingModelConfigRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct KnowledgeMultimodalModelConfigRecord {
+    id: String,
+    name: String,
+    capability: String,
+    provider: String,
+    base_url: String,
+    model: String,
+    api_key: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct KnowledgeMultimodalConfigRecord {
+    enabled: bool,
+    active_image_model_id: Option<String>,
+    active_audio_model_id: Option<String>,
+    models: Vec<KnowledgeMultimodalModelConfigRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct KnowledgeCollectionImageMultimodalConfigRecord {
+    enabled: bool,
+    model_id: Option<String>,
+    extract_text: bool,
+    generate_summary: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct KnowledgeCollectionAudioMultimodalConfigRecord {
+    enabled: bool,
+    model_id: Option<String>,
+    keep_transcript: bool,
+    generate_summary: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct KnowledgeCollectionMultimodalConfigRecord {
+    enabled: bool,
+    merge_mode: String,
+    image: KnowledgeCollectionImageMultimodalConfigRecord,
+    audio: KnowledgeCollectionAudioMultimodalConfigRecord,
 }
 
 #[derive(Deserialize)]
@@ -572,7 +622,7 @@ fn normalize_file_extension(extension: Option<String>, source_name: &str) -> Opt
         .or_else(|| file_extension_from_name(source_name))
 }
 
-fn infer_preview_type(extension: Option<&str>, mime_type: Option<&str>) -> String {
+pub(crate) fn infer_preview_type(extension: Option<&str>, mime_type: Option<&str>) -> String {
     let extension = extension.unwrap_or_default().to_lowercase();
     let mime_type = mime_type.unwrap_or_default().to_lowercase();
 
@@ -628,6 +678,26 @@ fn infer_preview_type(extension: Option<&str>, mime_type: Option<&str>) -> Strin
     ) || mime_type.starts_with("image/")
     {
         return "image".to_string();
+    }
+
+    if matches!(
+        extension.as_str(),
+        "mp4" | "mov" | "webm" | "mkv" | "avi" | "m4v" | "mpeg" | "mpg"
+    ) {
+        return "video".to_string();
+    }
+
+    if matches!(extension.as_str(), "mp3" | "wav" | "m4a" | "aac" | "flac" | "ogg" | "oga")
+    {
+        return "audio".to_string();
+    }
+
+    if mime_type.starts_with("video/") {
+        return "video".to_string();
+    }
+
+    if mime_type.starts_with("audio/") {
+        return "audio".to_string();
     }
 
     if matches!(extension.as_str(), "doc" | "rtf") {
@@ -867,6 +937,7 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
           description TEXT NOT NULL,
           retrieval_mode TEXT NOT NULL DEFAULT 'hybrid',
           embedding_profile_id TEXT,
+          multimodal_config_json TEXT,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
@@ -964,7 +1035,11 @@ fn is_model_connection_status_key(key: &str) -> bool {
 }
 
 fn is_knowledge_embedding_config_key(key: &str) -> bool {
-    key == "omni_knowledge_embedding_profile"
+    key == KNOWLEDGE_EMBEDDING_CONFIG_KEY
+}
+
+fn is_knowledge_multimodal_config_key(key: &str) -> bool {
+    key == KNOWLEDGE_MULTIMODAL_CONFIG_KEY
 }
 
 fn read_simple_table_value(
@@ -1187,6 +1262,9 @@ fn read_structured_app_value(connection: &Connection, key: &str) -> Result<Optio
     if is_knowledge_embedding_config_key(key) {
         return read_kv(connection, key);
     }
+    if is_knowledge_multimodal_config_key(key) {
+        return read_kv(connection, key);
+    }
     if is_window_state_key(key) {
         return read_simple_table_value(connection, "window_state", key);
     }
@@ -1207,6 +1285,9 @@ fn write_structured_app_value(
     if is_knowledge_embedding_config_key(key) {
         return write_kv(connection, key, value);
     }
+    if is_knowledge_multimodal_config_key(key) {
+        return write_kv(connection, key, value);
+    }
     if is_window_state_key(key) {
         return write_simple_table_value(connection, "window_state", key, value);
     }
@@ -1221,6 +1302,9 @@ fn remove_structured_app_value(connection: &Connection, key: &str) -> Result<(),
         return remove_model_connection_status_value(connection);
     }
     if is_knowledge_embedding_config_key(key) {
+        return remove_kv(connection, key);
+    }
+    if is_knowledge_multimodal_config_key(key) {
         return remove_kv(connection, key);
     }
     if is_window_state_key(key) {
@@ -1533,6 +1617,7 @@ const OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS: [&str; 6] = [
 
 const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
 const KNOWLEDGE_EMBEDDING_CONFIG_KEY: &str = "omni_knowledge_embedding_profile";
+const KNOWLEDGE_MULTIMODAL_CONFIG_KEY: &str = "omni_knowledge_multimodal_profile";
 const DEFAULT_BASE_URL_FALLBACK: &str = "https://api.openai.com/v1";
 const EMBEDDING_BATCH_SIZE: usize = 24;
 
@@ -1549,6 +1634,27 @@ fn fingerprint_text(value: &str) -> String {
     format!("{hash:016x}")
 }
 
+impl Default for KnowledgeCollectionMultimodalConfigRecord {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            merge_mode: "append".to_string(),
+            image: KnowledgeCollectionImageMultimodalConfigRecord {
+                enabled: false,
+                model_id: None,
+                extract_text: true,
+                generate_summary: true,
+            },
+            audio: KnowledgeCollectionAudioMultimodalConfigRecord {
+                enabled: false,
+                model_id: None,
+                keep_transcript: true,
+                generate_summary: true,
+            },
+        }
+    }
+}
+
 fn default_knowledge_embedding_config() -> KnowledgeEmbeddingConfigRecord {
     KnowledgeEmbeddingConfigRecord {
         enabled: false,
@@ -1561,6 +1667,41 @@ fn default_knowledge_embedding_config() -> KnowledgeEmbeddingConfigRecord {
             model: DEFAULT_EMBEDDING_MODEL.to_string(),
             api_key: String::new(),
         }],
+    }
+}
+
+fn default_knowledge_multimodal_config() -> KnowledgeMultimodalConfigRecord {
+    KnowledgeMultimodalConfigRecord {
+        enabled: false,
+        active_image_model_id: Some("image:default".to_string()),
+        active_audio_model_id: Some("audio:default".to_string()),
+        models: vec![
+            KnowledgeMultimodalModelConfigRecord {
+                id: "image:default".to_string(),
+                name: "Default Image Multimodal Model".to_string(),
+                capability: "image".to_string(),
+                provider: "openai".to_string(),
+                base_url: DEFAULT_BASE_URL_FALLBACK.to_string(),
+                model: "gpt-4.1-mini".to_string(),
+                api_key: String::new(),
+            },
+            KnowledgeMultimodalModelConfigRecord {
+                id: "audio:default".to_string(),
+                name: "Default Audio Multimodal Model".to_string(),
+                capability: "audio".to_string(),
+                provider: "openai".to_string(),
+                base_url: DEFAULT_BASE_URL_FALLBACK.to_string(),
+                model: "gpt-4o-mini-transcribe".to_string(),
+                api_key: String::new(),
+            },
+        ],
+    }
+}
+
+fn normalize_multimodal_capability(value: &str) -> String {
+    match value.trim().to_lowercase().as_str() {
+        "audio" => "audio".to_string(),
+        _ => "image".to_string(),
     }
 }
 
@@ -1644,6 +1785,158 @@ fn normalize_knowledge_embedding_config_record(
     }
 }
 
+fn normalize_knowledge_multimodal_config_record(
+    input: KnowledgeMultimodalConfigRecord,
+) -> KnowledgeMultimodalConfigRecord {
+    let default = default_knowledge_multimodal_config();
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut models = Vec::new();
+
+    for (index, model) in input.models.into_iter().enumerate() {
+        let capability = normalize_multimodal_capability(&model.capability);
+        let provider = if provider_supports_embeddings(&model.provider) {
+            model.provider.trim().to_string()
+        } else {
+            "openai".to_string()
+        };
+        let model_value = model
+            .model
+            .trim()
+            .to_string()
+            .if_empty_then(match capability.as_str() {
+                "audio" => "gpt-4o-mini-transcribe",
+                _ => "gpt-4.1-mini",
+            });
+        let model_id = model
+            .id
+            .trim()
+            .to_string()
+            .if_empty_then(&format!("{capability}:{model_value}:{index}"));
+        let unique_id = if seen_ids.contains(&model_id) {
+            format!("{model_id}-{index}")
+        } else {
+            model_id
+        };
+        seen_ids.insert(unique_id.clone());
+        models.push(KnowledgeMultimodalModelConfigRecord {
+            id: unique_id,
+            name: model.name.trim().to_string().if_empty_then(&model_value),
+            capability,
+            provider,
+            base_url: model
+                .base_url
+                .trim()
+                .to_string()
+                .if_empty_then(DEFAULT_BASE_URL_FALLBACK),
+            model: model_value,
+            api_key: model.api_key.trim().to_string(),
+        });
+    }
+
+    if models.is_empty() {
+        models = default.models;
+    }
+
+    let active_image_model_id = input
+        .active_image_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .filter(|id| {
+            models
+                .iter()
+                .any(|model| model.capability == "image" && model.id == *id)
+        })
+        .or_else(|| {
+            models
+                .iter()
+                .find(|model| model.capability == "image")
+                .map(|model| model.id.clone())
+        });
+    let active_audio_model_id = input
+        .active_audio_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .filter(|id| {
+            models
+                .iter()
+                .any(|model| model.capability == "audio" && model.id == *id)
+        })
+        .or_else(|| {
+            models
+                .iter()
+                .find(|model| model.capability == "audio")
+                .map(|model| model.id.clone())
+        });
+
+    KnowledgeMultimodalConfigRecord {
+        enabled: input.enabled,
+        active_image_model_id,
+        active_audio_model_id,
+        models,
+    }
+}
+
+fn normalize_collection_multimodal_flag_model(model_id: Option<String>) -> Option<String> {
+    model_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub(crate) fn normalize_knowledge_collection_multimodal_config_record(
+    input: KnowledgeCollectionMultimodalConfigRecord,
+) -> KnowledgeCollectionMultimodalConfigRecord {
+    let default = KnowledgeCollectionMultimodalConfigRecord::default();
+    KnowledgeCollectionMultimodalConfigRecord {
+        enabled: input.enabled,
+        merge_mode: match input.merge_mode.trim().to_lowercase().as_str() {
+            "append" => "append".to_string(),
+            _ => default.merge_mode,
+        },
+        image: KnowledgeCollectionImageMultimodalConfigRecord {
+            enabled: input.image.enabled,
+            model_id: normalize_collection_multimodal_flag_model(input.image.model_id),
+            extract_text: input.image.extract_text,
+            generate_summary: input.image.generate_summary,
+        },
+        audio: KnowledgeCollectionAudioMultimodalConfigRecord {
+            enabled: input.audio.enabled,
+            model_id: normalize_collection_multimodal_flag_model(input.audio.model_id),
+            keep_transcript: input.audio.keep_transcript,
+            generate_summary: input.audio.generate_summary,
+        },
+    }
+}
+
+fn normalize_collection_multimodal_config_json_for_storage(
+    raw: Option<String>,
+) -> Result<Option<String>, String> {
+    let Some(value) = raw.map(|item| item.trim().to_string()) else {
+        return Ok(None);
+    };
+    if value.is_empty() {
+        return Ok(None);
+    }
+
+    let parsed = serde_json::from_str::<KnowledgeCollectionMultimodalConfigRecord>(&value)
+        .map_err(|err| err.to_string())?;
+    let normalized = normalize_knowledge_collection_multimodal_config_record(parsed);
+    serde_json::to_string(&normalized)
+        .map(Some)
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) fn parse_knowledge_collection_multimodal_config_json(
+    raw: Option<&str>,
+) -> KnowledgeCollectionMultimodalConfigRecord {
+    raw.and_then(|value| serde_json::from_str::<KnowledgeCollectionMultimodalConfigRecord>(value).ok())
+        .map(normalize_knowledge_collection_multimodal_config_record)
+        .unwrap_or_default()
+}
+
 fn load_knowledge_embedding_config(
     connection: &Connection,
 ) -> Result<KnowledgeEmbeddingConfigRecord, String> {
@@ -1656,6 +1949,183 @@ fn load_knowledge_embedding_config(
         },
         None => Ok(default_knowledge_embedding_config()),
     }
+}
+
+pub(crate) fn load_knowledge_multimodal_config(
+    connection: &Connection,
+) -> Result<KnowledgeMultimodalConfigRecord, String> {
+    let raw = read_kv(connection, KNOWLEDGE_MULTIMODAL_CONFIG_KEY)?;
+    match raw {
+        Some(value) => serde_json::from_str::<KnowledgeMultimodalConfigRecord>(&value)
+            .map(normalize_knowledge_multimodal_config_record)
+            .map_err(|err| err.to_string()),
+        None => Ok(default_knowledge_multimodal_config()),
+    }
+}
+
+fn save_knowledge_multimodal_config(
+    connection: &Connection,
+    config: KnowledgeMultimodalConfigRecord,
+) -> Result<KnowledgeMultimodalConfigRecord, String> {
+    let normalized = normalize_knowledge_multimodal_config_record(config);
+    let json = serde_json::to_string(&normalized).map_err(|err| err.to_string())?;
+    write_kv(connection, KNOWLEDGE_MULTIMODAL_CONFIG_KEY, &json)?;
+    Ok(normalized)
+}
+
+pub(crate) fn load_knowledge_collection_multimodal_config(
+    connection: &Connection,
+    collection_id: &str,
+) -> Result<KnowledgeCollectionMultimodalConfigRecord, String> {
+    let raw = connection
+        .query_row(
+            "SELECT multimodal_config_json FROM knowledge_collections WHERE id = ?1",
+            params![collection_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?
+        .flatten();
+    Ok(parse_knowledge_collection_multimodal_config_json(raw.as_deref()))
+}
+
+pub(crate) fn resolve_knowledge_multimodal_model(
+    config: &KnowledgeMultimodalConfigRecord,
+    capability: &str,
+    preferred_model_id: Option<&str>,
+) -> Option<KnowledgeMultimodalModelConfigRecord> {
+    let capability = normalize_multimodal_capability(capability);
+    let selected_id = preferred_model_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| match capability.as_str() {
+            "audio" => config.active_audio_model_id.clone(),
+            _ => config.active_image_model_id.clone(),
+        });
+
+    let candidates = config
+        .models
+        .iter()
+        .filter(|model| {
+            model.capability == capability
+                && !model.api_key.trim().is_empty()
+                && provider_supports_embeddings(&model.provider)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return None;
+    }
+
+    if let Some(selected_id) = selected_id {
+        if let Some(selected) = candidates
+            .iter()
+            .find(|model| model.id == selected_id)
+            .cloned()
+        {
+            return Some(selected);
+        }
+    }
+
+    candidates.into_iter().next()
+}
+
+fn is_usable_knowledge_multimodal_model(
+    model: &KnowledgeMultimodalModelConfigRecord,
+    capability: &str,
+) -> bool {
+    model.capability == capability
+        && !model.api_key.trim().is_empty()
+        && !model.base_url.trim().is_empty()
+        && !model.model.trim().is_empty()
+        && provider_supports_embeddings(&model.provider)
+}
+
+fn find_exact_usable_knowledge_multimodal_model(
+    config: &KnowledgeMultimodalConfigRecord,
+    capability: &str,
+    required_model_id: &str,
+) -> Option<KnowledgeMultimodalModelConfigRecord> {
+    if !config.enabled {
+        return None;
+    }
+
+    let capability = normalize_multimodal_capability(capability);
+    let required_model_id = required_model_id.trim();
+    if required_model_id.is_empty() {
+        return None;
+    }
+
+    config
+        .models
+        .iter()
+        .find(|model| model.id == required_model_id && is_usable_knowledge_multimodal_model(model, &capability))
+        .cloned()
+}
+
+pub(crate) fn validate_knowledge_multimodal_upload(
+    connection: &Connection,
+    collection_id: &str,
+    preview_type: &str,
+) -> Result<(), String> {
+    let normalized_preview_type = preview_type.trim().to_lowercase();
+    if normalized_preview_type == "video" {
+        return Err(
+            "已阻止本次上传：当前版本暂不支持视频上传到知识库，请先移除视频文件后再上传。"
+                .to_string(),
+        );
+    }
+
+    let capability = match normalized_preview_type.as_str() {
+        "image" => "image",
+        "audio" => "audio",
+        _ => return Ok(()),
+    };
+    let label = if capability == "image" { "图片" } else { "音频" };
+
+    let collection_config = load_knowledge_collection_multimodal_config(connection, collection_id)?;
+    if !collection_config.enabled {
+        return Err(format!(
+            "已阻止本次上传：当前知识库未开启多模态分析，请先到知识库设置 -> 多模态中启用并配置{label}模型后再上传{label}。"
+        ));
+    }
+
+    let selected_model_id = if capability == "image" {
+        if !collection_config.image.enabled {
+            return Err(format!(
+                "已阻止本次上传：当前知识库未开启{label}多模态分析，请先到知识库设置 -> 多模态中开启并配置{label}模型后再上传{label}。"
+            ));
+        }
+        collection_config.image.model_id.as_deref()
+    } else {
+        if !collection_config.audio.enabled {
+            return Err(format!(
+                "已阻止本次上传：当前知识库未开启{label}多模态分析，请先到知识库设置 -> 多模态中开启并配置{label}模型后再上传{label}。"
+            ));
+        }
+        collection_config.audio.model_id.as_deref()
+    };
+
+    let selected_model_id = selected_model_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "已阻止本次上传：当前知识库尚未选择{label}模型，请先到知识库设置 -> 多模态中完成{label}模型配置后再上传{label}。"
+            )
+        })?;
+
+    let global_config = load_knowledge_multimodal_config(connection)?;
+    if find_exact_usable_knowledge_multimodal_model(&global_config, capability, selected_model_id)
+        .is_none()
+    {
+        return Err(format!(
+            "已阻止本次上传：当前知识库缺少可用的{label}多模态模型，请先到设置 -> 模型配置 -> 多模态中补充可用模型，并确认知识库设置里已选中对应{label}模型后再上传。"
+        ));
+    }
+
+    Ok(())
 }
 
 fn load_knowledge_embedding_active_model(
@@ -1946,7 +2416,7 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
     let mut collections_stmt = connection
         .prepare(
             r#"
-            SELECT id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at
+            SELECT id, name, description, retrieval_mode, embedding_profile_id, multimodal_config_json, created_at, updated_at
             FROM knowledge_collections
             ORDER BY created_at ASC, id ASC
             "#,
@@ -1960,8 +2430,9 @@ fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPay
                 description: row.get(2)?,
                 retrieval_mode: row.get(3)?,
                 embedding_profile_id: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                multimodal_config_json: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -2158,6 +2629,7 @@ fn create_knowledge_collection(
     connection: &Connection,
     name: &str,
     description: &str,
+    multimodal_config_json: Option<String>,
 ) -> Result<KnowledgeCollectionRecord, String> {
     let now = current_timestamp_ms();
     let id = uuid::Uuid::new_v4().to_string();
@@ -2168,13 +2640,27 @@ fn create_knowledge_collection(
         return Err("知识库名称不能为空".into());
     }
 
+    let multimodal_config_json =
+        normalize_collection_multimodal_config_json_for_storage(multimodal_config_json)?;
+
     connection
         .execute(
             r#"
-            INSERT INTO knowledge_collections (id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            INSERT INTO knowledge_collections (
+              id, name, description, retrieval_mode, embedding_profile_id, multimodal_config_json, created_at, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
             "#,
-            params![id, name, description, "hybrid", Option::<String>::None, now, now],
+            params![
+                id,
+                name,
+                description,
+                "hybrid",
+                Option::<String>::None,
+                multimodal_config_json.clone(),
+                now,
+                now
+            ],
         )
         .map_err(|err| err.to_string())?;
 
@@ -2184,6 +2670,7 @@ fn create_knowledge_collection(
         description: description.to_string(),
         retrieval_mode: "hybrid".to_string(),
         embedding_profile_id: None,
+        multimodal_config_json,
         created_at: now,
         updated_at: now,
     })
@@ -2201,7 +2688,7 @@ fn update_knowledge_collection(
     let existing = connection
         .query_row(
             r#"
-            SELECT id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at
+            SELECT id, name, description, retrieval_mode, embedding_profile_id, multimodal_config_json, created_at, updated_at
             FROM knowledge_collections
             WHERE id = ?1
             "#,
@@ -2213,8 +2700,9 @@ fn update_knowledge_collection(
                     description: row.get(2)?,
                     retrieval_mode: row.get(3)?,
                     embedding_profile_id: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    multimodal_config_json: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             },
         )
@@ -2232,16 +2720,27 @@ fn update_knowledge_collection(
         .retrieval_mode
         .map(|value| normalize_knowledge_retrieval_mode(&value))
         .unwrap_or_else(|| existing.retrieval_mode.clone());
+    let multimodal_config_json = match input.multimodal_config_json {
+        Some(value) => normalize_collection_multimodal_config_json_for_storage(Some(value))?,
+        None => existing.multimodal_config_json.clone(),
+    };
     let updated_at = current_timestamp_ms();
 
     connection
         .execute(
             r#"
             UPDATE knowledge_collections
-            SET name = ?2, description = ?3, retrieval_mode = ?4, updated_at = ?5
+            SET name = ?2, description = ?3, retrieval_mode = ?4, multimodal_config_json = ?5, updated_at = ?6
             WHERE id = ?1
             "#,
-            params![collection_id, name, description, retrieval_mode, updated_at],
+            params![
+                collection_id,
+                name,
+                description,
+                retrieval_mode,
+                multimodal_config_json,
+                updated_at
+            ],
         )
         .map_err(|err| err.to_string())?;
 
@@ -2251,6 +2750,7 @@ fn update_knowledge_collection(
         description,
         retrieval_mode,
         embedding_profile_id: existing.embedding_profile_id,
+        multimodal_config_json,
         created_at: existing.created_at,
         updated_at,
     })
@@ -2381,6 +2881,13 @@ fn import_knowledge_document(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| infer_preview_type(file_extension.as_deref(), mime_type.as_deref()));
+    let inferred_preview_type = infer_preview_type(file_extension.as_deref(), mime_type.as_deref());
+    let upload_guard_preview_type = if inferred_preview_type == "unsupported" {
+        preview_type.as_str()
+    } else {
+        inferred_preview_type.as_str()
+    };
+    validate_knowledge_multimodal_upload(connection, &collection_id, upload_guard_preview_type)?;
     let thumbnail_data_url = input
         .thumbnail_data_url
         .map(|value| value.trim().to_string())
@@ -2916,9 +3423,10 @@ fn create_knowledge_collection_command(
     app: tauri::AppHandle,
     name: String,
     description: String,
+    multimodal_config_json: Option<String>,
 ) -> Result<KnowledgeCollectionRecord, String> {
     let connection = open_sqlite_connection(&app)?;
-    create_knowledge_collection(&connection, &name, &description)
+    create_knowledge_collection(&connection, &name, &description, multimodal_config_json)
 }
 
 #[tauri::command]
@@ -2931,7 +3439,7 @@ fn ensure_default_knowledge_collection_command(
     connection
         .query_row(
             r#"
-            SELECT id, name, description, retrieval_mode, embedding_profile_id, created_at, updated_at
+            SELECT id, name, description, retrieval_mode, embedding_profile_id, multimodal_config_json, created_at, updated_at
             FROM knowledge_collections
             WHERE id = 'default'
             "#,
@@ -2943,8 +3451,9 @@ fn ensure_default_knowledge_collection_command(
                     description: row.get(2)?,
                     retrieval_mode: row.get(3)?,
                     embedding_profile_id: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    multimodal_config_json: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             },
         )
@@ -3146,6 +3655,23 @@ fn cleanup_knowledge_processing_logs_command(app: tauri::AppHandle) -> Result<i6
 }
 
 #[tauri::command]
+fn load_knowledge_multimodal_config_command(
+    app: tauri::AppHandle,
+) -> Result<KnowledgeMultimodalConfigRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    load_knowledge_multimodal_config(&connection)
+}
+
+#[tauri::command]
+fn save_knowledge_multimodal_config_command(
+    app: tauri::AppHandle,
+    config: KnowledgeMultimodalConfigRecord,
+) -> Result<KnowledgeMultimodalConfigRecord, String> {
+    let connection = open_sqlite_connection(&app)?;
+    save_knowledge_multimodal_config(&connection, config)
+}
+
+#[tauri::command]
 fn rebuild_knowledge_document_embeddings_command(
     app: tauri::AppHandle,
     input: RevectorizeKnowledgeDocumentInput,
@@ -3195,6 +3721,7 @@ fn migrate_legacy_app_kv_to_structured(connection: &Connection) -> Result<(), St
         "omni_compact_appearance",
         "omni_character_scale",
         "omni_character_model",
+        KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
     ];
 
     for key in known_keys {
@@ -3451,6 +3978,15 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
         connection
             .execute(
                 "ALTER TABLE knowledge_collections ADD COLUMN embedding_profile_id TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    if !table_has_column(connection, "knowledge_collections", "multimodal_config_json")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_collections ADD COLUMN multimodal_config_json TEXT",
                 [],
             )
             .map_err(|err| err.to_string())?;
@@ -3848,6 +4384,8 @@ pub fn run() {
             load_knowledge_pipeline_settings_command,
             save_knowledge_pipeline_settings_command,
             cleanup_knowledge_processing_logs_command,
+            load_knowledge_multimodal_config_command,
+            save_knowledge_multimodal_config_command,
             rebuild_knowledge_document_embeddings_command,
             search_knowledge_chunks_command,
             load_chat_storage,

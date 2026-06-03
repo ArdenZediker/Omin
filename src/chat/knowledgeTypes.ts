@@ -1,3 +1,5 @@
+import type { KnowledgeCollectionMultimodalConfig } from "./knowledgeMultimodal";
+
 export type KnowledgeContextSource = {
   chunkId: string;
   documentId: string;
@@ -44,6 +46,7 @@ export type KnowledgeCollection = {
   description: string;
   retrievalMode?: string | null;
   embeddingProfileId?: string | null;
+  multimodalConfig?: KnowledgeCollectionMultimodalConfig | null;
   createdAt?: number;
   updatedAt?: number;
 };
