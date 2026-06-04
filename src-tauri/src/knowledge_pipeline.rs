@@ -1,14 +1,23 @@
 #![allow(dead_code)]
 
-use crate::{infer_preview_type, validate_knowledge_multimodal_upload};
+use crate::{
+    find_exact_usable_knowledge_multimodal_model, infer_preview_type,
+    load_knowledge_collection_multimodal_config, load_knowledge_multimodal_config,
+    validate_knowledge_multimodal_upload, KnowledgeCollectionMultimodalConfigRecord,
+    KnowledgeMultimodalModelConfigRecord,
+};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use regex::Regex;
+use reqwest::blocking::{multipart, Client as BlockingHttpClient};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::OnceLock,
+    time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
@@ -34,10 +43,11 @@ pub const STEP_STATUS_SUCCEEDED: &str = "succeeded";
 pub const STEP_STATUS_FAILED: &str = "failed";
 pub const STEP_STATUS_SKIPPED: &str = "skipped";
 
-const PIPELINE_STEPS: [&str; 7] = [
+const PIPELINE_STEPS: [&str; 8] = [
     "validate",
     "parse",
-    "extract_assets",
+    "enrich_image",
+    "enrich_audio",
     "chunk",
     "embed",
     "index",
@@ -304,6 +314,12 @@ struct ParsedDocument {
     metadata_json: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct EnrichmentOutput {
+    content: Option<String>,
+    warning: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 struct PipelineJobClaim {
     id: String,
@@ -317,7 +333,9 @@ struct PipelineDocumentSource {
     collection_id: String,
     source_name: String,
     stored_file_path: Option<String>,
+    mime_type: Option<String>,
     file_extension: Option<String>,
+    preview_type: Option<String>,
     content: Option<String>,
 }
 
@@ -567,6 +585,264 @@ fn resolve_preview_types(
     (preview_type, upload_guard_preview_type)
 }
 
+fn normalize_optional_text(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn infer_fallback_mime_type(preview_type: &str, extension: Option<&str>) -> &'static str {
+    match preview_type {
+        "image" => match extension.unwrap_or_default().trim_start_matches('.').to_lowercase().as_str() {
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "bmp" => "image/bmp",
+            "svg" => "image/svg+xml",
+            "avif" => "image/avif",
+            "ico" => "image/x-icon",
+            _ => "image/png",
+        },
+        "audio" => match extension.unwrap_or_default().trim_start_matches('.').to_lowercase().as_str() {
+            "wav" => "audio/wav",
+            "m4a" => "audio/mp4",
+            "aac" => "audio/aac",
+            "flac" => "audio/flac",
+            "ogg" | "oga" => "audio/ogg",
+            _ => "audio/mpeg",
+        },
+        _ => "application/octet-stream",
+    }
+}
+
+fn format_image_placeholder(source_name: &str, mime_type: Option<&str>) -> String {
+    let mime_line = mime_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("未知");
+    format!(
+        "图片文件\n文件名: {source_name}\nMIME 类型: {mime_line}\n原始引用: ![{source_name}]({source_name})"
+    )
+}
+
+fn format_audio_placeholder(source_name: &str, mime_type: Option<&str>) -> String {
+    let mime_line = mime_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("未知");
+    format!("音频文件\n文件名: {source_name}\nMIME 类型: {mime_line}")
+}
+
+fn merge_multimodal_content(base: &str, multimodal: &str) -> String {
+    let base = base.trim();
+    let multimodal = multimodal.trim();
+    if base.is_empty() {
+        return multimodal.to_string();
+    }
+    if multimodal.is_empty() {
+        return base.to_string();
+    }
+
+    format!("{base}\n\n--- 多模态分析 ---\n{multimodal}")
+}
+
+fn format_image_enrichment(
+    source_name: &str,
+    mime_type: Option<&str>,
+    ocr_text: Option<&str>,
+    summary: Option<&str>,
+) -> String {
+    let mut sections = vec![format!("图片分析结果：{source_name}")];
+    if let Some(mime_type) = mime_type.map(str::trim).filter(|value| !value.is_empty()) {
+        sections.push(format!("MIME 类型: {mime_type}"));
+    }
+    sections.push(String::new());
+    sections.push("图片文字提取：".to_string());
+    sections.push(
+        normalize_optional_text(ocr_text)
+            .unwrap_or_else(|| "未识别到可用文字内容。".to_string()),
+    );
+    sections.push(String::new());
+    sections.push("图片摘要：".to_string());
+    sections.push(
+        normalize_optional_text(summary)
+            .unwrap_or_else(|| "未生成图片摘要。".to_string()),
+    );
+    sections.join("\n")
+}
+
+fn format_audio_enrichment(
+    source_name: &str,
+    mime_type: Option<&str>,
+    transcript: Option<&str>,
+    summary: Option<&str>,
+    keep_transcript: bool,
+) -> String {
+    let mut sections = vec![format!("音频分析结果：{source_name}")];
+    if let Some(mime_type) = mime_type.map(str::trim).filter(|value| !value.is_empty()) {
+        sections.push(format!("MIME 类型: {mime_type}"));
+    }
+
+    if keep_transcript {
+        sections.push(String::new());
+        sections.push("音频转写：".to_string());
+        sections.push(
+            normalize_optional_text(transcript)
+                .unwrap_or_else(|| "未检测到清晰可用的语音内容。".to_string()),
+        );
+    }
+
+    if let Some(summary) = normalize_optional_text(summary) {
+        sections.push(String::new());
+        sections.push("音频摘要：".to_string());
+        sections.push(summary);
+    }
+
+    if sections.len() <= 2 {
+        sections.push(String::new());
+        sections.push("未生成额外的多模态音频文本。".to_string());
+    }
+
+    sections.join("\n")
+}
+
+fn extract_tagged_block(content: &str, tag_name: &str) -> Option<String> {
+    let start_tag = format!("<{tag_name}>");
+    let end_tag = format!("</{tag_name}>");
+    let start_index = content.find(&start_tag)? + start_tag.len();
+    let end_index = content[start_index..].find(&end_tag)? + start_index;
+    normalize_optional_text(Some(&content[start_index..end_index]))
+}
+
+fn extract_chat_completion_text(payload: &JsonValue) -> Option<String> {
+    let choices = payload.get("choices")?.as_array()?;
+    let message = choices.first()?.get("message")?;
+    match message.get("content")? {
+        JsonValue::String(value) => normalize_optional_text(Some(value)),
+        JsonValue::Array(parts) => {
+            let text = parts
+                .iter()
+                .filter_map(|part| part.get("text").and_then(JsonValue::as_str))
+                .collect::<Vec<_>>()
+                .join("\n");
+            normalize_optional_text(Some(text.as_str()))
+        }
+        _ => None,
+    }
+}
+
+fn build_multimodal_http_client() -> Result<BlockingHttpClient, String> {
+    BlockingHttpClient::builder()
+        .timeout(Duration::from_secs(180))
+        .build()
+        .map_err(|err| err.to_string())
+}
+
+fn request_chat_completion(
+    client: &BlockingHttpClient,
+    model: &KnowledgeMultimodalModelConfigRecord,
+    request_body: &JsonValue,
+) -> Result<String, String> {
+    let response = client
+        .post(format!(
+            "{}/chat/completions",
+            model.base_url.trim_end_matches('/')
+        ))
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", model.api_key.trim()))
+        .json(request_body)
+        .send()
+        .map_err(|err| err.to_string())?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        return Err(format!("chat completion request failed ({status}): {body}"));
+    }
+
+    let payload: JsonValue = response.json().map_err(|err| err.to_string())?;
+    extract_chat_completion_text(&payload)
+        .ok_or_else(|| "chat completion response did not contain message content".to_string())
+}
+
+fn request_audio_transcription(
+    client: &BlockingHttpClient,
+    model: &KnowledgeMultimodalModelConfigRecord,
+    source_name: &str,
+    mime_type: Option<&str>,
+    bytes: &[u8],
+) -> Result<String, String> {
+    let file_name = source_name.to_string();
+    let file_part = if let Some(mime_type) = mime_type.map(str::trim).filter(|value| !value.is_empty()) {
+        match multipart::Part::bytes(bytes.to_vec())
+            .file_name(file_name.clone())
+            .mime_str(mime_type)
+        {
+            Ok(part) => part,
+            Err(_) => multipart::Part::bytes(bytes.to_vec()).file_name(file_name),
+        }
+    } else {
+        multipart::Part::bytes(bytes.to_vec()).file_name(file_name)
+    };
+
+    let form = multipart::Form::new()
+        .text("model", model.model.clone())
+        .part("file", file_part);
+
+    let response = client
+        .post(format!(
+            "{}/audio/transcriptions",
+            model.base_url.trim_end_matches('/')
+        ))
+        .header("Authorization", format!("Bearer {}", model.api_key.trim()))
+        .multipart(form)
+        .send()
+        .map_err(|err| err.to_string())?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        return Err(format!("audio transcription request failed ({status}): {body}"));
+    }
+
+    let body = response.text().map_err(|err| err.to_string())?;
+    if let Ok(payload) = serde_json::from_str::<JsonValue>(&body) {
+        if let Some(text) = payload.get("text").and_then(JsonValue::as_str) {
+            return Ok(text.trim().to_string());
+        }
+        if let Some(text) = payload.get("transcript").and_then(JsonValue::as_str) {
+            return Ok(text.trim().to_string());
+        }
+        if let Some(text) = payload
+            .get("data")
+            .and_then(|value| value.get("text"))
+            .and_then(JsonValue::as_str)
+        {
+            return Ok(text.trim().to_string());
+        }
+    }
+
+    Ok(body.trim().to_string())
+}
+
+fn resolve_collection_multimodal_config(
+    connection: &Connection,
+    collection_id: &str,
+) -> Result<KnowledgeCollectionMultimodalConfigRecord, String> {
+    load_knowledge_collection_multimodal_config(connection, collection_id)
+}
+
+fn resolve_multimodal_model(
+    connection: &Connection,
+    model_id: &str,
+    capability: &str,
+) -> Result<KnowledgeMultimodalModelConfigRecord, String> {
+    let global_config = load_knowledge_multimodal_config(connection)?;
+    find_exact_usable_knowledge_multimodal_model(&global_config, capability, model_id)
+        .ok_or_else(|| format!("no usable {capability} multimodal model found for id: {model_id}"))
+}
+
 fn preview_text(value: &str, max_chars: usize) -> String {
     let trimmed = value.trim();
     if trimmed.chars().count() <= max_chars {
@@ -797,6 +1073,8 @@ pub fn create_pipeline_import(
 fn parse_simple_document(
     source_name: &str,
     file_extension: Option<&str>,
+    mime_type: Option<&str>,
+    preview_type: Option<&str>,
     bytes: &[u8],
     bridged_content: Option<&str>,
 ) -> Result<ParsedDocument, String> {
@@ -804,6 +1082,10 @@ fn parse_simple_document(
         .unwrap_or_default()
         .trim_start_matches('.')
         .to_lowercase();
+    let normalized_preview_type = preview_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_lowercase());
     let text = String::from_utf8_lossy(bytes).to_string();
 
     match ext.as_str() {
@@ -844,15 +1126,46 @@ fn parse_simple_document(
                 metadata_json: Some("{\"mode\":\"frontend_bridge\"}".into()),
             })
         }
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" => Ok(ParsedDocument {
-            content: format!("![{}]({})", source_name, source_name),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" | "ico" => Ok(ParsedDocument {
+            content: format_image_placeholder(source_name, mime_type),
             preview_type: "image".into(),
             metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
         }),
-        "" => Err("unable to identify file extension".into()),
-        other => Err(format!(
-            "unsupported file extension .{other}; original file has been stored"
-        )),
+        "mp3" | "wav" | "m4a" | "aac" | "flac" | "ogg" | "oga" => Ok(ParsedDocument {
+            content: format_audio_placeholder(source_name, mime_type),
+            preview_type: "audio".into(),
+            metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
+        }),
+        "" => match normalized_preview_type.as_deref() {
+            Some("image") => Ok(ParsedDocument {
+                content: format_image_placeholder(source_name, mime_type),
+                preview_type: "image".into(),
+                metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
+            }),
+            Some("audio") => Ok(ParsedDocument {
+                content: format_audio_placeholder(source_name, mime_type),
+                preview_type: "audio".into(),
+                metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
+            }),
+            Some("video") => Err("unsupported file type .video; original file has been stored".into()),
+            _ => Err("unable to identify file extension".into()),
+        },
+        other => match normalized_preview_type.as_deref() {
+            Some("image") => Ok(ParsedDocument {
+                content: format_image_placeholder(source_name, mime_type),
+                preview_type: "image".into(),
+                metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
+            }),
+            Some("audio") => Ok(ParsedDocument {
+                content: format_audio_placeholder(source_name, mime_type),
+                preview_type: "audio".into(),
+                metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
+            }),
+            Some("video") => Err("unsupported file type .video; original file has been stored".into()),
+            _ => Err(format!(
+                "unsupported file extension .{other}; original file has been stored"
+            )),
+        },
     }
 }
 
@@ -883,6 +1196,170 @@ fn sanitize_frontend_bridged_content(content: &str) -> String {
         previous_blank = false;
     }
     out.trim().to_string()
+}
+
+fn enrich_image_document(
+    document: &PipelineDocumentSource,
+    bytes: &[u8],
+    model: &KnowledgeMultimodalModelConfigRecord,
+    config: &KnowledgeCollectionMultimodalConfigRecord,
+) -> Result<EnrichmentOutput, String> {
+    if !config.image.extract_text && !config.image.generate_summary {
+        return Ok(EnrichmentOutput::default());
+    }
+
+    let mime_type = document
+        .mime_type
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| infer_fallback_mime_type("image", document.file_extension.as_deref()));
+    let data_url = format!(
+        "data:{mime_type};base64,{}",
+        BASE64_STANDARD.encode(bytes)
+    );
+    let prompt = format!(
+        "你正在为知识库准备一段可用于中文检索的图片分析文本，文件名是“{}”。\n\
+请只返回 XML，格式必须严格如下：\n\
+<result>\n<ocr>...</ocr>\n<summary>...</summary>\n</result>\n\
+要求：\n\
+- `<ocr>` 中输出适合中文向量检索的文字内容。如果图片原文不是中文，请优先输出中文整理版，必要时保留关键原文术语。\n\
+- `<summary>` 中输出中文摘要，简洁描述图片中的关键信息、结构、主题和可检索要点。\n\
+- 如果某一项未启用或没有结果，请返回空标签。\n\
+- 不要输出 Markdown 代码块、解释或额外说明。\n\
+- 是否需要 OCR：{}\n\
+- 是否需要摘要：{}",
+        document.source_name,
+        if config.image.extract_text { "是" } else { "否" },
+        if config.image.generate_summary { "是" } else { "否" }
+    );
+    let request_body = serde_json::json!({
+        "model": model.model,
+        "temperature": 0.1,
+        "messages": [
+            {
+                "role": "system",
+                "content": "你负责生成适合中文知识库检索的图片 OCR 文本和图片摘要。"
+            },
+            {
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": prompt },
+                    { "type": "image_url", "image_url": { "url": data_url } }
+                ]
+            }
+        ]
+    });
+
+    let client = build_multimodal_http_client()?;
+    let raw_text = request_chat_completion(&client, model, &request_body)?;
+    let mut ocr_text = if config.image.extract_text {
+        extract_tagged_block(&raw_text, "ocr")
+    } else {
+        None
+    };
+    let mut summary = if config.image.generate_summary {
+        extract_tagged_block(&raw_text, "summary")
+    } else {
+        None
+    };
+    if ocr_text.is_none() && summary.is_none() {
+        if config.image.generate_summary {
+            summary = normalize_optional_text(Some(raw_text.as_str()));
+        } else if config.image.extract_text {
+            ocr_text = normalize_optional_text(Some(raw_text.as_str()));
+        }
+    }
+
+    Ok(EnrichmentOutput {
+        content: Some(format_image_enrichment(
+            &document.source_name,
+            Some(mime_type),
+            ocr_text.as_deref(),
+            summary.as_deref(),
+        )),
+        warning: None,
+    })
+}
+
+fn summarize_audio_transcript(
+    client: &BlockingHttpClient,
+    model: &KnowledgeMultimodalModelConfigRecord,
+    source_name: &str,
+    transcript: &str,
+) -> Result<String, String> {
+    let prompt = format!(
+        "请基于音频文件“{source_name}”的转写内容，生成一段适合中文知识库检索的摘要。\n\
+要求：\n\
+- 使用中文输出。\n\
+- 保留重要的人名、地名、数字、日期、结论和决策。\n\
+- 用 3 到 6 句话概括。\n\
+- 只返回纯文本，不要加标题或 Markdown。\n\n转写内容：\n{transcript}"
+    );
+    let request_body = serde_json::json!({
+        "model": model.model,
+        "temperature": 0.1,
+        "messages": [
+            {
+                "role": "system",
+                "content": "你负责把音频转写整理成适合中文知识库检索的精炼摘要。"
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    });
+
+    request_chat_completion(client, model, &request_body)
+}
+
+fn enrich_audio_document(
+    document: &PipelineDocumentSource,
+    bytes: &[u8],
+    model: &KnowledgeMultimodalModelConfigRecord,
+    config: &KnowledgeCollectionMultimodalConfigRecord,
+) -> Result<EnrichmentOutput, String> {
+    if !config.audio.keep_transcript && !config.audio.generate_summary {
+        return Ok(EnrichmentOutput::default());
+    }
+
+    let mime_type = document
+        .mime_type
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| infer_fallback_mime_type("audio", document.file_extension.as_deref()));
+    let client = build_multimodal_http_client()?;
+    let transcript = request_audio_transcription(
+        &client,
+        model,
+        &document.source_name,
+        Some(mime_type),
+        bytes,
+    )?;
+
+    let mut warning = None;
+    let summary = if config.audio.generate_summary && !transcript.trim().is_empty() {
+        match summarize_audio_transcript(&client, model, &document.source_name, &transcript) {
+            Ok(summary) => normalize_optional_text(Some(summary.as_str())),
+            Err(err) => {
+                warning = Some(format!("音频摘要生成失败: {err}"));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Ok(EnrichmentOutput {
+        content: Some(format_audio_enrichment(
+            &document.source_name,
+            Some(mime_type),
+            Some(transcript.as_str()),
+            summary.as_deref(),
+            config.audio.keep_transcript,
+        )),
+        warning,
+    })
 }
 
 fn markdown_data_image_regex() -> &'static Regex {
@@ -1277,11 +1754,12 @@ pub fn load_processing_job_detail(
               CASE step_name
                 WHEN 'validate' THEN 0
                 WHEN 'parse' THEN 1
-                WHEN 'extract_assets' THEN 2
-                WHEN 'chunk' THEN 3
-                WHEN 'embed' THEN 4
-                WHEN 'index' THEN 5
-                WHEN 'finalize' THEN 6
+                WHEN 'enrich_image' THEN 2
+                WHEN 'enrich_audio' THEN 3
+                WHEN 'chunk' THEN 4
+                WHEN 'embed' THEN 5
+                WHEN 'index' THEN 6
+                WHEN 'finalize' THEN 7
                 ELSE 99
               END,
               updated_at ASC
@@ -2177,7 +2655,7 @@ fn load_document_source(
     connection
         .query_row(
             r#"
-            SELECT id, collection_id, source_name, stored_file_path, file_extension, content
+            SELECT id, collection_id, source_name, stored_file_path, mime_type, file_extension, preview_type, content
             FROM knowledge_documents
             WHERE id = ?1
             "#,
@@ -2188,8 +2666,10 @@ fn load_document_source(
                     collection_id: row.get(1)?,
                     source_name: row.get(2)?,
                     stored_file_path: row.get(3)?,
-                    file_extension: row.get(4)?,
-                    content: row.get(5)?,
+                    mime_type: row.get(4)?,
+                    file_extension: row.get(5)?,
+                    preview_type: row.get(6)?,
+                    content: row.get(7)?,
                 })
             },
         )
@@ -2628,7 +3108,14 @@ fn mark_unsupported(
         100,
         Some(error_message),
     )?;
-    for step_name in ["extract_assets", "chunk", "embed", "index", "finalize"] {
+    for step_name in [
+        "enrich_image",
+        "enrich_audio",
+        "chunk",
+        "embed",
+        "index",
+        "finalize",
+    ] {
         finish_step(connection, job, step_name, STEP_STATUS_SKIPPED, 100, None)?;
     }
     connection
@@ -2669,20 +3156,31 @@ fn mark_unsupported(
     )
 }
 
+fn split_parsed_document_into_chunks(
+    parsed: &ParsedDocument,
+    source_name: &str,
+    file_extension: Option<&str>,
+) -> Vec<crate::knowledge_chunker::ChunkSlice> {
+    crate::knowledge_chunker::split_document_text(
+        &parsed.content,
+        source_name,
+        Some(parsed.preview_type.as_str()),
+        file_extension,
+        crate::knowledge_chunker::DEFAULT_CHUNK_SIZE,
+        crate::knowledge_chunker::DEFAULT_CHUNK_OVERLAP,
+    )
+}
+
 fn complete_partial_job(
     connection: &Connection,
     job: &PipelineJobClaim,
+    source_name: &str,
+    file_extension: Option<&str>,
     parsed: ParsedDocument,
+    processing_warnings: Vec<String>,
 ) -> Result<(), String> {
     start_step(connection, job, "chunk", 45)?;
-    let chunks = crate::knowledge_chunker::split_document_text(
-        &parsed.content,
-        "",
-        Some(parsed.preview_type.as_str()),
-        None,
-        crate::knowledge_chunker::DEFAULT_CHUNK_SIZE,
-        crate::knowledge_chunker::DEFAULT_CHUNK_OVERLAP,
-    );
+    let chunks = split_parsed_document_into_chunks(&parsed, source_name, file_extension);
     finish_step(connection, job, "chunk", STEP_STATUS_SUCCEEDED, 100, None)?;
     if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
         return Ok(());
@@ -2732,12 +3230,22 @@ fn complete_partial_job(
     let now = current_timestamp_ms();
     let content_preview = preview_text(&parsed.content, 240);
     let chunk_count = chunks.len() as i64;
-    let document_status = if chunk_count <= 0 || vectorized_chunk_count >= chunk_count {
-        DOCUMENT_STATUS_SEARCHABLE
+    let mut warning_messages = processing_warnings;
+    if let Some(message) = embedding_error {
+        warning_messages.push(message.to_string());
+    }
+    let document_status =
+        if warning_messages.is_empty() && (chunk_count <= 0 || vectorized_chunk_count >= chunk_count)
+        {
+            DOCUMENT_STATUS_SEARCHABLE
+        } else {
+            DOCUMENT_STATUS_PARTIAL
+        };
+    let document_error = if warning_messages.is_empty() {
+        None
     } else {
-        DOCUMENT_STATUS_PARTIAL
+        Some(warning_messages.join(" | "))
     };
-    let document_error = embedding_error;
     let tx = connection
         .unchecked_transaction()
         .map_err(|err| err.to_string())?;
@@ -2787,7 +3295,7 @@ fn complete_partial_job(
             content_preview,
             chunk_count,
             document_status,
-            document_error,
+            document_error.as_deref(),
             now,
             now,
         ],
@@ -2809,7 +3317,13 @@ fn complete_partial_job(
                 updated_at = ?5
             WHERE id = ?1
             "#,
-            params![job.document_id, document_status, document_error, now, now],
+            params![
+                job.document_id,
+                document_status,
+                document_error.as_deref(),
+                now,
+                now
+            ],
         )
         .map_err(|err| err.to_string())?;
     connection
@@ -2820,7 +3334,13 @@ fn complete_partial_job(
                 finished_at = ?4, updated_at = ?5
             WHERE id = ?1
             "#,
-            params![job.id, JOB_STATUS_SUCCEEDED, document_error, now, now,],
+            params![
+                job.id,
+                JOB_STATUS_SUCCEEDED,
+                document_error.as_deref(),
+                now,
+                now,
+            ],
         )
         .map_err(|err| err.to_string())?;
     finish_step(
@@ -3027,9 +3547,11 @@ fn execute_claimed_job(connection: &Connection, job: &PipelineJobClaim) -> Resul
     }
 
     start_step(connection, job, "parse", 20)?;
-    let parsed = match parse_simple_document(
+    let mut parsed = match parse_simple_document(
         &document.source_name,
         document.file_extension.as_deref(),
+        document.mime_type.as_deref(),
+        document.preview_type.as_deref(),
         &bytes,
         document.content.as_deref(),
     ) {
@@ -3044,18 +3566,160 @@ fn execute_claimed_job(connection: &Connection, job: &PipelineJobClaim) -> Resul
         return Ok(());
     }
 
-    start_step(connection, job, "extract_assets", 35)?;
-    skip_step(
-        connection,
-        job,
-        "extract_assets",
-        "no asset extraction needed for simple parser",
-    )?;
+    let collection_multimodal = resolve_collection_multimodal_config(connection, &job.collection_id)?;
+    let mut processing_warnings = Vec::new();
+
+    if parsed.preview_type == "image" {
+        start_step(connection, job, "enrich_image", 35)?;
+        if !collection_multimodal.enabled || !collection_multimodal.image.enabled {
+            skip_step(
+                connection,
+                job,
+                "enrich_image",
+                "image enrichment disabled for this collection",
+            )?;
+        } else if !collection_multimodal.image.extract_text
+            && !collection_multimodal.image.generate_summary
+        {
+            skip_step(
+                connection,
+                job,
+                "enrich_image",
+                "image enrichment options disabled for this collection",
+            )?;
+        } else if let Some(model_id) = collection_multimodal
+            .image
+            .model_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let model = resolve_multimodal_model(connection, model_id, "image")
+                .map_err(|err| format!("image enrichment failed: {err}"))?;
+            let output = enrich_image_document(&document, &bytes, &model, &collection_multimodal)
+                .map_err(|err| format!("image enrichment failed: {err}"))?;
+            if let Some(extra_content) = output.content.as_deref() {
+                parsed.content = merge_multimodal_content(&parsed.content, extra_content);
+            }
+            if let Some(warning) = output.warning {
+                processing_warnings.push(warning.clone());
+                log_job(
+                    connection,
+                    &job.id,
+                    &job.document_id,
+                    "warn",
+                    Some("enrich_image"),
+                    &warning,
+                    parsed.metadata_json.as_deref(),
+                )?;
+            }
+            finish_step(connection, job, "enrich_image", STEP_STATUS_SUCCEEDED, 100, None)?;
+        } else {
+            return Err(
+                "image enrichment failed: image multimodal model is missing or unusable"
+                    .to_string(),
+            );
+        }
+    } else {
+        skip_step(
+            connection,
+            job,
+            "enrich_image",
+            "image enrichment not applicable",
+        )?;
+    }
     if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
         return Ok(());
     }
 
-    complete_partial_job(connection, job, parsed)
+    if parsed.preview_type == "audio" {
+        start_step(connection, job, "enrich_audio", 45)?;
+        if !collection_multimodal.enabled || !collection_multimodal.audio.enabled {
+            skip_step(
+                connection,
+                job,
+                "enrich_audio",
+                "audio enrichment disabled for this collection",
+            )?;
+        } else if !collection_multimodal.audio.keep_transcript
+            && !collection_multimodal.audio.generate_summary
+        {
+            skip_step(
+                connection,
+                job,
+                "enrich_audio",
+                "audio enrichment options disabled for this collection",
+            )?;
+        } else if let Some(model_id) = collection_multimodal
+            .audio
+            .model_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let model = resolve_multimodal_model(connection, model_id, "audio")
+                .map_err(|err| format!("audio enrichment failed: {err}"))?;
+            let output = enrich_audio_document(&document, &bytes, &model, &collection_multimodal)
+                .map_err(|err| format!("audio enrichment failed: {err}"))?;
+            if let Some(extra_content) = output.content.as_deref() {
+                parsed.content = merge_multimodal_content(&parsed.content, extra_content);
+            }
+            if let Some(warning) = output.warning {
+                processing_warnings.push(warning.clone());
+                log_job(
+                    connection,
+                    &job.id,
+                    &job.document_id,
+                    "warn",
+                    Some("enrich_audio"),
+                    &warning,
+                    parsed.metadata_json.as_deref(),
+                )?;
+            }
+            finish_step(connection, job, "enrich_audio", STEP_STATUS_SUCCEEDED, 100, None)?;
+        } else {
+            return Err(
+                "audio enrichment failed: audio multimodal model is missing or unusable"
+                    .to_string(),
+            );
+        }
+    } else {
+        skip_step(
+            connection,
+            job,
+            "enrich_audio",
+            "audio enrichment not applicable",
+        )?;
+    }
+    if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
+        return Ok(());
+    }
+
+    complete_partial_job(
+        connection,
+        job,
+        &document.source_name,
+        document.file_extension.as_deref(),
+        parsed,
+        processing_warnings,
+    )
+}
+
+fn running_step_name(connection: &Connection, job_id: &str) -> Result<Option<String>, String> {
+    connection
+        .query_row(
+            r#"
+            SELECT step_name
+            FROM knowledge_processing_steps
+            WHERE job_id = ?1 AND status = ?2
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            "#,
+            params![job_id, STEP_STATUS_RUNNING],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())
 }
 
 fn process_claimed_job(
@@ -3065,11 +3729,17 @@ fn process_claimed_job(
 ) -> Result<(), String> {
     let connection = open_pipeline_connection(app)?;
     if let Err(err) = execute_claimed_job(&connection, &job) {
-        fail_job(&connection, &job, None, &err, max_auto_retries)?;
+        let failed_step = running_step_name(&connection, &job.id)?;
+        fail_job(
+            &connection,
+            &job,
+            failed_step.as_deref(),
+            &err,
+            max_auto_retries,
+        )?;
     }
     Ok(())
 }
-
 pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
     let connection = open_pipeline_connection(app)?;
     let settings = load_pipeline_settings(&connection)?;
@@ -3266,7 +3936,7 @@ mod tests {
 
     #[test]
     fn parse_markdown_keeps_markdown_preview() {
-        let parsed = parse_simple_document("notes.md", Some("md"), b"# Title\nBody", None).unwrap();
+        let parsed = parse_simple_document("notes.md", Some("md"), None, None, b"# Title\nBody", None).unwrap();
 
         assert_eq!(parsed.content, "# Title\nBody");
         assert_eq!(parsed.preview_type, "markdown");
@@ -3275,7 +3945,7 @@ mod tests {
 
     #[test]
     fn parse_csv_converts_to_markdown_table() {
-        let parsed = parse_simple_document("data.csv", Some(".csv"), b"a,b\n1,2", None).unwrap();
+        let parsed = parse_simple_document("data.csv", Some(".csv"), None, None, b"a,b\n1,2", None).unwrap();
 
         assert_eq!(parsed.preview_type, "markdown");
         assert!(parsed.content.contains("| a | b |"));
@@ -3285,7 +3955,7 @@ mod tests {
     #[test]
     fn parse_pdf_uses_frontend_bridge_content() {
         let parsed =
-            parse_simple_document("report.pdf", Some("pdf"), b"%PDF", Some("Extracted text"))
+            parse_simple_document("report.pdf", Some("pdf"), None, None, b"%PDF", Some("Extracted text"))
                 .unwrap();
 
         assert_eq!(parsed.preview_type, "pdf");
@@ -3301,6 +3971,8 @@ mod tests {
         let parsed = parse_simple_document(
             "report.docx",
             Some("docx"),
+            None,
+            None,
             b"PK",
             Some("标题\n\n![](data:image/png;base64,AAAA)\n\n正文"),
         )
@@ -3312,10 +3984,32 @@ mod tests {
 
     #[test]
     fn parse_image_uses_placeholder() {
-        let parsed = parse_simple_document("photo.png", Some("png"), &[1, 2, 3], None).unwrap();
+        let parsed = parse_simple_document("photo.png", Some("png"), Some("image/png"), None, &[1, 2, 3], None).unwrap();
 
         assert_eq!(parsed.preview_type, "image");
-        assert_eq!(parsed.content, "![photo.png](photo.png)");
+        assert!(parsed.content.contains("图片文件"));
+        assert!(parsed.content.contains("photo.png"));
+        assert_eq!(
+            parsed.metadata_json.as_deref(),
+            Some("{\"mode\":\"store_with_placeholder\"}")
+        );
+    }
+
+    #[test]
+    fn parse_audio_uses_placeholder() {
+        let parsed = parse_simple_document(
+            "meeting.mp3",
+            Some("mp3"),
+            Some("audio/mpeg"),
+            None,
+            &[1, 2, 3],
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.preview_type, "audio");
+        assert!(parsed.content.contains("音频文件"));
+        assert!(parsed.content.contains("meeting.mp3"));
         assert_eq!(
             parsed.metadata_json.as_deref(),
             Some("{\"mode\":\"store_with_placeholder\"}")
@@ -3324,9 +4018,48 @@ mod tests {
 
     #[test]
     fn parse_unknown_extension_is_unsupported() {
-        let err = parse_simple_document("archive.zip", Some("zip"), &[1, 2, 3], None).unwrap_err();
+        let err = parse_simple_document("archive.zip", Some("zip"), None, None, &[1, 2, 3], None).unwrap_err();
 
         assert!(err.contains(".zip"));
+    }
+
+    #[test]
+    fn merge_multimodal_content_appends_separator() {
+        let merged = merge_multimodal_content("正文", "图片摘要");
+
+        assert!(merged.contains("--- 多模态分析 ---"));
+        assert!(merged.contains("图片摘要"));
+    }
+
+    #[test]
+    fn format_audio_enrichment_keeps_transcript_and_summary() {
+        let text = format_audio_enrichment(
+            "call.mp3",
+            Some("audio/mpeg"),
+            Some("你好，世界"),
+            Some("简短摘要"),
+            true,
+        );
+
+        assert!(text.contains("音频转写："));
+        assert!(text.contains("你好，世界"));
+        assert!(text.contains("音频摘要："));
+        assert!(text.contains("简短摘要"));
+    }
+
+    #[test]
+    fn ensure_knowledge_schema_adds_embedded_image_columns() {
+        let connection = new_test_connection();
+
+        crate::ensure_knowledge_schema(&connection).unwrap();
+
+        assert!(crate::table_has_column(&connection, "knowledge_chunks", "chunk_type").unwrap());
+        assert!(crate::table_has_column(&connection, "knowledge_chunks", "parent_chunk_id").unwrap());
+        assert!(crate::table_has_column(&connection, "knowledge_chunks", "asset_id").unwrap());
+        assert!(crate::table_has_column(&connection, "knowledge_chunks", "image_info").unwrap());
+        assert!(crate::table_has_column(&connection, "knowledge_document_assets", "id").unwrap());
+        assert!(crate::table_has_column(&connection, "knowledge_document_assets", "ocr_text").unwrap());
+        assert!(crate::table_has_column(&connection, "knowledge_document_assets", "caption_text").unwrap());
     }
 
     #[test]

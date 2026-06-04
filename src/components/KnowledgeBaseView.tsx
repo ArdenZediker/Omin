@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
 import mammoth from "mammoth/mammoth.browser";
+import type { Options as DocxPreviewOptions } from "docx-preview";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
@@ -90,6 +91,19 @@ type UploadNotice = {
   tone: "success" | "error";
   message: string;
 };
+const UPLOAD_NOTICE_AUTO_DISMISS_MS = 4000;
+const DOCX_PREVIEW_OPTIONS = {
+  className: "docx-preview-wrapper",
+  inWrapper: true,
+  ignoreWidth: false,
+  ignoreHeight: false,
+  ignoreFonts: false,
+  breakPages: true,
+  ignoreLastRenderedPageBreak: true,
+  experimental: false,
+  trimXmlDeclaration: true,
+  useBase64URL: true,
+} satisfies Partial<DocxPreviewOptions>;
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
 const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac"]);
 const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v", "mpeg", "mpg"]);
@@ -356,6 +370,9 @@ function getPreviewKindFromDocument(document: KnowledgeLibraryPayload["documents
   if (kind === "image" || IMAGE_EXTENSIONS.has(ext) || mimeType.startsWith("image/")) {
     return "image";
   }
+  if (kind === "audio" || AUDIO_EXTENSIONS.has(ext) || mimeType.startsWith("audio/")) {
+    return "audio";
+  }
   if (kind === "pdf" || ext === "pdf" || mimeType === "application/pdf") {
     return "pdf";
   }
@@ -471,6 +488,53 @@ function formatTimestamp(timestamp?: number | null) {
 
 function normalizeSearchText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getSearchHighlightTerms(query: string) {
+  const terms = query
+    .trim()
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+
+  return Array.from(new Map(terms.map((term) => [term.toLowerCase(), term])).values());
+}
+
+function renderHighlightedSearchText(text: string, query: string) {
+  if (!text) {
+    return text;
+  }
+
+  const terms = getSearchHighlightTerms(query);
+  if (terms.length === 0) {
+    return text;
+  }
+
+  const pattern = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
+  const parts = text.split(pattern);
+  if (parts.length === 1) {
+    return text;
+  }
+
+  const normalizedTerms = new Set(terms.map((term) => term.toLowerCase()));
+  return parts.map((part, index) => {
+    if (!part) {
+      return null;
+    }
+    if (normalizedTerms.has(part.toLowerCase())) {
+      return (
+        <mark key={`match-${index}`} className="rounded bg-amber-100 px-0.5 text-slate-900">
+          {part}
+        </mark>
+      );
+    }
+    return <span key={`text-${index}`}>{part}</span>;
+  });
 }
 
 function trimContentPreview(content: string) {
@@ -831,16 +895,20 @@ async function loadKnowledgeProcessingDeadLetters(input: DeadLetterQueryInput) {
   return invoke<DeadLetterQueryResult>("load_knowledge_processing_dead_letters_command", { input });
 }
 
-async function convertDocxBytesToHtml(bytes: Uint8Array) {
-  const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const result = await mammoth.convertToHtml({ arrayBuffer });
-  return result.value;
-}
-
 async function convertDocxBytesToText(bytes: Uint8Array) {
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const result = await mammoth.extractRawText({ arrayBuffer });
   return result.value;
+}
+
+async function renderDocxBytesIntoContainer(bytes: Uint8Array, container: HTMLElement) {
+  const { renderAsync } = await import("docx-preview");
+  const blob = new Blob([bytes], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+
+  container.innerHTML = "";
+  await renderAsync(blob, container, undefined, DOCX_PREVIEW_OPTIONS);
 }
 
 async function convertPdfBytesToText(bytes: Uint8Array) {
@@ -941,13 +1009,16 @@ function DocumentPreviewArea({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [textPreview, setTextPreview] = useState<string>("");
-  const [docxHtml, setDocxHtml] = useState<string>("");
+  const [docxBytes, setDocxBytes] = useState<Uint8Array | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
+  const docxContainerRef = useRef<HTMLDivElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
   const previewKind = useMemo(() => getPreviewKindFromDocument(document), [document]);
+  const fallbackText = textPreview || document.contentPreview || document.sourceName;
 
   useEffect(() => {
     let cancelled = false;
@@ -959,10 +1030,14 @@ function DocumentPreviewArea({
       }
 
       setError(null);
-      setDocxHtml("");
+      setDocxBytes(null);
       setImageUrl(null);
+      setAudioUrl(null);
       setPdfObjectUrl(null);
       setPdfBytes(null);
+      if (docxContainerRef.current) {
+        docxContainerRef.current.innerHTML = "";
+      }
 
       const sourceText = (document.content ?? document.contentPreview ?? document.sourceName ?? "").trim();
       if (previewKind === "text" || previewKind === "markdown") {
@@ -972,12 +1047,14 @@ function DocumentPreviewArea({
       }
 
       if (previewKind === "unsupported") {
-        setTextPreview(sourceText || "该格式不支持内嵌预览，可以打开原文件查看。");
+        setTextPreview(sourceText || "\u8be5\u683c\u5f0f\u4e0d\u652f\u6301\u5185\u5d4c\u9884\u89c8\uff0c\u53ef\u4ee5\u6253\u5f00\u539f\u6587\u4ef6\u67e5\u770b\u3002");
         setIsLoading(false);
         return;
       }
 
+      setTextPreview(sourceText);
       setIsLoading(true);
+      let needsDocxRender = false;
       try {
         const payload = await loadKnowledgeDocumentBinary(document.id);
         if (cancelled) {
@@ -989,30 +1066,25 @@ function DocumentPreviewArea({
           const url = URL.createObjectURL(new Blob([bytes], { type: document.mimeType ?? "application/octet-stream" }));
           objectUrlRef.current = url;
           setImageUrl(url);
+        } else if (previewKind === "audio") {
+          const url = URL.createObjectURL(new Blob([bytes], { type: document.mimeType ?? "audio/mpeg" }));
+          objectUrlRef.current = url;
+          setAudioUrl(url);
         } else if (previewKind === "docx") {
-          const html = await convertDocxBytesToHtml(bytes);
-          if (!cancelled) {
-            setDocxHtml(html);
-            if (!html.trim() && sourceText) {
-              setTextPreview(sourceText);
-            }
-          }
+          needsDocxRender = true;
+          setDocxBytes(bytes);
         } else if (previewKind === "pdf") {
           const url = URL.createObjectURL(new Blob([bytes.slice()], { type: document.mimeType ?? "application/pdf" }));
           objectUrlRef.current = url;
           setPdfObjectUrl(url);
           setPdfBytes(bytes);
-          if (!cancelled) {
-            setTextPreview(sourceText);
-          }
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "预览加载失败");
-          setTextPreview(sourceText);
+          setError(err instanceof Error ? err.message : "\u9884\u89c8\u52a0\u8f7d\u5931\u8d25");
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && !needsDocxRender) {
           setIsLoading(false);
         }
       }
@@ -1026,92 +1098,170 @@ function DocumentPreviewArea({
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
       }
+      if (docxContainerRef.current) {
+        docxContainerRef.current.innerHTML = "";
+      }
     };
   }, [document.id, document.content, document.contentPreview, document.mimeType, document.sourceName, previewKind]);
 
+  useEffect(() => {
+    const bytes = docxBytes;
+    if (previewKind !== "docx" || !bytes || !docxContainerRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+    const container = docxContainerRef.current;
+
+    async function run() {
+      setError(null);
+      setIsLoading(true);
+      try {
+        await renderDocxBytesIntoContainer(bytes!, container);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          container.innerHTML = "";
+          setError(err instanceof Error ? err.message : "\u9884\u89c8\u52a0\u8f7d\u5931\u8d25");
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void run();
+
+    return () => {
+      cancelled = true;
+      container.innerHTML = "";
+    };
+  }, [docxBytes, previewKind]);
+
   if (error) {
     return (
-      <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-none border border-slate-200 bg-white p-4">
+      <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden p-4">
         <button
           type="button"
           onClick={() => void onOpenExternal()}
           className="absolute right-3 top-3 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
         >
-          打开原文件
+          {"\u6253\u5f00\u539f\u6587\u4ef6"}
         </button>
         <div className="space-y-3 pt-8">
-          <div className="text-sm font-medium text-slate-950">预览失败</div>
+          <div className="text-sm font-medium text-slate-950">{"\u9884\u89c8\u5931\u8d25"}</div>
           <div className="text-sm text-slate-500">{error}</div>
         </div>
       </div>
     );
   }
 
-  if (isLoading && previewKind !== "text" && previewKind !== "markdown") {
+  if (isLoading && previewKind !== "text" && previewKind !== "markdown" && previewKind !== "docx") {
     return (
-      <div className="flex min-h-[18rem] items-center justify-center rounded-none border border-slate-200 bg-white px-4 py-10 text-sm text-slate-500">
-        正在加载文档预览...
+      <div className="flex min-h-[18rem] items-center justify-center px-4 py-10 text-sm text-slate-500">
+        {"\u6b63\u5728\u52a0\u8f7d\u6587\u6863\u9884\u89c8..."}
       </div>
     );
   }
 
+  function renderPreviewContent() {
+    switch (previewKind) {
+      case "markdown":
+        return (
+          <div className="h-full overflow-auto pr-1">
+            <div className="markdown-body text-sm text-slate-700">{renderMarkdown(fallbackText)}</div>
+          </div>
+        );
+      case "text":
+        return (
+          <pre className="h-full overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+            {fallbackText}
+          </pre>
+        );
+      case "docx":
+        return (
+          <div className="omni-knowledge-preview__docx relative h-full overflow-auto pr-1">
+            {isLoading ? (
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center px-4 py-3">
+                <div className="rounded-full border border-slate-200 bg-white/92 px-3 py-1 text-xs text-slate-500 shadow-sm backdrop-blur-sm">
+                  {"\u6b63\u5728\u52a0\u8f7d\u6587\u6863\u9884\u89c8..."}
+                </div>
+              </div>
+            ) : null}
+            <div ref={docxContainerRef} className="omni-knowledge-preview__docx-container min-h-full" />
+            {!isLoading && !docxBytes ? (
+              <pre className="h-full overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                {fallbackText}
+              </pre>
+            ) : null}
+          </div>
+        );
+      case "pdf":
+        return pdfObjectUrl ? (
+          <div className="flex h-full min-h-0 flex-1 overflow-hidden rounded-none border border-slate-200 bg-white">
+            <object data={pdfObjectUrl} type="application/pdf" className="h-full w-full">
+              {pdfBytes ? (
+                <div className="h-full overflow-auto p-4">
+                  <div className="mb-3 text-sm text-slate-500">
+                    {"\u5f53\u524d\u73af\u5883\u65e0\u6cd5\u76f4\u63a5\u9884\u89c8 PDF\uff0c\u5df2\u5207\u6362\u4e3a\u9996\u9875\u56fe\u50cf\u9884\u89c8\uff0c\u4e5f\u53ef\u4ee5\u70b9\u51fb\u53f3\u4e0a\u89d2\u6253\u5f00\u539f\u6587\u4ef6\u3002"}
+                  </div>
+                  <PdfFirstPagePreview bytes={pdfBytes} />
+                </div>
+              ) : (
+                <div className="p-4 text-sm text-slate-500">
+                  {"\u5f53\u524d\u73af\u5883\u65e0\u6cd5\u76f4\u63a5\u9884\u89c8 PDF\uff0c\u8bf7\u70b9\u51fb\u53f3\u4e0a\u89d2\u6253\u5f00\u539f\u6587\u4ef6\u3002"}
+                </div>
+              )}
+            </object>
+          </div>
+        ) : pdfBytes ? (
+          <PdfFirstPagePreview bytes={pdfBytes} />
+        ) : null;
+      case "image":
+        return imageUrl ? (
+          <div className="flex h-full w-full items-center justify-center overflow-auto">
+            <img
+              src={imageUrl}
+              alt={document.sourceName}
+              className="max-h-full max-w-full rounded-none border border-slate-200 object-contain"
+            />
+          </div>
+        ) : null;
+      case "audio":
+        return (
+          <div className="flex h-full flex-col gap-4">
+            {audioUrl ? (
+              <audio controls className="w-full">
+                <source src={audioUrl} type={document.mimeType ?? "audio/mpeg"} />
+              </audio>
+            ) : null}
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+              {fallbackText}
+            </pre>
+          </div>
+        );
+      case "unsupported":
+        return (
+          <div className="space-y-3 text-sm text-slate-500">
+            <div>{textPreview || "\u8be5\u683c\u5f0f\u4e0d\u652f\u6301\u5185\u5d4c\u9884\u89c8\uff0c\u53ef\u4ee5\u6253\u5f00\u539f\u6587\u4ef6\u67e5\u770b\u3002"}</div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  }
+
   return (
-    <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-none border border-slate-200 bg-white">
+    <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       <button
         type="button"
         onClick={() => void onOpenExternal()}
         className="absolute right-3 top-3 z-10 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
       >
-        打开原文件
+        {"\u6253\u5f00\u539f\u6587\u4ef6"}
       </button>
 
-      <div className="min-h-0 flex-1 overflow-hidden p-4 pt-12">
-        {previewKind === "markdown" ? (
-          <div className="h-full overflow-auto pr-1">
-            <div className="markdown-body text-sm text-slate-700">{renderMarkdown(textPreview || document.contentPreview || document.sourceName)}</div>
-          </div>
-        ) : null}
-
-        {previewKind === "text" ? (
-          <pre className="h-full overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-            {textPreview || document.contentPreview || document.sourceName}
-          </pre>
-        ) : null}
-
-        {previewKind === "docx" ? (
-          docxHtml.trim() ? (
-            <div className="h-full overflow-auto pr-1">
-              <div className="docx-preview text-sm leading-7 text-slate-700" dangerouslySetInnerHTML={{ __html: docxHtml }} />
-            </div>
-          ) : (
-            <pre className="h-full overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-              {textPreview || document.contentPreview || document.sourceName}
-            </pre>
-          )
-        ) : null}
-
-        {previewKind === "pdf" ? (
-          pdfObjectUrl ? (
-            <div className="flex h-full min-h-0 flex-1 overflow-hidden rounded-none border border-slate-200 bg-white">
-              <object data={pdfObjectUrl} type="application/pdf" className="h-full w-full">
-                <div className="p-4 text-sm text-slate-500">当前环境无法直接预览 PDF，请点击右上角打开原文件。</div>
-              </object>
-            </div>
-          ) : pdfBytes ? (
-            <PdfFirstPagePreview bytes={pdfBytes} />
-          ) : null
-        ) : null}
-
-        {previewKind === "image" && imageUrl ? (
-          <img src={imageUrl} alt={document.sourceName} className="max-h-[60vh] rounded-none border border-slate-200 object-contain" />
-        ) : null}
-
-        {previewKind === "unsupported" ? (
-          <div className="space-y-3 text-sm text-slate-500">
-            <div>{textPreview || "该格式不支持内嵌预览，可以打开原文件查看。"}</div>
-          </div>
-        ) : null}
-      </div>
+      <div className="min-h-0 flex-1 overflow-hidden p-4 pt-12">{renderPreviewContent()}</div>
     </div>
   );
 }
@@ -1120,6 +1270,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const { openPrompt } = usePromptDialog();
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [chunkSearchQuery, setChunkSearchQuery] = useState("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
   const [isCollectionMenuOpen, setIsCollectionMenuOpen] = useState<string | null>(null);
@@ -1174,6 +1325,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [isTaskCenterPanelOpen, setIsTaskCenterPanelOpen] = useState(false);
   const [isSearchToolbarOpen, setIsSearchToolbarOpen] = useState(false);
   const settingsSaveTimerRef = useRef<number | null>(null);
+  const uploadNoticeTimerRef = useRef<number | null>(null);
   const pendingPipelineSettingsRef = useRef<KnowledgePipelineSettings | null>(null);
   const isSavingPipelineSettingsRef = useRef(false);
   const deadLetterListRequestSeqRef = useRef(0);
@@ -1181,6 +1333,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const uploadMenuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const chunkSearchInputRef = useRef<HTMLInputElement | null>(null);
   const activeCollection = useMemo(() => {
     if (selectedCollectionId) {
       const selected = library.collections.find((collection) => collection.id === selectedCollectionId);
@@ -1277,6 +1430,18 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       ).includes(normalizedQuery);
     });
   }, [activeCategory, activeCollectionDocuments, searchQuery]);
+
+  const visibleDocumentChunks = useMemo(() => {
+    const chunks = selectedDocumentDetail?.chunks ?? [];
+    const normalizedQuery = normalizeSearchText(chunkSearchQuery);
+    if (!normalizedQuery) {
+      return chunks;
+    }
+
+    return chunks.filter((chunk) =>
+      normalizeSearchText([`第 ${chunk.chunkIndex + 1} 片`, chunk.title ?? "", chunk.content].join(" ")).includes(normalizedQuery)
+    );
+  }, [chunkSearchQuery, selectedDocumentDetail?.chunks]);
 
   const listThumbnailDataUrlById = useMemo(() => {
     const map = new Map<string, string | undefined>();
@@ -1469,6 +1634,46 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     const timer = window.setTimeout(() => searchInputRef.current?.focus(), 0);
     return () => window.clearTimeout(timer);
   }, [isSearchToolbarOpen]);
+
+  useEffect(() => {
+    if (uploadNoticeTimerRef.current !== null) {
+      window.clearTimeout(uploadNoticeTimerRef.current);
+      uploadNoticeTimerRef.current = null;
+    }
+
+    if (!uploadNotice || uploadNotice.tone !== "success") {
+      return;
+    }
+
+    uploadNoticeTimerRef.current = window.setTimeout(() => {
+      setUploadNotice(null);
+      uploadNoticeTimerRef.current = null;
+    }, UPLOAD_NOTICE_AUTO_DISMISS_MS);
+
+    return () => {
+      if (uploadNoticeTimerRef.current !== null) {
+        window.clearTimeout(uploadNoticeTimerRef.current);
+        uploadNoticeTimerRef.current = null;
+      }
+    };
+  }, [uploadNotice]);
+
+  useEffect(() => {
+    setChunkSearchQuery("");
+  }, [selectedDocumentId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && selectedDocumentId && selectedDocumentDetailView === "chunks") {
+        event.preventDefault();
+        chunkSearchInputRef.current?.focus();
+        chunkSearchInputRef.current?.select();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedDocumentDetailView, selectedDocumentId]);
 
   useEffect(() => {
     if (!isCollectionMenuOpen) {
@@ -2987,28 +3192,68 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             <div className="mb-3 flex items-center justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm font-semibold text-slate-950">分片</div>
-                                <div className="mt-1 text-xs text-slate-500">共 {selectedDocumentDetail.chunks.length} 个分片</div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  共 {selectedDocumentDetail.chunks.length} 个分片{chunkSearchQuery ? ` · 命中 ${visibleDocumentChunks.length} 个` : ""}
+                                </div>
+                              </div>
+                              <div className="flex h-8 w-full max-w-xs items-center gap-2 rounded-none border border-slate-200 bg-white px-2.5">
+                                <Search size={14} strokeWidth={1.8} className="shrink-0 text-slate-400" />
+                                <input
+                                  ref={chunkSearchInputRef}
+                                  value={chunkSearchQuery}
+                                  onChange={(event) => setChunkSearchQuery(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Escape") {
+                                      if (chunkSearchQuery) {
+                                        setChunkSearchQuery("");
+                                      } else {
+                                        event.currentTarget.blur();
+                                      }
+                                    }
+                                  }}
+                                  placeholder="搜索当前分片"
+                                  className="w-full min-w-0 border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                                />
+                                {chunkSearchQuery ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setChunkSearchQuery("");
+                                      chunkSearchInputRef.current?.focus();
+                                    }}
+                                    className="inline-flex h-5 w-5 items-center justify-center rounded-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                    aria-label="清空分片搜索"
+                                  >
+                                    <X size={12} strokeWidth={2} />
+                                  </button>
+                                ) : null}
                               </div>
                             </div>
 
                             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-                              {selectedDocumentDetail.chunks.map((chunk) => (
+                              {visibleDocumentChunks.map((chunk) => (
                                 <div key={chunk.id} className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                       <div className="truncate text-sm font-medium text-slate-950">
-                                        第 {chunk.chunkIndex + 1} 片{chunk.title ? ` · ${chunk.title}` : ""}
+                                        {renderHighlightedSearchText(`第 ${chunk.chunkIndex + 1} 片${chunk.title ? ` · ${chunk.title}` : ""}`, chunkSearchQuery)}
                                       </div>
                                     </div>
                                     <div className="shrink-0 text-xs text-slate-400">{formatTimestamp(chunk.createdAt)}</div>
                                   </div>
-                                  <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{chunk.content}</div>
+                                  <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                                    {renderHighlightedSearchText(chunk.content, chunkSearchQuery)}
+                                  </div>
                                 </div>
                               ))}
 
                               {selectedDocumentDetail.chunks.length === 0 ? (
                                 <div className="rounded-none border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
                                   当前文档还没有分片
+                                </div>
+                              ) : chunkSearchQuery && visibleDocumentChunks.length === 0 ? (
+                                <div className="rounded-none border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+                                  未找到匹配的分片
                                 </div>
                               ) : null}
                             </div>
@@ -3049,17 +3294,17 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             className="flex min-w-0 flex-1 flex-col items-stretch gap-1.5 text-left"
                           >
                             <div className="h-[86px] w-full overflow-hidden rounded-md bg-slate-100">{fileBadge}</div>
-                            <div className="min-w-0">
-                              <div className="truncate text-[12px] font-medium leading-4">{document.sourceName}</div>
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                <span className="rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                            <div className="flex min-w-0 flex-1 flex-col">
+                              <div className="line-clamp-2 text-[12px] font-medium leading-4">{document.sourceName}</div>
+                              {document.errorMessage ? <div className="mt-1 line-clamp-1 text-xs text-red-500">{document.errorMessage}</div> : null}
+                              <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+                                <span className="shrink-0 rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
                                   {getProcessingStatusLabel(document.processingStatus)}
                                 </span>
-                                <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
+                                <span className="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
                                   {getVectorizationLabel(document.vectorizationState ?? null)}
                                 </span>
                               </div>
-                              {document.errorMessage ? <div className="mt-1 line-clamp-1 text-xs text-red-500">{document.errorMessage}</div> : null}
                             </div>
                           </button>
 
