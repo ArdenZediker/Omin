@@ -198,6 +198,42 @@ struct KnowledgeDocumentRecord {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct KnowledgeDocumentAssetRecord {
+    id: String,
+    document_id: String,
+    collection_id: String,
+    asset_kind: String,
+    source_name: String,
+    stored_file_path: String,
+    mime_type: Option<String>,
+    file_extension: Option<String>,
+    preview_type: String,
+    thumbnail_data_url: Option<String>,
+    ocr_text: Option<String>,
+    caption_text: Option<String>,
+    content_preview: String,
+    page_index: Option<i64>,
+    asset_index: i64,
+    metadata_json: Option<String>,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeChunkImageInfoRecord {
+    asset_id: String,
+    source_name: String,
+    page_index: Option<i64>,
+    asset_index: i64,
+    original_markdown: Option<String>,
+    thumbnail_data_url: Option<String>,
+    ocr_text: Option<String>,
+    caption_text: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct KnowledgeChunkRecord {
     id: String,
     document_id: String,
@@ -205,6 +241,10 @@ struct KnowledgeChunkRecord {
     chunk_index: i64,
     title: Option<String>,
     content: String,
+    chunk_type: Option<String>,
+    parent_chunk_id: Option<String>,
+    asset_id: Option<String>,
+    image_info: Option<String>,
     embedding_json: Option<String>,
     embedding_model_key: Option<String>,
     created_at: i64,
@@ -221,6 +261,7 @@ struct KnowledgeLibraryPayload {
 #[serde(rename_all = "camelCase")]
 struct KnowledgeDocumentDetailPayload {
     document: KnowledgeDocumentRecord,
+    assets: Vec<KnowledgeDocumentAssetRecord>,
     chunks: Vec<KnowledgeChunkRecord>,
 }
 
@@ -273,49 +314,49 @@ struct KnowledgeEmbeddingConfigRecord {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct KnowledgeMultimodalModelConfigRecord {
-    id: String,
-    name: String,
-    capability: String,
-    provider: String,
-    base_url: String,
-    model: String,
-    api_key: String,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) capability: String,
+    pub(crate) provider: String,
+    pub(crate) base_url: String,
+    pub(crate) model: String,
+    pub(crate) api_key: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct KnowledgeMultimodalConfigRecord {
-    enabled: bool,
-    active_image_model_id: Option<String>,
-    active_audio_model_id: Option<String>,
-    models: Vec<KnowledgeMultimodalModelConfigRecord>,
+    pub(crate) enabled: bool,
+    pub(crate) active_image_model_id: Option<String>,
+    pub(crate) active_audio_model_id: Option<String>,
+    pub(crate) models: Vec<KnowledgeMultimodalModelConfigRecord>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub(crate) struct KnowledgeCollectionImageMultimodalConfigRecord {
-    enabled: bool,
-    model_id: Option<String>,
-    extract_text: bool,
-    generate_summary: bool,
+    pub(crate) enabled: bool,
+    pub(crate) model_id: Option<String>,
+    pub(crate) extract_text: bool,
+    pub(crate) generate_summary: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub(crate) struct KnowledgeCollectionAudioMultimodalConfigRecord {
-    enabled: bool,
-    model_id: Option<String>,
-    keep_transcript: bool,
-    generate_summary: bool,
+    pub(crate) enabled: bool,
+    pub(crate) model_id: Option<String>,
+    pub(crate) keep_transcript: bool,
+    pub(crate) generate_summary: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct KnowledgeCollectionMultimodalConfigRecord {
-    enabled: bool,
-    merge_mode: String,
-    image: KnowledgeCollectionImageMultimodalConfigRecord,
-    audio: KnowledgeCollectionAudioMultimodalConfigRecord,
+    pub(crate) enabled: bool,
+    pub(crate) merge_mode: String,
+    pub(crate) image: KnowledgeCollectionImageMultimodalConfigRecord,
+    pub(crate) audio: KnowledgeCollectionAudioMultimodalConfigRecord,
 }
 
 #[derive(Deserialize)]
@@ -765,6 +806,12 @@ fn delete_stored_document_file(path: Option<&str>) {
         if let Some(collection_dir) = document_dir.parent() {
             remove_if_empty(collection_dir);
         }
+    }
+}
+
+fn delete_stored_document_files(paths: &[Option<String>]) {
+    for path in paths {
+        delete_stored_document_file(path.as_deref());
     }
 }
 
@@ -1989,6 +2036,7 @@ pub(crate) fn load_knowledge_collection_multimodal_config(
     Ok(parse_knowledge_collection_multimodal_config_json(raw.as_deref()))
 }
 
+#[allow(dead_code)]
 pub(crate) fn resolve_knowledge_multimodal_model(
     config: &KnowledgeMultimodalConfigRecord,
     capability: &str,
@@ -2042,7 +2090,7 @@ fn is_usable_knowledge_multimodal_model(
         && provider_supports_embeddings(&model.provider)
 }
 
-fn find_exact_usable_knowledge_multimodal_model(
+pub(crate) fn find_exact_usable_knowledge_multimodal_model(
     config: &KnowledgeMultimodalConfigRecord,
     capability: &str,
     required_model_id: &str,
@@ -2573,10 +2621,50 @@ fn load_knowledge_document(
         )
         .map_err(|err| err.to_string())?;
 
+    let mut asset_stmt = connection
+        .prepare(
+            r#"
+            SELECT id, document_id, collection_id, asset_kind, source_name, stored_file_path, mime_type,
+                   file_extension, preview_type, thumbnail_data_url, ocr_text, caption_text,
+                   content_preview, page_index, asset_index, metadata_json, created_at, updated_at
+            FROM knowledge_document_assets
+            WHERE document_id = ?1
+            ORDER BY asset_index ASC, created_at ASC, id ASC
+            "#,
+        )
+        .map_err(|err| err.to_string())?;
+    let assets = asset_stmt
+        .query_map(params![document_id], |row| {
+            Ok(KnowledgeDocumentAssetRecord {
+                id: row.get(0)?,
+                document_id: row.get(1)?,
+                collection_id: row.get(2)?,
+                asset_kind: row.get(3)?,
+                source_name: row.get(4)?,
+                stored_file_path: row.get(5)?,
+                mime_type: row.get(6)?,
+                file_extension: row.get(7)?,
+                preview_type: row.get(8)?,
+                thumbnail_data_url: row.get(9)?,
+                ocr_text: row.get(10)?,
+                caption_text: row.get(11)?,
+                content_preview: row.get(12)?,
+                page_index: row.get(13)?,
+                asset_index: row.get(14)?,
+                metadata_json: row.get(15)?,
+                created_at: row.get(16)?,
+                updated_at: row.get(17)?,
+            })
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+
     let mut chunk_stmt = connection
         .prepare(
             r#"
-            SELECT id, document_id, collection_id, chunk_index, title, content, embedding_json, embedding_model_key, created_at
+            SELECT id, document_id, collection_id, chunk_index, title, content, chunk_type, parent_chunk_id,
+                   asset_id, image_info, embedding_json, embedding_model_key, created_at
             FROM knowledge_chunks
             WHERE document_id = ?1
             ORDER BY chunk_index ASC, created_at ASC, id ASC
@@ -2592,16 +2680,24 @@ fn load_knowledge_document(
                 chunk_index: row.get(3)?,
                 title: row.get(4)?,
                 content: row.get(5)?,
-                embedding_json: row.get(6)?,
-                embedding_model_key: row.get(7)?,
-                created_at: row.get(8)?,
+                chunk_type: row.get(6)?,
+                parent_chunk_id: row.get(7)?,
+                asset_id: row.get(8)?,
+                image_info: row.get(9)?,
+                embedding_json: row.get(10)?,
+                embedding_model_key: row.get(11)?,
+                created_at: row.get(12)?,
             })
         })
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
 
-    Ok(KnowledgeDocumentDetailPayload { document, chunks })
+    Ok(KnowledgeDocumentDetailPayload {
+        document,
+        assets,
+        chunks,
+    })
 }
 
 fn load_knowledge_document_file(
@@ -3793,6 +3889,32 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|err| err.to_string())?;
     }
+    if !table_has_column(connection, "knowledge_chunks", "chunk_type")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_chunks ADD COLUMN chunk_type TEXT NOT NULL DEFAULT 'text'",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+    if !table_has_column(connection, "knowledge_chunks", "parent_chunk_id")? {
+        connection
+            .execute(
+                "ALTER TABLE knowledge_chunks ADD COLUMN parent_chunk_id TEXT",
+                [],
+            )
+            .map_err(|err| err.to_string())?;
+    }
+    if !table_has_column(connection, "knowledge_chunks", "asset_id")? {
+        connection
+            .execute("ALTER TABLE knowledge_chunks ADD COLUMN asset_id TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
+    if !table_has_column(connection, "knowledge_chunks", "image_info")? {
+        connection
+            .execute("ALTER TABLE knowledge_chunks ADD COLUMN image_info TEXT", [])
+            .map_err(|err| err.to_string())?;
+    }
 
     if !table_has_column(connection, "knowledge_documents", "tags_json")? {
         connection
@@ -3991,6 +4113,52 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|err| err.to_string())?;
     }
+
+    connection
+        .execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS knowledge_document_assets (
+              id TEXT PRIMARY KEY,
+              document_id TEXT NOT NULL,
+              collection_id TEXT NOT NULL,
+              asset_kind TEXT NOT NULL,
+              source_name TEXT NOT NULL,
+              stored_file_path TEXT NOT NULL,
+              mime_type TEXT,
+              file_extension TEXT,
+              preview_type TEXT NOT NULL,
+              thumbnail_data_url TEXT,
+              ocr_text TEXT,
+              caption_text TEXT,
+              content_preview TEXT NOT NULL,
+              page_index INTEGER,
+              asset_index INTEGER NOT NULL,
+              metadata_json TEXT,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            )
+            "#,
+            [],
+        )
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_document_assets_document ON knowledge_document_assets (document_id, asset_index)",
+            [],
+        )
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_parent_chunk_id ON knowledge_chunks (parent_chunk_id)",
+            [],
+        )
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_asset_id ON knowledge_chunks (asset_id)",
+            [],
+        )
+        .map_err(|err| err.to_string())?;
 
     knowledge_pipeline::ensure_pipeline_schema(connection)?;
     ensure_knowledge_defaults(connection)?;

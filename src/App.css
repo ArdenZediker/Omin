@@ -3190,6 +3190,42 @@ body:has(.pet-thought-window),
   box-shadow: var(--omni-surface-shadow);
 }
 
+.omni-knowledge-preview__docx {
+  scrollbar-gutter: stable;
+}
+
+.omni-knowledge-preview__docx-container {
+  min-height: 100%;
+}
+
+.omni-knowledge-preview__docx :where(.docx-preview-wrapper) {
+  padding: 20px;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+}
+
+.omni-knowledge-preview__docx :where(.docx-preview-wrapper *) {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.omni-knowledge-preview__docx :where(.docx-preview-wrapper table) {
+  width: 100%;
+  table-layout: auto;
+  word-break: break-word;
+}
+
+.omni-knowledge-preview__docx :where(.docx-preview-wrapper img) {
+  max-width: 100%;
+  height: auto;
+}
+
+.omni-knowledge-preview__docx :where(.docx-preview-wrapper [style*="width"]) {
+  max-width: 100% !important;
+}
+
 .omni-knowledge-topic-shell {
   min-width: 0;
   min-height: 0;
