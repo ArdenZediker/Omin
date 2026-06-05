@@ -15,6 +15,8 @@ export type KnowledgeContextSource = {
   accessCount: number;
   lastAccessedAt?: number | null;
   titleHierarchy?: string | null;
+  matchedChunkType?: "text" | "image_ocr" | "image_caption" | null;
+  imageInfo?: KnowledgeChunkImageInfo | string | null;
 };
 
 export type SearchKnowledgeChunkResult = {
@@ -25,10 +27,20 @@ export type SearchKnowledgeChunkResult = {
     chunkIndex: number;
     title?: string | null;
     content: string;
+    chunkType?: "text" | "image_ocr" | "image_caption" | null;
+    parentChunkId?: string | null;
+    assetId?: string | null;
+    imageInfo?: KnowledgeChunkImageInfo | string | null;
     embeddingJson?: string | null;
     embeddingModelKey?: string | null;
     createdAt: number;
   };
+  matchedChunk?: KnowledgeDocumentChunk | null;
+  displayChunk?: KnowledgeDocumentChunk | null;
+  matchedChunkType?: "text" | "image_ocr" | "image_caption" | null;
+  parentChunkId?: string | null;
+  imageInfo?: KnowledgeChunkImageInfo | string | null;
+  matchedAsset?: KnowledgeDocumentAsset | null;
   score: number;
   sourceName: string;
   sourcePath?: string | null;
@@ -88,6 +100,38 @@ export type KnowledgeLibraryPayload = {
   documents: KnowledgeDocument[];
 };
 
+export type KnowledgeChunkImageInfo = {
+  assetId: string;
+  sourceName: string;
+  pageIndex?: number | null;
+  assetIndex: number;
+  originalMarkdown?: string | null;
+  thumbnailDataUrl?: string | null;
+  ocrText?: string | null;
+  captionText?: string | null;
+};
+
+export type KnowledgeDocumentAsset = {
+  id: string;
+  documentId: string;
+  collectionId: string;
+  assetKind: "embedded_image";
+  sourceName: string;
+  storedFilePath: string;
+  mimeType?: string | null;
+  fileExtension?: string | null;
+  previewType: "image";
+  thumbnailDataUrl?: string | null;
+  ocrText?: string | null;
+  captionText?: string | null;
+  contentPreview: string;
+  pageIndex?: number | null;
+  assetIndex: number;
+  metadataJson?: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type KnowledgeDocumentChunk = {
   id: string;
   documentId: string;
@@ -95,6 +139,10 @@ export type KnowledgeDocumentChunk = {
   chunkIndex: number;
   title?: string | null;
   content: string;
+  chunkType?: "text" | "image_ocr" | "image_caption" | null;
+  parentChunkId?: string | null;
+  assetId?: string | null;
+  imageInfo?: KnowledgeChunkImageInfo | string | null;
   embeddingJson?: string | null;
   embeddingModelKey?: string | null;
   createdAt: number;
@@ -102,6 +150,7 @@ export type KnowledgeDocumentChunk = {
 
 export type KnowledgeDocumentDetail = {
   document: KnowledgeDocument & { content?: string | null };
+  assets: KnowledgeDocumentAsset[];
   chunks: KnowledgeDocumentChunk[];
 };
 

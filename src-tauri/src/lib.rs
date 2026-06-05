@@ -16,6 +16,7 @@ use tauri::{
 };
 
 mod knowledge_chunker;
+mod knowledge_embedded_images;
 mod knowledge_pipeline;
 
 #[derive(Serialize)]
@@ -196,7 +197,7 @@ struct KnowledgeDocumentRecord {
     updated_at: i64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct KnowledgeDocumentAssetRecord {
     id: String,
@@ -397,6 +398,12 @@ struct KnowledgeDocumentBinaryPayload {
 #[serde(rename_all = "camelCase")]
 struct SearchKnowledgeChunkResult {
     chunk: KnowledgeChunkRecord,
+    matched_chunk: Option<KnowledgeChunkRecord>,
+    display_chunk: Option<KnowledgeChunkRecord>,
+    matched_chunk_type: Option<String>,
+    parent_chunk_id: Option<String>,
+    image_info: Option<String>,
+    matched_asset: Option<KnowledgeDocumentAssetRecord>,
     score: f64,
     source_name: String,
     source_path: Option<String>,
@@ -2858,7 +2865,7 @@ fn delete_knowledge_collection(connection: &Connection, collection_id: &str) -> 
         return Err("知识库 ID 不能为空".into());
     }
 
-    let stored_paths = {
+    let stored_document_paths = {
         let mut stmt = connection
             .prepare(
                 r#"
@@ -2877,10 +2884,34 @@ fn delete_knowledge_collection(connection: &Connection, collection_id: &str) -> 
             .map_err(|err| err.to_string())?;
         rows
     };
+    let stored_asset_paths = {
+        let mut stmt = connection
+            .prepare(
+                r#"
+                SELECT stored_file_path
+                FROM knowledge_document_assets
+                WHERE collection_id = ?1
+                "#,
+            )
+            .map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map(params![collection_id], |row| {
+                row.get::<_, Option<String>>(0)
+            })
+            .map_err(|err| err.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())?;
+        rows
+    };
 
     let tx = connection
         .unchecked_transaction()
         .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_document_assets WHERE collection_id = ?1",
+        params![collection_id],
+    )
+    .map_err(|err| err.to_string())?;
     tx.execute(
         "DELETE FROM knowledge_chunks WHERE collection_id = ?1",
         params![collection_id],
@@ -2898,9 +2929,8 @@ fn delete_knowledge_collection(connection: &Connection, collection_id: &str) -> 
     .map_err(|err| err.to_string())?;
     tx.commit().map_err(|err| err.to_string())?;
 
-    for path in stored_paths {
-        delete_stored_document_file(path.as_deref());
-    }
+    delete_stored_document_files(&stored_asset_paths);
+    delete_stored_document_files(&stored_document_paths);
 
     Ok(())
 }
@@ -2920,10 +2950,32 @@ fn delete_knowledge_document(connection: &Connection, document_id: &str) -> Resu
         .optional()
         .map_err(|err| err.to_string())?
         .flatten();
+    let stored_asset_paths = {
+        let mut stmt = connection
+            .prepare(
+                r#"
+                SELECT stored_file_path
+                FROM knowledge_document_assets
+                WHERE document_id = ?1
+                "#,
+            )
+            .map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map(params![document_id], |row| row.get::<_, Option<String>>(0))
+            .map_err(|err| err.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())?;
+        rows
+    };
 
     let tx = connection
         .unchecked_transaction()
         .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_document_assets WHERE document_id = ?1",
+        params![document_id],
+    )
+    .map_err(|err| err.to_string())?;
     tx.execute(
         "DELETE FROM knowledge_chunks WHERE document_id = ?1",
         params![document_id],
@@ -2936,6 +2988,7 @@ fn delete_knowledge_document(connection: &Connection, document_id: &str) -> Resu
     .map_err(|err| err.to_string())?;
     tx.commit().map_err(|err| err.to_string())?;
 
+    delete_stored_document_files(&stored_asset_paths);
     delete_stored_document_file(stored_file_path.as_deref());
     Ok(())
 }
@@ -3308,6 +3361,10 @@ struct KnowledgeSearchCandidate {
     chunk_index: i64,
     title: Option<String>,
     content: String,
+    chunk_type: Option<String>,
+    parent_chunk_id: Option<String>,
+    asset_id: Option<String>,
+    image_info: Option<String>,
     embedding_json: Option<String>,
     embedding_model_key: Option<String>,
     created_at: i64,
@@ -3320,6 +3377,138 @@ struct KnowledgeSearchCandidate {
     access_count: i64,
     last_accessed_at: Option<i64>,
     title_hierarchy: Option<String>,
+}
+
+fn build_chunk_record_from_candidate(candidate: &KnowledgeSearchCandidate) -> KnowledgeChunkRecord {
+    KnowledgeChunkRecord {
+        id: candidate.chunk_id.clone(),
+        document_id: candidate.document_id.clone(),
+        collection_id: candidate.collection_id.clone(),
+        chunk_index: candidate.chunk_index,
+        title: candidate.title.clone(),
+        content: candidate.content.clone(),
+        chunk_type: candidate.chunk_type.clone(),
+        parent_chunk_id: candidate.parent_chunk_id.clone(),
+        asset_id: candidate.asset_id.clone(),
+        image_info: candidate.image_info.clone(),
+        embedding_json: candidate.embedding_json.clone(),
+        embedding_model_key: candidate.embedding_model_key.clone(),
+        created_at: candidate.created_at,
+    }
+}
+
+fn load_chunk_record_by_id(
+    connection: &Connection,
+    chunk_id: &str,
+) -> Result<Option<KnowledgeChunkRecord>, String> {
+    connection
+        .query_row(
+            r#"
+            SELECT id, document_id, collection_id, chunk_index, title, content, chunk_type, parent_chunk_id,
+                   asset_id, image_info, embedding_json, embedding_model_key, created_at
+            FROM knowledge_chunks
+            WHERE id = ?1
+            "#,
+            params![chunk_id],
+            |row| {
+                Ok(KnowledgeChunkRecord {
+                    id: row.get(0)?,
+                    document_id: row.get(1)?,
+                    collection_id: row.get(2)?,
+                    chunk_index: row.get(3)?,
+                    title: row.get(4)?,
+                    content: row.get(5)?,
+                    chunk_type: row.get(6)?,
+                    parent_chunk_id: row.get(7)?,
+                    asset_id: row.get(8)?,
+                    image_info: row.get(9)?,
+                    embedding_json: row.get(10)?,
+                    embedding_model_key: row.get(11)?,
+                    created_at: row.get(12)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|err| err.to_string())
+}
+
+fn load_asset_record_by_id(
+    connection: &Connection,
+    asset_id: &str,
+) -> Result<Option<KnowledgeDocumentAssetRecord>, String> {
+    connection
+        .query_row(
+            r#"
+            SELECT id, document_id, collection_id, asset_kind, source_name, stored_file_path, mime_type,
+                   file_extension, preview_type, thumbnail_data_url, ocr_text, caption_text,
+                   content_preview, page_index, asset_index, metadata_json, created_at, updated_at
+            FROM knowledge_document_assets
+            WHERE id = ?1
+            "#,
+            params![asset_id],
+            |row| {
+                Ok(KnowledgeDocumentAssetRecord {
+                    id: row.get(0)?,
+                    document_id: row.get(1)?,
+                    collection_id: row.get(2)?,
+                    asset_kind: row.get(3)?,
+                    source_name: row.get(4)?,
+                    stored_file_path: row.get(5)?,
+                    mime_type: row.get(6)?,
+                    file_extension: row.get(7)?,
+                    preview_type: row.get(8)?,
+                    thumbnail_data_url: row.get(9)?,
+                    ocr_text: row.get(10)?,
+                    caption_text: row.get(11)?,
+                    content_preview: row.get(12)?,
+                    page_index: row.get(13)?,
+                    asset_index: row.get(14)?,
+                    metadata_json: row.get(15)?,
+                    created_at: row.get(16)?,
+                    updated_at: row.get(17)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|err| err.to_string())
+}
+
+fn resolve_search_display_chunk(
+    connection: &Connection,
+    candidate: &KnowledgeSearchCandidate,
+) -> Result<
+    (
+        KnowledgeChunkRecord,
+        Option<KnowledgeChunkRecord>,
+        Option<KnowledgeDocumentAssetRecord>,
+    ),
+    String,
+> {
+    let matched_chunk = build_chunk_record_from_candidate(candidate);
+    let matched_asset = candidate
+        .asset_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|asset_id| load_asset_record_by_id(connection, asset_id))
+        .transpose()?
+        .flatten();
+
+    if matches!(
+        candidate.chunk_type.as_deref(),
+        Some("image_ocr" | "image_caption")
+    ) {
+        if let Some(parent_chunk_id) = candidate
+            .parent_chunk_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            if let Some(parent_chunk) = load_chunk_record_by_id(connection, parent_chunk_id)? {
+                return Ok((parent_chunk, Some(matched_chunk), matched_asset));
+            }
+        }
+    }
+
+    Ok((matched_chunk.clone(), Some(matched_chunk), matched_asset))
 }
 
 fn search_knowledge_chunks(
@@ -3362,6 +3551,10 @@ fn search_knowledge_chunks(
               c.chunk_index,
               c.title,
               c.content,
+              c.chunk_type,
+              c.parent_chunk_id,
+              c.asset_id,
+              c.image_info,
               c.embedding_json,
               c.embedding_model_key,
               c.created_at,
@@ -3383,7 +3576,7 @@ fn search_knowledge_chunks(
 
     let candidates = stmt
         .query_map([], |row| {
-            let tags_json: String = row.get(11)?;
+            let tags_json: String = row.get(15)?;
             Ok(KnowledgeSearchCandidate {
                 chunk_id: row.get(0)?,
                 document_id: row.get(1)?,
@@ -3391,18 +3584,22 @@ fn search_knowledge_chunks(
                 chunk_index: row.get(3)?,
                 title: row.get(4)?,
                 content: row.get(5)?,
-                embedding_json: row.get(6)?,
-                embedding_model_key: row.get(7)?,
-                created_at: row.get(8)?,
-                source_name: row.get(9)?,
-                source_path: row.get(10)?,
+                chunk_type: row.get(6)?,
+                parent_chunk_id: row.get(7)?,
+                asset_id: row.get(8)?,
+                image_info: row.get(9)?,
+                embedding_json: row.get(10)?,
+                embedding_model_key: row.get(11)?,
+                created_at: row.get(12)?,
+                source_name: row.get(13)?,
+                source_path: row.get(14)?,
                 tags: parse_tags_json(&tags_json),
-                favorite: row.get::<_, i64>(12)? != 0,
-                access_count: row.get(13)?,
-                last_accessed_at: row.get(14)?,
-                title_hierarchy: row.get(15)?,
-                collection_name: row.get(16)?,
-                retrieval_mode: row.get(17)?,
+                favorite: row.get::<_, i64>(16)? != 0,
+                access_count: row.get(17)?,
+                last_accessed_at: row.get(18)?,
+                title_hierarchy: row.get(19)?,
+                collection_name: row.get(20)?,
+                retrieval_mode: row.get(21)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -3460,32 +3657,53 @@ fn search_knowledge_chunks(
             .then_with(|| left.1.created_at.cmp(&right.1.created_at))
     });
 
-    Ok(scored
-        .into_iter()
-        .take(limit)
-        .map(|(score, candidate)| SearchKnowledgeChunkResult {
-            chunk: KnowledgeChunkRecord {
-                id: candidate.chunk_id,
-                document_id: candidate.document_id,
-                collection_id: candidate.collection_id,
-                chunk_index: candidate.chunk_index,
-                title: candidate.title,
-                content: candidate.content,
-                embedding_json: candidate.embedding_json,
-                embedding_model_key: candidate.embedding_model_key,
-                created_at: candidate.created_at,
-            },
+    let mut deduped_by_display: HashMap<String, SearchKnowledgeChunkResult> = HashMap::new();
+    for (score, candidate) in scored {
+        let (display_chunk, matched_chunk, matched_asset) =
+            resolve_search_display_chunk(connection, &candidate)?;
+        let display_chunk_id = display_chunk.id.clone();
+        let next_result = SearchKnowledgeChunkResult {
+            chunk: display_chunk.clone(),
+            matched_chunk,
+            display_chunk: Some(display_chunk.clone()),
+            matched_chunk_type: candidate.chunk_type.clone(),
+            parent_chunk_id: candidate.parent_chunk_id.clone(),
+            image_info: candidate.image_info.clone(),
+            matched_asset,
             score,
-            source_name: candidate.source_name,
-            source_path: candidate.source_path,
-            collection_name: candidate.collection_name,
-            tags: candidate.tags,
+            source_name: candidate.source_name.clone(),
+            source_path: candidate.source_path.clone(),
+            collection_name: candidate.collection_name.clone(),
+            tags: candidate.tags.clone(),
             favorite: candidate.favorite,
             access_count: candidate.access_count,
             last_accessed_at: candidate.last_accessed_at,
-            title_hierarchy: candidate.title_hierarchy,
-        })
-        .collect())
+            title_hierarchy: candidate.title_hierarchy.clone(),
+        };
+
+        match deduped_by_display.get(&display_chunk_id) {
+            Some(existing) if existing.score >= score => {}
+            _ => {
+                deduped_by_display.insert(display_chunk_id, next_result);
+            }
+        }
+    }
+
+    let mut results = deduped_by_display
+        .into_values()
+        .collect::<Vec<SearchKnowledgeChunkResult>>();
+    results.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| right.access_count.cmp(&left.access_count))
+            .then_with(|| {
+                left.chunk.created_at.cmp(&right.chunk.created_at)
+            })
+    });
+    results.truncate(limit);
+    Ok(results)
 }
 
 #[tauri::command]

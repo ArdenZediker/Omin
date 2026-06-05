@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState } from "react";
+﻿import { Component, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -76,7 +76,7 @@ type KnowledgeBaseViewProps = {
   windowControls?: ReactNode;
 };
 
-type KnowledgeDocumentDetailView = "preview" | "chunks" | "processing";
+type KnowledgeDocumentDetailView = "preview" | "assets" | "chunks" | "processing";
 type KnowledgePageMode = "empty" | "list" | "detail";
 type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "audio" | "video" | "unsupported";
 type DeadLetterScope = "all" | "activeCollection";
@@ -1284,6 +1284,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedDocumentDetail, setSelectedDocumentDetail] = useState<KnowledgeDocumentDetail | null>(null);
   const [selectedDocumentDetailView, setSelectedDocumentDetailView] = useState<KnowledgeDocumentDetailView>("preview");
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [isLoadingDocumentDetail, setIsLoadingDocumentDetail] = useState(false);
   const [documentDetailError, setDocumentDetailError] = useState<string | null>(null);
   const [globalTaskSummary, setGlobalTaskSummary] = useState<KnowledgeProcessingStatusSummary>({
@@ -1433,15 +1434,26 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
   const visibleDocumentChunks = useMemo(() => {
     const chunks = selectedDocumentDetail?.chunks ?? [];
+    const textChunks = chunks.filter((chunk) => (chunk.chunkType ?? "text") === "text");
     const normalizedQuery = normalizeSearchText(chunkSearchQuery);
     if (!normalizedQuery) {
-      return chunks;
+      return textChunks;
     }
 
-    return chunks.filter((chunk) =>
+    return textChunks.filter((chunk) =>
       normalizeSearchText([`第 ${chunk.chunkIndex + 1} 片`, chunk.title ?? "", chunk.content].join(" ")).includes(normalizedQuery)
     );
   }, [chunkSearchQuery, selectedDocumentDetail?.chunks]);
+
+  const selectedAsset = useMemo(
+    () => selectedDocumentDetail?.assets.find((asset) => asset.id === selectedAssetId) ?? null,
+    [selectedAssetId, selectedDocumentDetail?.assets]
+  );
+
+  const textOnlyDocumentChunkCount = useMemo(
+    () => selectedDocumentDetail?.chunks.filter((chunk) => (chunk.chunkType ?? "text") === "text").length ?? 0,
+    [selectedDocumentDetail?.chunks]
+  );
 
   const listThumbnailDataUrlById = useMemo(() => {
     const map = new Map<string, string | undefined>();
@@ -1490,6 +1502,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     if (!selectedDocumentId) {
       setSelectedDocumentDetail(null);
       setDocumentDetailError(null);
+      setSelectedAssetId(null);
       return;
     }
 
@@ -1519,6 +1532,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
       cancelled = true;
     };
   }, [selectedDocumentId]);
+
+  useEffect(() => {
+    const firstAssetId = selectedDocumentDetail?.assets[0]?.id ?? null;
+    setSelectedAssetId(firstAssetId);
+  }, [selectedDocumentDetail?.document.id, selectedDocumentDetail?.assets]);
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
@@ -2330,6 +2348,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setSelectedDocumentDetail(null);
     setDocumentDetailError(null);
     setSelectedDocumentDetailView("preview");
+    setSelectedAssetId(null);
     setSelectedDocumentId(documentId);
   }
 
@@ -2342,6 +2361,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
     setSelectedDocumentDetail(null);
     setDocumentDetailError(null);
     setSelectedDocumentDetailView("preview");
+    setSelectedAssetId(null);
   }
 
   async function openSelectedDocumentExternal() {
@@ -2835,6 +2855,17 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </button>
                     <button
                       type="button"
+                      onClick={() => setSelectedDocumentDetailView("assets")}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
+                        selectedDocumentDetailView === "assets" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                      }`}
+                      title="Assets"
+                      aria-pressed={selectedDocumentDetailView === "assets"}
+                    >
+                      <LucideFileImage size={15} strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setSelectedDocumentDetailView("chunks")}
                       className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
                         selectedDocumentDetailView === "chunks" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
@@ -3119,6 +3150,93 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                           <div className="flex min-h-0 flex-1">
                             <DocumentPreviewArea key={selectedDocumentId} document={selectedDocument} onOpenExternal={openSelectedDocumentExternal} />
                           </div>
+                        ) : selectedDocumentDetailView === "assets" ? (
+                          <section className="omni-knowledge-assets-view flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-slate-950">Assets</div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {selectedDocumentDetail.assets.length > 0
+                                    ? `${selectedDocumentDetail.assets.length} extracted image assets`
+                                    : "No embedded images were extracted from this document."}
+                                </div>
+                              </div>
+                            </div>
+
+                            {selectedDocumentDetail.assets.length === 0 ? (
+                              <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                                No embedded image assets yet.
+                              </div>
+                            ) : (
+                              <div className="omni-knowledge-assets-layout min-h-0 flex-1">
+                                <div className="omni-knowledge-assets-list">
+                                  {selectedDocumentDetail.assets.map((asset) => (
+                                    <button
+                                      key={asset.id}
+                                      type="button"
+                                      onClick={() => setSelectedAssetId(asset.id)}
+                                      className={`omni-knowledge-asset-card ${asset.id === selectedAssetId ? "omni-knowledge-asset-card--active" : ""}`}
+                                    >
+                                      <div className="omni-knowledge-asset-card__thumb">
+                                        {asset.thumbnailDataUrl ? (
+                                          <img src={asset.thumbnailDataUrl} alt={asset.sourceName} className="h-full w-full object-cover" />
+                                        ) : (
+                                          <div className="flex h-full w-full items-center justify-center bg-slate-100 text-xs font-medium text-slate-500">
+                                            IMG
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="mt-3 text-sm font-medium text-slate-900">{asset.sourceName}</div>
+                                      <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{asset.contentPreview}</div>
+                                    </button>
+                                  ))}
+                                </div>
+
+                                <div className="omni-knowledge-assets-detail">
+                                  {selectedAsset ? (
+                                    <div className="flex min-h-0 flex-1 flex-col">
+                                      <div className="omni-knowledge-assets-detail__preview">
+                                        {selectedAsset.thumbnailDataUrl ? (
+                                          <img src={selectedAsset.thumbnailDataUrl} alt={selectedAsset.sourceName} className="max-h-[22rem] w-full object-contain" />
+                                        ) : (
+                                          <div className="flex h-56 items-center justify-center rounded-none border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
+                                            Preview unavailable
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="mt-4 flex items-center justify-between gap-3">
+                                        <div>
+                                          <div className="text-sm font-semibold text-slate-950">{selectedAsset.sourceName}</div>
+                                          <div className="mt-1 text-xs text-slate-500">
+                                            Asset #{selectedAsset.assetIndex + 1}
+                                            {typeof selectedAsset.pageIndex === "number" ? ` · Page ${selectedAsset.pageIndex + 1}` : ""}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                                        <div className="rounded-none border border-slate-200 bg-slate-50 p-4">
+                                          <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">OCR</div>
+                                          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                            {selectedAsset.ocrText?.trim() ? selectedAsset.ocrText : "No OCR text"}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-none border border-slate-200 bg-slate-50 p-4">
+                                          <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Caption</div>
+                                          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                            {selectedAsset.captionText?.trim() ? selectedAsset.captionText : "No caption summary"}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-slate-500">
+                                      Select an asset to inspect it.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </section>
                         ) : selectedDocumentDetailView === "processing" ? (
                           <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
                             <div className="mb-4 flex items-center justify-between gap-3">
@@ -3193,7 +3311,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                               <div className="min-w-0">
                                 <div className="text-sm font-semibold text-slate-950">分片</div>
                                 <div className="mt-1 text-xs text-slate-500">
-                                  共 {selectedDocumentDetail.chunks.length} 个分片{chunkSearchQuery ? ` · 命中 ${visibleDocumentChunks.length} 个` : ""}
+                                  共 {textOnlyDocumentChunkCount} 个分片{chunkSearchQuery ? ` · 命中 ${visibleDocumentChunks.length} 个` : ""}
                                 </div>
                               </div>
                               <div className="flex h-8 w-full max-w-xs items-center gap-2 rounded-none border border-slate-200 bg-white px-2.5">
@@ -3247,7 +3365,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                                 </div>
                               ))}
 
-                              {selectedDocumentDetail.chunks.length === 0 ? (
+                              {textOnlyDocumentChunkCount === 0 ? (
                                 <div className="rounded-none border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
                                   当前文档还没有分片
                                 </div>
