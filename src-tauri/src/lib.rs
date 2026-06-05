@@ -1673,7 +1673,7 @@ const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
 const KNOWLEDGE_EMBEDDING_CONFIG_KEY: &str = "omni_knowledge_embedding_profile";
 const KNOWLEDGE_MULTIMODAL_CONFIG_KEY: &str = "omni_knowledge_multimodal_profile";
 const DEFAULT_BASE_URL_FALLBACK: &str = "https://api.openai.com/v1";
-const EMBEDDING_BATCH_SIZE: usize = 24;
+const EMBEDDING_BATCH_SIZE: usize = 8;
 
 fn provider_supports_embeddings(provider: &str) -> bool {
     OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS.contains(&provider)
@@ -2312,6 +2312,231 @@ fn load_legacy_knowledge_embedding_config(
     )))
 }
 
+#[derive(Deserialize)]
+struct EmbeddingApiItem {
+    embedding: Vec<f64>,
+    index: usize,
+}
+
+#[derive(Deserialize)]
+struct EmbeddingApiResponse {
+    data: Vec<EmbeddingApiItem>,
+}
+
+fn request_embedding_batch(
+    client: &BlockingHttpClient,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    input: &[&str],
+) -> Result<Vec<Option<String>>, String> {
+    let request_body = serde_json::json!({
+        "model": model,
+        "input": input,
+    });
+
+    let response = client
+        .post(format!("{}/embeddings", base_url.trim_end_matches('/')))
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&request_body)
+        .send()
+        .map_err(|err| err.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(response.text().unwrap_or_default());
+    }
+
+    let payload: EmbeddingApiResponse = response.json().map_err(|err| err.to_string())?;
+    let mut embeddings = vec![None; input.len()];
+    for item in payload.data {
+        if item.index >= embeddings.len() {
+            continue;
+        }
+        embeddings[item.index] = serde_json::to_string(&item.embedding).ok();
+    }
+
+    Ok(embeddings)
+}
+
+fn collect_missing_embedding_spans(embeddings: &[Option<String>]) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut span_start = None;
+
+    for (index, value) in embeddings.iter().enumerate() {
+        if value.is_none() {
+            if span_start.is_none() {
+                span_start = Some(index);
+            }
+            continue;
+        }
+
+        if let Some(start) = span_start.take() {
+            spans.push((start, index));
+        }
+    }
+
+    if let Some(start) = span_start {
+        spans.push((start, embeddings.len()));
+    }
+
+    spans
+}
+
+fn recover_embedding_batch<F>(
+    batch: &[knowledge_chunker::ChunkSlice],
+    provider: &str,
+    request_embeddings: &mut F,
+) -> Vec<Option<String>>
+where
+    F: FnMut(&[knowledge_chunker::ChunkSlice]) -> Result<Vec<Option<String>>, String>,
+{
+    if batch.is_empty() {
+        return Vec::new();
+    }
+
+    let requested = batch.len();
+    let response = request_embeddings(batch);
+    match response {
+        Ok(mut embeddings) => {
+            if embeddings.len() < requested {
+                embeddings.resize(requested, None);
+            } else if embeddings.len() > requested {
+                embeddings.truncate(requested);
+            }
+
+            let missing_spans = collect_missing_embedding_spans(&embeddings);
+            if missing_spans.is_empty() {
+                return embeddings;
+            }
+
+            let missing_count = missing_spans.iter().map(|(start, end)| end - start).sum::<usize>();
+            eprintln!(
+                "Knowledge embedding batch returned partial data ({provider}) requested={requested} recovered={} missing={missing_count}",
+                requested.saturating_sub(missing_count)
+            );
+
+            if requested == 1 {
+                return embeddings;
+            }
+
+            if missing_spans.len() == 1 && missing_spans[0] == (0, requested) {
+                let split = requested / 2;
+                let mut left = recover_embedding_batch(&batch[..split], provider, request_embeddings);
+                let right = recover_embedding_batch(&batch[split..], provider, request_embeddings);
+                left.extend(right);
+                return left;
+            }
+
+            for (start, end) in missing_spans {
+                let recovered =
+                    recover_embedding_batch(&batch[start..end], provider, request_embeddings);
+                for (offset, embedding) in recovered.into_iter().enumerate() {
+                    if embedding.is_some() {
+                        embeddings[start + offset] = embedding;
+                    }
+                }
+            }
+
+            embeddings
+        }
+        Err(err) => {
+            eprintln!(
+                "Knowledge embedding batch request failed ({provider}) requested={requested}: {err}"
+            );
+            if requested == 1 {
+                return vec![None];
+            }
+
+            let split = requested / 2;
+            let mut left = recover_embedding_batch(&batch[..split], provider, request_embeddings);
+            let right = recover_embedding_batch(&batch[split..], provider, request_embeddings);
+            left.extend(right);
+            left
+        }
+    }
+}
+
+fn generate_chunk_embeddings_resilient(
+    active_model: &KnowledgeEmbeddingModelConfigRecord,
+    provider: &str,
+    base_url: &str,
+    api_key: &str,
+    chunks: &[knowledge_chunker::ChunkSlice],
+) -> Result<Vec<Option<String>>, String> {
+    let client = BlockingHttpClient::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|err| format!("知识库 embedding 客户端创建失败 ({provider}): {err}"))?;
+
+    let mut embeddings = vec![None; chunks.len()];
+    for (batch_index, batch) in chunks.chunks(EMBEDDING_BATCH_SIZE).enumerate() {
+        let batch_start = batch_index * EMBEDDING_BATCH_SIZE;
+        let mut request_embeddings =
+            |items: &[knowledge_chunker::ChunkSlice]| -> Result<Vec<Option<String>>, String> {
+                let input: Vec<&str> = items.iter().map(|chunk| chunk.content.as_str()).collect();
+                request_embedding_batch(&client, base_url, api_key, &active_model.model, &input)
+            };
+        let recovered = recover_embedding_batch(batch, provider, &mut request_embeddings);
+
+        for (offset, embedding) in recovered.into_iter().enumerate() {
+            let target = batch_start + offset;
+            if target >= embeddings.len() {
+                break;
+            }
+            embeddings[target] = embedding;
+        }
+    }
+
+    Ok(embeddings)
+}
+
+pub(crate) fn generate_chunk_embeddings_safe(
+    connection: &Connection,
+    chunks: &[knowledge_chunker::ChunkSlice],
+) -> (Vec<Option<String>>, Option<String>) {
+    if chunks.is_empty() {
+        return (Vec::new(), None);
+    }
+
+    let Some((_, active_model)) = load_knowledge_embedding_active_model(connection)
+        .ok()
+        .flatten()
+    else {
+        return (vec![None; chunks.len()], None);
+    };
+
+    let provider = active_model.provider.clone();
+    let base_url = active_model.base_url.trim();
+    let api_key = active_model.api_key.trim();
+    if base_url.is_empty() || api_key.is_empty() {
+        return (vec![None; chunks.len()], None);
+    }
+
+    let embeddings = match generate_chunk_embeddings_resilient(
+        &active_model,
+        &provider,
+        base_url,
+        api_key,
+        chunks,
+    ) {
+        Ok(embeddings) => embeddings,
+        Err(err) => {
+            eprintln!("{err}");
+            vec![None; chunks.len()]
+        }
+    };
+
+    let model_key = format!(
+        "{}:{}:{}",
+        active_model.provider,
+        active_model.model,
+        fingerprint_text(active_model.api_key.trim())
+    );
+    (embeddings, Some(model_key))
+}
+
+#[allow(dead_code)]
 pub(crate) fn generate_chunk_embeddings(
     connection: &Connection,
     chunks: &[knowledge_chunker::ChunkSlice],
@@ -2417,6 +2642,72 @@ pub(crate) fn generate_chunk_embeddings(
         fingerprint_text(active_model.api_key.trim())
     );
     (embeddings, Some(model_key))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chunk(content: &str) -> knowledge_chunker::ChunkSlice {
+        knowledge_chunker::ChunkSlice {
+            content: content.to_string(),
+            title: None,
+        }
+    }
+
+    #[test]
+    fn recover_embedding_batch_recovers_partial_responses() {
+        let chunks = vec![
+            chunk("chunk-0"),
+            chunk("chunk-1"),
+            chunk("chunk-2"),
+            chunk("chunk-3"),
+            chunk("chunk-4"),
+        ];
+        let mut request_embeddings =
+            |items: &[knowledge_chunker::ChunkSlice]| -> Result<Vec<Option<String>>, String> {
+                let mut values = vec![None; items.len()];
+                if let Some(first) = items.first() {
+                    values[0] = Some(format!("embed:{}", first.content));
+                }
+                Ok(values)
+            };
+
+        let recovered = recover_embedding_batch(&chunks, "test", &mut request_embeddings);
+
+        assert_eq!(recovered.len(), chunks.len());
+        for (index, embedding) in recovered.iter().enumerate() {
+            assert_eq!(
+                embedding.as_deref(),
+                Some(format!("embed:chunk-{index}").as_str())
+            );
+        }
+    }
+
+    #[test]
+    fn recover_embedding_batch_recovers_failed_batches() {
+        let chunks = vec![chunk("chunk-a"), chunk("chunk-b"), chunk("chunk-c"), chunk("chunk-d")];
+        let mut request_embeddings =
+            |items: &[knowledge_chunker::ChunkSlice]| -> Result<Vec<Option<String>>, String> {
+                if items.len() > 1 {
+                    return Err("batch too large".into());
+                }
+                Ok(vec![Some(format!("embed:{}", items[0].content))])
+            };
+
+        let recovered = recover_embedding_batch(&chunks, "test", &mut request_embeddings);
+
+        assert_eq!(recovered.len(), chunks.len());
+        assert_eq!(
+            recovered,
+            vec![
+                Some("embed:chunk-a".to_string()),
+                Some("embed:chunk-b".to_string()),
+                Some("embed:chunk-c".to_string()),
+                Some("embed:chunk-d".to_string())
+            ]
+        );
+    }
 }
 
 trait EmptyFallback {
@@ -3054,7 +3345,8 @@ fn import_knowledge_document(
         )
     };
     let chunk_count = chunks.len() as i64;
-    let (chunk_embeddings, embedding_model_key) = generate_chunk_embeddings(connection, &chunks);
+    let (chunk_embeddings, embedding_model_key) =
+        generate_chunk_embeddings_safe(connection, &chunks);
     let vectorized_chunk_count = count_vectorized_chunks(&chunk_embeddings);
     let content_preview = if content.trim().is_empty() {
         preview_text(source_name, 240)
@@ -3218,7 +3510,8 @@ fn rebuild_document_embeddings(
         })
         .collect::<Vec<_>>();
 
-    let (embeddings, embedding_model_key) = generate_chunk_embeddings(connection, &chunk_slices);
+    let (embeddings, embedding_model_key) =
+        generate_chunk_embeddings_safe(connection, &chunk_slices);
     let vectorized_chunk_count = count_vectorized_chunks(&embeddings);
     let now = current_timestamp_ms();
 
