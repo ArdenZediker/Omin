@@ -260,12 +260,53 @@ body:has(.pet-thought-window),
   padding-top: 2px;
 }
 
+.omni-knowledge-assets-view {
+  gap: 18px;
+  border-radius: 24px;
+  border: 1px solid rgb(226 232 240);
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.96), rgba(241, 245, 249, 0.96));
+  padding: 18px;
+}
+
+.omni-knowledge-assets-view__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.omni-knowledge-assets-view__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: rgb(15 23 42);
+}
+
+.omni-knowledge-assets-view__subtitle {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgb(100 116 139);
+}
+
+.omni-knowledge-assets-view__count {
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid rgb(203 213 225);
+  background: rgba(255, 255, 255, 0.85);
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(71 85 105);
+}
+
 .omni-knowledge-assets-layout {
   min-height: 0;
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(17.5rem, 19.5rem) minmax(0, 1fr);
+  gap: 18px;
 }
 
 .omni-knowledge-assets-list {
@@ -278,54 +319,213 @@ body:has(.pet-thought-window),
 }
 
 .omni-knowledge-asset-card {
-  border: 1px solid rgb(226 232 240);
-  background: #fff;
-  padding: 12px;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border-radius: 20px;
+  border: 1px solid rgb(219 228 239);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 10px;
   text-align: left;
-  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
 }
 
 .omni-knowledge-asset-card:hover {
-  background: rgb(248 250 252);
+  background: rgb(255 255 255);
+  border-color: rgb(191 219 254);
+  transform: translateY(-1px);
 }
 
 .omni-knowledge-asset-card--active {
-  border-color: rgb(15 23 42);
-  box-shadow: inset 0 0 0 1px rgb(15 23 42);
+  border-color: rgba(37, 99, 235, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(37, 99, 235, 0.24),
+    0 10px 24px rgba(37, 99, 235, 0.08);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.98));
 }
 
 .omni-knowledge-asset-card__thumb {
-  height: 96px;
+  height: 76px;
   overflow: hidden;
+  border-radius: 14px;
   background: rgb(241 245 249);
+}
+
+.omni-knowledge-asset-card__thumb-empty {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: rgb(100 116 139);
+  font-size: 11px;
+}
+
+.omni-knowledge-asset-card__body {
+  min-width: 0;
+}
+
+.omni-knowledge-asset-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(15 23 42);
+}
+
+.omni-knowledge-asset-card__meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgb(100 116 139);
+}
+
+.omni-knowledge-asset-card__preview {
+  margin-top: 8px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgb(71 85 105);
 }
 
 .omni-knowledge-assets-detail {
   min-height: 0;
   overflow-y: auto;
-  border: 1px solid rgb(226 232 240);
-  background: #fff;
+  border-radius: 24px;
+  border: 1px solid rgb(219 228 239);
+  background: rgba(255, 255, 255, 0.95);
   padding: 16px;
 }
 
+.omni-knowledge-assets-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.omni-knowledge-assets-workspace__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: rgb(15 23 42);
+}
+
+.omni-knowledge-assets-workspace__subtitle {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgb(100 116 139);
+}
+
 .omni-knowledge-assets-detail__preview {
-  min-height: 224px;
+  min-height: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    linear-gradient(135deg, rgba(148, 163, 184, 0.08), rgba(15, 23, 42, 0.03)),
-    #fff;
+  border-radius: 24px;
   border: 1px solid rgb(226 232 240);
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 245, 249, 0.94));
+  padding: 20px;
 }
 
-@media (max-width: 960px) {
-  .omni-knowledge-assets-layout {
+.omni-knowledge-assets-detail__preview-empty,
+.omni-knowledge-assets-detail__empty {
+  display: flex;
+  min-height: 160px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: rgb(100 116 139);
+  font-size: 13px;
+  text-align: center;
+}
+
+.omni-knowledge-assets-meta-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr;
+  gap: 12px;
+}
+
+.omni-knowledge-assets-meta-card,
+.omni-knowledge-assets-reading-card {
+  border-radius: 18px;
+  border: 1px solid rgb(226 232 240);
+  background: rgb(248 250 252);
+  padding: 14px 16px;
+}
+
+.omni-knowledge-assets-meta-card__label {
+  font-size: 11px;
+  color: rgb(100 116 139);
+}
+
+.omni-knowledge-assets-meta-card__value {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(15 23 42);
+}
+
+.omni-knowledge-assets-reading-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.omni-knowledge-assets-reading-card__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgb(37 99 235);
+}
+
+.omni-knowledge-assets-reading-card__content {
+  margin-top: 10px;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.75;
+  color: rgb(51 65 85);
+}
+
+@media (max-width: 1100px) {
+  .omni-knowledge-assets-layout,
+  .omni-knowledge-assets-reading-grid,
+  .omni-knowledge-assets-meta-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .omni-knowledge-assets-list {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .omni-knowledge-assets-view {
+    padding: 14px;
+  }
+
+  .omni-knowledge-assets-view__header {
+    flex-direction: column;
+  }
+
+  .omni-knowledge-assets-list {
+    padding-right: 0;
+  }
+
+  .omni-knowledge-asset-card {
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+
+  .omni-knowledge-assets-detail__preview {
+    min-height: 260px;
+    padding: 16px;
   }
 }
 
