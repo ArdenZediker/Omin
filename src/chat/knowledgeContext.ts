@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Message } from "../adapters/types";
 import { embedKnowledgeText } from "./knowledgeEmbedding";
-import type { KnowledgeContextResult, KnowledgeContextSource, SearchKnowledgeChunkResult } from "./knowledgeTypes";
+import type {
+  KnowledgeChunkImageInfo,
+  KnowledgeContextResult,
+  KnowledgeContextSource,
+  SearchKnowledgeChunkResult,
+} from "./knowledgeTypes";
 
 function canUseTauriInvoke() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -21,6 +26,61 @@ function clipText(text: string, maxChars: number) {
     return normalized;
   }
   return `${normalized.slice(0, Math.max(0, maxChars - 3))}...`;
+}
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function parseKnowledgeChunkImageInfo(value: KnowledgeChunkImageInfo | string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(value) as KnowledgeChunkImageInfo;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildImageInfoBlock(result: SearchKnowledgeChunkResult) {
+  const info = parseKnowledgeChunkImageInfo(result.imageInfo);
+  if (!info) {
+    return "";
+  }
+
+  const attributes = [`asset_id="${escapeXml(info.assetId)}"`, `source_name="${escapeXml(info.sourceName)}"`];
+  if (typeof info.pageIndex === "number") {
+    attributes.push(`page="${info.pageIndex + 1}"`);
+  }
+
+  const lines = [
+    "<image_match>",
+    `<match_type>${escapeXml(result.matchedChunkType ?? "text")}</match_type>`,
+    `<image ${attributes.join(" ")}>`,
+  ];
+
+  if (info.originalMarkdown) {
+    lines.push(`<image_original>${escapeXml(info.originalMarkdown)}</image_original>`);
+  }
+  if (info.captionText) {
+    lines.push(`<image_caption>${escapeXml(info.captionText)}</image_caption>`);
+  }
+  if (info.ocrText) {
+    lines.push(`<image_ocr>${escapeXml(info.ocrText)}</image_ocr>`);
+  }
+  lines.push("</image>");
+  lines.push("</image_match>");
+  return `\n${lines.join("\n")}`;
 }
 
 function buildKnowledgeBlock(query: string, sources: KnowledgeContextSource[]) {
@@ -138,22 +198,28 @@ export async function buildKnowledgeContextBlock(options: {
 
   const sources = results
     .slice(0, limit)
-    .map((item) => ({
-      chunkId: item.chunk.id,
+    .map((item) => {
+      const displayChunk = item.displayChunk ?? item.chunk;
+      const imageBlock = buildImageInfoBlock(item);
+      return {
+      chunkId: displayChunk.id,
       documentId: item.chunk.documentId,
       sourceName: item.sourceName,
       sourcePath: item.sourcePath ?? null,
       collectionName: item.collectionName,
-      chunkTitle: item.chunk.title ?? null,
-      chunkIndex: item.chunk.chunkIndex,
+      chunkTitle: displayChunk.title ?? null,
+      chunkIndex: displayChunk.chunkIndex,
       score: item.score,
-      excerpt: clipText(item.chunk.content, 420),
+      excerpt: clipText(`${displayChunk.content}${imageBlock}`, 420),
       tags: item.tags ?? [],
       favorite: item.favorite,
       accessCount: item.accessCount,
       lastAccessedAt: item.lastAccessedAt ?? null,
       titleHierarchy: item.titleHierarchy ?? null,
-    }))
+      matchedChunkType: item.matchedChunkType ?? null,
+      imageInfo: item.imageInfo ?? null,
+    };
+    })
     .filter((item) => item.excerpt.length > 0);
 
   if (sources.length === 0) {

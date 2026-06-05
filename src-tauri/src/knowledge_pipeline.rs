@@ -318,6 +318,8 @@ struct ParsedDocument {
 struct EnrichmentOutput {
     content: Option<String>,
     warning: Option<String>,
+    ocr_text: Option<String>,
+    summary: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -337,6 +339,38 @@ struct PipelineDocumentSource {
     file_extension: Option<String>,
     preview_type: Option<String>,
     content: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PersistedEmbeddedImageAsset {
+    asset_id: String,
+    source_name: String,
+    stored_file_path: String,
+    mime_type: Option<String>,
+    file_extension: Option<String>,
+    page_index: Option<i64>,
+    asset_index: i64,
+    anchor_text: Option<String>,
+    ocr_text: Option<String>,
+    caption_text: Option<String>,
+    thumbnail_data_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct EmbeddedImageChildChunkCandidate {
+    title: Option<String>,
+    content: String,
+    chunk_type: String,
+    parent_chunk_index: usize,
+    asset_id: String,
+    image_info: String,
+}
+
+#[derive(Debug, Clone)]
+struct EmbeddedImageBuildOutput {
+    text_chunks: Vec<crate::knowledge_chunker::ChunkSlice>,
+    assets: Vec<crate::KnowledgeDocumentAssetRecord>,
+    child_chunks: Vec<EmbeddedImageChildChunkCandidate>,
 }
 
 fn table_has_column(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
@@ -1278,6 +1312,8 @@ fn enrich_image_document(
             summary.as_deref(),
         )),
         warning: None,
+        ocr_text,
+        summary,
     })
 }
 
@@ -1359,6 +1395,8 @@ fn enrich_audio_document(
             config.audio.keep_transcript,
         )),
         warning,
+        ocr_text: None,
+        summary: None,
     })
 }
 
@@ -3171,30 +3209,370 @@ fn split_parsed_document_into_chunks(
     )
 }
 
+fn normalize_attachment_text(value: &str) -> String {
+    value
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn resolve_embedded_asset_parent_chunk_index(
+    text_chunks: &[crate::knowledge_chunker::ChunkSlice],
+    anchor_text: Option<&str>,
+    asset_index: i64,
+    page_index: Option<i64>,
+) -> usize {
+    if text_chunks.is_empty() {
+        return 0;
+    }
+
+    if let Some(anchor_text) = anchor_text
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let anchor_key = normalize_attachment_text(anchor_text);
+        if let Some(index) = text_chunks.iter().position(|chunk| {
+            let mut haystack = chunk.content.clone();
+            if let Some(title) = chunk.title.as_deref() {
+                haystack.push('\n');
+                haystack.push_str(title);
+            }
+            normalize_attachment_text(&haystack).contains(&anchor_key)
+        }) {
+            return index;
+        }
+    }
+
+    let order_hint = page_index
+        .map(|value| value.max(0) as usize)
+        .unwrap_or_else(|| asset_index.max(0) as usize);
+    order_hint.min(text_chunks.len().saturating_sub(1))
+}
+
+fn format_embedded_image_chunk_content(
+    label: &str,
+    source_name: &str,
+    page_index: Option<i64>,
+    body_label: &str,
+    body_text: &str,
+) -> String {
+    let mut lines = vec![label.to_string(), format!("Source: {source_name}")];
+    if let Some(page_index) = page_index {
+        lines.push(format!("Page: {}", page_index + 1));
+    }
+    lines.push(format!("{body_label}:"));
+    lines.push(body_text.trim().to_string());
+    lines.join("\n")
+}
+
+fn embedded_asset_file_name(
+    asset_id: &str,
+    asset_index: i64,
+    source_name: &str,
+) -> String {
+    let base = sanitize_storage_file_name(source_name);
+    let short_id = asset_id.chars().take(8).collect::<String>();
+    if base == "document" {
+        format!("{:03}-{short_id}.bin", asset_index.max(0))
+    } else {
+        format!("{:03}-{short_id}-{base}", asset_index.max(0))
+    }
+}
+
+fn store_embedded_image_asset_bytes(
+    app: &tauri::AppHandle,
+    collection_id: &str,
+    document_id: &str,
+    asset_id: &str,
+    asset_index: i64,
+    source_name: &str,
+    bytes: &[u8],
+) -> Result<String, String> {
+    let collection_dir = sanitize_storage_file_name(collection_id);
+    let document_dir = sanitize_storage_file_name(document_id);
+    let file_name = embedded_asset_file_name(asset_id, asset_index, source_name);
+    let stored_path = knowledge_files_root(app)?
+        .join(collection_dir)
+        .join(document_dir)
+        .join("assets")
+        .join(file_name);
+    if let Some(parent) = stored_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(&stored_path, bytes).map_err(|err| err.to_string())?;
+    Ok(stored_path.to_string_lossy().to_string())
+}
+
+fn cleanup_stored_embedded_asset_files(paths: &[String]) {
+    for path in paths {
+        let stored_path = Path::new(path);
+        if stored_path.is_file() {
+            let _ = fs::remove_file(stored_path);
+        }
+        if let Some(parent) = stored_path.parent() {
+            let _ = fs::remove_dir(parent);
+        }
+    }
+}
+
+fn persist_embedded_image_candidates(
+    app: &tauri::AppHandle,
+    collection_id: &str,
+    document_id: &str,
+    assets: &[crate::knowledge_embedded_images::EmbeddedImageAssetCandidate],
+) -> (Vec<PersistedEmbeddedImageAsset>, Vec<String>) {
+    let mut persisted = Vec::new();
+    let mut warnings = Vec::new();
+
+    for asset in assets {
+        let asset_id = uuid::Uuid::new_v4().to_string();
+        match store_embedded_image_asset_bytes(
+            app,
+            collection_id,
+            document_id,
+            &asset_id,
+            asset.asset_index,
+            &asset.source_name,
+            &asset.bytes,
+        ) {
+            Ok(stored_file_path) => persisted.push(PersistedEmbeddedImageAsset {
+                asset_id,
+                source_name: asset.source_name.clone(),
+                stored_file_path,
+                mime_type: asset.mime_type.clone(),
+                file_extension: asset.file_extension.clone(),
+                page_index: asset.page_index,
+                asset_index: asset.asset_index,
+                anchor_text: asset.anchor_text.clone(),
+                ocr_text: asset.ocr_text.clone(),
+                caption_text: asset.caption_text.clone(),
+                thumbnail_data_url: asset.thumbnail_data_url.clone(),
+            }),
+            Err(err) => warnings.push(format!(
+                "failed to store embedded image {}: {err}",
+                asset.source_name
+            )),
+        }
+    }
+
+    (persisted, warnings)
+}
+
+fn build_embedded_image_assets_and_chunks(
+    text_chunks: &[crate::knowledge_chunker::ChunkSlice],
+    assets: &[PersistedEmbeddedImageAsset],
+    document_id: &str,
+    collection_id: &str,
+    now: i64,
+) -> EmbeddedImageBuildOutput {
+    let mut prepared_text_chunks = text_chunks.to_vec();
+    if prepared_text_chunks.is_empty()
+        && assets.iter().any(|asset| {
+            asset
+                .ocr_text
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+                || asset
+                    .caption_text
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_some()
+        })
+    {
+        let fallback_name = assets
+            .first()
+            .map(|asset| asset.source_name.clone())
+            .unwrap_or_else(|| "embedded-image".to_string());
+        prepared_text_chunks.push(crate::knowledge_chunker::ChunkSlice {
+            title: Some(fallback_name.clone()),
+            content: format!("Embedded image: {fallback_name}"),
+        });
+    }
+
+    let mut asset_rows = Vec::new();
+    let mut child_chunks = Vec::new();
+    for asset in assets {
+        let parent_chunk_index = resolve_embedded_asset_parent_chunk_index(
+            &prepared_text_chunks,
+            asset.anchor_text.as_deref(),
+            asset.asset_index,
+            asset.page_index,
+        );
+        let image_info = serde_json::to_string(&crate::KnowledgeChunkImageInfoRecord {
+            asset_id: asset.asset_id.clone(),
+            source_name: asset.source_name.clone(),
+            page_index: asset.page_index,
+            asset_index: asset.asset_index,
+            original_markdown: Some(format!(
+                "![{}](embedded://asset/{})",
+                asset.source_name, asset.asset_id
+            )),
+            thumbnail_data_url: asset.thumbnail_data_url.clone(),
+            ocr_text: asset.ocr_text.clone(),
+            caption_text: asset.caption_text.clone(),
+        })
+        .unwrap_or_else(|_| "{}".to_string());
+
+        let content_preview_seed = asset
+            .caption_text
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                asset
+                    .ocr_text
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .unwrap_or(asset.source_name.as_str());
+        asset_rows.push(crate::KnowledgeDocumentAssetRecord {
+            id: asset.asset_id.clone(),
+            document_id: document_id.to_string(),
+            collection_id: collection_id.to_string(),
+            asset_kind: "embedded_image".to_string(),
+            source_name: asset.source_name.clone(),
+            stored_file_path: asset.stored_file_path.clone(),
+            mime_type: asset.mime_type.clone(),
+            file_extension: asset.file_extension.clone(),
+            preview_type: "image".to_string(),
+            thumbnail_data_url: asset.thumbnail_data_url.clone(),
+            ocr_text: asset.ocr_text.clone(),
+            caption_text: asset.caption_text.clone(),
+            content_preview: preview_text(content_preview_seed, 160),
+            page_index: asset.page_index,
+            asset_index: asset.asset_index,
+            metadata_json: None,
+            created_at: now,
+            updated_at: now,
+        });
+
+        if let Some(ocr_text) = normalize_optional_text(asset.ocr_text.as_deref()) {
+            child_chunks.push(EmbeddedImageChildChunkCandidate {
+                title: Some(format!("Embedded image {} OCR", asset.asset_index + 1)),
+                content: format_embedded_image_chunk_content(
+                    "Image OCR",
+                    &asset.source_name,
+                    asset.page_index,
+                    "Text",
+                    &ocr_text,
+                ),
+                chunk_type: "image_ocr".to_string(),
+                parent_chunk_index,
+                asset_id: asset.asset_id.clone(),
+                image_info: image_info.clone(),
+            });
+        }
+
+        if let Some(caption_text) = normalize_optional_text(asset.caption_text.as_deref()) {
+            child_chunks.push(EmbeddedImageChildChunkCandidate {
+                title: Some(format!("Embedded image {} Caption", asset.asset_index + 1)),
+                content: format_embedded_image_chunk_content(
+                    "Image Caption",
+                    &asset.source_name,
+                    asset.page_index,
+                    "Summary",
+                    &caption_text,
+                ),
+                chunk_type: "image_caption".to_string(),
+                parent_chunk_index,
+                asset_id: asset.asset_id.clone(),
+                image_info,
+            });
+        }
+    }
+
+    EmbeddedImageBuildOutput {
+        text_chunks: prepared_text_chunks,
+        assets: asset_rows,
+        child_chunks,
+    }
+}
+
 fn complete_partial_job(
+    app: &tauri::AppHandle,
     connection: &Connection,
     job: &PipelineJobClaim,
     source_name: &str,
     file_extension: Option<&str>,
     parsed: ParsedDocument,
     processing_warnings: Vec<String>,
+    embedded_assets: Vec<crate::knowledge_embedded_images::EmbeddedImageAssetCandidate>,
 ) -> Result<(), String> {
     start_step(connection, job, "chunk", 45)?;
-    let chunks = split_parsed_document_into_chunks(&parsed, source_name, file_extension);
+    let text_chunks = split_parsed_document_into_chunks(&parsed, source_name, file_extension);
     finish_step(connection, job, "chunk", STEP_STATUS_SUCCEEDED, 100, None)?;
     if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
         return Ok(());
     }
 
+    let now = current_timestamp_ms();
+    let (persisted_assets, asset_storage_warnings) =
+        persist_embedded_image_candidates(app, &job.collection_id, &job.document_id, &embedded_assets);
+    let embedded = build_embedded_image_assets_and_chunks(
+        &text_chunks,
+        &persisted_assets,
+        &job.document_id,
+        &job.collection_id,
+        now,
+    );
+
+    let mut prepared_chunks = Vec::new();
+    let mut chunk_slices = Vec::new();
+    let mut text_chunk_ids = Vec::new();
+    for (index, chunk) in embedded.text_chunks.iter().enumerate() {
+        let chunk_id = uuid::Uuid::new_v4().to_string();
+        text_chunk_ids.push(chunk_id.clone());
+        chunk_slices.push(chunk.clone());
+        prepared_chunks.push((
+            chunk_id,
+            index as i64,
+            chunk.title.clone(),
+            chunk.content.clone(),
+            "text".to_string(),
+            Option::<String>::None,
+            Option::<String>::None,
+            Option::<String>::None,
+        ));
+    }
+
+    let mut next_chunk_index = prepared_chunks.len() as i64;
+    for child in &embedded.child_chunks {
+        let parent_chunk_id = text_chunk_ids
+            .get(child.parent_chunk_index)
+            .cloned()
+            .or_else(|| text_chunk_ids.last().cloned());
+        let chunk_id = uuid::Uuid::new_v4().to_string();
+        chunk_slices.push(crate::knowledge_chunker::ChunkSlice {
+            title: child.title.clone(),
+            content: child.content.clone(),
+        });
+        prepared_chunks.push((
+            chunk_id,
+            next_chunk_index,
+            child.title.clone(),
+            child.content.clone(),
+            child.chunk_type.clone(),
+            parent_chunk_id,
+            Some(child.asset_id.clone()),
+            Some(child.image_info.clone()),
+        ));
+        next_chunk_index += 1;
+    }
+
     start_step(connection, job, "embed", 65)?;
     let (chunk_embeddings, embedding_model_key) =
-        crate::generate_chunk_embeddings(connection, &chunks);
+        crate::generate_chunk_embeddings(connection, &chunk_slices);
     let vectorized_chunk_count = crate::count_vectorized_chunks(&chunk_embeddings);
-    let embedding_error = if chunks.is_empty() {
+    let embedding_error = if chunk_slices.is_empty() {
         None
     } else if vectorized_chunk_count <= 0 {
         Some("indexed without embeddings")
-    } else if vectorized_chunk_count < chunks.len() as i64 {
+    } else if vectorized_chunk_count < chunk_slices.len() as i64 {
         Some("partially vectorized")
     } else {
         None
@@ -3227,10 +3605,10 @@ fn complete_partial_job(
     }
 
     start_step(connection, job, "index", 80)?;
-    let now = current_timestamp_ms();
     let content_preview = preview_text(&parsed.content, 240);
-    let chunk_count = chunks.len() as i64;
+    let chunk_count = prepared_chunks.len() as i64;
     let mut warning_messages = processing_warnings;
+    warning_messages.extend(asset_storage_warnings);
     if let Some(message) = embedding_error {
         warning_messages.push(message.to_string());
     }
@@ -3246,9 +3624,27 @@ fn complete_partial_job(
     } else {
         Some(warning_messages.join(" | "))
     };
+    let stale_asset_paths = {
+        let mut stmt = connection
+            .prepare(
+                "SELECT stored_file_path FROM knowledge_document_assets WHERE document_id = ?1",
+            )
+            .map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map(params![job.document_id], |row| row.get::<_, String>(0))
+            .map_err(|err| err.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())?;
+        rows
+    };
     let tx = connection
         .unchecked_transaction()
         .map_err(|err| err.to_string())?;
+    tx.execute(
+        "DELETE FROM knowledge_document_assets WHERE document_id = ?1",
+        params![job.document_id],
+    )
+    .map_err(|err| err.to_string())?;
     tx.execute(
         "DELETE FROM knowledge_chunks WHERE document_id = ?1",
         params![job.document_id],
@@ -3258,21 +3654,61 @@ fn complete_partial_job(
         let mut stmt = tx
             .prepare(
                 r#"
-                INSERT INTO knowledge_chunks (
-                  id, document_id, collection_id, chunk_index, title, content,
-                  embedding_json, embedding_model_key, created_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                INSERT INTO knowledge_document_assets (
+                  id, document_id, collection_id, asset_kind, source_name, stored_file_path, mime_type,
+                  file_extension, preview_type, thumbnail_data_url, ocr_text, caption_text, content_preview,
+                  page_index, asset_index, metadata_json, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
                 "#,
             )
             .map_err(|err| err.to_string())?;
-        for (index, chunk) in chunks.into_iter().enumerate() {
+        for asset in &embedded.assets {
             stmt.execute(params![
-                uuid::Uuid::new_v4().to_string(),
+                asset.id,
+                asset.document_id,
+                asset.collection_id,
+                asset.asset_kind,
+                asset.source_name,
+                asset.stored_file_path,
+                asset.mime_type,
+                asset.file_extension,
+                asset.preview_type,
+                asset.thumbnail_data_url,
+                asset.ocr_text,
+                asset.caption_text,
+                asset.content_preview,
+                asset.page_index,
+                asset.asset_index,
+                asset.metadata_json,
+                asset.created_at,
+                asset.updated_at,
+            ])
+            .map_err(|err| err.to_string())?;
+        }
+    }
+    {
+        let mut stmt = tx
+            .prepare(
+                r#"
+                INSERT INTO knowledge_chunks (
+                  id, document_id, collection_id, chunk_index, title, content, chunk_type,
+                  parent_chunk_id, asset_id, image_info, embedding_json, embedding_model_key, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                "#,
+            )
+            .map_err(|err| err.to_string())?;
+        for (index, chunk) in prepared_chunks.into_iter().enumerate() {
+            stmt.execute(params![
+                chunk.0,
                 job.document_id,
                 job.collection_id,
-                index as i64,
-                chunk.title,
-                chunk.content,
+                chunk.1,
+                chunk.2,
+                chunk.3,
+                chunk.4,
+                chunk.5,
+                chunk.6,
+                chunk.7,
                 chunk_embeddings.get(index).cloned().unwrap_or(None),
                 embedding_model_key.clone(),
                 now,
@@ -3302,6 +3738,7 @@ fn complete_partial_job(
     )
     .map_err(|err| err.to_string())?;
     tx.commit().map_err(|err| err.to_string())?;
+    cleanup_stored_embedded_asset_files(&stale_asset_paths);
     finish_step(connection, job, "index", STEP_STATUS_SUCCEEDED, 100, None)?;
     if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
         return Ok(());
@@ -3517,7 +3954,11 @@ fn recover_timed_out_running_jobs(
     Ok(stale_jobs.len() as i64)
 }
 
-fn execute_claimed_job(connection: &Connection, job: &PipelineJobClaim) -> Result<(), String> {
+fn execute_claimed_job(
+    app: &tauri::AppHandle,
+    connection: &Connection,
+    job: &PipelineJobClaim,
+) -> Result<(), String> {
     let now = current_timestamp_ms();
     connection
         .execute(
@@ -3568,6 +4009,7 @@ fn execute_claimed_job(connection: &Connection, job: &PipelineJobClaim) -> Resul
 
     let collection_multimodal = resolve_collection_multimodal_config(connection, &job.collection_id)?;
     let mut processing_warnings = Vec::new();
+    let mut embedded_assets = Vec::new();
 
     if parsed.preview_type == "image" {
         start_step(connection, job, "enrich_image", 35)?;
@@ -3619,6 +4061,165 @@ fn execute_claimed_job(connection: &Connection, job: &PipelineJobClaim) -> Resul
                 "image enrichment failed: image multimodal model is missing or unusable"
                     .to_string(),
             );
+        }
+    } else if matches!(parsed.preview_type.as_str(), "docx" | "pdf") {
+        start_step(connection, job, "enrich_image", 35)?;
+        let extraction_result = if parsed.preview_type == "docx" {
+            crate::knowledge_embedded_images::extract_docx_embedded_images(&bytes)
+        } else {
+            crate::knowledge_embedded_images::extract_pdf_embedded_images(&bytes)
+        };
+
+        match extraction_result {
+            Ok(extracted) => {
+                if extracted.is_empty() {
+                    skip_step(
+                        connection,
+                        job,
+                        "enrich_image",
+                        "no embedded images found",
+                    )?;
+                } else {
+                    embedded_assets = extracted;
+                    let image_analysis_enabled =
+                        collection_multimodal.enabled && collection_multimodal.image.enabled;
+                    let image_options_enabled = collection_multimodal.image.extract_text
+                        || collection_multimodal.image.generate_summary;
+                    let model_id = collection_multimodal
+                        .image
+                        .model_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    let resolved_model = if image_analysis_enabled && image_options_enabled {
+                        match model_id {
+                            Some(model_id) => match resolve_multimodal_model(connection, model_id, "image") {
+                                Ok(model) => Some(model),
+                                Err(err) => {
+                                    let message =
+                                        format!("embedded image enrichment unavailable: {err}");
+                                    processing_warnings.push(message.clone());
+                                    log_job(
+                                        connection,
+                                        &job.id,
+                                        &job.document_id,
+                                        "warn",
+                                        Some("enrich_image"),
+                                        &message,
+                                        parsed.metadata_json.as_deref(),
+                                    )?;
+                                    None
+                                }
+                            },
+                            None => {
+                                let message = "embedded image enrichment skipped: no usable image multimodal model is configured".to_string();
+                                processing_warnings.push(message.clone());
+                                log_job(
+                                    connection,
+                                    &job.id,
+                                    &job.document_id,
+                                    "warn",
+                                    Some("enrich_image"),
+                                    &message,
+                                    parsed.metadata_json.as_deref(),
+                                )?;
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
+                    if let Some(model) = resolved_model.as_ref() {
+                        for asset in &mut embedded_assets {
+                            let asset_source = PipelineDocumentSource {
+                                id: format!("{}:asset:{}", document.id, asset.asset_index),
+                                collection_id: document.collection_id.clone(),
+                                source_name: asset.source_name.clone(),
+                                stored_file_path: None,
+                                mime_type: asset.mime_type.clone(),
+                                file_extension: asset.file_extension.clone(),
+                                preview_type: Some("image".to_string()),
+                                content: None,
+                            };
+                            match enrich_image_document(
+                                &asset_source,
+                                &asset.bytes,
+                                model,
+                                &collection_multimodal,
+                            ) {
+                                Ok(output) => {
+                                    if output.ocr_text.is_some() {
+                                        asset.ocr_text = output.ocr_text;
+                                    }
+                                    if output.summary.is_some() {
+                                        asset.caption_text = output.summary;
+                                    }
+                                    if let Some(warning) = output.warning {
+                                        processing_warnings.push(warning.clone());
+                                        log_job(
+                                            connection,
+                                            &job.id,
+                                            &job.document_id,
+                                            "warn",
+                                            Some("enrich_image"),
+                                            &warning,
+                                            parsed.metadata_json.as_deref(),
+                                        )?;
+                                    }
+                                }
+                                Err(err) => {
+                                    let message = format!(
+                                        "embedded image enrichment failed for {}: {err}",
+                                        asset.source_name
+                                    );
+                                    processing_warnings.push(message.clone());
+                                    log_job(
+                                        connection,
+                                        &job.id,
+                                        &job.document_id,
+                                        "warn",
+                                        Some("enrich_image"),
+                                        &message,
+                                        parsed.metadata_json.as_deref(),
+                                    )?;
+                                }
+                            }
+                        }
+                    } else if !image_analysis_enabled {
+                        log_job(
+                            connection,
+                            &job.id,
+                            &job.document_id,
+                            "info",
+                            Some("enrich_image"),
+                            "stored embedded images without multimodal enrichment",
+                            None,
+                        )?;
+                    }
+
+                    finish_step(connection, job, "enrich_image", STEP_STATUS_SUCCEEDED, 100, None)?;
+                }
+            }
+            Err(err) => {
+                let message = format!("embedded image extraction failed: {err}");
+                processing_warnings.push(message.clone());
+                log_job(
+                    connection,
+                    &job.id,
+                    &job.document_id,
+                    "warn",
+                    Some("enrich_image"),
+                    &message,
+                    parsed.metadata_json.as_deref(),
+                )?;
+                skip_step(
+                    connection,
+                    job,
+                    "enrich_image",
+                    "embedded image extraction failed",
+                )?;
+            }
         }
     } else {
         skip_step(
@@ -3696,12 +4297,14 @@ fn execute_claimed_job(connection: &Connection, job: &PipelineJobClaim) -> Resul
     }
 
     complete_partial_job(
+        app,
         connection,
         job,
         &document.source_name,
         document.file_extension.as_deref(),
         parsed,
         processing_warnings,
+        embedded_assets,
     )
 }
 
@@ -3728,7 +4331,7 @@ fn process_claimed_job(
     max_auto_retries: i64,
 ) -> Result<(), String> {
     let connection = open_pipeline_connection(app)?;
-    if let Err(err) = execute_claimed_job(&connection, &job) {
+    if let Err(err) = execute_claimed_job(app, &connection, &job) {
         let failed_step = running_step_name(&connection, &job.id)?;
         fail_job(
             &connection,
@@ -3864,6 +4467,7 @@ mod tests {
             )
             .unwrap();
         ensure_pipeline_schema(&connection).unwrap();
+        crate::ensure_knowledge_schema(&connection).unwrap();
         connection
     }
 
@@ -4060,6 +4664,121 @@ mod tests {
         assert!(crate::table_has_column(&connection, "knowledge_document_assets", "id").unwrap());
         assert!(crate::table_has_column(&connection, "knowledge_document_assets", "ocr_text").unwrap());
         assert!(crate::table_has_column(&connection, "knowledge_document_assets", "caption_text").unwrap());
+    }
+
+    #[test]
+    fn build_embedded_image_child_chunks_attaches_to_text_chunks() {
+        let parsed = ParsedDocument {
+            content: "Overview\n\nSystem diagram anchor\n\nDetails".to_string(),
+            preview_type: "docx".to_string(),
+            metadata_json: None,
+        };
+        let text_chunks = split_parsed_document_into_chunks(&parsed, "report.docx", Some("docx"));
+        let now = current_timestamp_ms();
+        let assets = vec![PersistedEmbeddedImageAsset {
+            asset_id: "asset-1".to_string(),
+            source_name: "image1.png".to_string(),
+            stored_file_path: "C:/tmp/image1.png".to_string(),
+            mime_type: Some("image/png".to_string()),
+            file_extension: Some("png".to_string()),
+            page_index: None,
+            asset_index: 0,
+            anchor_text: Some("System diagram anchor".to_string()),
+            ocr_text: Some("database connection string".to_string()),
+            caption_text: Some("architecture overview".to_string()),
+            thumbnail_data_url: None,
+        }];
+
+        let output = build_embedded_image_assets_and_chunks(
+            &text_chunks,
+            &assets,
+            "doc-test",
+            "col-test",
+            now,
+        );
+
+        assert_eq!(output.assets.len(), 1);
+        assert_eq!(output.child_chunks.len(), 2);
+        assert!(output
+            .child_chunks
+            .iter()
+            .all(|chunk| chunk.parent_chunk_index < output.text_chunks.len()));
+        assert!(output
+            .child_chunks
+            .iter()
+            .any(|chunk| chunk.chunk_type == "image_ocr"));
+        assert!(output
+            .child_chunks
+            .iter()
+            .any(|chunk| chunk.chunk_type == "image_caption"));
+    }
+
+    #[test]
+    fn search_knowledge_chunks_rolls_child_hits_back_to_parent() {
+        let connection = new_test_connection();
+        let (collection_id, document_id) = seed_collection_and_document(&connection);
+        let now = current_timestamp_ms();
+
+        connection
+            .execute(
+                "DELETE FROM knowledge_chunks WHERE document_id = ?1",
+                params![document_id],
+            )
+            .unwrap();
+
+        connection
+            .execute(
+                r#"
+                INSERT INTO knowledge_chunks (
+                  id, document_id, collection_id, chunk_index, title, content, chunk_type, parent_chunk_id,
+                  asset_id, image_info, embedding_json, embedding_model_key, created_at
+                ) VALUES (?1, ?2, ?3, 0, 'Parent', 'Parent section describing the system.', 'text', NULL, NULL, NULL, NULL, NULL, ?4)
+                "#,
+                params!["text-1", document_id, collection_id, now],
+            )
+            .unwrap();
+        connection
+            .execute(
+                r#"
+                INSERT INTO knowledge_chunks (
+                  id, document_id, collection_id, chunk_index, title, content, chunk_type, parent_chunk_id,
+                  asset_id, image_info, embedding_json, embedding_model_key, created_at
+                ) VALUES (?1, ?2, ?3, 1, 'Image OCR', 'database connection string inside image', 'image_ocr', 'text-1', 'asset-1', '{"assetId":"asset-1","sourceName":"diagram.png","ocrText":"database connection string"}', NULL, NULL, ?4)
+                "#,
+                params!["ocr-1", document_id, collection_id, now],
+            )
+            .unwrap();
+        connection
+            .execute(
+                r#"
+                INSERT INTO knowledge_document_assets (
+                  id, document_id, collection_id, asset_kind, source_name, stored_file_path, mime_type, file_extension,
+                  preview_type, thumbnail_data_url, ocr_text, caption_text, content_preview, page_index, asset_index,
+                  metadata_json, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, 'embedded_image', 'diagram.png', 'C:/tmp/diagram.png', 'image/png', 'png', 'image', NULL, 'database connection string', NULL, 'diagram', NULL, 0, NULL, ?4, ?4)
+                "#,
+                params!["asset-1", document_id, collection_id, now],
+            )
+            .unwrap();
+
+        let results = crate::search_knowledge_chunks(
+            &connection,
+            crate::SearchKnowledgeChunksInput {
+                query: "database connection".to_string(),
+                limit: Some(5),
+                collection_id: Some(collection_id),
+                query_embedding: None,
+                query_embedding_model_key: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].chunk.id, "text-1");
+        assert_eq!(results[0].display_chunk.as_ref().map(|chunk| chunk.id.as_str()), Some("text-1"));
+        assert_eq!(results[0].matched_chunk.as_ref().map(|chunk| chunk.id.as_str()), Some("ocr-1"));
+        assert_eq!(results[0].matched_chunk_type.as_deref(), Some("image_ocr"));
+        assert_eq!(results[0].matched_asset.as_ref().map(|asset| asset.id.as_str()), Some("asset-1"));
     }
 
     #[test]
