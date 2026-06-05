@@ -3566,14 +3566,14 @@ fn complete_partial_job(
 
     start_step(connection, job, "embed", 65)?;
     let (chunk_embeddings, embedding_model_key) =
-        crate::generate_chunk_embeddings(connection, &chunk_slices);
+        crate::generate_chunk_embeddings_safe(connection, &chunk_slices);
     let vectorized_chunk_count = crate::count_vectorized_chunks(&chunk_embeddings);
     let embedding_error = if chunk_slices.is_empty() {
         None
     } else if vectorized_chunk_count <= 0 {
         Some("indexed without embeddings")
     } else if vectorized_chunk_count < chunk_slices.len() as i64 {
-        Some("partially vectorized")
+        Some("partial")
     } else {
         None
     };
