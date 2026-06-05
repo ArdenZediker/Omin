@@ -413,6 +413,7 @@ function getVectorizationLabel(state?: string | null) {
     case "vectorized":
       return "已向量化";
     case "partial":
+    case "partially vectorized":
       return "部分向量化";
     case "unvectorized":
       return "未向量化";
@@ -1369,6 +1370,15 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const selectedDocument = selectedDocumentDetail?.document ?? selectedDocumentRecord;
   const activeCollectionName = activeCollection?.name ?? "未选择知识库";
   const selectedVectorizationLabel = getVectorizationLabel(selectedDocument?.vectorizationState ?? null);
+  const documentDetailViewOptions: Array<{
+    id: "preview" | "assets" | "chunks";
+    label: string;
+    icon: typeof LucideFileText;
+  }> = [
+    { id: "preview", label: "原文", icon: LucideFileText },
+    { id: "assets", label: "图片资产", icon: LucideFileImage },
+    { id: "chunks", label: "知识结果", icon: Layers3 },
+  ];
   const documentNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const document of library.documents) {
@@ -2840,56 +2850,48 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   </div>
                 </div>
 
-                <div className="drag-region flex items-center gap-2">
-                  <div className="no-drag inline-flex items-center gap-1 rounded-none border border-slate-200 bg-white p-1">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDocumentDetailView("preview")}
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
-                        selectedDocumentDetailView === "preview" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                      }`}
-                      title="预览"
-                      aria-pressed={selectedDocumentDetailView === "preview"}
-                    >
-                      <LucideFileText size={15} strokeWidth={2} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDocumentDetailView("assets")}
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
-                        selectedDocumentDetailView === "assets" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                      }`}
-                      title="Assets"
-                      aria-pressed={selectedDocumentDetailView === "assets"}
-                    >
-                      <LucideFileImage size={15} strokeWidth={2} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDocumentDetailView("chunks")}
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
-                        selectedDocumentDetailView === "chunks" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                      }`}
-                      title="分片"
-                      aria-pressed={selectedDocumentDetailView === "chunks"}
-                    >
-                      <Layers3 size={15} strokeWidth={2} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDocumentDetailView("processing")}
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded-none transition ${
-                        selectedDocumentDetailView === "processing" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                      }`}
-                      title="处理"
-                      aria-pressed={selectedDocumentDetailView === "processing"}
-                    >
-                      <Settings size={15} strokeWidth={2} />
-                    </button>
+                <div className="drag-region flex flex-wrap items-center justify-end gap-2">
+                  <div className="no-drag inline-flex items-center gap-1 rounded-[20px] border border-slate-200/90 bg-white/90 p-1 shadow-sm shadow-slate-200/60 backdrop-blur">
+                    {documentDetailViewOptions.map((option) => {
+                      const Icon = option.icon;
+                      const isActive = selectedDocumentDetailView === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setSelectedDocumentDetailView(option.id)}
+                          className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-2xl px-3 text-xs font-medium transition ${
+                            isActive
+                              ? "bg-slate-950 text-white shadow-sm shadow-slate-300/60"
+                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          }`}
+                          title={option.label}
+                          aria-pressed={isActive}
+                        >
+                          <Icon size={14} strokeWidth={2} />
+                          <span>{option.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
 
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDocumentDetailView("processing")}
+                    className={`no-drag inline-flex h-10 items-center justify-center gap-1.5 rounded-[20px] border px-3 text-xs font-medium shadow-sm shadow-slate-200/40 transition ${
+                      selectedDocumentDetailView === "processing"
+                        ? "border-slate-950 bg-slate-950 text-white"
+                        : "border-slate-200/90 bg-white/90 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    }`}
+                    title="处理信息"
+                    aria-pressed={selectedDocumentDetailView === "processing"}
+                  >
+                    <Settings size={14} strokeWidth={2} />
+                    <span>处理信息</span>
+                  </button>
+
                   {selectedDocument ? (
-                    <div className="no-drag flex items-center gap-1">
+                    <div className="no-drag inline-flex items-center gap-1 rounded-[20px] border border-slate-200/90 bg-white/90 p-1 shadow-sm shadow-slate-200/50 backdrop-blur">
                       {selectedDocument.activeJobId ? (
                         <>
                           <button
@@ -2900,7 +2902,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                                 "取消处理任务失败"
                               )
                             }
-                            className="rounded-none border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                           >
                             取消
                           </button>
@@ -2912,7 +2914,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                                 "重试处理任务失败"
                               )
                             }
-                            className="rounded-none border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                           >
                             重试
                           </button>
@@ -2926,7 +2928,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             "重新解析文档失败"
                           )
                         }
-                        className="rounded-none border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                        className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                       >
                         重解析
                       </button>
@@ -2938,7 +2940,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             "重新向量化失败"
                           )
                         }
-                        className="rounded-none border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                        className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                       >
                         重向量化
                       </button>
@@ -3151,21 +3153,25 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             <DocumentPreviewArea key={selectedDocumentId} document={selectedDocument} onOpenExternal={openSelectedDocumentExternal} />
                           </div>
                         ) : selectedDocumentDetailView === "assets" ? (
-                          <section className="omni-knowledge-assets-view flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
-                            <div className="mb-3 flex items-center justify-between gap-3">
+                          <section className="omni-knowledge-assets-view flex min-h-0 flex-1 flex-col">
+                            <div className="omni-knowledge-assets-view__header">
                               <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-950">Assets</div>
-                                <div className="mt-1 text-xs text-slate-500">
+                                <div className="omni-knowledge-assets-view__title">图片资产</div>
+                                <div className="omni-knowledge-assets-view__subtitle">
                                   {selectedDocumentDetail.assets.length > 0
-                                    ? `${selectedDocumentDetail.assets.length} extracted image assets`
-                                    : "No embedded images were extracted from this document."}
+                                    ? `已提取 ${selectedDocumentDetail.assets.length} 张图片，可在左侧切换查看。`
+                                    : "当前文档还没有提取到可浏览的图片资产。"}
                                 </div>
                               </div>
+                              {selectedDocumentDetail.assets.length > 0 ? (
+                                <div className="omni-knowledge-assets-view__count">共 {selectedDocumentDetail.assets.length} 张</div>
+                              ) : null}
                             </div>
 
                             {selectedDocumentDetail.assets.length === 0 ? (
-                              <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
-                                No embedded image assets yet.
+                              <div className="omni-knowledge-assets-detail__empty">
+                                <LucideFileImage size={24} strokeWidth={1.8} />
+                                <span>当前文档还没有图片资产。</span>
                               </div>
                             ) : (
                               <div className="omni-knowledge-assets-layout min-h-0 flex-1">
@@ -3175,62 +3181,90 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                                       key={asset.id}
                                       type="button"
                                       onClick={() => setSelectedAssetId(asset.id)}
+                                      aria-pressed={asset.id === selectedAssetId}
                                       className={`omni-knowledge-asset-card ${asset.id === selectedAssetId ? "omni-knowledge-asset-card--active" : ""}`}
                                     >
                                       <div className="omni-knowledge-asset-card__thumb">
                                         {asset.thumbnailDataUrl ? (
                                           <img src={asset.thumbnailDataUrl} alt={asset.sourceName} className="h-full w-full object-cover" />
                                         ) : (
-                                          <div className="flex h-full w-full items-center justify-center bg-slate-100 text-xs font-medium text-slate-500">
-                                            IMG
+                                          <div className="omni-knowledge-asset-card__thumb-empty">
+                                            <LucideFileImage size={18} strokeWidth={1.8} />
+                                            <span>暂无缩略图</span>
                                           </div>
                                         )}
                                       </div>
-                                      <div className="mt-3 text-sm font-medium text-slate-900">{asset.sourceName}</div>
-                                      <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{asset.contentPreview}</div>
+                                      <div className="omni-knowledge-asset-card__body">
+                                        <div className="omni-knowledge-asset-card__name">{asset.sourceName}</div>
+                                        <div className="omni-knowledge-asset-card__meta">
+                                          资产 #{asset.assetIndex + 1}
+                                          {typeof asset.pageIndex === "number" ? ` · 第 ${asset.pageIndex + 1} 页` : ""}
+                                        </div>
+                                        <div className="omni-knowledge-asset-card__preview">
+                                          {asset.contentPreview?.trim() || asset.captionText?.trim() || asset.ocrText?.trim() || "暂无摘要"}
+                                        </div>
+                                      </div>
                                     </button>
                                   ))}
                                 </div>
 
                                 <div className="omni-knowledge-assets-detail">
                                   {selectedAsset ? (
-                                    <div className="flex min-h-0 flex-1 flex-col">
+                                    <div className="omni-knowledge-assets-workspace">
+                                      <div className="omni-knowledge-assets-workspace__header">
+                                        <div>
+                                          <div className="omni-knowledge-assets-workspace__title">当前图片</div>
+                                          <div className="omni-knowledge-assets-workspace__subtitle">先看预览，再看 OCR 和描述内容。</div>
+                                        </div>
+                                      </div>
+
                                       <div className="omni-knowledge-assets-detail__preview">
                                         {selectedAsset.thumbnailDataUrl ? (
-                                          <img src={selectedAsset.thumbnailDataUrl} alt={selectedAsset.sourceName} className="max-h-[22rem] w-full object-contain" />
+                                          <img src={selectedAsset.thumbnailDataUrl} alt={selectedAsset.sourceName} className="max-h-[26rem] w-full object-contain" />
                                         ) : (
-                                          <div className="flex h-56 items-center justify-center rounded-none border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
-                                            Preview unavailable
+                                          <div className="omni-knowledge-assets-detail__preview-empty">
+                                            <LucideFileImage size={24} strokeWidth={1.8} />
+                                            <span>暂无可预览图片</span>
                                           </div>
                                         )}
                                       </div>
-                                      <div className="mt-4 flex items-center justify-between gap-3">
-                                        <div>
-                                          <div className="text-sm font-semibold text-slate-950">{selectedAsset.sourceName}</div>
-                                          <div className="mt-1 text-xs text-slate-500">
-                                            Asset #{selectedAsset.assetIndex + 1}
-                                            {typeof selectedAsset.pageIndex === "number" ? ` · Page ${selectedAsset.pageIndex + 1}` : ""}
+
+                                      <div className="omni-knowledge-assets-meta-grid">
+                                        <div className="omni-knowledge-assets-meta-card">
+                                          <div className="omni-knowledge-assets-meta-card__label">文件名</div>
+                                          <div className="omni-knowledge-assets-meta-card__value">{selectedAsset.sourceName}</div>
+                                        </div>
+                                        <div className="omni-knowledge-assets-meta-card">
+                                          <div className="omni-knowledge-assets-meta-card__label">资产序号</div>
+                                          <div className="omni-knowledge-assets-meta-card__value">#{selectedAsset.assetIndex + 1}</div>
+                                        </div>
+                                        <div className="omni-knowledge-assets-meta-card">
+                                          <div className="omni-knowledge-assets-meta-card__label">所在页</div>
+                                          <div className="omni-knowledge-assets-meta-card__value">
+                                            {typeof selectedAsset.pageIndex === "number" ? `第 ${selectedAsset.pageIndex + 1} 页` : "未记录"}
                                           </div>
                                         </div>
                                       </div>
-                                      <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                                        <div className="rounded-none border border-slate-200 bg-slate-50 p-4">
-                                          <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">OCR</div>
-                                          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                                            {selectedAsset.ocrText?.trim() ? selectedAsset.ocrText : "No OCR text"}
+
+                                      <div className="omni-knowledge-assets-reading-grid">
+                                        <section className="omni-knowledge-assets-reading-card">
+                                          <div className="omni-knowledge-assets-reading-card__label">OCR</div>
+                                          <div className="omni-knowledge-assets-reading-card__content">
+                                            {selectedAsset.ocrText?.trim() ? selectedAsset.ocrText : "暂无 OCR 文本"}
                                           </div>
-                                        </div>
-                                        <div className="rounded-none border border-slate-200 bg-slate-50 p-4">
-                                          <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Caption</div>
-                                          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                                            {selectedAsset.captionText?.trim() ? selectedAsset.captionText : "No caption summary"}
+                                        </section>
+                                        <section className="omni-knowledge-assets-reading-card">
+                                          <div className="omni-knowledge-assets-reading-card__label">图片描述</div>
+                                          <div className="omni-knowledge-assets-reading-card__content">
+                                            {selectedAsset.captionText?.trim() ? selectedAsset.captionText : "暂无图片描述"}
                                           </div>
-                                        </div>
+                                        </section>
                                       </div>
                                     </div>
                                   ) : (
-                                    <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-slate-500">
-                                      Select an asset to inspect it.
+                                    <div className="omni-knowledge-assets-detail__empty">
+                                      <LucideFileImage size={22} strokeWidth={1.8} />
+                                      <span>请先从左侧选择一张图片。</span>
                                     </div>
                                   )}
                                 </div>
