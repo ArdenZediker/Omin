@@ -24,7 +24,6 @@ import {
   PanelRightOpen,
   Plus,
   PlaySquare,
-  Trash2,
   SquarePlus,
   Search,
   Settings,
@@ -55,6 +54,8 @@ import {
 } from "../chat/knowledgeMultimodal";
 import { usePromptDialog } from "./PromptDialog";
 import KnowledgeAssetInspector from "./knowledge/KnowledgeAssetInspector";
+import KnowledgeDocumentList from "./knowledge/KnowledgeDocumentList";
+import KnowledgeDocumentProcessingPanel from "./knowledge/KnowledgeDocumentProcessingPanel";
 import KnowledgeDocumentPreview from "./knowledge/KnowledgeDocumentPreview";
 import {
   KNOWLEDGE_UPLOAD_ACCEPT,
@@ -2577,73 +2578,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             onSelectAsset={setSelectedAssetId}
                           />
                         ) : selectedDocumentDetailView === "processing" ? (
-                          <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
-                            <div className="mb-4 flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-950">处理状态</div>
-                                <div className="mt-1 text-xs text-slate-500">查看当前文档的处理进度与错误摘要</div>
-                              </div>
-                              <span className="rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                                {getProcessingStatusLabel(selectedDocument.processingStatus)}
-                              </span>
-                            </div>
-
-                            <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                                <div className="text-xs text-slate-400">当前状态</div>
-                                <div className="mt-1 font-medium text-slate-900">{getProcessingStatusLabel(selectedDocument.processingStatus)}</div>
-                              </div>
-                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                                <div className="text-xs text-slate-400">活动任务 ID</div>
-                                <div className="mt-1 truncate font-medium text-slate-900" title={selectedDocument.activeJobId ?? "无"}>
-                                  {selectedDocument.activeJobId ?? "无"}
-                                </div>
-                              </div>
-                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                                <div className="text-xs text-slate-400">分片数</div>
-                                <div className="mt-1 font-medium text-slate-900">{selectedDocument.chunkCount}</div>
-                              </div>
-                              <div className="rounded-none border border-slate-200 bg-slate-50 px-4 py-3">
-                                <div className="text-xs text-slate-400">已向量化</div>
-                                <div className="mt-1 font-medium text-slate-900">
-                                  {selectedDocument.vectorizedChunkCount ?? 0}/{selectedDocument.chunkCount}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="mt-3 rounded-none border border-slate-200 bg-white px-4 py-3 text-sm">
-                              <div className="text-xs text-slate-400">错误信息</div>
-                              <div className={selectedDocument.errorMessage ? "mt-1 text-red-500" : "mt-1 text-slate-500"}>
-                                {selectedDocument.errorMessage ?? "无"}
-                              </div>
-                            </div>
-
-                            <div className="mt-3 rounded-none border border-slate-200 bg-white px-4 py-3 text-sm">
-                              <div className="flex items-center justify-between gap-3">
-                                <div>
-                                  <div className="text-xs text-slate-400">多模态策略</div>
-                                  <div className="mt-1 font-medium text-slate-900">
-                                    {selectedDocumentCollection?.multimodalConfig?.enabled ? "已启用知识库多模态分析" : "当前知识库未启用多模态分析"}
-                                  </div>
-                                </div>
-                                {selectedDocumentCollection?.multimodalConfig?.enabled ? (
-                                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                                    多模态
-                                  </span>
-                                ) : null}
-                              </div>
-                              {selectedDocumentCollection?.multimodalConfig?.enabled ? (
-                                <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
-                                    图片分析 {selectedDocumentCollection.multimodalConfig.image.enabled ? "开启" : "关闭"}
-                                  </span>
-                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
-                                    音频分析 {selectedDocumentCollection.multimodalConfig.audio.enabled ? "开启" : "关闭"}
-                                  </span>
-                                </div>
-                              ) : null}
-                            </div>
-                          </section>
+                          <KnowledgeDocumentProcessingPanel document={selectedDocument} collection={selectedDocumentCollection} />
                         ) : (
                           <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
                             <div className="mb-3 flex items-center justify-between gap-3">
@@ -2720,82 +2655,16 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </KnowledgeBaseDetailBoundary>
                   </div>
                 ) : pageMode === "list" ? (
-                  <section className="no-drag flex min-h-0 min-w-0 flex-1 flex-col">
-                    <div className="flex min-h-0 flex-1 overflow-y-auto pt-3">
-                      <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(168px,1fr))] content-start gap-3">
-                    {visibleDocuments.map((document) => {
-                      const isActive = document.id === selectedDocumentId;
-                      const thumbnailDataUrl = listThumbnailDataUrlById.get(document.id);
-                      const fileBadge = thumbnailDataUrl ? (
-                        <img src={thumbnailDataUrl} alt={document.sourceName} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[10px] font-semibold text-white">
-                          {document.sourceName.slice(0, 2).toUpperCase()}
-                        </div>
-                      );
-
-                      return (
-                        <div
-                          key={document.id}
-                          className={`group relative flex h-[170px] min-w-0 flex-col rounded-lg border p-2 text-left transition ${
-                            isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-                          }`}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            openDocumentMenu(document.id);
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => openDocument(document.id)}
-                            className="flex min-w-0 flex-1 flex-col items-stretch gap-1.5 text-left"
-                          >
-                            <div className="h-[86px] w-full overflow-hidden rounded-md bg-slate-100">{fileBadge}</div>
-                            <div className="flex min-w-0 flex-1 flex-col">
-                              <div className="line-clamp-2 text-[12px] font-medium leading-4">{document.sourceName}</div>
-                              {document.errorMessage ? <div className="mt-1 line-clamp-1 text-xs text-red-500">{document.errorMessage}</div> : null}
-                              <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                                <span className="shrink-0 rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                                  {getProcessingStatusLabel(document.processingStatus)}
-                                </span>
-                                <span className="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
-                                  {getVectorizationLabel(document.vectorizationState ?? null)}
-                                </span>
-                              </div>
-                            </div>
-                          </button>
-
-                          {isDocumentMenuOpen === document.id ? (
-                            <div
-                              className="omni-knowledge-doc-menu no-drag absolute right-0 top-6 z-20 w-40 overflow-hidden"
-                              onPointerDown={(event) => event.stopPropagation()}
-                            >
-                              <button
-                                type="button"
-                                className="omni-knowledge-doc-menu__danger no-drag"
-                                onPointerDown={(event) => event.stopPropagation()}
-                                onClick={() => {
-                                  setIsDocumentMenuOpen(null);
-                                  void deleteDocument(document.id);
-                                }}
-                              >
-                                <Trash2 size={14} strokeWidth={1.9} />
-                                删除
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-
-                    {visibleDocuments.length === 0 ? (
-                      <div className="col-span-full rounded-none border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
-                        没有符合当前筛选条件的文档。你可以先上传文件，或者切换分类。
-                      </div>
-                    ) : null}
-                      </div>
-                    </div>
-                  </section>
+                  <KnowledgeDocumentList
+                    documents={visibleDocuments}
+                    selectedDocumentId={selectedDocumentId}
+                    openDocumentMenuId={isDocumentMenuOpen}
+                    thumbnailDataUrlById={listThumbnailDataUrlById}
+                    onOpenDocument={openDocument}
+                    onOpenDocumentMenu={openDocumentMenu}
+                    onCloseDocumentMenu={() => setIsDocumentMenuOpen(null)}
+                    onDeleteDocument={(documentId) => void deleteDocument(documentId)}
+                  />
                 ) : (
                   <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     {!isKnowledgeLibraryReady ? (
