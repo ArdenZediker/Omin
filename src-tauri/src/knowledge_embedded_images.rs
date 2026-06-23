@@ -1,6 +1,9 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use image::{DynamicImage, ImageBuffer, ImageFormat, Luma, Rgb, Rgba};
-use lopdf::{Dictionary as LoDictionary, Document as LoDocument, Object as LoObject, ObjectId, Stream as LoStream};
+use lopdf::{
+    Dictionary as LoDictionary, Document as LoDocument, Object as LoObject, ObjectId,
+    Stream as LoStream,
+};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
@@ -29,7 +32,9 @@ struct DocxImageOccurrence {
     anchor_text: Option<String>,
 }
 
-pub fn extract_docx_embedded_images(bytes: &[u8]) -> Result<Vec<EmbeddedImageAssetCandidate>, String> {
+pub fn extract_docx_embedded_images(
+    bytes: &[u8],
+) -> Result<Vec<EmbeddedImageAssetCandidate>, String> {
     let cursor = Cursor::new(bytes.to_vec());
     let mut archive = ZipArchive::new(cursor).map_err(|err| err.to_string())?;
     let relationships = read_docx_relationships(&mut archive);
@@ -80,7 +85,9 @@ pub fn extract_docx_embedded_images(bytes: &[u8]) -> Result<Vec<EmbeddedImageAss
     Ok(assets)
 }
 
-pub fn extract_pdf_embedded_images(bytes: &[u8]) -> Result<Vec<EmbeddedImageAssetCandidate>, String> {
+pub fn extract_pdf_embedded_images(
+    bytes: &[u8],
+) -> Result<Vec<EmbeddedImageAssetCandidate>, String> {
     let document = LoDocument::load_mem(bytes).map_err(|err| err.to_string())?;
     let mut assets = Vec::new();
     let mut seen_object_ids = HashSet::new();
@@ -105,7 +112,12 @@ pub fn extract_pdf_embedded_images(bytes: &[u8]) -> Result<Vec<EmbeddedImageAsse
             else {
                 continue;
             };
-            let source_name = format!("page-{}-{}.{}", page_index + 1, String::from_utf8_lossy(name), file_extension);
+            let source_name = format!(
+                "page-{}-{}.{}",
+                page_index + 1,
+                String::from_utf8_lossy(name),
+                file_extension
+            );
             assets.push(EmbeddedImageAssetCandidate {
                 source_name,
                 mime_type: Some(mime_type),
@@ -164,16 +176,13 @@ fn read_docx_relationships(archive: &mut ZipArchive<Cursor<Vec<u8>>>) -> HashMap
                 for attribute in event.attributes().flatten() {
                     match local_xml_name(attribute.key.as_ref()) {
                         b"Id" => {
-                            relationship_id = Some(
-                                String::from_utf8_lossy(attribute.value.as_ref()).to_string(),
-                            );
+                            relationship_id =
+                                Some(String::from_utf8_lossy(attribute.value.as_ref()).to_string());
                         }
                         b"Target" => {
-                            target = Some(
-                                normalize_docx_target(
-                                    &String::from_utf8_lossy(attribute.value.as_ref()),
-                                ),
-                            );
+                            target = Some(normalize_docx_target(&String::from_utf8_lossy(
+                                attribute.value.as_ref(),
+                            )));
                         }
                         _ => {}
                     }
@@ -222,18 +231,27 @@ fn read_docx_image_occurrences(
                     if let Some(target) = resolve_docx_image_target(&event, relationships) {
                         occurrences.push(DocxImageOccurrence {
                             target,
-                            anchor_text: select_docx_anchor_text(&current_paragraph, last_paragraph.as_deref()),
+                            anchor_text: select_docx_anchor_text(
+                                &current_paragraph,
+                                last_paragraph.as_deref(),
+                            ),
                         });
                     }
                 }
                 _ => {}
             },
             Ok(Event::Empty(event)) => {
-                if matches!(local_xml_name(event.name().as_ref()), b"blip" | b"imagedata") {
+                if matches!(
+                    local_xml_name(event.name().as_ref()),
+                    b"blip" | b"imagedata"
+                ) {
                     if let Some(target) = resolve_docx_image_target(&event, relationships) {
                         occurrences.push(DocxImageOccurrence {
                             target,
-                            anchor_text: select_docx_anchor_text(&current_paragraph, last_paragraph.as_deref()),
+                            anchor_text: select_docx_anchor_text(
+                                &current_paragraph,
+                                last_paragraph.as_deref(),
+                            ),
                         });
                     }
                 }
@@ -302,17 +320,22 @@ fn resolve_docx_image_target(
     event: &BytesStart<'_>,
     relationships: &HashMap<String, String>,
 ) -> Option<String> {
-    let relationship_id = event
-        .attributes()
-        .flatten()
-        .find_map(|attribute| match local_xml_name(attribute.key.as_ref()) {
-            b"embed" | b"id" => Some(String::from_utf8_lossy(attribute.value.as_ref()).to_string()),
-            _ => None,
+    let relationship_id =
+        event.attributes().flatten().find_map(|attribute| {
+            match local_xml_name(attribute.key.as_ref()) {
+                b"embed" | b"id" => {
+                    Some(String::from_utf8_lossy(attribute.value.as_ref()).to_string())
+                }
+                _ => None,
+            }
         })?;
     relationships.get(&relationship_id).cloned()
 }
 
-fn select_docx_anchor_text(current_paragraph: &str, last_paragraph: Option<&str>) -> Option<String> {
+fn select_docx_anchor_text(
+    current_paragraph: &str,
+    last_paragraph: Option<&str>,
+) -> Option<String> {
     normalize_anchor_text(current_paragraph).or_else(|| last_paragraph.map(str::to_string))
 }
 
@@ -371,7 +394,10 @@ fn mime_type_from_extension(extension: Option<&str>) -> Option<String> {
     }
 }
 
-fn load_pdf_page_resources<'a>(document: &'a LoDocument, page_id: ObjectId) -> Option<&'a LoDictionary> {
+fn load_pdf_page_resources<'a>(
+    document: &'a LoDocument,
+    page_id: ObjectId,
+) -> Option<&'a LoDictionary> {
     let page = document.get_object(page_id).ok()?;
     let page_dict = page.as_dict().ok()?;
     let resources = page_dict.get(b"Resources").ok()?;
@@ -386,7 +412,10 @@ fn load_pdf_xobject_dictionary<'a>(
     resolve_pdf_dictionary(document, xobject)
 }
 
-fn resolve_pdf_dictionary<'a>(document: &'a LoDocument, object: &'a LoObject) -> Option<&'a LoDictionary> {
+fn resolve_pdf_dictionary<'a>(
+    document: &'a LoDocument,
+    object: &'a LoObject,
+) -> Option<&'a LoDictionary> {
     match object {
         LoObject::Dictionary(dictionary) => Some(dictionary),
         LoObject::Reference(object_id) => document.get_object(*object_id).ok()?.as_dict().ok(),
@@ -454,11 +483,7 @@ fn extract_pdf_image_bytes(
     image
         .write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
         .ok()?;
-    Some((
-        "image/png".to_string(),
-        "png".to_string(),
-        encoded,
-    ))
+    Some(("image/png".to_string(), "png".to_string(), encoded))
 }
 
 fn is_pdf_image_stream(stream: &LoStream) -> bool {
@@ -476,10 +501,7 @@ fn is_pdf_image_stream(stream: &LoStream) -> bool {
 fn pdf_stream_filters(stream: &LoStream) -> Vec<String> {
     match stream.dict.get(b"Filter").ok() {
         Some(LoObject::Name(name)) => vec![String::from_utf8_lossy(name).to_string()],
-        Some(LoObject::Array(items)) => items
-            .iter()
-            .filter_map(pdf_name_from_object)
-            .collect(),
+        Some(LoObject::Array(items)) => items.iter().filter_map(pdf_name_from_object).collect(),
         _ => Vec::new(),
     }
 }
@@ -523,7 +545,9 @@ mod tests {
             )
             .unwrap();
 
-        writer.start_file("word/_rels/document.xml.rels", options).unwrap();
+        writer
+            .start_file("word/_rels/document.xml.rels", options)
+            .unwrap();
         writer
             .write_all(
                 br#"<?xml version="1.0" encoding="UTF-8"?>
@@ -551,12 +575,11 @@ mod tests {
         writer.start_file("word/media/image1.png", options).unwrap();
         writer
             .write_all(&[
-                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-                0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-                0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-                0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
-                0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB1, 0x00, 0x00, 0x00,
-                0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+                0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+                0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78,
+                0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+                0xB1, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
             ])
             .unwrap();
 

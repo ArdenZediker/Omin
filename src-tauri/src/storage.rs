@@ -180,7 +180,11 @@ pub(crate) fn write_simple_table_value(
     Ok(())
 }
 
-fn remove_simple_table_value(connection: &Connection, table: &str, key: &str) -> Result<(), String> {
+fn remove_simple_table_value(
+    connection: &Connection,
+    table: &str,
+    key: &str,
+) -> Result<(), String> {
     let sql = format!("DELETE FROM {table} WHERE key = ?1");
     connection
         .execute(&sql, params![key])
@@ -635,9 +639,7 @@ pub(crate) fn save_manifest_storage(
     Ok(())
 }
 
-pub(crate) fn load_memory_storage(
-    connection: &Connection,
-) -> Result<MemoryStoragePayload, String> {
+pub(crate) fn load_memory_storage(connection: &Connection) -> Result<MemoryStoragePayload, String> {
     let assistant_memories_json =
         read_simple_table_value(connection, "assistant_memories", "builtin")?;
     let user_preferences_json = read_simple_table_value(connection, "user_preferences", "builtin")?;

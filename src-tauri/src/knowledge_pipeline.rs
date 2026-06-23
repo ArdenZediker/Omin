@@ -628,7 +628,12 @@ fn normalize_optional_text(value: Option<&str>) -> Option<String> {
 
 fn infer_fallback_mime_type(preview_type: &str, extension: Option<&str>) -> &'static str {
     match preview_type {
-        "image" => match extension.unwrap_or_default().trim_start_matches('.').to_lowercase().as_str() {
+        "image" => match extension
+            .unwrap_or_default()
+            .trim_start_matches('.')
+            .to_lowercase()
+            .as_str()
+        {
             "jpg" | "jpeg" => "image/jpeg",
             "gif" => "image/gif",
             "webp" => "image/webp",
@@ -638,7 +643,12 @@ fn infer_fallback_mime_type(preview_type: &str, extension: Option<&str>) -> &'st
             "ico" => "image/x-icon",
             _ => "image/png",
         },
-        "audio" => match extension.unwrap_or_default().trim_start_matches('.').to_lowercase().as_str() {
+        "audio" => match extension
+            .unwrap_or_default()
+            .trim_start_matches('.')
+            .to_lowercase()
+            .as_str()
+        {
             "wav" => "audio/wav",
             "m4a" => "audio/mp4",
             "aac" => "audio/aac",
@@ -694,15 +704,12 @@ fn format_image_enrichment(
     sections.push(String::new());
     sections.push("图片文字提取：".to_string());
     sections.push(
-        normalize_optional_text(ocr_text)
-            .unwrap_or_else(|| "未识别到可用文字内容。".to_string()),
+        normalize_optional_text(ocr_text).unwrap_or_else(|| "未识别到可用文字内容。".to_string()),
     );
     sections.push(String::new());
     sections.push("图片摘要：".to_string());
-    sections.push(
-        normalize_optional_text(summary)
-            .unwrap_or_else(|| "未生成图片摘要。".to_string()),
-    );
+    sections
+        .push(normalize_optional_text(summary).unwrap_or_else(|| "未生成图片摘要。".to_string()));
     sections.join("\n")
 }
 
@@ -808,17 +815,18 @@ fn request_audio_transcription(
     bytes: &[u8],
 ) -> Result<String, String> {
     let file_name = source_name.to_string();
-    let file_part = if let Some(mime_type) = mime_type.map(str::trim).filter(|value| !value.is_empty()) {
-        match multipart::Part::bytes(bytes.to_vec())
-            .file_name(file_name.clone())
-            .mime_str(mime_type)
-        {
-            Ok(part) => part,
-            Err(_) => multipart::Part::bytes(bytes.to_vec()).file_name(file_name),
-        }
-    } else {
-        multipart::Part::bytes(bytes.to_vec()).file_name(file_name)
-    };
+    let file_part =
+        if let Some(mime_type) = mime_type.map(str::trim).filter(|value| !value.is_empty()) {
+            match multipart::Part::bytes(bytes.to_vec())
+                .file_name(file_name.clone())
+                .mime_str(mime_type)
+            {
+                Ok(part) => part,
+                Err(_) => multipart::Part::bytes(bytes.to_vec()).file_name(file_name),
+            }
+        } else {
+            multipart::Part::bytes(bytes.to_vec()).file_name(file_name)
+        };
 
     let form = multipart::Form::new()
         .text("model", model.model.clone())
@@ -837,7 +845,9 @@ fn request_audio_transcription(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
-        return Err(format!("audio transcription request failed ({status}): {body}"));
+        return Err(format!(
+            "audio transcription request failed ({status}): {body}"
+        ));
     }
 
     let body = response.text().map_err(|err| err.to_string())?;
@@ -1160,11 +1170,13 @@ fn parse_simple_document(
                 metadata_json: Some("{\"mode\":\"frontend_bridge\"}".into()),
             })
         }
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" | "ico" => Ok(ParsedDocument {
-            content: format_image_placeholder(source_name, mime_type),
-            preview_type: "image".into(),
-            metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
-        }),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" | "ico" => {
+            Ok(ParsedDocument {
+                content: format_image_placeholder(source_name, mime_type),
+                preview_type: "image".into(),
+                metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
+            })
+        }
         "mp3" | "wav" | "m4a" | "aac" | "flac" | "ogg" | "oga" => Ok(ParsedDocument {
             content: format_audio_placeholder(source_name, mime_type),
             preview_type: "audio".into(),
@@ -1181,7 +1193,9 @@ fn parse_simple_document(
                 preview_type: "audio".into(),
                 metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
             }),
-            Some("video") => Err("unsupported file type .video; original file has been stored".into()),
+            Some("video") => {
+                Err("unsupported file type .video; original file has been stored".into())
+            }
             _ => Err("unable to identify file extension".into()),
         },
         other => match normalized_preview_type.as_deref() {
@@ -1195,7 +1209,9 @@ fn parse_simple_document(
                 preview_type: "audio".into(),
                 metadata_json: Some("{\"mode\":\"store_with_placeholder\"}".into()),
             }),
-            Some("video") => Err("unsupported file type .video; original file has been stored".into()),
+            Some("video") => {
+                Err("unsupported file type .video; original file has been stored".into())
+            }
             _ => Err(format!(
                 "unsupported file extension .{other}; original file has been stored"
             )),
@@ -1247,10 +1263,7 @@ fn enrich_image_document(
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| infer_fallback_mime_type("image", document.file_extension.as_deref()));
-    let data_url = format!(
-        "data:{mime_type};base64,{}",
-        BASE64_STANDARD.encode(bytes)
-    );
+    let data_url = format!("data:{mime_type};base64,{}", BASE64_STANDARD.encode(bytes));
     let prompt = format!(
         "你正在为知识库准备一段可用于中文检索的图片分析文本，文件名是“{}”。\n\
 请只返回 XML，格式必须严格如下：\n\
@@ -1403,8 +1416,7 @@ fn enrich_audio_document(
 fn markdown_data_image_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
-        Regex::new(r"!\[[^\]]*\]\(\s*data:image/[^)]+?\)")
-            .expect("valid markdown data image regex")
+        Regex::new(r"!\[[^\]]*\]\(\s*data:image/[^)]+?\)").expect("valid markdown data image regex")
     })
 }
 
@@ -1527,12 +1539,21 @@ fn dead_letter_status_label(status: &str) -> &'static str {
 fn dead_letter_snapshot_text(metadata_json: Option<&str>, field: &str) -> Option<String> {
     metadata_json
         .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
-        .and_then(|value| value.get(field).and_then(|item| item.as_str()).map(str::trim).map(str::to_string))
+        .and_then(|value| {
+            value
+                .get(field)
+                .and_then(|item| item.as_str())
+                .map(str::trim)
+                .map(str::to_string)
+        })
         .filter(|value| !value.is_empty())
 }
 
 fn dead_letter_user_message(error_message: Option<&str>) -> String {
-    let Some(message) = error_message.map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(message) = error_message
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return "处理失败，请查看详情。".to_string();
     };
 
@@ -1842,11 +1863,11 @@ pub fn load_processing_status_summary(
         ("global".to_string(), None)
     };
 
-    let (queued, running, failed): (i64, i64, i64) = if let Some(collection_id) = collection_id.as_ref()
-    {
-        connection
-            .query_row(
-                r#"
+    let (queued, running, failed): (i64, i64, i64) =
+        if let Some(collection_id) = collection_id.as_ref() {
+            connection
+                .query_row(
+                    r#"
                 SELECT
                   SUM(CASE WHEN status = ?2 THEN 1 ELSE 0 END) AS queued_count,
                   SUM(CASE WHEN status = ?3 THEN 1 ELSE 0 END) AS running_count,
@@ -1854,37 +1875,42 @@ pub fn load_processing_status_summary(
                 FROM knowledge_processing_jobs
                 WHERE collection_id = ?1
                 "#,
-                params![collection_id, JOB_STATUS_QUEUED, JOB_STATUS_RUNNING, JOB_STATUS_FAILED],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<i64>>(0)?.unwrap_or(0),
-                        row.get::<_, Option<i64>>(1)?.unwrap_or(0),
-                        row.get::<_, Option<i64>>(2)?.unwrap_or(0),
-                    ))
-                },
-            )
-            .map_err(|err| err.to_string())?
-    } else {
-        connection
-            .query_row(
-                r#"
+                    params![
+                        collection_id,
+                        JOB_STATUS_QUEUED,
+                        JOB_STATUS_RUNNING,
+                        JOB_STATUS_FAILED
+                    ],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                            row.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                            row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                        ))
+                    },
+                )
+                .map_err(|err| err.to_string())?
+        } else {
+            connection
+                .query_row(
+                    r#"
                 SELECT
                   SUM(CASE WHEN status = ?1 THEN 1 ELSE 0 END) AS queued_count,
                   SUM(CASE WHEN status = ?2 THEN 1 ELSE 0 END) AS running_count,
                   SUM(CASE WHEN status = ?3 THEN 1 ELSE 0 END) AS failed_count
                 FROM knowledge_processing_jobs
                 "#,
-                params![JOB_STATUS_QUEUED, JOB_STATUS_RUNNING, JOB_STATUS_FAILED],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<i64>>(0)?.unwrap_or(0),
-                        row.get::<_, Option<i64>>(1)?.unwrap_or(0),
-                        row.get::<_, Option<i64>>(2)?.unwrap_or(0),
-                    ))
-                },
-            )
-            .map_err(|err| err.to_string())?
-    };
+                    params![JOB_STATUS_QUEUED, JOB_STATUS_RUNNING, JOB_STATUS_FAILED],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                            row.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                            row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                        ))
+                    },
+                )
+                .map_err(|err| err.to_string())?
+        };
 
     Ok(KnowledgeProcessingStatusSummary {
         scope,
@@ -2035,10 +2061,12 @@ pub fn retry_failed_jobs(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?
     } else {
-        stmt.query_map(params![JOB_STATUS_FAILED, limit], |row| row.get::<_, String>(0))
-            .map_err(|err| err.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| err.to_string())?
+        stmt.query_map(params![JOB_STATUS_FAILED, limit], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?
     };
 
     let attempted = job_ids.len() as i64;
@@ -2116,9 +2144,14 @@ pub fn list_dead_letters(
             let total: i64 = connection
                 .query_row(&count_sql, params![collection_id, status], |row| row.get(0))
                 .map_err(|err| err.to_string())?;
-            let mut stmt = connection.prepare(&list_sql).map_err(|err| err.to_string())?;
+            let mut stmt = connection
+                .prepare(&list_sql)
+                .map_err(|err| err.to_string())?;
             let items = stmt
-                .query_map(params![collection_id, status, limit, offset], read_dead_letter_record)
+                .query_map(
+                    params![collection_id, status, limit, offset],
+                    read_dead_letter_record,
+                )
                 .map_err(|err| err.to_string())?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|err| err.to_string())?;
@@ -2126,13 +2159,19 @@ pub fn list_dead_letters(
         }
         (Some(collection_id), None) => {
             let count_sql = format!("{base_count} WHERE collection_id = ?1");
-            let list_sql = format!("{base_select} WHERE dl.collection_id = ?1 {order} LIMIT ?2 OFFSET ?3");
+            let list_sql =
+                format!("{base_select} WHERE dl.collection_id = ?1 {order} LIMIT ?2 OFFSET ?3");
             let total: i64 = connection
                 .query_row(&count_sql, params![collection_id], |row| row.get(0))
                 .map_err(|err| err.to_string())?;
-            let mut stmt = connection.prepare(&list_sql).map_err(|err| err.to_string())?;
+            let mut stmt = connection
+                .prepare(&list_sql)
+                .map_err(|err| err.to_string())?;
             let items = stmt
-                .query_map(params![collection_id, limit, offset], read_dead_letter_record)
+                .query_map(
+                    params![collection_id, limit, offset],
+                    read_dead_letter_record,
+                )
                 .map_err(|err| err.to_string())?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|err| err.to_string())?;
@@ -2144,7 +2183,9 @@ pub fn list_dead_letters(
             let total: i64 = connection
                 .query_row(&count_sql, params![status], |row| row.get(0))
                 .map_err(|err| err.to_string())?;
-            let mut stmt = connection.prepare(&list_sql).map_err(|err| err.to_string())?;
+            let mut stmt = connection
+                .prepare(&list_sql)
+                .map_err(|err| err.to_string())?;
             let items = stmt
                 .query_map(params![status, limit, offset], read_dead_letter_record)
                 .map_err(|err| err.to_string())?
@@ -2158,7 +2199,9 @@ pub fn list_dead_letters(
             let total: i64 = connection
                 .query_row(&count_sql, [], |row| row.get(0))
                 .map_err(|err| err.to_string())?;
-            let mut stmt = connection.prepare(&list_sql).map_err(|err| err.to_string())?;
+            let mut stmt = connection
+                .prepare(&list_sql)
+                .map_err(|err| err.to_string())?;
             let items = stmt
                 .query_map(params![limit, offset], read_dead_letter_record)
                 .map_err(|err| err.to_string())?
@@ -2223,16 +2266,16 @@ pub fn replay_dead_letters(
         stmt.query_map(params![status_value, collection_id, limit], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
-            .map_err(|err| err.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?
     } else {
         stmt.query_map(params![status_value, limit], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
-            .map_err(|err| err.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?
     };
 
     let attempted = dead_letter_candidates.len() as i64;
@@ -3229,10 +3272,7 @@ fn resolve_embedded_asset_parent_chunk_index(
         return 0;
     }
 
-    if let Some(anchor_text) = anchor_text
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
+    if let Some(anchor_text) = anchor_text.map(str::trim).filter(|value| !value.is_empty()) {
         let anchor_key = normalize_attachment_text(anchor_text);
         if let Some(index) = text_chunks.iter().position(|chunk| {
             let mut haystack = chunk.content.clone();
@@ -3268,11 +3308,7 @@ fn format_embedded_image_chunk_content(
     lines.join("\n")
 }
 
-fn embedded_asset_file_name(
-    asset_id: &str,
-    asset_index: i64,
-    source_name: &str,
-) -> String {
+fn embedded_asset_file_name(asset_id: &str, asset_index: i64, source_name: &str) -> String {
     let base = sanitize_storage_file_name(source_name);
     let short_id = asset_id.chars().take(8).collect::<String>();
     if base == "document" {
@@ -3511,8 +3547,12 @@ fn complete_partial_job(
     }
 
     let now = current_timestamp_ms();
-    let (persisted_assets, asset_storage_warnings) =
-        persist_embedded_image_candidates(app, &job.collection_id, &job.document_id, &embedded_assets);
+    let (persisted_assets, asset_storage_warnings) = persist_embedded_image_candidates(
+        app,
+        &job.collection_id,
+        &job.document_id,
+        &embedded_assets,
+    );
     let embedded = build_embedded_image_assets_and_chunks(
         &text_chunks,
         &persisted_assets,
@@ -3612,13 +3652,13 @@ fn complete_partial_job(
     if let Some(message) = embedding_error {
         warning_messages.push(message.to_string());
     }
-    let document_status =
-        if warning_messages.is_empty() && (chunk_count <= 0 || vectorized_chunk_count >= chunk_count)
-        {
-            DOCUMENT_STATUS_SEARCHABLE
-        } else {
-            DOCUMENT_STATUS_PARTIAL
-        };
+    let document_status = if warning_messages.is_empty()
+        && (chunk_count <= 0 || vectorized_chunk_count >= chunk_count)
+    {
+        DOCUMENT_STATUS_SEARCHABLE
+    } else {
+        DOCUMENT_STATUS_PARTIAL
+    };
     let document_error = if warning_messages.is_empty() {
         None
     } else {
@@ -3913,7 +3953,14 @@ fn recover_timed_out_running_jobs(
                         next_run_at = NULL, finished_at = ?5, updated_at = ?6
                     WHERE id = ?1
                     "#,
-                    params![job_id, JOB_STATUS_FAILED, next_fail_count, timeout_message, now, now],
+                    params![
+                        job_id,
+                        JOB_STATUS_FAILED,
+                        next_fail_count,
+                        timeout_message,
+                        now,
+                        now
+                    ],
                 )
                 .map_err(|err| err.to_string())?;
             let failed_job_record = load_job_record(connection, job_id)?;
@@ -3982,7 +4029,14 @@ fn execute_claimed_job(
         .ok_or_else(|| "stored file path is missing".to_string())?;
     let bytes = fs::read(stored_file_path).map_err(|err| err.to_string())?;
     validate_upload_size(&bytes)?;
-    finish_step(connection, job, "validate", STEP_STATUS_SUCCEEDED, 100, None)?;
+    finish_step(
+        connection,
+        job,
+        "validate",
+        STEP_STATUS_SUCCEEDED,
+        100,
+        None,
+    )?;
     if matches!(check_job_control(connection, job)?, ControlFlow::Stop) {
         return Ok(());
     }
@@ -4007,7 +4061,8 @@ fn execute_claimed_job(
         return Ok(());
     }
 
-    let collection_multimodal = resolve_collection_multimodal_config(connection, &job.collection_id)?;
+    let collection_multimodal =
+        resolve_collection_multimodal_config(connection, &job.collection_id)?;
     let mut processing_warnings = Vec::new();
     let mut embedded_assets = Vec::new();
 
@@ -4055,7 +4110,14 @@ fn execute_claimed_job(
                     parsed.metadata_json.as_deref(),
                 )?;
             }
-            finish_step(connection, job, "enrich_image", STEP_STATUS_SUCCEEDED, 100, None)?;
+            finish_step(
+                connection,
+                job,
+                "enrich_image",
+                STEP_STATUS_SUCCEEDED,
+                100,
+                None,
+            )?;
         } else {
             return Err(
                 "image enrichment failed: image multimodal model is missing or unusable"
@@ -4073,12 +4135,7 @@ fn execute_claimed_job(
         match extraction_result {
             Ok(extracted) => {
                 if extracted.is_empty() {
-                    skip_step(
-                        connection,
-                        job,
-                        "enrich_image",
-                        "no embedded images found",
-                    )?;
+                    skip_step(connection, job, "enrich_image", "no embedded images found")?;
                 } else {
                     embedded_assets = extracted;
                     let image_analysis_enabled =
@@ -4093,24 +4150,26 @@ fn execute_claimed_job(
                         .filter(|value| !value.is_empty());
                     let resolved_model = if image_analysis_enabled && image_options_enabled {
                         match model_id {
-                            Some(model_id) => match resolve_multimodal_model(connection, model_id, "image") {
-                                Ok(model) => Some(model),
-                                Err(err) => {
-                                    let message =
-                                        format!("embedded image enrichment unavailable: {err}");
-                                    processing_warnings.push(message.clone());
-                                    log_job(
-                                        connection,
-                                        &job.id,
-                                        &job.document_id,
-                                        "warn",
-                                        Some("enrich_image"),
-                                        &message,
-                                        parsed.metadata_json.as_deref(),
-                                    )?;
-                                    None
+                            Some(model_id) => {
+                                match resolve_multimodal_model(connection, model_id, "image") {
+                                    Ok(model) => Some(model),
+                                    Err(err) => {
+                                        let message =
+                                            format!("embedded image enrichment unavailable: {err}");
+                                        processing_warnings.push(message.clone());
+                                        log_job(
+                                            connection,
+                                            &job.id,
+                                            &job.document_id,
+                                            "warn",
+                                            Some("enrich_image"),
+                                            &message,
+                                            parsed.metadata_json.as_deref(),
+                                        )?;
+                                        None
+                                    }
                                 }
-                            },
+                            }
                             None => {
                                 let message = "embedded image enrichment skipped: no usable image multimodal model is configured".to_string();
                                 processing_warnings.push(message.clone());
@@ -4198,7 +4257,14 @@ fn execute_claimed_job(
                         )?;
                     }
 
-                    finish_step(connection, job, "enrich_image", STEP_STATUS_SUCCEEDED, 100, None)?;
+                    finish_step(
+                        connection,
+                        job,
+                        "enrich_image",
+                        STEP_STATUS_SUCCEEDED,
+                        100,
+                        None,
+                    )?;
                 }
             }
             Err(err) => {
@@ -4277,7 +4343,14 @@ fn execute_claimed_job(
                     parsed.metadata_json.as_deref(),
                 )?;
             }
-            finish_step(connection, job, "enrich_audio", STEP_STATUS_SUCCEEDED, 100, None)?;
+            finish_step(
+                connection,
+                job,
+                "enrich_audio",
+                STEP_STATUS_SUCCEEDED,
+                100,
+                None,
+            )?;
         } else {
             return Err(
                 "audio enrichment failed: audio multimodal model is missing or unusable"
@@ -4346,8 +4419,7 @@ fn process_claimed_job(
 pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
     let connection = open_pipeline_connection(app)?;
     let settings = load_pipeline_settings(&connection)?;
-    let Some(job) =
-        claim_next_job_with_limits(&connection, settings.per_collection_max_running)?
+    let Some(job) = claim_next_job_with_limits(&connection, settings.per_collection_max_running)?
     else {
         return Ok(false);
     };
@@ -4375,7 +4447,8 @@ pub fn run_pipeline_worker_tick(app: &tauri::AppHandle) -> Result<bool, String> 
 
     let mut launched = 0_i64;
     while capacity > 0 {
-        let maybe_job = claim_next_job_with_limits(&connection, settings.per_collection_max_running)?;
+        let maybe_job =
+            claim_next_job_with_limits(&connection, settings.per_collection_max_running)?;
         let Some(job) = maybe_job else {
             break;
         };
@@ -4540,7 +4613,9 @@ mod tests {
 
     #[test]
     fn parse_markdown_keeps_markdown_preview() {
-        let parsed = parse_simple_document("notes.md", Some("md"), None, None, b"# Title\nBody", None).unwrap();
+        let parsed =
+            parse_simple_document("notes.md", Some("md"), None, None, b"# Title\nBody", None)
+                .unwrap();
 
         assert_eq!(parsed.content, "# Title\nBody");
         assert_eq!(parsed.preview_type, "markdown");
@@ -4549,7 +4624,8 @@ mod tests {
 
     #[test]
     fn parse_csv_converts_to_markdown_table() {
-        let parsed = parse_simple_document("data.csv", Some(".csv"), None, None, b"a,b\n1,2", None).unwrap();
+        let parsed =
+            parse_simple_document("data.csv", Some(".csv"), None, None, b"a,b\n1,2", None).unwrap();
 
         assert_eq!(parsed.preview_type, "markdown");
         assert!(parsed.content.contains("| a | b |"));
@@ -4558,9 +4634,15 @@ mod tests {
 
     #[test]
     fn parse_pdf_uses_frontend_bridge_content() {
-        let parsed =
-            parse_simple_document("report.pdf", Some("pdf"), None, None, b"%PDF", Some("Extracted text"))
-                .unwrap();
+        let parsed = parse_simple_document(
+            "report.pdf",
+            Some("pdf"),
+            None,
+            None,
+            b"%PDF",
+            Some("Extracted text"),
+        )
+        .unwrap();
 
         assert_eq!(parsed.preview_type, "pdf");
         assert_eq!(parsed.content, "Extracted text");
@@ -4588,7 +4670,15 @@ mod tests {
 
     #[test]
     fn parse_image_uses_placeholder() {
-        let parsed = parse_simple_document("photo.png", Some("png"), Some("image/png"), None, &[1, 2, 3], None).unwrap();
+        let parsed = parse_simple_document(
+            "photo.png",
+            Some("png"),
+            Some("image/png"),
+            None,
+            &[1, 2, 3],
+            None,
+        )
+        .unwrap();
 
         assert_eq!(parsed.preview_type, "image");
         assert!(parsed.content.contains("图片文件"));
@@ -4622,7 +4712,8 @@ mod tests {
 
     #[test]
     fn parse_unknown_extension_is_unsupported() {
-        let err = parse_simple_document("archive.zip", Some("zip"), None, None, &[1, 2, 3], None).unwrap_err();
+        let err = parse_simple_document("archive.zip", Some("zip"), None, None, &[1, 2, 3], None)
+            .unwrap_err();
 
         assert!(err.contains(".zip"));
     }
@@ -4658,12 +4749,19 @@ mod tests {
         crate::ensure_knowledge_schema(&connection).unwrap();
 
         assert!(crate::table_has_column(&connection, "knowledge_chunks", "chunk_type").unwrap());
-        assert!(crate::table_has_column(&connection, "knowledge_chunks", "parent_chunk_id").unwrap());
+        assert!(
+            crate::table_has_column(&connection, "knowledge_chunks", "parent_chunk_id").unwrap()
+        );
         assert!(crate::table_has_column(&connection, "knowledge_chunks", "asset_id").unwrap());
         assert!(crate::table_has_column(&connection, "knowledge_chunks", "image_info").unwrap());
         assert!(crate::table_has_column(&connection, "knowledge_document_assets", "id").unwrap());
-        assert!(crate::table_has_column(&connection, "knowledge_document_assets", "ocr_text").unwrap());
-        assert!(crate::table_has_column(&connection, "knowledge_document_assets", "caption_text").unwrap());
+        assert!(
+            crate::table_has_column(&connection, "knowledge_document_assets", "ocr_text").unwrap()
+        );
+        assert!(
+            crate::table_has_column(&connection, "knowledge_document_assets", "caption_text")
+                .unwrap()
+        );
     }
 
     #[test]
@@ -4775,10 +4873,28 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].chunk.id, "text-1");
-        assert_eq!(results[0].display_chunk.as_ref().map(|chunk| chunk.id.as_str()), Some("text-1"));
-        assert_eq!(results[0].matched_chunk.as_ref().map(|chunk| chunk.id.as_str()), Some("ocr-1"));
+        assert_eq!(
+            results[0]
+                .display_chunk
+                .as_ref()
+                .map(|chunk| chunk.id.as_str()),
+            Some("text-1")
+        );
+        assert_eq!(
+            results[0]
+                .matched_chunk
+                .as_ref()
+                .map(|chunk| chunk.id.as_str()),
+            Some("ocr-1")
+        );
         assert_eq!(results[0].matched_chunk_type.as_deref(), Some("image_ocr"));
-        assert_eq!(results[0].matched_asset.as_ref().map(|asset| asset.id.as_str()), Some("asset-1"));
+        assert_eq!(
+            results[0]
+                .matched_asset
+                .as_ref()
+                .map(|asset| asset.id.as_str()),
+            Some("asset-1")
+        );
     }
 
     #[test]
@@ -4808,9 +4924,8 @@ mod tests {
         let connection = new_test_connection();
         let (collection_id, _) = seed_collection_and_document(&connection);
 
-        let err =
-            crate::validate_knowledge_multimodal_upload(&connection, &collection_id, "image")
-                .unwrap_err();
+        let err = crate::validate_knowledge_multimodal_upload(&connection, &collection_id, "image")
+            .unwrap_err();
 
         assert!(!err.trim().is_empty());
     }
@@ -4859,8 +4974,7 @@ mod tests {
             .to_string(),
         );
 
-        crate::validate_knowledge_multimodal_upload(&connection, &collection_id, "audio")
-            .unwrap();
+        crate::validate_knowledge_multimodal_upload(&connection, &collection_id, "audio").unwrap();
     }
 
     #[test]
