@@ -6,17 +6,12 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ArrowLeft,
   Bot,
-  FileImage as LucideFileImage,
-  FileText as LucideFileText,
   FolderOpen,
   Grid2x2,
-  History,
   Layers3,
   MessageSquare,
   Mic,
   X,
-  RotateCcw,
-  TriangleAlert,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -26,9 +21,9 @@ import {
   SquarePlus,
   Search,
   Settings,
-  ChevronDown,
-  ChevronUp,
   Sparkles,
+  FileImage as LucideFileImage,
+  FileText as LucideFileText,
 } from "lucide-react";
 import type {
   KnowledgeCollection,
@@ -59,6 +54,8 @@ import KnowledgeDocumentChunksPanel from "./knowledge/KnowledgeDocumentChunksPan
 import KnowledgeDocumentList from "./knowledge/KnowledgeDocumentList";
 import KnowledgeDocumentProcessingPanel from "./knowledge/KnowledgeDocumentProcessingPanel";
 import KnowledgeDocumentPreview from "./knowledge/KnowledgeDocumentPreview";
+import KnowledgeTaskCenterPanel from "./knowledge/KnowledgeTaskCenterPanel";
+import type { KnowledgeDeadLetterStatusFilter, KnowledgeTaskCenterScope } from "./knowledge/KnowledgeTaskCenterPanel";
 import {
   KNOWLEDGE_UPLOAD_ACCEPT,
   classifyResource,
@@ -79,7 +76,6 @@ type KnowledgeBaseViewProps = {
 
 type KnowledgeDocumentDetailView = "preview" | "assets" | "chunks" | "processing";
 type KnowledgePageMode = "empty" | "list" | "detail";
-type DeadLetterScope = "all" | "activeCollection";
 type CollectionSettingsDraft = {
   id: string;
   name: string;
@@ -311,18 +307,6 @@ function renderHighlightedSearchText(text: string, query: string) {
     }
     return <span key={`text-${index}`}>{part}</span>;
   });
-}
-
-function getDeadLetterDisplayName(item: KnowledgeProcessingDeadLetter, documentNameById: Map<string, string>) {
-  return item.documentName?.trim() || documentNameById.get(item.documentId) || `文档 ${item.documentId.slice(0, 8)}`;
-}
-
-function getDeadLetterStatusClassName(status: string) {
-  return status === "failed" ? "chat-topic-panel__task-status--failed" : "chat-topic-panel__task-status--completed";
-}
-
-function formatDeadLetterAttempts(item: KnowledgeProcessingDeadLetter) {
-  return `第 ${Math.max(1, item.attempt)}/${Math.max(1, item.maxAttempts)} 次尝试`;
 }
 
 function fitCanvasTextToWidth(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
@@ -711,8 +695,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const [collectionSettingsDraft, setCollectionSettingsDraft] = useState<CollectionSettingsDraft | null>(null);
   const [collectionSettingsError, setCollectionSettingsError] = useState<string | null>(null);
   const [isSavingCollectionSettings, setIsSavingCollectionSettings] = useState(false);
-  const [deadLetterScope, setDeadLetterScope] = useState<DeadLetterScope>("activeCollection");
-  const [deadLetterStatusFilter, setDeadLetterStatusFilter] = useState<"failed" | "replayed" | "all">("failed");
+  const [deadLetterScope, setDeadLetterScope] = useState<KnowledgeTaskCenterScope>("activeCollection");
+  const [deadLetterStatusFilter, setDeadLetterStatusFilter] = useState<KnowledgeDeadLetterStatusFilter>("failed");
   const [deadLetterItems, setDeadLetterItems] = useState<KnowledgeProcessingDeadLetter[]>([]);
   const [deadLetterTotal, setDeadLetterTotal] = useState(0);
   const [deadLetterPage, setDeadLetterPage] = useState(1);
@@ -1781,256 +1765,49 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   const detailView = pageMode === "detail";
   const shouldShowTaskCenterPanel = isTaskCenterPanelOpen && !detailView;
   const taskCenterPanel = (
-    <aside className="chat-topic-panel no-drag !w-[360px] !min-w-[360px] !basis-[360px] omni-knowledge-task-panel">
-      <div className="chat-topic-panel__body">
-        <>
-          <div className="chat-topic-panel__section chat-topic-panel__section--task">
-            <div className="chat-topic-panel__section-title">
-              <History size={13} strokeWidth={2} />
-              <span>任务中心</span>
-            </div>
-
-            <div className="chat-topic-panel__task">
-              <div className="chat-topic-panel__task-head">
-                <strong>{deadLetterScope === "activeCollection" ? `当前知识库 · ${activeCollectionName}` : "全局处理概览"}</strong>
-                <span
-                  className={`chat-topic-panel__task-status ${
-                    (deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.failed : taskCounts.failed) > 0
-                      ? "chat-topic-panel__task-status--failed"
-                      : "chat-topic-panel__task-status--completed"
-                  }`}
-                >
-                  失败 {deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.failed : taskCounts.failed}
-                </span>
-              </div>
-              <div className="chat-topic-panel__task-meta">
-                <span>排队 {deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.queued : taskCounts.queued}</span>
-                <span>运行 {deadLetterScope === "activeCollection" ? activeCollectionTaskCounts.running : taskCounts.running}</span>
-                <span>死信 {deadLetterScope === "activeCollection" ? activeCollectionDeadLetterCount : globalDeadLetterCount}</span>
-              </div>
-              <div className="mt-3 rounded-none border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-                全局失败 {taskCounts.failed} · 当前库失败 {activeCollectionTaskCounts.failed} · 当前展示 {deadLetterScope === "activeCollection" ? "当前知识库" : "全局范围"}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2">
-              <select
-                value={deadLetterScope}
-                onChange={(event) => {
-                  const nextScope = event.target.value as DeadLetterScope;
-                  if (nextScope === "activeCollection" && !activeCollection?.id) {
-                    setTaskCenterNotice("当前没有可用知识库");
-                    return;
-                  }
-                  setDeadLetterPage(1);
-                  setDeadLetterScope(nextScope);
-                }}
-                className="chat-topic-panel__form-input"
-              >
-                <option value="activeCollection">当前知识库</option>
-                <option value="all">全局范围</option>
-              </select>
-              <button
-                type="button"
-                className="chat-topic-panel__inline-action"
-                onClick={() => setIsTaskSettingsOpen((current) => !current)}
-              >
-                {isTaskSettingsOpen ? <ChevronUp size={14} strokeWidth={2} /> : <ChevronDown size={14} strokeWidth={2} />}
-                <span>{isTaskSettingsOpen ? "收起调度设置" : "调度设置"}</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={
-                  isTaskCenterBusy ||
-                  ((deadLetterScope === "activeCollection"
-                    ? activeCollectionTaskCounts.failed + activeCollectionDeadLetterCount
-                    : taskCounts.failed + globalDeadLetterCount) <= 0)
-                }
-                onClick={() => void reprocessFailedItems(deadLetterScope)}
-                className="chat-topic-panel__inline-action"
-              >
-                <RotateCcw size={14} strokeWidth={2} />
-                <span>重新处理失败项</span>
-              </button>
-            </div>
-          </div>
-
-          {pipelineSettings && isTaskSettingsOpen ? (
-            <div className="chat-topic-panel__section">
-              <div className="chat-topic-panel__section-title">
-                <Settings size={13} strokeWidth={2} />
-                <span>调度设置</span>
-                <span className="chat-topic-panel__item-meta">{isSavingPipelineSettings ? "保存中..." : "自动保存"}</span>
-              </div>
-              <div className="chat-topic-panel__task chat-topic-panel__task--form">
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                    <span>总并发</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={4}
-                      value={pipelineSettings.maxConcurrentJobs}
-                      onChange={(event) => void updatePipelineSettings({ maxConcurrentJobs: Number(event.target.value || 1) })}
-                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                    <span>单库并发</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={4}
-                      value={pipelineSettings.perCollectionMaxRunning}
-                      onChange={(event) => void updatePipelineSettings({ perCollectionMaxRunning: Number(event.target.value || 1) })}
-                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                    <span>自动重试</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={10}
-                      value={pipelineSettings.maxAutoRetries}
-                      onChange={(event) => void updatePipelineSettings({ maxAutoRetries: Number(event.target.value || 0) })}
-                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
-                    <span>任务超时(s)</span>
-                    <input
-                      type="number"
-                      min={10}
-                      max={3600}
-                      value={Math.floor(pipelineSettings.jobTimeoutMs / 1000)}
-                      onChange={(event) =>
-                        void updatePipelineSettings({
-                          jobTimeoutMs: Number(event.target.value || 10) * 1000,
-                        })
-                      }
-                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="chat-topic-panel__section">
-            <div className="chat-topic-panel__section-title">
-              <TriangleAlert size={13} strokeWidth={2} />
-              <span>待处理失败</span>
-              <span className="chat-topic-panel__item-meta">{deadLetterTotal} 条</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={deadLetterStatusFilter}
-                onChange={(event) => {
-                  setDeadLetterPage(1);
-                  setDeadLetterStatusFilter(event.target.value as "failed" | "replayed" | "all");
-                }}
-                className="chat-topic-panel__form-input"
-              >
-                <option value="failed">仅失败</option>
-                <option value="replayed">仅已回放</option>
-                <option value="all">全部状态</option>
-              </select>
-              <div className="rounded-none border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-                优先处理失败文档，再看详情排查原因
-              </div>
-            </div>
-            <div className="chat-topic-panel__group-list">
-              {isDeadLetterLoading ? (
-                <div className="chat-topic-panel__empty">加载失败任务中...</div>
-              ) : deadLetterItems.length === 0 ? (
-                <div className="chat-topic-panel__empty">当前筛选下没有需要处理的失败任务</div>
-              ) : (
-                deadLetterItems.map((item) => {
-                  const documentName = getDeadLetterDisplayName(item, documentNameById);
-                  const isExpanded = expandedDeadLetterId === item.id;
-                  return (
-                    <div key={item.id} className="chat-topic-panel__task">
-                      <div className="chat-topic-panel__task-head">
-                        <strong title={documentName}>{documentName}</strong>
-                        <span className={`chat-topic-panel__task-status ${getDeadLetterStatusClassName(item.status)}`}>
-                          {item.statusLabel}
-                        </span>
-                      </div>
-                      <div className="chat-topic-panel__task-meta">
-                        <span>{item.collectionName ?? activeCollectionName}</span>
-                        <span>{item.jobTypeLabel}</span>
-                        <span>{formatTimestamp(item.lastFailedAt)}</span>
-                      </div>
-                      <div className="mt-2 text-sm font-medium leading-6 text-slate-900">{item.userMessage}</div>
-                      {item.userAction ? <div className="mt-1 text-xs leading-5 text-slate-500">{item.userAction}</div> : null}
-                      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                        <span>{formatDeadLetterAttempts(item)}</span>
-                        <span>{item.documentName ? "已识别文档" : `文档 ID ${item.documentId.slice(0, 8)}`}</span>
-                      </div>
-                      <div className="mt-3 flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={deadLetterReplayBusyId === item.id || item.status !== "failed"}
-                          onClick={() => void replayDeadLetterItem(item)}
-                          className="chat-topic-panel__inline-action"
-                        >
-                          {deadLetterReplayBusyId === item.id ? "回放中" : "回放"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedDeadLetterId((current) => (current === item.id ? null : item.id))}
-                          className="chat-topic-panel__inline-action"
-                        >
-                          {isExpanded ? "收起详情" : "查看详情"}
-                        </button>
-                      </div>
-                      {isExpanded ? (
-                        <div className="mt-3 space-y-2 rounded-none border border-slate-200 bg-slate-50 px-3 py-3 text-[11px] leading-5 text-slate-600">
-                          <div><strong className="text-slate-900">原始错误：</strong>{item.errorMessage ?? "无原始错误详情"}</div>
-                          <div><strong className="text-slate-900">文档 ID：</strong>{item.documentId}</div>
-                          <div><strong className="text-slate-900">任务 ID：</strong>{item.jobId}</div>
-                          <div><strong className="text-slate-900">知识库 ID：</strong>{item.collectionId}</div>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                disabled={deadLetterPage <= 1 || isDeadLetterLoading}
-                onClick={() => setDeadLetterPage((current) => Math.max(1, current - 1))}
-                className="chat-topic-panel__inline-action"
-              >
-                上一页
-              </button>
-              <span className="chat-topic-panel__item-meta">第 {deadLetterPage} 页</span>
-              <button
-                type="button"
-                disabled={deadLetterPage * deadLetterPageSize >= deadLetterTotal || isDeadLetterLoading}
-                onClick={() => setDeadLetterPage((current) => current + 1)}
-                className="chat-topic-panel__inline-action"
-              >
-                下一页
-              </button>
-            </div>
-          </div>
-
-          {taskCenterNotice ? (
-            <div className="chat-topic-panel__task-status chat-topic-panel__task-status--completed">{taskCenterNotice}</div>
-          ) : null}
-          {taskCenterError ? (
-            <div className="chat-topic-panel__task-status chat-topic-panel__task-status--failed">{taskCenterError}</div>
-          ) : null}
-        </>
-      </div>
-    </aside>
+    <KnowledgeTaskCenterPanel
+      activeCollectionName={activeCollectionName}
+      hasActiveCollection={Boolean(activeCollection?.id)}
+      counts={{
+        global: taskCounts,
+        activeCollection: activeCollectionTaskCounts,
+        globalDeadLetterCount,
+        activeCollectionDeadLetterCount,
+      }}
+      scope={deadLetterScope}
+      statusFilter={deadLetterStatusFilter}
+      items={deadLetterItems}
+      total={deadLetterTotal}
+      page={deadLetterPage}
+      pageSize={deadLetterPageSize}
+      isLoading={isDeadLetterLoading}
+      isBusy={isTaskCenterBusy}
+      replayBusyId={deadLetterReplayBusyId}
+      expandedItemId={expandedDeadLetterId}
+      pipelineSettings={pipelineSettings}
+      isTaskSettingsOpen={isTaskSettingsOpen}
+      isSavingPipelineSettings={isSavingPipelineSettings}
+      notice={taskCenterNotice}
+      error={taskCenterError}
+      documentNameById={documentNameById}
+      onScopeChange={(nextScope) => {
+        setDeadLetterPage(1);
+        setDeadLetterScope(nextScope);
+      }}
+      onStatusFilterChange={(nextStatusFilter) => {
+        setDeadLetterPage(1);
+        setDeadLetterStatusFilter(nextStatusFilter);
+      }}
+      onToggleTaskSettings={() => setIsTaskSettingsOpen((current) => !current)}
+      onReprocessFailedItems={(scope) => void reprocessFailedItems(scope)}
+      onUpdatePipelineSettings={(patch) => void updatePipelineSettings(patch)}
+      onReplayDeadLetterItem={(item) => void replayDeadLetterItem(item)}
+      onToggleDeadLetterExpanded={(itemId) => setExpandedDeadLetterId((current) => (current === itemId ? null : itemId))}
+      onPreviousPage={() => setDeadLetterPage((current) => Math.max(1, current - 1))}
+      onNextPage={() => setDeadLetterPage((current) => current + 1)}
+      formatTimestamp={formatTimestamp}
+      onUnavailableActiveCollection={() => setTaskCenterNotice("当前没有可用知识库")}
+    />
   );
 
   return (
