@@ -6,7 +6,7 @@ use std::{
     cmp::Ordering,
     collections::HashMap,
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{
@@ -19,6 +19,7 @@ mod knowledge_chunker;
 mod knowledge_embedded_images;
 mod knowledge_pipeline;
 mod storage;
+mod workspace_files;
 
 use storage::{
     has_structured_chat_storage, load_automation_storage, load_manifest_storage,
@@ -28,19 +29,6 @@ use storage::{
     AutomationStoragePayload, ChatStoragePayload, ManifestStoragePayload, MemoryStoragePayload,
     KNOWLEDGE_EMBEDDING_CONFIG_KEY, KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
 };
-
-#[derive(Serialize)]
-struct WorkspaceFileEntry {
-    path: String,
-    is_dir: bool,
-}
-
-#[derive(Serialize)]
-struct WorkspaceSearchMatch {
-    path: String,
-    line_number: usize,
-    line_preview: String,
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -520,7 +508,7 @@ fn create_codex_pet_package() -> Result<CodexPetPackageRecord, String> {
     })
 }
 
-fn workspace_root() -> Result<PathBuf, String> {
+pub(crate) fn workspace_root() -> Result<PathBuf, String> {
     let current_dir = std::env::current_dir().map_err(|err| err.to_string())?;
     if current_dir.file_name().and_then(|name| name.to_str()) == Some("src-tauri") {
         return current_dir
@@ -664,8 +652,10 @@ pub(crate) fn infer_preview_type(extension: Option<&str>, mime_type: Option<&str
         return "video".to_string();
     }
 
-    if matches!(extension.as_str(), "mp3" | "wav" | "m4a" | "aac" | "flac" | "ogg" | "oga")
-    {
+    if matches!(
+        extension.as_str(),
+        "mp3" | "wav" | "m4a" | "aac" | "flac" | "ogg" | "oga"
+    ) {
         return "audio".to_string();
     }
 
@@ -1324,9 +1314,11 @@ fn normalize_collection_multimodal_config_json_for_storage(
 pub(crate) fn parse_knowledge_collection_multimodal_config_json(
     raw: Option<&str>,
 ) -> KnowledgeCollectionMultimodalConfigRecord {
-    raw.and_then(|value| serde_json::from_str::<KnowledgeCollectionMultimodalConfigRecord>(value).ok())
-        .map(normalize_knowledge_collection_multimodal_config_record)
-        .unwrap_or_default()
+    raw.and_then(|value| {
+        serde_json::from_str::<KnowledgeCollectionMultimodalConfigRecord>(value).ok()
+    })
+    .map(normalize_knowledge_collection_multimodal_config_record)
+    .unwrap_or_default()
 }
 
 fn load_knowledge_embedding_config(
@@ -1378,7 +1370,9 @@ pub(crate) fn load_knowledge_collection_multimodal_config(
         .optional()
         .map_err(|err| err.to_string())?
         .flatten();
-    Ok(parse_knowledge_collection_multimodal_config_json(raw.as_deref()))
+    Ok(parse_knowledge_collection_multimodal_config_json(
+        raw.as_deref(),
+    ))
 }
 
 #[allow(dead_code)]
@@ -1453,7 +1447,10 @@ pub(crate) fn find_exact_usable_knowledge_multimodal_model(
     config
         .models
         .iter()
-        .find(|model| model.id == required_model_id && is_usable_knowledge_multimodal_model(model, &capability))
+        .find(|model| {
+            model.id == required_model_id
+                && is_usable_knowledge_multimodal_model(model, &capability)
+        })
         .cloned()
 }
 
@@ -1475,7 +1472,11 @@ pub(crate) fn validate_knowledge_multimodal_upload(
         "audio" => "audio",
         _ => return Ok(()),
     };
-    let label = if capability == "image" { "图片" } else { "音频" };
+    let label = if capability == "image" {
+        "图片"
+    } else {
+        "音频"
+    };
 
     let collection_config = load_knowledge_collection_multimodal_config(connection, collection_id)?;
     if !collection_config.enabled {
@@ -1748,7 +1749,10 @@ where
                 return embeddings;
             }
 
-            let missing_count = missing_spans.iter().map(|(start, end)| end - start).sum::<usize>();
+            let missing_count = missing_spans
+                .iter()
+                .map(|(start, end)| end - start)
+                .sum::<usize>();
             eprintln!(
                 "Knowledge embedding batch returned partial data ({provider}) requested={requested} recovered={} missing={missing_count}",
                 requested.saturating_sub(missing_count)
@@ -1760,7 +1764,8 @@ where
 
             if missing_spans.len() == 1 && missing_spans[0] == (0, requested) {
                 let split = requested / 2;
-                let mut left = recover_embedding_batch(&batch[..split], provider, request_embeddings);
+                let mut left =
+                    recover_embedding_batch(&batch[..split], provider, request_embeddings);
                 let right = recover_embedding_batch(&batch[split..], provider, request_embeddings);
                 left.extend(right);
                 return left;
@@ -2024,7 +2029,12 @@ mod tests {
 
     #[test]
     fn recover_embedding_batch_recovers_failed_batches() {
-        let chunks = vec![chunk("chunk-a"), chunk("chunk-b"), chunk("chunk-c"), chunk("chunk-d")];
+        let chunks = vec![
+            chunk("chunk-a"),
+            chunk("chunk-b"),
+            chunk("chunk-c"),
+            chunk("chunk-d"),
+        ];
         let mut request_embeddings =
             |items: &[knowledge_chunker::ChunkSlice]| -> Result<Vec<Option<String>>, String> {
                 if items.len() > 1 {
@@ -3329,9 +3339,7 @@ fn search_knowledge_chunks(
             .partial_cmp(&left.score)
             .unwrap_or(Ordering::Equal)
             .then_with(|| right.access_count.cmp(&left.access_count))
-            .then_with(|| {
-                left.chunk.created_at.cmp(&right.chunk.created_at)
-            })
+            .then_with(|| left.chunk.created_at.cmp(&right.chunk.created_at))
     });
     results.truncate(limit);
     Ok(results)
@@ -3687,29 +3695,6 @@ fn ensure_storage_migrations(connection: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-fn normalize_relative_path(input: &str) -> Result<PathBuf, String> {
-    let candidate = PathBuf::from(input);
-    if candidate.is_absolute() {
-        return Err("Only relative workspace paths are allowed".into());
-    }
-
-    let mut normalized = PathBuf::new();
-    for component in candidate.components() {
-        match component {
-            Component::CurDir => {}
-            Component::Normal(part) => normalized.push(part),
-            Component::ParentDir => {
-                if !normalized.pop() {
-                    return Err("Path escapes workspace root".into());
-                }
-            }
-            _ => return Err("Unsupported path component".into()),
-        }
-    }
-
-    Ok(normalized)
-}
-
 fn table_has_column(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
     let sql = format!("PRAGMA table_info({table})");
     let mut stmt = connection.prepare(&sql).map_err(|err| err.to_string())?;
@@ -3761,7 +3746,10 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
     }
     if !table_has_column(connection, "knowledge_chunks", "image_info")? {
         connection
-            .execute("ALTER TABLE knowledge_chunks ADD COLUMN image_info TEXT", [])
+            .execute(
+                "ALTER TABLE knowledge_chunks ADD COLUMN image_info TEXT",
+                [],
+            )
             .map_err(|err| err.to_string())?;
     }
 
@@ -3954,7 +3942,11 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
 
-    if !table_has_column(connection, "knowledge_collections", "multimodal_config_json")? {
+    if !table_has_column(
+        connection,
+        "knowledge_collections",
+        "multimodal_config_json",
+    )? {
         connection
             .execute(
                 "ALTER TABLE knowledge_collections ADD COLUMN multimodal_config_json TEXT",
@@ -4015,172 +4007,25 @@ fn ensure_knowledge_schema(connection: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-fn collect_workspace_files(
-    root: &Path,
-    current: &Path,
-    query: &str,
-    limit: usize,
-    acc: &mut Vec<WorkspaceFileEntry>,
-) -> Result<(), String> {
-    if acc.len() >= limit {
-        return Ok(());
-    }
-
-    let entries = fs::read_dir(current).map_err(|err| err.to_string())?;
-    for entry in entries {
-        if acc.len() >= limit {
-            break;
-        }
-
-        let entry = entry.map_err(|err| err.to_string())?;
-        let path = entry.path();
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        if file_name.starts_with(".git") || file_name == "node_modules" || file_name == "dist" {
-            continue;
-        }
-
-        let metadata = entry.metadata().map_err(|err| err.to_string())?;
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|err| err.to_string())?
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        if query.is_empty() || relative.to_lowercase().contains(query) {
-            acc.push(WorkspaceFileEntry {
-                path: relative.clone(),
-                is_dir: metadata.is_dir(),
-            });
-        }
-
-        if metadata.is_dir() {
-            collect_workspace_files(root, &path, query, limit, acc)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn collect_workspace_matches(
-    root: &Path,
-    current: &Path,
-    query: &str,
-    limit: usize,
-    acc: &mut Vec<WorkspaceSearchMatch>,
-) -> Result<(), String> {
-    if acc.len() >= limit {
-        return Ok(());
-    }
-
-    let entries = fs::read_dir(current).map_err(|err| err.to_string())?;
-    for entry in entries {
-        if acc.len() >= limit {
-            break;
-        }
-
-        let entry = entry.map_err(|err| err.to_string())?;
-        let path = entry.path();
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        if file_name.starts_with(".git") || file_name == "node_modules" || file_name == "dist" {
-            continue;
-        }
-
-        let metadata = entry.metadata().map_err(|err| err.to_string())?;
-        if metadata.is_dir() {
-            collect_workspace_matches(root, &path, query, limit, acc)?;
-            continue;
-        }
-
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|err| err.to_string())?
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(_) => continue,
-        };
-        let content = String::from_utf8_lossy(&bytes);
-
-        for (index, line) in content.lines().enumerate() {
-            if acc.len() >= limit {
-                break;
-            }
-
-            if line.to_lowercase().contains(query) {
-                let preview = if line.chars().count() > 160 {
-                    let clipped: String = line.chars().take(157).collect();
-                    format!("{clipped}...")
-                } else {
-                    line.to_string()
-                };
-
-                acc.push(WorkspaceSearchMatch {
-                    path: relative.clone(),
-                    line_number: index + 1,
-                    line_preview: preview,
-                });
-            }
-        }
-    }
-
-    Ok(())
-}
-
 #[tauri::command]
 fn list_workspace_files(
     query: Option<String>,
     limit: Option<usize>,
-) -> Result<Vec<WorkspaceFileEntry>, String> {
-    let root = workspace_root()?;
-    let normalized_query = query.unwrap_or_default().trim().to_lowercase();
-    let limit = limit.unwrap_or(100).clamp(1, 500);
-    let mut results = Vec::new();
-    collect_workspace_files(&root, &root, &normalized_query, limit, &mut results)?;
-    Ok(results)
+) -> Result<Vec<workspace_files::WorkspaceFileEntry>, String> {
+    workspace_files::list_files(query, limit)
 }
 
 #[tauri::command]
 fn read_workspace_file(path: String, max_chars: Option<usize>) -> Result<String, String> {
-    let root = workspace_root()?;
-    let relative = normalize_relative_path(&path)?;
-    let full_path = root.join(relative);
-
-    if !full_path.exists() {
-        return Err(format!("File not found: {path}"));
-    }
-    if full_path.is_dir() {
-        return Err(format!("Path is a directory: {path}"));
-    }
-
-    let bytes = fs::read(&full_path).map_err(|err| err.to_string())?;
-    let content = String::from_utf8_lossy(&bytes).into_owned();
-    let max_chars = max_chars.unwrap_or(8000).clamp(200, 20000);
-
-    if content.chars().count() > max_chars {
-        let preview: String = content.chars().take(max_chars).collect();
-        return Ok(format!("{preview}\n\n[truncated]"));
-    }
-
-    Ok(content)
+    workspace_files::read_file(path, max_chars)
 }
 
 #[tauri::command]
 fn search_workspace_files(
     query: String,
     limit: Option<usize>,
-) -> Result<Vec<WorkspaceSearchMatch>, String> {
-    let normalized_query = query.trim().to_lowercase();
-    if normalized_query.is_empty() {
-        return Err("Query cannot be empty".into());
-    }
-
-    let root = workspace_root()?;
-    let limit = limit.unwrap_or(50).clamp(1, 200);
-    let mut results = Vec::new();
-    collect_workspace_matches(&root, &root, &normalized_query, limit, &mut results)?;
-    Ok(results)
+) -> Result<Vec<workspace_files::WorkspaceSearchMatch>, String> {
+    workspace_files::search_files(query, limit)
 }
 
 #[tauri::command]
