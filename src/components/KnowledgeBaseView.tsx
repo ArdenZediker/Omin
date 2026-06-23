@@ -4,11 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
-  ArrowLeft,
   Bot,
   FolderOpen,
   Grid2x2,
-  Layers3,
   MessageSquare,
   Mic,
   X,
@@ -51,6 +49,8 @@ import KnowledgeAssetInspector from "./knowledge/KnowledgeAssetInspector";
 import KnowledgeCollectionSidebar from "./knowledge/KnowledgeCollectionSidebar";
 import type { KnowledgeSidebarCategory } from "./knowledge/KnowledgeCollectionSidebar";
 import KnowledgeDocumentChunksPanel from "./knowledge/KnowledgeDocumentChunksPanel";
+import KnowledgeDocumentDetailHeader from "./knowledge/KnowledgeDocumentDetailHeader";
+import type { KnowledgeDocumentDetailView } from "./knowledge/KnowledgeDocumentDetailHeader";
 import KnowledgeDocumentList from "./knowledge/KnowledgeDocumentList";
 import KnowledgeDocumentProcessingPanel from "./knowledge/KnowledgeDocumentProcessingPanel";
 import KnowledgeDocumentPreview from "./knowledge/KnowledgeDocumentPreview";
@@ -59,11 +59,8 @@ import type { KnowledgeDeadLetterStatusFilter, KnowledgeTaskCenterScope } from "
 import {
   KNOWLEDGE_UPLOAD_ACCEPT,
   classifyResource,
-  getDocumentTypeLabel,
   getExtension,
   getPreviewKindFromFile,
-  getProcessingStatusLabel,
-  getVectorizationLabel,
   splitPreviewLines,
   trimContentPreview,
 } from "./knowledge/knowledgeViewHelpers";
@@ -74,7 +71,6 @@ type KnowledgeBaseViewProps = {
   windowControls?: ReactNode;
 };
 
-type KnowledgeDocumentDetailView = "preview" | "assets" | "chunks" | "processing";
 type KnowledgePageMode = "empty" | "list" | "detail";
 type CollectionSettingsDraft = {
   id: string;
@@ -749,16 +745,6 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
   const selectedDocument = selectedDocumentDetail?.document ?? selectedDocumentRecord;
   const activeCollectionName = activeCollection?.name ?? "未选择知识库";
-  const selectedVectorizationLabel = getVectorizationLabel(selectedDocument?.vectorizationState ?? null);
-  const documentDetailViewOptions: Array<{
-    id: "preview" | "assets" | "chunks";
-    label: string;
-    icon: typeof LucideFileText;
-  }> = [
-    { id: "preview", label: "原文", icon: LucideFileText },
-    { id: "assets", label: "图片资产", icon: LucideFileImage },
-    { id: "chunks", label: "知识结果", icon: Layers3 },
-  ];
   const documentNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const document of library.documents) {
@@ -1856,137 +1842,51 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
         <main className="omni-knowledge-main relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <header className="drag-region relative z-40 flex min-h-20 shrink-0 flex-col overflow-visible bg-white">
             {detailView ? (
-              <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-                <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={backToDocumentList}
-                    className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                    title="返回列表"
-                  >
-                    <ArrowLeft size={16} strokeWidth={2} />
-                  </button>
-                  <div className="min-w-0">
-                    <div className="truncate text-base font-semibold text-slate-950">
-                      {selectedDocument?.sourceName ?? selectedDocumentRecord?.sourceName ?? "文档详情"}
-                    </div>
-                    <div className="mt-1 truncate text-xs text-slate-500">
-                      {selectedDocumentCollectionName}
-                      {selectedDocument ? ` · ${getDocumentTypeLabel(selectedDocument)} · ${selectedDocument.chunkCount} 个分片` : ""}
-                    </div>
-                    {selectedDocument ? (
-                      <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600">
-                        <span>{getProcessingStatusLabel(selectedDocument.processingStatus)}</span>
-                        <span>·</span>
-                        <span>{selectedVectorizationLabel}</span>
-                        {selectedDocument.vectorizedChunkCount !== undefined ? (
-                          <span>· {selectedDocument.vectorizedChunkCount}/{selectedDocument.chunkCount}</span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="drag-region flex flex-wrap items-center justify-end gap-2">
-                  <div className="no-drag inline-flex items-center gap-1 rounded-[20px] border border-slate-200/90 bg-white/90 p-1 shadow-sm shadow-slate-200/60 backdrop-blur">
-                    {documentDetailViewOptions.map((option) => {
-                      const Icon = option.icon;
-                      const isActive = selectedDocumentDetailView === option.id;
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => setSelectedDocumentDetailView(option.id)}
-                          className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-2xl px-3 text-xs font-medium transition ${
-                            isActive
-                              ? "bg-slate-950 text-white shadow-sm shadow-slate-300/60"
-                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                          }`}
-                          title={option.label}
-                          aria-pressed={isActive}
-                        >
-                          <Icon size={14} strokeWidth={2} />
-                          <span>{option.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDocumentDetailView("processing")}
-                    className={`no-drag inline-flex h-10 items-center justify-center gap-1.5 rounded-[20px] border px-3 text-xs font-medium shadow-sm shadow-slate-200/40 transition ${
-                      selectedDocumentDetailView === "processing"
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200/90 bg-white/90 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                    }`}
-                    title="处理信息"
-                    aria-pressed={selectedDocumentDetailView === "processing"}
-                  >
-                    <Settings size={14} strokeWidth={2} />
-                    <span>处理信息</span>
-                  </button>
-
-                  {selectedDocument ? (
-                    <div className="no-drag inline-flex items-center gap-1 rounded-[20px] border border-slate-200/90 bg-white/90 p-1 shadow-sm shadow-slate-200/50 backdrop-blur">
-                      {selectedDocument.activeJobId ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void runSelectedDocumentAction(
-                                () => invoke("cancel_knowledge_processing_job_command", { jobId: selectedDocument.activeJobId }),
-                                "取消处理任务失败"
-                              )
-                            }
-                            className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                          >
-                            取消
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void runSelectedDocumentAction(
-                                () => invoke("retry_knowledge_processing_job_command", { jobId: selectedDocument.activeJobId }),
-                                "重试处理任务失败"
-                              )
-                            }
-                            className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                          >
-                            重试
-                          </button>
-                        </>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void runSelectedDocumentAction(
-                            () => invoke("reparse_knowledge_document_command", { documentId: selectedDocument.id }),
-                            "重新解析文档失败"
-                          )
-                        }
-                        className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                      >
-                        重解析
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void runSelectedDocumentAction(
-                            () => invoke("revectorize_knowledge_document_command", { documentId: selectedDocument.id }),
-                            "重新向量化失败"
-                          )
-                        }
-                        className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                      >
-                        重向量化
-                      </button>
-                    </div>
-                  ) : null}
-
-                  <div className="no-drag">{windowControls}</div>
-                </div>
-              </div>
+              <KnowledgeDocumentDetailHeader
+                document={selectedDocument}
+                fallbackDocumentName={selectedDocumentRecord?.sourceName ?? null}
+                collectionName={selectedDocumentCollectionName}
+                activeView={selectedDocumentDetailView}
+                windowControls={windowControls}
+                onBackToList={backToDocumentList}
+                onChangeView={setSelectedDocumentDetailView}
+                onCancelActiveJob={() => {
+                  if (!selectedDocument?.activeJobId) {
+                    return;
+                  }
+                  void runSelectedDocumentAction(
+                    () => invoke("cancel_knowledge_processing_job_command", { jobId: selectedDocument.activeJobId }),
+                    "取消处理任务失败"
+                  );
+                }}
+                onRetryActiveJob={() => {
+                  if (!selectedDocument?.activeJobId) {
+                    return;
+                  }
+                  void runSelectedDocumentAction(
+                    () => invoke("retry_knowledge_processing_job_command", { jobId: selectedDocument.activeJobId }),
+                    "重试处理任务失败"
+                  );
+                }}
+                onReparse={() => {
+                  if (!selectedDocument) {
+                    return;
+                  }
+                  void runSelectedDocumentAction(
+                    () => invoke("reparse_knowledge_document_command", { documentId: selectedDocument.id }),
+                    "重新解析文档失败"
+                  );
+                }}
+                onRevectorize={() => {
+                  if (!selectedDocument) {
+                    return;
+                  }
+                  void runSelectedDocumentAction(
+                    () => invoke("revectorize_knowledge_document_command", { documentId: selectedDocument.id }),
+                    "重新向量化失败"
+                  );
+                }}
+              />
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
