@@ -43,7 +43,7 @@ import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
 import { RECOMMENDED_ASSISTANT_PRESETS } from "../config/manifests/assistants";
 import { AVATAR_CATEGORIES, AVATAR_PRESETS } from "../config/manifests/avatars";
-import { filterAvatarPresets, getEmojiAssetSrc, resolveAssistantAvatarImageSrc, resolveAssistantAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
+import { filterAvatarPresets, getEmojiAssetSrc, resolveAssistantAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
 import { ASSISTANT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
 import type { AvatarCategoryManifest } from "../config/manifests/types";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
@@ -52,24 +52,24 @@ import ChatMessage from "./ChatMessage";
 import ModelSelector from "./ModelSelector";
 import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-
-const MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY = "main_layout_topic_width";
-const EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY = "main_empty_chat_guide_compact";
-const DEFAULT_TOPIC_PANEL_WIDTH = 240;
-const MIN_TOPIC_PANEL_WIDTH = 220;
-const MAX_TOPIC_PANEL_WIDTH = 360;
-
-function clampPanelWidth(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function readStoredPanelWidth(storageKey: string, fallback: number, min: number, max: number) {
-  const saved = readSqliteBackedValue(storageKey);
-  if (!saved) return fallback;
-  const parsed = Number.parseInt(saved, 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return clampPanelWidth(parsed, min, max);
-}
+import {
+  ASSISTANT_GROUPS_STORAGE_KEY,
+  DEFAULT_ASSISTANT_GROUP_LABEL,
+  DEFAULT_TOPIC_PANEL_WIDTH,
+  EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY,
+  MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY,
+  MAX_TOPIC_PANEL_WIDTH,
+  MIN_TOPIC_PANEL_WIDTH,
+  buildTaskAggregateSummary,
+  clampPanelWidth,
+  enhancePresetPromptIfNeeded,
+  findPresetMetaByAssistant,
+  formatMemoryScopeLabel,
+  normalizeSearchText,
+  readStoredPanelWidth,
+  renderAssistantAvatar,
+  renderTopicGroupLabel,
+} from "./mainChatViewUtils";
 
 type SessionGroup = {
   label: string;
@@ -164,93 +164,6 @@ type MainChatViewProps = {
   onUseEmptyPrompt: (prompt: string) => void;
   onOpenKnowledge: () => void;
 };
-
-const ASSISTANT_GROUPS_STORAGE_KEY = "assistant_groups";
-const DEFAULT_ASSISTANT_GROUP_LABEL = "默认列表";
-
-function normalizeSearchText(value: string) {
-  return value.toLocaleLowerCase().replace(/\s+/g, "");
-}
-
-function renderTopicGroupLabel(label: string) {
-  if (label === "置顶") {
-    return (
-      <>
-        <Pin size={11} strokeWidth={2} />
-        <span>置顶话题</span>
-      </>
-    );
-  }
-
-  return <span>{label}</span>;
-}
-
-function findPresetMetaByAssistant(assistant: AssistantProfile | null) {
-  if (!assistant?.sourcePresetId) return null;
-  return AVATAR_PRESETS.find((preset) => preset.code === assistant.sourcePresetId) ?? null;
-}
-
-function buildTaskAggregateSummary(task: TaskExecutionResult) {
-  const childCount = task.plan.childTaskIds?.length ?? 0;
-  const lastTrace = task.trace.slice(-2).map((entry) => entry.message).join(" · ");
-  if (childCount <= 0 && !lastTrace) return null;
-  return {
-    childCount,
-    text: lastTrace || "已拆分并执行子任务",
-  };
-}
-
-function formatMemoryScopeLabel(scope: AssistantMemoryScope) {
-  switch (scope) {
-    case "off":
-      return "不启用记忆";
-    case "session":
-      return "仅当前话题";
-    case "assistant":
-    default:
-      return "当前助手全局";
-  }
-}
-
-function enhancePresetPromptIfNeeded(presetCode: string, prompt: string) {
-  if (presetCode !== "2728") {
-    return prompt;
-  }
-
-  return `## 角色定位
-你是通用顾问型 AI 助手，适合处理日常问答、资料整理、轻咨询和方向建议。
-
-## 核心职责
-- 帮用户把问题说明白、理清楚、做顺。
-- 提供平衡、稳健、易理解的建议。
-- 在信息不足时先补关键信息，不仓促下结论。
-
-## 行为要求
-- 优先理解用户真实目标，而不是只回答字面问题。
-- 多方案场景下，给出简短比较和推荐，不并列堆砌。
-- 如果用户只想快速拿结果，先给结论，再补说明。
-- 如果任务存在明显风险、前提不足或信息冲突，要主动指出。
-
-## 边界与禁忌
-- 不要为了显得聪明而过度延展问题。
-- 不要在不确定时装懂或编造事实。
-- 不要输出空泛安慰、套话或无执行价值的建议。
-- 不要把简单问题复杂化。
-
-## 澄清策略
-- 只有当缺少关键信息会影响结论时，才提出澄清问题。
-- 澄清问题尽量少，一次只问最关键的 1 到 2 个。
-
-## 输出风格
-- 使用中文。
-- 表达自然、克制、清楚。
-- 少空话，少套话。
-- 尽量给出用户下一步可以直接执行的建议。`;
-}
-
-function renderAssistantAvatar(assistant: AssistantProfile | null, seed = 0) {
-  return <img src={resolveAssistantAvatarImageSrc(assistant, seed)} alt="" className="chat-history-panel__assistant-image" />;
-}
 
 export default function MainChatView({
   activeAssistant,
