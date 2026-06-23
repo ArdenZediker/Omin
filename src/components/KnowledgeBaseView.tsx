@@ -3,10 +3,7 @@ import type { ErrorInfo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
-import mammoth from "mammoth/mammoth.browser";
 import type { Options as DocxPreviewOptions } from "docx-preview";
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   ArrowLeft,
   Bot,
@@ -59,8 +56,19 @@ import {
 } from "../chat/knowledgeMultimodal";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { usePromptDialog } from "./PromptDialog";
-
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+import KnowledgeAssetInspector from "./knowledge/KnowledgeAssetInspector";
+import {
+  KNOWLEDGE_UPLOAD_ACCEPT,
+  classifyResource,
+  getDocumentTypeLabel,
+  getExtension,
+  getPreviewKindFromDocument,
+  getPreviewKindFromFile,
+  getProcessingStatusLabel,
+  getVectorizationLabel,
+  splitPreviewLines,
+  trimContentPreview,
+} from "./knowledge/knowledgeViewHelpers";
 
 type KnowledgeCategory = {
   id: string;
@@ -78,7 +86,6 @@ type KnowledgeBaseViewProps = {
 
 type KnowledgeDocumentDetailView = "preview" | "assets" | "chunks" | "processing";
 type KnowledgePageMode = "empty" | "list" | "detail";
-type PreviewKind = "text" | "markdown" | "pdf" | "docx" | "image" | "audio" | "video" | "unsupported";
 type DeadLetterScope = "all" | "activeCollection";
 type CollectionSettingsDraft = {
   id: string;
@@ -104,82 +111,6 @@ const DOCX_PREVIEW_OPTIONS = {
   trimXmlDeclaration: true,
   useBase64URL: true,
 } satisfies Partial<DocxPreviewOptions>;
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
-const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac"]);
-const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v", "mpeg", "mpg"]);
-const KNOWLEDGE_UPLOAD_ACCEPT = [
-  ".txt",
-  ".md",
-  ".markdown",
-  ".json",
-  ".csv",
-  ".tsv",
-  ".log",
-  ".html",
-  ".htm",
-  ".js",
-  ".ts",
-  ".tsx",
-  ".py",
-  ".rs",
-  ".css",
-  ".xml",
-  ".yaml",
-  ".yml",
-  ".pdf",
-  ".docx",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".svg",
-  ".avif",
-  ".mp3",
-  ".wav",
-  ".ogg",
-  ".oga",
-  ".m4a",
-  ".flac",
-  ".aac",
-  ".mp4",
-  ".mov",
-  ".webm",
-  ".mkv",
-  ".avi",
-  ".m4v",
-  ".mpeg",
-  ".mpg",
-  "audio/*",
-  "video/*",
-].join(",");
-const TEXT_EXTENSIONS = new Set([
-  "txt",
-  "log",
-  "json",
-  "csv",
-  "tsv",
-  "html",
-  "htm",
-  "xml",
-  "yml",
-  "yaml",
-  "js",
-  "jsx",
-  "ts",
-  "tsx",
-  "py",
-  "rs",
-  "css",
-  "toml",
-  "ini",
-  "sql",
-  "sh",
-  "bat",
-  "cmd",
-]);
-
 const CATEGORIES: Omit<KnowledgeCategory, "count">[] = [
   { id: "all", title: "全部文件", description: "当前知识库中的全部文档", icon: Grid2x2 },
   { id: "docs", title: "文档", description: "Markdown、PDF、Word、文本", icon: LucideFileText },
@@ -250,60 +181,6 @@ class KnowledgeBaseDetailBoundary extends Component<
   }
 }
 
-function getExtension(value?: string | null) {
-  if (!value) {
-    return "";
-  }
-  const base = value.split(/[?#]/)[0];
-  const dotIndex = base.lastIndexOf(".");
-  if (dotIndex < 0) {
-    return "";
-  }
-  return base.slice(dotIndex + 1).toLowerCase();
-}
-
-function getPreviewKindFromFile(file: File): PreviewKind {
-  const ext = getExtension(file.name);
-  const mimeType = file.type.toLowerCase();
-
-  if (IMAGE_EXTENSIONS.has(ext) || mimeType.startsWith("image/")) {
-    return "image";
-  }
-  if (AUDIO_EXTENSIONS.has(ext) || mimeType.startsWith("audio/")) {
-    return "audio";
-  }
-  if (VIDEO_EXTENSIONS.has(ext) || mimeType.startsWith("video/")) {
-    return "video";
-  }
-  if (ext === "pdf" || mimeType === "application/pdf") {
-    return "pdf";
-  }
-  if (ext === "docx" || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-    return "docx";
-  }
-  if (ext === "md" || ext === "markdown") {
-    return "markdown";
-  }
-  if (TEXT_EXTENSIONS.has(ext) || mimeType.startsWith("text/") || mimeType === "application/json") {
-    return "text";
-  }
-  return "unsupported";
-}
-
-function classifyResource(sourceName: string, sourcePath?: string | null) {
-  const ext = getExtension(sourcePath ?? sourceName);
-  if (IMAGE_EXTENSIONS.has(ext)) {
-    return "images";
-  }
-  if (AUDIO_EXTENSIONS.has(ext)) {
-    return "audio";
-  }
-  if (VIDEO_EXTENSIONS.has(ext)) {
-    return "video";
-  }
-  return "docs";
-}
-
 function hasUsableKnowledgeMultimodalModel(
   config: KnowledgeMultimodalConfig,
   capability: "image" | "audio",
@@ -360,89 +237,6 @@ function getKnowledgeUploadBlockMessage(
   }
 
   return null;
-}
-
-function getPreviewKindFromDocument(document: KnowledgeLibraryPayload["documents"][number] | KnowledgeDocumentDetail["document"]) {
-  const kind = (document.previewType ?? "").toLowerCase();
-  const ext = (document.fileExtension ?? getExtension(document.sourceName)).toLowerCase();
-  const mimeType = (document.mimeType ?? "").toLowerCase();
-
-  if (kind === "image" || IMAGE_EXTENSIONS.has(ext) || mimeType.startsWith("image/")) {
-    return "image";
-  }
-  if (kind === "audio" || AUDIO_EXTENSIONS.has(ext) || mimeType.startsWith("audio/")) {
-    return "audio";
-  }
-  if (kind === "pdf" || ext === "pdf" || mimeType === "application/pdf") {
-    return "pdf";
-  }
-  if (kind === "docx" || ext === "docx" || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-    return "docx";
-  }
-  if (kind === "markdown" || ext === "md" || ext === "markdown") {
-    return "markdown";
-  }
-  if (kind === "text" || TEXT_EXTENSIONS.has(ext) || mimeType.startsWith("text/") || mimeType === "application/json") {
-    return "text";
-  }
-  return "unsupported";
-}
-
-function getDocumentTypeLabel(document?: KnowledgeLibraryPayload["documents"][number] | KnowledgeDocumentDetail["document"] | null) {
-  if (!document) {
-    return "文档";
-  }
-
-  const ext = (document.fileExtension ?? getExtension(document.sourceName)).toLowerCase();
-  const kind = getPreviewKindFromDocument(document);
-  const resourceCategory = classifyResource(document.sourceName, document.sourcePath);
-
-  if (kind === "image") return "图片";
-  if (resourceCategory === "audio") return "音频";
-  if (resourceCategory === "video") return "视频";
-  if (kind === "pdf") return "PDF";
-  if (kind === "docx") return "DOCX";
-  if (kind === "markdown") return "MD";
-  if (kind === "text") return ext ? ext.toUpperCase() : "TXT";
-
-  return document.mimeType ? document.mimeType.split("/").pop()?.toUpperCase() ?? "文档" : "文档";
-}
-
-function getVectorizationLabel(state?: string | null) {
-  switch (state) {
-    case "vectorized":
-      return "已向量化";
-    case "partial":
-    case "partially vectorized":
-      return "部分向量化";
-    case "unvectorized":
-      return "未向量化";
-    case "empty":
-      return "无内容";
-    default:
-      return "未知状态";
-  }
-}
-
-function getProcessingStatusLabel(status?: KnowledgeLibraryPayload["documents"][number]["processingStatus"] | null) {
-  switch (status) {
-    case "pending":
-      return "等待处理";
-    case "processing":
-      return "处理中";
-    case "searchable":
-      return "可检索";
-    case "partial":
-      return "部分可用";
-    case "failed":
-      return "处理失败";
-    case "canceled":
-      return "已取消";
-    case "unsupported":
-      return "仅保存";
-    default:
-      return "可检索";
-  }
 }
 
 function normalizeCollectionMultimodalConfig(
@@ -536,45 +330,6 @@ function renderHighlightedSearchText(text: string, query: string) {
     }
     return <span key={`text-${index}`}>{part}</span>;
   });
-}
-
-function trimContentPreview(content: string) {
-  return content
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/[#>*_\-\[\](){}/\\]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function splitPreviewLines(value: string, maxLines: number, maxChars: number) {
-  const text = value.trim().replace(/\s+/g, " ");
-  if (!text) {
-    return [];
-  }
-
-  const lines: string[] = [];
-  let current = "";
-
-  for (const token of text.split(/(\s+)/)) {
-    const candidate = `${current}${token}`.trimStart();
-    if (candidate.replace(/\s+/g, " ").length > maxChars && current) {
-      lines.push(current.trim());
-      current = token.trimStart();
-    } else {
-      current = candidate;
-    }
-
-    if (lines.length >= maxLines) {
-      break;
-    }
-  }
-
-  if (current && lines.length < maxLines) {
-    lines.push(current.trim());
-  }
-
-  return lines.slice(0, maxLines).map((line) => line.slice(0, maxChars));
 }
 
 function getDeadLetterDisplayName(item: KnowledgeProcessingDeadLetter, documentNameById: Map<string, string>) {
@@ -898,6 +653,7 @@ async function loadKnowledgeProcessingDeadLetters(input: DeadLetterQueryInput) {
 
 async function convertDocxBytesToText(bytes: Uint8Array) {
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const { default: mammoth } = await import("mammoth/mammoth.browser");
   const result = await mammoth.extractRawText({ arrayBuffer });
   return result.value;
 }
@@ -912,7 +668,17 @@ async function renderDocxBytesIntoContainer(bytes: Uint8Array, container: HTMLEl
   await renderAsync(blob, container, undefined, DOCX_PREVIEW_OPTIONS);
 }
 
+async function loadPdfJs() {
+  const [{ getDocument, GlobalWorkerOptions }, workerModule] = await Promise.all([
+    import("pdfjs-dist"),
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+  ]);
+  GlobalWorkerOptions.workerSrc = workerModule.default;
+  return { getDocument };
+}
+
 async function convertPdfBytesToText(bytes: Uint8Array) {
+  const { getDocument } = await loadPdfJs();
   const loadingTask = getDocument({ data: bytes.slice() });
   const pdf = await loadingTask.promise;
   const parts: string[] = [];
@@ -938,6 +704,7 @@ async function convertPdfBytesToText(bytes: Uint8Array) {
 }
 
 async function renderPdfFirstPage(bytes: Uint8Array, canvas: HTMLCanvasElement) {
+  const { getDocument } = await loadPdfJs();
   const loadingTask = getDocument({ data: bytes.slice() });
   const pdf = await loadingTask.promise;
   const page = await pdf.getPage(1);
@@ -3153,124 +2920,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                             <DocumentPreviewArea key={selectedDocumentId} document={selectedDocument} onOpenExternal={openSelectedDocumentExternal} />
                           </div>
                         ) : selectedDocumentDetailView === "assets" ? (
-                          <section className="omni-knowledge-assets-view flex min-h-0 flex-1 flex-col">
-                            <div className="omni-knowledge-assets-view__header">
-                              <div className="min-w-0">
-                                <div className="omni-knowledge-assets-view__title">图片资产</div>
-                                <div className="omni-knowledge-assets-view__subtitle">
-                                  {selectedDocumentDetail.assets.length > 0
-                                    ? `已提取 ${selectedDocumentDetail.assets.length} 张图片，可在左侧切换查看。`
-                                    : "当前文档还没有提取到可浏览的图片资产。"}
-                                </div>
-                              </div>
-                              {selectedDocumentDetail.assets.length > 0 ? (
-                                <div className="omni-knowledge-assets-view__count">共 {selectedDocumentDetail.assets.length} 张</div>
-                              ) : null}
-                            </div>
-
-                            {selectedDocumentDetail.assets.length === 0 ? (
-                              <div className="omni-knowledge-assets-detail__empty">
-                                <LucideFileImage size={24} strokeWidth={1.8} />
-                                <span>当前文档还没有图片资产。</span>
-                              </div>
-                            ) : (
-                              <div className="omni-knowledge-assets-layout min-h-0 flex-1">
-                                <div className="omni-knowledge-assets-list">
-                                  {selectedDocumentDetail.assets.map((asset) => (
-                                    <button
-                                      key={asset.id}
-                                      type="button"
-                                      onClick={() => setSelectedAssetId(asset.id)}
-                                      aria-pressed={asset.id === selectedAssetId}
-                                      className={`omni-knowledge-asset-card ${asset.id === selectedAssetId ? "omni-knowledge-asset-card--active" : ""}`}
-                                    >
-                                      <div className="omni-knowledge-asset-card__thumb">
-                                        {asset.thumbnailDataUrl ? (
-                                          <img src={asset.thumbnailDataUrl} alt={asset.sourceName} className="h-full w-full object-cover" />
-                                        ) : (
-                                          <div className="omni-knowledge-asset-card__thumb-empty">
-                                            <LucideFileImage size={18} strokeWidth={1.8} />
-                                            <span>暂无缩略图</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                      <div className="omni-knowledge-asset-card__body">
-                                        <div className="omni-knowledge-asset-card__name">{asset.sourceName}</div>
-                                        <div className="omni-knowledge-asset-card__meta">
-                                          资产 #{asset.assetIndex + 1}
-                                          {typeof asset.pageIndex === "number" ? ` · 第 ${asset.pageIndex + 1} 页` : ""}
-                                        </div>
-                                        <div className="omni-knowledge-asset-card__preview">
-                                          {asset.contentPreview?.trim() || asset.captionText?.trim() || asset.ocrText?.trim() || "暂无摘要"}
-                                        </div>
-                                      </div>
-                                    </button>
-                                  ))}
-                                </div>
-
-                                <div className="omni-knowledge-assets-detail">
-                                  {selectedAsset ? (
-                                    <div className="omni-knowledge-assets-workspace">
-                                      <div className="omni-knowledge-assets-workspace__header">
-                                        <div>
-                                          <div className="omni-knowledge-assets-workspace__title">当前图片</div>
-                                          <div className="omni-knowledge-assets-workspace__subtitle">先看预览，再看 OCR 和描述内容。</div>
-                                        </div>
-                                      </div>
-
-                                      <div className="omni-knowledge-assets-detail__preview">
-                                        {selectedAsset.thumbnailDataUrl ? (
-                                          <img src={selectedAsset.thumbnailDataUrl} alt={selectedAsset.sourceName} className="max-h-[26rem] w-full object-contain" />
-                                        ) : (
-                                          <div className="omni-knowledge-assets-detail__preview-empty">
-                                            <LucideFileImage size={24} strokeWidth={1.8} />
-                                            <span>暂无可预览图片</span>
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      <div className="omni-knowledge-assets-meta-grid">
-                                        <div className="omni-knowledge-assets-meta-card">
-                                          <div className="omni-knowledge-assets-meta-card__label">文件名</div>
-                                          <div className="omni-knowledge-assets-meta-card__value">{selectedAsset.sourceName}</div>
-                                        </div>
-                                        <div className="omni-knowledge-assets-meta-card">
-                                          <div className="omni-knowledge-assets-meta-card__label">资产序号</div>
-                                          <div className="omni-knowledge-assets-meta-card__value">#{selectedAsset.assetIndex + 1}</div>
-                                        </div>
-                                        <div className="omni-knowledge-assets-meta-card">
-                                          <div className="omni-knowledge-assets-meta-card__label">所在页</div>
-                                          <div className="omni-knowledge-assets-meta-card__value">
-                                            {typeof selectedAsset.pageIndex === "number" ? `第 ${selectedAsset.pageIndex + 1} 页` : "未记录"}
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      <div className="omni-knowledge-assets-reading-grid">
-                                        <section className="omni-knowledge-assets-reading-card">
-                                          <div className="omni-knowledge-assets-reading-card__label">OCR</div>
-                                          <div className="omni-knowledge-assets-reading-card__content">
-                                            {selectedAsset.ocrText?.trim() ? selectedAsset.ocrText : "暂无 OCR 文本"}
-                                          </div>
-                                        </section>
-                                        <section className="omni-knowledge-assets-reading-card">
-                                          <div className="omni-knowledge-assets-reading-card__label">图片描述</div>
-                                          <div className="omni-knowledge-assets-reading-card__content">
-                                            {selectedAsset.captionText?.trim() ? selectedAsset.captionText : "暂无图片描述"}
-                                          </div>
-                                        </section>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="omni-knowledge-assets-detail__empty">
-                                      <LucideFileImage size={22} strokeWidth={1.8} />
-                                      <span>请先从左侧选择一张图片。</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </section>
+                          <KnowledgeAssetInspector
+                            assets={selectedDocumentDetail.assets}
+                            selectedAssetId={selectedAssetId}
+                            selectedAsset={selectedAsset}
+                            onSelectAsset={setSelectedAssetId}
+                          />
                         ) : selectedDocumentDetailView === "processing" ? (
                           <section className="flex min-h-0 flex-1 flex-col rounded-none border border-slate-200 bg-white p-4">
                             <div className="mb-4 flex items-center justify-between gap-3">

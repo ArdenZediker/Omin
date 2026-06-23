@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Message } from "./adapters/types";
@@ -7,7 +7,6 @@ import { modelRegistry } from "./adapters/registry";
 import TitleBar from "./components/TitleBar";
 import SettingsWindow from "./components/SettingsWindow";
 import MainChatView from "./components/MainChatView";
-import KnowledgeBaseView from "./components/KnowledgeBaseView";
 import CompactWindow from "./components/CompactWindow";
 import PetThoughtWindow from "./components/PetThoughtWindow";
 import { usePromptDialog } from "./components/PromptDialog";
@@ -46,6 +45,8 @@ import {
   useCompactWindowState,
 } from "./hooks/useCompactWindowState";
 import "./App.css";
+
+const KnowledgeBaseView = lazy(() => import("./components/KnowledgeBaseView"));
 
 type ComposerDraft = {
   text: string;
@@ -703,18 +704,25 @@ function MainApp() {
           onOpenKnowledge={() => setView("knowledge")}
         />
       ) : (
-        <KnowledgeBaseView
-          onBackToChat={() => setView("chat")}
-          onSettingsOpen={desktopActions.openSettings}
-          windowControls={<TitleBar inline onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />}
-        />
+        <Suspense
+          fallback={
+            <div className="omni-view-loading">
+              <span>正在打开知识库...</span>
+            </div>
+          }
+        >
+          <KnowledgeBaseView
+            onBackToChat={() => setView("chat")}
+            onSettingsOpen={desktopActions.openSettings}
+            windowControls={<TitleBar inline onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />}
+          />
+        </Suspense>
       )}
     </div>
   );
 }
 
 export default App;
-
 
 
 
