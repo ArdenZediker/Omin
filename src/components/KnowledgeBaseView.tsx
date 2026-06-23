@@ -6,7 +6,6 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ArrowLeft,
   Bot,
-  EllipsisVertical,
   FileImage as LucideFileImage,
   FileText as LucideFileText,
   FolderOpen,
@@ -54,6 +53,8 @@ import {
 } from "../chat/knowledgeMultimodal";
 import { usePromptDialog } from "./PromptDialog";
 import KnowledgeAssetInspector from "./knowledge/KnowledgeAssetInspector";
+import KnowledgeCollectionSidebar from "./knowledge/KnowledgeCollectionSidebar";
+import type { KnowledgeSidebarCategory } from "./knowledge/KnowledgeCollectionSidebar";
 import KnowledgeDocumentChunksPanel from "./knowledge/KnowledgeDocumentChunksPanel";
 import KnowledgeDocumentList from "./knowledge/KnowledgeDocumentList";
 import KnowledgeDocumentProcessingPanel from "./knowledge/KnowledgeDocumentProcessingPanel";
@@ -69,14 +70,6 @@ import {
   splitPreviewLines,
   trimContentPreview,
 } from "./knowledge/knowledgeViewHelpers";
-
-type KnowledgeCategory = {
-  id: string;
-  title: string;
-  icon: typeof LucideFileText;
-  count: number;
-  description: string;
-};
 
 type KnowledgeBaseViewProps = {
   onSettingsOpen: () => void;
@@ -99,7 +92,7 @@ type UploadNotice = {
   message: string;
 };
 const UPLOAD_NOTICE_AUTO_DISMISS_MS = 4000;
-const CATEGORIES: Omit<KnowledgeCategory, "count">[] = [
+const CATEGORIES: Omit<KnowledgeSidebarCategory, "count">[] = [
   { id: "all", title: "全部文件", description: "当前知识库中的全部文档", icon: Grid2x2 },
   { id: "docs", title: "文档", description: "Markdown、PDF、Word、文本", icon: LucideFileText },
   { id: "images", title: "图片", description: "图片类资源", icon: LucideFileImage },
@@ -564,17 +557,6 @@ function openFilePicker(input: HTMLInputElement | null) {
   // In desktop webviews, showPicker() may exist but fail silently for file inputs.
   // click() is the most reliable way to trigger the native file chooser.
   input.click();
-}
-
-function KnowledgeCollectionIcon({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" className={className}>
-      <path d="M4.25 2.5h6.2L12.25 4.3v9.2H4.25z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
-      <path d="M10.45 2.5V4.25h1.8" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
-      <path d="M5.1 6.35h5.1" stroke="currentColor" strokeWidth="1.05" strokeLinecap="round" />
-      <path d="M5.1 8.45h3.8" stroke="currentColor" strokeWidth="1.05" strokeLinecap="round" />
-    </svg>
-  );
 }
 
 async function loadKnowledgeLibrary() {
@@ -2074,161 +2056,25 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
           </button>
         </aside>
 
-        <aside className={`omni-knowledge-sidebar flex min-h-0 shrink-0 flex-col border-r border-slate-200 bg-slate-50 ${isSidebarCollapsed ? "w-16" : "w-80"}`}>
-          <div className="drag-region flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-3">
-            {!isSidebarCollapsed ? (
-              <div className="min-w-0">
-                <div className="truncate text-base font-semibold tracking-[-0.02em] text-slate-950">文件</div>
-                <div className="mt-0.5 text-xs text-slate-500">知识库与分类</div>
-              </div>
-            ) : (
-              <div className="h-8 w-8" />
-            )}
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <div className={isSidebarCollapsed ? "space-y-2 px-2 py-2" : "space-y-1 px-3 py-3"}>
-              {activeCategories.map((category) => {
-                const Icon = category.icon;
-                const isActive = category.id === activeCategory;
-                const categoryIconColor =
-                  category.id === "all"
-                    ? "#2563eb"
-                    : category.id === "docs"
-                      ? "#3b82f6"
-                      : category.id === "images"
-                        ? "#f59e0b"
-                        : category.id === "audio"
-                          ? "#10b981"
-                          : "#8b5cf6";
-
-                return (
-                  <button
-                    key={category.id}
-                    type="button"
-                    onClick={() => setActiveCategory(category.id)}
-                    className={
-                      isSidebarCollapsed
-                        ? `flex h-11 w-11 items-center justify-center rounded-none border transition ${
-                            isActive
-                              ? "border-slate-950 bg-slate-950 text-white shadow-sm"
-                              : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                          }`
-                        : `flex w-full items-center gap-2 rounded-none border px-3 py-2 text-left text-sm transition ${
-                            isActive
-                              ? "border-slate-950 bg-white text-slate-950 shadow-sm"
-                              : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                          }`
-                    }
-                    title={category.title}
-                  >
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-none ${isActive ? "text-slate-950" : "text-slate-500"}`}>
-                      <Icon size={13} strokeWidth={1.8} stroke={categoryIconColor} color={categoryIconColor} />
-                    </span>
-                    {!isSidebarCollapsed ? (
-                      <>
-                        <span className="flex-1">{category.title}</span>
-                        <span className="text-[11px] text-slate-400">{category.count}</span>
-                      </>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className={isSidebarCollapsed ? "mt-2 border-t border-slate-200 px-2 pt-2" : "mt-2 border-t border-slate-200 px-4 pt-3"}>
-              {!isSidebarCollapsed ? (
-                <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  <span>知识库</span>
-                  <button
-                    type="button"
-                    className="no-drag rounded-none p-1 text-slate-400 hover:bg-white hover:text-slate-700"
-                    title="新建知识库"
-                    onClick={createCollection}
-                  >
-                    <Plus size={14} strokeWidth={2} />
-                  </button>
-                </div>
-              ) : null}
-
-              <div className="space-y-1">
-                {library.collections.map((collection) => {
-                  const isActive = collection.id === activeCollection?.id;
-                  return (
-                    <div
-                      key={collection.id}
-                      className={`flex items-center gap-1 rounded-none border px-1 py-0.5 text-sm transition ${
-                        isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCollectionId(collection.id)}
-                        className={isSidebarCollapsed ? "flex h-10 w-10 items-center justify-center rounded-none" : "flex min-w-0 flex-1 items-center gap-2 rounded-none px-2 py-1 text-left"}
-                        title={collection.name}
-                      >
-                        <KnowledgeCollectionIcon className="h-4 w-4 shrink-0 text-blue-600" />
-                        {!isSidebarCollapsed ? <span className="flex-1 truncate">{collection.name}</span> : null}
-                      </button>
-
-                      {!isSidebarCollapsed ? (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setIsCollectionMenuOpen((current) => (current === collection.id ? null : collection.id));
-                            }}
-                            className="flex h-7 w-7 items-center justify-center rounded-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                            title="更多操作"
-                          >
-                            <EllipsisVertical size={14} strokeWidth={2} />
-                          </button>
-
-                          {isCollectionMenuOpen === collection.id ? (
-                            <div
-                              className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-none border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
-                              onPointerDown={(event) => event.stopPropagation()}
-                            >
-                              <button
-                                type="button"
-                                className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                onClick={() => openCollectionSettings(collection)}
-                              >
-                                设置
-                              </button>
-                              <button
-                                type="button"
-                                className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
-                                onClick={() => {
-                                  setIsCollectionMenuOpen(null);
-                                  void deleteCollection(collection.id);
-                                }}
-                              >
-                                删除
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-auto border-t border-slate-200 p-3">
-            <button
-              type="button"
-              className="flex w-full items-center justify-center gap-2 rounded-none border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              onClick={createCollection}
-            >
-              <Plus size={14} strokeWidth={2} />
-              {!isSidebarCollapsed ? "新建知识库" : ""}
-            </button>
-          </div>
-        </aside>
+        <KnowledgeCollectionSidebar
+          isCollapsed={isSidebarCollapsed}
+          categories={activeCategories}
+          activeCategoryId={activeCategory}
+          collections={library.collections}
+          activeCollectionId={activeCollection?.id ?? null}
+          openCollectionMenuId={isCollectionMenuOpen}
+          onSelectCategory={setActiveCategory}
+          onCreateCollection={createCollection}
+          onSelectCollection={setSelectedCollectionId}
+          onToggleCollectionMenu={(collectionId) =>
+            setIsCollectionMenuOpen((current) => (current === collectionId ? null : collectionId))
+          }
+          onOpenCollectionSettings={openCollectionSettings}
+          onDeleteCollection={(collectionId) => {
+            setIsCollectionMenuOpen(null);
+            void deleteCollection(collectionId);
+          }}
+        />
 
         <main className="omni-knowledge-main relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <header className="drag-region relative z-40 flex min-h-20 shrink-0 flex-col overflow-visible bg-white">
