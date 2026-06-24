@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::{
     find_exact_usable_knowledge_multimodal_model, infer_preview_type,
     load_knowledge_collection_multimodal_config, load_knowledge_multimodal_config,
@@ -4416,17 +4414,6 @@ fn process_claimed_job(
     }
     Ok(())
 }
-pub fn run_next_pipeline_job(app: &tauri::AppHandle) -> Result<bool, String> {
-    let connection = open_pipeline_connection(app)?;
-    let settings = load_pipeline_settings(&connection)?;
-    let Some(job) = claim_next_job_with_limits(&connection, settings.per_collection_max_running)?
-    else {
-        return Ok(false);
-    };
-    process_claimed_job(app, job, settings.max_auto_retries)?;
-    Ok(true)
-}
-
 pub fn run_pipeline_worker_tick(app: &tauri::AppHandle) -> Result<bool, String> {
     let connection = open_pipeline_connection(app)?;
     let settings = load_pipeline_settings(&connection)?;
