@@ -358,7 +358,7 @@ export async function executeLocalTool(runtime: LocalToolRuntime, command: { com
     return { ok: false, error: `当前助手未启用工具：${tool.title}` };
   }
 
-  return registry.execute(command as never, {
+  return registry.execute(command, {
     activeChatId: runtime.activeChatId,
     chatSessions: runtime.searchChatSessions(""),
   });

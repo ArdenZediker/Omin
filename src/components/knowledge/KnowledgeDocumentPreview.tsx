@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Options as DocxPreviewOptions } from "docx-preview";
+import type { RenderParameters } from "pdfjs-dist/types/src/display/api";
 import type { KnowledgeDocumentBinaryPayload, KnowledgeDocumentDetail } from "../../chat/knowledgeTypes";
 import { renderMarkdown } from "../../app/renderMarkdown";
 import { getPreviewKindFromDocument } from "./knowledgeViewHelpers";
@@ -55,7 +56,8 @@ async function renderPdfFirstPage(bytes: Uint8Array, canvas: HTMLCanvasElement) 
 
   canvas.width = viewport.width;
   canvas.height = viewport.height;
-  const renderTask = page.render({ canvasContext: context, canvas, viewport } as never);
+  const renderParameters: RenderParameters = { canvasContext: context, canvas, viewport };
+  const renderTask = page.render(renderParameters);
   await renderTask.promise;
 }
 

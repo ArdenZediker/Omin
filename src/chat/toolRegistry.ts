@@ -1,6 +1,8 @@
 import type { Message } from "../adapters/types";
 import type { ResolvedLocalSlashCommand } from "./skills";
 
+export type ToolExecutionCommand = Pick<ResolvedLocalSlashCommand, "command" | "args">;
+
 export type ToolExecutionContext = {
   activeChatId: string | null;
   chatSessions: Array<{
@@ -21,7 +23,7 @@ export type ToolDefinition = {
   id: string;
   command: string;
   title: string;
-  execute: (command: ResolvedLocalSlashCommand, context: ToolExecutionContext) => Promise<ToolExecutionResult | void>;
+  execute: (command: ToolExecutionCommand, context: ToolExecutionContext) => Promise<ToolExecutionResult | void>;
 };
 
 export class ToolRegistry {
@@ -39,7 +41,7 @@ export class ToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  async execute(command: ResolvedLocalSlashCommand, context: ToolExecutionContext): Promise<ToolExecutionResult | void> {
+  async execute(command: ToolExecutionCommand, context: ToolExecutionContext): Promise<ToolExecutionResult | void> {
     const tool = this.get(command.command);
     if (!tool) {
       return { ok: false, error: `暂不支持命令：${command.command}` };
