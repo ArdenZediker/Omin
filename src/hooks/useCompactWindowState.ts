@@ -9,10 +9,8 @@ import { matchesPetThought } from "../app/petThoughts";
 export { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale } from "../app/compactPetScale";
 
 export type CompactAppearance = "default" | "compact" | "large" | "pet";
-export type CharacterModel = string;
 
 export const COMPACT_APPEARANCE_STORAGE_KEY = "omni_compact_appearance";
-export const CHARACTER_MODEL_STORAGE_KEY = "omni_character_model";
 
 export function getInitialCompactAppearance(): CompactAppearance {
   if (typeof window === "undefined") return "default";
@@ -22,10 +20,6 @@ export function getInitialCompactAppearance(): CompactAppearance {
 
 export function getInitialCharacterScale(): number {
   return getStoredCharacterScale();
-}
-
-export function getInitialCharacterModel(): CharacterModel | null {
-  return null;
 }
 
 function canUseTauriEvents() {

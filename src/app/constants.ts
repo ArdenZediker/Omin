@@ -1,5 +1,5 @@
 import type { BasicSettings, ExternalChatEntry } from "./types";
-import type { CharacterModel, CompactAppearance } from "../hooks/useCompactWindowState";
+import type { CompactAppearance } from "../hooks/useCompactWindowState";
 
 export const MAIN_WINDOW_LABEL = "main";
 export const COMPACT_WINDOW_LABEL = "compact";
@@ -53,8 +53,6 @@ export const COMPACT_APPEARANCE_OPTIONS: Array<{
   { id: "large", title: "大号外观", description: "更醒目的尺寸" },
   { id: "pet", title: "桌宠", description: "桌宠精灵模式" },
 ];
-
-export const CHARACTER_MODEL_OPTIONS: Array<{ id: CharacterModel; title: string; description: string }> = [];
 
 export const EXTERNAL_CHAT_ENTRIES: ExternalChatEntry[] = [
   { id: "omni", title: "Omni", description: "打开 Omni 主界面", group: "common", kind: "main", icon: "omni" },
