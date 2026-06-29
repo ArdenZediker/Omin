@@ -325,6 +325,19 @@ async function executeAnalyzeFilesTask(options: {
   };
 }
 
+function buildSkillMessages(command: ResolvedLocalSlashCommand, currentMessages: Message[]) {
+  const latestUserMessage = [...currentMessages].reverse().find((message) => message.role === "user")?.content?.trim() ?? "";
+  const target = command.args.trim() || latestUserMessage;
+  const prefix = command.promptPrefix ?? `请执行技能：${command.title}`;
+  return [
+    ...currentMessages,
+    {
+      role: "user" as const,
+      content: [prefix, "", target || "请基于最近对话执行该技能。"].join("\n"),
+    },
+  ];
+}
+
 export async function executeInputTask(options: {
   input: string;
   images?: string[];
@@ -365,6 +378,25 @@ export async function executeInputTask(options: {
   const localCommand = !images || images.length === 0 ? resolveLocalSlashCommand(input) : null;
 
   if (localCommand) {
+    if (localCommand.kind === "skill") {
+      if (assistant && !assistant.allowedSkillIds.includes(localCommand.id)) {
+        throw new Error(`当前助手未启用技能：${localCommand.title}`);
+      }
+      const skillMessages = buildSkillMessages(localCommand, currentMessages);
+      return executeTask({
+        model,
+        messages: skillMessages,
+        signal,
+        systemPrompt,
+        assistant,
+        relatedContext,
+        enabledToolNames,
+        onChunk,
+        knowledgeCollectionId,
+        intent: "chat",
+      });
+    }
+
     if (localCommand.command === "/analyze_files") {
       return executeAnalyzeFilesTask({
         model,

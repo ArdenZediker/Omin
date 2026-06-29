@@ -5,6 +5,9 @@ export type LocalSlashCommand = {
   command: string;
   title: string;
   description: string;
+  kind: "tool" | "skill";
+  systemPrompt?: string;
+  promptPrefix?: string;
 };
 
 export type ResolvedLocalSlashCommand = LocalSlashCommand & {
@@ -16,12 +19,58 @@ export const LOCAL_SLASH_COMMANDS: LocalSlashCommand[] = TOOL_MANIFESTS.filter((
   command: tool.command as string,
   title: tool.title,
   description: tool.description,
+  kind: "tool",
 }));
 
-export type SlashSuggestion =
-  | { kind: "local"; id: string; command: string; title: string; description: string };
+export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = [
+  {
+    id: "summarize",
+    command: "/summarize",
+    title: "总结",
+    description: "总结当前输入或最近对话",
+    kind: "skill",
+    promptPrefix: "请总结下面内容，保留关键结论、约束和待办：",
+  },
+  {
+    id: "rewrite",
+    command: "/rewrite",
+    title: "改写",
+    description: "改写当前输入，使表达更清晰自然",
+    kind: "skill",
+    promptPrefix: "请改写下面内容，让表达更清晰、自然、可直接使用：",
+  },
+  {
+    id: "translate",
+    command: "/translate",
+    title: "翻译",
+    description: "翻译当前输入，未指定语言时默认翻译成中文",
+    kind: "skill",
+    promptPrefix: "请翻译下面内容；如果用户没有指定目标语言，默认翻译成中文：",
+  },
+  {
+    id: "explain",
+    command: "/explain",
+    title: "解释",
+    description: "解释概念、代码或文本",
+    kind: "skill",
+    promptPrefix: "请解释下面内容，说明背景、关键点和容易误解的地方：",
+  },
+  {
+    id: "compare",
+    command: "/compare",
+    title: "比较",
+    description: "比较多个方案、概念或文本差异",
+    kind: "skill",
+    promptPrefix: "请比较下面内容，给出差异、优缺点和推荐结论：",
+  },
+];
 
-export function getMatchingSlashSuggestions(input: string, allowedToolIds?: string[] | null): SlashSuggestion[] {
+export const ALL_LOCAL_COMMANDS = [...LOCAL_SLASH_COMMANDS, ...LOCAL_SKILL_COMMANDS];
+
+export type SlashSuggestion =
+  | { kind: "local"; commandKind: "tool" | "skill"; id: string; command: string; title: string; description: string };
+
+export function getMatchingSlashSuggestions(input: string, allowedToolIds?: string[] | null, allowedSkillIds?: string[] | null): SlashSuggestion[] {
   const normalized = input.trim().toLowerCase();
   if (!normalized.startsWith("/")) {
     return [];
@@ -29,12 +78,23 @@ export function getMatchingSlashSuggestions(input: string, allowedToolIds?: stri
 
   const query = normalized.slice(1);
   const allowedToolIdSet = allowedToolIds ? new Set(allowedToolIds) : null;
-  return LOCAL_SLASH_COMMANDS.filter((item) => {
-    if (allowedToolIdSet && !allowedToolIdSet.has(item.id)) {
+  const allowedSkillIdSet = allowedSkillIds ? new Set(allowedSkillIds) : null;
+  return ALL_LOCAL_COMMANDS.filter((item) => {
+    if (item.kind === "tool" && allowedToolIdSet && !allowedToolIdSet.has(item.id)) {
+      return false;
+    }
+    if (item.kind === "skill" && allowedSkillIdSet && !allowedSkillIdSet.has(item.id)) {
       return false;
     }
     return item.command.startsWith(normalized) || item.title.toLowerCase().includes(query) || item.description.toLowerCase().includes(query);
-  }).map((item) => ({ kind: "local", ...item }));
+  }).map((item) => ({
+    kind: "local",
+    commandKind: item.kind,
+    id: item.id,
+    command: item.command,
+    title: item.title,
+    description: item.description,
+  }));
 }
 
 export function resolveLocalSlashCommand(input: string): ResolvedLocalSlashCommand | null {
@@ -44,7 +104,7 @@ export function resolveLocalSlashCommand(input: string): ResolvedLocalSlashComma
   }
 
   const [command, ...rest] = trimmed.split(/\s+/);
-  const definition = LOCAL_SLASH_COMMANDS.find((item) => item.command === command.toLowerCase());
+  const definition = ALL_LOCAL_COMMANDS.find((item) => item.command === command.toLowerCase());
   if (!definition) return null;
 
   return {

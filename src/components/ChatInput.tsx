@@ -11,11 +11,12 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { buildSlashDraft, getMatchingSlashSuggestions, LOCAL_SLASH_COMMANDS, type SlashSuggestion } from "../chat/skills";
+import { ALL_LOCAL_COMMANDS, buildSlashDraft, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;
   allowedToolIds?: string[];
+  allowedSkillIds?: string[];
   hasConversation?: boolean;
   usageLabel?: string | null;
   contextPresetText?: string;
@@ -54,6 +55,7 @@ function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
 export default function ChatInput({
   canStartNewTopic = false,
   allowedToolIds,
+  allowedSkillIds,
   hasConversation = false,
   usageLabel,
   contextPresetText,
@@ -97,13 +99,13 @@ export default function ChatInput({
     }
   };
 
-  const matchedSuggestions = getMatchingSlashSuggestions(input, allowedToolIds);
+  const matchedSuggestions = getMatchingSlashSuggestions(input, allowedToolIds, allowedSkillIds);
   const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
   const trimmedInput = input.trim();
   const activeSlashCommand = trimmedInput.startsWith("/") ? trimmedInput.split(/\s+/)[0].toLowerCase() : "";
-  const activeLocalCommand = LOCAL_SLASH_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
+  const activeLocalCommand = ALL_LOCAL_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
   const activeModeLabel = activeLocalCommand?.title ?? null;
-  const activeModeTypeLabel = activeLocalCommand ? "工具模式" : null;
+  const activeModeTypeLabel = activeLocalCommand ? (activeLocalCommand.kind === "skill" ? "技能模式" : "工具模式") : null;
   const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
   const showSlashSuggestions =
     localSuggestions.length > 0 &&
