@@ -15,7 +15,8 @@ import { getChatSessionTitle } from "../chat/storage";
 import { ToolRegistry } from "../chat/toolRegistry";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { AssistantProfile, ChatExecutionResult } from "../chat/types";
-import { getToolManifestById } from "../config/manifests/tools";
+import type { AssistantMemoryRecord, SessionSummaryRecord } from "../chat/types";
+import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
 import type { PetThoughtState } from "../app/types";
 import type { ViewMode } from "../app/types";
 import { getPetThoughtKey, matchesPetThought } from "../app/petThoughts";
@@ -32,12 +33,17 @@ type UseChatRuntimeArgs = {
   activeAssistant: AssistantProfile | null;
   availableModels: ModelConfig[];
   messages: Message[];
+  addAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null) => boolean;
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
-  commitAssistantMemory: (sessionId: string, conversationMessages: Message[], assistantReply: string) => void;
+  commitAssistantMemory: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
   createSessionFromMessages: (conversationMessages: Message[], assistantId?: string) => { id: string };
   currentModel: string;
   getAssistantById: (assistantId: string) => AssistantProfile | null;
   getChatSessionById: (sessionId: string) => SessionLite | null;
+  getRelatedContextForAssistant: (query: string) => {
+    summaries: SessionSummaryRecord[];
+    memories: AssistantMemoryRecord[];
+  };
   handleModelChange: (modelId: string) => void;
   renameChatSession: (sessionId: string, title: string) => boolean;
   searchChatSessions: (query: string) => SessionLite[];
@@ -62,15 +68,16 @@ function requireTool(id: string) {
   return manifest as typeof manifest & { command: string };
 }
 
-const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = new Set([
-  "new",
-  "clear",
-  "settings",
-  "pet",
-  "model",
-  "rename",
-  "pin",
-]);
+function resolveEnabledToolNames(assistant: AssistantProfile | null) {
+  if (!assistant) {
+    return [];
+  }
+  return assistant.allowedToolIds
+    .map((toolId) => getToolManifestById(toolId)?.title)
+    .filter((title): title is string => Boolean(title));
+}
+
+const ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET = new Set(ALWAYS_ALLOWED_LOCAL_TOOL_IDS);
 
 const SILENT_LOCAL_TOOL_IDS = new Set([
   "pet",
@@ -123,12 +130,14 @@ export function useChatRuntime({
   activeAssistant,
   availableModels,
   messages,
+  addAssistantMemory,
   applyUsageToSession,
   commitAssistantMemory,
   createSessionFromMessages,
   currentModel,
   getAssistantById,
   getChatSessionById,
+  getRelatedContextForAssistant,
   handleModelChange,
   renameChatSession,
   searchChatSessions,
@@ -636,7 +645,7 @@ export function useChatRuntime({
         ]);
         if (sessionId) {
           applyUsageToSession(sessionId, taskResult.finalResult, conversationMessages);
-          commitAssistantMemory(sessionId, conversationMessages, taskResult.finalResult.content);
+          commitAssistantMemory(sessionId, conversationMessages, taskResult.finalResult);
         }
         return;
       }
@@ -679,9 +688,14 @@ export function useChatRuntime({
       const abortController = new AbortController();
       const runId = startSessionRun(sessionId, abortController);
       const petThoughtId = startPetThought(sessionId, conversationMessages);
+      const executionAssistant = options.assistantOverride ?? activeAssistant;
       const systemPrompt = resolveAssistantSystemPrompt(options.assistantOverride);
-      const knowledgeCollectionId = options.assistantOverride?.knowledgeCollectionId ?? activeAssistant?.knowledgeCollectionId ?? null;
+      const knowledgeCollectionId = executionAssistant?.knowledgeCollectionId ?? null;
+      const latestUserQuery = [...conversationMessages].reverse().find((message) => message.role === "user")?.content ?? "";
+      const relatedContext = getRelatedContextForAssistant(latestUserQuery);
       let streamedAssistantReply = "";
+      let visibleStreamedAssistantReply = "";
+      let isStructuredOutputStreaming = false;
       let lastUiUpdateAt = 0;
       let lastThoughtUpdateAt = 0;
       const updateStreamPreview = (force = false) => {
@@ -690,7 +704,7 @@ export function useChatRuntime({
           return;
         }
         lastUiUpdateAt = now;
-        setLastAssistantContent(sessionId, streamedAssistantReply);
+        setLastAssistantContent(sessionId, visibleStreamedAssistantReply);
       };
       const updateThoughtPreview = (force = false) => {
         const now = performance.now();
@@ -698,7 +712,7 @@ export function useChatRuntime({
           return;
         }
         lastThoughtUpdateAt = now;
-        updatePetThought(petThoughtId, sessionId, conversationMessages, streamedAssistantReply);
+        updatePetThought(petThoughtId, sessionId, conversationMessages, visibleStreamedAssistantReply);
       };
 
       setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "assistant", content: "" }]);
@@ -710,14 +724,27 @@ export function useChatRuntime({
           messages: conversationMessages,
           signal: abortController.signal,
           systemPrompt: [systemPrompt, options.hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+          assistant: executionAssistant,
+          relatedContext,
+          enabledToolNames: resolveEnabledToolNames(executionAssistant),
           knowledgeCollectionId,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
             }
             streamedAssistantReply += chunk;
-            updateThoughtPreview();
-            updateStreamPreview();
+            if (!isStructuredOutputStreaming) {
+              const nextVisible = `${visibleStreamedAssistantReply}${chunk}`;
+              const structuredStart = nextVisible.search(/<omni_(memory|summary)>/i);
+              if (structuredStart >= 0) {
+                visibleStreamedAssistantReply = nextVisible.slice(0, structuredStart).trimEnd();
+                isStructuredOutputStreaming = true;
+              } else {
+                visibleStreamedAssistantReply = nextVisible;
+              }
+              updateThoughtPreview();
+              updateStreamPreview();
+            }
           },
         });
 
@@ -826,6 +853,7 @@ export function useChatRuntime({
         const clearTool = requireTool("clear");
         const settingsTool = requireTool("settings");
         const petTool = requireTool("pet");
+        const rememberTool = requireTool("remember");
         const renameTool = requireTool("rename");
         const pinTool = requireTool("pin");
         const modelTool = requireTool("model");
@@ -916,6 +944,20 @@ export function useChatRuntime({
             }
 
             return { ok: false, error: "Usage: /pet, /pet wake, or /pet close" };
+          },
+        });
+
+        registry.register({
+          id: rememberTool.id,
+          command: rememberTool.command,
+          title: rememberTool.title,
+          execute: async (resolvedCommand, context) => {
+            const content = resolvedCommand.args.trim();
+            if (!activeAssistant) return { ok: false, error: "当前没有可写入记忆的助手" };
+            if (!content) return { ok: false, error: "用法：/remember 要记住的长期偏好或约束" };
+            const added = addAssistantMemory(activeAssistant.id, content, context.activeChatId);
+            if (!added) return { ok: true, outputText: "这条记忆已经存在，未重复保存。" };
+            return { ok: true, outputText: "已保存到当前助手记忆库。" };
           },
         });
 
@@ -1101,8 +1143,8 @@ export function useChatRuntime({
         return { ok: false, error: `Unsupported command: ${command.command}` };
       }
 
-      if (activeAssistant && !ALWAYS_ALLOWED_LOCAL_TOOL_IDS.has(tool.id) && !activeAssistant.allowedToolIds.includes(tool.id)) {
-        return { ok: false, error: `This assistant has not enabled tool: ${tool.title}` };
+      if (activeAssistant && !ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET.has(tool.id) && !activeAssistant.allowedToolIds.includes(tool.id)) {
+        return { ok: false, error: `当前助手未启用工具：${tool.title}` };
       }
 
       return toolRegistryRef.current.execute(command as never, {
@@ -1113,6 +1155,7 @@ export function useChatRuntime({
     [
       activeAssistant,
       activeChatId,
+      addAssistantMemory,
       availableModels,
       getChatSessionById,
       handleModelChange,

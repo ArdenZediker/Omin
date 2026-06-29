@@ -37,14 +37,14 @@ import type { Message } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
-import type { AssistantProfile, ChatSession } from "../chat/types";
+import type { AssistantMemoryRecord, AssistantProfile, ChatSession } from "../chat/types";
 import type { AssistantMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
 import { RECOMMENDED_ASSISTANT_PRESETS } from "../config/manifests/assistants";
 import { AVATAR_CATEGORIES, AVATAR_PRESETS } from "../config/manifests/avatars";
 import { filterAvatarPresets, getEmojiAssetSrc, resolveAssistantAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
-import { ASSISTANT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
+import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ASSISTANT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
 import type { AvatarCategoryManifest } from "../config/manifests/types";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import ChatInput from "./ChatInput";
@@ -91,6 +91,11 @@ type AssistantDeleteConfirmState = {
   message: string;
 } | null;
 
+type AssistantNoticeState = {
+  tone: "success" | "error";
+  message: string;
+} | null;
+
 type AssistantDisplayGroup = {
   label: string;
   assistants: AssistantProfile[];
@@ -121,6 +126,7 @@ type MainChatViewProps = {
     summaries: Array<{ sessionId: string; title: string; summary: string }>;
     memories: Array<{ id: string; content: string; sourceSessionId?: string | null }>;
   };
+  assistantMemories: AssistantMemoryRecord[];
   latestTaskResult: TaskExecutionResult | null;
   taskRuntimeState: TaskRuntimeState;
   messages: Message[];
@@ -142,7 +148,10 @@ type MainChatViewProps = {
     allowedToolIds?: string[];
     allowedSkillIds?: string[];
   }) => void;
+  onAddAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null) => boolean;
   onDeleteAssistant: (assistantId: string) => boolean;
+  onDeleteAssistantMemory: (memoryId: string) => boolean;
+  onUpdateAssistantMemory: (memoryId: string, content: string) => boolean;
   onDeleteChat: (session: ChatSession) => void;
   onDraftChange: (text: string, images: string[]) => void;
   onEditUserMessage: (messageIndex: number) => void;
@@ -187,6 +196,7 @@ export default function MainChatView({
   isSendBlocked = false,
   isStreaming,
   relatedContext,
+  assistantMemories,
   latestTaskResult,
   taskRuntimeState,
   messages,
@@ -197,7 +207,10 @@ export default function MainChatView({
   onClearChat,
   onCopyMessage,
   onCreateCustomAssistant,
+  onAddAssistantMemory,
   onDeleteAssistant,
+  onDeleteAssistantMemory,
+  onUpdateAssistantMemory,
   onDeleteChat,
   onDraftChange,
   onEditUserMessage,
@@ -260,6 +273,10 @@ export default function MainChatView({
   const [assistantAvatarPanelOpen, setAssistantAvatarPanelOpen] = useState(false);
   const [assistantAvatarSearchQuery, setAssistantAvatarSearchQuery] = useState("");
   const [assistantAvatarCategory, setAssistantAvatarCategory] = useState("recent");
+  const [assistantNotice, setAssistantNotice] = useState<AssistantNoticeState>(null);
+  const [newMemoryDraft, setNewMemoryDraft] = useState("");
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [editingMemoryDraft, setEditingMemoryDraft] = useState("");
   const [customAssistantsCollapsed, setCustomAssistantsCollapsed] = useState(false);
   const [openAssistantCardMenuId, setOpenAssistantCardMenuId] = useState<string | null>(null);
   const [topicItemMenuSessionId, setTopicItemMenuSessionId] = useState<string | null>(null);
@@ -355,6 +372,10 @@ export default function MainChatView({
     };
   }, [topicPanelWidth]);
   const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
+  const allowedComposerToolIds = useMemo(
+    () => [...ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ...(activeAssistant?.allowedToolIds ?? [])],
+    [activeAssistant?.allowedToolIds]
+  );
   const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
@@ -398,6 +419,10 @@ export default function MainChatView({
     () => groupedCustomAssistants.filter((group) => group.label !== DEFAULT_ASSISTANT_GROUP_LABEL),
     [groupedCustomAssistants]
   );
+  const topicTitleById = useMemo(() => {
+    const entries = groupedChatSessions.flatMap((group) => group.sessions.map((session) => [session.id, session.title] as const));
+    return new Map(entries);
+  }, [groupedChatSessions]);
   const filteredAssistantAvatars = filterAvatarPresets(AVATAR_PRESETS, assistantAvatarCategory, assistantAvatarSearchQuery);
   const isAssistantSettingsMode = Boolean(assistantSettingsId && activeAssistant?.kind === "custom");
   const [assistantTitleDraft, setAssistantTitleDraft] = useState(activeAssistant?.title ?? "");
@@ -410,6 +435,66 @@ export default function MainChatView({
   const lastAutoScrolledSessionRef = useRef<string | null>(null);
   const selectedAssistantModel = availableModels.find((model) => model.id === assistantModelDraft) ?? null;
   const selectedAssistantKnowledgeCollection = knowledgeCollections.find((collection) => collection.id === activeAssistant?.knowledgeCollectionId) ?? null;
+  const showAssistantNotice = useCallback((message: string, tone: "success" | "error" = "success") => {
+    setAssistantNotice({ tone, message });
+  }, []);
+  const saveAssistantPatch = useCallback(
+    (patch: Partial<AssistantProfile>, message: string) => {
+      if (!activeAssistant) return null;
+      const updated = onUpdateAssistantProfile(activeAssistant.id, patch);
+      showAssistantNotice(updated ? message : "保存失败，请稍后重试", updated ? "success" : "error");
+      return updated;
+    },
+    [activeAssistant, onUpdateAssistantProfile, showAssistantNotice]
+  );
+  const handleShareActiveSession = useCallback(async () => {
+    if (!activeSession) {
+      showAssistantNotice("当前没有可分享的会话", "error");
+      return;
+    }
+
+    try {
+      await onShareChat(activeSession);
+      showAssistantNotice("会话 Markdown 已复制");
+    } catch {
+      showAssistantNotice("复制失败，请检查剪贴板权限", "error");
+    }
+  }, [activeSession, onShareChat, showAssistantNotice]);
+  const handleCopyMessageWithNotice = useCallback(
+    async (message: Message) => {
+      try {
+        await onCopyMessage(message);
+        showAssistantNotice("消息已复制");
+      } catch {
+        showAssistantNotice("复制失败，请检查剪贴板权限", "error");
+      }
+    },
+    [onCopyMessage, showAssistantNotice]
+  );
+  const startEditMemory = useCallback((memory: AssistantMemoryRecord) => {
+    setEditingMemoryId(memory.id);
+    setEditingMemoryDraft(memory.content);
+  }, []);
+  const cancelEditMemory = useCallback(() => {
+    setEditingMemoryId(null);
+    setEditingMemoryDraft("");
+  }, []);
+  const saveEditingMemory = useCallback(() => {
+    if (!editingMemoryId) return;
+    const updated = onUpdateAssistantMemory(editingMemoryId, editingMemoryDraft);
+    showAssistantNotice(updated ? "记忆已更新" : "记忆更新失败", updated ? "success" : "error");
+    if (updated) {
+      cancelEditMemory();
+    }
+  }, [cancelEditMemory, editingMemoryDraft, editingMemoryId, onUpdateAssistantMemory, showAssistantNotice]);
+  const addManualMemory = useCallback(() => {
+    if (!activeAssistant) return;
+    const added = onAddAssistantMemory(activeAssistant.id, newMemoryDraft, activeChatId);
+    showAssistantNotice(added ? "记忆已添加" : "记忆已存在或内容太短", added ? "success" : "error");
+    if (added) {
+      setNewMemoryDraft("");
+    }
+  }, [activeAssistant, activeChatId, newMemoryDraft, onAddAssistantMemory, showAssistantNotice]);
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
     if (assistantPanelManualVisible === true) classNames.push("main-chat-layout--assistant-forced-open");
@@ -430,6 +515,14 @@ export default function MainChatView({
   useEffect(() => {
     isMessagesAtBottomRef.current = isMessagesAtBottom;
   }, [isMessagesAtBottom]);
+
+  useEffect(() => {
+    if (!assistantNotice) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => setAssistantNotice(null), 2600);
+    return () => window.clearTimeout(timeoutId);
+  }, [assistantNotice]);
 
   useEffect(() => {
     if (messages.length === 0 || isEmptyGuideCompact) {
@@ -1478,6 +1571,15 @@ export default function MainChatView({
       )}
 
       <section className="main-chat-stage">
+        {assistantNotice && (
+          <div
+            className={`main-chat-notice main-chat-notice--${assistantNotice.tone}`}
+            role={assistantNotice.tone === "error" ? "alert" : "status"}
+            aria-live="polite"
+          >
+            {assistantNotice.message}
+          </div>
+        )}
         <header className="main-chat-header drag-region">
           <div className="main-chat-toolbar">
             <div className="main-chat-toolbar__session main-chat-toolbar__session--hero">
@@ -1555,11 +1657,7 @@ export default function MainChatView({
                 className="main-chat-toolbar__icon-button"
                 title="分享会话"
                 type="button"
-                onClick={() => {
-                  if (activeSession) {
-                    void onShareChat(activeSession);
-                  }
-                }}
+                onClick={() => void handleShareActiveSession()}
                 disabled={!activeSession}
               >
                 <Share2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
@@ -1661,7 +1759,7 @@ export default function MainChatView({
                                       type="button"
                                       className={`chat-history-panel__avatar-option chat-history-panel__avatar-option--detailed chat-history-panel__avatar-option--tone-${avatar.tone} ${activeAssistant.avatarType !== "image" && resolveEmojiAvatarCode(activeAssistant.avatarValue) === avatar.code ? "chat-history-panel__avatar-option--active" : ""}`}
                                       onClick={() => {
-                                      onUpdateAssistantProfile(activeAssistant.id, {
+                                      saveAssistantPatch({
                                         sourcePresetId: avatar.code,
                                         avatarType: "emoji",
                                         avatarValue: `emoji:${avatar.code}`,
@@ -1669,7 +1767,7 @@ export default function MainChatView({
                                         allowedToolIds: avatar.allowedToolIds ?? activeAssistant.allowedToolIds,
                                         allowedSkillIds: avatar.allowedSkillIds ?? activeAssistant.allowedSkillIds,
                                         defaultModelId: avatar.defaultModelId ?? activeAssistant.defaultModelId ?? null,
-                                      });
+                                      }, "头像与预设已更新");
                                       setAssistantPromptDraft(enhancePresetPromptIfNeeded(avatar.code, avatar.prompt));
                                         setAssistantModelDraft(avatar.defaultModelId ?? activeAssistant.defaultModelId ?? "");
                                         setAssistantAvatarPanelOpen(false);
@@ -1706,7 +1804,7 @@ export default function MainChatView({
                           <input
                             value={assistantTitleDraft}
                             onChange={(event) => setAssistantTitleDraft(event.target.value)}
-                            onBlur={() => onUpdateAssistantProfile(activeAssistant.id, { title: assistantTitleDraft })}
+                            onBlur={() => saveAssistantPatch({ title: assistantTitleDraft }, "助手名称已保存")}
                           />
                         </label>
                         <label className="chat-topic-panel__field">
@@ -1717,7 +1815,7 @@ export default function MainChatView({
                               onChange={(event) => {
                                 const nextValue = event.target.value;
                                 setAssistantModelDraft(nextValue);
-                                onUpdateAssistantProfile(activeAssistant.id, { defaultModelId: nextValue });
+                                saveAssistantPatch({ defaultModelId: nextValue }, "默认模型已更新");
                               }}
                             >
                               {availableModels.map((model) => (
@@ -1728,7 +1826,7 @@ export default function MainChatView({
                             </select>
                             {selectedAssistantModel && (
                               <div className="omni-settings-dialog__model-select-meta">
-                                {selectedAssistantModel.provider} / {selectedAssistantModel.id}
+                                {selectedAssistantModel.provider} / {selectedAssistantModel.id} · 仅作为当前助手默认模型
                               </div>
                             )}
                           </div>
@@ -1740,7 +1838,7 @@ export default function MainChatView({
                               value={activeAssistant.knowledgeCollectionId ?? ""}
                               onChange={(event) => {
                                 const nextValue = event.target.value;
-                                onUpdateAssistantProfile(activeAssistant.id, { knowledgeCollectionId: nextValue || null });
+                                saveAssistantPatch({ knowledgeCollectionId: nextValue || null }, "知识库绑定已更新");
                               }}
                             >
                               <option value="">全部知识库</option>
@@ -1765,7 +1863,7 @@ export default function MainChatView({
                             value={activeAssistant.groupName ?? ""}
                             onChange={(event) => {
                               const nextValue = event.target.value;
-                              onUpdateAssistantProfile(activeAssistant.id, { groupName: nextValue || null });
+                              saveAssistantPatch({ groupName: nextValue || null }, "助手分组已更新");
                             }}
                           >
                             <option value="">{DEFAULT_ASSISTANT_GROUP_LABEL}</option>
@@ -1781,7 +1879,7 @@ export default function MainChatView({
                           <input
                             value={assistantDescriptionDraft}
                             onChange={(event) => setAssistantDescriptionDraft(event.target.value)}
-                            onBlur={() => onUpdateAssistantProfile(activeAssistant.id, { description: assistantDescriptionDraft })}
+                            onBlur={() => saveAssistantPatch({ description: assistantDescriptionDraft }, "助手描述已保存")}
                           />
                         </label>
                         <label className="chat-topic-panel__field omni-settings-dialog__field--full">
@@ -1789,7 +1887,7 @@ export default function MainChatView({
                           <textarea
                             value={assistantPromptDraft}
                             onChange={(event) => setAssistantPromptDraft(event.target.value)}
-                            onBlur={() => onUpdateAssistantProfile(activeAssistant.id, { systemPrompt: assistantPromptDraft })}
+                            onBlur={() => saveAssistantPatch({ systemPrompt: assistantPromptDraft }, "角色设定已保存")}
                             rows={5}
                           />
                         </label>
@@ -1807,7 +1905,7 @@ export default function MainChatView({
                         type="button"
                         className="omni-settings-dialog__preset-card"
                         onClick={() => {
-                          onUpdateAssistantProfile(activeAssistant.id, { allowedToolIds: toolset.toolIds });
+                          saveAssistantPatch({ allowedToolIds: toolset.toolIds }, "工具集模板已应用");
                         }}
                       >
                         <div className="omni-settings-dialog__toggle-copy">
@@ -1832,9 +1930,9 @@ export default function MainChatView({
                         className="omni-settings-dialog__select"
                         value={activeAssistant.memoryScope}
                         onChange={(event) =>
-                          onUpdateAssistantProfile(activeAssistant.id, {
+                          saveAssistantPatch({
                             memoryScope: event.target.value as AssistantMemoryScope,
-                          })
+                          }, "记忆范围已更新")
                         }
                       >
                         <option value="off">关闭记忆</option>
@@ -1852,9 +1950,9 @@ export default function MainChatView({
                         type="checkbox"
                         checked={activeAssistant.autoSaveMemories}
                         onChange={(event) =>
-                          onUpdateAssistantProfile(activeAssistant.id, {
+                          saveAssistantPatch({
                             autoSaveMemories: event.target.checked,
-                          })
+                          }, event.target.checked ? "自动沉淀记忆已开启" : "自动沉淀记忆已关闭")
                         }
                       />
                     </label>
@@ -1868,13 +1966,93 @@ export default function MainChatView({
                         type="checkbox"
                         checked={activeAssistant.autoSaveSummaries}
                         onChange={(event) =>
-                          onUpdateAssistantProfile(activeAssistant.id, {
+                          saveAssistantPatch({
                             autoSaveSummaries: event.target.checked,
-                          })
+                          }, event.target.checked ? "自动沉淀摘要已开启" : "自动沉淀摘要已关闭")
                         }
                       />
                     </label>
                   </div>
+                </div>
+
+                <div className="omni-settings-dialog__section">
+                  <div className="omni-settings-dialog__section-title">记忆库</div>
+                  <div className="omni-settings-dialog__assistant-copy">
+                    <div className="omni-settings-dialog__setting-hint">
+                      当前助手已沉淀 {assistantMemories.length} 条长期记忆，可删除过期或不准确的内容。
+                    </div>
+                  </div>
+                  <div className="omni-settings-dialog__memory-add">
+                    <input
+                      value={newMemoryDraft}
+                      onChange={(event) => setNewMemoryDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          addManualMemory();
+                        }
+                      }}
+                      placeholder="手动添加一条长期记忆，例如：以后回答都用中文"
+                    />
+                    <button type="button" onClick={addManualMemory} disabled={!newMemoryDraft.trim()}>
+                      添加记忆
+                    </button>
+                  </div>
+                  {assistantMemories.length > 0 ? (
+                    <div className="omni-settings-dialog__memory-list">
+                      {assistantMemories.slice(0, 12).map((memory) => (
+                        <div key={memory.id} className="omni-settings-dialog__memory-item">
+                          {editingMemoryId === memory.id ? (
+                            <div className="omni-settings-dialog__memory-editor">
+                              <textarea
+                                value={editingMemoryDraft}
+                                onChange={(event) => setEditingMemoryDraft(event.target.value)}
+                                rows={3}
+                              />
+                              <div className="omni-settings-dialog__memory-actions">
+                                <button type="button" onClick={cancelEditMemory}>
+                                  取消
+                                </button>
+                                <button type="button" className="omni-settings-dialog__memory-save" onClick={saveEditingMemory}>
+                                  保存
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="omni-settings-dialog__memory-copy">
+                                <strong>{memory.content}</strong>
+                                <span>
+                                  {memory.sourceSessionId
+                                    ? `来源会话：${topicTitleById.get(memory.sourceSessionId) ?? "来源会话已删除或不可用"}`
+                                    : "未记录来源会话"}
+                                  {" · "}
+                                  {new Date(memory.updatedAt).toLocaleString("zh-CN")}
+                                </span>
+                              </div>
+                              <div className="omni-settings-dialog__memory-actions">
+                                <button type="button" onClick={() => startEditMemory(memory)}>
+                                  编辑
+                                </button>
+                                <button
+                                  type="button"
+                                  className="omni-settings-dialog__memory-delete"
+                                  onClick={() => {
+                                    const deleted = onDeleteAssistantMemory(memory.id);
+                                    showAssistantNotice(deleted ? "记忆已删除" : "记忆删除失败", deleted ? "success" : "error");
+                                  }}
+                                >
+                                  删除
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="omni-settings-dialog__memory-empty">暂无已沉淀记忆</div>
+                  )}
                 </div>
 
                 <div className="omni-settings-dialog__section">
@@ -1895,7 +2073,7 @@ export default function MainChatView({
                               const nextAllowedToolIds = event.target.checked
                                 ? [...activeAssistant.allowedToolIds, tool.id]
                                 : activeAssistant.allowedToolIds.filter((item) => item !== tool.id);
-                              onUpdateAssistantProfile(activeAssistant.id, { allowedToolIds: nextAllowedToolIds });
+                              saveAssistantPatch({ allowedToolIds: nextAllowedToolIds }, "工具权限已更新");
                             }}
                           />
                         </label>
@@ -1917,7 +2095,7 @@ export default function MainChatView({
                   reader.onload = () => {
                     const result = reader.result;
                     if (typeof result === "string") {
-                      onUpdateAssistantProfile(activeAssistant.id, { avatarType: "image", avatarValue: result });
+                      saveAssistantPatch({ avatarType: "image", avatarValue: result }, "自定义头像已更新");
                       setAssistantAvatarPanelOpen(false);
                     }
                   };
@@ -1982,7 +2160,7 @@ export default function MainChatView({
                       <p>
                         {isEmptyGuideCompact
                           ? "直接输入问题开始对话。需要推荐模板时可展开引导。"
-                          : "你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前助手。"}
+                          : "你可以直接输入问题，也可以从下方选择一个起点。后续任务和工具会默认归属当前助手。"}
                       </p>
                     </div>
                     <div className="empty-chat-state__actions">
@@ -2067,7 +2245,7 @@ export default function MainChatView({
                       index={index}
                       isStreaming={isCurrentStreamingMessage}
                       isEditing={editingMessageIndex === index}
-                      onCopy={onCopyMessage}
+                      onCopy={handleCopyMessageWithNotice}
                       onEdit={onEditUserMessage}
                       onCancelEdit={onCancelEditUserMessage}
                       onSubmitEdit={onSubmitEditedUserMessage}
@@ -2093,6 +2271,7 @@ export default function MainChatView({
 
               <div ref={setComposerElement}>
                 <ChatInput
+                  allowedToolIds={allowedComposerToolIds}
                   canStartNewTopic={Boolean(activeAssistant)}
                   contextPresetText={composerContextPresetText}
                   onSend={onSend}

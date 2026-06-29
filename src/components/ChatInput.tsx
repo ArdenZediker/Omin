@@ -15,6 +15,7 @@ import { buildSlashDraft, getMatchingSlashSuggestions, LOCAL_SLASH_COMMANDS, typ
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;
+  allowedToolIds?: string[];
   hasConversation?: boolean;
   usageLabel?: string | null;
   contextPresetText?: string;
@@ -52,6 +53,7 @@ function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
 
 export default function ChatInput({
   canStartNewTopic = false,
+  allowedToolIds,
   hasConversation = false,
   usageLabel,
   contextPresetText,
@@ -95,7 +97,7 @@ export default function ChatInput({
     }
   };
 
-  const matchedSuggestions = getMatchingSlashSuggestions(input);
+  const matchedSuggestions = getMatchingSlashSuggestions(input, allowedToolIds);
   const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
   const trimmedInput = input.trim();
   const activeSlashCommand = trimmedInput.startsWith("/") ? trimmedInput.split(/\s+/)[0].toLowerCase() : "";
