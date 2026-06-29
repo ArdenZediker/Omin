@@ -42,7 +42,7 @@ export class ToolRegistry {
   async execute(command: ResolvedLocalSlashCommand, context: ToolExecutionContext): Promise<ToolExecutionResult | void> {
     const tool = this.get(command.command);
     if (!tool) {
-      return { ok: false, error: `暂不支持命令: ${command.command}` };
+      return { ok: false, error: `暂不支持命令：${command.command}` };
     }
     return tool.execute(command, context);
   }
