@@ -84,6 +84,18 @@ type PetThoughtSyncResponsePayload = {
   currentThought: PetThoughtState | null;
 };
 
+function createPreviewThrottler(intervalMs: number, update: () => void) {
+  let lastUpdateAt = 0;
+  return (force = false) => {
+    const now = performance.now();
+    if (!force && now - lastUpdateAt < intervalMs) {
+      return;
+    }
+    lastUpdateAt = now;
+    update();
+  };
+}
+
 function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -682,24 +694,8 @@ export function useChatRuntime({
       let streamedAssistantReply = "";
       let visibleStreamedAssistantReply = "";
       let isStructuredOutputStreaming = false;
-      let lastUiUpdateAt = 0;
-      let lastThoughtUpdateAt = 0;
-      const updateStreamPreview = (force = false) => {
-        const now = performance.now();
-        if (!force && now - lastUiUpdateAt < 16) {
-          return;
-        }
-        lastUiUpdateAt = now;
-        setLastAssistantContent(sessionId, visibleStreamedAssistantReply);
-      };
-      const updateThoughtPreview = (force = false) => {
-        const now = performance.now();
-        if (!force && now - lastThoughtUpdateAt < 66) {
-          return;
-        }
-        lastThoughtUpdateAt = now;
-        updatePetThought(petThoughtId, sessionId, conversationMessages, visibleStreamedAssistantReply);
-      };
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastAssistantContent(sessionId, visibleStreamedAssistantReply));
+      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, sessionId, conversationMessages, visibleStreamedAssistantReply));
 
       setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "assistant", content: "" }]);
       setError(null);
@@ -914,24 +910,8 @@ export function useChatRuntime({
       let conversationMessagesForTask = session.messages;
       let petThoughtId: string | null = null;
       let streamedAssistantReply = "";
-      let lastUiUpdateAt = 0;
-      let lastThoughtUpdateAt = 0;
-      const updateStreamPreview = (force = false) => {
-        const now = performance.now();
-        if (!force && now - lastUiUpdateAt < 16) {
-          return;
-        }
-        lastUiUpdateAt = now;
-        setLastAssistantContent(session.id, streamedAssistantReply);
-      };
-      const updateThoughtPreview = (force = false) => {
-        const now = performance.now();
-        if (!force && now - lastThoughtUpdateAt < 66) {
-          return;
-        }
-        lastThoughtUpdateAt = now;
-        updatePetThought(petThoughtId, session.id, conversationMessagesForTask, streamedAssistantReply);
-      };
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastAssistantContent(session.id, streamedAssistantReply));
+      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, session.id, conversationMessagesForTask, streamedAssistantReply));
 
       try {
         const taskResult = await executeInputTask({
@@ -1094,27 +1074,13 @@ export function useChatRuntime({
       let hasPetThought = false;
       let petThoughtId: string | null = null;
       let streamedAssistantReply = "";
-      let lastUiUpdateAt = 0;
-      let lastThoughtUpdateAt = 0;
-      const updateStreamPreview = (force = false) => {
-        const now = performance.now();
-        if (!force && now - lastUiUpdateAt < 16) {
-          return;
-        }
-        lastUiUpdateAt = now;
-        setLastAssistantContent(sessionId, streamedAssistantReply);
-      };
-      const updateThoughtPreview = (force = false) => {
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastAssistantContent(sessionId, streamedAssistantReply));
+      const updateThoughtPreview = createPreviewThrottler(66, () => {
         if (!hasPetThought) {
           return;
         }
-        const now = performance.now();
-        if (!force && now - lastThoughtUpdateAt < 66) {
-          return;
-        }
-        lastThoughtUpdateAt = now;
         updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, streamedAssistantReply);
-      };
+      });
 
       try {
         const taskResult = await executeInputTask({
@@ -1172,7 +1138,7 @@ export function useChatRuntime({
         const conversationMessages = taskResult.conversationMessages ?? conversationMessagesForTask;
         if (!taskResult.finalResult) {
           if (taskResult.status === "aborted") {
-          setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+            setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
             if (hasPetThought) {
               clearPetThoughtSession(sessionId);
             }
