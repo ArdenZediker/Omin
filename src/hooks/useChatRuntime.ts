@@ -101,6 +101,12 @@ function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function getMessageRoleLabel(role: Message["role"]) {
+  if (role === "user") return "用户";
+  if (role === "assistant") return "助手";
+  return "系统";
+}
+
 function safelyEmitPetThoughtEvent(event: string, payload: unknown) {
   if (!canUseTauriEvents()) {
     return;
@@ -759,7 +765,7 @@ export function useChatRuntime({
         }
 
         if (!taskResult.finalResult && !taskResult.toolResult?.outputText) {
-          setError(taskResult.error || "?????????");
+          setError(taskResult.error || "回复失败");
           setConversationMessagesForSession(sessionId, conversationMessages);
           if (isCurrentPetThought(petThoughtId, sessionId)) {
             const responseCount = resolvePetThoughtResponseCount(sessionId);
@@ -798,10 +804,10 @@ export function useChatRuntime({
           return;
         }
 
-        setError(runError instanceof Error ? runError.message : "??????");
+        setError(runError instanceof Error ? runError.message : "回复失败");
         setConversationMessagesForSession(sessionId, conversationMessages);
         if (isCurrentPetThought(petThoughtId, sessionId)) {
-          const errorPreview = runError instanceof Error ? runError.message : "Response failed";
+          const errorPreview = runError instanceof Error ? runError.message : "回复失败";
           const responseCount = resolvePetThoughtResponseCount(sessionId);
           emitPetThought({
             thoughtId: petThoughtId,
@@ -906,7 +912,7 @@ export function useChatRuntime({
           title: petTool.title,
           execute: async (resolvedCommand) => {
             if (!canUseTauriEvents()) {
-              return { ok: false, error: "Desktop pet is only available in the desktop app." };
+              return { ok: false, error: "桌面宠物仅在桌面应用中可用。" };
             }
 
             const action = resolvedCommand.args.trim().toLowerCase();
@@ -920,14 +926,14 @@ export function useChatRuntime({
             if (!action) {
               if (compactWindow && isCompactWindowVisible && !isCompactPetHidden()) {
                 await hideCompactPet();
-                return { ok: true, outputText: "Hid desktop pet." };
+                return { ok: true, outputText: "已隐藏桌面宠物。" };
               }
 
               setCompactPetHidden(false);
               saveSqliteBackedValue("omni_compact_appearance", "pet");
               await emit("omni-compact-appearance-changed", { appearance: "pet" });
               await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
-              return { ok: true, outputText: "Opened desktop pet." };
+              return { ok: true, outputText: "已打开桌面宠物。" };
             }
 
             if (["wake", "open", "show", "on"].includes(action)) {
@@ -935,15 +941,15 @@ export function useChatRuntime({
               saveSqliteBackedValue("omni_compact_appearance", "pet");
               await emit("omni-compact-appearance-changed", { appearance: "pet" });
               await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
-              return { ok: true, outputText: "Opened desktop pet." };
+              return { ok: true, outputText: "已打开桌面宠物。" };
             }
 
             if (["close", "hide", "off"].includes(action)) {
               await hideCompactPet();
-              return { ok: true, outputText: "Hid desktop pet." };
+              return { ok: true, outputText: "已隐藏桌面宠物。" };
             }
 
-            return { ok: false, error: "Usage: /pet, /pet wake, or /pet close" };
+            return { ok: false, error: "用法：/pet、/pet wake 或 /pet close" };
           },
         });
 
@@ -966,8 +972,8 @@ export function useChatRuntime({
           command: renameTool.command,
           title: renameTool.title,
           execute: async (resolvedCommand, context) => {
-            if (!context.activeChatId) return { ok: false, error: "No chat session to rename." };
-            if (!resolvedCommand.args) return { ok: false, error: "Usage: /rename <title>" };
+            if (!context.activeChatId) return { ok: false, error: "当前没有可重命名的会话。" };
+            if (!resolvedCommand.args) return { ok: false, error: "用法：/rename 会话标题" };
             renameChatSession(context.activeChatId, resolvedCommand.args);
             setError(null);
             setOpenChatMenu(null);
@@ -980,7 +986,7 @@ export function useChatRuntime({
           command: pinTool.command,
           title: pinTool.title,
           execute: async (_, context) => {
-            if (!context.activeChatId) return { ok: false, error: "No chat session to pin." };
+            if (!context.activeChatId) return { ok: false, error: "当前没有可置顶的会话。" };
             togglePinnedChatSession(context.activeChatId);
             setError(null);
             setOpenChatMenu(null);
@@ -994,13 +1000,13 @@ export function useChatRuntime({
           title: modelTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim().toLowerCase();
-            if (!query) return { ok: false, error: "Usage: /model <model id or name>" };
+            if (!query) return { ok: false, error: "用法：/model 模型 ID 或名称" };
 
             const matchedModel =
               availableModels.find((model) => model.id.toLowerCase() === query || model.name.toLowerCase() === query) ??
               availableModels.find((model) => model.id.toLowerCase().includes(query) || model.name.toLowerCase().includes(query));
 
-            if (!matchedModel) return { ok: false, error: `No matching model: ${resolvedCommand.args}` };
+            if (!matchedModel) return { ok: false, error: `未找到匹配模型：${resolvedCommand.args}` };
 
             handleModelChange(matchedModel.id);
             setError(null);
@@ -1014,21 +1020,21 @@ export function useChatRuntime({
           title: searchSessionsTool.title,
           execute: async (resolvedCommand, context) => {
             const query = resolvedCommand.args.trim();
-            if (!query) return { ok: false, error: "Usage: /search_sessions <keyword>" };
+            if (!query) return { ok: false, error: "用法：/search_sessions 关键词" };
 
             const matchedSessions = searchChatSessions(query);
             if (matchedSessions.length === 0) {
-              return { ok: true, outputText: `No sessions contain "${query}".`, data: [] };
+              return { ok: true, outputText: `没有会话包含“${query}”。`, data: [] };
             }
 
             const lines = matchedSessions.slice(0, 8).map((session, index) => {
-              const marker = context.activeChatId === session.id ? " [current]" : "";
-              return `${index + 1}. ${session.title}${marker} | id=${session.id} | ${session.messages.length} messages`;
+              const marker = context.activeChatId === session.id ? " [当前]" : "";
+              return `${index + 1}. ${session.title}${marker} | ID=${session.id} | ${session.messages.length} 条消息`;
             });
 
             return {
               ok: true,
-              outputText: [`Found ${matchedSessions.length} related sessions:`, ...lines].join("\n"),
+              outputText: [`找到 ${matchedSessions.length} 个相关会话：`, ...lines].join("\n"),
               data: matchedSessions.map((session) => ({ id: session.id, title: session.title })),
             };
           },
@@ -1040,22 +1046,22 @@ export function useChatRuntime({
           title: readSessionTool.title,
           execute: async (resolvedCommand) => {
             const sessionId = resolvedCommand.args.trim();
-            if (!sessionId) return { ok: false, error: "Usage: /read_session <session id>" };
+            if (!sessionId) return { ok: false, error: "用法：/read_session 会话 ID" };
             const session = getChatSessionById(sessionId);
-            if (!session) return { ok: false, error: `Session not found: ${sessionId}` };
+            if (!session) return { ok: false, error: `未找到会话：${sessionId}` };
 
             const preview = session.messages
               .slice(-8)
               .map((message, index) => {
-                const content = message.content.trim() || "[empty content]";
+                const content = message.content.trim() || "[空内容]";
                 const clipped = content.length > 120 ? `${content.slice(0, 117)}...` : content;
-                return `${index + 1}. ${message.role}: ${clipped}`;
+                return `${index + 1}. ${getMessageRoleLabel(message.role)}：${clipped}`;
               })
               .join("\n");
 
             return {
               ok: true,
-              outputText: [`Session: ${session.title}`, `ID: ${session.id}`, `Message count: ${session.messages.length}`, "", preview].join("\n"),
+              outputText: [`会话：${session.title}`, `ID：${session.id}`, `消息数：${session.messages.length}`, "", preview].join("\n"),
               data: { id: session.id, title: session.title, messageCount: session.messages.length },
             };
           },
@@ -1075,13 +1081,13 @@ export function useChatRuntime({
             if (entries.length === 0) {
               return {
                 ok: true,
-                outputText: query ? `No files contain "${query}".` : "No files in the current workspace.",
+                outputText: query ? `没有文件名包含“${query}”。` : "当前工作区没有文件。",
                 data: [],
               };
             }
 
-            const lines = entries.slice(0, 20).map((entry, index) => `${index + 1}. ${entry.is_dir ? "[DIR]" : "[FILE]"} ${entry.path}`);
-            return { ok: true, outputText: [`Found ${entries.length} items:`, ...lines].join("\n"), data: entries };
+            const lines = entries.slice(0, 20).map((entry, index) => `${index + 1}. ${entry.is_dir ? "[目录]" : "[文件]"} ${entry.path}`);
+            return { ok: true, outputText: [`找到 ${entries.length} 个项目：`, ...lines].join("\n"), data: entries };
           },
         });
 
@@ -1091,7 +1097,7 @@ export function useChatRuntime({
           title: readFileTool.title,
           execute: async (resolvedCommand) => {
             const relativePath = resolvedCommand.args.trim();
-            if (!relativePath) return { ok: false, error: "Usage: /read_file <relative path>" };
+            if (!relativePath) return { ok: false, error: "用法：/read_file 相对路径" };
 
             const content = await invoke<string>("read_workspace_file", {
               path: relativePath,
@@ -1100,7 +1106,7 @@ export function useChatRuntime({
 
             return {
               ok: true,
-              outputText: [`File: ${relativePath}`, "", content].join("\n"),
+              outputText: [`文件：${relativePath}`, "", content].join("\n"),
               data: { path: relativePath },
             };
           },
@@ -1112,7 +1118,7 @@ export function useChatRuntime({
           title: searchFilesTool.title,
           execute: async (resolvedCommand) => {
             const query = resolvedCommand.args.trim();
-            if (!query) return { ok: false, error: "Usage: /search_files <keyword>" };
+            if (!query) return { ok: false, error: "用法：/search_files 关键词" };
 
             const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>("search_workspace_files", {
               query,
@@ -1120,11 +1126,11 @@ export function useChatRuntime({
             });
 
             if (matches.length === 0) {
-              return { ok: true, outputText: `No file content contains "${query}".`, data: [] };
+              return { ok: true, outputText: `没有文件内容包含“${query}”。`, data: [] };
             }
 
             const lines = matches.slice(0, 20).map((match, index) => `${index + 1}. ${match.path}:${match.line_number} ${match.line_preview}`);
-            return { ok: true, outputText: [`Found ${matches.length} related matches:`, ...lines].join("\n"), data: matches };
+            return { ok: true, outputText: [`找到 ${matches.length} 个相关匹配：`, ...lines].join("\n"), data: matches };
           },
         });
 
@@ -1140,7 +1146,7 @@ export function useChatRuntime({
 
       const tool = toolRegistryRef.current.get(command.command);
       if (!tool) {
-        return { ok: false, error: `Unsupported command: ${command.command}` };
+        return { ok: false, error: `暂不支持命令：${command.command}` };
       }
 
       if (activeAssistant && !ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET.has(tool.id) && !activeAssistant.allowedToolIds.includes(tool.id)) {
@@ -1280,7 +1286,7 @@ export function useChatRuntime({
               thoughtId: petThoughtId ?? undefined,
               sessionId: session.id,
               sessionTitle: resolvePetThoughtTitle(session.id, conversationMessages),
-              previewText: taskResult.error || "Response failed",
+              previewText: taskResult.error || "回复失败",
               responseCount,
               status: "error",
               updatedAt: Date.now(),

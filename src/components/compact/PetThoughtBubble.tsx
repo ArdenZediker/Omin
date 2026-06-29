@@ -40,9 +40,9 @@ export default function PetThoughtBubble({
   const isThinking = thought?.status === "thinking";
   const previewText =
     thought?.status === "thinking" && !thought.previewText.trim()
-      ? "Thinking..."
+      ? "思考中..."
       : thought?.status === "error" && !thought.previewText.trim()
-        ? "Response failed"
+        ? "回复失败"
         : thought?.previewText.trim() ?? "";
   const [layout, setLayout] = useState<BubbleLayout>({
     bubblePlacement: "top",
@@ -154,8 +154,8 @@ export default function PetThoughtBubble({
               type="button"
               className="pet-thought-bubble__hover-button pet-thought-bubble__hover-button--close"
               onClick={closeBubble}
-              aria-label="Close bubble"
-              title="Close"
+              aria-label="关闭气泡"
+              title="关闭"
             >
               <X size={11} strokeWidth={2.2} aria-hidden="true" focusable="false" />
             </button>
@@ -163,8 +163,8 @@ export default function PetThoughtBubble({
               type="button"
               className="pet-thought-bubble__hover-button pet-thought-bubble__hover-button--expand"
               onClick={() => setIsExpanded((value) => !value)}
-              aria-label={isExpanded ? "Collapse reply" : "Expand reply"}
-              title={isExpanded ? "Collapse" : "Expand"}
+              aria-label={isExpanded ? "收起回复" : "展开回复"}
+              title={isExpanded ? "收起" : "展开"}
             >
               <ChevronRight size={14} strokeWidth={2.1} aria-hidden="true" focusable="false" />
             </button>
