@@ -218,7 +218,7 @@ async function executeAnalyzeFilesTask(options: {
     executeStep: async ({ step, api }) => {
       if (step.id === "plan_chain") {
         if (!query) {
-          throw new Error("用法: /analyze_files 关键字");
+          throw new Error("用法：/analyze_files 关键字");
         }
         api.appendTrace("组合工具任务规划完成");
         return;
@@ -261,7 +261,7 @@ async function executeAnalyzeFilesTask(options: {
           });
 
           if (!readResult || readResult.ok === false) {
-            throw new Error(readResult?.error || `读取文件失败: ${path}`);
+            throw new Error(readResult?.error || `读取文件失败：${path}`);
           }
 
           readSnippets.push({
