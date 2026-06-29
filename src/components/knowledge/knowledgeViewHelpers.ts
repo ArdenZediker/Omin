@@ -257,3 +257,53 @@ export function splitPreviewLines(value: string, maxLines: number, maxChars: num
 
   return lines.slice(0, maxLines).map((line) => line.slice(0, maxChars));
 }
+
+export function formatTimestamp(timestamp?: number | null) {
+  if (!timestamp) {
+    return "未知时间";
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function normalizeSearchText(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function getSearchHighlightTerms(query: string) {
+  const terms = query
+    .trim()
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+
+  return Array.from(new Map(terms.map((term) => [term.toLowerCase(), term])).values());
+}
+
+export function extractThumbnailPreviewLines(content: string, maxLines: number, maxChars: number) {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  const lines: string[] = [];
+
+  for (const rawLine of normalized.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    lines.push(line.slice(0, maxChars));
+    if (lines.length >= maxLines) {
+      return lines;
+    }
+  }
+
+  if (lines.length === 0) {
+    return splitPreviewLines(trimContentPreview(content), maxLines, maxChars);
+  }
+
+  return lines.slice(0, maxLines);
+}

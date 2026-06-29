@@ -59,10 +59,12 @@ import type { KnowledgeDeadLetterStatusFilter, KnowledgeTaskCenterScope } from "
 import {
   KNOWLEDGE_UPLOAD_ACCEPT,
   classifyResource,
+  extractThumbnailPreviewLines,
+  formatTimestamp,
   getExtension,
   getPreviewKindFromFile,
-  splitPreviewLines,
-  trimContentPreview,
+  getSearchHighlightTerms,
+  normalizeSearchText,
 } from "./knowledge/knowledgeViewHelpers";
 
 type KnowledgeBaseViewProps = {
@@ -241,36 +243,8 @@ function createCollectionSettingsDraft(collection: KnowledgeCollection): Collect
   };
 }
 
-function formatTimestamp(timestamp?: number | null) {
-  if (!timestamp) {
-    return "未知时间";
-  }
-
-  return new Date(timestamp).toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function normalizeSearchText(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function getSearchHighlightTerms(query: string) {
-  const terms = query
-    .trim()
-    .split(/\s+/)
-    .map((term) => term.trim())
-    .filter(Boolean)
-    .sort((left, right) => right.length - left.length);
-
-  return Array.from(new Map(terms.map((term) => [term.toLowerCase(), term])).values());
 }
 
 function renderHighlightedSearchText(text: string, query: string) {
@@ -332,28 +306,6 @@ function fitCanvasTextToWidth(context: CanvasRenderingContext2D, text: string, m
   }
 
   return `${normalized.slice(0, Math.max(0, low)).trimEnd()}${ellipsis}`;
-}
-
-function extractThumbnailPreviewLines(content: string, maxLines: number, maxChars: number) {
-  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
-  const lines: string[] = [];
-
-  for (const rawLine of normalized.split("\n")) {
-    const line = rawLine.trim();
-    if (!line) {
-      continue;
-    }
-    lines.push(line.slice(0, maxChars));
-    if (lines.length >= maxLines) {
-      return lines;
-    }
-  }
-
-  if (lines.length === 0) {
-    return splitPreviewLines(trimContentPreview(content), maxLines, maxChars);
-  }
-
-  return lines.slice(0, maxLines);
 }
 
 function roundRectPath(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {

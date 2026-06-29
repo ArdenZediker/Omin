@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyResource,
+  extractThumbnailPreviewLines,
+  formatTimestamp,
   getDocumentTypeLabel,
   getExtension,
   getPreviewKindFromDocument,
   getPreviewKindFromFile,
   getProcessingStatusLabel,
+  getSearchHighlightTerms,
+  normalizeSearchText,
   getVectorizationLabel,
   splitPreviewLines,
   trimContentPreview,
@@ -60,5 +64,21 @@ describe("knowledgeViewHelpers", () => {
     const lines = splitPreviewLines("第一段 内容 很长 第二段 内容 继续 很长", 2, 8);
     expect(lines).toHaveLength(2);
     expect(lines.every((line) => line.length <= 8)).toBe(true);
+  });
+
+  it("规范化搜索文本并按长度排序高亮词", () => {
+    expect(normalizeSearchText("  Omni   知识库  ")).toBe("omni 知识库");
+    expect(getSearchHighlightTerms("AI ai assistant")).toEqual(["assistant", "ai"]);
+  });
+
+  it("格式化时间戳并处理空时间", () => {
+    expect(formatTimestamp(null)).toBe("未知时间");
+    expect(formatTimestamp(new Date("2026-06-29T09:05:00+08:00").getTime())).toContain("06/29");
+  });
+
+  it("从原文中提取缩略图预览行", () => {
+    expect(extractThumbnailPreviewLines("第一行\n\n第二行很长", 3, 3)).toEqual(["第一行", "第二行"]);
+    expect(extractThumbnailPreviewLines("   ", 2, 6)).toEqual([]);
+    expect(extractThumbnailPreviewLines("# 标题 **正文**", 2, 8)).toEqual(["# 标题 **正"]);
   });
 });
