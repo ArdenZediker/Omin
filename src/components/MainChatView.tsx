@@ -45,6 +45,7 @@ import { RECOMMENDED_ASSISTANT_PRESETS } from "../config/manifests/assistants";
 import { AVATAR_CATEGORIES, AVATAR_PRESETS } from "../config/manifests/avatars";
 import { filterAvatarPresets, getEmojiAssetSrc, resolveAssistantAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ASSISTANT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
+import { LOCAL_SKILL_COMMANDS } from "../chat/skills";
 import type { AvatarCategoryManifest } from "../config/manifests/types";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import ChatInput from "./ChatInput";
@@ -376,6 +377,7 @@ export default function MainChatView({
     () => [...ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ...(activeAssistant?.allowedToolIds ?? [])],
     [activeAssistant?.allowedToolIds]
   );
+  const allowedComposerSkillIds = activeAssistant?.allowedSkillIds ?? [];
   const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
@@ -2082,6 +2084,33 @@ export default function MainChatView({
                   </div>
                 </div>
 
+                <div className="omni-settings-dialog__section">
+                  <div className="omni-settings-dialog__section-title">技能权限</div>
+                  <div className="omni-settings-dialog__toggle-list">
+                    {LOCAL_SKILL_COMMANDS.map((skill) => {
+                      const checked = activeAssistant.allowedSkillIds.includes(skill.id);
+                      return (
+                        <label key={skill.id} className="omni-settings-dialog__toggle-row">
+                          <div className="omni-settings-dialog__toggle-copy">
+                            <strong>{skill.title}</strong>
+                            <span>{skill.description} · {skill.command}</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              const nextAllowedSkillIds = event.target.checked
+                                ? [...activeAssistant.allowedSkillIds, skill.id]
+                                : activeAssistant.allowedSkillIds.filter((item) => item !== skill.id);
+                              saveAssistantPatch({ allowedSkillIds: nextAllowedSkillIds }, "技能权限已更新");
+                            }}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
               </div>
               <input
                 ref={assistantAvatarInputRef}
@@ -2160,7 +2189,7 @@ export default function MainChatView({
                       <p>
                         {isEmptyGuideCompact
                           ? "直接输入问题开始对话。需要推荐模板时可展开引导。"
-                          : "你可以直接输入问题，也可以从下方选择一个起点。后续任务和工具会默认归属当前助手。"}
+                          : "你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前助手。"}
                       </p>
                     </div>
                     <div className="empty-chat-state__actions">
@@ -2272,6 +2301,7 @@ export default function MainChatView({
               <div ref={setComposerElement}>
                 <ChatInput
                   allowedToolIds={allowedComposerToolIds}
+                  allowedSkillIds={allowedComposerSkillIds}
                   canStartNewTopic={Boolean(activeAssistant)}
                   contextPresetText={composerContextPresetText}
                   onSend={onSend}
