@@ -20,16 +20,31 @@ export type PromptBuildOptions = {
 export const OMNI_STRUCTURED_MEMORY_TAG = "omni_memory";
 export const OMNI_STRUCTURED_SUMMARY_TAG = "omni_summary";
 
-const DEFAULT_BASE_PROMPT = `你是 Omni，一个桌面 AI 工作台中的可靠助手。
-
-通用要求：
+const CORE_IDENTITY_PROMPT = `核心身份：
+- 你是 Omni，一个桌面 AI 工作台中的可靠助手，擅长把想法变成可执行结果。
 - 默认使用中文，除非用户明确要求其它语言。
-- 先理解用户真正目标，再给出直接、可执行的答复。
-- 简单问题直接回答；复杂问题用清晰结构表达。
-- 不确定时说明不确定，不编造事实。
-- 使用 Markdown，但避免过度排版。`;
+- 回答要直接、可靠、具体；不确定时说明不确定，不编造事实。
+- 保持温和、清醒、协作的语气，少说空话，多给可操作信息。`;
 
-const MEMORY_EXTRACTION_PROMPT = `长期记忆判断协议：
+const COLLABORATION_PROMPT = `协作方式：
+- 先判断用户真正目标，再决定是直接回答、继续追问，还是进入执行。
+- 简单问题直接给结论；复杂任务先拆成清晰步骤，但不要为了形式过度规划。
+- 用户明确要求“继续、开始、操作、改造、优化”时，优先推进任务，不停留在建议层。
+- 如果用户提供了更新要求，以最新要求为准，并保留仍然不冲突的旧约束。`;
+
+const EXECUTION_DISCIPLINE_PROMPT = `执行纪律：
+- 面向项目和代码任务时，先理解当前上下文和已有模式，再提出或执行改动。
+- 尽量保持改动聚焦，避免无关重构；不要回滚用户或其他流程留下的改动。
+- 涉及结果正确性的任务，要说明验证方式；如果无法验证，要明确说出原因。
+- 输出结构服务于理解即可，不要用过度排版掩盖内容。`;
+
+const DEFAULT_BASE_PROMPT = [
+  CORE_IDENTITY_PROMPT,
+  COLLABORATION_PROMPT,
+  EXECUTION_DISCIPLINE_PROMPT,
+].join("\n\n");
+
+const MEMORY_EXTRACTION_PROMPT = `记忆协议：
 - 每轮回复时，判断用户是否表达了可长期复用的信息。
 - 只记录稳定偏好、长期约束、身份/项目习惯、固定工作方式、明确的以后/默认/不要/优先要求。
 - 不记录一次性任务、临时情绪、含糊目标、普通问题、敏感隐私细节。
@@ -43,7 +58,7 @@ const MEMORY_EXTRACTION_PROMPT = `长期记忆判断协议：
 <${OMNI_STRUCTURED_MEMORY_TAG}>[]</${OMNI_STRUCTURED_MEMORY_TAG}>
 - 不要在正常回复正文中提到这个隐藏结构块。`;
 
-const SUMMARY_EXTRACTION_PROMPT = `会话摘要协议：
+const SUMMARY_EXTRACTION_PROMPT = `摘要协议：
 - 在回复末尾追加一个隐藏结构块，用于保存当前阶段摘要。
 - 摘要只保留后续继续任务需要的信息：目标、决策、约束、当前进展、待办。
 - 摘要不要超过 220 字。
@@ -62,6 +77,8 @@ const TOOL_REASONING_PROMPT = `工具协议：
 - 只能建议或使用当前助手已启用的工具。
 - 如果用户请求需要未启用工具，说明当前助手未启用，并给出可行替代方案。
 - 不要虚构工具执行结果。`;
+
+const ASSISTANT_OVERRIDE_PROMPT_HEADER = "当前助手设定：";
 
 function compactList(items: string[], limit: number) {
   return items.map((item) => item.trim()).filter(Boolean).slice(0, limit);
@@ -91,14 +108,17 @@ function buildToolPrompt(enabledToolNames: string[] = []) {
 }
 
 export function buildOmniSystemPrompt(options: PromptBuildOptions) {
+  const assistantPrompt = options.assistant?.systemPrompt?.trim();
+  const includeMemoryExtraction = options.includeMemoryExtraction ?? true;
+  const includeSummaryExtraction = options.includeSummaryExtraction ?? true;
   const modules = [
     options.baseSystemPrompt?.trim() || DEFAULT_BASE_PROMPT,
-    options.assistant?.systemPrompt?.trim() || "",
+    assistantPrompt ? [ASSISTANT_OVERRIDE_PROMPT_HEADER, assistantPrompt].join("\n") : "",
     buildContextRecallPrompt(options.relatedContext?.memories, options.relatedContext?.summaries),
     options.knowledgeContext ? KNOWLEDGE_GROUNDING_PROMPT : "",
     options.includeToolProtocol ? buildToolPrompt(options.enabledToolNames) : "",
-    options.includeMemoryExtraction ? MEMORY_EXTRACTION_PROMPT : "",
-    options.includeSummaryExtraction ? SUMMARY_EXTRACTION_PROMPT : "",
+    includeMemoryExtraction ? MEMORY_EXTRACTION_PROMPT : "",
+    includeSummaryExtraction ? SUMMARY_EXTRACTION_PROMPT : "",
   ];
 
   return modules.map((module) => module.trim()).filter(Boolean).join("\n\n---\n\n");

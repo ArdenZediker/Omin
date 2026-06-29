@@ -383,11 +383,12 @@ export async function executeInputTask(options: {
         throw new Error(`当前助手未启用技能：${localCommand.title}`);
       }
       const skillMessages = buildSkillMessages(localCommand, currentMessages);
+      const skillSystemPrompt = [systemPrompt, localCommand.systemPrompt?.trim()].filter(Boolean).join("\n\n") || undefined;
       return executeTask({
         model,
         messages: skillMessages,
         signal,
-        systemPrompt,
+        systemPrompt: skillSystemPrompt,
         assistant,
         relatedContext,
         enabledToolNames,
