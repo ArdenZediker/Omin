@@ -1389,7 +1389,7 @@ fn enrich_audio_document(
         match summarize_audio_transcript(&client, model, &document.source_name, &transcript) {
             Ok(summary) => normalize_optional_text(Some(summary.as_str())),
             Err(err) => {
-                warning = Some(format!("音频摘要生成失败: {err}"));
+                warning = Some(format!("音频摘要生成失败：{err}"));
                 None
             }
         }
