@@ -1,22 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { emit, emitTo, listen } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
-import { isMainWindowUserVisible, showCompactWindow, showSettingsWindow } from "../app/window";
+import { isMainWindowUserVisible } from "../app/window";
 import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
-import { getPetWindowScale } from "../app/compactPetScale";
-import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibility";
-import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { readSqliteBackedValue } from "../app/sqliteStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { getChatSessionTitle } from "../chat/storage";
-import { ToolRegistry } from "../chat/toolRegistry";
+import { executeLocalTool } from "../chat/localTools";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { AssistantProfile, ChatExecutionResult } from "../chat/types";
 import type { AssistantMemoryRecord, SessionSummaryRecord } from "../chat/types";
-import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
+import { getToolManifestById } from "../config/manifests/tools";
 import type { PetThoughtState } from "../app/types";
 import type { ViewMode } from "../app/types";
 import { getPetThoughtKey, matchesPetThought } from "../app/petThoughts";
@@ -60,14 +57,6 @@ type UseChatRuntimeArgs = {
   view: ViewMode;
 };
 
-function requireTool(id: string) {
-  const manifest = getToolManifestById(id);
-  if (!manifest?.command) {
-    throw new Error(`缺少工具定义: ${id}`);
-  }
-  return manifest as typeof manifest & { command: string };
-}
-
 function resolveEnabledToolNames(assistant: AssistantProfile | null) {
   if (!assistant) {
     return [];
@@ -76,8 +65,6 @@ function resolveEnabledToolNames(assistant: AssistantProfile | null) {
     .map((toolId) => getToolManifestById(toolId)?.title)
     .filter((title): title is string => Boolean(title));
 }
-
-const ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET = new Set(ALWAYS_ALLOWED_LOCAL_TOOL_IDS);
 
 const SILENT_LOCAL_TOOL_IDS = new Set([
   "pet",
@@ -99,12 +86,6 @@ type PetThoughtSyncResponsePayload = {
 
 function canUseTauriEvents() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-function getMessageRoleLabel(role: Message["role"]) {
-  if (role === "user") return "用户";
-  if (role === "assistant") return "助手";
-  return "系统";
 }
 
 function safelyEmitPetThoughtEvent(event: string, payload: unknown) {
@@ -171,7 +152,6 @@ export function useChatRuntime({
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const sessionRunIdsRef = useRef<Map<string, number>>(new Map());
   const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
-  const toolRegistryRef = useRef<ToolRegistry | null>(null);
   const petThoughtRef = useRef<PetThoughtState | null>(null);
   const petThoughtQueueRef = useRef<PetThoughtState[]>([]);
   const activePetThoughtIdRef = useRef<string | null>(null);
@@ -852,311 +832,22 @@ export function useChatRuntime({
 
   const executeTool = useCallback(
     async (command: { command: string; args: string }) => {
-      if (!toolRegistryRef.current) {
-        const registry = new ToolRegistry();
-
-        const newTool = requireTool("new");
-        const clearTool = requireTool("clear");
-        const settingsTool = requireTool("settings");
-        const petTool = requireTool("pet");
-        const rememberTool = requireTool("remember");
-        const renameTool = requireTool("rename");
-        const pinTool = requireTool("pin");
-        const modelTool = requireTool("model");
-        const searchSessionsTool = requireTool("search_sessions");
-        const readSessionTool = requireTool("read_session");
-        const listFilesTool = requireTool("list_files");
-        const readFileTool = requireTool("read_file");
-        const searchFilesTool = requireTool("search_files");
-        const analyzeFilesTool = requireTool("analyze_files");
-
-        registry.register({
-          id: newTool.id,
-          command: newTool.command,
-          title: newTool.title,
-          execute: async () => {
-            setActiveChatId(null);
-            setMessages([]);
-            setError(null);
-            setOpenChatMenu(null);
-            setEditingMessageIndex(null);
-            return { ok: true };
-          },
-        });
-
-        registry.register({
-          id: clearTool.id,
-          command: clearTool.command,
-          title: clearTool.title,
-          execute: async () => {
-            setMessages([]);
-            setError(null);
-            setEditingMessageIndex(null);
-            return { ok: true };
-          },
-        });
-
-        registry.register({
-          id: settingsTool.id,
-          command: settingsTool.command,
-          title: settingsTool.title,
-          execute: async () => {
-            await showSettingsWindow();
-            return { ok: true };
-          },
-        });
-
-        registry.register({
-          id: petTool.id,
-          command: petTool.command,
-          title: petTool.title,
-          execute: async (resolvedCommand) => {
-            if (!canUseTauriEvents()) {
-              return { ok: false, error: "桌面宠物仅在桌面应用中可用。" };
-            }
-
-            const action = resolvedCommand.args.trim().toLowerCase();
-            const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
-            const isCompactWindowVisible = compactWindow ? await compactWindow.isVisible().catch(() => false) : false;
-            const hideCompactPet = async () => {
-              setCompactPetHidden(true);
-              await compactWindow?.close().catch(() => undefined);
-            };
-
-            if (!action) {
-              if (compactWindow && isCompactWindowVisible && !isCompactPetHidden()) {
-                await hideCompactPet();
-                return { ok: true, outputText: "已隐藏桌面宠物。" };
-              }
-
-              setCompactPetHidden(false);
-              saveSqliteBackedValue("omni_compact_appearance", "pet");
-              await emit("omni-compact-appearance-changed", { appearance: "pet" });
-              await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
-              return { ok: true, outputText: "已打开桌面宠物。" };
-            }
-
-            if (["wake", "open", "show", "on"].includes(action)) {
-              setCompactPetHidden(false);
-              saveSqliteBackedValue("omni_compact_appearance", "pet");
-              await emit("omni-compact-appearance-changed", { appearance: "pet" });
-              await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
-              return { ok: true, outputText: "已打开桌面宠物。" };
-            }
-
-            if (["close", "hide", "off"].includes(action)) {
-              await hideCompactPet();
-              return { ok: true, outputText: "已隐藏桌面宠物。" };
-            }
-
-            return { ok: false, error: "用法：/pet、/pet wake 或 /pet close" };
-          },
-        });
-
-        registry.register({
-          id: rememberTool.id,
-          command: rememberTool.command,
-          title: rememberTool.title,
-          execute: async (resolvedCommand, context) => {
-            const content = resolvedCommand.args.trim();
-            if (!activeAssistant) return { ok: false, error: "当前没有可写入记忆的助手" };
-            if (!content) return { ok: false, error: "用法：/remember 要记住的长期偏好或约束" };
-            const added = addAssistantMemory(activeAssistant.id, content, context.activeChatId);
-            if (!added) return { ok: true, outputText: "这条记忆已经存在，未重复保存。" };
-            return { ok: true, outputText: "已保存到当前助手记忆库。" };
-          },
-        });
-
-        registry.register({
-          id: renameTool.id,
-          command: renameTool.command,
-          title: renameTool.title,
-          execute: async (resolvedCommand, context) => {
-            if (!context.activeChatId) return { ok: false, error: "当前没有可重命名的会话。" };
-            if (!resolvedCommand.args) return { ok: false, error: "用法：/rename 会话标题" };
-            renameChatSession(context.activeChatId, resolvedCommand.args);
-            setError(null);
-            setOpenChatMenu(null);
-            return { ok: true };
-          },
-        });
-
-        registry.register({
-          id: pinTool.id,
-          command: pinTool.command,
-          title: pinTool.title,
-          execute: async (_, context) => {
-            if (!context.activeChatId) return { ok: false, error: "当前没有可置顶的会话。" };
-            togglePinnedChatSession(context.activeChatId);
-            setError(null);
-            setOpenChatMenu(null);
-            return { ok: true };
-          },
-        });
-
-        registry.register({
-          id: modelTool.id,
-          command: modelTool.command,
-          title: modelTool.title,
-          execute: async (resolvedCommand) => {
-            const query = resolvedCommand.args.trim().toLowerCase();
-            if (!query) return { ok: false, error: "用法：/model 模型 ID 或名称" };
-
-            const matchedModel =
-              availableModels.find((model) => model.id.toLowerCase() === query || model.name.toLowerCase() === query) ??
-              availableModels.find((model) => model.id.toLowerCase().includes(query) || model.name.toLowerCase().includes(query));
-
-            if (!matchedModel) return { ok: false, error: `未找到匹配模型：${resolvedCommand.args}` };
-
-            handleModelChange(matchedModel.id);
-            setError(null);
-            return { ok: true };
-          },
-        });
-
-        registry.register({
-          id: searchSessionsTool.id,
-          command: searchSessionsTool.command,
-          title: searchSessionsTool.title,
-          execute: async (resolvedCommand, context) => {
-            const query = resolvedCommand.args.trim();
-            if (!query) return { ok: false, error: "用法：/search_sessions 关键词" };
-
-            const matchedSessions = searchChatSessions(query);
-            if (matchedSessions.length === 0) {
-              return { ok: true, outputText: `没有会话包含“${query}”。`, data: [] };
-            }
-
-            const lines = matchedSessions.slice(0, 8).map((session, index) => {
-              const marker = context.activeChatId === session.id ? " [当前]" : "";
-              return `${index + 1}. ${session.title}${marker} | ID=${session.id} | ${session.messages.length} 条消息`;
-            });
-
-            return {
-              ok: true,
-              outputText: [`找到 ${matchedSessions.length} 个相关会话：`, ...lines].join("\n"),
-              data: matchedSessions.map((session) => ({ id: session.id, title: session.title })),
-            };
-          },
-        });
-
-        registry.register({
-          id: readSessionTool.id,
-          command: readSessionTool.command,
-          title: readSessionTool.title,
-          execute: async (resolvedCommand) => {
-            const sessionId = resolvedCommand.args.trim();
-            if (!sessionId) return { ok: false, error: "用法：/read_session 会话 ID" };
-            const session = getChatSessionById(sessionId);
-            if (!session) return { ok: false, error: `未找到会话：${sessionId}` };
-
-            const preview = session.messages
-              .slice(-8)
-              .map((message, index) => {
-                const content = message.content.trim() || "[空内容]";
-                const clipped = content.length > 120 ? `${content.slice(0, 117)}...` : content;
-                return `${index + 1}. ${getMessageRoleLabel(message.role)}：${clipped}`;
-              })
-              .join("\n");
-
-            return {
-              ok: true,
-              outputText: [`会话：${session.title}`, `ID：${session.id}`, `消息数：${session.messages.length}`, "", preview].join("\n"),
-              data: { id: session.id, title: session.title, messageCount: session.messages.length },
-            };
-          },
-        });
-
-        registry.register({
-          id: listFilesTool.id,
-          command: listFilesTool.command,
-          title: listFilesTool.title,
-          execute: async (resolvedCommand) => {
-            const query = resolvedCommand.args.trim();
-            const entries = await invoke<Array<{ path: string; is_dir: boolean }>>("list_workspace_files", {
-              query: query || null,
-              limit: 80,
-            });
-
-            if (entries.length === 0) {
-              return {
-                ok: true,
-                outputText: query ? `没有文件名包含“${query}”。` : "当前工作区没有文件。",
-                data: [],
-              };
-            }
-
-            const lines = entries.slice(0, 20).map((entry, index) => `${index + 1}. ${entry.is_dir ? "[目录]" : "[文件]"} ${entry.path}`);
-            return { ok: true, outputText: [`找到 ${entries.length} 个项目：`, ...lines].join("\n"), data: entries };
-          },
-        });
-
-        registry.register({
-          id: readFileTool.id,
-          command: readFileTool.command,
-          title: readFileTool.title,
-          execute: async (resolvedCommand) => {
-            const relativePath = resolvedCommand.args.trim();
-            if (!relativePath) return { ok: false, error: "用法：/read_file 相对路径" };
-
-            const content = await invoke<string>("read_workspace_file", {
-              path: relativePath,
-              maxChars: 6000,
-            });
-
-            return {
-              ok: true,
-              outputText: [`文件：${relativePath}`, "", content].join("\n"),
-              data: { path: relativePath },
-            };
-          },
-        });
-
-        registry.register({
-          id: searchFilesTool.id,
-          command: searchFilesTool.command,
-          title: searchFilesTool.title,
-          execute: async (resolvedCommand) => {
-            const query = resolvedCommand.args.trim();
-            if (!query) return { ok: false, error: "用法：/search_files 关键词" };
-
-            const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>("search_workspace_files", {
-              query,
-              limit: 50,
-            });
-
-            if (matches.length === 0) {
-              return { ok: true, outputText: `没有文件内容包含“${query}”。`, data: [] };
-            }
-
-            const lines = matches.slice(0, 20).map((match, index) => `${index + 1}. ${match.path}:${match.line_number} ${match.line_preview}`);
-            return { ok: true, outputText: [`找到 ${matches.length} 个相关匹配：`, ...lines].join("\n"), data: matches };
-          },
-        });
-
-        registry.register({
-          id: analyzeFilesTool.id,
-          command: analyzeFilesTool.command,
-          title: analyzeFilesTool.title,
-          execute: async () => ({ ok: true }),
-        });
-
-        toolRegistryRef.current = registry;
-      }
-
-      const tool = toolRegistryRef.current.get(command.command);
-      if (!tool) {
-        return { ok: false, error: `暂不支持命令：${command.command}` };
-      }
-
-      if (activeAssistant && !ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET.has(tool.id) && !activeAssistant.allowedToolIds.includes(tool.id)) {
-        return { ok: false, error: `当前助手未启用工具：${tool.title}` };
-      }
-
-      return toolRegistryRef.current.execute(command as never, {
+      return executeLocalTool({
+        activeAssistant,
         activeChatId,
-        chatSessions: searchChatSessions(""),
-      });
+        addAssistantMemory,
+        availableModels,
+        getChatSessionById,
+        handleModelChange,
+        renameChatSession,
+        searchChatSessions,
+        setActiveChatId,
+        setEditingMessageIndex,
+        setError,
+        setMessages,
+        setOpenChatMenu,
+        togglePinnedChatSession,
+      }, command);
     },
     [
       activeAssistant,
@@ -1168,6 +859,7 @@ export function useChatRuntime({
       renameChatSession,
       searchChatSessions,
       setActiveChatId,
+      setEditingMessageIndex,
       setMessages,
       setOpenChatMenu,
       togglePinnedChatSession,
