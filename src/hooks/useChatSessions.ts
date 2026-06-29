@@ -519,6 +519,75 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const getChatSessionById = useCallback((sessionId: string) => chatSessions.find((session) => session.id === sessionId) ?? null, [chatSessions]);
 
+  const getAssistantMemories = useCallback(
+    (assistantId: string) =>
+      assistantMemories
+        .filter((memory) => memory.assistantId === assistantId)
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    [assistantMemories]
+  );
+
+  const addAssistantMemory = useCallback((assistantId: string, content: string, sourceSessionId?: string | null) => {
+    const nextContent = content.trim();
+    if (!assistantId || nextContent.length < 4) {
+      return false;
+    }
+
+    let added = false;
+    const now = Date.now();
+    setAssistantMemories((current) => {
+      const exists = current.some((memory) => memory.assistantId === assistantId && memory.content === nextContent);
+      if (exists) {
+        return current;
+      }
+      added = true;
+      return [
+        {
+          id: createMemoryId(),
+          assistantId,
+          content: nextContent.length > 120 ? `${nextContent.slice(0, 117)}...` : nextContent,
+          sourceSessionId: sourceSessionId ?? null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        ...current,
+      ].slice(0, 300);
+    });
+    return added;
+  }, []);
+
+  const deleteAssistantMemory = useCallback((memoryId: string) => {
+    let deleted = false;
+    setAssistantMemories((current) => {
+      const next = current.filter((memory) => memory.id !== memoryId);
+      deleted = next.length !== current.length;
+      return deleted ? next : current;
+    });
+    return deleted;
+  }, []);
+
+  const updateAssistantMemory = useCallback((memoryId: string, content: string) => {
+    const nextContent = content.trim();
+    if (!nextContent) {
+      return false;
+    }
+
+    let updated = false;
+    const now = Date.now();
+    setAssistantMemories((current) =>
+      current.map((memory) => {
+        if (memory.id !== memoryId) return memory;
+        updated = true;
+        return {
+          ...memory,
+          content: nextContent,
+          updatedAt: now,
+        };
+      })
+    );
+    return updated;
+  }, []);
+
   const getRelatedContextForAssistant = useCallback(
     (query: string) => {
       if (!activeAssistant) {
@@ -568,7 +637,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   );
 
   const commitAssistantMemory = useCallback(
-    (sessionId: string, conversationMessages: Message[], assistantReply: string) => {
+    (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => {
       const assistant = assistants.find((item) => item.id === activeAssistantId) ?? activeAssistant;
       if (!assistant) {
         return;
@@ -577,10 +646,10 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       const now = Date.now();
 
       if (assistant.autoSaveSummaries) {
-        const summary = buildSessionSummary(conversationMessages, assistantReply);
+        const summary = result.suggestedSummary?.summary ?? buildSessionSummary(conversationMessages, result.content);
         if (summary) {
           setSessionSummaries((current) => {
-            const nextTitle = getChatSessionTitle(conversationMessages);
+            const nextTitle = result.suggestedSummary?.title?.trim() || getChatSessionTitle(conversationMessages);
             const existingIndex = current.findIndex((item) => item.sessionId === sessionId);
             if (existingIndex >= 0) {
               const next = [...current];
@@ -609,7 +678,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       }
 
       if (assistant.autoSaveMemories) {
-        const memoryItems = extractAssistantMemories(conversationMessages);
+        const modelMemoryItems = (result.suggestedMemories ?? []).map((memory) => memory.content);
+        const memoryItems = modelMemoryItems.length > 0 ? modelMemoryItems : extractAssistantMemories(conversationMessages);
         if (memoryItems.length > 0) {
           setAssistantMemories((current) => {
             const existingKeys = new Set(current.filter((item) => item.assistantId === assistant.id).map((item) => item.content));
@@ -650,6 +720,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     createSessionFromMessages,
     deleteChatSession,
     getChatSessionById,
+    addAssistantMemory,
+    getAssistantMemories,
     getRelatedContextForAssistant,
     groupedChatSessions,
     messages,
@@ -672,6 +744,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     toggleFavoriteChatSession,
     togglePinnedChatSession,
     deleteAssistantProfile,
+    deleteAssistantMemory,
+    updateAssistantMemory,
     updateAssistantProfile,
   };
 }

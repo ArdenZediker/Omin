@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Message } from "./adapters/types";
+import type { ChatSession } from "./chat/types";
 import { createDesktopActions } from "./app/desktopActions";
 import { modelRegistry } from "./adapters/registry";
 import TitleBar from "./components/TitleBar";
@@ -58,6 +59,37 @@ const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
   images: [],
 };
 
+function formatShareRole(role: Message["role"]) {
+  switch (role) {
+    case "assistant":
+      return "助手";
+    case "system":
+      return "系统";
+    case "user":
+    default:
+      return "用户";
+  }
+}
+
+function formatSharedChatMarkdown(session: ChatSession) {
+  const title = session.title?.trim() || "Omni 会话";
+  const exportedAt = new Date().toLocaleString("zh-CN");
+  const sections = session.messages.map((message, index) => {
+    const roleLabel = formatShareRole(message.role);
+    const content = message.content.trim() || "（空消息）";
+    const imageLines = (message.images ?? []).map((_, imageIndex) => `[图片 ${imageIndex + 1}]`);
+    const sourceLines =
+      message.knowledgeContext?.sources?.map((source, sourceIndex) => {
+        const title = source.chunkTitle || source.sourceName;
+        return `${sourceIndex + 1}. ${title}（${source.collectionName}，score ${source.score.toFixed(2)}）`;
+      }) ?? [];
+    const sourceBlock = sourceLines.length > 0 ? ["### 知识来源", ...sourceLines].join("\n") : "";
+    return [`## ${index + 1}. ${roleLabel}`, content, ...imageLines, sourceBlock].filter(Boolean).join("\n\n");
+  });
+
+  return [`# ${title}`, `导出时间：${exportedAt}`, ...sections].join("\n\n");
+}
+
 function getSafeCurrentWindow() {
   try {
     return getCurrentWindow();
@@ -90,14 +122,17 @@ function MainApp() {
     activeAssistantId,
     activeChatId,
     activeSession,
+    addAssistantMemory,
     applyUsageToSession,
     assistants,
     commitAssistantMemory,
     createCustomAssistantProfile,
     createSessionFromMessages,
     deleteAssistantProfile,
+    deleteAssistantMemory,
     deleteChatSession,
     getChatSessionById,
+    getAssistantMemories,
     getRelatedContextForAssistant,
     groupedChatSessions,
     messages,
@@ -113,6 +148,7 @@ function MainApp() {
     toggleFavoriteChatSession,
     togglePinnedChatSession,
     updateChatSessionMessages,
+    updateAssistantMemory,
     updateAssistantProfile,
   } = useChatSessions({ persist: !isCompactWindow });
 
@@ -317,12 +353,14 @@ function MainApp() {
     activeAssistant,
     availableModels,
     messages,
+    addAssistantMemory,
     applyUsageToSession,
     commitAssistantMemory,
     createSessionFromMessages,
     currentModel,
     getAssistantById,
     handleModelChange,
+    getRelatedContextForAssistant,
     renameChatSession,
     getChatSessionById,
     searchChatSessions,
@@ -343,19 +381,10 @@ function MainApp() {
     () => getRelatedContextForAssistant(relatedContextQuery),
     [getRelatedContextForAssistant, relatedContextQuery]
   );
-
-  useEffect(() => {
-    if (!activeAssistant.defaultModelId) {
-      return;
-    }
-    if (!availableModels.some((model) => model.id === activeAssistant.defaultModelId)) {
-      return;
-    }
-    if (currentModel === activeAssistant.defaultModelId) {
-      return;
-    }
-    handleModelChange(activeAssistant.defaultModelId);
-  }, [activeAssistant.defaultModelId, availableModels, currentModel, handleModelChange]);
+  const activeExecutionModel =
+    activeAssistant?.defaultModelId && availableModels.some((model) => model.id === activeAssistant.defaultModelId)
+      ? activeAssistant.defaultModelId
+      : currentModel;
 
   const { handleOpenCompact, handleRestoreMain } = useMainWindowController({
     basicSettings,
@@ -553,11 +582,9 @@ function MainApp() {
     togglePinnedChatSession(session.id);
   }, [togglePinnedChatSession]);
 
-  const handleShareChat = useCallback(async (session: { messages: Message[] }) => {
-    const text = session.messages.map((message) => `${message.role}: ${message.content}`).join("\n\n");
-    if (text) {
-      await navigator.clipboard.writeText(text);
-    }
+  const handleShareChat = useCallback(async (session: ChatSession) => {
+    const text = formatSharedChatMarkdown(session);
+    await navigator.clipboard.writeText(text);
     setOpenChatMenu(null);
   }, []);
 
@@ -655,7 +682,7 @@ function MainApp() {
           activeSession={activeSession}
           assistants={assistants}
           availableModels={availableModels}
-          currentModel={currentModel}
+          currentModel={activeExecutionModel}
           editingMessageIndex={editingMessageIndex}
           emptyChatPrompts={EMPTY_CHAT_PROMPTS}
           error={error}
@@ -670,6 +697,7 @@ function MainApp() {
           isSendBlocked={isSendBlockedByOtherSession}
           isStreaming={isStreaming}
           relatedContext={relatedContext}
+          assistantMemories={activeAssistant ? getAssistantMemories(activeAssistant.id) : []}
           latestTaskResult={latestTaskResult}
           taskRuntimeState={taskRuntimeState}
           messages={visibleMessages}
@@ -685,7 +713,10 @@ function MainApp() {
           onModelChange={handleModelChange}
           onNewChat={handleNewChat}
           onCreateCustomAssistant={createCustomAssistantProfile}
+          onAddAssistantMemory={addAssistantMemory}
           onDeleteAssistant={deleteAssistantProfile}
+          onDeleteAssistantMemory={deleteAssistantMemory}
+          onUpdateAssistantMemory={updateAssistantMemory}
           onRegenerateMessage={handleRegenerateMessage}
           onRenameChat={handleRenameChat}
           onSelectAssistant={selectAssistant}
@@ -723,8 +754,3 @@ function MainApp() {
 }
 
 export default App;
-
-
-
-
-

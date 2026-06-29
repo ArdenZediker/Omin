@@ -4,6 +4,7 @@ import { runTaskPlan } from "./taskRunner";
 import type { ResolvedLocalSlashCommand } from "./skills";
 import { resolveLocalSlashCommand } from "./skills";
 import type { TaskExecutionResult, TaskIntent, TaskPlan, TaskStep } from "./taskTypes";
+import type { AssistantMemoryRecord, AssistantProfile, SessionSummaryRecord } from "./types";
 
 function createTaskId() {
   return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -66,12 +67,18 @@ export async function executeTask(options: {
   messages: Message[];
   signal?: AbortSignal;
   systemPrompt?: string;
+  assistant?: AssistantProfile | null;
+  relatedContext?: {
+    memories?: AssistantMemoryRecord[];
+    summaries?: SessionSummaryRecord[];
+  };
+  enabledToolNames?: string[];
   onChunk?: (chunk: string) => void;
   knowledgeCollectionId?: string | null;
   intent?: TaskIntent;
   plan?: TaskPlan;
 }): Promise<TaskExecutionResult> {
-  const { model, messages, signal, systemPrompt, onChunk, knowledgeCollectionId } = options;
+  const { model, messages, signal, systemPrompt, assistant, relatedContext, enabledToolNames, onChunk, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
   const plan = options.plan ?? createTaskPlan({ intent, model, messages });
 
@@ -99,9 +106,15 @@ export async function executeTask(options: {
           messages,
           signal,
           systemPrompt,
+          assistant,
+          relatedContext,
+          enabledToolNames,
           onChunk,
           knowledgeCollectionId,
           enableKnowledgeContext: intent === "chat",
+          enableMemoryExtraction: intent === "chat",
+          enableSummaryExtraction: intent === "chat",
+          enableToolProtocol: intent !== "chat",
         });
         api.setFinalResult(finalResult);
         api.appendTrace("模型回复生成完成");
@@ -321,12 +334,34 @@ export async function executeInputTask(options: {
   model: string;
   signal?: AbortSignal;
   systemPrompt?: string;
+  assistant?: AssistantProfile | null;
+  relatedContext?: {
+    memories?: AssistantMemoryRecord[];
+    summaries?: SessionSummaryRecord[];
+  };
+  enabledToolNames?: string[];
   onChunk?: (chunk: string) => void;
   knowledgeCollectionId?: string | null;
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown } | void>;
 }): Promise<TaskExecutionResult> {
-  const { input, images, hiddenContext, currentMessages, preparedMessages: preparedMessagesOverride, model, signal, systemPrompt, onChunk, knowledgeCollectionId, onPrepareConversation, executeTool } = options;
+  const {
+    input,
+    images,
+    hiddenContext,
+    currentMessages,
+    preparedMessages: preparedMessagesOverride,
+    model,
+    signal,
+    systemPrompt,
+    assistant,
+    relatedContext,
+    enabledToolNames,
+    onChunk,
+    knowledgeCollectionId,
+    onPrepareConversation,
+    executeTool,
+  } = options;
   const localCommand = !images || images.length === 0 ? resolveLocalSlashCommand(input) : null;
 
   if (localCommand) {
@@ -364,6 +399,9 @@ export async function executeInputTask(options: {
     messages: preparedMessages,
     signal,
     systemPrompt: [systemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+    assistant,
+    relatedContext,
+    enabledToolNames,
     onChunk,
     knowledgeCollectionId,
     intent: "chat",

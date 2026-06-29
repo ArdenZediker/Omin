@@ -29,7 +29,11 @@ export default function ChatMessage({
 }: ChatMessageProps) {
   const isUser = message.role === "user";
   const [editValue, setEditValue] = useState(message.content);
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const knowledgeSources = message.knowledgeContext?.sources ?? [];
+  const visibleKnowledgeSources = sourcesExpanded ? knowledgeSources : knowledgeSources.slice(0, 3);
+  const hiddenKnowledgeSourceCount = Math.max(0, knowledgeSources.length - visibleKnowledgeSources.length);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -107,14 +111,27 @@ export default function ChatMessage({
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
             {isStreaming && !message.content.trim() ? <ThinkingIndicator /> : renderMarkdown(message.content)}
           </div>
-          {message.knowledgeContext?.sources?.length ? (
-            <div className="mt-3 space-y-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">知识来源</div>
-              <div className="grid gap-2">
-                {message.knowledgeContext.sources.slice(0, 3).map((source, index) => (
+          {knowledgeSources.length ? (
+            <div className="message-knowledge-sources">
+              <div className="message-knowledge-sources__header">
+                <span>知识来源</span>
+                <span>{knowledgeSources.length} 条命中</span>
+              </div>
+              <div className="message-knowledge-sources__list">
+                {visibleKnowledgeSources.map((source, index) => (
                   <KnowledgeSourceCard key={`${source.chunkId}-${index}`} source={source} />
                 ))}
               </div>
+              {hiddenKnowledgeSourceCount > 0 && (
+                <button type="button" className="message-knowledge-sources__toggle" onClick={() => setSourcesExpanded(true)}>
+                  查看全部 {knowledgeSources.length} 条来源
+                </button>
+              )}
+              {sourcesExpanded && knowledgeSources.length > 3 && (
+                <button type="button" className="message-knowledge-sources__toggle" onClick={() => setSourcesExpanded(false)}>
+                  收起来源
+                </button>
+              )}
             </div>
           ) : null}
           </div>
@@ -164,20 +181,20 @@ function ThinkingIndicator() {
 
 function KnowledgeSourceCard({ source }: { source: KnowledgeContextSource }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-slate-900">{source.chunkTitle || source.sourceName}</div>
-          <div className="mt-0.5 text-[11px] text-slate-500">{source.collectionName}</div>
+    <div className="message-knowledge-source">
+      <div className="message-knowledge-source__top">
+        <div className="message-knowledge-source__title-block">
+          <div className="message-knowledge-source__title">{source.chunkTitle || source.sourceName}</div>
+          <div className="message-knowledge-source__collection">{source.collectionName}</div>
         </div>
-        <div className="shrink-0 text-[11px] text-slate-400">score {source.score}</div>
+        <div className="message-knowledge-source__score">score {source.score.toFixed(2)}</div>
       </div>
-      <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-slate-500">
+      <div className="message-knowledge-source__meta">
         {source.sourcePath ? <span>{source.sourcePath}</span> : null}
         {source.favorite ? <span>收藏</span> : null}
         {source.accessCount > 0 ? <span>访问 {source.accessCount}</span> : null}
       </div>
-      <div className="mt-2 text-sm leading-6 text-slate-600">{source.excerpt}</div>
+      <div className="message-knowledge-source__excerpt">{source.excerpt}</div>
     </div>
   );
 }

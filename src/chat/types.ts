@@ -95,6 +95,16 @@ export type AssistantMemoryRecord = {
   updatedAt: number;
 };
 
+export type SuggestedAssistantMemory = {
+  content: string;
+  reason?: string | null;
+};
+
+export type SuggestedSessionSummary = {
+  title?: string | null;
+  summary: string;
+};
+
 export type UserPreferenceRecord = {
   key: string;
   value: string;
@@ -137,6 +147,8 @@ export type ChatExecutionResult = {
   estimated: boolean;
   costUsd: number;
   knowledgeContext?: KnowledgeContextResult | null;
+  suggestedMemories?: SuggestedAssistantMemory[];
+  suggestedSummary?: SuggestedSessionSummary | null;
 };
 
 export type SlashSkill = {

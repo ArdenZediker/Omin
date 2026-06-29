@@ -13,6 +13,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   { id: "settings", command: "/settings", title: "打开设置", description: "打开设置页面" },
   { id: "pet", command: "/pet", title: "宠物", description: "唤醒或收起桌面宠物" },
   { id: "model", command: "/model", title: "切换模型", description: "输入模型 ID 或名称后切换模型" },
+  { id: "remember", command: "/remember", title: "记住", description: "把一条长期偏好或约束保存到当前助手记忆库" },
   { id: "rename", command: "/rename", title: "重命名对话", description: "重命名当前对话" },
   { id: "pin", command: "/pin", title: "置顶对话", description: "置顶或取消置顶当前对话" },
   { id: "search_sessions", command: "/search_sessions", title: "搜索会话", description: "按标题或内容搜索本地会话" },
@@ -59,6 +60,17 @@ export const ASSISTANT_TOOL_OPTIONS = ASSISTANT_TOOL_MANIFESTS.map((tool) => ({
   label: tool.title,
   description: tool.description,
 }));
+
+export const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [
+  "new",
+  "clear",
+  "settings",
+  "pet",
+  "model",
+  "remember",
+  "rename",
+  "pin",
+];
 
 export function getToolManifestById(id: string) {
   return TOOL_MANIFESTS.find((tool) => tool.id === id) ?? null;

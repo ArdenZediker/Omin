@@ -3,6 +3,9 @@ import type { Message } from "../adapters/types";
 import { getUsagePreferences } from "./storage";
 import type { ChatExecutionResult } from "./types";
 import { buildKnowledgeContextBlock } from "./knowledgeContext";
+import { buildOmniSystemPrompt } from "./promptModules";
+import { parseOmniStructuredOutput } from "./structuredOutput";
+import type { AssistantMemoryRecord, AssistantProfile, SessionSummaryRecord } from "./types";
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are Omni, a helpful, knowledgeable AI assistant. Be concise and clear. Use markdown when useful.";
@@ -54,20 +57,35 @@ export async function executeChatTurn(options: {
   messages: Message[];
   signal?: AbortSignal;
   systemPrompt?: string;
+  assistant?: AssistantProfile | null;
+  relatedContext?: {
+    memories?: AssistantMemoryRecord[];
+    summaries?: SessionSummaryRecord[];
+  };
+  enabledToolNames?: string[];
   onChunk?: (chunk: string) => void;
   knowledgeQuery?: string | null;
   knowledgeCollectionId?: string | null;
   enableKnowledgeContext?: boolean;
+  enableMemoryExtraction?: boolean;
+  enableSummaryExtraction?: boolean;
+  enableToolProtocol?: boolean;
 }): Promise<ChatExecutionResult> {
   const {
     model,
     messages,
     signal,
     systemPrompt = DEFAULT_SYSTEM_PROMPT,
+    assistant,
+    relatedContext,
+    enabledToolNames,
     onChunk,
     knowledgeQuery,
     knowledgeCollectionId,
     enableKnowledgeContext = true,
+    enableMemoryExtraction = true,
+    enableSummaryExtraction = true,
+    enableToolProtocol = false,
   } = options;
 
   if (signal?.aborted) {
@@ -104,7 +122,18 @@ export async function executeChatTurn(options: {
         })
       : null;
 
-  const systemMessage: Message = { role: "system", content: systemPrompt };
+  const composedSystemPrompt = buildOmniSystemPrompt({
+    assistant,
+    baseSystemPrompt: systemPrompt,
+    messages,
+    relatedContext,
+    knowledgeContext,
+    enabledToolNames,
+    includeMemoryExtraction: enableMemoryExtraction,
+    includeSummaryExtraction: enableSummaryExtraction,
+    includeToolProtocol: enableToolProtocol,
+  });
+  const systemMessage: Message = { role: "system", content: composedSystemPrompt };
   const knowledgeMessages: Message[] = knowledgeContext
     ? [{ role: "system", content: knowledgeContext.block }]
     : [];
@@ -135,10 +164,11 @@ export async function executeChatTurn(options: {
       throw new DOMException("Request aborted", "AbortError");
     }
 
+    const parsed = parseOmniStructuredOutput(streamedContent || response.content);
     const promptTokens = estimatePromptTokens(requestMessages);
-    const completionTokens = estimateTokens(streamedContent || response.content);
+    const completionTokens = estimateTokens(parsed.content);
     return {
-      content: streamedContent || response.content,
+      content: parsed.content,
       model: response.model,
       usage: {
         promptTokens,
@@ -148,6 +178,8 @@ export async function executeChatTurn(options: {
       estimated: true,
       costUsd: estimateCost(model, promptTokens, completionTokens),
       knowledgeContext: knowledgeContext ?? null,
+      suggestedMemories: parsed.suggestedMemories,
+      suggestedSummary: parsed.suggestedSummary,
     };
   }
 
@@ -163,10 +195,11 @@ export async function executeChatTurn(options: {
     throw new DOMException("Request aborted", "AbortError");
   }
 
+  const parsed = parseOmniStructuredOutput(response.content);
   const promptTokens = response.usage?.promptTokens ?? estimatePromptTokens(requestMessages);
-  const completionTokens = response.usage?.completionTokens ?? estimateTokens(response.content);
+  const completionTokens = response.usage?.completionTokens ?? estimateTokens(parsed.content);
   return {
-    content: response.content,
+    content: parsed.content,
     model: response.model,
     usage: {
       promptTokens,
@@ -176,5 +209,7 @@ export async function executeChatTurn(options: {
     estimated: !response.usage,
     costUsd: estimateCost(model, promptTokens, completionTokens),
     knowledgeContext: knowledgeContext ?? null,
+    suggestedMemories: parsed.suggestedMemories,
+    suggestedSummary: parsed.suggestedSummary,
   };
 }

@@ -21,14 +21,18 @@ export const LOCAL_SLASH_COMMANDS: LocalSlashCommand[] = TOOL_MANIFESTS.filter((
 export type SlashSuggestion =
   | { kind: "local"; id: string; command: string; title: string; description: string };
 
-export function getMatchingSlashSuggestions(input: string): SlashSuggestion[] {
+export function getMatchingSlashSuggestions(input: string, allowedToolIds?: string[] | null): SlashSuggestion[] {
   const normalized = input.trim().toLowerCase();
   if (!normalized.startsWith("/")) {
     return [];
   }
 
   const query = normalized.slice(1);
+  const allowedToolIdSet = allowedToolIds ? new Set(allowedToolIds) : null;
   return LOCAL_SLASH_COMMANDS.filter((item) => {
+    if (allowedToolIdSet && !allowedToolIdSet.has(item.id)) {
+      return false;
+    }
     return item.command.startsWith(normalized) || item.title.toLowerCase().includes(query) || item.description.toLowerCase().includes(query);
   }).map((item) => ({ kind: "local", ...item }));
 }
