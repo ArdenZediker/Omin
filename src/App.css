@@ -1,4 +1,4 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
 
 :root {
   font-family: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -190,7 +190,7 @@ body:has(.pet-thought-window),
 .main-chat-layout {
   position: relative;
   --topic-panel-width: 232px;
-  --assistant-panel-width: 244px;
+  --assistant-panel-width: 280px;
   min-height: 0;
   flex: 1;
   display: flex;
@@ -198,6 +198,10 @@ body:has(.pet-thought-window),
   gap: 12px;
   padding: 4px;
   background: transparent;
+}
+
+.omni-knowledge-layout {
+  --assistant-panel-width: 280px;
 }
 
 .main-chat-stage {
@@ -245,17 +249,17 @@ body:has(.pet-thought-window),
 
 .main-chat-nav__brand,
 .main-chat-nav__item {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   border: 0;
-  border-radius: 15px;
+  border-radius: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   color: var(--omni-app-muted);
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
 
 .main-chat-nav__brand img {
@@ -266,7 +270,7 @@ body:has(.pet-thought-window),
 .main-chat-nav__items {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   align-items: center;
   padding-top: 2px;
@@ -543,19 +547,32 @@ body:has(.pet-thought-window),
 
 .main-chat-nav__item:hover,
 .main-chat-nav__item--active {
-  background: #f1f3f5;
+  background: color-mix(in srgb, var(--omni-panel-bg) 72%, var(--omni-app-text) 5%);
   color: var(--omni-app-text);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--omni-panel-border) 70%, transparent),
+    0 8px 18px color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+}
+
+.main-chat-nav__item:hover {
+  transform: translateY(-1px);
+}
+
+.main-chat-nav__item--active {
+  color: color-mix(in srgb, var(--omni-app-text) 88%, #2563eb 12%);
 }
 
 :root[data-omni-theme="dark"] .main-chat-nav__item:hover,
 :root[data-omni-theme="dark"] .main-chat-nav__item--active {
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 10px 24px rgba(0, 0, 0, 0.18);
 }
 
 .main-chat-nav__brand:hover {
   background: color-mix(in srgb, var(--omni-app-text) 6%, transparent);
+  transform: translateY(-1px);
 }
 
 .main-chat-nav__item--bottom {
@@ -865,6 +882,77 @@ body:has(.pet-thought-window),
   width: 17px;
   height: 17px;
   display: block;
+}
+
+.omni-knowledge-toolbar-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: max-content;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.omni-knowledge-toolbar-button {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.omni-knowledge-toolbar-button:hover,
+.omni-knowledge-toolbar-button--active {
+  background: color-mix(in srgb, var(--omni-app-text) 7%, transparent);
+  color: var(--omni-app-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omni-panel-border) 80%, transparent);
+}
+
+.omni-knowledge-toolbar-button:hover {
+  transform: translateY(-1px);
+}
+
+
+.omni-knowledge-title-actions {
+  gap: 10px;
+}
+
+.omni-window-control-slot {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding-left: 10px;
+}
+
+.omni-window-control-slot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 20px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-app-muted) 30%, transparent);
+}
+
+.omni-window-control-slot .omni-window-controls--inline {
+  margin-left: 0;
 }
 
 .model-selector {
@@ -3421,11 +3509,14 @@ body:has(.pet-thought-window),
 
 .omni-knowledge-layout {
   gap: 12px;
-  padding: 12px;
+  padding: 4px;
   background: var(--omni-app-bg) !important;
 }
 
 .omni-knowledge-sidebar {
+  flex: 0 0 var(--assistant-panel-width);
+  width: var(--assistant-panel-width);
+  min-width: var(--assistant-panel-width);
   margin: 0;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
@@ -6390,6 +6481,17 @@ body:has(.pet-thought-window),
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
+.main-chat-header.drag-region,
+.omni-knowledge-root header.drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.main-chat-header .no-drag,
+.omni-knowledge-root header .no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
 .knowledge-upload-input {
   position: fixed;
   width: 1px;
@@ -6406,13 +6508,21 @@ body:has(.pet-thought-window),
   right: 12px;
   z-index: 60;
   display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
-  padding-left: 14px;
-  background: transparent;
+  gap: 0;
+  min-width: max-content;
+  height: 42px;
+  padding: 0;
   border: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .omni-window-controls--inline {
@@ -6423,32 +6533,36 @@ body:has(.pet-thought-window),
   margin-left: 6px;
 }
 
-.omni-window-controls::before {
-  content: "";
-  width: 1px;
-  height: 28px;
-  margin-right: 10px;
-  background: color-mix(in srgb, var(--omni-divider-strong) 100%, transparent);
+.omni-window-controls > .no-drag {
+  display: inline-flex;
   flex: 0 0 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0;
+  height: 34px;
 }
 
 .omni-window-controls__button {
-  width: 32px;
-  height: 32px;
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   color: var(--omni-app-muted);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
 .omni-window-controls__button:hover {
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
   color: var(--omni-app-text);
+  transform: translateY(-1px);
 }
 
 .omni-window-controls__button--close:hover {

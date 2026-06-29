@@ -53,11 +53,11 @@ export default function KnowledgeDocumentDetailHeader({
 
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-      <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <button
           type="button"
           onClick={onBackToList}
-          className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+          className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none text-slate-500 hover:bg-slate-50 hover:text-slate-800"
           title="返回列表"
         >
           <ArrowLeft size={16} strokeWidth={2} />
@@ -83,7 +83,7 @@ export default function KnowledgeDocumentDetailHeader({
         </div>
       </div>
 
-      <div className="drag-region flex flex-wrap items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="no-drag inline-flex items-center gap-1 rounded-[20px] border border-slate-200/90 bg-white/90 p-1 shadow-sm shadow-slate-200/60 backdrop-blur">
           {DETAIL_VIEW_OPTIONS.map((option) => {
             const Icon = option.icon;

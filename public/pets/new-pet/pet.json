@@ -1,0 +1,6 @@
+{
+  "id": "new-pet",
+  "displayName": "New Pet",
+  "description": "Custom Codex pet package.",
+  "spritesheetPath": "spritesheet.webp"
+}

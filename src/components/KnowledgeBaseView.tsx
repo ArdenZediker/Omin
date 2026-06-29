@@ -1,4 +1,4 @@
-﻿import { Component, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -1799,7 +1799,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
   return (
     <div className="omni-knowledge-root flex h-full min-h-0 flex-col bg-white text-slate-900">
       <div className="omni-knowledge-layout flex min-h-0 flex-1">
-        <aside className="main-chat-nav drag-region">
+        <aside className="main-chat-nav">
           <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
             <Bot size={20} strokeWidth={1.9} className="text-sky-500" />
           </button>
@@ -1890,11 +1890,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-                  <div className="drag-region flex min-w-0 flex-1 items-center gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     <button
                       type="button"
                       onClick={() => setIsSidebarCollapsed((current) => !current)}
-                      className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                      className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                       title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
                     >
                       {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
@@ -1907,8 +1907,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     </div>
                   </div>
 
-                <div className="drag-region flex shrink-0 items-center gap-3">
-                    <div className="no-drag flex items-center gap-2" onPointerDown={(event) => event.stopPropagation()}>
+                  <div className="omni-knowledge-title-actions flex shrink-0 items-center">
+                    <div className="no-drag omni-knowledge-toolbar-actions" onPointerDown={(event) => event.stopPropagation()}>
                       {isSearchToolbarOpen || searchQuery ? (
                         <div className="flex h-8 w-64 items-center gap-2 rounded-none border border-slate-200 bg-white px-2.5 transition-all duration-150 md:w-72">
                           <Search size={14} strokeWidth={1.8} className="shrink-0 text-slate-400" />
@@ -1931,71 +1931,73 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                       <button
                         type="button"
                         onClick={() => setIsSearchToolbarOpen((current) => !current)}
-                        className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800 ${
-                          searchQuery ? "text-slate-800" : ""
+                        className={`omni-knowledge-toolbar-button ${
+                          isSearchToolbarOpen || searchQuery ? "omni-knowledge-toolbar-button--active" : ""
                         }`}
                         title="搜索文档"
                         aria-pressed={isSearchToolbarOpen || Boolean(searchQuery)}
                       >
                         <Search size={17} strokeWidth={1.9} />
                       </button>
-                    </div>
 
-                  <div className="no-drag relative">
-                    <button
-                      type="button"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={() => setIsUploadMenuOpen((current) => !current)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800"
-                        title="上传"
-                      >
-                        <SquarePlus size={17} strokeWidth={1.9} />
-                      </button>
-
-                      {isUploadMenuOpen ? (
-                        <div
-                          ref={uploadMenuRef}
-                          className="no-drag absolute right-0 top-10 z-[130] w-40 rounded-none border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
+                      <div className="no-drag relative">
+                        <button
+                          type="button"
                           onPointerDown={(event) => event.stopPropagation()}
+                          onClick={() => setIsUploadMenuOpen((current) => !current)}
+                          className={`omni-knowledge-toolbar-button ${isUploadMenuOpen ? "omni-knowledge-toolbar-button--active" : ""}`}
+                          title="上传"
                         >
-                          <button
-                            type="button"
-                            className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                          <SquarePlus size={17} strokeWidth={1.9} />
+                        </button>
+
+                        {isUploadMenuOpen ? (
+                          <div
+                            ref={uploadMenuRef}
+                            className="no-drag absolute right-0 top-10 z-[130] w-40 rounded-none border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
                             onPointerDown={(event) => event.stopPropagation()}
-                            onClick={() => {
-                              openFilePicker(fileInputRef.current);
-                              setIsUploadMenuOpen(false);
-                            }}
                           >
-                            <LucideFileText size={15} strokeWidth={1.8} className="text-slate-500" />
-                            上传文件
-                          </button>
-                          <button
-                            type="button"
-                            className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={() => {
-                              openFilePicker(folderInputRef.current);
-                              setIsUploadMenuOpen(false);
-                            }}
-                          >
-                            <FolderOpen size={15} strokeWidth={1.8} className="text-slate-500" />
-                            上传文件夹
-                          </button>
-                        </div>
-                      ) : null}
+                            <button
+                              type="button"
+                              className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={() => {
+                                openFilePicker(fileInputRef.current);
+                                setIsUploadMenuOpen(false);
+                              }}
+                            >
+                              <LucideFileText size={15} strokeWidth={1.8} className="text-slate-500" />
+                              上传文件
+                            </button>
+                            <button
+                              type="button"
+                              className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={() => {
+                                openFilePicker(folderInputRef.current);
+                                setIsUploadMenuOpen(false);
+                              }}
+                            >
+                              <FolderOpen size={15} strokeWidth={1.8} className="text-slate-500" />
+                              上传文件夹
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsTaskCenterPanelOpen((current) => !current)}
+                        className={`no-drag omni-knowledge-toolbar-button ${
+                          isTaskCenterPanelOpen ? "omni-knowledge-toolbar-button--active" : ""
+                        }`}
+                        title={isTaskCenterPanelOpen ? "收起工作台" : "展开工作台"}
+                      >
+                        {isTaskCenterPanelOpen ? <PanelRightClose size={17} strokeWidth={1.9} /> : <PanelRightOpen size={17} strokeWidth={1.9} />}
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setIsTaskCenterPanelOpen((current) => !current)}
-                      className="no-drag inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800"
-                      title={isTaskCenterPanelOpen ? "收起工作台" : "展开工作台"}
-                    >
-                    {isTaskCenterPanelOpen ? <PanelRightClose size={17} strokeWidth={1.9} /> : <PanelRightOpen size={17} strokeWidth={1.9} />}
-                  </button>
-
-                    <div className="no-drag">{windowControls}</div>
+                    <div className="no-drag omni-window-control-slot">{windowControls}</div>
                   </div>
                 </div>
               </>
@@ -2055,7 +2057,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
           <div className="omni-knowledge-body-shell flex min-h-0 min-w-0 flex-1 gap-3">
             <section className="omni-knowledge-content-panel flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="drag-region flex min-h-0 flex-1 px-5 pb-4 pt-0">
+              <div className="flex min-h-0 flex-1 px-5 pb-4 pt-0">
                 {detailView ? (
                   <div className="no-drag flex min-h-0 w-full flex-1 flex-col">
                     <KnowledgeBaseDetailBoundary
