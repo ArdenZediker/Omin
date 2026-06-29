@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CSSProperties, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useLayoutEffect } from "react";
@@ -890,7 +890,7 @@ export default function MainChatView({
 
   return (
     <div className={layoutClassName} style={layoutStyle}>
-      <aside className="main-chat-nav drag-region">
+      <aside className="main-chat-nav">
         <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
           <Bot size={20} strokeWidth={1.9} />
         </button>
@@ -1579,7 +1579,7 @@ export default function MainChatView({
               >
                 {isTopicPanelVisible ? <PanelRightClose className="main-chat-toolbar__icon" strokeWidth={1.7} /> : <PanelRightOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />}
               </button>
-              {windowControls}
+              <div className="omni-window-control-slot">{windowControls}</div>
             </div>
           </div>
         </header>
