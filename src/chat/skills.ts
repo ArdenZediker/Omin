@@ -29,6 +29,7 @@ export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = [
     title: "总结",
     description: "总结当前输入或最近对话",
     kind: "skill",
+    systemPrompt: "当前任务是总结。压缩信息但保留关键结论、约束、风险和后续待办，不扩写无根据内容。",
     promptPrefix: "请总结下面内容，保留关键结论、约束和待办：",
   },
   {
@@ -37,6 +38,7 @@ export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = [
     title: "改写",
     description: "改写当前输入，使表达更清晰自然",
     kind: "skill",
+    systemPrompt: "当前任务是改写。保持原意和事实不变，优化结构、语气和可读性，不新增未提供的信息。",
     promptPrefix: "请改写下面内容，让表达更清晰、自然、可直接使用：",
   },
   {
@@ -45,6 +47,7 @@ export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = [
     title: "翻译",
     description: "翻译当前输入，未指定语言时默认翻译成中文",
     kind: "skill",
+    systemPrompt: "当前任务是翻译。优先准确传达原意；未指定目标语言时翻译成中文；保留必要的术语、代码和专有名词。",
     promptPrefix: "请翻译下面内容；如果用户没有指定目标语言，默认翻译成中文：",
   },
   {
@@ -53,6 +56,7 @@ export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = [
     title: "解释",
     description: "解释概念、代码或文本",
     kind: "skill",
+    systemPrompt: "当前任务是解释。先给简明结论，再说明背景、关键点、例子和常见误解；不要把解释写成泛泛教程。",
     promptPrefix: "请解释下面内容，说明背景、关键点和容易误解的地方：",
   },
   {
@@ -61,6 +65,7 @@ export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = [
     title: "比较",
     description: "比较多个方案、概念或文本差异",
     kind: "skill",
+    systemPrompt: "当前任务是比较。围绕差异、适用场景、优缺点和推荐结论组织回答；如果信息不足，明确比较依据有限。",
     promptPrefix: "请比较下面内容，给出差异、优缺点和推荐结论：",
   },
 ];
