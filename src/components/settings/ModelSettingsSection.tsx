@@ -8,7 +8,7 @@ type Props = {
   endpoints: Endpoint[];
   endpointModels: Array<CustomModelConfig & { endpointId: string; endpointName: string }>;
   prefs: ChatUsagePreferences;
-  prefsSaveStatus: "idle" | "saved" | "error";
+  prefsSaveStatus: "idle" | "dirty" | "saved" | "error";
   testingConnection: boolean;
   testResult: boolean | null;
   isModelFormOpen: boolean;
@@ -36,6 +36,7 @@ type Props = {
   onSetPrefs: (prefs: ChatUsagePreferences) => void;
   onTestConnection: () => void | Promise<void>;
   onSavePrefs: () => void;
+  onResetPrefs: () => void;
   onSaveModel: () => void | Promise<void>;
   onRemoveModel: (endpointId: string, id: string) => void;
   getRawApiKey: (id: string) => string;
@@ -91,6 +92,7 @@ export default function ModelSettingsSection({
   onSetPrefs,
   onTestConnection,
   onSavePrefs,
+  onResetPrefs,
   onSaveModel,
   onRemoveModel,
   getRawApiKey,
@@ -166,14 +168,25 @@ export default function ModelSettingsSection({
           <div className="flex items-center gap-3">
             <button
               onClick={onSavePrefs}
+              disabled={prefsSaveStatus !== "dirty" && prefsSaveStatus !== "error"}
               className={`rounded-md px-4 py-2 text-xs font-medium text-white transition-colors ${
-                prefsSaveStatus === "saved" ? "bg-emerald-600" : prefsSaveStatus === "error" ? "bg-red-600" : "bg-violet-600 hover:bg-violet-500"
+                prefsSaveStatus === "saved"
+                  ? "bg-emerald-600"
+                  : prefsSaveStatus === "error"
+                    ? "bg-red-600"
+                    : prefsSaveStatus === "dirty"
+                      ? "bg-violet-600 hover:bg-violet-500"
+                      : "bg-slate-300"
               }`}
               type="button"
             >
-              {prefsSaveStatus === "saved" ? "已保存" : prefsSaveStatus === "error" ? "保存失败" : "保存偏好"}
+              {prefsSaveStatus === "saved" ? "已保存" : prefsSaveStatus === "error" ? "保存失败" : prefsSaveStatus === "dirty" ? "保存修改" : "已是最新"}
             </button>
-            {prefsSaveStatus === "saved" && <span className="text-xs text-emerald-600">偏好已生效</span>}
+            <button onClick={onResetPrefs} className="rounded-md border border-slate-200 px-4 py-2 text-xs text-slate-600" type="button">
+              重置默认
+            </button>
+            {prefsSaveStatus === "dirty" && <span className="text-xs text-amber-600">有未保存修改</span>}
+            {prefsSaveStatus === "saved" && <span className="text-xs text-emerald-600">已同步到聊天请求</span>}
             {prefsSaveStatus === "error" && <span className="text-xs text-red-500">请重试</span>}
           </div>
         </Actions>

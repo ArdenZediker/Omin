@@ -32,6 +32,7 @@ export type LocalToolRuntime = {
   setMessages: (messages: Message[]) => void;
   setOpenChatMenu: (menu: { id: string; x: number; y: number } | null) => void;
   togglePinnedChatSession: (sessionId: string) => boolean;
+  updateAssistantProfile?: (assistantId: string, patch: Partial<AssistantProfile>) => AssistantProfile | null;
 };
 
 export const ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET = new Set(ALWAYS_ALLOWED_LOCAL_TOOL_IDS);
@@ -211,9 +212,17 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
       if (!matchedModel) return { ok: false, error: `未找到匹配模型：${resolvedCommand.args}` };
 
-      runtime.handleModelChange(matchedModel.id);
+      const updatedAssistantModel = Boolean(runtime.activeAssistant && runtime.updateAssistantProfile);
+      if (runtime.activeAssistant && runtime.updateAssistantProfile) {
+        runtime.updateAssistantProfile(runtime.activeAssistant.id, { defaultModelId: matchedModel.id });
+      } else {
+        runtime.handleModelChange(matchedModel.id);
+      }
       runtime.setError(null);
-      return { ok: true };
+      return {
+        ok: true,
+        outputText: updatedAssistantModel ? `已将当前助手默认模型切换为：${matchedModel.name}` : `已切换当前模型：${matchedModel.name}`,
+      };
     },
   });
 

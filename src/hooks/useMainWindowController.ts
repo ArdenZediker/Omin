@@ -15,6 +15,8 @@ import {
 } from "../app/constants";
 import type { BasicSettings, ViewMode } from "../app/types";
 import { bootstrapSqliteStorage, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
+import { resolveCurrentModelId } from "../chat/modelSelection";
 import { getPetWindowScale } from "../app/compactPetScale";
 import { COMPACT_PET_HIDDEN_STORAGE_KEY, isCompactPetHidden } from "../app/compactVisibility";
 import { CHARACTER_SCALE_STORAGE_KEY, type CompactAppearance } from "./useCompactWindowState";
@@ -93,6 +95,7 @@ export function useMainWindowController({
       CHARACTER_SCALE_STORAGE_KEY,
       COMPACT_PET_HIDDEN_STORAGE_KEY,
       "omni_provider_configs",
+      USAGE_PREFERENCES_STORAGE_KEY,
       "omni_knowledge_embedding_profile",
       CURRENT_MODEL_STORAGE_KEY,
       "omni_model_connection_status",
@@ -104,7 +107,13 @@ export function useMainWindowController({
       applyThemeFromStorage();
       void loadProviderConfigs().then(() => {
         if (cancelled) return;
-        setCurrentModel(modelRegistry.getCurrentModel());
+        setCurrentModel(
+          resolveCurrentModelId({
+            savedModelId: readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY),
+            registryModelId: modelRegistry.getCurrentModel(),
+            availableModels: modelRegistry.getAvailableModels(),
+          })
+        );
       });
     });
 
@@ -115,10 +124,17 @@ export function useMainWindowController({
     };
     const media = window.matchMedia("(prefers-color-scheme: light)");
     const onSystemThemeChange = () => applyThemeFromStorage();
+    let usagePreferencesCleanup: (() => void) | undefined;
+    void listen("omni-usage-preferences-changed", () => {
+      void bootstrapSqliteStorage([USAGE_PREFERENCES_STORAGE_KEY]);
+    }).then((cleanup) => {
+      usagePreferencesCleanup = cleanup;
+    });
     window.addEventListener("storage", onThemeStorage);
     media.addEventListener("change", onSystemThemeChange);
     return () => {
       cancelled = true;
+      usagePreferencesCleanup?.();
       window.removeEventListener("storage", onThemeStorage);
       media.removeEventListener("change", onSystemThemeChange);
     };
@@ -357,12 +373,20 @@ export function useMainWindowController({
 
     let unlisten: (() => void) | undefined;
     void listen<{ modelId?: string }>("omni-model-changed", (event) => {
-      const modelId = event.payload?.modelId;
-      if (!modelId) {
-        return;
-      }
-      setCurrentModel(modelId);
-      onModelChange(modelId);
+      void (async () => {
+        await loadProviderConfigs();
+        const resolvedModel = resolveCurrentModelId({
+          savedModelId: event.payload?.modelId ?? readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY),
+          registryModelId: modelRegistry.getCurrentModel(),
+          availableModels: modelRegistry.getAvailableModels(),
+        });
+        if (!resolvedModel) {
+          modelRegistry.setCurrentModel("");
+          setCurrentModel("");
+          return;
+        }
+        onModelChange(resolvedModel);
+      })();
     }).then((cleanup) => {
       unlisten = cleanup;
     });

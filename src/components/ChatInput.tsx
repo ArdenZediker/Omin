@@ -233,6 +233,7 @@ export default function ChatInput({
     setImages([]);
     clearSuggestionDismissal();
   };
+  const sendDisabledTitle = isSendBlocked ? "请先配置可用模型或等待当前会话完成" : "发送消息";
 
   const applySuggestion = (suggestion: SlashSuggestion) => {
     if (IMMEDIATE_COMMAND_IDS.has(suggestion.id)) {
@@ -471,7 +472,7 @@ export default function ChatInput({
                   onClick={handleSubmit}
                   disabled={isSendBlocked || (!trimmedInput && images.length === 0)}
                   className="chat-composer__submit"
-                  title={isSendBlocked ? "其他会话正在生成" : "发送消息"}
+                  title={sendDisabledTitle}
                   type="button"
                 >
                   <span>发送</span>
