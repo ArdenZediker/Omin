@@ -5,6 +5,7 @@ import type { Message } from "./adapters/types";
 import type { ChatSession } from "./chat/types";
 import { createDesktopActions } from "./app/desktopActions";
 import { modelRegistry } from "./adapters/registry";
+import { resolveCurrentModelId, resolveExecutionModelId } from "./chat/modelSelection";
 import TitleBar from "./components/TitleBar";
 import SettingsWindow from "./components/SettingsWindow";
 import MainChatView from "./components/MainChatView";
@@ -189,7 +190,7 @@ function MainApp() {
     setArePetThoughtsCollapsed,
   } = useCompactWindowState({ isCompactWindow });
 
-  const [currentModel, setCurrentModel] = useState("gpt-4o");
+  const [currentModel, setCurrentModel] = useState("");
   const [view, setView] = useState<"chat" | "knowledge">(getStoredMainView);
   const [inputFocusKey, setInputFocusKey] = useState(0);
   const [assistantDrafts, setAssistantDrafts] = useState<Record<string, ComposerDraft>>({});
@@ -238,6 +239,7 @@ function MainApp() {
   ]);
 
   const availableModels = modelRegistry.getAvailableModels();
+  const availableModelIdsKey = availableModels.map((model) => model.id).join("\n");
   const hasModels = availableModels.length > 0;
   const visibleMessages = messages;
   const activeComposerDraft = assistantDrafts[activeAssistantId] ?? EMPTY_COMPOSER_DRAFT;
@@ -318,6 +320,24 @@ function MainApp() {
     saveSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY, modelId);
   }, []);
 
+  useEffect(() => {
+    const resolvedModel = resolveCurrentModelId({
+      savedModelId: currentModel,
+      registryModelId: modelRegistry.getCurrentModel(),
+      availableModels,
+    });
+
+    if (resolvedModel === currentModel) {
+      return;
+    }
+
+    setCurrentModel(resolvedModel);
+    modelRegistry.setCurrentModel(resolvedModel);
+    if (resolvedModel) {
+      saveSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY, resolvedModel);
+    }
+  }, [availableModelIdsKey, currentModel]);
+
   const updateBasicSettings = useCallback((patch: Partial<BasicSettings>) => {
     setBasicSettings((current) => {
       const next = { ...current, ...patch };
@@ -372,6 +392,7 @@ function MainApp() {
     setMessages,
     setOpenChatMenu,
     togglePinnedChatSession,
+    updateAssistantProfile,
     updateChatSessionMessages,
     isCompactWindow,
     view,
@@ -381,10 +402,11 @@ function MainApp() {
     () => getRelatedContextForAssistant(relatedContextQuery),
     [getRelatedContextForAssistant, relatedContextQuery]
   );
-  const activeExecutionModel =
-    activeAssistant?.defaultModelId && availableModels.some((model) => model.id === activeAssistant.defaultModelId)
-      ? activeAssistant.defaultModelId
-      : currentModel;
+  const activeExecutionModel = resolveExecutionModelId({
+    assistantModelId: activeAssistant?.defaultModelId,
+    currentModelId: currentModel,
+    availableModels,
+  });
 
   const { handleOpenCompact, handleRestoreMain } = useMainWindowController({
     basicSettings,
@@ -694,7 +716,7 @@ function MainApp() {
           inputDraftScopeKey={activeAssistantId}
           inputFocusKey={inputFocusKey}
           isLoading={isActiveSessionLoading}
-          isSendBlocked={isSendBlockedByOtherSession}
+          isSendBlocked={isSendBlockedByOtherSession || !hasModels}
           isStreaming={isStreaming}
           relatedContext={relatedContext}
           assistantMemories={activeAssistant ? getAssistantMemories(activeAssistant.id) : []}

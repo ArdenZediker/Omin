@@ -4,8 +4,10 @@ import { availableMonitors, currentMonitor, cursorPosition, getCurrentWindow, mo
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
-import { readSqliteBackedValue } from "../app/sqliteStorage";
+import { bootstrapSqliteStorage, readSqliteBackedValue } from "../app/sqliteStorage";
 import { executeChatTurn } from "../chat/engine";
+import { resolveCurrentModelId } from "../chat/modelSelection";
+import { USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
 import {
   CHARACTER_SCALE_BASELINE,
   COMPACT_APPEARANCE_OPTIONS,
@@ -712,11 +714,15 @@ export function useCompactWindowController({
 
     let unlisten: (() => void) | undefined;
     void listen<{ modelId?: string }>("omni-model-changed", (event) => {
-      const modelId = event.payload?.modelId;
-      if (!modelId) {
-        return;
-      }
-      setCurrentModel(modelId);
+      void (async () => {
+        await loadProviderConfigs();
+        const resolvedModel = resolveCurrentModelId({
+          savedModelId: event.payload?.modelId ?? readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY),
+          registryModelId: modelRegistry.getCurrentModel(),
+          availableModels: modelRegistry.getAvailableModels(),
+        });
+        setCurrentModel(resolvedModel);
+      })();
     }).then((cleanup) => {
       unlisten = cleanup;
     });
@@ -725,6 +731,23 @@ export function useCompactWindowController({
       unlisten?.();
     };
   }, [isCompactWindow, setCurrentModel]);
+
+  useEffect(() => {
+    if (!isCompactWindow) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void listen("omni-usage-preferences-changed", () => {
+      void bootstrapSqliteStorage([USAGE_PREFERENCES_STORAGE_KEY]);
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isCompactWindow]);
 
   useEffect(() => {
     if (!isCompactWindow) {
@@ -1475,8 +1498,15 @@ export function useCompactWindowController({
 
       await loadProviderConfigs();
       const savedModel = readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY);
-      const resolvedModel =
-        savedModel && modelRegistry.getModelConfig(savedModel) ? savedModel : modelRegistry.getCurrentModel();
+      const resolvedModel = resolveCurrentModelId({
+        savedModelId: savedModel,
+        registryModelId: modelRegistry.getCurrentModel(),
+        availableModels: modelRegistry.getAvailableModels(),
+      });
+      if (!resolvedModel) {
+        setCompactReply({ question: draft, answer: "请先在设置中配置一个可用模型。", isError: true });
+        return;
+      }
       modelRegistry.setCurrentModel(resolvedModel);
       if (resolvedModel !== currentModel) {
         setCurrentModel(resolvedModel);

@@ -29,7 +29,7 @@ class ModelRegistry {
   private adapters: Map<string, ModelAdapter> = new Map();
   private configs: Map<string, ProviderConfig> = new Map();
   private customModels: Map<string, CustomModelConfig[]> = new Map(); // 提供方 -> 自定义模型
-  private currentModel: string = "gpt-4o";
+  private currentModel: string = "";
 
   // 注册提供方及其配置
   registerProvider(provider: string, config: ProviderConfig): void {
@@ -144,7 +144,7 @@ class ModelRegistry {
     return undefined;
   }
 
-  // 设置当前模型
+  // 设置当前模型；空字符串表示当前没有已配置的可用模型。
   setCurrentModel(modelId: string): void {
     this.currentModel = modelId;
   }
@@ -248,6 +248,8 @@ export async function loadProviderConfigs(): Promise<void> {
       modelRegistry.setCurrentModel(savedCurrentModel);
     } else if (availableModels.length > 0) {
       modelRegistry.setCurrentModel(availableModels[0].id);
+    } else {
+      modelRegistry.setCurrentModel("");
     }
   } catch {
     // 忽略解析错误

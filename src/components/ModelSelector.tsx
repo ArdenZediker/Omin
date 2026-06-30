@@ -5,7 +5,7 @@ import { BUILTIN_MODELS, type ModelConfig } from "../adapters/types";
 import { readSqliteBackedJson } from "../app/sqliteStorage";
 
 interface ModelSelectorProps {
-  currentModel: string;
+  currentModel: string | null;
   onModelChange: (modelId: string) => void;
 }
 
@@ -41,7 +41,7 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const models = modelRegistry.getAvailableModels();
-  const currentConfig = modelRegistry.getModelConfig(currentModel);
+  const currentConfig = currentModel ? modelRegistry.getModelConfig(currentModel) : undefined;
   const currentStatus = currentConfig ? getModelConnectionStatus(currentConfig.id) : undefined;
 
   const grouped = models.reduce<Record<string, ModelConfig[]>>((acc, model) => {
@@ -81,7 +81,7 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
             }`}
           />
         )}
-        <span>{currentConfig?.name || currentModel}</span>
+        <span>{currentConfig?.name || "未选择模型"}</span>
         <ChevronDown className={`model-selector__chevron ${isOpen ? "model-selector__chevron--open" : ""}`} strokeWidth={2} />
       </button>
 

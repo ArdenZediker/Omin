@@ -86,6 +86,7 @@ function createRuntime(patch: Partial<LocalToolRuntime> = {}): LocalToolRuntime 
     setMessages: vi.fn(),
     setOpenChatMenu: vi.fn(),
     togglePinnedChatSession: vi.fn(() => true),
+    updateAssistantProfile: vi.fn(),
     ...patch,
   };
 }
@@ -105,16 +106,33 @@ describe("localTools", () => {
     expect(result).toEqual({ ok: false, error: "当前助手未启用工具：搜索文件" });
   });
 
-  it("始终允许基础本地命令并使用最新模型列表切换模型", async () => {
+  it("始终允许基础本地命令并把模型切换保存到当前助手", async () => {
     const handleModelChange = vi.fn();
+    const updateAssistantProfile = vi.fn();
     const runtime = createRuntime({
       activeAssistant: createAssistant({ allowedToolIds: [] }),
       handleModelChange,
+      updateAssistantProfile,
     });
 
     const result = await executeLocalTool(runtime, { command: "/model", args: "deepseek" });
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, outputText: "已将当前助手默认模型切换为：DeepSeek V3" });
+    expect(updateAssistantProfile).toHaveBeenCalledWith("assistant-1", { defaultModelId: "deepseek-chat" });
+    expect(handleModelChange).not.toHaveBeenCalled();
+  });
+
+  it("没有当前助手时 /model 只切换当前模型", async () => {
+    const handleModelChange = vi.fn();
+    const runtime = createRuntime({
+      activeAssistant: null,
+      handleModelChange,
+      updateAssistantProfile: vi.fn(),
+    });
+
+    const result = await executeLocalTool(runtime, { command: "/model", args: "deepseek" });
+
+    expect(result).toEqual({ ok: true, outputText: "已切换当前模型：DeepSeek V3" });
     expect(handleModelChange).toHaveBeenCalledWith("deepseek-chat");
   });
 

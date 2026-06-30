@@ -7,6 +7,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Cuboid, MessageSquareText, Settings, Sparkles } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
+import type { ChatUsagePreferences } from "../chat/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
 import {
   loadCodexPetLibraryState,
@@ -33,16 +34,13 @@ import {
   saveUsagePreferences,
   saveModelConnectionStatus,
 } from "../app/settingsStore";
-import {
-  loadKnowledgeEmbeddingConfig,
-  saveKnowledgeEmbeddingConfig,
-  type KnowledgeEmbeddingConfig,
-} from "../chat/knowledgeEmbedding";
+import { loadKnowledgeEmbeddingConfig, saveKnowledgeEmbeddingConfig, type KnowledgeEmbeddingConfig } from "../chat/knowledgeEmbedding";
 import {
   loadKnowledgeMultimodalConfig,
   saveKnowledgeMultimodalConfig,
   type KnowledgeMultimodalConfig,
 } from "../chat/knowledgeMultimodal";
+import { DEFAULT_USAGE_PREFERENCES } from "../chat/storage";
 import BasicSettingsSection from "./settings/BasicSettingsSection";
 import KnowledgeEmbeddingSection from "./settings/KnowledgeEmbeddingSection";
 import KnowledgeMultimodalSection from "./settings/KnowledgeMultimodalSection";
@@ -78,6 +76,29 @@ function getRawApiKey(id: string) {
   return (modelRegistry as unknown as RawRegistry).configs.get(id)?.apiKey || "";
 }
 
+function areUsagePreferencesEqual(a: ChatUsagePreferences, b: ChatUsagePreferences) {
+  return (
+    a.enableStreaming === b.enableStreaming &&
+    a.enableVisionInput === b.enableVisionInput &&
+    a.temperature === b.temperature &&
+    a.maxOutputTokens === b.maxOutputTokens
+  );
+}
+
+function normalizeUsagePreferences(prefs: ChatUsagePreferences): ChatUsagePreferences {
+  const temperature = Number.isFinite(prefs.temperature) ? prefs.temperature : DEFAULT_USAGE_PREFERENCES.temperature;
+  const maxOutputTokens = Number.isFinite(prefs.maxOutputTokens)
+    ? Math.floor(prefs.maxOutputTokens)
+    : DEFAULT_USAGE_PREFERENCES.maxOutputTokens;
+
+  return {
+    enableStreaming: prefs.enableStreaming,
+    enableVisionInput: prefs.enableVisionInput,
+    temperature: Math.min(2, Math.max(0, temperature)),
+    maxOutputTokens: Math.min(200000, Math.max(1, maxOutputTokens)),
+  };
+}
+
 function getSafeCurrentWindow() {
   try {
     return getCurrentWindow();
@@ -99,7 +120,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [codexPetHome, setCodexPetHome] = useState("");
   const [isDesktopPetAwake, setIsDesktopPetAwake] = useState(false);
   const [prefs, setPrefs] = useState(loadUsagePreferences);
-  const [prefsSaveStatus, setPrefsSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [savedPrefs, setSavedPrefs] = useState(loadUsagePreferences);
+  const [prefsSaveStatus, setPrefsSaveStatus] = useState<"idle" | "dirty" | "saved" | "error">("idle");
   const [knowledgeEmbeddingConfig, setKnowledgeEmbeddingConfig] = useState<KnowledgeEmbeddingConfig>(loadKnowledgeEmbeddingConfig);
   const [knowledgeMultimodalConfig, setKnowledgeMultimodalConfig] = useState<KnowledgeMultimodalConfig>(loadKnowledgeMultimodalConfig);
   const [recordingShortcut, setRecordingShortcut] = useState<"openMainShortcut" | "switchPreviousModelShortcut" | null>(null);
@@ -446,10 +468,25 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     setVersion((value) => value + 1);
   };
 
-  const saveCurrentPrefs = () => {
+  const updateUsagePrefs = (nextPrefs: ChatUsagePreferences) => {
+    const normalizedPrefs = normalizeUsagePreferences(nextPrefs);
+    setPrefs(normalizedPrefs);
+    setPrefsSaveStatus(areUsagePreferencesEqual(normalizedPrefs, savedPrefs) ? "idle" : "dirty");
+  };
+
+  const resetUsagePrefs = () => {
+    setPrefs(DEFAULT_USAGE_PREFERENCES);
+    setPrefsSaveStatus(areUsagePreferencesEqual(DEFAULT_USAGE_PREFERENCES, savedPrefs) ? "idle" : "dirty");
+  };
+
+  const saveCurrentPrefs = async () => {
     try {
-      saveUsagePreferences(prefs);
+      const normalizedPrefs = normalizeUsagePreferences(prefs);
+      saveUsagePreferences(normalizedPrefs);
+      setPrefs(normalizedPrefs);
+      setSavedPrefs(normalizedPrefs);
       setPrefsSaveStatus("saved");
+      await emit("omni-usage-preferences-changed", { prefs: normalizedPrefs });
       window.setTimeout(() => setPrefsSaveStatus("idle"), 1600);
     } catch {
       setPrefsSaveStatus("error");
@@ -703,6 +740,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                       onRemoveModel={removeModel}
                       onSaveModel={saveModel}
                       onSavePrefs={saveCurrentPrefs}
+                      onResetPrefs={resetUsagePrefs}
                       onSetApiKey={setApiKey}
                       onSetBaseUrl={setBaseUrl}
                       onSetEndpointName={setEndpointName}
@@ -711,7 +749,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                       onSetModelName={setModelName}
                       onSetModelStreaming={setModelStreaming}
                       onSetModelVision={setModelVision}
-                      onSetPrefs={setPrefs}
+                      onSetPrefs={updateUsagePrefs}
                       onTestConnection={testConnection}
                       prefs={prefs}
                       prefsSaveStatus={prefsSaveStatus}

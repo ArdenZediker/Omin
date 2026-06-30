@@ -7,6 +7,7 @@ import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
+import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSelection";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { getChatSessionTitle } from "../chat/storage";
 import { executeLocalTool } from "../chat/localTools";
@@ -52,6 +53,7 @@ type UseChatRuntimeArgs = {
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setOpenChatMenu: React.Dispatch<React.SetStateAction<{ id: string; x: number; y: number } | null>>;
   togglePinnedChatSession: (sessionId: string) => boolean;
+  updateAssistantProfile: (assistantId: string, patch: Partial<AssistantProfile>) => AssistantProfile | null;
   updateChatSessionMessages: (sessionId: string, nextMessages: Message[] | ((current: Message[]) => Message[])) => void;
   isCompactWindow: boolean;
   view: ViewMode;
@@ -67,6 +69,7 @@ function resolveEnabledToolNames(assistant: AssistantProfile | null) {
 }
 
 const SILENT_LOCAL_TOOL_IDS = new Set([
+  "model",
   "pet",
 ]);
 
@@ -148,6 +151,7 @@ export function useChatRuntime({
   setMessages,
   setOpenChatMenu,
   togglePinnedChatSession,
+  updateAssistantProfile,
   updateChatSessionMessages,
   isCompactWindow,
   view,
@@ -260,10 +264,11 @@ export function useChatRuntime({
     [setMessages, updateChatSessionMessages]
   );
 
-  const executionModel =
-    activeAssistant?.defaultModelId && availableModels.some((model) => model.id === activeAssistant.defaultModelId)
-      ? activeAssistant.defaultModelId
-      : currentModel;
+  const executionModel = resolveExecutionModelId({
+    assistantModelId: activeAssistant?.defaultModelId,
+    currentModelId: currentModel,
+    availableModels,
+  });
   const assistantSystemPrompt = activeAssistant?.systemPrompt?.trim() ? activeAssistant.systemPrompt.trim() : undefined;
 
   const getScopedConversationMessages = useCallback(() => {
@@ -701,6 +706,10 @@ export function useChatRuntime({
       setError(null);
 
       try {
+        if (!executionModel) {
+          throw new Error("请先在设置中配置一个可用模型");
+        }
+
         const taskResult = await executeTask({
           model: executionModel,
           messages: conversationMessages,
@@ -843,6 +852,7 @@ export function useChatRuntime({
         setMessages,
         setOpenChatMenu,
         togglePinnedChatSession,
+        updateAssistantProfile,
       }, command);
     },
     [
@@ -859,6 +869,7 @@ export function useChatRuntime({
       setMessages,
       setOpenChatMenu,
       togglePinnedChatSession,
+      updateAssistantProfile,
     ]
   );
 
@@ -888,20 +899,20 @@ export function useChatRuntime({
       }
 
       const preferredAssistantModelId = targetAssistant?.defaultModelId?.trim() ?? "";
-      const savedModelId = readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY)?.trim() ?? "";
-      const registryCurrentModelId = modelRegistry.getCurrentModel()?.trim() ?? "";
-      const registryFallbackModelId = modelRegistry.getAvailableModels()[0]?.id ?? executionModel;
       const resolvedModelId =
-        (preferredAssistantModelId && modelRegistry.getModelConfig(preferredAssistantModelId)
-          ? preferredAssistantModelId
-          : null) ??
-        (savedModelId && modelRegistry.getModelConfig(savedModelId)
-          ? savedModelId
-          : null) ??
-        (registryCurrentModelId && modelRegistry.getModelConfig(registryCurrentModelId)
-          ? registryCurrentModelId
-          : null) ??
-        (executionModel && modelRegistry.getModelConfig(executionModel) ? executionModel : registryFallbackModelId);
+        resolveExecutionModelId({
+          assistantModelId: preferredAssistantModelId,
+          currentModelId: readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY) ?? modelRegistry.getCurrentModel(),
+          availableModels: modelRegistry.getAvailableModels(),
+        }) ||
+        resolveCurrentModelId({
+          savedModelId: executionModel,
+          registryModelId: modelRegistry.getCurrentModel(),
+          availableModels,
+        });
+      if (!resolvedModelId) {
+        throw new Error("请先在设置中配置一个可用模型");
+      }
 
       const abortController = new AbortController();
       const runId = startSessionRun(session.id, abortController);
