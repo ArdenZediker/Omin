@@ -4394,6 +4394,59 @@ body:has(.pet-thought-window),
   cursor: not-allowed;
 }
 
+.omni-settings-dialog__memory-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.omni-settings-dialog__memory-search {
+  min-width: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 12px;
+  padding: 0 11px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-muted);
+}
+
+.omni-settings-dialog__memory-search input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--omni-app-text);
+  font-size: 12px;
+  outline: none;
+}
+
+.omni-settings-dialog__memory-search:focus-within {
+  border-color: color-mix(in srgb, var(--omni-accent) 42%, var(--omni-panel-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--omni-accent) 10%, transparent);
+}
+
+.omni-settings-dialog__memory-clear {
+  min-width: 82px;
+  height: 38px;
+  border: 1px solid color-mix(in srgb, #ef4444 30%, var(--omni-panel-border));
+  border-radius: 12px;
+  padding: 0 12px;
+  background: color-mix(in srgb, #ef4444 7%, transparent);
+  color: color-mix(in srgb, #ef4444 72%, var(--omni-app-muted));
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.omni-settings-dialog__memory-clear:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .omni-settings-dialog__memory-item {
   display: flex;
   align-items: flex-start;
@@ -4451,6 +4504,12 @@ body:has(.pet-thought-window),
   line-height: 1.4;
 }
 
+.omni-settings-dialog__memory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
 .omni-settings-dialog__memory-actions {
   flex: 0 0 auto;
   display: inline-flex;
@@ -4470,6 +4529,11 @@ body:has(.pet-thought-window),
   font-size: 11px;
   font-weight: 700;
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.omni-settings-dialog__memory-actions button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .omni-settings-dialog__memory-actions button:hover {
@@ -4493,6 +4557,27 @@ body:has(.pet-thought-window),
   border-color: color-mix(in srgb, #ef4444 54%, var(--omni-panel-border));
   background: color-mix(in srgb, #ef4444 8%, transparent);
   color: #ef4444;
+}
+
+.omni-settings-dialog__memory-more {
+  min-height: 36px;
+  border: 1px dashed color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.omni-settings-dialog__memory-more:hover {
+  border-color: color-mix(in srgb, var(--omni-accent) 36%, var(--omni-panel-border));
+  color: var(--omni-app-text);
+}
+
+.omni-settings-dialog__memory-confirm {
+  position: static;
+  margin-top: 4px;
 }
 
 .omni-settings-dialog__memory-empty {

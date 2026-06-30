@@ -566,6 +566,20 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     return deleted;
   }, []);
 
+  const clearAssistantMemories = useCallback((assistantId: string) => {
+    if (!assistantId) {
+      return 0;
+    }
+
+    let removedCount = 0;
+    setAssistantMemories((current) => {
+      const next = current.filter((memory) => memory.assistantId !== assistantId);
+      removedCount = current.length - next.length;
+      return removedCount > 0 ? next : current;
+    });
+    return removedCount;
+  }, []);
+
   const updateAssistantMemory = useCallback((memoryId: string, content: string) => {
     const nextContent = content.trim();
     if (!nextContent) {
@@ -745,6 +759,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     togglePinnedChatSession,
     deleteAssistantProfile,
     deleteAssistantMemory,
+    clearAssistantMemories,
     updateAssistantMemory,
     updateAssistantProfile,
   };
