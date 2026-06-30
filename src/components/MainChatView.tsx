@@ -150,6 +150,7 @@ type MainChatViewProps = {
     allowedSkillIds?: string[];
   }) => void;
   onAddAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null) => boolean;
+  onClearAssistantMemories: (assistantId: string) => number;
   onDeleteAssistant: (assistantId: string) => boolean;
   onDeleteAssistantMemory: (memoryId: string) => boolean;
   onUpdateAssistantMemory: (memoryId: string, content: string) => boolean;
@@ -209,6 +210,7 @@ export default function MainChatView({
   onCopyMessage,
   onCreateCustomAssistant,
   onAddAssistantMemory,
+  onClearAssistantMemories,
   onDeleteAssistant,
   onDeleteAssistantMemory,
   onUpdateAssistantMemory,
@@ -276,6 +278,9 @@ export default function MainChatView({
   const [assistantAvatarCategory, setAssistantAvatarCategory] = useState("recent");
   const [assistantNotice, setAssistantNotice] = useState<AssistantNoticeState>(null);
   const [newMemoryDraft, setNewMemoryDraft] = useState("");
+  const [memorySearchQuery, setMemorySearchQuery] = useState("");
+  const [showAllMemories, setShowAllMemories] = useState(false);
+  const [memoryClearConfirmOpen, setMemoryClearConfirmOpen] = useState(false);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState("");
   const [customAssistantsCollapsed, setCustomAssistantsCollapsed] = useState(false);
@@ -425,6 +430,18 @@ export default function MainChatView({
     const entries = groupedChatSessions.flatMap((group) => group.sessions.map((session) => [session.id, session.title] as const));
     return new Map(entries);
   }, [groupedChatSessions]);
+  const normalizedMemorySearchQuery = normalizeSearchText(memorySearchQuery);
+  const filteredAssistantMemories = useMemo(() => {
+    if (!normalizedMemorySearchQuery) {
+      return assistantMemories;
+    }
+
+    return assistantMemories.filter((memory) => {
+      const sourceTitle = memory.sourceSessionId ? topicTitleById.get(memory.sourceSessionId) ?? "" : "";
+      return normalizeSearchText(`${memory.content} ${sourceTitle}`).includes(normalizedMemorySearchQuery);
+    });
+  }, [assistantMemories, normalizedMemorySearchQuery, topicTitleById]);
+  const visibleAssistantMemories = showAllMemories ? filteredAssistantMemories : filteredAssistantMemories.slice(0, 12);
   const filteredAssistantAvatars = filterAvatarPresets(AVATAR_PRESETS, assistantAvatarCategory, assistantAvatarSearchQuery);
   const isAssistantSettingsMode = Boolean(assistantSettingsId && activeAssistant?.kind === "custom");
   const [assistantTitleDraft, setAssistantTitleDraft] = useState(activeAssistant?.title ?? "");
@@ -497,6 +514,29 @@ export default function MainChatView({
       setNewMemoryDraft("");
     }
   }, [activeAssistant, activeChatId, newMemoryDraft, onAddAssistantMemory, showAssistantNotice]);
+  const openMemorySourceSession = useCallback(
+    (sessionId: string | null | undefined) => {
+      if (!sessionId || !topicTitleById.has(sessionId)) {
+        showAssistantNotice("来源会话已删除或不可用", "error");
+        return;
+      }
+
+      onSelectChat(sessionId);
+      setAssistantSettingsId(null);
+      setMemorySearchQuery("");
+      setShowAllMemories(false);
+      showAssistantNotice("已打开记忆来源会话");
+    },
+    [onSelectChat, showAssistantNotice, topicTitleById]
+  );
+  const clearCurrentAssistantMemories = useCallback(() => {
+    if (!activeAssistant) return;
+    const removedCount = onClearAssistantMemories(activeAssistant.id);
+    setMemoryClearConfirmOpen(false);
+    setEditingMemoryId(null);
+    setEditingMemoryDraft("");
+    showAssistantNotice(removedCount > 0 ? `已清空 ${removedCount} 条记忆` : "当前没有可清空的记忆", removedCount > 0 ? "success" : "error");
+  }, [activeAssistant, onClearAssistantMemories, showAssistantNotice]);
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
     if (assistantPanelManualVisible === true) classNames.push("main-chat-layout--assistant-forced-open");
@@ -645,6 +685,11 @@ export default function MainChatView({
     setAssistantDescriptionDraft(activeAssistant?.description ?? "");
     setAssistantPromptDraft(activeAssistant?.systemPrompt ?? "");
     setAssistantModelDraft(activeAssistant?.defaultModelId ?? "");
+    setMemorySearchQuery("");
+    setShowAllMemories(false);
+    setMemoryClearConfirmOpen(false);
+    setEditingMemoryId(null);
+    setEditingMemoryDraft("");
   }, [activeAssistant]);
 
   useEffect(() => {
@@ -1981,7 +2026,8 @@ export default function MainChatView({
                   <div className="omni-settings-dialog__section-title">记忆库</div>
                   <div className="omni-settings-dialog__assistant-copy">
                     <div className="omni-settings-dialog__setting-hint">
-                      当前助手已沉淀 {assistantMemories.length} 条长期记忆，可删除过期或不准确的内容。
+                      当前助手已沉淀 {assistantMemories.length} 条长期记忆。记忆范围：{activeMemoryScopeLabel}，自动记忆
+                      {activeAssistant.autoSaveMemories ? "已开启" : "已关闭"}，自动摘要{activeAssistant.autoSaveSummaries ? "已开启" : "已关闭"}。
                     </div>
                   </div>
                   <div className="omni-settings-dialog__memory-add">
@@ -2000,9 +2046,27 @@ export default function MainChatView({
                       添加记忆
                     </button>
                   </div>
+                  <div className="omni-settings-dialog__memory-toolbar">
+                    <div className="omni-settings-dialog__memory-search">
+                      <Search size={14} strokeWidth={1.8} />
+                      <input
+                        value={memorySearchQuery}
+                        onChange={(event) => setMemorySearchQuery(event.target.value)}
+                        placeholder="搜索记忆内容或来源会话"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="omni-settings-dialog__memory-clear"
+                      onClick={() => setMemoryClearConfirmOpen(true)}
+                      disabled={assistantMemories.length === 0}
+                    >
+                      清空记忆
+                    </button>
+                  </div>
                   {assistantMemories.length > 0 ? (
                     <div className="omni-settings-dialog__memory-list">
-                      {assistantMemories.slice(0, 12).map((memory) => (
+                      {visibleAssistantMemories.map((memory) => (
                         <div key={memory.id} className="omni-settings-dialog__memory-item">
                           {editingMemoryId === memory.id ? (
                             <div className="omni-settings-dialog__memory-editor">
@@ -2024,15 +2088,23 @@ export default function MainChatView({
                             <>
                               <div className="omni-settings-dialog__memory-copy">
                                 <strong>{memory.content}</strong>
-                                <span>
-                                  {memory.sourceSessionId
-                                    ? `来源会话：${topicTitleById.get(memory.sourceSessionId) ?? "来源会话已删除或不可用"}`
-                                    : "未记录来源会话"}
-                                  {" · "}
-                                  {new Date(memory.updatedAt).toLocaleString("zh-CN")}
-                                </span>
+                                <div className="omni-settings-dialog__memory-meta">
+                                  <span>
+                                    {memory.sourceSessionId
+                                      ? `来源会话：${topicTitleById.get(memory.sourceSessionId) ?? "来源会话已删除或不可用"}`
+                                      : "未记录来源会话"}
+                                  </span>
+                                  <span>{new Date(memory.updatedAt).toLocaleString("zh-CN")}</span>
+                                </div>
                               </div>
                               <div className="omni-settings-dialog__memory-actions">
+                                <button
+                                  type="button"
+                                  onClick={() => openMemorySourceSession(memory.sourceSessionId)}
+                                  disabled={!memory.sourceSessionId || !topicTitleById.has(memory.sourceSessionId)}
+                                >
+                                  来源
+                                </button>
                                 <button type="button" onClick={() => startEditMemory(memory)}>
                                   编辑
                                 </button>
@@ -2051,9 +2123,37 @@ export default function MainChatView({
                           )}
                         </div>
                       ))}
+                      {filteredAssistantMemories.length === 0 && (
+                        <div className="omni-settings-dialog__memory-empty">没有匹配的记忆</div>
+                      )}
+                      {filteredAssistantMemories.length > 12 && (
+                        <button
+                          type="button"
+                          className="omni-settings-dialog__memory-more"
+                          onClick={() => setShowAllMemories((current) => !current)}
+                        >
+                          {showAllMemories ? "收起部分记忆" : `显示全部 ${filteredAssistantMemories.length} 条记忆`}
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="omni-settings-dialog__memory-empty">暂无已沉淀记忆</div>
+                  )}
+                  {memoryClearConfirmOpen && (
+                    <div className="chat-topic-panel__menu-confirm omni-settings-dialog__memory-confirm">
+                      <div className="chat-topic-panel__menu-confirm-title">清空当前助手记忆</div>
+                      <div className="chat-topic-panel__menu-confirm-message">
+                        将删除当前助手的 {assistantMemories.length} 条长期记忆。此操作不会删除会话记录。
+                      </div>
+                      <div className="chat-topic-panel__menu-confirm-actions">
+                        <button type="button" className="chat-topic-panel__menu-button" onClick={() => setMemoryClearConfirmOpen(false)}>
+                          取消
+                        </button>
+                        <button type="button" className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger" onClick={clearCurrentAssistantMemories}>
+                          确认清空
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
 

@@ -126,6 +126,7 @@ function MainApp() {
     addAssistantMemory,
     applyUsageToSession,
     assistants,
+    clearAssistantMemories,
     commitAssistantMemory,
     createCustomAssistantProfile,
     createSessionFromMessages,
@@ -736,6 +737,7 @@ function MainApp() {
           onNewChat={handleNewChat}
           onCreateCustomAssistant={createCustomAssistantProfile}
           onAddAssistantMemory={addAssistantMemory}
+          onClearAssistantMemories={clearAssistantMemories}
           onDeleteAssistant={deleteAssistantProfile}
           onDeleteAssistantMemory={deleteAssistantMemory}
           onUpdateAssistantMemory={updateAssistantMemory}
