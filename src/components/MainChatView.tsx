@@ -37,7 +37,7 @@ import type { Message } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
-import type { AssistantMemoryRecord, AssistantProfile, ChatSession } from "../chat/types";
+import type { AssistantMemoryRecord, AssistantMemorySourceType, AssistantProfile, ChatSession } from "../chat/types";
 import type { AssistantMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
@@ -97,6 +97,13 @@ type AssistantNoticeState = {
   message: string;
 } | null;
 
+function getMemorySourceTypeLabel(sourceType?: AssistantMemorySourceType) {
+  if (sourceType === "auto") return "自动沉淀";
+  if (sourceType === "manual") return "手动添加";
+  if (sourceType === "command") return "命令写入";
+  return "旧记录";
+}
+
 type AssistantDisplayGroup = {
   label: string;
   assistants: AssistantProfile[];
@@ -149,7 +156,7 @@ type MainChatViewProps = {
     allowedToolIds?: string[];
     allowedSkillIds?: string[];
   }) => void;
-  onAddAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null) => boolean;
+  onAddAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null, sourceType?: AssistantMemorySourceType) => boolean;
   onClearAssistantMemories: (assistantId: string) => number;
   onDeleteAssistant: (assistantId: string) => boolean;
   onDeleteAssistantMemory: (memoryId: string) => boolean;
@@ -438,12 +445,13 @@ export default function MainChatView({
 
     return assistantMemories.filter((memory) => {
       const sourceTitle = memory.sourceSessionId ? topicTitleById.get(memory.sourceSessionId) ?? "" : "";
-      return normalizeSearchText(`${memory.content} ${sourceTitle}`).includes(normalizedMemorySearchQuery);
+      return normalizeSearchText(`${memory.content} ${sourceTitle} ${getMemorySourceTypeLabel(memory.sourceType)}`).includes(normalizedMemorySearchQuery);
     });
   }, [assistantMemories, normalizedMemorySearchQuery, topicTitleById]);
   const visibleAssistantMemories = showAllMemories ? filteredAssistantMemories : filteredAssistantMemories.slice(0, 12);
   const filteredAssistantAvatars = filterAvatarPresets(AVATAR_PRESETS, assistantAvatarCategory, assistantAvatarSearchQuery);
-  const isAssistantSettingsMode = Boolean(assistantSettingsId && activeAssistant?.kind === "custom");
+  const isAssistantSettingsMode = Boolean(assistantSettingsId && activeAssistant);
+  const isCustomAssistantSettingsMode = Boolean(isAssistantSettingsMode && activeAssistant?.kind === "custom");
   const [assistantTitleDraft, setAssistantTitleDraft] = useState(activeAssistant?.title ?? "");
   const [assistantDescriptionDraft, setAssistantDescriptionDraft] = useState(activeAssistant?.description ?? "");
   const [assistantPromptDraft, setAssistantPromptDraft] = useState(activeAssistant?.systemPrompt ?? "");
@@ -508,7 +516,7 @@ export default function MainChatView({
   }, [cancelEditMemory, editingMemoryDraft, editingMemoryId, onUpdateAssistantMemory, showAssistantNotice]);
   const addManualMemory = useCallback(() => {
     if (!activeAssistant) return;
-    const added = onAddAssistantMemory(activeAssistant.id, newMemoryDraft, activeChatId);
+    const added = onAddAssistantMemory(activeAssistant.id, newMemoryDraft, activeChatId, "manual");
     showAssistantNotice(added ? "记忆已添加" : "记忆已存在或内容太短", added ? "success" : "error");
     if (added) {
       setNewMemoryDraft("");
@@ -1088,7 +1096,25 @@ export default function MainChatView({
                 <span className="chat-history-panel__assistant-copy">
                   <strong>{basicAssistant.title}</strong>
                 </span>
-                <span className="chat-history-panel__assistant-action chat-history-panel__assistant-action--placeholder" aria-hidden="true" />
+                <span
+                  className="chat-history-panel__assistant-menu"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className="chat-history-panel__assistant-action"
+                    title="记忆管理"
+                    aria-label="打开 Omni 记忆管理"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectAssistant(basicAssistant.id);
+                      setAssistantSettingsId(basicAssistant.id);
+                    }}
+                  >
+                    <Settings size={13} strokeWidth={1.9} />
+                  </button>
+                </span>
               </button>
             </div>
           )}
@@ -1732,9 +1758,11 @@ export default function MainChatView({
         <div className="main-chat-body">
           <section ref={setWorkspaceElement} className="main-chat-workspace" style={{ "--composer-height": `${composerHeight}px` } as CSSProperties}>
             <main className="main-chat-pane">
-          {isAssistantSettingsMode && activeAssistant?.kind === "custom" ? (
+          {isAssistantSettingsMode && activeAssistant ? (
             <div className="main-chat-scroll hide-scrollbar">
               <div className="omni-settings-dialog__sections omni-settings-dialog__sections--page">
+                {isCustomAssistantSettingsMode && (
+                <>
                 <div className="omni-settings-dialog__section">
                   <div className="omni-settings-dialog__section-title">助手信息</div>
                   <div className="omni-settings-dialog__assistant-overview">
@@ -1964,6 +1992,8 @@ export default function MainChatView({
                     ))}
                   </div>
                 </div>
+                </>
+                )}
 
                 <div className="omni-settings-dialog__section">
                   <div className="omni-settings-dialog__section-title">记忆策略</div>
@@ -2052,7 +2082,7 @@ export default function MainChatView({
                       <input
                         value={memorySearchQuery}
                         onChange={(event) => setMemorySearchQuery(event.target.value)}
-                        placeholder="搜索记忆内容或来源会话"
+                        placeholder="搜索记忆、来源会话或来源类型"
                       />
                     </div>
                     <button
@@ -2089,6 +2119,7 @@ export default function MainChatView({
                               <div className="omni-settings-dialog__memory-copy">
                                 <strong>{memory.content}</strong>
                                 <div className="omni-settings-dialog__memory-meta">
+                                  <span className="omni-settings-dialog__memory-source-type">{getMemorySourceTypeLabel(memory.sourceType)}</span>
                                   <span>
                                     {memory.sourceSessionId
                                       ? `来源会话：${topicTitleById.get(memory.sourceSessionId) ?? "来源会话已删除或不可用"}`
@@ -2157,6 +2188,8 @@ export default function MainChatView({
                   )}
                 </div>
 
+                {isCustomAssistantSettingsMode && (
+                <>
                 <div className="omni-settings-dialog__section">
                   <div className="omni-settings-dialog__section-title">工具权限</div>
                   <div className="omni-settings-dialog__toggle-list">
@@ -2210,8 +2243,11 @@ export default function MainChatView({
                     })}
                   </div>
                 </div>
+                </>
+                )}
 
               </div>
+              {isCustomAssistantSettingsMode && (
               <input
                 ref={assistantAvatarInputRef}
                 type="file"
@@ -2232,6 +2268,7 @@ export default function MainChatView({
                   event.currentTarget.value = "";
                 }}
               />
+              )}
             </div>
           ) : (
             <>

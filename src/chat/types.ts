@@ -86,11 +86,14 @@ export type SessionSummaryRecord = {
   updatedAt: number;
 };
 
+export type AssistantMemorySourceType = "auto" | "manual" | "command" | "legacy";
+
 export type AssistantMemoryRecord = {
   id: string;
   assistantId: string;
   content: string;
   sourceSessionId?: string | null;
+  sourceType?: AssistantMemorySourceType;
   createdAt: number;
   updatedAt: number;
 };

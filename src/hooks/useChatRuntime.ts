@@ -12,7 +12,7 @@ import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { getChatSessionTitle } from "../chat/storage";
 import { executeLocalTool } from "../chat/localTools";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
-import type { AssistantProfile, ChatExecutionResult } from "../chat/types";
+import type { AssistantMemorySourceType, AssistantProfile, ChatExecutionResult } from "../chat/types";
 import type { AssistantMemoryRecord, SessionSummaryRecord } from "../chat/types";
 import { getToolManifestById } from "../config/manifests/tools";
 import type { PetThoughtState } from "../app/types";
@@ -31,7 +31,7 @@ type UseChatRuntimeArgs = {
   activeAssistant: AssistantProfile | null;
   availableModels: ModelConfig[];
   messages: Message[];
-  addAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null) => boolean;
+  addAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null, sourceType?: AssistantMemorySourceType) => boolean;
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
   commitAssistantMemory: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
   createSessionFromMessages: (conversationMessages: Message[], assistantId?: string) => { id: string };
