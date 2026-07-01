@@ -527,7 +527,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     [assistantMemories]
   );
 
-  const addAssistantMemory = useCallback((assistantId: string, content: string, sourceSessionId?: string | null) => {
+  const addAssistantMemory = useCallback((assistantId: string, content: string, sourceSessionId?: string | null, sourceType: AssistantMemoryRecord["sourceType"] = "manual") => {
     const nextContent = content.trim();
     if (!assistantId || nextContent.length < 4) {
       return false;
@@ -547,6 +547,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
           assistantId,
           content: nextContent.length > 120 ? `${nextContent.slice(0, 117)}...` : nextContent,
           sourceSessionId: sourceSessionId ?? null,
+          sourceType,
           createdAt: now,
           updatedAt: now,
         },
@@ -704,6 +705,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
                 assistantId: assistant.id,
                 content,
                 sourceSessionId: sessionId,
+                sourceType: "auto" as const,
                 createdAt: now,
                 updatedAt: now,
               }));

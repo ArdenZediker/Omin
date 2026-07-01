@@ -143,7 +143,7 @@ describe("localTools", () => {
     const result = await executeLocalTool(runtime, { command: "/remember", args: "以后全部使用中文" });
 
     expect(result).toEqual({ ok: true, outputText: "已保存到当前助手记忆库。" });
-    expect(addAssistantMemory).toHaveBeenCalledWith("assistant-1", "以后全部使用中文", "session-1");
+    expect(addAssistantMemory).toHaveBeenCalledWith("assistant-1", "以后全部使用中文", "session-1", "command");
   });
 
   it("搜索会话时标记当前会话并输出中文摘要", async () => {

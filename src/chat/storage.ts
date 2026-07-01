@@ -1,4 +1,4 @@
-﻿import type { Message } from "../adapters/types";
+import type { Message } from "../adapters/types";
 import type {
   AssistantMemoryScope,
   AssistantMemoryRecord,
@@ -323,7 +323,15 @@ export function parseChatSessionsSnapshot(raw: string | null | undefined): ChatS
 export function parseAssistantMemoriesSnapshot(raw: string | null | undefined): AssistantMemoryRecord[] {
   try {
     const parsed = raw ? (JSON.parse(raw) as AssistantMemoryRecord[]) : [];
-    return parsed.filter((item) => typeof item?.id === "string" && typeof item?.assistantId === "string" && typeof item?.content === "string");
+    return parsed
+      .filter((item) => typeof item?.id === "string" && typeof item?.assistantId === "string" && typeof item?.content === "string")
+      .map((item) => ({
+        ...item,
+        sourceType:
+          item.sourceType === "auto" || item.sourceType === "manual" || item.sourceType === "command" || item.sourceType === "legacy"
+            ? item.sourceType
+            : "legacy",
+      }));
   } catch {
     return [];
   }
@@ -402,7 +410,7 @@ export function searchAssistantMemories(memories: AssistantMemoryRecord[], assis
   const normalizedQuery = query.trim().toLowerCase();
   const scoped = memories.filter((item) => item.assistantId === assistantId);
   if (!normalizedQuery) return scoped;
-  return scoped.filter((item) => item.content.toLowerCase().includes(normalizedQuery));
+  return scoped.filter((item) => `${item.content} ${item.sourceType ?? "legacy"}`.toLowerCase().includes(normalizedQuery));
 }
 
 export function getChatSessionGroupLabel(updatedAt: number) {

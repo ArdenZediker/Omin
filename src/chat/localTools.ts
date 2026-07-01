@@ -8,7 +8,7 @@ import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibilit
 import { saveSqliteBackedValue } from "../app/sqliteStorage";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
-import type { AssistantProfile } from "./types";
+import type { AssistantMemorySourceType, AssistantProfile } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 
 export type LocalToolSession = {
@@ -20,7 +20,7 @@ export type LocalToolSession = {
 export type LocalToolRuntime = {
   activeAssistant: AssistantProfile | null;
   activeChatId: string | null;
-  addAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null) => boolean;
+  addAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null, sourceType?: AssistantMemorySourceType) => boolean;
   availableModels: ModelConfig[];
   getChatSessionById: (sessionId: string) => LocalToolSession | null;
   handleModelChange: (modelId: string) => void;
@@ -165,7 +165,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const content = resolvedCommand.args.trim();
       if (!runtime.activeAssistant) return { ok: false, error: "当前没有可写入记忆的助手" };
       if (!content) return { ok: false, error: "用法：/remember 要记住的长期偏好或约束" };
-      const added = runtime.addAssistantMemory(runtime.activeAssistant.id, content, context.activeChatId);
+      const added = runtime.addAssistantMemory(runtime.activeAssistant.id, content, context.activeChatId, "command");
       if (!added) return { ok: true, outputText: "这条记忆已经存在，未重复保存。" };
       return { ok: true, outputText: "已保存到当前助手记忆库。" };
     },
