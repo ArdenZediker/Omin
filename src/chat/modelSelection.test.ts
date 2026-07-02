@@ -35,4 +35,9 @@ describe("modelSelection", () => {
     expect(resolveExecutionModelId({ assistantModelId: "gpt-4o-mini", currentModelId: "deepseek-chat", availableModels: models })).toBe("gpt-4o-mini");
     expect(resolveExecutionModelId({ assistantModelId: "missing", currentModelId: "deepseek-chat", availableModels: models })).toBe("deepseek-chat");
   });
+
+  it("助手没有默认模型时执行模型跟随主模型", () => {
+    expect(resolveExecutionModelId({ assistantModelId: null, currentModelId: "deepseek-chat", availableModels: models })).toBe("deepseek-chat");
+    expect(resolveExecutionModelId({ assistantModelId: "", currentModelId: "gpt-4o-mini", availableModels: models })).toBe("gpt-4o-mini");
+  });
 });

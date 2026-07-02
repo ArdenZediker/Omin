@@ -34,6 +34,7 @@ import {
   getCompactWindowSize,
   getExpandedCompactViewportSizeForAppearance,
   getPetCompactViewportSize,
+  getPetThoughtAnchorOffset,
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
@@ -208,6 +209,14 @@ function MainApp() {
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
     [compactAppearance, effectiveCompactScale]
   );
+  const shouldReservePetThoughtSpace =
+    compactAppearance === "pet" &&
+    (petThoughtCount > 0 || petThoughtQueue.length > 0 || Boolean(petThought)) &&
+    !arePetThoughtsCollapsed &&
+    !isCompactMenuOpen &&
+    !isCompactQueryOpen &&
+    !isCompactReplyLoading &&
+    !compactReply;
   const compactViewportSize = useMemo(() => {
     if (compactAppearance === "pet") {
       return getPetCompactViewportSize({
@@ -217,7 +226,7 @@ function MainApp() {
         isCompactReplyLoading,
         hasCompactReply: Boolean(compactReply),
         thoughtPlacement: petThoughtPlacement,
-        reservePetThoughtSpace: false,
+        reservePetThoughtSpace: shouldReservePetThoughtSpace,
       });
     }
     if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
@@ -236,8 +245,26 @@ function MainApp() {
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
+    petThought,
+    petThoughtCount,
+    petThoughtQueue.length,
     petThoughtPlacement,
+    shouldReservePetThoughtSpace,
   ]);
+  const petThoughtViewportOffset = useMemo(
+    () =>
+      compactAppearance === "pet" && shouldReservePetThoughtSpace && compactViewportSize
+        ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
+        : { x: 0, y: 0 },
+    [
+      compactAppearance,
+      compactSize.height,
+      compactSize.width,
+      compactViewportSize?.height,
+      compactViewportSize?.width,
+      shouldReservePetThoughtSpace,
+    ]
+  );
 
   const availableModels = modelRegistry.getAvailableModels();
   const availableModelIdsKey = availableModels.map((model) => model.id).join("\n");
@@ -499,6 +526,8 @@ function MainApp() {
       "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
+      "--pet-viewport-offset-x": `${petThoughtViewportOffset.x}px`,
+      "--pet-viewport-offset-y": `${petThoughtViewportOffset.y}px`,
     } as CSSProperties;
   }, [
     compactViewportSize,
@@ -506,6 +535,8 @@ function MainApp() {
     displayCompactSize.width,
     isAnimatedCompactAppearance,
     compactAppearance,
+    petThoughtViewportOffset.x,
+    petThoughtViewportOffset.y,
     petThoughtPlacement,
   ]);
 
@@ -652,7 +683,10 @@ function MainApp() {
         compactAppearance={compactAppearance as CompactAppearance}
         compactQuery={compactQuery}
         compactReply={compactReply}
+        petThought={petThought}
+        petThoughtQueue={petThoughtQueue}
         petThoughtCount={petThoughtCount}
+        petThoughtPlacement={petThoughtPlacement}
         arePetThoughtsCollapsed={arePetThoughtsCollapsed}
         compactSize={displayCompactSize}
         compactStyle={compactStyle}
@@ -705,12 +739,13 @@ function MainApp() {
           activeSession={activeSession}
           assistants={assistants}
           availableModels={availableModels}
-          currentModel={activeExecutionModel}
+          currentModel={currentModel}
           editingMessageIndex={editingMessageIndex}
           emptyChatPrompts={EMPTY_CHAT_PROMPTS}
           error={error}
           groupedChatSessions={groupedChatSessions}
           hasModels={hasModels}
+          executionModel={activeExecutionModel}
           inputDraft={activeComposerDraft.text}
           inputDraftImages={activeComposerDraft.images}
           inputDraftKey={inputDraftKey}
