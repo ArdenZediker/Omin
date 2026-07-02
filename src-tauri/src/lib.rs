@@ -1319,6 +1319,15 @@ fn normalize_text_for_search(value: &str) -> String {
         .to_lowercase()
 }
 
+fn tokenize_search_query(value: &str) -> Vec<String> {
+    normalize_text_for_search(value)
+        .split(|character: char| !character.is_alphanumeric())
+        .map(str::trim)
+        .filter(|term| !term.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
 fn preview_text(value: &str, max_chars: usize) -> String {
     let trimmed = value.trim();
     let count = trimmed.chars().count();
@@ -2167,20 +2176,6 @@ fn score_search_candidate(
         }
     }
 
-    if haystack.contains(&normalize_text_for_search(&candidate.source_name)) {
-        score += 1.0;
-    }
-    if candidate
-        .title
-        .as_deref()
-        .map(normalize_text_for_search)
-        .as_deref()
-        .map(|title| haystack.contains(title))
-        .unwrap_or(false)
-    {
-        score += 0.8;
-    }
-
     let allow_embedding = matches!(retrieval_mode, "hybrid" | "vector");
     if allow_embedding {
         if let Some(query_embedding) = query_embedding {
@@ -2396,17 +2391,18 @@ fn search_knowledge_chunks(
     connection: &Connection,
     input: SearchKnowledgeChunksInput,
 ) -> Result<Vec<SearchKnowledgeChunkResult>, String> {
-    let query = input.query.trim().to_lowercase();
+    let query = normalize_text_for_search(&input.query);
     if query.is_empty() {
         return Ok(Vec::new());
     }
 
     ensure_knowledge_defaults(connection)?;
-    let query_terms: Vec<String> = query
-        .split_whitespace()
-        .filter(|term| !term.is_empty())
-        .map(|term| term.to_string())
-        .collect();
+    let query_terms = tokenize_search_query(&query);
+    let normalized_query = if query_terms.is_empty() {
+        query.clone()
+    } else {
+        query_terms.join(" ")
+    };
     let limit = input.limit.unwrap_or(10).clamp(1, 50);
     let query_model_key = input
         .query_embedding_model_key
@@ -2516,13 +2512,13 @@ fn search_knowledge_chunks(
             None
         };
         let score = score_search_candidate(
-            &query,
+            &normalized_query,
             &query_terms,
             effective_embedding,
             &retrieval_mode,
             &candidate,
         );
-        if score <= 0.0 && !candidate.content.to_lowercase().contains(&query) {
+        if score <= 0.0 && !normalize_text_for_search(&candidate.content).contains(&normalized_query) {
             continue;
         }
 

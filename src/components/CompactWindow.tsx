@@ -3,6 +3,9 @@ import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/type
 import { emit, emitTo } from "@tauri-apps/api/event";
 import { ChevronDown } from "lucide-react";
 import { PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
+import { getPetThoughtKey } from "../app/petThoughts";
+import type { PetThoughtState } from "../app/types";
+import type { PetThoughtPlacement } from "../app/window";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
@@ -10,6 +13,7 @@ import DesktopPet, { type DesktopPetState } from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
 import CompactReplyPanel from "./compact/CompactReplyPanel";
+import PetThoughtBubble from "./compact/PetThoughtBubble";
 
 type CompactWindowProps = {
   basicSettings: BasicSettings;
@@ -19,7 +23,10 @@ type CompactWindowProps = {
   compactAppearance: CompactAppearance;
   compactQuery: string;
   compactReply: CompactReply | null;
+  petThought: PetThoughtState | null;
+  petThoughtQueue: PetThoughtState[];
   petThoughtCount: number;
+  petThoughtPlacement: PetThoughtPlacement;
   arePetThoughtsCollapsed: boolean;
   compactSize: { width: number; height: number };
   compactStyle: CSSProperties;
@@ -70,7 +77,10 @@ export default function CompactWindow({
   compactAppearance,
   compactQuery,
   compactReply,
+  petThought,
+  petThoughtQueue,
   petThoughtCount,
+  petThoughtPlacement,
   arePetThoughtsCollapsed,
   compactSize,
   compactStyle,
@@ -124,9 +134,37 @@ export default function CompactWindow({
     !isCompactQueryOpen &&
     !isCompactReplyLoading &&
     !compactReply;
+  const resolvedPetThoughtQueue = petThoughtQueue.length > 0 ? petThoughtQueue : petThought ? [petThought] : [];
+  const visiblePetThoughts = petThoughtPlacement === "top" ? [...resolvedPetThoughtQueue].reverse() : resolvedPetThoughtQueue;
+  const isInlinePetThoughtStackVisible = isPetThoughtToggleVisible && resolvedPetThoughtQueue.length > 0;
   const petViewportSize = getCodexPetViewportSize(compactSize);
   const petRenderHeight = petViewportSize.height;
   const petRenderWidth = petViewportSize.width;
+  const petThoughtBubbleWidth = 250;
+  const petThoughtSafeGap = 12;
+  const compactStyleVars = compactStyle as CSSProperties & Record<string, string | number | undefined>;
+  const rawPetThoughtViewportOffsetX = compactStyleVars["--pet-viewport-offset-x"];
+  const parsedPetThoughtViewportOffsetX =
+    typeof rawPetThoughtViewportOffsetX === "number"
+      ? rawPetThoughtViewportOffsetX
+      : typeof rawPetThoughtViewportOffsetX === "string"
+        ? Number.parseFloat(rawPetThoughtViewportOffsetX)
+        : 0;
+  const petThoughtViewportOffsetX = Number.isFinite(parsedPetThoughtViewportOffsetX) ? parsedPetThoughtViewportOffsetX : 0;
+  const petThoughtViewportWidth = compactSize.width + petThoughtViewportOffsetX * 2;
+  const petThoughtStackMinLeft = -petThoughtViewportOffsetX + petThoughtSafeGap;
+  const petThoughtStackMaxLeft = compactSize.width + petThoughtViewportOffsetX - petThoughtBubbleWidth - petThoughtSafeGap;
+  const petThoughtStackPreferredLeft = (petThoughtViewportWidth - petThoughtBubbleWidth) / 2 - petThoughtViewportOffsetX;
+  const petThoughtStackLeft = Math.round(
+    Math.min(petThoughtStackMaxLeft, Math.max(petThoughtStackMinLeft, petThoughtStackPreferredLeft))
+  );
+  const petThoughtTailX = Math.max(
+    18,
+    Math.min(
+      petThoughtBubbleWidth - 18,
+      Math.round(petRenderWidth * 0.74 - petThoughtStackLeft)
+    )
+  );
   const petButtonRef = useRef<HTMLButtonElement | null>(null);
   const petAnchorRef = useRef<HTMLDivElement | null>(null);
   const [petCelebrateReply, setPetCelebrateReply] = useState(false);
@@ -379,6 +417,33 @@ export default function CompactWindow({
               >
                 {arePetThoughtsCollapsed ? petThoughtCount : <ChevronDown size={16} strokeWidth={2.25} aria-hidden="true" focusable="false" />}
               </button>
+            ) : null}
+
+            {isInlinePetThoughtStackVisible ? (
+              <div
+                className={`compact-pet-thought-stack compact-pet-thought-stack--${petThoughtPlacement} ${
+                  arePetThoughtsCollapsed ? "compact-pet-thought-stack--collapsed" : ""
+                } no-drag`}
+                style={
+                  {
+                    "--pet-thought-inline-width": `${petThoughtBubbleWidth}px`,
+                    "--pet-thought-inline-safe-gap": `${petThoughtSafeGap}px`,
+                    "--pet-thought-inline-left": `${petThoughtStackLeft}px`,
+                    "--pet-thought-tail-x": `${petThoughtTailX}px`,
+                  } as CSSProperties
+                }
+              >
+                {visiblePetThoughts.slice(0, 3).map((thought) => (
+                  <PetThoughtBubble
+                    key={getPetThoughtKey(thought)}
+                    thought={thought}
+                    placement={petThoughtPlacement}
+                    usePortal={false}
+                    stacked
+                    collapsed={arePetThoughtsCollapsed}
+                  />
+                ))}
+              </div>
             ) : null}
 
             {isCompactMenuOpen && (

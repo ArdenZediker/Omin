@@ -5,7 +5,7 @@ import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStora
 import { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale, getStoredCharacterScale } from "../app/compactPetScale";
 import type { PetThoughtState } from "../app/types";
 import type { PetThoughtPlacement } from "../app/window";
-import { matchesPetThought } from "../app/petThoughts";
+import { getPetThoughtKey, matchesPetThought } from "../app/petThoughts";
 export { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale } from "../app/compactPetScale";
 
 export type CompactAppearance = "default" | "compact" | "large" | "pet";
@@ -180,6 +180,27 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
           }
           return nextThought;
         });
+        if (nextThought) {
+          setPetThoughtQueue((currentQueue) => {
+            const nextKey = getPetThoughtKey(nextThought);
+            const currentIndex = currentQueue.findIndex((thought) => getPetThoughtKey(thought) === nextKey);
+            if (currentIndex >= 0 && currentQueue[currentIndex]?.updatedAt > nextThought.updatedAt) {
+              setPetThoughtCount(currentQueue.length);
+              return currentQueue;
+            }
+            const nextQueue =
+              currentIndex >= 0
+                ? currentQueue.map((thought, index) => (index === currentIndex ? nextThought : thought))
+                : [nextThought, ...currentQueue];
+            setPetThoughtCount(nextQueue.length);
+            return nextQueue;
+          });
+          setArePetThoughtsCollapsed(false);
+          return;
+        }
+        setPetThoughtQueue([]);
+        setPetThoughtCount(0);
+        setArePetThoughtsCollapsed(false);
       }),
       listen<PetThoughtState[]>("omni-pet-thought-queue-changed", (event) => {
         const queue = Array.isArray(event.payload) ? event.payload : [];

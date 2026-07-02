@@ -26,6 +26,7 @@ import type { BasicSettings } from "../app/types";
 import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../app/settings";
 import { COMPACT_WINDOW_LABEL } from "../app/constants";
 import { saveSqliteBackedValue } from "../app/sqliteStorage";
+import { resolveCurrentModelId } from "../chat/modelSelection";
 import {
   loadBasicSettings,
   loadUsagePreferences,
@@ -76,6 +77,15 @@ function getRawApiKey(id: string) {
   return (modelRegistry as unknown as RawRegistry).configs.get(id)?.apiKey || "";
 }
 
+function resolveFormApiKey(endpointId: string, apiKeyInput: string) {
+  const trimmed = apiKeyInput.trim();
+  if (trimmed && trimmed !== "********") {
+    return trimmed;
+  }
+
+  return getRawApiKey(endpointId);
+}
+
 function areUsagePreferencesEqual(a: ChatUsagePreferences, b: ChatUsagePreferences) {
   return (
     a.enableStreaming === b.enableStreaming &&
@@ -111,6 +121,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [section, setSection] = useState<SettingsSection>("basic");
   const [modelSection, setModelSection] = useState<ModelConfigSection>("chat");
   const [version, setVersion] = useState(0);
+  const [currentModel, setCurrentModel] = useState(modelRegistry.getCurrentModel());
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode(THEME_MODE_STORAGE_KEY));
   const [basicSettings, setBasicSettings] = useState<BasicSettings>(
     loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS)
@@ -150,6 +161,12 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const endpointModels = endpoints.flatMap((endpoint) =>
     modelRegistry.getCustomModels(endpoint.id).map((model) => ({ ...model, endpointId: endpoint.id, endpointName: endpoint.name }))
   );
+  const availableModels = useMemo(() => modelRegistry.getAvailableModels(), [version]);
+  const resolvedCurrentModel = resolveCurrentModelId({
+    savedModelId: currentModel,
+    registryModelId: modelRegistry.getCurrentModel(),
+    availableModels,
+  });
   const modelSectionCards: ModelSectionCards = {
     chat: {
       title: "聊天模型",
@@ -346,6 +363,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       setEndpointName(cfg?.name || endpoint.name);
       setBaseUrl(cfg?.baseUrl || endpoint.baseUrl || "");
     }
+    setApiKey("");
     setModelId("");
     setModelName("");
     setModelVision(false);
@@ -361,6 +379,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     setModelEndpointId(model.endpointId);
     setEndpointName(cfg?.name || endpoint?.name || model.endpointId);
     setBaseUrl(cfg?.baseUrl || endpoint?.baseUrl || "");
+    setApiKey(getRawApiKey(model.endpointId) ? "********" : "");
     setModelId(model.requestModelId || model.id.replace(`${model.endpointId}:`, ""));
     setModelName(model.name);
     setModelVision(model.supportsVision ?? false);
@@ -371,11 +390,12 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
 
   const validateCurrentEndpoint = async () => {
     const id = modelEndpointId.trim();
-    if (!id || !endpointName.trim() || !baseUrl.trim() || !getRawApiKey(id)) return null;
+    const resolvedApiKey = resolveFormApiKey(id, apiKey);
+    if (!id || !endpointName.trim() || !baseUrl.trim() || !resolvedApiKey) return null;
 
     const existingModels = modelRegistry.getCustomModels(id);
     modelRegistry.registerProvider(id, {
-      apiKey: getRawApiKey(id),
+      apiKey: resolvedApiKey,
       name: endpointName.trim(),
       baseUrl: baseUrl.trim(),
       customModels: existingModels.length ? existingModels : undefined,
@@ -413,7 +433,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const saveModel = async () => {
     const id = modelEndpointId.trim();
     const rawId = modelId.trim();
-    if (!id || !endpointName.trim() || !baseUrl.trim() || !getRawApiKey(id) || !rawId) return;
+    const resolvedApiKey = resolveFormApiKey(id, apiKey);
+    if (!id || !endpointName.trim() || !baseUrl.trim() || !resolvedApiKey || !rawId) return;
 
     setTestingConnection(true);
     setTestResult(null);
@@ -436,7 +457,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
 
     const existingModels = modelRegistry.getCustomModels(id);
     modelRegistry.registerProvider(id, {
-      apiKey: getRawApiKey(id),
+      apiKey: resolvedApiKey,
       name: endpointName.trim(),
       baseUrl: baseUrl.trim(),
       customModels: existingModels.length ? existingModels : undefined,
@@ -451,10 +472,13 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     };
 
     modelRegistry.addCustomModel(id, model);
+    modelRegistry.setCurrentModel(model.id);
     await saveProviderConfigs();
+    setCurrentModel(model.id);
     onModelChange(model.id);
     setEditingModel(null);
     setIsModelFormOpen(false);
+    setApiKey("");
     setModelId("");
     setModelName("");
     setTestResult(null);
@@ -465,7 +489,25 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     modelRegistry.removeCustomModel(endpointId, id);
     void removeModelConnectionStatus(id);
     void saveProviderConfigs();
+    const nextModel = resolveCurrentModelId({
+      savedModelId: id === currentModel ? null : currentModel,
+      registryModelId: modelRegistry.getCurrentModel(),
+      availableModels: modelRegistry.getAvailableModels(),
+    });
+    if (nextModel !== currentModel) {
+      setCurrentModel(nextModel);
+      onModelChange(nextModel);
+    }
     setVersion((value) => value + 1);
+  };
+
+  const changeMainModel = (modelId: string) => {
+    if (!modelId) {
+      return;
+    }
+    modelRegistry.setCurrentModel(modelId);
+    setCurrentModel(modelId);
+    onModelChange(modelId);
   };
 
   const updateUsagePrefs = (nextPrefs: ChatUsagePreferences) => {
@@ -721,7 +763,9 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                   {modelSection === "chat" ? (
                     <ModelSettingsSection
                       apiKey={apiKey}
+                      availableModels={availableModels}
                       baseUrl={baseUrl}
+                      currentModel={resolvedCurrentModel}
                       editingModel={editingModel}
                       endpointModels={endpointModels}
                       endpointName={endpointName}
@@ -735,6 +779,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                       modelVision={modelVision}
                       onChooseEndpoint={chooseEndpoint}
                       onCloseModelForm={() => setIsModelFormOpen(false)}
+                      onModelChange={changeMainModel}
                       onOpenEditModelForm={openEditModelForm}
                       onOpenNewModelForm={openNewModelForm}
                       onRemoveModel={removeModel}

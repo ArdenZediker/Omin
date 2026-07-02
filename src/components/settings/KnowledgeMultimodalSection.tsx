@@ -10,6 +10,7 @@ import {
   type KnowledgeMultimodalModelConfig,
   type KnowledgeMultimodalProviderId,
 } from "../../chat/knowledgeMultimodal";
+import OmniSelect from "../ui/OmniSelect";
 
 type Props = {
   config: KnowledgeMultimodalConfig;
@@ -61,6 +62,19 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
     });
   };
 
+  const toggleDefaultModel = (capability: KnowledgeMultimodalCapability, modelId: string) => {
+    if (capability === "image") {
+      updateConfig({
+        activeImageModelId: normalizedConfig.activeImageModelId === modelId ? "" : modelId,
+      });
+      return;
+    }
+
+    updateConfig({
+      activeAudioModelId: normalizedConfig.activeAudioModelId === modelId ? "" : modelId,
+    });
+  };
+
   const openNewModel = () => {
     setEditingModel(createBlankModel(normalizedConfig.models.length));
     setIsModelFormOpen(true);
@@ -105,14 +119,8 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
 
     updateConfig({
       models: nextModels,
-      activeImageModelId:
-        capability === "image" && !normalizedConfig.activeImageModelId
-          ? normalizedModel.id
-          : normalizedConfig.activeImageModelId,
-      activeAudioModelId:
-        capability === "audio" && !normalizedConfig.activeAudioModelId
-          ? normalizedModel.id
-          : normalizedConfig.activeAudioModelId,
+      activeImageModelId: normalizedConfig.activeImageModelId,
+      activeAudioModelId: normalizedConfig.activeAudioModelId,
     });
     closeModelForm();
   };
@@ -121,14 +129,8 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
     const nextModels = normalizedConfig.models.filter((model) => model.id !== modelId);
     updateConfig({
       models: nextModels,
-      activeImageModelId:
-        normalizedConfig.activeImageModelId === modelId
-          ? nextModels.find((model) => model.capability === "image")?.id ?? ""
-          : normalizedConfig.activeImageModelId,
-      activeAudioModelId:
-        normalizedConfig.activeAudioModelId === modelId
-          ? nextModels.find((model) => model.capability === "audio")?.id ?? ""
-          : normalizedConfig.activeAudioModelId,
+      activeImageModelId: normalizedConfig.activeImageModelId === modelId ? "" : normalizedConfig.activeImageModelId,
+      activeAudioModelId: normalizedConfig.activeAudioModelId === modelId ? "" : normalizedConfig.activeAudioModelId,
     });
   };
 
@@ -158,36 +160,28 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
       <div className="grid gap-3 lg:grid-cols-2">
         <label className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">图片默认模型</div>
-          <div className="mt-1 text-xs text-slate-500">知识库启用图片分析时，优先使用这里选中的模型。</div>
-          <select
+          <div className="mt-1 text-xs text-slate-500">知识库启用图片分析时，优先使用这里选中的模型；再次选择当前模型可取消默认。</div>
+          <OmniSelect
             value={normalizedConfig.activeImageModelId}
-            onChange={(event) => updateConfig({ activeImageModelId: event.target.value })}
-            className="mt-3 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-          >
-            <option value="">未设置</option>
-            {imageModels.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name} ({model.provider})
-              </option>
-            ))}
-          </select>
+            onChange={(value) => toggleDefaultModel("image", value)}
+            placeholder="请选择图片模型"
+            ariaLabel="图片默认模型"
+            className="mt-3"
+            options={imageModels.map((model) => ({ value: model.id, label: `${model.name} (${model.provider})` }))}
+          />
         </label>
 
         <label className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">音频默认模型</div>
-          <div className="mt-1 text-xs text-slate-500">知识库启用音频分析时，优先使用这里选中的模型。</div>
-          <select
+          <div className="mt-1 text-xs text-slate-500">知识库启用音频分析时，优先使用这里选中的模型；再次选择当前模型可取消默认。</div>
+          <OmniSelect
             value={normalizedConfig.activeAudioModelId}
-            onChange={(event) => updateConfig({ activeAudioModelId: event.target.value })}
-            className="mt-3 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-          >
-            <option value="">未设置</option>
-            {audioModels.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name} ({model.provider})
-              </option>
-            ))}
-          </select>
+            onChange={(value) => toggleDefaultModel("audio", value)}
+            placeholder="请选择音频模型"
+            ariaLabel="音频默认模型"
+            className="mt-3"
+            options={audioModels.map((model) => ({ value: model.id, label: `${model.name} (${model.provider})` }))}
+          />
         </label>
       </div>
 
@@ -211,49 +205,69 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
             normalizedConfig.models.map((model) => {
               const isImageDefault = model.id === normalizedConfig.activeImageModelId;
               const isAudioDefault = model.id === normalizedConfig.activeAudioModelId;
+              const isDefaultModel = isImageDefault || isAudioDefault;
               return (
-                <div key={model.id} className="rounded-lg border border-slate-200 bg-white px-3 py-3 transition-colors hover:border-slate-300">
+                <div
+                  key={model.id}
+                  className={`rounded-lg border px-3 py-3 transition-colors ${
+                    isDefaultModel
+                      ? "border-violet-300 bg-violet-50 shadow-[inset_3px_0_0_rgba(124,58,237,0.68)]"
+                      : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50"
+                  }`}
+                >
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <button type="button" onClick={() => openEditModel(model)} className="min-w-0 flex-1 text-left">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="rounded-full bg-slate-100 px-2 py-1">供应商：{model.provider}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1">{model.name}</span>
-                        <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-700">
+                      <div className={`flex flex-wrap items-center gap-2 text-xs ${isDefaultModel ? "text-violet-600" : "text-slate-500"}`}>
+                        <span className={isDefaultModel ? "rounded-full bg-violet-100 px-2 py-1 text-violet-700" : "rounded-full bg-slate-100 px-2 py-1"}>
+                          供应商：{model.provider}
+                        </span>
+                        <span className={isDefaultModel ? "rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-800" : "rounded-full bg-slate-100 px-2 py-1"}>
+                          {model.name}
+                        </span>
+                        <span className={isDefaultModel ? "rounded-full bg-violet-100 px-2 py-1 text-violet-700" : "rounded-full bg-sky-100 px-2 py-1 text-sky-700"}>
                           {model.capability === "image" ? "图片" : "音频"}
                         </span>
-                        {isImageDefault ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">图片默认</span> : null}
-                        {isAudioDefault ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">音频默认</span> : null}
+                        {isImageDefault ? <span className="rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-700">图片默认</span> : null}
+                        {isAudioDefault ? <span className="rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-700">音频默认</span> : null}
                         {!model.apiKey.trim() ? <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">缺少 Key</span> : null}
                       </div>
-                      <div className="mt-2 text-xs text-slate-400">
-                        <span className="font-medium text-slate-500">模型 ID：</span>
+                      <div className={`mt-2 text-xs ${isDefaultModel ? "text-violet-500" : "text-slate-400"}`}>
+                        <span className={`font-medium ${isDefaultModel ? "text-violet-600" : "text-slate-500"}`}>模型 ID：</span>
                         {model.model}
                       </div>
                     </button>
 
                     <div className="flex shrink-0 items-center gap-2">
-                      {model.capability === "image" && !isImageDefault ? (
+                      {model.capability === "image" ? (
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            updateConfig({ activeImageModelId: model.id });
+                            toggleDefaultModel("image", model.id);
                           }}
-                          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                          className={`rounded-md border px-2.5 py-1 text-xs ${
+                            isImageDefault
+                              ? "border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-200"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
                         >
-                          设为图片默认
+                          {isImageDefault ? "取消图片默认" : "设为图片默认"}
                         </button>
                       ) : null}
-                      {model.capability === "audio" && !isAudioDefault ? (
+                      {model.capability === "audio" ? (
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            updateConfig({ activeAudioModelId: model.id });
+                            toggleDefaultModel("audio", model.id);
                           }}
-                          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                          className={`rounded-md border px-2.5 py-1 text-xs ${
+                            isAudioDefault
+                              ? "border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-200"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
                         >
-                          设为音频默认
+                          {isAudioDefault ? "取消音频默认" : "设为音频默认"}
                         </button>
                       ) : null}
                       <button
@@ -297,41 +311,31 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
             <div className="space-y-4">
               <label className="grid grid-cols-[120px_1fr] gap-4">
                 <span className="pt-2 text-right text-sm text-slate-700">能力</span>
-                <select
+                <OmniSelect
                   value={editingModel.capability}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     setEditingModel((current) =>
-                      current ? { ...current, capability: event.target.value as KnowledgeMultimodalCapability } : current
+                      current ? { ...current, capability: value as KnowledgeMultimodalCapability } : current
                     )
                   }
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
-                >
-                  {KNOWLEDGE_MULTIMODAL_CAPABILITY_OPTIONS.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel="多模态模型能力"
+                  options={KNOWLEDGE_MULTIMODAL_CAPABILITY_OPTIONS.map((item) => ({ value: item.id, label: item.label }))}
+                />
               </label>
 
               <label className="grid grid-cols-[120px_1fr] gap-4">
                 <span className="pt-2 text-right text-sm text-slate-700">供应商</span>
-                <select
+                <OmniSelect
                   value={editingModel.provider}
-                  onChange={(event) => {
-                    const provider = event.target.value as KnowledgeMultimodalProviderId;
+                  onChange={(value) => {
+                    const provider = value as KnowledgeMultimodalProviderId;
                     setEditingModel((current) =>
                       current ? { ...current, provider, baseUrl: KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[provider] } : current
                     );
                   }}
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
-                >
-                  {providerOptions.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel="多模态模型供应商"
+                  options={providerOptions.map((item) => ({ value: item.id, label: item.label }))}
+                />
               </label>
 
               <label className="grid grid-cols-[120px_1fr] gap-4">

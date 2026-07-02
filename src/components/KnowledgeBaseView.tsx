@@ -56,6 +56,8 @@ import KnowledgeDocumentProcessingPanel from "./knowledge/KnowledgeDocumentProce
 import KnowledgeDocumentPreview from "./knowledge/KnowledgeDocumentPreview";
 import KnowledgeTaskCenterPanel from "./knowledge/KnowledgeTaskCenterPanel";
 import type { KnowledgeDeadLetterStatusFilter, KnowledgeTaskCenterScope } from "./knowledge/KnowledgeTaskCenterPanel";
+import OmniSelect from "./ui/OmniSelect";
+import OmniSwitch from "./ui/OmniSwitch";
 import {
   KNOWLEDGE_UPLOAD_ACCEPT,
   classifyResource,
@@ -2194,17 +2196,17 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     <div className="mt-1 text-sm text-slate-500">分析结果会并入知识内容，继续沿用当前的检索和问答链路。</div>
                   </div>
                   <label className="omni-knowledge-collection-settings__switch">
-                    <input
-                      type="checkbox"
+                    <OmniSwitch
                       checked={collectionSettingsDraft.multimodalConfig.enabled}
-                      onChange={(event) =>
+                      onChange={(checked) =>
                         updateCollectionDraft({
                           multimodalConfig: {
                             ...collectionSettingsDraft.multimodalConfig,
-                            enabled: event.target.checked,
+                            enabled: checked,
                           },
                         })
                       }
+                      ariaLabel="启用多模态"
                     />
                     <span>启用多模态</span>
                   </label>
@@ -2218,11 +2220,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         <strong className="text-sm text-slate-900">图片分析</strong>
                       </div>
                       <label className="omni-knowledge-collection-settings__switch">
-                        <input
-                          type="checkbox"
+                        <OmniSwitch
                           checked={collectionSettingsDraft.multimodalConfig.image.enabled}
-                          onChange={(event) => updateCollectionImageConfig({ enabled: event.target.checked })}
+                          onChange={(checked) => updateCollectionImageConfig({ enabled: checked })}
                           disabled={!collectionSettingsDraft.multimodalConfig.enabled}
+                          ariaLabel="图片分析"
                         />
                         <span>{collectionSettingsDraft.multimodalConfig.image.enabled ? "开启" : "关闭"}</span>
                       </label>
@@ -2230,35 +2232,32 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
                     <div className="mt-3 space-y-3">
                       <label className="block text-xs font-medium text-slate-500">模型</label>
-                      <select
+                      <OmniSelect
                         value={collectionSettingsDraft.multimodalConfig.image.modelId}
-                        onChange={(event) => updateCollectionImageConfig({ modelId: event.target.value })}
+                        onChange={(value) => updateCollectionImageConfig({ modelId: value })}
                         disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.image.enabled}
-                        className="w-full rounded-none border border-slate-300 px-3 py-2 text-sm"
-                      >
-                        <option value="">请选择图片模型</option>
-                        {imageMultimodalModels.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.name} · {model.provider}
-                          </option>
-                        ))}
-                      </select>
+                        ariaLabel="知识库图片分析模型"
+                        options={[
+                          { value: "", label: "请选择图片模型" },
+                          ...imageMultimodalModels.map((model) => ({ value: model.id, label: `${model.name} · ${model.provider}` })),
+                        ]}
+                      />
 
                       <label className="omni-knowledge-collection-settings__toggle">
-                        <input
-                          type="checkbox"
+                        <OmniSwitch
                           checked={collectionSettingsDraft.multimodalConfig.image.extractText}
-                          onChange={(event) => updateCollectionImageConfig({ extractText: event.target.checked })}
+                          onChange={(checked) => updateCollectionImageConfig({ extractText: checked })}
                           disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.image.enabled}
+                          ariaLabel="提取图片文字"
                         />
                         <span>提取图片文字</span>
                       </label>
                       <label className="omni-knowledge-collection-settings__toggle">
-                        <input
-                          type="checkbox"
+                        <OmniSwitch
                           checked={collectionSettingsDraft.multimodalConfig.image.generateSummary}
-                          onChange={(event) => updateCollectionImageConfig({ generateSummary: event.target.checked })}
+                          onChange={(checked) => updateCollectionImageConfig({ generateSummary: checked })}
                           disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.image.enabled}
+                          ariaLabel="生成图片摘要"
                         />
                         <span>生成图片摘要</span>
                       </label>
@@ -2272,11 +2271,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         <strong className="text-sm text-slate-900">音频分析</strong>
                       </div>
                       <label className="omni-knowledge-collection-settings__switch">
-                        <input
-                          type="checkbox"
+                        <OmniSwitch
                           checked={collectionSettingsDraft.multimodalConfig.audio.enabled}
-                          onChange={(event) => updateCollectionAudioConfig({ enabled: event.target.checked })}
+                          onChange={(checked) => updateCollectionAudioConfig({ enabled: checked })}
                           disabled={!collectionSettingsDraft.multimodalConfig.enabled}
+                          ariaLabel="音频分析"
                         />
                         <span>{collectionSettingsDraft.multimodalConfig.audio.enabled ? "开启" : "关闭"}</span>
                       </label>
@@ -2284,35 +2283,32 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
 
                     <div className="mt-3 space-y-3">
                       <label className="block text-xs font-medium text-slate-500">模型</label>
-                      <select
+                      <OmniSelect
                         value={collectionSettingsDraft.multimodalConfig.audio.modelId}
-                        onChange={(event) => updateCollectionAudioConfig({ modelId: event.target.value })}
+                        onChange={(value) => updateCollectionAudioConfig({ modelId: value })}
                         disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.audio.enabled}
-                        className="w-full rounded-none border border-slate-300 px-3 py-2 text-sm"
-                      >
-                        <option value="">请选择音频模型</option>
-                        {audioMultimodalModels.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.name} · {model.provider}
-                          </option>
-                        ))}
-                      </select>
+                        ariaLabel="知识库音频分析模型"
+                        options={[
+                          { value: "", label: "请选择音频模型" },
+                          ...audioMultimodalModels.map((model) => ({ value: model.id, label: `${model.name} · ${model.provider}` })),
+                        ]}
+                      />
 
                       <label className="omni-knowledge-collection-settings__toggle">
-                        <input
-                          type="checkbox"
+                        <OmniSwitch
                           checked={collectionSettingsDraft.multimodalConfig.audio.keepTranscript}
-                          onChange={(event) => updateCollectionAudioConfig({ keepTranscript: event.target.checked })}
+                          onChange={(checked) => updateCollectionAudioConfig({ keepTranscript: checked })}
                           disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.audio.enabled}
+                          ariaLabel="保留全文转写"
                         />
                         <span>保留全文转写</span>
                       </label>
                       <label className="omni-knowledge-collection-settings__toggle">
-                        <input
-                          type="checkbox"
+                        <OmniSwitch
                           checked={collectionSettingsDraft.multimodalConfig.audio.generateSummary}
-                          onChange={(event) => updateCollectionAudioConfig({ generateSummary: event.target.checked })}
+                          onChange={(checked) => updateCollectionAudioConfig({ generateSummary: checked })}
                           disabled={!collectionSettingsDraft.multimodalConfig.enabled || !collectionSettingsDraft.multimodalConfig.audio.enabled}
+                          ariaLabel="生成音频摘要"
                         />
                         <span>生成音频摘要</span>
                       </label>

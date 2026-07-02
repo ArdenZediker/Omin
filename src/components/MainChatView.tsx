@@ -51,6 +51,8 @@ import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStora
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import ModelSelector from "./ModelSelector";
+import OmniSelect from "./ui/OmniSelect";
+import OmniSwitch from "./ui/OmniSwitch";
 import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -127,6 +129,7 @@ type MainChatViewProps = {
   inputDraftKey: number;
   inputFocusKey: number;
   inputDraftScopeKey: string;
+  executionModel: string;
   isLoading: boolean;
   isSendBlocked?: boolean;
   isStreaming: boolean;
@@ -201,6 +204,7 @@ export default function MainChatView({
   inputDraftKey,
   inputFocusKey,
   inputDraftScopeKey,
+  executionModel,
   isLoading,
   isSendBlocked = false,
   isStreaming,
@@ -384,7 +388,6 @@ export default function MainChatView({
       window.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [topicPanelWidth]);
-  const activeToolCount = activeAssistant?.allowedToolIds.length ?? 0;
   const allowedComposerToolIds = useMemo(
     () => [...ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ...(activeAssistant?.allowedToolIds ?? [])],
     [activeAssistant?.allowedToolIds]
@@ -460,6 +463,7 @@ export default function MainChatView({
   const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
   const isMessagesAtBottomRef = useRef(true);
   const lastAutoScrolledSessionRef = useRef<string | null>(null);
+  const selectedExecutionModel = availableModels.find((model) => model.id === executionModel) ?? null;
   const selectedAssistantModel = availableModels.find((model) => model.id === assistantModelDraft) ?? null;
   const selectedAssistantKnowledgeCollection = knowledgeCollections.find((collection) => collection.id === activeAssistant?.knowledgeCollectionId) ?? null;
   const showAssistantNotice = useCallback((message: string, tone: "success" | "error" = "success") => {
@@ -1696,27 +1700,22 @@ export default function MainChatView({
                 </div>
                 <div className="main-chat-toolbar__assistant-copy main-chat-toolbar__assistant-copy--single-line">
                   <strong>{isAssistantSettingsMode ? "助手设置" : currentTopicTitle}</strong>
-                  {!isAssistantSettingsMode && activeAssistantPresetMeta && (
-                    <div className="main-chat-toolbar__assistant-panel">
-                      <div className="main-chat-toolbar__assistant-panel-row">
-                        <strong>来源预设</strong>
-                        <span>{activeAssistantPresetMeta.label} · {activeAssistantPresetMeta.hint}</span>
-                      </div>
-                      <div className="main-chat-toolbar__assistant-panel-row">
-                        <strong>工具能力</strong>
-                        <span>{activeToolCount} 项已启用</span>
-                      </div>
-                      <div className="main-chat-toolbar__assistant-panel-row">
-                        <strong>记忆范围</strong>
-                        <span>{activeMemoryScopeLabel}</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
 
               <div className="no-drag">
-                <ModelSelector currentModel={currentModel} onModelChange={onModelChange} />
+                <div className="main-chat-toolbar__model-stack">
+                  <ModelSelector
+                    currentModel={currentModel}
+                    onModelChange={onModelChange}
+                    label="主模型"
+                    title={
+                      selectedExecutionModel && executionModel !== currentModel
+                        ? `当前助手会优先使用：${selectedExecutionModel.name}`
+                        : undefined
+                    }
+                  />
+                </div>
               </div>
             </div>
 
@@ -1885,23 +1884,26 @@ export default function MainChatView({
                         <label className="chat-topic-panel__field">
                           <span>默认模型</span>
                           <div className="omni-settings-dialog__model-select">
-                            <select
+                            <OmniSelect
                               value={assistantModelDraft}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
-                                setAssistantModelDraft(nextValue);
-                                saveAssistantPatch({ defaultModelId: nextValue }, "默认模型已更新");
+                              onChange={(nextValue) => {
+                                const nextModelId = assistantModelDraft === nextValue ? "" : nextValue;
+                                setAssistantModelDraft(nextModelId);
+                                saveAssistantPatch({ defaultModelId: nextModelId || null }, "默认模型已更新");
                               }}
-                            >
-                              {availableModels.map((model) => (
-                                <option key={model.id} value={model.id}>
-                                  {model.name}
-                                </option>
-                              ))}
-                            </select>
+                              ariaLabel="助手默认模型"
+                              className="omni-select--field"
+                              placeholder="跟随主模型"
+                              options={availableModels.map((model) => ({ value: model.id, label: model.name }))}
+                            />
                             {selectedAssistantModel && (
                               <div className="omni-settings-dialog__model-select-meta">
-                                {selectedAssistantModel.provider} / {selectedAssistantModel.id} · 仅作为当前助手默认模型
+                                {selectedAssistantModel.provider} / {selectedAssistantModel.id} · 会覆盖主模型，仅当前助手生效
+                              </div>
+                            )}
+                            {!selectedAssistantModel && (
+                              <div className="omni-settings-dialog__model-select-meta">
+                                未单独指定时使用顶部选择的主模型
                               </div>
                             )}
                           </div>
@@ -1909,20 +1911,18 @@ export default function MainChatView({
                         <label className="chat-topic-panel__field">
                           <span>绑定知识库</span>
                           <div className="omni-settings-dialog__model-select">
-                            <select
+                            <OmniSelect
                               value={activeAssistant.knowledgeCollectionId ?? ""}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
+                              onChange={(nextValue) => {
                                 saveAssistantPatch({ knowledgeCollectionId: nextValue || null }, "知识库绑定已更新");
                               }}
-                            >
-                              <option value="">全部知识库</option>
-                              {knowledgeCollections.map((collection) => (
-                                <option key={collection.id} value={collection.id}>
-                                  {collection.name}
-                                </option>
-                              ))}
-                            </select>
+                              ariaLabel="助手绑定知识库"
+                              className="omni-select--field"
+                              options={[
+                                { value: "", label: "全部知识库" },
+                                ...knowledgeCollections.map((collection) => ({ value: collection.id, label: collection.name })),
+                              ]}
+                            />
                             <div className="omni-settings-dialog__model-select-meta">
                               {selectedAssistantKnowledgeCollection
                                 ? `仅检索：${selectedAssistantKnowledgeCollection.name}`
@@ -1934,20 +1934,18 @@ export default function MainChatView({
                         </label>
                         <label className="chat-topic-panel__field">
                           <span>所属分组</span>
-                          <select
+                          <OmniSelect
                             value={activeAssistant.groupName ?? ""}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
+                            onChange={(nextValue) => {
                               saveAssistantPatch({ groupName: nextValue || null }, "助手分组已更新");
                             }}
-                          >
-                            <option value="">{DEFAULT_ASSISTANT_GROUP_LABEL}</option>
-                            {assistantGroupNames.map((groupName) => (
-                              <option key={groupName} value={groupName}>
-                                {groupName}
-                              </option>
-                            ))}
-                          </select>
+                            ariaLabel="助手所属分组"
+                            className="omni-select--field"
+                            options={[
+                              { value: "", label: DEFAULT_ASSISTANT_GROUP_LABEL },
+                              ...assistantGroupNames.map((groupName) => ({ value: groupName, label: groupName })),
+                            ]}
+                          />
                         </label>
                         <label className="chat-topic-panel__field omni-settings-dialog__field--full">
                           <span>描述</span>
@@ -2003,19 +2001,21 @@ export default function MainChatView({
                         <strong>记忆范围</strong>
                         <span>控制这个助手能否读取历史记忆，以及召回的边界。</span>
                       </div>
-                      <select
-                        className="omni-settings-dialog__select"
+                      <OmniSelect
                         value={activeAssistant.memoryScope}
-                        onChange={(event) =>
+                        onChange={(value) =>
                           saveAssistantPatch({
-                            memoryScope: event.target.value as AssistantMemoryScope,
+                            memoryScope: value as AssistantMemoryScope,
                           }, "记忆范围已更新")
                         }
-                      >
-                        <option value="off">关闭记忆</option>
-                        <option value="session">仅当前话题</option>
-                        <option value="assistant">当前助手全局</option>
-                      </select>
+                        ariaLabel="助手记忆范围"
+                        className="omni-select--memory"
+                        options={[
+                          { value: "off", label: "关闭记忆" },
+                          { value: "session", label: "仅当前话题" },
+                          { value: "assistant", label: "当前助手全局" },
+                        ]}
+                      />
                     </label>
 
                     <label className="omni-settings-dialog__toggle-row">
@@ -2023,14 +2023,14 @@ export default function MainChatView({
                         <strong>自动沉淀记忆</strong>
                         <span>将稳定偏好、约束或长期信息保存到该助手的记忆库。</span>
                       </div>
-                      <input
-                        type="checkbox"
+                      <OmniSwitch
                         checked={activeAssistant.autoSaveMemories}
-                        onChange={(event) =>
+                        onChange={(checked) =>
                           saveAssistantPatch({
-                            autoSaveMemories: event.target.checked,
-                          }, event.target.checked ? "自动沉淀记忆已开启" : "自动沉淀记忆已关闭")
+                            autoSaveMemories: checked,
+                          }, checked ? "自动沉淀记忆已开启" : "自动沉淀记忆已关闭")
                         }
+                        ariaLabel="自动沉淀记忆"
                       />
                     </label>
 
@@ -2039,14 +2039,14 @@ export default function MainChatView({
                         <strong>自动沉淀摘要</strong>
                         <span>把当前话题的阶段结论保存为摘要，供后续继续接力。</span>
                       </div>
-                      <input
-                        type="checkbox"
+                      <OmniSwitch
                         checked={activeAssistant.autoSaveSummaries}
-                        onChange={(event) =>
+                        onChange={(checked) =>
                           saveAssistantPatch({
-                            autoSaveSummaries: event.target.checked,
-                          }, event.target.checked ? "自动沉淀摘要已开启" : "自动沉淀摘要已关闭")
+                            autoSaveSummaries: checked,
+                          }, checked ? "自动沉淀摘要已开启" : "自动沉淀摘要已关闭")
                         }
+                        ariaLabel="自动沉淀摘要"
                       />
                     </label>
                   </div>
@@ -2201,15 +2201,15 @@ export default function MainChatView({
                             <strong>{tool.label}</strong>
                             <span>{tool.description}</span>
                           </div>
-                          <input
-                            type="checkbox"
+                          <OmniSwitch
                             checked={checked}
-                            onChange={(event) => {
-                              const nextAllowedToolIds = event.target.checked
+                            onChange={(nextChecked) => {
+                              const nextAllowedToolIds = nextChecked
                                 ? [...activeAssistant.allowedToolIds, tool.id]
                                 : activeAssistant.allowedToolIds.filter((item) => item !== tool.id);
                               saveAssistantPatch({ allowedToolIds: nextAllowedToolIds }, "工具权限已更新");
                             }}
+                            ariaLabel={tool.label}
                           />
                         </label>
                       );
@@ -2228,15 +2228,15 @@ export default function MainChatView({
                             <strong>{skill.title}</strong>
                             <span>{skill.description} · {skill.command}</span>
                           </div>
-                          <input
-                            type="checkbox"
+                          <OmniSwitch
                             checked={checked}
-                            onChange={(event) => {
-                              const nextAllowedSkillIds = event.target.checked
+                            onChange={(nextChecked) => {
+                              const nextAllowedSkillIds = nextChecked
                                 ? [...activeAssistant.allowedSkillIds, skill.id]
                                 : activeAssistant.allowedSkillIds.filter((item) => item !== skill.id);
                               saveAssistantPatch({ allowedSkillIds: nextAllowedSkillIds }, "技能权限已更新");
                             }}
+                            ariaLabel={skill.title}
                           />
                         </label>
                       );

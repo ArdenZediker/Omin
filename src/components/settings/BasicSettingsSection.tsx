@@ -2,6 +2,8 @@ import type { KeyboardEvent, ReactNode } from "react";
 import type { BasicSettings } from "../../app/types";
 import type { ThemeMode } from "../../app/settings";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
+import OmniSelect from "../ui/OmniSelect";
+import OmniSwitch from "../ui/OmniSwitch";
 import CodexPetSection from "./CodexPetSection";
 
 type Props = {
@@ -116,45 +118,48 @@ export default function BasicSettingsSection({
       <div className="space-y-4 border-t border-slate-100 pt-4">
         <h3 className="text-sm font-medium text-slate-900 omni-settings-title">悬浮与窗口</h3>
         <Field label="菜单打开">
-          <select
+          <OmniSelect
             value={basicSettings.menuOpenMode}
-            onChange={(e) => onUpdateBasicSettings({ menuOpenMode: e.target.value as BasicSettings["menuOpenMode"] })}
-            className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
-          >
-            <option value="hover">悬停</option>
-            <option value="click">点击</option>
-          </select>
+            onChange={(value) => onUpdateBasicSettings({ menuOpenMode: value as BasicSettings["menuOpenMode"] })}
+            ariaLabel="菜单打开方式"
+            options={[
+              { value: "hover", label: "悬停" },
+              { value: "click", label: "点击" },
+            ]}
+          />
         </Field>
         <Actions label="开机自启">
-          <input type="checkbox" checked={basicSettings.autoLaunch} onChange={(e) => onUpdateBasicSettings({ autoLaunch: e.target.checked })} />
+          <OmniSwitch checked={basicSettings.autoLaunch} onChange={(checked) => onUpdateBasicSettings({ autoLaunch: checked })} ariaLabel="开机自启" />
           <span className="text-xs text-slate-500 omni-settings-muted">已保存开关，接入系统自启插件后生效。</span>
         </Actions>
         <Field label="最小化方式">
-          <select
+          <OmniSelect
             value={basicSettings.minimizeBehavior}
-            onChange={(e) => onUpdateBasicSettings({ minimizeBehavior: e.target.value as BasicSettings["minimizeBehavior"] })}
-            className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
-          >
-            <option value="taskbar">最小化到任务栏</option>
-            <option value="compact">收起到悬浮球</option>
-          </select>
+            onChange={(value) => onUpdateBasicSettings({ minimizeBehavior: value as BasicSettings["minimizeBehavior"] })}
+            ariaLabel="最小化方式"
+            options={[
+              { value: "taskbar", label: "最小化到任务栏" },
+              { value: "compact", label: "收起到悬浮球" },
+            ]}
+          />
         </Field>
         <Field label="打开主窗口">
-          <select
+          <OmniSelect
             value={basicSettings.mainWindowPositionMode}
-            onChange={(e) => onUpdateBasicSettings({ mainWindowPositionMode: e.target.value as BasicSettings["mainWindowPositionMode"] })}
-            className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
-          >
-            <option value="center">居中</option>
-            <option value="remember">记住上次位置</option>
-          </select>
+            onChange={(value) => onUpdateBasicSettings({ mainWindowPositionMode: value as BasicSettings["mainWindowPositionMode"] })}
+            ariaLabel="打开主窗口位置"
+            options={[
+              { value: "center", label: "居中" },
+              { value: "remember", label: "记住上次位置" },
+            ]}
+          />
         </Field>
         <Actions label="悬浮球">
-          <input type="checkbox" checked={basicSettings.showCompactBall} onChange={(e) => onUpdateBasicSettings({ showCompactBall: e.target.checked })} />
+          <OmniSwitch checked={basicSettings.showCompactBall} onChange={(checked) => onUpdateBasicSettings({ showCompactBall: checked })} ariaLabel="显示悬浮球" />
           <span className="text-xs text-slate-500 omni-settings-muted">控制主窗口隐藏后是否显示悬浮球。</span>
         </Actions>
         <Actions label="鼠标随航">
-          <input type="checkbox" checked={basicSettings.followCursorScreen} onChange={(e) => onUpdateBasicSettings({ followCursorScreen: e.target.checked })} />
+          <OmniSwitch checked={basicSettings.followCursorScreen} onChange={(checked) => onUpdateBasicSettings({ followCursorScreen: checked })} ariaLabel="鼠标随航" />
           <span className="text-xs text-slate-500 omni-settings-muted">开启后，鼠标跨屏时悬浮球会切换到鼠标所在屏幕。</span>
         </Actions>
       </div>

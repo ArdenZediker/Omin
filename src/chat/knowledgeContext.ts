@@ -12,6 +12,8 @@ function canUseTauriInvoke() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+const MIN_KNOWLEDGE_CONTEXT_SCORE = 2.4;
+
 function normalizeQuery(value: string | null | undefined) {
   return value?.trim().replace(/\s+/g, " ") ?? "";
 }
@@ -197,6 +199,7 @@ export async function buildKnowledgeContextBlock(options: {
   }
 
   const sources = results
+    .filter((item) => item.score >= MIN_KNOWLEDGE_CONTEXT_SCORE)
     .slice(0, limit)
     .map((item) => {
       const displayChunk = item.displayChunk ?? item.chunk;

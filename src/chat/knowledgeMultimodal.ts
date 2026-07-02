@@ -141,10 +141,13 @@ function normalizeActiveModelId(
   capability: KnowledgeMultimodalCapability
 ) {
   const normalized = normalizeText(activeModelId);
-  if (normalized && models.some((model) => model.id === normalized && model.capability === capability)) {
+  if (!normalized) {
+    return "";
+  }
+  if (models.some((model) => model.id === normalized && model.capability === capability)) {
     return normalized;
   }
-  return models.find((model) => model.capability === capability)?.id ?? "";
+  return "";
 }
 
 export function getDefaultKnowledgeMultimodalConfig(): KnowledgeMultimodalConfig {

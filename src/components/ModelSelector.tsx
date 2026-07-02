@@ -6,6 +6,8 @@ import { readSqliteBackedJson } from "../app/sqliteStorage";
 
 interface ModelSelectorProps {
   currentModel: string | null;
+  label?: string;
+  title?: string;
   onModelChange: (modelId: string) => void;
 }
 
@@ -36,7 +38,7 @@ function getModelConnectionStatus(modelId: string) {
   }
 }
 
-export default function ModelSelector({ currentModel, onModelChange }: ModelSelectorProps) {
+export default function ModelSelector({ currentModel, label, title, onModelChange }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -69,7 +71,7 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
 
   return (
     <div className="model-selector" ref={dropdownRef}>
-      <button onClick={() => setIsOpen(!isOpen)} className="model-selector__trigger" type="button">
+      <button onClick={() => setIsOpen(!isOpen)} className="model-selector__trigger" type="button" title={title}>
         {currentConfig && (
           <div
             className={`w-2 h-2 rounded-full ${
@@ -81,7 +83,7 @@ export default function ModelSelector({ currentModel, onModelChange }: ModelSele
             }`}
           />
         )}
-        <span>{currentConfig?.name || "未选择模型"}</span>
+        <span>{label ? `${label}：${currentConfig?.name || "未选择模型"}` : currentConfig?.name || "未选择模型"}</span>
         <ChevronDown className={`model-selector__chevron ${isOpen ? "model-selector__chevron--open" : ""}`} strokeWidth={2} />
       </button>
 

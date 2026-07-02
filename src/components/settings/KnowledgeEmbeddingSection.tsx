@@ -6,6 +6,8 @@ import {
   type KnowledgeEmbeddingModelConfig,
   type KnowledgeEmbeddingProviderId,
 } from "../../chat/knowledgeEmbedding";
+import OmniSelect from "../ui/OmniSelect";
+import OmniSwitch from "../ui/OmniSwitch";
 
 type Props = {
   config: KnowledgeEmbeddingConfig;
@@ -120,8 +122,8 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
       </div>
 
       <label className="flex items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" checked={normalizedConfig.enabled} onChange={(event) => updateConfig({ enabled: event.target.checked })} />
-        启用知识库向量化
+        <OmniSwitch checked={normalizedConfig.enabled} onChange={(checked) => updateConfig({ enabled: checked })} ariaLabel="启用知识库向量化" />
+        <span>启用知识库向量化</span>
       </label>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4">
@@ -147,15 +149,21 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
                 <div
                   key={model.id}
                   className={`rounded-lg border px-3 py-3 transition-colors ${
-                    isActive ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+                    isActive
+                      ? "border-violet-300 bg-violet-50 shadow-[inset_3px_0_0_rgba(124,58,237,0.68)]"
+                      : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50"
                   }`}
                 >
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <button type="button" onClick={() => openEditModel(model)} className="min-w-0 flex-1 text-left">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="rounded-full bg-slate-100 px-2 py-1">供应商：{model.provider}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1">{model.name}</span>
-                        {isActive ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">当前使用</span> : null}
+                      <div className={`flex flex-wrap items-center gap-2 text-xs ${isActive ? "text-violet-600" : "text-slate-500"}`}>
+                        <span className={isActive ? "rounded-full bg-violet-100 px-2 py-1 text-violet-700" : "rounded-full bg-slate-100 px-2 py-1"}>
+                          供应商：{model.provider}
+                        </span>
+                        <span className={isActive ? "rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-800" : "rounded-full bg-slate-100 px-2 py-1"}>
+                          {model.name}
+                        </span>
+                        {isActive ? <span className="rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-700">当前使用</span> : null}
                         {!model.apiKey.trim() ? <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">缺少 Key</span> : null}
                       </div>
                     </button>
@@ -200,20 +208,15 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
             <div className="space-y-4">
               <label className="grid grid-cols-[120px_1fr] gap-4">
                 <span className="pt-2 text-right text-sm text-slate-700">供应商</span>
-                <select
+                <OmniSelect
                   value={editingModel.provider}
-                  onChange={(event) => {
-                    const provider = event.target.value as KnowledgeEmbeddingProviderId;
+                  onChange={(value) => {
+                    const provider = value as KnowledgeEmbeddingProviderId;
                     setEditingModel((current) => (current ? { ...current, provider, baseUrl: PROVIDER_BASE_URLS[provider] } : current));
                   }}
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
-                >
-                  {providerOptions.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                  </select>
+                  ariaLabel="向量模型供应商"
+                  options={providerOptions.map((item) => ({ value: item.id, label: item.label }))}
+                />
               </label>
 
               <label className="grid grid-cols-[120px_1fr] gap-4">

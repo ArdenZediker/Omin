@@ -27,6 +27,7 @@ import {
   getMonitorForCursor,
   getCompactWindowSize,
   getPetCompactMenuViewport,
+  getPetThoughtAnchorOffset,
   getStoredCompactPosition,
   ensurePetThoughtWindow,
   PET_THOUGHT_WINDOW_SIZE,
@@ -306,6 +307,7 @@ export function useCompactWindowController({
   const compactInteractionUntilRef = useRef(0);
   const compactSuppressBlurUntilRef = useRef(0);
   const lastAppliedCompactSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const lastAppliedPetViewportOffsetRef = useRef({ x: 0, y: 0 });
   const petThoughtCollapseHideTimerRef = useRef<number | null>(null);
   const petThoughtCollapseHideVersionRef = useRef(0);
 
@@ -375,7 +377,7 @@ export function useCompactWindowController({
       const currentThought = petThoughtStateRef.current;
       const currentQueue = petThoughtQueueRef.current;
       const hasThoughtQueue = currentQueue.length > 0;
-      const shouldShowThoughtWindow =
+      const shouldResolveThoughtLayout =
         compactAppearance === "pet" &&
         (hasThoughtQueue || Boolean(currentThought)) &&
         !arePetThoughtsCollapsed &&
@@ -384,7 +386,34 @@ export function useCompactWindowController({
         !isCompactQueryOpen &&
         !isCompactReplyLoading &&
         !compactReply;
+      const shouldUseDetachedThoughtWindow = false;
+      const shouldShowThoughtWindow =
+        shouldUseDetachedThoughtWindow &&
+        shouldResolveThoughtLayout;
       if (!shouldShowThoughtWindow) {
+        if (shouldResolveThoughtLayout) {
+          const scaleFactor = await appWindow.scaleFactor();
+          let monitor =
+            (await monitorFromPoint(
+              Math.round((petRect.left + petRect.width / 2) * scaleFactor),
+              Math.round((petRect.top + petRect.height / 2) * scaleFactor)
+            ).catch(() => null)) ?? (await currentMonitor().catch(() => null));
+          if (!monitor) {
+            const monitors = await availableMonitors().catch(() => []);
+            monitor = monitors[0] ?? null;
+          }
+          if (!isLatestRequest()) {
+            return;
+          }
+          if (monitor) {
+            const resolvedThoughtCount = Math.max(currentQueue.length, currentThought ? 1 : 0, petThoughtCountRef.current);
+            const layout = resolvePetThoughtWindowLayout(petRect, monitor, resolvedThoughtCount);
+            if (layout.placement !== petThoughtPlacementRef.current) {
+              petThoughtPlacementRef.current = layout.placement;
+              setPetThoughtPlacement(layout.placement);
+            }
+          }
+        }
         const thoughtWindow = await WebviewWindow.getByLabel(PET_THOUGHT_WINDOW_LABEL);
         if (!isLatestRequest()) {
           return;
@@ -666,6 +695,23 @@ export function useCompactWindowController({
       });
     };
   }, [isCompactWindow]);
+
+  useEffect(() => {
+    if (!isCompactWindow) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void listen("omni-pet-thought-window-ready", () => {
+      void updatePetThoughtWindowFromCurrentPosition().catch(() => undefined);
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isCompactWindow, updatePetThoughtWindowFromCurrentPosition]);
 
   useEffect(() => {
     const previousMenuOpen = wasCompactMenuOpenRef.current;
@@ -1058,6 +1104,20 @@ export function useCompactWindowController({
         ? compactViewportSize ?? previewCompactSize
         : compactViewportSize ?? compactSize;
     const isCompactSubmenuOpen = isCompactMenuOpen && (isCompactModelOpen || isCompactAppearanceOpen);
+    const shouldReservePetThoughtSpace =
+      compactAppearance === "pet" &&
+      !previewCharacterScale &&
+      (petThoughtCount > 0 || petThoughtQueue.length > 0 || Boolean(petThought)) &&
+      !arePetThoughtsCollapsed &&
+      !isCompactMenuOpen &&
+      !isCompactQueryOpen &&
+      !isCompactReplyLoading &&
+      !compactReply &&
+      Boolean(compactViewportSize);
+    const targetPetViewportOffset =
+      compactAppearance === "pet" && shouldReservePetThoughtSpace && compactViewportSize
+        ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
+        : { x: 0, y: 0 };
     void (async () => {
       const scaleFactor = await appWindow.scaleFactor();
       const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
@@ -1071,12 +1131,26 @@ export function useCompactWindowController({
         const currentSizeChanged =
           Math.round(currentSize.width) !== Math.round(targetSize.width) ||
           Math.round(currentSize.height) !== Math.round(targetSize.height);
-        if (hasSizeChanged || currentSizeChanged) {
+        const previousPetViewportOffset = lastAppliedPetViewportOffsetRef.current;
+        const hasPetViewportOffsetChanged =
+          previousPetViewportOffset.x !== targetPetViewportOffset.x ||
+          previousPetViewportOffset.y !== targetPetViewportOffset.y;
+        if (hasSizeChanged || currentSizeChanged || hasPetViewportOffsetChanged) {
+          const nextX = Math.round(currentPosition.x + previousPetViewportOffset.x - targetPetViewportOffset.x);
+          const nextVisualY = toVisualPetWindowY(currentPosition.y) + previousPetViewportOffset.y - targetPetViewportOffset.y;
+          compactInternalMoveRef.current = true;
           await Promise.all([
+            hasPetViewportOffsetChanged
+              ? appWindow.setPosition(new LogicalPosition(nextX, toNativePetWindowY(nextVisualY)))
+              : Promise.resolve(),
             appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height)),
             updatePetThoughtWindowForCurrentPositionAndSize(targetSize),
           ]);
+          window.setTimeout(() => {
+            compactInternalMoveRef.current = false;
+          }, 120);
           lastAppliedCompactSizeRef.current = { ...targetSize };
+          lastAppliedPetViewportOffsetRef.current = targetPetViewportOffset;
         }
         return;
       }
@@ -1108,6 +1182,10 @@ export function useCompactWindowController({
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
+    arePetThoughtsCollapsed,
+    petThought,
+    petThoughtCount,
+    petThoughtQueue.length,
     petThoughtPlacement,
     scaleGestureVersion,
     suppressCompactBlur,

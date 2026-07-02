@@ -65,6 +65,7 @@ export default function PetThoughtWindow({ petSize }: PetThoughtWindowProps) {
     let syncRetryTimer: number | null = null;
     let syncRetryCount = 0;
     let hasReceivedInitialThought = false;
+    void emit("omni-pet-thought-window-ready", { requesterLabel: PET_THOUGHT_WINDOW_LABEL }).catch(() => undefined);
 
     const clearSyncRetryTimer = () => {
       if (syncRetryTimer !== null) {

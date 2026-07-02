@@ -4885,6 +4885,45 @@ mod tests {
     }
 
     #[test]
+    fn search_knowledge_chunks_does_not_return_unrelated_title_only_candidates() {
+        let connection = new_test_connection();
+        let (collection_id, document_id) = seed_collection_and_document(&connection);
+        let now = current_timestamp_ms();
+
+        connection
+            .execute(
+                "DELETE FROM knowledge_chunks WHERE document_id = ?1",
+                params![document_id],
+            )
+            .unwrap();
+        connection
+            .execute(
+                r#"
+                INSERT INTO knowledge_chunks (
+                  id, document_id, collection_id, chunk_index, title, content, chunk_type, parent_chunk_id,
+                  asset_id, image_info, embedding_json, embedding_model_key, created_at
+                ) VALUES (?1, ?2, ?3, 0, 'AQS overview', 'AbstractQueuedSynchronizer coordinates locks and synchronizers.', 'text', NULL, NULL, NULL, NULL, NULL, ?4)
+                "#,
+                params!["aqs-1", document_id, collection_id, now],
+            )
+            .unwrap();
+
+        let results = crate::search_knowledge_chunks(
+            &connection,
+            crate::SearchKnowledgeChunksInput {
+                query: "比较并替换是什么".to_string(),
+                limit: Some(5),
+                collection_id: Some(collection_id),
+                query_embedding: None,
+                query_embedding_model_key: None,
+            },
+        )
+        .unwrap();
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
     fn resolve_preview_types_uses_audio_video_inference_for_upload_guard() {
         let (audio_preview_type, audio_guard_preview_type) =
             resolve_preview_types(None, Some("mp3"), None);

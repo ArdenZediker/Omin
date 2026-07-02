@@ -4,6 +4,7 @@ import type {
   KnowledgeProcessingDeadLetter,
   KnowledgeProcessingStatusSummary,
 } from "../../chat/knowledgeTypes";
+import OmniSelect from "../ui/OmniSelect";
 
 export type KnowledgeTaskCenterScope = "all" | "activeCollection";
 export type KnowledgeDeadLetterStatusFilter = "failed" | "replayed" | "all";
@@ -129,21 +130,23 @@ export default function KnowledgeTaskCenterPanel({
             </div>
 
             <div className="grid grid-cols-1 gap-2">
-              <select
+              <OmniSelect
                 value={scope}
-                onChange={(event) => {
-                  const nextScope = event.target.value as KnowledgeTaskCenterScope;
+                onChange={(value) => {
+                  const nextScope = value as KnowledgeTaskCenterScope;
                   if (nextScope === "activeCollection" && !hasActiveCollection) {
                     onUnavailableActiveCollection();
                     return;
                   }
                   onScopeChange(nextScope);
                 }}
-                className="chat-topic-panel__form-input"
-              >
-                <option value="activeCollection">当前知识库</option>
-                <option value="all">全局范围</option>
-              </select>
+                ariaLabel="任务范围"
+                className="omni-select--compact"
+                options={[
+                  { value: "activeCollection", label: "当前知识库" },
+                  { value: "all", label: "全局范围" },
+                ]}
+              />
               <button type="button" className="chat-topic-panel__inline-action" onClick={onToggleTaskSettings}>
                 {isTaskSettingsOpen ? <ChevronUp size={14} strokeWidth={2} /> : <ChevronDown size={14} strokeWidth={2} />}
                 <span>{isTaskSettingsOpen ? "收起调度设置" : "调度设置"}</span>
@@ -232,15 +235,17 @@ export default function KnowledgeTaskCenterPanel({
               <span className="chat-topic-panel__item-meta">{total} 条</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <select
+              <OmniSelect
                 value={statusFilter}
-                onChange={(event) => onStatusFilterChange(event.target.value as KnowledgeDeadLetterStatusFilter)}
-                className="chat-topic-panel__form-input"
-              >
-                <option value="failed">仅失败</option>
-                <option value="replayed">仅已回放</option>
-                <option value="all">全部状态</option>
-              </select>
+                onChange={(value) => onStatusFilterChange(value as KnowledgeDeadLetterStatusFilter)}
+                ariaLabel="失败状态筛选"
+                className="omni-select--compact"
+                options={[
+                  { value: "failed", label: "仅失败" },
+                  { value: "replayed", label: "仅已回放" },
+                  { value: "all", label: "全部状态" },
+                ]}
+              />
               <div className="rounded-none border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
                 优先处理失败文档，再看详情排查原因
               </div>
