@@ -83,6 +83,7 @@ const PET_THOUGHT_STACK_GAP = 6;
 const PET_THOUGHT_WINDOW_VERTICAL_PADDING = 10;
 const PET_THOUGHT_WINDOW_SAFE_INSET = 12;
 const PET_THOUGHT_COLLAPSE_HIDE_DELAY_MS = 170;
+const COMPACT_FOLLOW_CURSOR_SCREEN_INTERVAL_MS = 220;
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -303,6 +304,8 @@ export function useCompactWindowController({
   const wasCompactMenuOpenRef = useRef(isCompactMenuOpen);
   const suppressPetClickUntilRef = useRef(0);
   const compactFollowMonitorRef = useRef<string | null>(null);
+  const compactFollowMonitorSnapshotRef = useRef<Monitor | null>(null);
+  const compactFollowSyncRunningRef = useRef(false);
   const compactInternalMoveRef = useRef(false);
   const compactInteractionUntilRef = useRef(0);
   const compactSuppressBlurUntilRef = useRef(0);
@@ -940,6 +943,7 @@ export function useCompactWindowController({
     if (!canFollowCursorScreen) {
       if (!basicSettings.followCursorScreen || !basicSettings.showCompactBall) {
         compactFollowMonitorRef.current = null;
+        compactFollowMonitorSnapshotRef.current = null;
       }
       return;
     }
@@ -947,6 +951,11 @@ export function useCompactWindowController({
     let cancelled = false;
     const syncCompactMonitor = async () => {
       try {
+        if (compactFollowSyncRunningRef.current) {
+          return;
+        }
+        compactFollowSyncRunningRef.current = true;
+
         if (Date.now() <= compactInteractionUntilRef.current) {
           return;
         }
@@ -970,20 +979,42 @@ export function useCompactWindowController({
         ].join(":");
 
         if (nextMonitorKey === compactFollowMonitorRef.current) {
+          compactFollowMonitorSnapshotRef.current = monitor;
           return;
         }
 
-        compactFollowMonitorRef.current = nextMonitorKey;
-        await moveCompactWindowToMonitor(appWindow, monitor, compactSize);
+        const scaleFactor = await appWindow.scaleFactor();
+        const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+        const currentLogicalPosition = {
+          x: Math.round(currentPosition.x),
+          y: Math.round(currentPosition.y),
+        };
+        const previousMonitor = compactFollowMonitorSnapshotRef.current;
+        compactInternalMoveRef.current = true;
+        try {
+          await moveCompactWindowToMonitor(appWindow, monitor, compactSize, {
+            sourceMonitor: previousMonitor,
+            currentPosition: previousMonitor ? currentLogicalPosition : null,
+            persistPosition: false,
+          });
+          compactFollowMonitorRef.current = nextMonitorKey;
+          compactFollowMonitorSnapshotRef.current = monitor;
+        } finally {
+          window.setTimeout(() => {
+            compactInternalMoveRef.current = false;
+          }, 120);
+        }
       } catch {
         // Ignore monitor sync failures and keep the current compact position.
+      } finally {
+        compactFollowSyncRunningRef.current = false;
       }
     };
 
     void syncCompactMonitor();
     const timer = window.setInterval(() => {
       void syncCompactMonitor();
-    }, 450);
+    }, COMPACT_FOLLOW_CURSOR_SCREEN_INTERVAL_MS);
 
     return () => {
       cancelled = true;
