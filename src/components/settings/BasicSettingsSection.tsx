@@ -160,7 +160,7 @@ export default function BasicSettingsSection({
         </Actions>
         <Actions label="鼠标随航">
           <OmniSwitch checked={basicSettings.followCursorScreen} onChange={(checked) => onUpdateBasicSettings({ followCursorScreen: checked })} ariaLabel="鼠标随航" />
-          <span className="text-xs text-slate-500 omni-settings-muted">开启后，鼠标跨屏时悬浮球会切换到鼠标所在屏幕。</span>
+          <span className="text-xs text-slate-500 omni-settings-muted">鼠标跨屏时悬浮球会切换到所在屏幕，并尽量保留原来的相对位置。</span>
         </Actions>
       </div>
 
