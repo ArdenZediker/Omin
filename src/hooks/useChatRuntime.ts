@@ -12,7 +12,7 @@ import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { getChatSessionTitle } from "../chat/storage";
 import { executeLocalTool } from "../chat/localTools";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
-import type { AssistantMemorySourceType, AssistantProfile, ChatExecutionResult } from "../chat/types";
+import type { AssistantMemorySourceType, AssistantProfile, ChatExecutionResult, ChatSendOptions } from "../chat/types";
 import type { AssistantMemoryRecord, SessionSummaryRecord } from "../chat/types";
 import { getToolManifestById } from "../config/manifests/tools";
 import type { PetThoughtState } from "../app/types";
@@ -1070,13 +1070,15 @@ export function useChatRuntime({
   }, [handlePetThoughtReply, isCompactWindow]);
 
   const handleSend = useCallback(
-    async (content: string, images?: string[], hiddenContext?: string) => {
+    async (content: string, images?: string[], options: ChatSendOptions = {}) => {
       if (isSessionLoading(activeChatId)) {
         return;
       }
 
       const abortController = new AbortController();
       setError(null);
+      const hiddenContext = options.hiddenContext;
+      const selectedKnowledgeCollectionId = options.knowledgeCollectionId?.trim() || null;
 
       let sessionId = activeChatId;
       let runId = startSessionRun(sessionId, abortController);
@@ -1113,7 +1115,7 @@ export function useChatRuntime({
           },
           signal: abortController.signal,
           systemPrompt: [assistantSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
-          knowledgeCollectionId: activeAssistant?.knowledgeCollectionId ?? null,
+          knowledgeCollectionId: selectedKnowledgeCollectionId ?? activeAssistant?.knowledgeCollectionId ?? null,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;

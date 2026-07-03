@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { loadAppKvEntries, saveSqliteBackedValue } from "../sqliteStorage";
 import { CODEX_PET_LIBRARY_STATE_STORAGE_KEY } from "../constants";
-import type { CodexPetLibraryState, CodexPetPackageResponse } from "./codexPetTypes";
+import type { CodexPetLibraryState, CodexPetPackage, CodexPetPackageResponse } from "./codexPetTypes";
 
 type CodexPetLibraryStorage = {
   activePetId: string | null;
@@ -47,10 +47,10 @@ export async function saveCodexPetLibraryState(state: CodexPetLibraryState) {
   saveSqliteBackedValue(CODEX_PET_LIBRARY_STATE_STORAGE_KEY, JSON.stringify(state));
 }
 
-export async function createCodexPetPackage() {
+export async function importCodexPetPackage(sourceDir: string): Promise<CodexPetPackage> {
   if (!canUseTauriInvoke()) {
-    throw new Error("Codex pet creation is unavailable outside Tauri");
+    throw new Error("宠物导入仅在桌面应用中可用。");
   }
 
-  return invoke<import("./codexPetTypes").CodexPetPackage>("create_codex_pet_package");
+  return invoke<CodexPetPackage>("import_codex_pet_package", { input: { sourceDir } });
 }

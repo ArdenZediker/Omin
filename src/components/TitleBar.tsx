@@ -86,23 +86,8 @@ export default function TitleBar({
     setIsMaximized(nextIsMaximized);
   };
 
-  const handleDragStart = async (event: MouseEvent<HTMLDivElement>) => {
-    if (!appWindow) {
-      return;
-    }
-
-    const target = event.target as HTMLElement;
-    if (target.closest(".no-drag")) {
-      return;
-    }
-
-    if (event.button === 0) {
-      await appWindow.startDragging();
-    }
-  };
-
   return (
-    <div className={`omni-window-controls ${inline ? "omni-window-controls--inline" : "drag-region select-none"}`} onMouseDown={inline ? undefined : handleDragStart}>
+    <div className={`omni-window-controls ${inline ? "omni-window-controls--inline" : "drag-region select-none"}`}>
       <div className="flex items-center gap-1 no-drag">
         <button
           onClick={handleMinimize}

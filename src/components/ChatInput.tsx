@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowRight,
+  BookOpen,
   Bot,
   CirclePlus,
   Eraser,
@@ -12,6 +13,8 @@ import {
   X,
 } from "lucide-react";
 import { ALL_LOCAL_COMMANDS, buildSlashDraft, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
+import type { KnowledgeCollection } from "../chat/knowledgeTypes";
+import type { ChatSendOptions } from "../chat/types";
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;
@@ -20,8 +23,9 @@ interface ChatInputProps {
   hasConversation?: boolean;
   usageLabel?: string | null;
   contextPresetText?: string;
+  knowledgeCollections?: KnowledgeCollection[];
   onStartNewTopic?: () => void;
-  onSend: (content: string, images?: string[], hiddenContext?: string) => void | Promise<void>;
+  onSend: (content: string, images?: string[], options?: ChatSendOptions) => void | Promise<void>;
   isLoading: boolean;
   isSendBlocked?: boolean;
   onStop: () => void;
@@ -47,6 +51,40 @@ const IMMEDIATE_COMMAND_PAYLOADS: Record<string, string> = {
   pet: "/pet",
 };
 
+type KnowledgeMentionTrigger = {
+  start: number;
+  end: number;
+  query: string;
+};
+
+function normalizeMentionText(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function getKnowledgeMentionTrigger(value: string, caretIndex: number): KnowledgeMentionTrigger | null {
+  const safeCaretIndex = Math.max(0, Math.min(caretIndex, value.length));
+  const prefix = value.slice(0, safeCaretIndex);
+  const match = prefix.match(/(^|\s)@([^\s@]*)$/);
+  if (!match) {
+    return null;
+  }
+
+  const query = match[2] ?? "";
+  return {
+    start: prefix.length - query.length - 1,
+    end: safeCaretIndex,
+    query,
+  };
+}
+
+function scrollElementIntoView(element: HTMLElement | null | undefined) {
+  if (typeof element?.scrollIntoView !== "function") {
+    return;
+  }
+
+  element.scrollIntoView({ block: "nearest" });
+}
+
 function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
   const Icon = LOCAL_COMMAND_ICON_MAP[suggestion.id] ?? CirclePlus;
   return <Icon size={16} strokeWidth={1.8} />;
@@ -61,6 +99,7 @@ export default function ChatInput({
   contextPresetText,
   onStartNewTopic,
   onSend,
+  knowledgeCollections = [],
   isLoading,
   isSendBlocked = false,
   onStop,
@@ -75,9 +114,14 @@ export default function ChatInput({
   const [images, setImages] = useState<string[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [dismissedSlashInput, setDismissedSlashInput] = useState("");
+  const [selectedKnowledgeCollection, setSelectedKnowledgeCollection] = useState<KnowledgeCollection | null>(null);
+  const [selectedKnowledgeIndex, setSelectedKnowledgeIndex] = useState(0);
+  const [dismissedMentionInput, setDismissedMentionInput] = useState("");
+  const [caretIndex, setCaretIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const knowledgeSuggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const lastDraftScopeRef = useRef<string | undefined>(undefined);
   const lastDraftSignalRef = useRef<number | undefined>(undefined);
   const suppressNextDraftReportRef = useRef(false);
@@ -106,12 +150,29 @@ export default function ChatInput({
   const activeLocalCommand = ALL_LOCAL_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
   const activeModeLabel = activeLocalCommand?.title ?? null;
   const activeModeTypeLabel = activeLocalCommand ? (activeLocalCommand.kind === "skill" ? "技能模式" : "工具模式") : null;
-  const hasComposerStatus = Boolean(activeModeLabel || images.length > 0);
+  const mentionTrigger = getKnowledgeMentionTrigger(input, caretIndex);
+  const mentionQuery = mentionTrigger?.query ?? null;
+  const normalizedMentionQuery = normalizeMentionText(mentionQuery ?? "");
+  const knowledgeSuggestions = knowledgeCollections
+    .filter((collection) => {
+      if (selectedKnowledgeCollection?.id === collection.id) {
+        return false;
+      }
+      if (!normalizedMentionQuery) {
+        return true;
+      }
+      return normalizeMentionText(`${collection.name} ${collection.description ?? ""}`).includes(normalizedMentionQuery);
+    })
+    .slice(0, 8);
+  const hasComposerStatus = Boolean(activeModeLabel || selectedKnowledgeCollection || images.length > 0);
+  const canShowKnowledgeSuggestions = Boolean(mentionTrigger && input !== dismissedMentionInput && knowledgeCollections.length > 0);
+  const showKnowledgeSuggestions = canShowKnowledgeSuggestions && knowledgeSuggestions.length > 0;
   const showSlashSuggestions =
     localSuggestions.length > 0 &&
     !activeModeLabel &&
     trimmedInput.startsWith("/") &&
-    input !== dismissedSlashInput;
+    input !== dismissedSlashInput &&
+    !mentionTrigger;
 
   useLayoutEffect(() => {
     syncTextareaHeight();
@@ -138,6 +199,13 @@ export default function ChatInput({
       suppressNextDraftReportRef.current = true;
       setInput(draftValue);
       setImages(draftImages ?? []);
+      setCaretIndex(draftValue.length);
+
+      if (scopeChanged) {
+        setSelectedKnowledgeCollection(null);
+        clearSuggestionDismissal();
+        clearMentionDismissal();
+      }
 
       if (signalChanged && !scopeChanged) {
         textareaRef.current?.focus();
@@ -159,6 +227,10 @@ export default function ChatInput({
   }, [localSuggestions.length]);
 
   useEffect(() => {
+    knowledgeSuggestionItemRefs.current = knowledgeSuggestionItemRefs.current.slice(0, knowledgeSuggestions.length);
+  }, [knowledgeSuggestions.length]);
+
+  useEffect(() => {
     if (!showSlashSuggestions) {
       setSelectedSuggestionIndex(0);
       return;
@@ -168,12 +240,29 @@ export default function ChatInput({
   }, [localSuggestions.length, showSlashSuggestions]);
 
   useEffect(() => {
+    if (!showKnowledgeSuggestions) {
+      setSelectedKnowledgeIndex(0);
+      return;
+    }
+
+    setSelectedKnowledgeIndex((current) => Math.min(current, knowledgeSuggestions.length - 1));
+  }, [knowledgeSuggestions.length, showKnowledgeSuggestions]);
+
+  useEffect(() => {
     if (!showSlashSuggestions) {
       return;
     }
 
-    suggestionItemRefs.current[selectedSuggestionIndex]?.scrollIntoView({ block: "nearest" });
+    scrollElementIntoView(suggestionItemRefs.current[selectedSuggestionIndex]);
   }, [selectedSuggestionIndex, showSlashSuggestions]);
+
+  useEffect(() => {
+    if (!showKnowledgeSuggestions) {
+      return;
+    }
+
+    scrollElementIntoView(knowledgeSuggestionItemRefs.current[selectedKnowledgeIndex]);
+  }, [selectedKnowledgeIndex, showKnowledgeSuggestions]);
 
   useEffect(() => {
     if (!dismissedSlashInput) {
@@ -184,6 +273,26 @@ export default function ChatInput({
       setDismissedSlashInput("");
     }
   }, [dismissedSlashInput, input]);
+
+  useEffect(() => {
+    if (!dismissedMentionInput) {
+      return;
+    }
+
+    if (input !== dismissedMentionInput) {
+      setDismissedMentionInput("");
+    }
+  }, [dismissedMentionInput, input]);
+
+  useEffect(() => {
+    if (!selectedKnowledgeCollection) {
+      return;
+    }
+
+    if (knowledgeCollections.length > 0 && !knowledgeCollections.some((collection) => collection.id === selectedKnowledgeCollection.id)) {
+      setSelectedKnowledgeCollection(null);
+    }
+  }, [knowledgeCollections, selectedKnowledgeCollection]);
 
   const appendImageFiles = async (files: File[]) => {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
@@ -210,16 +319,48 @@ export default function ChatInput({
     setDismissedSlashInput("");
   };
 
+  const clearMentionDismissal = () => {
+    setDismissedMentionInput("");
+  };
+
+  const updateCaretFromTextarea = (textarea: HTMLTextAreaElement | null) => {
+    if (!textarea) {
+      return;
+    }
+
+    setCaretIndex(textarea.selectionStart ?? textarea.value.length);
+  };
+
+  const focusTextareaAt = (nextCaretIndex: number) => {
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+
+      textarea.focus();
+      textarea.setSelectionRange(nextCaretIndex, nextCaretIndex);
+      setCaretIndex(nextCaretIndex);
+    });
+  };
+
+  const buildSendOptions = (): ChatSendOptions => ({
+    hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
+    knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
+  });
+
   const handleSubmit = () => {
     if ((!trimmedInput && images.length === 0) || isLoading || isSendBlocked) {
       return;
     }
 
-    const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
-    void onSend(trimmedInput, images.length > 0 ? images : undefined, hiddenContext);
+    void onSend(trimmedInput, images.length > 0 ? images : undefined, buildSendOptions());
     setInput("");
     setImages([]);
+    setSelectedKnowledgeCollection(null);
+    setCaretIndex(0);
     clearSuggestionDismissal();
+    clearMentionDismissal();
   };
 
   const submitImmediateCommand = (command: string) => {
@@ -227,11 +368,15 @@ export default function ChatInput({
       return;
     }
 
-    const hiddenContext = contextPresetText?.trim() ? contextPresetText : undefined;
-    void onSend(command, undefined, hiddenContext);
+    void onSend(command, undefined, {
+      hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
+    });
     setInput("");
     setImages([]);
+    setSelectedKnowledgeCollection(null);
+    setCaretIndex(0);
     clearSuggestionDismissal();
+    clearMentionDismissal();
   };
   const sendDisabledTitle = isSendBlocked ? "请先配置可用模型或等待当前会话完成" : "发送消息";
 
@@ -244,6 +389,26 @@ export default function ChatInput({
     setInput(buildSlashDraft(suggestion));
     clearSuggestionDismissal();
     textareaRef.current?.focus();
+  };
+
+  const applyKnowledgeSuggestion = (collection: KnowledgeCollection) => {
+    const textarea = textareaRef.current;
+    const trigger = getKnowledgeMentionTrigger(input, textarea?.selectionStart ?? caretIndex);
+    setSelectedKnowledgeCollection(collection);
+    clearMentionDismissal();
+
+    if (!trigger) {
+      textareaRef.current?.focus();
+      return;
+    }
+
+    const before = input.slice(0, trigger.start);
+    const after = input.slice(trigger.end);
+    const needsSpace = before.length > 0 && !/\s$/.test(before) && after.length > 0 && !/^\s/.test(after);
+    const nextInput = `${before}${needsSpace ? " " : ""}${after}`.replace(/[ \t]{2,}/g, " ");
+    const nextCaretIndex = Math.min(before.length + (needsSpace ? 1 : 0), nextInput.length);
+    setInput(nextInput);
+    focusTextareaAt(nextCaretIndex);
   };
 
   useEffect(() => {
@@ -275,6 +440,43 @@ export default function ChatInput({
   }, [applySuggestion, input, localSuggestions, selectedSuggestionIndex, showSlashSuggestions]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (showKnowledgeSuggestions && knowledgeSuggestions.length > 0) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setDismissedMentionInput(input);
+        return;
+      }
+
+      if (event.key === "Tab") {
+        event.preventDefault();
+        event.stopPropagation();
+        applyKnowledgeSuggestion(knowledgeSuggestions[selectedKnowledgeIndex] ?? knowledgeSuggestions[0]);
+        return;
+      }
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        event.stopPropagation();
+        setSelectedKnowledgeIndex((current) => (current + 1) % knowledgeSuggestions.length);
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopPropagation();
+        setSelectedKnowledgeIndex((current) => (current - 1 + knowledgeSuggestions.length) % knowledgeSuggestions.length);
+        return;
+      }
+
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        applyKnowledgeSuggestion(knowledgeSuggestions[selectedKnowledgeIndex] ?? knowledgeSuggestions[0]);
+        return;
+      }
+    }
+
     if (showSlashSuggestions && localSuggestions.length > 0) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -382,6 +584,22 @@ export default function ChatInput({
             </button>
           )}
 
+          {selectedKnowledgeCollection && (
+            <button
+              type="button"
+              className="chat-composer__status-chip chat-composer__status-chip--knowledge"
+              onClick={() => {
+                setSelectedKnowledgeCollection(null);
+                textareaRef.current?.focus();
+              }}
+              title="取消本次知识库选择"
+            >
+              <BookOpen size={13} strokeWidth={1.9} />
+              <span>@ {selectedKnowledgeCollection.name}</span>
+              <X size={12} strokeWidth={2} />
+            </button>
+          )}
+
           {images.length > 0 && (
             <button
               type="button"
@@ -435,9 +653,15 @@ export default function ChatInput({
               <textarea
                 ref={textareaRef}
                 value={input}
-                onChange={(event) => setInput(event.target.value)}
+                onChange={(event) => {
+                  setInput(event.target.value);
+                  updateCaretFromTextarea(event.currentTarget);
+                }}
+                onClick={(event) => updateCaretFromTextarea(event.currentTarget)}
                 onKeyDownCapture={handleKeyDown}
+                onKeyUp={(event) => updateCaretFromTextarea(event.currentTarget)}
                 onPaste={handlePaste}
+                onSelect={(event) => updateCaretFromTextarea(event.currentTarget)}
                 placeholder="输入聊天内容..."
                 className="chat-composer__textarea hide-scrollbar"
                 rows={1}
@@ -506,6 +730,40 @@ export default function ChatInput({
                   <span className="chat-composer__suggestion-copy">
                     <span className="chat-composer__suggestion-command">{suggestion.command}</span>
                     <span className="chat-composer__suggestion-description">{suggestion.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showKnowledgeSuggestions && (
+        <div className="chat-composer__suggestions chat-composer__suggestions--knowledge">
+          <div className="chat-composer__suggestions-list">
+            <div className="chat-composer__suggestion-group">
+              <div className="chat-composer__suggestion-group-title">选择知识库</div>
+              {knowledgeSuggestions.map((collection, index) => (
+                <button
+                  key={collection.id}
+                  ref={(element) => {
+                    knowledgeSuggestionItemRefs.current[index] = element;
+                  }}
+                  type="button"
+                  className={`chat-composer__suggestion chat-composer__suggestion--knowledge${
+                    selectedKnowledgeIndex === index ? " chat-composer__suggestion--active" : ""
+                  }`}
+                  onClick={() => applyKnowledgeSuggestion(collection)}
+                  onMouseEnter={() => setSelectedKnowledgeIndex(index)}
+                >
+                  <span className="chat-composer__suggestion-icon" aria-hidden="true">
+                    <BookOpen size={15} strokeWidth={1.9} />
+                  </span>
+                  <span className="chat-composer__suggestion-copy chat-composer__suggestion-copy--knowledge">
+                    <span className="chat-composer__suggestion-command">@ {collection.name}</span>
+                    <span className="chat-composer__suggestion-description">
+                      {collection.description?.trim() || "使用该知识库回答本次问题"}
+                    </span>
                   </span>
                 </button>
               ))}

@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showCompactWindow } from "../app/window";
@@ -12,9 +12,10 @@ import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_
 import {
   loadCodexPetLibraryState,
   loadCodexPetPackages,
-  createCodexPetPackage,
+  importCodexPetPackage,
   saveCodexPetLibraryState,
 } from "../app/pets/codexPetStore";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getPetWindowScale } from "../app/compactPetScale";
 import { setCompactPetHidden } from "../app/compactVisibility";
 import {
@@ -63,6 +64,7 @@ type ModelSectionCard = {
 };
 type ModelSectionCards = Record<ModelConfigSection, ModelSectionCard>;
 type RawRegistry = { configs: Map<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> };
+type ShortcutSettingKey = keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">;
 const DEFAULT_ENDPOINTS = [
   { id: "openai", name: "OpenAI 官方", baseUrl: "https://api.openai.com/v1" },
   { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1" },
@@ -115,6 +117,20 @@ function getSafeCurrentWindow() {
   } catch {
     return null;
   }
+}
+
+function formatShortcutFromEvent(event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">) {
+  if (["Control", "Shift", "Alt", "Meta"].includes(event.key)) {
+    return "";
+  }
+
+  return [
+    event.ctrlKey ? "Ctrl" : "",
+    event.shiftKey ? "Shift" : "",
+    event.altKey ? "Alt" : "",
+    event.metaKey ? "Meta" : "",
+    event.key.length === 1 ? event.key.toUpperCase() : event.key,
+  ].filter(Boolean).join("+");
 }
 
 export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: SettingsPanelProps) {
@@ -245,8 +261,17 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     });
   };
 
-  const createCodexPet = async () => {
-    const created = await createCodexPetPackage();
+  const importCodexPet = async () => {
+    const selected = await openDialog({
+      directory: true,
+      multiple: false,
+      title: "选择宠物文件夹",
+    });
+    if (typeof selected !== "string") {
+      return false;
+    }
+
+    const created = await importCodexPetPackage(selected);
     const payload = await loadCodexPetPackages();
     const nextPackages = payload.packages.some((pet) => pet.id === created.id) ? payload.packages : [created, ...payload.packages];
     const nextActivePetId = payload.activePetId ?? created.id;
@@ -261,6 +286,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       }
       return { ...current, activePetId: nextSelection, updatedAt: Date.now() };
     });
+    return true;
   };
 
   useEffect(() => {
@@ -311,31 +337,53 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     applyThemeMode(THEME_MODE_STORAGE_KEY, mode);
   };
 
-  const captureShortcut = (
-    event: KeyboardEvent<HTMLButtonElement>,
-    keyName: keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-
+  const saveCapturedShortcut = (event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">, keyName: ShortcutSettingKey) => {
     if (event.key === "Backspace" || event.key === "Delete" || event.key === "Escape") {
       updateBasicSettings({ [keyName]: "未设置" });
       setRecordingShortcut(null);
       return;
     }
-    if (["Control", "Shift", "Alt", "Meta"].includes(event.key)) return;
 
-    const keys = [
-      event.ctrlKey ? "Ctrl" : "",
-      event.shiftKey ? "Shift" : "",
-      event.altKey ? "Alt" : "",
-      event.metaKey ? "Meta" : "",
-      event.key.length === 1 ? event.key.toUpperCase() : event.key,
-    ].filter(Boolean);
+    const shortcut = formatShortcutFromEvent(event);
+    if (!shortcut) {
+      return;
+    }
 
-    updateBasicSettings({ [keyName]: keys.join("+") });
+    updateBasicSettings({ [keyName]: shortcut });
     setRecordingShortcut(null);
   };
+
+  const startShortcutCapture = (keyName: ShortcutSettingKey) => {
+    setRecordingShortcut(keyName);
+  };
+
+  const cancelShortcutCapture = () => {
+    setRecordingShortcut(null);
+  };
+
+  const captureShortcut = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    keyName: ShortcutSettingKey
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    saveCapturedShortcut(event, keyName);
+  };
+
+  useEffect(() => {
+    if (!recordingShortcut) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      saveCapturedShortcut(event, recordingShortcut);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [recordingShortcut]);
 
   const chooseEndpoint = (id: string) => {
     if (id === "__new__") {
@@ -665,7 +713,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
 
       <section className="omni-settings-main flex min-w-0 flex-1 flex-col bg-white">
         <header className="omni-settings-header flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-5 select-none" onMouseDown={handleHeaderMouseDown}>
-          <div className="drag-region min-w-0 flex-1 pr-3">
+          <div className="min-w-0 flex-1 pr-3">
             <h2 className="omni-settings-title text-sm font-semibold text-slate-950">{section === "basic" ? "基本设置" : "模型配置"}</h2>
             <p className="omni-settings-muted text-[11px] text-slate-500">
               {section === "basic" ? "管理 Omni 的通用基础选项。" : "通过模型列表新增或编辑 OpenAI 兼容模型。"}
@@ -700,11 +748,13 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                 isDesktopPetAwake={isDesktopPetAwake}
                 onEnableDesktopPet={enableDesktopPet}
                 onSelectCodexPet={selectCodexPet}
-                onCreateCodexPet={createCodexPet}
+                onImportCodexPet={importCodexPet}
                 onRefreshCodexPets={refreshCodexPets}
                 onCaptureShortcut={captureShortcut}
                 onChangeThemeMode={changeThemeMode}
                 onUpdateBasicSettings={updateBasicSettings}
+                onStartShortcutCapture={startShortcutCapture}
+                onCancelShortcutCapture={cancelShortcutCapture}
                 themeMode={themeMode}
                 recordingShortcut={recordingShortcut}
               />
@@ -802,9 +852,17 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                       testingConnection={testingConnection}
                     />
                   ) : modelSection === "embedding" ? (
-                    <KnowledgeEmbeddingSection config={knowledgeEmbeddingConfig} onChangeConfig={updateKnowledgeEmbeddingConfig} />
+                    <KnowledgeEmbeddingSection
+                      config={knowledgeEmbeddingConfig}
+                      onChangeConfig={updateKnowledgeEmbeddingConfig}
+                      providerEndpoints={endpoints}
+                    />
                   ) : (
-                    <KnowledgeMultimodalSection config={knowledgeMultimodalConfig} onChangeConfig={updateKnowledgeMultimodalConfig} />
+                    <KnowledgeMultimodalSection
+                      config={knowledgeMultimodalConfig}
+                      onChangeConfig={updateKnowledgeMultimodalConfig}
+                      providerEndpoints={endpoints}
+                    />
                   )}
                 </div>
               </div>

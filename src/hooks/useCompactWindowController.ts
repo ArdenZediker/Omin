@@ -40,6 +40,9 @@ import {
 } from "../app/window";
 import { PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import {
+  resolvePetMenuAnchorX,
+  resolvePetMenuAnchorY,
+  resolvePetMenuViewportOffset,
   resolveCompactMenuPositionFromViewport,
   resolveCompactMenuSidesFromSpace,
 } from "./compactMenuGeometry";
@@ -85,8 +88,20 @@ const PET_THOUGHT_WINDOW_SAFE_INSET = 12;
 const PET_THOUGHT_COLLAPSE_HIDE_DELAY_MS = 170;
 const COMPACT_FOLLOW_CURSOR_SCREEN_INTERVAL_MS = 220;
 
+type CharacterDragPosition = { x: number; y: number };
+
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function waitForNextAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+function deferToAfterWindowMoveSettles(callback: () => void) {
+  window.setTimeout(callback, 120);
 }
 
 function getLogicalMonitorWorkArea(monitor: Monitor) {
@@ -275,11 +290,14 @@ export function useCompactWindowController({
   const characterPointerDownRef = useRef<{ screenX: number; screenY: number } | null>(null);
   const characterDragOriginRef = useRef<{ screenX: number; screenY: number; windowX: number; windowY: number } | null>(null);
   const characterDragRafRef = useRef<number | null>(null);
-  const characterDragPendingRef = useRef<{ x: number; y: number } | null>(null);
-  const characterDragLastTargetRef = useRef<{ x: number; y: number } | null>(null);
-  const characterDragLastPersistedRef = useRef<{ x: number; y: number } | null>(null);
+  const characterDragPendingRef = useRef<CharacterDragPosition | null>(null);
+  const characterDragMoveDrainRef = useRef<Promise<void> | null>(null);
+  const characterDragWindowMoveActiveRef = useRef(false);
+  const characterDragLastTargetRef = useRef<CharacterDragPosition | null>(null);
+  const characterDragLastPersistedRef = useRef<CharacterDragPosition | null>(null);
   const characterPointerMovedRef = useRef(false);
   const lastCharacterDragPointerRef = useRef<{ screenX: number; screenY: number } | null>(null);
+  const characterDragLastHandledPointerRef = useRef<{ screenX: number; screenY: number } | null>(null);
   const characterDragMotionAccumRef = useRef({ x: 0, y: 0 });
   const characterDragMotionRef = useRef<"running-left" | "running-right" | "running" | null>(null);
   const scaleWheelTimerRef = useRef<number | null>(null);
@@ -819,6 +837,20 @@ export function useCompactWindowController({
     compactInteractionUntilRef.current = Date.now() + 900;
   }, []);
 
+  const releaseCharacterDragWindowMove = useCallback(() => {
+    deferToAfterWindowMoveSettles(() => {
+      if (
+        !characterPointerDownRef.current &&
+        !isCharacterDraggingRef.current &&
+        !characterDragPendingRef.current &&
+        !characterDragMoveDrainRef.current
+      ) {
+        characterDragWindowMoveActiveRef.current = false;
+        compactInternalMoveRef.current = false;
+      }
+    });
+  }, []);
+
   const suppressCompactBlur = useCallback((durationMs = 360) => {
     compactSuppressBlurUntilRef.current = Date.now() + durationMs;
   }, []);
@@ -837,7 +869,13 @@ export function useCompactWindowController({
     }
   }, [isCompactWindow, suppressCompactBlur]);
 
-  const resolveCompactMenuSides = useCallback(async (anchorX?: number, anchorY?: number) => {
+  const resolveCompactMenuSides = useCallback(async (
+    anchorX?: number,
+    anchorY?: number,
+    viewportOverride?: { width: number; height: number },
+    anchorXOverride?: number,
+    petCompactSize?: { width: number; height: number }
+  ) => {
     if (!isCompactWindow) {
       return { menuSide: "right" as const, submenuSide: "right" as const };
     }
@@ -864,21 +902,33 @@ export function useCompactWindowController({
       : Number(window.screen.availWidth || window.screen.width || 0) * monitorScale;
     const leftSpace = Math.max(0, (anchorPhysicalX - workAreaLeft) / monitorScale);
     const rightSpace = Math.max(0, (workAreaRight - anchorPhysicalX) / monitorScale);
-    return resolveCompactMenuSidesFromSpace(leftSpace, rightSpace);
-  }, [isCompactWindow]);
+    const viewportWidth = viewportOverride?.width ?? compactViewportSize?.width ?? currentSize.width / scaleFactor;
+    const viewportAnchorX = typeof anchorXOverride === "number" ? anchorXOverride : Number(anchorX);
+    const viewportLeftSpace = Number.isFinite(viewportAnchorX) ? Math.max(0, viewportAnchorX) : undefined;
+    const viewportRightSpace = Number.isFinite(viewportAnchorX)
+      ? Math.max(0, viewportWidth - viewportAnchorX)
+      : undefined;
+    return resolveCompactMenuSidesFromSpace(leftSpace, rightSpace, {
+      viewportLeftSpace,
+      viewportRightSpace,
+      petCompactSize,
+      petViewportSize: viewportOverride,
+    });
+  }, [compactViewportSize, isCompactWindow]);
 
   const resolveCompactMenuPosition = useCallback(
     async (
       anchorX: number,
       anchorY: number,
       side: "left" | "right",
+      submenuSide: "left" | "right",
       viewportOverride?: { width: number; height: number }
     ) => {
       const scaleFactor = await appWindow.scaleFactor();
       const windowSize = (await appWindow.outerSize()).toLogical(scaleFactor);
       const viewportWidth = viewportOverride?.width ?? compactViewportSize?.width ?? windowSize.width;
       const viewportHeight = viewportOverride?.height ?? compactViewportSize?.height ?? windowSize.height;
-      return resolveCompactMenuPositionFromViewport(anchorX, anchorY, side, viewportWidth, viewportHeight);
+      return resolveCompactMenuPositionFromViewport(anchorX, anchorY, side, submenuSide, viewportWidth, viewportHeight);
     },
     [compactViewportSize]
   );
@@ -955,6 +1005,10 @@ export function useCompactWindowController({
           return;
         }
         compactFollowSyncRunningRef.current = true;
+
+        if (isCharacterDraggingRef.current || characterPointerDownRef.current) {
+          return;
+        }
 
         if (Date.now() <= compactInteractionUntilRef.current) {
           return;
@@ -1146,8 +1200,15 @@ export function useCompactWindowController({
       !compactReply &&
       Boolean(compactViewportSize);
     const targetPetViewportOffset =
-      compactAppearance === "pet" && shouldReservePetThoughtSpace && compactViewportSize
-        ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
+      compactAppearance === "pet" && compactViewportSize
+        ? isCompactMenuOpen
+          ? resolvePetMenuViewportOffset(compactSize, compactViewportSize, {
+              menuSide: compactMenuSide,
+              submenuSide: compactSubmenuSide,
+            })
+          : shouldReservePetThoughtSpace
+            ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
+            : { x: 0, y: 0 }
         : { x: 0, y: 0 };
     void (async () => {
       const scaleFactor = await appWindow.scaleFactor();
@@ -1167,11 +1228,16 @@ export function useCompactWindowController({
           previousPetViewportOffset.x !== targetPetViewportOffset.x ||
           previousPetViewportOffset.y !== targetPetViewportOffset.y;
         if (hasSizeChanged || currentSizeChanged || hasPetViewportOffsetChanged) {
+          const shouldKeepPetVisualAnchor =
+            previousPetViewportOffset.x !== 0 ||
+            previousPetViewportOffset.y !== 0 ||
+            targetPetViewportOffset.x !== 0 ||
+            targetPetViewportOffset.y !== 0;
           const nextX = Math.round(currentPosition.x + previousPetViewportOffset.x - targetPetViewportOffset.x);
           const nextVisualY = toVisualPetWindowY(currentPosition.y) + previousPetViewportOffset.y - targetPetViewportOffset.y;
           compactInternalMoveRef.current = true;
           await Promise.all([
-            hasPetViewportOffsetChanged
+            hasPetViewportOffsetChanged && shouldKeepPetVisualAnchor
               ? appWindow.setPosition(new LogicalPosition(nextX, toNativePetWindowY(nextVisualY)))
               : Promise.resolve(),
             appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height)),
@@ -1234,6 +1300,9 @@ export function useCompactWindowController({
         if (isCharacterDraggingRef.current) {
           return;
         }
+        if (characterDragWindowMoveActiveRef.current) {
+          return;
+        }
         const scaleFactor = await appWindow.scaleFactor();
         const pos = event.payload.toLogical(scaleFactor);
         const visualPos = {
@@ -1269,6 +1338,8 @@ export function useCompactWindowController({
         window.cancelAnimationFrame(characterDragRafRef.current);
         characterDragRafRef.current = null;
       }
+      characterDragMoveDrainRef.current = null;
+      characterDragWindowMoveActiveRef.current = false;
       characterDragLastTargetRef.current = null;
       if (scaleWheelTimerRef.current !== null) {
         window.clearTimeout(scaleWheelTimerRef.current);
@@ -1279,6 +1350,7 @@ export function useCompactWindowController({
       setPreviewCharacterScale(null);
       isScaleGestureActiveRef.current = false;
       lastCharacterDragPointerRef.current = null;
+      characterDragLastHandledPointerRef.current = null;
       characterDragMotionAccumRef.current = { x: 0, y: 0 };
       characterDragMotionRef.current = null;
       setCharacterDragMotion(null);
@@ -1286,19 +1358,46 @@ export function useCompactWindowController({
   }, []);
 
   const flushCharacterDragPosition = useCallback(() => {
-    const pending = characterDragPendingRef.current;
-    if (!pending) {
-      return;
+    if (characterDragMoveDrainRef.current) {
+      return characterDragMoveDrainRef.current;
     }
 
-    characterDragPendingRef.current = null;
-    void appWindow
-      .setPosition(new LogicalPosition(Math.round(pending.x), toNativePetWindowY(pending.y)))
-      .catch(() => undefined);
-  }, []);
+    if (!characterDragPendingRef.current) {
+      return Promise.resolve();
+    }
+
+    characterDragWindowMoveActiveRef.current = true;
+    compactInternalMoveRef.current = true;
+    const drain = (async () => {
+      try {
+        while (characterDragPendingRef.current) {
+          const nextPosition = characterDragPendingRef.current;
+          characterDragPendingRef.current = null;
+          await appWindow
+            .setPosition(new LogicalPosition(Math.round(nextPosition.x), toNativePetWindowY(nextPosition.y)))
+            .catch(() => undefined);
+          if (characterDragPendingRef.current) {
+            await waitForNextAnimationFrame();
+          }
+        }
+      } finally {
+        characterDragMoveDrainRef.current = null;
+        if (!characterPointerDownRef.current && !isCharacterDraggingRef.current && !characterDragPendingRef.current) {
+          releaseCharacterDragWindowMove();
+        }
+      }
+    })();
+    characterDragMoveDrainRef.current = drain;
+    return drain;
+  }, [releaseCharacterDragWindowMove]);
 
   const scheduleCharacterDragPosition = useCallback((x: number, y: number) => {
+    characterDragWindowMoveActiveRef.current = true;
+    compactInternalMoveRef.current = true;
     characterDragPendingRef.current = { x, y };
+    if (characterDragMoveDrainRef.current) {
+      return;
+    }
     if (characterDragRafRef.current !== null) {
       return;
     }
@@ -1323,6 +1422,17 @@ export function useCompactWindowController({
         return false;
       }
 
+      const lastHandledPointer = characterDragLastHandledPointerRef.current;
+      if (
+        lastHandledPointer &&
+        lastHandledPointer.screenX === pointerScreenX &&
+        lastHandledPointer.screenY === pointerScreenY
+      ) {
+        return true;
+      }
+      characterDragLastHandledPointerRef.current = { screenX: pointerScreenX, screenY: pointerScreenY };
+
+      markCompactInteraction();
       characterPointerMovedRef.current = true;
       if (!isCharacterDraggingRef.current) {
         setIsCharacterDragging(true);
@@ -1350,18 +1460,26 @@ export function useCompactWindowController({
       scheduleCharacterDragPosition(nextWindowX, nextWindowY);
       return true;
     },
-    [hidePetThoughtWindowForDrag, scheduleCharacterDragPosition, setCharacterDragMotionFromPointer]
+    [hidePetThoughtWindowForDrag, markCompactInteraction, scheduleCharacterDragPosition, setCharacterDragMotionFromPointer]
   );
 
-  const closeCompactMenu = useCallback(() => {
+  const cancelCompactMenuClose = useCallback(() => {
     if (compactMenuCloseTimerRef.current !== null) {
       window.clearTimeout(compactMenuCloseTimerRef.current);
+      compactMenuCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const closeCompactMenu = useCallback((delayMs = COMPACT_MENU_CLOSE_DELAY_MS) => {
+    if (compactMenuCloseTimerRef.current !== null) {
+      return;
     }
 
+    const closeDelay = Math.max(0, delayMs);
     compactMenuCloseTimerRef.current = window.setTimeout(() => {
       closeCompactMenuPanels();
       compactMenuCloseTimerRef.current = null;
-    }, COMPACT_MENU_CLOSE_DELAY_MS);
+    }, closeDelay);
   }, [closeCompactMenuPanels]);
 
   const closeCompactMenuNow = useCallback(() => {
@@ -1453,14 +1571,18 @@ export function useCompactWindowController({
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
+      markCompactInteraction();
       if (event.button !== 0) {
         characterPointerDownRef.current = null;
         characterDragOriginRef.current = null;
         characterDragLastTargetRef.current = null;
         characterPointerMovedRef.current = false;
         isCharacterDraggingRef.current = false;
+        characterDragWindowMoveActiveRef.current = false;
+        compactInternalMoveRef.current = false;
         setIsCharacterDragging(false);
         lastCharacterDragPointerRef.current = null;
+        characterDragLastHandledPointerRef.current = null;
         characterDragMotionAccumRef.current = { x: 0, y: 0 };
         characterDragMotionRef.current = null;
         setCharacterDragMotion(null);
@@ -1475,8 +1597,11 @@ export function useCompactWindowController({
         characterDragOriginRef.current = null;
         characterDragLastTargetRef.current = null;
         characterPointerMovedRef.current = false;
+        characterDragWindowMoveActiveRef.current = false;
+        compactInternalMoveRef.current = false;
         setIsCharacterDragging(false);
         lastCharacterDragPointerRef.current = null;
+        characterDragLastHandledPointerRef.current = null;
         characterDragMotionAccumRef.current = { x: 0, y: 0 };
         characterDragMotionRef.current = null;
         setCharacterDragMotion(null);
@@ -1487,6 +1612,7 @@ export function useCompactWindowController({
       isCharacterDraggingRef.current = false;
       characterDragLastTargetRef.current = null;
       lastCharacterDragPointerRef.current = null;
+      characterDragLastHandledPointerRef.current = null;
       characterDragMotionAccumRef.current = { x: 0, y: 0 };
       characterDragMotionRef.current = null;
       setCharacterDragMotion(null);
@@ -1494,7 +1620,7 @@ export function useCompactWindowController({
       characterDragOriginRef.current = null;
       characterPointerMovedRef.current = false;
     },
-    [resetCompactFloatingUi]
+    [markCompactInteraction, resetCompactFloatingUi]
   );
 
   const handleCharacterPointerMove = useCallback(
@@ -1566,10 +1692,14 @@ export function useCompactWindowController({
     characterPointerMovedRef.current = false;
     setIsCharacterDragging(false);
     lastCharacterDragPointerRef.current = null;
+    characterDragLastHandledPointerRef.current = null;
     characterDragMotionAccumRef.current = { x: 0, y: 0 };
     characterDragMotionRef.current = null;
     setCharacterDragMotion(null);
-  }, [compactSize.height, compactSize.width, flushCharacterDragPosition, updatePetThoughtWindowForRect]);
+    if (!pendingDragPosition && !characterDragMoveDrainRef.current) {
+      releaseCharacterDragWindowMove();
+    }
+  }, [compactSize.height, compactSize.width, flushCharacterDragPosition, releaseCharacterDragWindowMove, updatePetThoughtWindowForRect]);
 
   useEffect(() => {
     if (!isCompactWindow) {
@@ -1755,16 +1885,16 @@ export function useCompactWindowController({
   const openCompactMenu = useCallback(async (anchorClientX?: number, anchorClientY?: number) => {
     markCompactInteraction();
     suppressCompactBlur();
+    if (compactMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(compactMenuCloseTimerRef.current);
+      compactMenuCloseTimerRef.current = null;
+    }
     await raiseCompactWindow();
     if (compactMenuOpeningRef.current || isCompactMenuOpen) {
       return;
     }
 
     compactMenuOpeningRef.current = true;
-    if (compactMenuCloseTimerRef.current !== null) {
-      window.clearTimeout(compactMenuCloseTimerRef.current);
-      compactMenuCloseTimerRef.current = null;
-    }
     try {
       if (isCompactQueryOpen) {
         return;
@@ -1775,25 +1905,30 @@ export function useCompactWindowController({
       const pointer = await cursorPosition().catch(() => null);
       const anchorX =
         typeof anchorClientX === "number"
-          ? anchorClientX - windowPosition.x
+          ? anchorClientX
           : pointer
             ? pointer.x / scaleFactor - windowPosition.x
             : Math.max(0, fallbackSize.width / 2);
       const anchorY =
         typeof anchorClientY === "number"
-          ? anchorClientY - windowPosition.y
+          ? anchorClientY
           : pointer
             ? pointer.y / scaleFactor - windowPosition.y
             : Math.max(0, fallbackSize.height / 2);
-      const { menuSide, submenuSide } = await resolveCompactMenuSides(anchorX, anchorY);
       const petMenuViewport =
         compactAppearance === "pet"
           ? getPetCompactMenuViewport(compactSize)
           : null;
-      const menuAnchorX = petMenuViewport ? Math.round(petMenuViewport.width / 2) : anchorX;
+      const { menuSide, submenuSide } = await resolveCompactMenuSides(anchorX, anchorY, petMenuViewport ?? undefined, undefined, compactSize);
+      const menuAnchorX = petMenuViewport
+        ? resolvePetMenuAnchorX(compactSize, petMenuViewport, { menuSide, submenuSide })
+        : anchorX;
+      const menuAnchorY = petMenuViewport
+        ? resolvePetMenuAnchorY(compactSize, petMenuViewport, anchorY, { menuSide, submenuSide })
+        : anchorY;
       setCompactMenuSide(menuSide);
       setCompactSubmenuSide(submenuSide);
-      setCharacterMenuPosition(await resolveCompactMenuPosition(menuAnchorX, anchorY, menuSide, petMenuViewport ?? undefined));
+      setCharacterMenuPosition(await resolveCompactMenuPosition(menuAnchorX, menuAnchorY, menuSide, submenuSide, petMenuViewport ?? undefined));
       setIsCompactMenuOpen(true);
       setIsCompactModelOpen(false);
       setIsCompactAppearanceOpen(false);
@@ -1825,21 +1960,35 @@ export function useCompactWindowController({
       isCharacterDraggingRef.current = false;
       setIsCharacterDragging(false);
       lastCharacterDragPointerRef.current = null;
+      characterDragLastHandledPointerRef.current = null;
       characterDragMotionAccumRef.current = { x: 0, y: 0 };
       characterDragMotionRef.current = null;
       setCharacterDragMotion(null);
       clearPendingDragTimer(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
 
-      const { menuSide, submenuSide } = await resolveCompactMenuSides(event.clientX, event.clientY);
       const petMenuViewport =
         compactAppearance === "pet"
           ? getPetCompactMenuViewport(compactSize)
           : null;
-      const menuPosition = await resolveCompactMenuPosition(
-        petMenuViewport ? Math.round(petMenuViewport.width / 2) : event.clientX,
+      const { menuSide, submenuSide } = await resolveCompactMenuSides(
+        event.clientX,
         event.clientY,
+        petMenuViewport ?? undefined,
+        undefined,
+        compactSize
+      );
+      const menuAnchorX = petMenuViewport
+        ? resolvePetMenuAnchorX(compactSize, petMenuViewport, { menuSide, submenuSide })
+        : event.clientX;
+      const menuAnchorY = petMenuViewport
+        ? resolvePetMenuAnchorY(compactSize, petMenuViewport, event.clientY, { menuSide, submenuSide })
+        : event.clientY;
+      const menuPosition = await resolveCompactMenuPosition(
+        menuAnchorX,
+        menuAnchorY,
         menuSide,
+        submenuSide,
         petMenuViewport ?? undefined
       );
 
@@ -1866,6 +2015,7 @@ export function useCompactWindowController({
 
   return {
     appearanceOptions: COMPACT_APPEARANCE_OPTIONS,
+    cancelCompactMenuClose,
     closeCompactMenu,
     closeCompactMenuNow,
     entries: EXTERNAL_CHAT_ENTRIES,

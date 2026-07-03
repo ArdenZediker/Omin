@@ -1,0 +1,6 @@
+{
+  "id": "saionji-ria-edge-clean",
+  "displayName": "西園莉愛 Edge Clean",
+  "description": "Edge-cleaned package rebuilt from saionji-ria-pet-run backup frames without modifying the source run.",
+  "spritesheetPath": "spritesheet.png"
+}

@@ -6,6 +6,7 @@ import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, 
 import type { BasicSettings, ExternalChatEntry, ViewMode } from "./types";
 import { isCompactPetHidden } from "./compactVisibility";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
+import { getCompactMenuViewportMinWidth } from "../hooks/compactMenuGeometry";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
 import { PET_WINDOW_DECORATION_MARGIN_RIGHT, PET_WINDOW_DECORATION_MARGIN_TOP, PET_WINDOW_SAFE_MARGIN_X, PET_WINDOW_SAFE_MARGIN_Y } from "./pets/codexPetSizing";
 
@@ -353,7 +354,7 @@ export function getExpandedCompactViewportSizeForAppearance(
 
 export function getPetCompactMenuViewport(size: { width: number; height: number }) {
   return {
-    width: Math.max(size.width, 462),
+    width: Math.max(size.width, getCompactMenuViewportMinWidth()),
     height: Math.max(size.height + 360, 560),
   };
 }

@@ -12,14 +12,22 @@ import OmniSwitch from "../ui/OmniSwitch";
 type Props = {
   config: KnowledgeEmbeddingConfig;
   onChangeConfig: (config: KnowledgeEmbeddingConfig) => void;
+  providerEndpoints?: ProviderEndpoint[];
 };
 
 type ProviderOption = {
   id: KnowledgeEmbeddingProviderId;
   label: string;
+  baseUrl?: string;
 };
 
-const PROVIDER_BASE_URLS: Record<KnowledgeEmbeddingProviderId, string> = {
+type ProviderEndpoint = {
+  id: string;
+  name: string;
+  baseUrl: string;
+};
+
+const PROVIDER_BASE_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
   openrouter: "https://openrouter.ai/api/v1",
   moonshot: "https://api.moonshot.cn/v1",
@@ -41,11 +49,40 @@ function createBlankModel(index: number): EditingModelState {
   };
 }
 
-export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Props) {
+export default function KnowledgeEmbeddingSection({ config, onChangeConfig, providerEndpoints = [] }: Props) {
   const providerOptions = getKnowledgeEmbeddingProviderOptions() as ProviderOption[];
+  const providerSelectOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: ProviderOption[] = [];
+
+    for (const endpoint of providerEndpoints) {
+      const id = endpoint.id.trim();
+      if (!id || seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      options.push({ id, label: endpoint.name || id, baseUrl: endpoint.baseUrl });
+    }
+
+    for (const option of providerOptions) {
+      if (seen.has(option.id)) {
+        continue;
+      }
+      seen.add(option.id);
+      options.push({ ...option, baseUrl: option.baseUrl || PROVIDER_BASE_URLS[option.id] });
+    }
+
+    return options;
+  }, [providerEndpoints, providerOptions]);
   const normalizedConfig = useMemo(() => normalizeKnowledgeEmbeddingConfig(config), [config]);
   const [isModelFormOpen, setIsModelFormOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<EditingModelState | null>(null);
+
+  const getProviderBaseUrl = (provider: string) =>
+    providerSelectOptions.find((item) => item.id === provider)?.baseUrl || PROVIDER_BASE_URLS[provider] || PROVIDER_BASE_URLS.openai;
+
+  const getProviderLabel = (provider: string) =>
+    providerSelectOptions.find((item) => item.id === provider)?.label || provider;
 
   const commit = (next: KnowledgeEmbeddingConfig) => {
     onChangeConfig(normalizeKnowledgeEmbeddingConfig(next));
@@ -83,7 +120,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
         `${editingModel.provider}:${editingModel.model.trim() || "text-embedding-3-small"}:${normalizedConfig.models.filter((model) => model.provider === editingModel.provider).length + 1}`,
       name: editingModel.name.trim() || editingModel.model.trim() || "模型",
       provider: editingModel.provider,
-      baseUrl: editingModel.baseUrl.trim() || PROVIDER_BASE_URLS[editingModel.provider],
+      baseUrl: editingModel.baseUrl.trim() || getProviderBaseUrl(editingModel.provider),
       model: editingModel.model.trim() || "text-embedding-3-small",
       apiKey: editingModel.apiKey,
     };
@@ -141,7 +178,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+        <div className="max-h-[360px] space-y-2 overflow-y-auto overscroll-contain border-t border-slate-100 pt-3 pr-1 [scrollbar-gutter:stable]">
           {normalizedConfig.models.length > 0 ? (
             normalizedConfig.models.map((model) => {
               const isActive = model.id === normalizedConfig.activeModelId;
@@ -154,20 +191,24 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
                       : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50"
                   }`}
                 >
-                  <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="flex items-start justify-between gap-4">
                     <button type="button" onClick={() => openEditModel(model)} className="min-w-0 flex-1 text-left">
-                      <div className={`flex flex-wrap items-center gap-2 text-xs ${isActive ? "text-violet-600" : "text-slate-500"}`}>
-                        <span className={isActive ? "rounded-full bg-violet-100 px-2 py-1 text-violet-700" : "rounded-full bg-slate-100 px-2 py-1"}>
-                          供应商：{model.provider}
-                        </span>
-                        <span className={isActive ? "rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-800" : "rounded-full bg-slate-100 px-2 py-1"}>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className={`truncate text-sm font-medium ${isActive ? "text-violet-950" : "text-slate-900"}`}>
                           {model.name}
                         </span>
-                        {isActive ? <span className="rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-700">当前使用</span> : null}
-                        {!model.apiKey.trim() ? <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">缺少 Key</span> : null}
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${isActive ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-500"}`}>
+                          {getProviderLabel(model.provider)}
+                        </span>
+                      </div>
+                      <div className={`mt-2 truncate text-xs ${isActive ? "text-violet-500" : "text-slate-400"}`}>
+                        <span className={`font-medium ${isActive ? "text-violet-600" : "text-slate-500"}`}>模型 ID：</span>
+                        {model.model}
                       </div>
                     </button>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      {isActive ? <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-700">当前使用</span> : null}
+                      {!model.apiKey.trim() ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">缺少 Key</span> : null}
                       {!isActive ? (
                         <button
                           type="button"
@@ -212,10 +253,10 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig }: Pr
                   value={editingModel.provider}
                   onChange={(value) => {
                     const provider = value as KnowledgeEmbeddingProviderId;
-                    setEditingModel((current) => (current ? { ...current, provider, baseUrl: PROVIDER_BASE_URLS[provider] } : current));
+                    setEditingModel((current) => (current ? { ...current, provider, baseUrl: getProviderBaseUrl(provider) } : current));
                   }}
                   ariaLabel="向量模型供应商"
-                  options={providerOptions.map((item) => ({ value: item.id, label: item.label }))}
+                  options={providerSelectOptions.map((item) => ({ value: item.id, label: item.label }))}
                 />
               </label>
 

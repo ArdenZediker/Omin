@@ -154,6 +154,11 @@ export type ChatExecutionResult = {
   suggestedSummary?: SuggestedSessionSummary | null;
 };
 
+export type ChatSendOptions = {
+  hiddenContext?: string;
+  knowledgeCollectionId?: string | null;
+};
+
 export type SlashSkill = {
   id: string;
   command: string;

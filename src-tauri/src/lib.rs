@@ -326,8 +326,10 @@ fn load_codex_pet_packages() -> Result<codex_pets::CodexPetPackageListPayload, S
 }
 
 #[tauri::command]
-fn create_codex_pet_package() -> Result<codex_pets::CodexPetPackageRecord, String> {
-    codex_pets::create_package()
+fn import_codex_pet_package(
+    input: codex_pets::ImportCodexPetPackageInput,
+) -> Result<codex_pets::CodexPetPackageRecord, String> {
+    codex_pets::import_package(input)
 }
 
 pub(crate) fn workspace_root() -> Result<PathBuf, String> {
@@ -2518,7 +2520,9 @@ fn search_knowledge_chunks(
             &retrieval_mode,
             &candidate,
         );
-        if score <= 0.0 && !normalize_text_for_search(&candidate.content).contains(&normalized_query) {
+        if score <= 0.0
+            && !normalize_text_for_search(&candidate.content).contains(&normalized_query)
+        {
             continue;
         }
 
@@ -3070,6 +3074,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -3086,7 +3091,7 @@ pub fn run() {
             greet,
             load_workspace_pet_dir_command,
             load_codex_pet_packages,
-            create_codex_pet_package,
+            import_codex_pet_package,
             list_workspace_files,
             read_workspace_file,
             search_workspace_files,

@@ -15,11 +15,19 @@ import OmniSelect from "../ui/OmniSelect";
 type Props = {
   config: KnowledgeMultimodalConfig;
   onChangeConfig: (config: KnowledgeMultimodalConfig) => void;
+  providerEndpoints?: ProviderEndpoint[];
 };
 
 type ProviderOption = {
   id: KnowledgeMultimodalProviderId;
   label: string;
+  baseUrl?: string;
+};
+
+type ProviderEndpoint = {
+  id: string;
+  name: string;
+  baseUrl: string;
 };
 
 type EditingModelState = KnowledgeMultimodalModelConfig;
@@ -36,8 +44,31 @@ function createBlankModel(index: number): EditingModelState {
   };
 }
 
-export default function KnowledgeMultimodalSection({ config, onChangeConfig }: Props) {
+export default function KnowledgeMultimodalSection({ config, onChangeConfig, providerEndpoints = [] }: Props) {
   const providerOptions = getKnowledgeMultimodalProviderOptions() as ProviderOption[];
+  const providerSelectOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: ProviderOption[] = [];
+
+    for (const endpoint of providerEndpoints) {
+      const id = endpoint.id.trim();
+      if (!id || seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      options.push({ id, label: endpoint.name || id, baseUrl: endpoint.baseUrl });
+    }
+
+    for (const option of providerOptions) {
+      if (seen.has(option.id)) {
+        continue;
+      }
+      seen.add(option.id);
+      options.push({ ...option, baseUrl: option.baseUrl || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[option.id] });
+    }
+
+    return options;
+  }, [providerEndpoints, providerOptions]);
   const normalizedConfig = useMemo(() => normalizeKnowledgeMultimodalConfig(config), [config]);
   const imageModels = useMemo(
     () => getKnowledgeMultimodalModelsByCapability(normalizedConfig, "image"),
@@ -49,6 +80,12 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
   );
   const [isModelFormOpen, setIsModelFormOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<EditingModelState | null>(null);
+
+  const getProviderBaseUrl = (provider: string) =>
+    providerSelectOptions.find((item) => item.id === provider)?.baseUrl || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[provider] || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS.openai;
+
+  const getProviderLabel = (provider: string) =>
+    providerSelectOptions.find((item) => item.id === provider)?.label || provider;
 
   const commit = (next: KnowledgeMultimodalConfig) => {
     onChangeConfig(normalizeKnowledgeMultimodalConfig(next));
@@ -107,7 +144,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
         }`,
       name: editingModel.name.trim() || modelValue,
       provider: editingModel.provider,
-      baseUrl: editingModel.baseUrl.trim() || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[editingModel.provider],
+      baseUrl: editingModel.baseUrl.trim() || getProviderBaseUrl(editingModel.provider),
       model: modelValue,
       apiKey: editingModel.apiKey,
       capability,
@@ -138,6 +175,11 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
     normalizedConfig.models.length === 0
       ? "未配置模型"
       : `${imageModels.length} 个图片模型 / ${audioModels.length} 个音频模型`;
+  const editingStoredModel = editingModel
+    ? normalizedConfig.models.find((model) => model.id === editingModel.id) ?? null
+    : null;
+  const isEditingImageDefault = editingModel?.id === normalizedConfig.activeImageModelId;
+  const isEditingAudioDefault = editingModel?.id === normalizedConfig.activeAudioModelId;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -200,7 +242,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+        <div className="max-h-[360px] space-y-2 overflow-y-auto overscroll-contain border-t border-slate-100 pt-3 pr-1 [scrollbar-gutter:stable]">
           {normalizedConfig.models.length > 0 ? (
             normalizedConfig.models.map((model) => {
               const isImageDefault = model.id === normalizedConfig.activeImageModelId;
@@ -215,71 +257,28 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
                       : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50"
                   }`}
                 >
-                  <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="flex items-start justify-between gap-4">
                     <button type="button" onClick={() => openEditModel(model)} className="min-w-0 flex-1 text-left">
-                      <div className={`flex flex-wrap items-center gap-2 text-xs ${isDefaultModel ? "text-violet-600" : "text-slate-500"}`}>
-                        <span className={isDefaultModel ? "rounded-full bg-violet-100 px-2 py-1 text-violet-700" : "rounded-full bg-slate-100 px-2 py-1"}>
-                          供应商：{model.provider}
-                        </span>
-                        <span className={isDefaultModel ? "rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-800" : "rounded-full bg-slate-100 px-2 py-1"}>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className={`truncate text-sm font-medium ${isDefaultModel ? "text-violet-950" : "text-slate-900"}`}>
                           {model.name}
                         </span>
-                        <span className={isDefaultModel ? "rounded-full bg-violet-100 px-2 py-1 text-violet-700" : "rounded-full bg-sky-100 px-2 py-1 text-sky-700"}>
-                          {model.capability === "image" ? "图片" : "音频"}
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${isDefaultModel ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-500"}`}>
+                          {getProviderLabel(model.provider)}
                         </span>
-                        {isImageDefault ? <span className="rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-700">图片默认</span> : null}
-                        {isAudioDefault ? <span className="rounded-full bg-violet-100 px-2 py-1 font-medium text-violet-700">音频默认</span> : null}
-                        {!model.apiKey.trim() ? <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">缺少 Key</span> : null}
                       </div>
-                      <div className={`mt-2 text-xs ${isDefaultModel ? "text-violet-500" : "text-slate-400"}`}>
+                      <div className={`mt-2 truncate text-xs ${isDefaultModel ? "text-violet-500" : "text-slate-400"}`}>
                         <span className={`font-medium ${isDefaultModel ? "text-violet-600" : "text-slate-500"}`}>模型 ID：</span>
                         {model.model}
                       </div>
                     </button>
-
-                    <div className="flex shrink-0 items-center gap-2">
-                      {model.capability === "image" ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleDefaultModel("image", model.id);
-                          }}
-                          className={`rounded-md border px-2.5 py-1 text-xs ${
-                            isImageDefault
-                              ? "border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-200"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          }`}
-                        >
-                          {isImageDefault ? "取消图片默认" : "设为图片默认"}
-                        </button>
-                      ) : null}
-                      {model.capability === "audio" ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleDefaultModel("audio", model.id);
-                          }}
-                          className={`rounded-md border px-2.5 py-1 text-xs ${
-                            isAudioDefault
-                              ? "border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-200"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          }`}
-                        >
-                          {isAudioDefault ? "取消音频默认" : "设为音频默认"}
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          removeModel(model.id);
-                        }}
-                        className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-100"
-                      >
-                        删除
-                      </button>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <span className={`rounded-full px-2 py-1 text-xs ${isDefaultModel ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700"}`}>
+                        {model.capability === "image" ? "图片" : "音频"}
+                      </span>
+                      {isImageDefault ? <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-700">图片默认</span> : null}
+                      {isAudioDefault ? <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-700">音频默认</span> : null}
+                      {!model.apiKey.trim() ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">缺少 Key</span> : null}
                     </div>
                   </div>
                 </div>
@@ -330,11 +329,11 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
                   onChange={(value) => {
                     const provider = value as KnowledgeMultimodalProviderId;
                     setEditingModel((current) =>
-                      current ? { ...current, provider, baseUrl: KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[provider] } : current
+                      current ? { ...current, provider, baseUrl: getProviderBaseUrl(provider) } : current
                     );
                   }}
                   ariaLabel="多模态模型供应商"
-                  options={providerOptions.map((item) => ({ value: item.id, label: item.label }))}
+                  options={providerSelectOptions.map((item) => ({ value: item.id, label: item.label }))}
                 />
               </label>
 
@@ -381,21 +380,63 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig }: P
 
               <div className="grid grid-cols-[120px_1fr] gap-4">
                 <span />
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={closeModelForm}
-                    className="rounded-md border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600 hover:bg-slate-50"
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    onClick={saveEditingModel}
-                    className="rounded-md bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800"
-                  >
-                    保存
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {editingStoredModel?.capability === "image" ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleDefaultModel("image", editingStoredModel.id)}
+                        className={`rounded-md border px-3 py-2 text-xs ${
+                          isEditingImageDefault
+                            ? "border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-200"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {isEditingImageDefault ? "取消图片默认" : "设为图片默认"}
+                      </button>
+                    ) : null}
+                    {editingStoredModel?.capability === "audio" ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleDefaultModel("audio", editingStoredModel.id)}
+                        className={`rounded-md border px-3 py-2 text-xs ${
+                          isEditingAudioDefault
+                            ? "border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-200"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {isEditingAudioDefault ? "取消音频默认" : "设为音频默认"}
+                      </button>
+                    ) : null}
+                    {editingStoredModel ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          removeModel(editingStoredModel.id);
+                          closeModelForm();
+                        }}
+                        className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600 hover:bg-rose-100"
+                      >
+                        删除
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={closeModelForm}
+                      className="rounded-md border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600 hover:bg-slate-50"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveEditingModel}
+                      className="rounded-md bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800"
+                    >
+                      保存
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
