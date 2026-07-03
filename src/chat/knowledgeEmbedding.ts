@@ -2,13 +2,7 @@ import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStora
 
 export type KnowledgeRetrievalMode = "keyword" | "hybrid" | "vector";
 
-export type KnowledgeEmbeddingProviderId =
-  | "openai"
-  | "openrouter"
-  | "moonshot"
-  | "siliconflow"
-  | "dashscope"
-  | "zhipu";
+export type KnowledgeEmbeddingProviderId = string;
 
 export type KnowledgeEmbeddingModelConfig = {
   id: string;
@@ -35,7 +29,7 @@ export type KnowledgeEmbeddingResolution = {
 
 export const KNOWLEDGE_EMBEDDING_CONFIG_STORAGE_KEY = "omni_knowledge_embedding_profile";
 
-const DEFAULT_BASE_URLS: Record<KnowledgeEmbeddingProviderId, string> = {
+const DEFAULT_BASE_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
   openrouter: "https://openrouter.ai/api/v1",
   moonshot: "https://api.moonshot.cn/v1",
@@ -64,15 +58,8 @@ type LegacyKnowledgeEmbeddingProfile = {
   apiKey?: string;
 };
 
-function isKnowledgeEmbeddingProviderId(value: string): value is KnowledgeEmbeddingProviderId {
-  return PROVIDER_OPTIONS.some((item) => item.id === value);
-}
-
 function normalizeProvider(value: string | undefined | null): KnowledgeEmbeddingProviderId {
-  if (value && isKnowledgeEmbeddingProviderId(value)) {
-    return value;
-  }
-  return DEFAULT_PROVIDER;
+  return normalizeText(value) || DEFAULT_PROVIDER;
 }
 
 function normalizeText(value: string | undefined | null) {
@@ -107,7 +94,7 @@ function createDefaultModels(): KnowledgeEmbeddingModelConfig[] {
 
 function normalizeModel(model: Partial<KnowledgeEmbeddingModelConfig> | null | undefined, index: number): KnowledgeEmbeddingModelConfig {
   const provider = normalizeProvider(model?.provider);
-  const baseUrl = normalizeText(model?.baseUrl) || DEFAULT_BASE_URLS[provider];
+  const baseUrl = normalizeText(model?.baseUrl) || DEFAULT_BASE_URLS[provider] || DEFAULT_BASE_URLS[DEFAULT_PROVIDER];
   const rawModel = normalizeText(model?.model) || DEFAULT_MODEL;
   return {
     id: normalizeText(model?.id) || makeModelId(provider, rawModel, index),
@@ -170,7 +157,7 @@ export function normalizeKnowledgeEmbeddingConfig(input: Partial<KnowledgeEmbedd
 
 function parseLegacyEmbeddingConfig(raw: LegacyKnowledgeEmbeddingProfile): KnowledgeEmbeddingConfig {
   const provider = normalizeProvider(raw.provider);
-  const baseUrl = normalizeText(raw.baseUrl) || DEFAULT_BASE_URLS[provider];
+  const baseUrl = normalizeText(raw.baseUrl) || DEFAULT_BASE_URLS[provider] || DEFAULT_BASE_URLS[DEFAULT_PROVIDER];
   const model = normalizeText(raw.model) || DEFAULT_MODEL;
   const models = [
     {

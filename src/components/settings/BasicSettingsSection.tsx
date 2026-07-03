@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import type { BasicSettings } from "../../app/types";
 import type { ThemeMode } from "../../app/settings";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
@@ -17,12 +17,14 @@ type Props = {
   isDesktopPetAwake: boolean;
   onEnableDesktopPet: () => void;
   onSelectCodexPet: (petId: string) => void;
-  onCreateCodexPet: () => void;
+  onImportCodexPet: () => Promise<boolean>;
   onRefreshCodexPets: () => void;
   onCaptureShortcut: (
-    event: KeyboardEvent<HTMLButtonElement>,
+    event: ReactKeyboardEvent<HTMLButtonElement>,
     keyName: keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">
   ) => void;
+  onStartShortcutCapture: (keyName: keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">) => void;
+  onCancelShortcutCapture: () => void;
   recordingShortcut: "openMainShortcut" | "switchPreviousModelShortcut" | null;
 };
 
@@ -55,9 +57,11 @@ export default function BasicSettingsSection({
   isDesktopPetAwake,
   onEnableDesktopPet,
   onSelectCodexPet,
-  onCreateCodexPet,
+  onImportCodexPet,
   onRefreshCodexPets,
   onCaptureShortcut,
+  onStartShortcutCapture,
+  onCancelShortcutCapture,
   recordingShortcut,
 }: Props) {
   return (
@@ -165,9 +169,9 @@ export default function BasicSettingsSection({
       </div>
 
       <div className="space-y-4 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">默认尺寸</h3>
+        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">主窗口默认尺寸</h3>
         <div className="space-y-3">
-          <Field label="默认尺寸">
+          <Field label="主界面尺寸">
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -189,6 +193,9 @@ export default function BasicSettingsSection({
               <span className="text-xs text-slate-500 omni-settings-muted">宽 × 高</span>
             </div>
           </Field>
+          <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
+            影响聊天/知识库主界面的默认窗口大小，不影响设置窗口、悬浮球和桌宠窗口。
+          </p>
         </div>
       </div>
 
@@ -198,7 +205,12 @@ export default function BasicSettingsSection({
           <button
             type="button"
             onKeyDown={(e) => onCaptureShortcut(e, "openMainShortcut")}
-            onClick={(e) => e.currentTarget.focus()}
+            onClick={(e) => {
+              e.currentTarget.focus();
+              onStartShortcutCapture("openMainShortcut");
+            }}
+            onBlur={onCancelShortcutCapture}
+            aria-pressed={recordingShortcut === "openMainShortcut"}
             className={`omni-shortcut-capture h-9 w-full rounded-md border px-3 text-left text-sm ${
               recordingShortcut === "openMainShortcut"
                 ? "omni-shortcut-capture--active border-violet-500 text-violet-600 ring-2 ring-violet-500/20"
@@ -213,7 +225,12 @@ export default function BasicSettingsSection({
           <button
             type="button"
             onKeyDown={(e) => onCaptureShortcut(e, "switchPreviousModelShortcut")}
-            onClick={(e) => e.currentTarget.focus()}
+            onClick={(e) => {
+              e.currentTarget.focus();
+              onStartShortcutCapture("switchPreviousModelShortcut");
+            }}
+            onBlur={onCancelShortcutCapture}
+            aria-pressed={recordingShortcut === "switchPreviousModelShortcut"}
             className={`omni-shortcut-capture h-9 w-full rounded-md border px-3 text-left text-sm ${
               recordingShortcut === "switchPreviousModelShortcut"
                 ? "omni-shortcut-capture--active border-violet-500 text-violet-600 ring-2 ring-violet-500/20"
@@ -237,7 +254,7 @@ export default function BasicSettingsSection({
           isDesktopPetAwake={isDesktopPetAwake}
           onEnableDesktopPet={onEnableDesktopPet}
           onSelectPet={onSelectCodexPet}
-          onCreatePet={onCreateCodexPet}
+          onImportPet={onImportCodexPet}
           onRefreshPets={onRefreshCodexPets}
         />
       </div>

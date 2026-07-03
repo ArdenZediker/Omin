@@ -3104,6 +3104,11 @@ body:has(.pet-thought-window),
   color: #64748b;
 }
 
+.chat-composer__suggestion--knowledge.chat-composer__suggestion--active .chat-composer__suggestion-icon {
+  background: color-mix(in srgb, #4f46e5 16%, var(--omni-panel-bg));
+  color: #4f46e5;
+}
+
 .chat-composer__suggestion-icon {
   width: 20px;
   height: 20px;
@@ -3123,6 +3128,10 @@ body:has(.pet-thought-window),
   align-items: center;
   gap: 16px;
   flex: 1 1 auto;
+}
+
+.chat-composer__suggestion-copy--knowledge {
+  grid-template-columns: minmax(110px, max-content) minmax(0, 1fr);
 }
 
 .chat-composer__suggestion-command {
@@ -3298,6 +3307,16 @@ body:has(.pet-thought-window),
 
 .chat-composer__status-chip:hover {
   background: color-mix(in srgb, var(--omni-app-text) 6%, transparent);
+}
+
+.chat-composer__status-chip--knowledge {
+  border-color: color-mix(in srgb, #4f46e5 24%, var(--omni-panel-border));
+  background: color-mix(in srgb, #4f46e5 8%, var(--omni-panel-bg));
+  color: color-mix(in srgb, #312e81 76%, var(--omni-app-text));
+}
+
+.chat-composer__status-chip--knowledge:hover {
+  background: color-mix(in srgb, #4f46e5 12%, var(--omni-panel-bg));
 }
 
 .chat-composer__row {
@@ -6858,7 +6877,9 @@ body:has(.pet-thought-window),
   position: absolute;
   top: calc(100% + 10px);
   left: 0;
-  min-width: 136px;
+  width: var(--compact-menu-width, 136px);
+  min-width: var(--compact-menu-width, 136px);
+  box-sizing: border-box;
   padding: 6px;
   border-radius: 14px;
   background:
@@ -6902,10 +6923,13 @@ body:has(.pet-thought-window),
   position: absolute;
   top: 0;
   left: calc(100% + 4px);
-  min-width: 136px;
-  width: max-content;
-  max-width: min(220px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
+  min-width: var(--compact-submenu-width, 136px);
+  width: var(--compact-submenu-width, 136px);
+  max-width: calc(100vw - var(--compact-menu-edge-padding, 18px) * 2);
+  max-height: calc(
+    100vh - var(--compact-submenu-top, var(--compact-menu-edge-padding, 18px)) - var(--compact-menu-edge-padding, 18px)
+  );
+  box-sizing: border-box;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 4px;
@@ -7155,6 +7179,16 @@ body:has(.pet-thought-window),
 }
 
 .no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.drag-region button,
+.drag-region input,
+.drag-region textarea,
+.drag-region select,
+.drag-region a,
+.drag-region [role="button"] {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }

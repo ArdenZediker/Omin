@@ -37,7 +37,7 @@ import type { Message } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
-import type { AssistantMemoryRecord, AssistantMemorySourceType, AssistantProfile, ChatSession } from "../chat/types";
+import type { AssistantMemoryRecord, AssistantMemorySourceType, AssistantProfile, ChatSendOptions, ChatSession } from "../chat/types";
 import type { AssistantMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
@@ -174,7 +174,7 @@ type MainChatViewProps = {
   onSelectAssistant: (assistantId: string) => void;
   onSelectChat: (sessionId: string) => void;
   onUpdateAssistantProfile: (assistantId: string, patch: Partial<AssistantProfile>) => AssistantProfile | null;
-  onSend: (content: string, images?: string[], hiddenContext?: string) => void | Promise<void>;
+  onSend: (content: string, images?: string[], options?: ChatSendOptions) => void | Promise<void>;
   onSetOpenChatMenu: Dispatch<SetStateAction<{ id: string; x: number; y: number } | null>>;
   onSettingsOpen: () => void;
   onShareChat: (session: ChatSession) => void | Promise<void>;
@@ -586,7 +586,6 @@ export default function MainChatView({
   }, [isEmptyGuideCompact, messages.length, updateEmptyGuideCompact]);
 
   useEffect(() => {
-    if (!isAssistantSettingsMode) return;
     let cancelled = false;
 
     void invoke<{ collections: KnowledgeCollection[] }>("load_knowledge_library_command")
@@ -604,7 +603,7 @@ export default function MainChatView({
     return () => {
       cancelled = true;
     };
-  }, [isAssistantSettingsMode]);
+  }, []);
 
   useEffect(() => {
     if (!composerElement) return;
@@ -1664,7 +1663,7 @@ export default function MainChatView({
                 {!isAssistantSettingsMode && (
                   <button
                     type="button"
-                    className="main-chat-toolbar__icon-button main-chat-toolbar__back-button"
+                    className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
                     aria-label={isAssistantPanelVisible ? "收起助手栏" : "展开助手栏"}
                     title={isAssistantPanelVisible ? "收起助手栏" : "展开助手栏"}
                     onClick={() =>
@@ -1685,7 +1684,7 @@ export default function MainChatView({
                 {isAssistantSettingsMode && (
                   <button
                     type="button"
-                    className="main-chat-toolbar__icon-button main-chat-toolbar__back-button"
+                    className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
                     title="返回聊天"
                     onClick={() => {
                       setAssistantSettingsId(null);
@@ -2441,6 +2440,7 @@ export default function MainChatView({
                   allowedSkillIds={allowedComposerSkillIds}
                   canStartNewTopic={Boolean(activeAssistant)}
                   contextPresetText={composerContextPresetText}
+                  knowledgeCollections={knowledgeCollections}
                   onSend={onSend}
                   hasConversation={messages.some((message) => message.role === "user")}
                   usageLabel={activeSession ? formatUsageLabel(activeSession.usage) : null}

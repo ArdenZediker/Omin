@@ -53,7 +53,7 @@ type LegacyKnowledgeMultimodalProfile = {
 
 export const KNOWLEDGE_MULTIMODAL_CONFIG_STORAGE_KEY = "omni_knowledge_multimodal_profile";
 
-export const KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS: Record<KnowledgeMultimodalProviderId, string> = {
+export const KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
   openrouter: "https://openrouter.ai/api/v1",
   moonshot: "https://api.moonshot.cn/v1",
@@ -74,12 +74,8 @@ function normalizeText(value: string | undefined | null) {
   return (value ?? "").trim();
 }
 
-function isKnowledgeMultimodalProviderId(value: string): value is KnowledgeMultimodalProviderId {
-  return KNOWLEDGE_MULTIMODAL_PROVIDER_OPTIONS.some((item) => item.id === value);
-}
-
 function normalizeProvider(value: string | undefined | null): KnowledgeMultimodalProviderId {
-  return value && isKnowledgeMultimodalProviderId(value) ? value : DEFAULT_PROVIDER;
+  return normalizeText(value) || DEFAULT_PROVIDER;
 }
 
 function normalizeCapability(
@@ -108,7 +104,7 @@ function makeModelId(provider: KnowledgeMultimodalProviderId, capability: Knowle
 function normalizeModel(model: Partial<KnowledgeMultimodalModelConfig> & { capabilities?: string[] } | null | undefined, index: number) {
   const capability = normalizeCapability(model?.capability, model?.capabilities);
   const provider = normalizeProvider(model?.provider);
-  const baseUrl = normalizeText(model?.baseUrl) || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[provider];
+  const baseUrl = normalizeText(model?.baseUrl) || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[provider] || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[DEFAULT_PROVIDER];
   const rawModel = normalizeText(model?.model) || getDefaultModelName(capability);
   return {
     id: normalizeText(model?.id) || makeModelId(provider, capability, rawModel, index),
@@ -199,7 +195,7 @@ function parseLegacyMultimodalConfig(raw: LegacyKnowledgeMultimodalProfile): Kno
         id: makeModelId(provider, capability, model, 0),
         name: model,
         provider,
-        baseUrl: normalizeText(raw.baseUrl) || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[provider],
+        baseUrl: normalizeText(raw.baseUrl) || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[provider] || KNOWLEDGE_MULTIMODAL_PROVIDER_BASE_URLS[DEFAULT_PROVIDER],
         model,
         apiKey: normalizeText(raw.apiKey),
         capability,

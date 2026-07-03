@@ -12,7 +12,7 @@ type Props = {
   isDesktopPetAwake: boolean;
   onEnableDesktopPet: () => Promise<void> | void;
   onSelectPet: (petId: string) => void;
-  onCreatePet: () => Promise<void> | void;
+  onImportPet: () => Promise<boolean>;
   onRefreshPets: () => Promise<void> | void;
 };
 
@@ -23,18 +23,39 @@ export default function CodexPetSection({
   isDesktopPetAwake,
   onEnableDesktopPet,
   onSelectPet,
-  onCreatePet,
+  onImportPet,
   onRefreshPets,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
+  const [importStatus, setImportStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const activePackage = packages.find((pet) => pet.id === state.activePetId) ?? null;
   const previewSize = fitCodexPetToBounds({ width: 54, height: 54 });
+  const petFormatHint = "请选择宠物包文件夹，文件夹内必须包含 pet.json 和贴图文件，可使用 Codex 同款宠物文件。pet.json 需要包含 id、displayName、description、spritesheetPath，其中 spritesheetPath 必须指向文件夹内的相对路径。";
   const handleOpenFolder = async () => {
     const folderPath = projectPetsRoot;
     try {
       await revealItemInDir(folderPath);
     } catch (error) {
       console.error("打开宠物文件夹失败", error);
+    }
+  };
+
+  const handleImportPet = async () => {
+    setIsImporting(true);
+    setImportStatus(null);
+    try {
+      const imported = await onImportPet();
+      if (imported) {
+        setImportStatus({ tone: "success", message: "宠物已导入并加入列表。" });
+      }
+    } catch (error) {
+      setImportStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : "导入宠物失败，请检查宠物文件夹。",
+      });
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -67,10 +88,12 @@ export default function CodexPetSection({
             <div className="flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => void onCreatePet()}
+                onClick={() => void handleImportPet()}
+                disabled={isImporting}
+                title={petFormatHint}
                 className="rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-200"
               >
-                创建自己的宠物
+                {isImporting ? "导入中..." : "导入宠物"}
               </button>
               <button
                 type="button"
@@ -87,6 +110,29 @@ export default function CodexPetSection({
                 {isDesktopPetAwake ? "收起宠物" : "唤醒宠物"}
               </button>
             </div>
+            <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
+              <div className="font-medium text-slate-700">宠物包格式</div>
+              <div className="mt-0.5">
+                选择一个宠物包文件夹，需包含 <code className="rounded bg-white px-1 text-slate-600">pet.json</code> 和贴图文件，
+                可使用 Codex 同款宠物文件。
+                <code className="ml-1 rounded bg-white px-1 text-slate-600">pet.json</code> 字段：
+                <code className="ml-1 rounded bg-white px-1 text-slate-600">id</code>、
+                <code className="ml-1 rounded bg-white px-1 text-slate-600">displayName</code>、
+                <code className="ml-1 rounded bg-white px-1 text-slate-600">description</code>、
+                <code className="ml-1 rounded bg-white px-1 text-slate-600">spritesheetPath</code>。
+              </div>
+            </div>
+            {importStatus ? (
+              <div
+                className={`mt-3 rounded-lg border px-3 py-2 text-xs ${
+                  importStatus.tone === "error"
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                }`}
+              >
+                {importStatus.message}
+              </div>
+            ) : null}
           </div>
 
           <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
@@ -105,7 +151,7 @@ export default function CodexPetSection({
             </div>
           </div>
 
-          <div className="border-t border-slate-100">
+          <div className="max-h-[360px] overflow-y-auto overscroll-contain border-t border-slate-100 pr-1 [scrollbar-gutter:stable]">
             {packages.map((pet) => {
               const isActive = pet.id === state.activePetId;
               return (

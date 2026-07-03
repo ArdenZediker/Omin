@@ -46,6 +46,8 @@ type CompactWindowProps = {
   onCharacterPointerDown: (e: MouseEvent<HTMLButtonElement>) => void;
   onCharacterPointerMove: (e: MouseEvent<HTMLButtonElement>) => void;
   onCharacterPointerUp: () => void;
+  onCancelCompactMenuClose: () => void;
+  onCloseCompactMenu: () => void;
   onCloseCompactMenuNow: () => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
   onCompactDrag: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
@@ -99,6 +101,8 @@ export default function CompactWindow({
   onCharacterPointerDown,
   onCharacterPointerMove,
   onCharacterPointerUp,
+  onCancelCompactMenuClose,
+  onCloseCompactMenu,
   onCloseCompactMenuNow,
   onCompactAppearanceChange,
   onCompactDrag,
@@ -238,6 +242,18 @@ export default function CompactWindow({
     };
   };
 
+  const isPointerInsideVisibleFloatingUi = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return Boolean(
+      target.closest(
+        ".compact-menu, .compact-submenu, .compact-query, .compact-reply, .compact-menu-anchor, .pet-thought-compact-toggle, .compact-pet-thought-stack"
+      )
+    );
+  };
+
   return (
     <div
       className={`compact-shell drag-region ${
@@ -281,12 +297,25 @@ export default function CompactWindow({
         className={`compact-hover-zone ${isAnimatedAppearance ? "compact-hover-zone--character" : ""} ${
           isPetAppearance ? "compact-hover-zone--pet" : ""
         }`}
+        onMouseMove={(event) => {
+          if (!isPetAppearance || basicSettings.menuOpenMode !== "hover" || !isCompactMenuOpen || isCompactQueryOpen) {
+            return;
+          }
+
+          if (isPointerInsideVisibleFloatingUi(event.target)) {
+            onCancelCompactMenuClose();
+            return;
+          }
+
+          onCloseCompactMenu();
+        }}
         onMouseEnter={
           (e) => {
             if (isPetAppearance) {
               setIsPetHovered(true);
             }
             if (!isCompactQueryOpen && basicSettings.menuOpenMode === "hover") {
+                onCancelCompactMenuClose();
                 const anchor = resolveAnchorEdge(e.currentTarget);
                 void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
             }
@@ -298,7 +327,7 @@ export default function CompactWindow({
               setIsPetHovered(false);
             }
             if (!isCompactQueryOpen && basicSettings.menuOpenMode === "hover") {
-              onCloseCompactMenuNow();
+              onCloseCompactMenu();
             }
           }
         }
@@ -446,10 +475,10 @@ export default function CompactWindow({
               </div>
             ) : null}
 
-            {isCompactMenuOpen && (
+            {isCompactMenuOpen && !isPetAppearance && (
               <CompactMenu
                 appearanceOptions={appearanceOptions}
-                menuPosition={isPetAppearance ? menuPosition : null}
+                menuPosition={null}
                 characterScale={characterScale}
                 compactAppearance={compactAppearance}
                 entries={entries}
@@ -529,6 +558,28 @@ export default function CompactWindow({
             </div>
           )}
         </div>
+
+        {isCompactMenuOpen && isPetAppearance && (
+          <CompactMenu
+            appearanceOptions={appearanceOptions}
+            menuPosition={isPetAppearance ? menuPosition : null}
+            characterScale={characterScale}
+            compactAppearance={compactAppearance}
+            entries={entries}
+            isCompactAppearanceOpen={isCompactAppearanceOpen}
+            isCompactModelOpen={isCompactModelOpen}
+            compactMenuSide={compactMenuSide}
+            compactSubmenuSide={compactSubmenuSide}
+            followCursorScreen={basicSettings.followCursorScreen}
+            onCompactAppearanceChange={onCompactAppearanceChange}
+            onOpenExternalChat={onOpenExternalChat}
+            onOpenSettingsFromCompact={onOpenSettingsFromCompact}
+            onScaleReset={onCompactScaleReset}
+            onUpdateBasicSettings={onUpdateBasicSettings}
+            onSetIsCompactAppearanceOpen={onSetIsCompactAppearanceOpen}
+            onSetIsCompactModelOpen={onSetIsCompactModelOpen}
+          />
+        )}
       </div>
     </div>
   );

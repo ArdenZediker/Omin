@@ -1,6 +1,11 @@
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { BasicSettings, ExternalChatEntry } from "../../app/types";
 import type { CompactAppearance } from "../../hooks/useCompactWindowState";
+import {
+  COMPACT_MENU_EDGE_PADDING,
+  COMPACT_MENU_SUBMENU_WIDTH,
+  COMPACT_MENU_WIDTH,
+} from "../../hooks/compactMenuGeometry";
 import { omniSmallIconSrc, THEME_MODE_STORAGE_KEY } from "../../app/constants";
 import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../../app/settings";
 import { Bot, Check, ChevronRight, Circle, MessageSquareMore, Minimize2, MonitorCog, Moon, Palette, PawPrint, RotateCcw, Settings2, Sun } from "lucide-react";
@@ -96,10 +101,21 @@ export default function CompactMenu({
     menuPosition && typeof window !== "undefined"
       ? {
           position: "fixed" as const,
-          left: Math.max(8, menuPosition.x),
-          top: Math.max(8, menuPosition.y),
+          "--compact-menu-edge-padding": `${COMPACT_MENU_EDGE_PADDING}px`,
+          "--compact-menu-width": `${COMPACT_MENU_WIDTH}px`,
+          "--compact-submenu-width": `${COMPACT_MENU_SUBMENU_WIDTH}px`,
+          left: Math.max(COMPACT_MENU_EDGE_PADDING, menuPosition.x),
+          top: Math.max(COMPACT_MENU_EDGE_PADDING, menuPosition.y),
         }
-      : undefined;
+      : ({
+          "--compact-menu-edge-padding": `${COMPACT_MENU_EDGE_PADDING}px`,
+          "--compact-menu-width": `${COMPACT_MENU_WIDTH}px`,
+          "--compact-submenu-width": `${COMPACT_MENU_SUBMENU_WIDTH}px`,
+        } as CSSProperties);
+
+  const submenuPositionStyle = {
+    "--compact-submenu-top": `${menuPosition?.y ?? COMPACT_MENU_EDGE_PADDING}px`,
+  } as CSSProperties;
 
   const switchThemeMode = (mode: ThemeMode) => {
     setThemeMode(mode);
@@ -250,6 +266,7 @@ export default function CompactMenu({
       {isCompactModelOpen && (
         <div
           className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
+          style={submenuPositionStyle}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(true);
             onSetIsCompactAppearanceOpen(false);
@@ -291,6 +308,7 @@ export default function CompactMenu({
       {isCompactAppearanceOpen && (
         <div
           className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
+          style={submenuPositionStyle}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(true);
@@ -320,6 +338,7 @@ export default function CompactMenu({
       {isThemeOpen && (
         <div
           className={`compact-submenu compact-submenu--${compactSubmenuSide} animate-fade-in`}
+          style={submenuPositionStyle}
           onMouseEnter={() => {
             onSetIsCompactModelOpen(false);
             onSetIsCompactAppearanceOpen(false);

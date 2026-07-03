@@ -155,7 +155,7 @@ export default function ModelSettingsSection({
             新增模型
           </button>
         </div>
-        <div className="space-y-2">
+        <div className="max-h-[360px] space-y-2 overflow-y-auto overscroll-contain border-t border-slate-100 pt-3 pr-1 [scrollbar-gutter:stable]">
           {endpointModels.length === 0 ? (
             <div className="rounded-md border border-dashed border-slate-300 px-4 py-8 text-center text-xs text-slate-400">
               暂无自定义模型，点击右上角新增。

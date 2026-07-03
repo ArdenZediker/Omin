@@ -38,6 +38,7 @@ import {
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
+import { resolvePetMenuViewportOffset } from "./hooks/compactMenuGeometry";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -252,16 +253,31 @@ function MainApp() {
     shouldReservePetThoughtSpace,
   ]);
   const petThoughtViewportOffset = useMemo(
-    () =>
-      compactAppearance === "pet" && shouldReservePetThoughtSpace && compactViewportSize
+    () => {
+      if (compactAppearance !== "pet" || !compactViewportSize) {
+        return { x: 0, y: 0 };
+      }
+
+      if (isCompactMenuOpen) {
+        return resolvePetMenuViewportOffset(compactSize, compactViewportSize, {
+          menuSide: compactMenuSide,
+          submenuSide: compactSubmenuSide,
+        });
+      }
+
+      return shouldReservePetThoughtSpace
         ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
-        : { x: 0, y: 0 },
+        : { x: 0, y: 0 };
+    },
     [
       compactAppearance,
       compactSize.height,
       compactSize.width,
       compactViewportSize?.height,
       compactViewportSize?.width,
+      compactMenuSide,
+      compactSubmenuSide,
+      isCompactMenuOpen,
       shouldReservePetThoughtSpace,
     ]
   );
@@ -705,6 +721,8 @@ function MainApp() {
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
         onCharacterPointerMove={compactController.handleCharacterPointerMove}
         onCharacterPointerUp={compactController.handleCharacterPointerUp}
+        onCancelCompactMenuClose={compactController.cancelCompactMenuClose}
+        onCloseCompactMenu={compactController.closeCompactMenu}
         onCloseCompactMenuNow={compactController.closeCompactMenuNow}
         onCompactAppearanceChange={compactController.handleCompactAppearanceChange}
         onCompactDrag={compactController.handleCompactDrag}
