@@ -36,3 +36,6 @@ src-tauri/gen/schemas
 *.njsproj
 *.sln
 *.sw?
+
+# WorkBuddy 本地项目数据（记忆/技能/MCP 配置等，不入库）
+.workbuddy/

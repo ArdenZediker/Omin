@@ -12,7 +12,7 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { ALL_LOCAL_COMMANDS, buildSlashDraft, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
+import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ChatSendOptions } from "../chat/types";
 
@@ -155,7 +155,7 @@ export default function ChatInput({
   const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
   const trimmedInput = input.trim();
   const activeSlashCommand = trimmedInput.startsWith("/") ? trimmedInput.split(/\s+/)[0].toLowerCase() : "";
-  const activeLocalCommand = ALL_LOCAL_COMMANDS.find((item) => item.command === activeSlashCommand) ?? null;
+  const activeLocalCommand = getAllLocalCommands().find((item) => item.command === activeSlashCommand) ?? null;
   const activeModeLabel = activeLocalCommand?.title ?? null;
   const activeModeTypeLabel = activeLocalCommand ? (activeLocalCommand.kind === "skill" ? "技能模式" : "工具模式") : null;
   const mentionTrigger = getKnowledgeMentionTrigger(input, caretIndex);

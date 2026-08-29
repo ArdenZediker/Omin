@@ -1,4 +1,6 @@
-import { TOOL_MANIFESTS } from "../config/manifests/tools";
+import { BUILTIN_SKILL_PLUGINS, BUILTIN_TOOL_PLUGINS } from "../plugins/builtins";
+import { pluginRegistry } from "../plugins/registry";
+import type { PluginSkillContribution, PluginToolContribution } from "../plugins/types";
 
 export type LocalSlashCommand = {
   id: string;
@@ -14,68 +16,82 @@ export type ResolvedLocalSlashCommand = LocalSlashCommand & {
   args: string;
 };
 
-export const LOCAL_SLASH_COMMANDS: LocalSlashCommand[] = TOOL_MANIFESTS.filter((tool) => tool.command).map((tool) => ({
-  id: tool.id,
-  command: tool.command as string,
-  title: tool.title,
-  description: tool.description,
-  kind: "tool",
-}));
+function skillToLocalCommand(skill: PluginSkillContribution): LocalSlashCommand {
+  return {
+    id: skill.id,
+    command: skill.command,
+    title: skill.title,
+    description: skill.description,
+    kind: "skill",
+    systemPrompt: skill.systemPrompt,
+    promptPrefix: skill.promptPrefix,
+  };
+}
 
-export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = [
-  {
-    id: "summarize",
-    command: "/summarize",
-    title: "总结",
-    description: "总结当前输入或最近对话",
-    kind: "skill",
-    systemPrompt: "当前任务是总结。压缩信息但保留关键结论、约束、风险和后续待办，不扩写无根据内容。",
-    promptPrefix: "请总结下面内容，保留关键结论、约束和待办：",
-  },
-  {
-    id: "rewrite",
-    command: "/rewrite",
-    title: "改写",
-    description: "改写当前输入，使表达更清晰自然",
-    kind: "skill",
-    systemPrompt: "当前任务是改写。保持原意和事实不变，优化结构、语气和可读性，不新增未提供的信息。",
-    promptPrefix: "请改写下面内容，让表达更清晰、自然、可直接使用：",
-  },
-  {
-    id: "translate",
-    command: "/translate",
-    title: "翻译",
-    description: "翻译当前输入，未指定语言时默认翻译成中文",
-    kind: "skill",
-    systemPrompt: "当前任务是翻译。优先准确传达原意；未指定目标语言时翻译成中文；保留必要的术语、代码和专有名词。",
-    promptPrefix: "请翻译下面内容；如果用户没有指定目标语言，默认翻译成中文：",
-  },
-  {
-    id: "explain",
-    command: "/explain",
-    title: "解释",
-    description: "解释概念、代码或文本",
-    kind: "skill",
-    systemPrompt: "当前任务是解释。先给简明结论，再说明背景、关键点、例子和常见误解；不要把解释写成泛泛教程。",
-    promptPrefix: "请解释下面内容，说明背景、关键点和容易误解的地方：",
-  },
-  {
-    id: "compare",
-    command: "/compare",
-    title: "比较",
-    description: "比较多个方案、概念或文本差异",
-    kind: "skill",
-    systemPrompt: "当前任务是比较。围绕差异、适用场景、优缺点和推荐结论组织回答；如果信息不足，明确比较依据有限。",
-    promptPrefix: "请比较下面内容，给出差异、优缺点和推荐结论：",
-  },
-];
+function toolToLocalCommand(tool: PluginToolContribution): LocalSlashCommand {
+  return {
+    id: tool.id,
+    command: tool.command ?? `/${tool.id}`,
+    title: tool.title,
+    description: tool.description,
+    kind: "tool",
+  };
+}
 
-export const ALL_LOCAL_COMMANDS = [...LOCAL_SLASH_COMMANDS, ...LOCAL_SKILL_COMMANDS];
+/** 内置技能命令（保留导出用于兼容旧代码与测试）。 */
+export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = BUILTIN_SKILL_PLUGINS.map((manifest) =>
+  skillToLocalCommand({
+    id: manifest.id,
+    command: manifest.command ?? `/${manifest.id}`,
+    title: manifest.name,
+    description: manifest.description,
+    systemPrompt: manifest.systemPrompt,
+    promptPrefix: manifest.promptPrefix,
+  })
+);
 
-export type SlashSuggestion =
-  | { kind: "local"; commandKind: "tool" | "skill"; id: string; command: string; title: string; description: string };
+/** 内置工具命令（保留导出用于兼容旧代码）。 */
+export const LOCAL_TOOL_COMMANDS: LocalSlashCommand[] = BUILTIN_TOOL_PLUGINS.map((manifest) =>
+  toolToLocalCommand({
+    id: manifest.id,
+    command: manifest.command,
+    title: manifest.name,
+    description: manifest.description,
+    promptContribution: manifest.promptContribution,
+  })
+);
 
-export function getMatchingSlashSuggestions(input: string, allowedToolIds?: string[] | null, allowedSkillIds?: string[] | null): SlashSuggestion[] {
+/** 全部可用技能命令 = 内置 + 插件市场已安装且启用。 */
+export function getAllSkillCommands(): LocalSlashCommand[] {
+  return pluginRegistry.toSkillCommands().map(skillToLocalCommand);
+}
+
+/** 全部可用工具命令 = 内置 + 插件市场已安装且启用。 */
+export function getAllToolCommands(): LocalSlashCommand[] {
+  return pluginRegistry.toToolManifests().map(toolToLocalCommand);
+}
+
+/** 全部本地命令 = 工具 + 技能（含已安装插件）。 */
+export function getAllLocalCommands(): LocalSlashCommand[] {
+  return [...getAllToolCommands(), ...getAllSkillCommands()];
+}
+
+export const ALL_LOCAL_COMMANDS = [...LOCAL_TOOL_COMMANDS, ...LOCAL_SKILL_COMMANDS];
+
+export type SlashSuggestion = {
+  kind: "local";
+  commandKind: "tool" | "skill";
+  id: string;
+  command: string;
+  title: string;
+  description: string;
+};
+
+export function getMatchingSlashSuggestions(
+  input: string,
+  allowedToolIds?: string[] | null,
+  allowedSkillIds?: string[] | null
+): SlashSuggestion[] {
   const normalized = input.trim().toLowerCase();
   if (!normalized.startsWith("/")) {
     return [];
@@ -84,15 +100,30 @@ export function getMatchingSlashSuggestions(input: string, allowedToolIds?: stri
   const query = normalized.slice(1);
   const allowedToolIdSet = allowedToolIds ? new Set(allowedToolIds) : null;
   const allowedSkillIdSet = allowedSkillIds ? new Set(allowedSkillIds) : null;
-  return ALL_LOCAL_COMMANDS.filter((item) => {
-    if (item.kind === "tool" && allowedToolIdSet && !allowedToolIdSet.has(item.id)) {
+
+  const toolSuggestions = getAllToolCommands().filter((item) => {
+    if (allowedToolIdSet && !allowedToolIdSet.has(item.id)) {
       return false;
     }
-    if (item.kind === "skill" && allowedSkillIdSet && !allowedSkillIdSet.has(item.id)) {
+    return (
+      item.command.startsWith(normalized) ||
+      item.title.toLowerCase().includes(query) ||
+      item.description.toLowerCase().includes(query)
+    );
+  });
+
+  const skillSuggestions = getAllSkillCommands().filter((item) => {
+    if (allowedSkillIdSet && !allowedSkillIdSet.has(item.id)) {
       return false;
     }
-    return item.command.startsWith(normalized) || item.title.toLowerCase().includes(query) || item.description.toLowerCase().includes(query);
-  }).map((item) => ({
+    return (
+      item.command.startsWith(normalized) ||
+      item.title.toLowerCase().includes(query) ||
+      item.description.toLowerCase().includes(query)
+    );
+  });
+
+  return [...toolSuggestions, ...skillSuggestions].map((item) => ({
     kind: "local",
     commandKind: item.kind,
     id: item.id,
@@ -109,7 +140,7 @@ export function resolveLocalSlashCommand(input: string): ResolvedLocalSlashComma
   }
 
   const [command, ...rest] = trimmed.split(/\s+/);
-  const definition = ALL_LOCAL_COMMANDS.find((item) => item.command === command.toLowerCase());
+  const definition = getAllSkillCommands().find((item) => item.command === command.toLowerCase());
   if (!definition) return null;
 
   return {

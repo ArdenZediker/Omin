@@ -46,6 +46,7 @@ import {
   type CompactAppearance,
   useCompactWindowState,
 } from "./hooks/useCompactWindowState";
+import { initializePluginRegistry } from "./plugins/registry";
 import "./App.css";
 
 const KnowledgeBaseView = lazy(() => import("./components/KnowledgeBaseView"));
@@ -544,6 +545,8 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
+    initializePluginRegistry();
+
     let cancelled = false;
 
     const syncActivePet = async () => {
