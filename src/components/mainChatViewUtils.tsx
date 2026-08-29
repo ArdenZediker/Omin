@@ -11,8 +11,13 @@ export const EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY = "main_empty_chat_guide_compa
 export const DEFAULT_TOPIC_PANEL_WIDTH = 240;
 export const MIN_TOPIC_PANEL_WIDTH = 220;
 export const MAX_TOPIC_PANEL_WIDTH = 360;
-export const PROJECT_GROUPS_STORAGE_KEY = "assistant_groups";
-export const DEFAULT_PROJECT_GROUP_LABEL = "默认列表";
+export const LEGACY_PROJECT_GROUPS_STORAGE_KEY = "assistant_groups";
+export const PROJECT_GROUPS_STORAGE_KEY = "project_groups";
+export const DEFAULT_PROJECT_GROUP_LABEL = "默认项目";
+
+export function readProjectGroupsStorageValue(): string | null {
+  return readSqliteBackedValue(PROJECT_GROUPS_STORAGE_KEY) ?? readSqliteBackedValue(LEGACY_PROJECT_GROUPS_STORAGE_KEY);
+}
 
 export function clampPanelWidth(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));

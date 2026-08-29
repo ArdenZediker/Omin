@@ -38,7 +38,7 @@ import type { Message } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
-import type { ProjectMemoryRecord, ProjectMemorySourceType, Project, ChatSendOptions, ChatSession } from "../chat/types";
+import type { ProjectDraft, ProjectMemoryRecord, ProjectMemorySourceType, Project, ChatSendOptions, ChatSession } from "../chat/types";
 import type { ProjectMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
@@ -46,11 +46,12 @@ import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 import { AVATAR_CATEGORIES, AVATAR_PRESETS } from "../config/manifests/avatars";
 import { filterAvatarPresets, getEmojiAssetSrc, resolveProjectAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, PROJECT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
-import { LOCAL_SKILL_COMMANDS } from "../chat/skills";
+import { pluginRegistry } from "../plugins/registry";
 import type { AvatarCategoryManifest } from "../config/manifests/types";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
+import CreateProjectDialog from "./CreateProjectDialog";
 import ModelSelector from "./ModelSelector";
 import OmniSelect from "./ui/OmniSelect";
 import OmniSwitch from "./ui/OmniSwitch";
@@ -58,6 +59,7 @@ import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   PROJECT_GROUPS_STORAGE_KEY,
+  readProjectGroupsStorageValue,
   DEFAULT_PROJECT_GROUP_LABEL,
   DEFAULT_TOPIC_PANEL_WIDTH,
   EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY,
@@ -261,6 +263,7 @@ export default function MainChatView({
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
   const [projectGroupManagerOpen, setProjectGroupManagerOpen] = useState(false);
   const [projectGroupCreateMode, setProjectGroupCreateMode] = useState(false);
   const [projectGroupDraft, setProjectGroupDraft] = useState("");
@@ -270,7 +273,7 @@ export default function MainChatView({
     readStoredPanelWidth(MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY, DEFAULT_TOPIC_PANEL_WIDTH, MIN_TOPIC_PANEL_WIDTH, MAX_TOPIC_PANEL_WIDTH)
   );
   const [projectGroups, setProjectGroups] = useState<string[]>(() => {
-    const saved = readSqliteBackedValue(PROJECT_GROUPS_STORAGE_KEY);
+    const saved = readProjectGroupsStorageValue();
     if (!saved) return [];
     try {
       const parsed = JSON.parse(saved);
@@ -534,19 +537,20 @@ export default function MainChatView({
     },
     [activeProject, onUpdateProject, showProjectNotice]
   );
-  const handleCreateProject = useCallback(async () => {
-    try {
-      const selected = await open({ directory: true, title: "选择项目工作目录（可取消以创建空项目）" });
-      const workspacePath = typeof selected === "string" ? selected.trim() : "";
-      const created = onCreateCustomProject(workspacePath ? { workspacePath } : undefined);
+  const handleCreateProject = useCallback(() => {
+    setCreateProjectDialogOpen(true);
+  }, []);
+
+  const handleCreateProjectFromDialog = useCallback(
+    (draft: ProjectDraft) => {
+      const created = onCreateCustomProject(draft);
       if (created && created.id) {
         showProjectNotice("项目已创建，可在项目设置中完善信息");
         setProjectSettingsId(created.id);
       }
-    } catch {
-      showProjectNotice("无法打开目录选择器", "error");
-    }
-  }, [onCreateCustomProject, showProjectNotice]);
+    },
+    [onCreateCustomProject, showProjectNotice]
+  );
   const handleShareActiveSession = useCallback(async () => {
     if (!activeSession) {
       showProjectNotice("当前没有可分享的会话", "error");
@@ -2303,14 +2307,20 @@ export default function MainChatView({
                 {isCustomProjectSettingsMode && (
                 <>
                 <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">工具权限</div>
+                  <div className="omni-settings-dialog__section-title">
+                    工具权限
+                    <span className="omni-settings-dialog__section-subtitle">来自插件广场已启用的工具</span>
+                  </div>
                   <div className="omni-settings-dialog__toggle-list">
-                    {PROJECT_TOOL_OPTIONS.map((tool) => {
+                    {pluginRegistry
+                      .listEnabledTools()
+                      .filter((tool) => PROJECT_TOOL_OPTIONS.some((option) => option.id === tool.id))
+                      .map((tool) => {
                       const checked = activeProject.allowedToolIds.includes(tool.id);
                       return (
                         <label key={tool.id} className="omni-settings-dialog__toggle-row">
                           <div className="omni-settings-dialog__toggle-copy">
-                            <strong>{tool.label}</strong>
+                            <strong>{tool.name}</strong>
                             <span>{tool.description}</span>
                           </div>
                           <OmniSwitch
@@ -2321,7 +2331,7 @@ export default function MainChatView({
                                 : activeProject.allowedToolIds.filter((item) => item !== tool.id);
                               saveProjectPatch({ allowedToolIds: nextAllowedToolIds }, "工具权限已更新");
                             }}
-                            ariaLabel={tool.label}
+                            ariaLabel={tool.name}
                           />
                         </label>
                       );
@@ -2330,15 +2340,18 @@ export default function MainChatView({
                 </div>
 
                 <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">技能权限</div>
+                  <div className="omni-settings-dialog__section-title">
+                    技能权限
+                    <span className="omni-settings-dialog__section-subtitle">来自插件广场已启用的技能</span>
+                  </div>
                   <div className="omni-settings-dialog__toggle-list">
-                    {LOCAL_SKILL_COMMANDS.map((skill) => {
+                    {pluginRegistry.listEnabledSkills().map((skill) => {
                       const checked = activeProject.allowedSkillIds.includes(skill.id);
                       return (
                         <label key={skill.id} className="omni-settings-dialog__toggle-row">
                           <div className="omni-settings-dialog__toggle-copy">
-                            <strong>{skill.title}</strong>
-                            <span>{skill.description} · {skill.command}</span>
+                            <strong>{skill.name}</strong>
+                            <span>{skill.description} · {skill.command ?? `/${skill.id}`}</span>
                           </div>
                           <OmniSwitch
                             checked={checked}
@@ -2348,7 +2361,7 @@ export default function MainChatView({
                                 : activeProject.allowedSkillIds.filter((item) => item !== skill.id);
                               saveProjectPatch({ allowedSkillIds: nextAllowedSkillIds }, "技能权限已更新");
                             }}
-                            ariaLabel={skill.title}
+                            ariaLabel={skill.name}
                           />
                         </label>
                       );
@@ -2863,6 +2876,11 @@ export default function MainChatView({
         </div>
       </section>
 
+      <CreateProjectDialog
+        open={createProjectDialogOpen}
+        onClose={() => setCreateProjectDialogOpen(false)}
+        onCreate={handleCreateProjectFromDialog}
+      />
     </div>
   );
 }
