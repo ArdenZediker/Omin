@@ -4123,11 +4123,11 @@ body:has(.pet-thought-window),
 .omni-knowledge-content-panel {
   min-width: 0;
   min-height: 0;
-  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
+  border: 0;
   border-radius: var(--omni-radius-xl);
   background: var(--omni-app-bg);
   overflow: hidden;
-  box-shadow: var(--omni-surface-shadow);
+  box-shadow: none;
 }
 
 /* Dark mode: harmonize knowledge sidebar surfaces/text with the theme.
