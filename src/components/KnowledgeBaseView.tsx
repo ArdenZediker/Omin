@@ -2087,12 +2087,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                 ) : (
                   <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     {!isKnowledgeLibraryReady ? (
-                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center rounded-2xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-8 py-12 text-center shadow-sm">
+                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center rounded-2xl bg-[var(--omni-panel-bg)] px-8 py-12 text-center">
                         <div className="omni-knowledge-empty-state__title text-lg font-semibold tracking-[-0.02em]">正在加载知识库</div>
                         <div className="omni-knowledge-empty-state__desc mt-2 text-sm">请稍候，系统会读取当前已有的知识库。</div>
                       </div>
                     ) : library.collections.length === 0 ? (
-                      <div className="omni-knowledge-empty-state flex w-full max-w-md flex-col items-center justify-center rounded-2xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-8 py-12 text-center shadow-sm">
+                      <div className="omni-knowledge-empty-state flex w-full max-w-md flex-col items-center justify-center rounded-2xl bg-[var(--omni-panel-bg)] px-8 py-12 text-center">
                         <div className="omni-knowledge-empty-state__title text-2xl font-semibold tracking-[-0.03em]">还没有知识库</div>
                         <div className="omni-knowledge-empty-state__desc mt-2 text-sm">先新建一个知识库，再上传文件或文件夹。</div>
                         {uploadError ? (
@@ -2115,7 +2115,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         </button>
                       </div>
                     ) : (
-                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center rounded-2xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-8 py-12 text-center shadow-sm">
+                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center rounded-2xl bg-[var(--omni-panel-bg)] px-8 py-12 text-center">
                         <div className="omni-knowledge-empty-state__title text-lg font-semibold tracking-[-0.02em]">当前知识库暂无文档</div>
                         <div className="omni-knowledge-empty-state__desc mt-2 text-sm">请使用右上角上传按钮导入文件。</div>
                         {uploadError ? (
