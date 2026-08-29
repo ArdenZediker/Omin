@@ -1127,7 +1127,12 @@ export default function MainChatView({
           <Bot size={20} strokeWidth={1.9} />
         </button>
         <div className="main-chat-nav__items">
-          <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="聊天">
+          <button
+            type="button"
+            className={`main-chat-nav__item no-drag ${!showPluginMarketplace ? "main-chat-nav__item--active" : ""}`}
+            title="聊天"
+            onClick={() => setShowPluginMarketplace(false)}
+          >
             <MessageSquare size={18} strokeWidth={1.9} />
           </button>
           <button

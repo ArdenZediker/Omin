@@ -113,7 +113,7 @@ export default function PluginMarketplace({ initialFilter = {}, onPick, onClose,
       <div className="plugin-marketplace__header">
         <div className="plugin-marketplace__title-row">
           <h2 id="plugin-marketplace-title">插件广场</h2>
-          {!embedded && (
+          {!embedded && !mainView && (
             <button type="button" className="plugin-marketplace__close" onClick={onClose} aria-label="关闭">
               <X size={18} strokeWidth={1.8} />
             </button>
