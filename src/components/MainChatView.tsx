@@ -7,6 +7,7 @@ import {
   ArrowDown,
   ArrowRight,
   Bot,
+  Cable,
   Check,
   GripVertical,
   Compass,
@@ -14,6 +15,7 @@ import {
   FolderOpen,
   History,
   LayoutDashboard,
+  LayoutTemplate,
   MessageSquare,
   MoreHorizontal,
   PawPrint,
@@ -24,6 +26,7 @@ import {
   PanelLeftOpen,
   Pin,
   Plus,
+  Puzzle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -33,6 +36,7 @@ import {
   Sparkles,
   Star,
   Trash2,
+  Wand2,
 } from "lucide-react";
 import type { Message } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
@@ -55,6 +59,8 @@ import CreateProjectDialog from "./CreateProjectDialog";
 import ModelSelector from "./ModelSelector";
 import OmniSelect from "./ui/OmniSelect";
 import OmniSwitch from "./ui/OmniSwitch";
+import PluginMarketplace from "./plugins/PluginMarketplace";
+import type { PluginKind } from "../plugins/types";
 import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -259,6 +265,8 @@ export default function MainChatView({
   const [topicMenuOpen, setTopicMenuOpen] = useState(false);
   const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
+  const [showPluginMarketplace, setShowPluginMarketplace] = useState(false);
+  const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind | "all"; category: string }>({ kind: "all", category: "全部" });
   const [topicDeleteConfirm, setTopicDeleteConfirm] = useState<TopicDeleteConfirmState>(null);
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -1122,7 +1130,18 @@ export default function MainChatView({
           <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="聊天">
             <MessageSquare size={18} strokeWidth={1.9} />
           </button>
-          <button type="button" className="main-chat-nav__item no-drag" title="项目">
+          <button
+            type="button"
+            className={`main-chat-nav__item no-drag ${showPluginMarketplace ? "main-chat-nav__item--active" : ""}`}
+            title="插件广场"
+            onClick={() => {
+              setShowPluginMarketplace((current) => {
+                const next = !current;
+                if (next) setProjectPanelManualVisible(true);
+                return next;
+              });
+            }}
+          >
             <Sparkles size={18} strokeWidth={1.9} />
           </button>
           <button type="button" className="main-chat-nav__item no-drag" title="知识" onClick={onOpenKnowledge}>
@@ -1145,14 +1164,45 @@ export default function MainChatView({
           </div>
         </div>
 
-        <div className="chat-history-panel__project-search">
-          <Search size={14} strokeWidth={1.9} />
-          <input
-            value={projectSearchQuery}
-            onChange={(event) => setProjectSearchQuery(event.target.value)}
-            placeholder="搜索项目..."
-          />
-        </div>
+        {showPluginMarketplace ? (
+          <div className="chat-history-panel__marketplace-nav">
+            <div className="chat-history-panel__marketplace-nav-header">
+              <span>插件广场</span>
+              <button type="button" onClick={() => setShowPluginMarketplace(false)} title="返回项目">
+                <ChevronLeft size={16} strokeWidth={1.8} />
+              </button>
+            </div>
+            <div className="chat-history-panel__marketplace-kind-list">
+              {[
+                { kind: "all" as const, label: "全部", icon: Puzzle },
+                { kind: "skill" as const, label: "技能", icon: Wand2 },
+                { kind: "tool" as const, label: "工具", icon: Puzzle },
+                { kind: "connector" as const, label: "连接器", icon: Cable },
+                { kind: "expert" as const, label: "专家", icon: Bot },
+                { kind: "template" as const, label: "模板", icon: LayoutTemplate },
+              ].map((item) => (
+                <button
+                  key={item.kind}
+                  type="button"
+                  className={`chat-history-panel__marketplace-kind ${marketplaceFilter.kind === item.kind ? "chat-history-panel__marketplace-kind--active" : ""}`}
+                  onClick={() => setMarketplaceFilter((current) => ({ ...current, kind: item.kind, category: "全部" }))}
+                >
+                  <item.icon size={16} strokeWidth={1.8} />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="chat-history-panel__project-search">
+              <Search size={14} strokeWidth={1.9} />
+              <input
+                value={projectSearchQuery}
+                onChange={(event) => setProjectSearchQuery(event.target.value)}
+                placeholder="搜索项目..."
+              />
+            </div>
 
         <div className="chat-history-panel__projects">
           {isBasicProjectVisible && basicProject && (
@@ -1528,6 +1578,8 @@ export default function MainChatView({
             </div>
 
         </div>
+          </>
+        )}
       </aside>
 
       {projectGroupManagerOpen && (
@@ -1720,6 +1772,14 @@ export default function MainChatView({
       )}
 
       <section className="main-chat-stage">
+        {showPluginMarketplace && (
+          <PluginMarketplace
+            key={`marketplace-${marketplaceFilter.kind}-${marketplaceFilter.category}`}
+            mainView
+            initialFilter={marketplaceFilter}
+            onClose={() => setShowPluginMarketplace(false)}
+          />
+        )}
         {projectNotice && (
           <div
             className={`main-chat-notice main-chat-notice--${projectNotice.tone}`}

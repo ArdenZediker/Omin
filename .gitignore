@@ -25,6 +25,14 @@ src-tauri/gen/schemas
 
 # Tauri / Rust local files
 **/*.rs.bk
+# 临时 cargo 编译目录（沙箱/验证用，非项目产物）
+target_check/
+target_verify/
+target_fresh/
+target_check2/
+target_sandbox3/
+target_skillhub_fix/
+cargo_check.log
 
 # Editor directories and files
 .vscode/*

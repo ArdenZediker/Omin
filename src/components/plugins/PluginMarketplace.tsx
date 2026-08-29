@@ -5,11 +5,14 @@ import { listMarketplacePlugins } from "../../plugins/marketplace";
 import { PLUGIN_CATEGORIES } from "../../plugins/builtins";
 import type { PluginFilter, PluginKind, PluginManifest } from "../../plugins/types";
 import { buildPluginInstallPrompt } from "../../plugins/registry";
+import SkillhubBrowser from "./SkillhubBrowser";
 
 type PluginMarketplaceProps = {
-  initialFilter?: PluginFilter;
+  initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind | "all" };
   onPick?: (manifest: PluginManifest) => void;
   onClose: () => void;
+  embedded?: boolean;
+  mainView?: boolean;
 };
 
 const KIND_TABS: { kind: PluginKind | "all"; label: string; icon: typeof Puzzle }[] = [
@@ -29,7 +32,7 @@ const ICON_MAP: Record<string, typeof Puzzle> = {
   template: LayoutTemplate,
 };
 
-export default function PluginMarketplace({ initialFilter = {}, onPick, onClose }: PluginMarketplaceProps) {
+export default function PluginMarketplace({ initialFilter = {}, onPick, onClose, embedded = false, mainView = false }: PluginMarketplaceProps) {
   const [query, setQuery] = useState(initialFilter.query ?? "");
   const [kind, setKind] = useState<PluginKind | "all">(initialFilter.kind ?? "all");
   const [category, setCategory] = useState(initialFilter.category ?? "全部");
@@ -37,6 +40,8 @@ export default function PluginMarketplace({ initialFilter = {}, onPick, onClose 
   const [refreshKey, setRefreshKey] = useState(0);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
+  const [source, setSource] = useState<"local" | "skillhub">("local");
+  const [searchExpanded, setSearchExpanded] = useState(!mainView);
 
   const allPlugins = useMemo(() => {
     const builtins = pluginRegistry.list({ kind: kind === "all" ? undefined : kind, query });
@@ -98,58 +103,148 @@ export default function PluginMarketplace({ initialFilter = {}, onPick, onClose 
     [configDraft]
   );
 
-  return (
-    <>
-      <div className="plugin-marketplace-backdrop" onClick={onClose} />
-      <div className="plugin-marketplace" role="dialog" aria-modal="true" aria-labelledby="plugin-marketplace-title">
-        <div className="plugin-marketplace__header">
-          <div className="plugin-marketplace__title-row">
-            <h2 id="plugin-marketplace-title">插件广场</h2>
+  const renderMarketplace = () => (
+    <div
+      className={`plugin-marketplace ${embedded ? "plugin-marketplace--embedded" : ""} ${mainView ? "plugin-marketplace--main-view" : ""}`}
+      role={embedded || mainView ? undefined : "dialog"}
+      aria-modal={embedded || mainView ? undefined : "true"}
+      aria-labelledby="plugin-marketplace-title"
+    >
+      <div className="plugin-marketplace__header">
+        <div className="plugin-marketplace__title-row">
+          <h2 id="plugin-marketplace-title">插件广场</h2>
+          {!embedded && (
             <button type="button" className="plugin-marketplace__close" onClick={onClose} aria-label="关闭">
               <X size={18} strokeWidth={1.8} />
             </button>
-          </div>
+          )}
+          {mainView && (
+            <button type="button" className="plugin-marketplace__close" onClick={onClose} aria-label="返回聊天">
+              <X size={18} strokeWidth={1.8} />
+            </button>
+          )}
+        </div>
           <p className="plugin-marketplace__subtitle">参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能</p>
 
-          <div className="plugin-marketplace__search">
-            <Search size={16} strokeWidth={1.8} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索插件、技能、专家..."
-            />
-          </div>
-
-          <div className="plugin-marketplace__kind-tabs">
-            {KIND_TABS.map((tab) => (
+          {!onPick && (
+            <div className="plugin-marketplace__kind-tabs">
               <button
-                key={tab.kind}
                 type="button"
-                className={`plugin-marketplace__kind-tab ${kind === tab.kind ? "plugin-marketplace__kind-tab--active" : ""}`}
-                onClick={() => setKind(tab.kind)}
+                className={`plugin-marketplace__kind-tab ${source === "local" ? "plugin-marketplace__kind-tab--active" : ""}`}
+                onClick={() => setSource("local")}
               >
-                <tab.icon size={14} strokeWidth={1.8} />
-                <span>{tab.label}</span>
+                <LayoutTemplate size={14} strokeWidth={1.8} />
+                <span>本地内置</span>
               </button>
-            ))}
-          </div>
-
-          <div className="plugin-marketplace__category-tabs">
-            {PLUGIN_CATEGORIES.filter((c) => c === "全部" || filteredPlugins.some((m) => m.category === c)).map((c) => (
               <button
-                key={c}
                 type="button"
-                className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
-                onClick={() => setCategory(c)}
+                className={`plugin-marketplace__kind-tab ${source === "skillhub" ? "plugin-marketplace__kind-tab--active" : ""}`}
+                onClick={() => setSource("skillhub")}
               >
-                {c}
+                <Bot size={14} strokeWidth={1.8} />
+                <span>SkillHub 实时</span>
               </button>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {!onPick && source === "skillhub" ? null : (
+            <>
+              {mainView ? (
+                <div className="plugin-marketplace__top-bar">
+                  <div className="plugin-marketplace__category-tabs">
+                    {PLUGIN_CATEGORIES.filter((c) => c === "全部" || filteredPlugins.some((m) => m.category === c)).map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
+                        onClick={() => setCategory(c)}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className={`plugin-marketplace__search ${searchExpanded ? "plugin-marketplace__search--expanded" : ""}`}>
+                    {searchExpanded ? (
+                      <>
+                        <Search size={16} strokeWidth={1.8} />
+                        <input
+                          value={query}
+                          onChange={(event) => setQuery(event.target.value)}
+                          placeholder="搜索..."
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          className="plugin-marketplace__search-close"
+                          onClick={() => {
+                            setQuery("");
+                            setSearchExpanded(false);
+                          }}
+                          aria-label="清除搜索"
+                        >
+                          <X size={14} strokeWidth={1.8} />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="plugin-marketplace__search-toggle"
+                        onClick={() => setSearchExpanded(true)}
+                        aria-label="展开搜索"
+                      >
+                        <Search size={18} strokeWidth={1.8} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="plugin-marketplace__search">
+                    <Search size={16} strokeWidth={1.8} />
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="搜索插件、技能、专家..."
+                    />
+                  </div>
+
+                  <div className="plugin-marketplace__kind-tabs">
+                    {KIND_TABS.map((tab) => (
+                      <button
+                        key={tab.kind}
+                        type="button"
+                        className={`plugin-marketplace__kind-tab ${kind === tab.kind ? "plugin-marketplace__kind-tab--active" : ""}`}
+                        onClick={() => setKind(tab.kind)}
+                      >
+                        <tab.icon size={14} strokeWidth={1.8} />
+                        <span>{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="plugin-marketplace__category-tabs">
+                    {PLUGIN_CATEGORIES.filter((c) => c === "全部" || filteredPlugins.some((m) => m.category === c)).map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
+                        onClick={() => setCategory(c)}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
         </div>
 
         <div className="plugin-marketplace__body">
-          {filteredPlugins.length === 0 ? (
+          {!onPick && source === "skillhub" ? (
+            <SkillhubBrowser />
+          ) : filteredPlugins.length === 0 ? (
             <div className="plugin-marketplace__empty">
               <Puzzle size={40} strokeWidth={1.2} />
               <p>没有找到匹配的插件</p>
@@ -319,6 +414,16 @@ export default function PluginMarketplace({ initialFilter = {}, onPick, onClose 
           </div>
         </div>
       </div>
+  );
+
+  if (embedded || mainView) {
+    return renderMarketplace();
+  }
+
+  return (
+    <>
+      <div className="plugin-marketplace-backdrop" onClick={onClose} />
+      {renderMarketplace()}
     </>
   );
 }

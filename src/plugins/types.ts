@@ -37,6 +37,8 @@ export type PluginManifest = {
   category?: string;
   /** emoji 或 lucide icon name */
   icon?: string;
+  /** 来源页（如 SkillHub 技能详情页），用于「在来源查看」 */
+  sourceUrl?: string;
   tags?: string[];
   /** 该插件自带的详细指令/正文（DeepSeek Harness SKILL.md 正文） */
   body?: string;

@@ -1659,6 +1659,53 @@ body:has(.pet-thought-window),
   min-width: 0;
 }
 
+.chat-history-panel__tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--omni-soft-bg);
+  border: 1px solid var(--omni-panel-border);
+}
+
+.chat-history-panel__tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.chat-history-panel__tab:hover {
+  color: var(--omni-app-text);
+}
+
+.chat-history-panel__tab--active {
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.chat-history-panel__plugin-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0 -10px -10px;
+  padding: 0 10px 10px;
+  overflow: hidden;
+}
+
 .chat-history-panel__brand-copy strong {
   color: var(--omni-app-text);
   font-size: 15px;
@@ -9370,6 +9417,36 @@ body:has(.pet-thought-window),
   background: var(--omni-soft-bg);
 }
 
+.plugin-marketplace__search:not(.plugin-marketplace__search--expanded) {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+  margin-top: 0;
+  cursor: pointer;
+}
+
+.plugin-marketplace__search-toggle,
+.plugin-marketplace__search-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+}
+
+.plugin-marketplace__search-toggle:hover,
+.plugin-marketplace__search-close:hover {
+  color: var(--omni-app-text);
+  background: var(--omni-soft-bg);
+}
+
 .plugin-marketplace__search input {
   flex: 1;
   height: 36px;
@@ -9384,11 +9461,35 @@ body:has(.pet-thought-window),
   color: var(--omni-app-muted);
 }
 
+.plugin-marketplace__top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.plugin-marketplace__top-bar .plugin-marketplace__category-tabs {
+  flex: 1;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.plugin-marketplace__top-bar .plugin-marketplace__search {
+  flex-shrink: 0;
+  margin-top: 0;
+}
+
 .plugin-marketplace__kind-tabs {
   display: flex;
   gap: 8px;
   margin-top: 14px;
   overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.plugin-marketplace__kind-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .plugin-marketplace__kind-tab {
@@ -9416,6 +9517,12 @@ body:has(.pet-thought-window),
   gap: 8px;
   margin-top: 10px;
   overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.plugin-marketplace__category-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .plugin-marketplace__category-tab {
@@ -9439,6 +9546,12 @@ body:has(.pet-thought-window),
   flex: 1;
   overflow-y: auto;
   padding: 16px 22px 20px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.plugin-marketplace__body::-webkit-scrollbar {
+  display: none;
 }
 
 .plugin-marketplace__grid {
@@ -9584,6 +9697,75 @@ body:has(.pet-thought-window),
   cursor: default;
 }
 
+.skillhub-browser {
+  margin-top: 14px;
+}
+
+.plugin-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plugin-card__header .plugin-card__icon {
+  flex-shrink: 0;
+}
+
+.skillhub-browser__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-browser__status--error {
+  color: #ef4444;
+}
+
+.skillhub-browser__empty {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-browser__api {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #f59e0b;
+  font-size: 10px;
+}
+
+.skillhub-browser__load-more {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 16px;
+}
+
+.skillhub-browser__load-more button {
+  min-width: 120px;
+}
+
+.skillhub-browser__end {
+  color: var(--omni-app-muted);
+  font-size: 12px;
+}
+
+.spin {
+  animation: skillhub-spin 0.9s linear infinite;
+}
+
+@keyframes skillhub-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .plugin-card__config {
   grid-column: 1 / -1;
   display: flex;
@@ -9663,6 +9845,183 @@ body:has(.pet-thought-window),
   gap: 14px;
   font-size: 11px;
   color: var(--omni-app-muted);
+}
+
+/* 侧边栏内嵌 marketplace */
+.plugin-marketplace--embedded {
+  position: static;
+  transform: none;
+  width: 100%;
+  max-height: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__header {
+  padding: 0 0 12px;
+  border-bottom-color: var(--omni-panel-border);
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__body {
+  padding: 12px 0 0;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__footer {
+  padding: 10px 0 0;
+  background: transparent;
+  border-top: none;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__grid {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.plugin-marketplace--embedded .plugin-card {
+  padding: 10px;
+  gap: 10px;
+}
+
+.plugin-marketplace--embedded .plugin-card__description {
+  -webkit-line-clamp: 2;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__kind-tabs,
+.plugin-marketplace--embedded .plugin-marketplace__category-tabs {
+  margin-top: 10px;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__search {
+  margin-top: 10px;
+}
+
+.plugin-marketplace--main-view {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  height: 100%;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  background: var(--omni-app-bg);
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__header {
+  padding: 18px 20px 12px;
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__body {
+  padding: 12px 20px;
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__footer {
+  padding: 12px 20px;
+}
+
+.chat-history-panel__marketplace-nav {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 4px 2px 10px;
+}
+
+.chat-history-panel__marketplace-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--omni-app-text);
+  padding: 0 6px;
+}
+
+.chat-history-panel__marketplace-nav-header button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+}
+
+.chat-history-panel__marketplace-nav-header button:hover {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.chat-history-panel__marketplace-kind-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-history-panel__marketplace-kind {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--omni-app-text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.chat-history-panel__marketplace-kind:hover {
+  background: color-mix(in srgb, var(--omni-panel-bg) 92%, #8b5cf6 4%);
+  border-color: color-mix(in srgb, #8b5cf6 28%, var(--omni-panel-border));
+}
+
+.chat-history-panel__marketplace-kind--active {
+  border-color: rgba(96, 165, 250, 0.42);
+  background: color-mix(in srgb, #60a5fa 10%, var(--omni-panel-bg));
+}
+
+.chat-history-panel__marketplace-category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--omni-panel-border);
+}
+
+.chat-history-panel__marketplace-category {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.chat-history-panel__marketplace-category:hover {
+  color: var(--omni-app-text);
+  background: color-mix(in srgb, var(--omni-panel-bg) 92%, #8b5cf6 4%);
+}
+
+.chat-history-panel__marketplace-category--active {
+  color: var(--omni-app-text);
+  border-color: rgba(96, 165, 250, 0.42);
+  background: color-mix(in srgb, #60a5fa 10%, var(--omni-panel-bg));
 }
 
 /* 设置页内嵌 marketplace 不需要 backdrop/居中 */

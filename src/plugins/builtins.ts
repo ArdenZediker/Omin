@@ -457,13 +457,17 @@ export const BUILTIN_PLUGINS: PluginManifest[] = [
 /** SkillHub 风格的分类，用于插件市场筛选与统计。 */
 export const PLUGIN_CATEGORIES = [
   "全部",
-  "开发编程",
+  "Pay Skill",
+  "办公效率",
   "内容创作",
+  "开发编程",
   "数据分析",
+  "设计多媒体",
+  "AI Agent",
   "知识管理",
   "商业运营",
-  "设计多媒体",
-  "模型",
-  "系统",
-  "记忆",
+  "教育学习",
+  "行业专业",
+  "IT 运维与安全",
+  "生活服务",
 ];
