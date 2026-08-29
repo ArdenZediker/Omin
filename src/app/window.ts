@@ -8,7 +8,13 @@ import { isCompactPetHidden } from "./compactVisibility";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
 import { getCompactMenuViewportMinWidth } from "../hooks/compactMenuGeometry";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
-import { PET_WINDOW_DECORATION_MARGIN_RIGHT, PET_WINDOW_DECORATION_MARGIN_TOP, PET_WINDOW_SAFE_MARGIN_X, PET_WINDOW_SAFE_MARGIN_Y } from "./pets/codexPetSizing";
+import {
+  PET_WINDOW_DECORATION_MARGIN_RIGHT,
+  PET_WINDOW_DECORATION_MARGIN_TOP,
+  PET_WINDOW_SAFE_MARGIN_X,
+  PET_WINDOW_SAFE_MARGIN_Y,
+  PET_WINDOW_TOP_OVERSCROLL,
+} from "./pets/codexPetSizing";
 
 const PET_THOUGHT_BUBBLE_WIDTH = 250;
 const PET_THOUGHT_VIEWPORT_HORIZONTAL_PADDING = 44;
@@ -110,7 +116,15 @@ export function persistCompactPosition(position: { x: number; y: number }) {
 
 function toNativePetCompactPosition(appearance: CompactAppearance, position: { x: number; y: number }) {
   return appearance === "pet"
-    ? { x: position.x, y: Math.max(0, Math.round(position.y - PET_WINDOW_DECORATION_MARGIN_TOP)) }
+    ? {
+        x: position.x,
+        // 保存的是「宠物本体」的视觉位置（已不含视口偏移），恢复时窗口顶边需要向上
+        // 超出一个装饰边距；再额外给一点 overscroll，让贴顶拖动过的宠物能原样回来。
+        y: Math.max(
+          -(PET_WINDOW_DECORATION_MARGIN_TOP + PET_WINDOW_TOP_OVERSCROLL),
+          Math.round(position.y - PET_WINDOW_DECORATION_MARGIN_TOP)
+        ),
+      }
     : position;
 }
 
@@ -208,7 +222,13 @@ export function getStoredMainPosition() {
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       return null;
     }
-    return { x: Math.round(x as number), y: Math.round(y as number) };
+    const position = { x: Math.round(x as number), y: Math.round(y as number) };
+    // 透明无边框窗口在创建瞬间经常在 (0,0) 闪现并触发一次 moved 事件，
+    // 把这种退化坐标当作「无记录」处理，回落到居中，避免每次启动都贴左上角。
+    if (position.x <= 0 && position.y <= 0) {
+      return null;
+    }
+    return position;
   } catch {
     return null;
   }

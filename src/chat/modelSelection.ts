@@ -31,13 +31,13 @@ export function resolveCurrentModelId(options: {
 }
 
 export function resolveExecutionModelId(options: {
-  assistantModelId?: string | null;
+  projectModelId?: string | null;
   currentModelId?: string | null;
   availableModels: ModelConfig[];
 }) {
-  const assistantModelId = resolveAvailableModelId(options.assistantModelId, options.availableModels);
-  if (assistantModelId) {
-    return assistantModelId;
+  const projectModelId = resolveAvailableModelId(options.projectModelId, options.availableModels);
+  if (projectModelId) {
+    return projectModelId;
   }
 
   const currentModelId = resolveAvailableModelId(options.currentModelId, options.availableModels);

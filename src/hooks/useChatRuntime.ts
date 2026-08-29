@@ -12,8 +12,8 @@ import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { getChatSessionTitle } from "../chat/storage";
 import { executeLocalTool } from "../chat/localTools";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
-import type { AssistantMemorySourceType, AssistantProfile, ChatExecutionResult, ChatSendOptions } from "../chat/types";
-import type { AssistantMemoryRecord, SessionSummaryRecord } from "../chat/types";
+import type { ProjectMemorySourceType, Project, ChatExecutionResult, ChatSendOptions } from "../chat/types";
+import type { ProjectMemoryRecord, SessionSummaryRecord } from "../chat/types";
 import { getToolManifestById } from "../config/manifests/tools";
 import type { PetThoughtState } from "../app/types";
 import type { ViewMode } from "../app/types";
@@ -21,31 +21,31 @@ import { getPetThoughtKey, matchesPetThought } from "../app/petThoughts";
 
 type SessionLite = {
   id: string;
-  assistantId?: string;
+  projectId?: string;
   title: string;
   messages: Message[];
 };
 
 type UseChatRuntimeArgs = {
   activeChatId: string | null;
-  activeAssistant: AssistantProfile | null;
+  activeProject: Project | null;
   availableModels: ModelConfig[];
   messages: Message[];
-  addAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null, sourceType?: AssistantMemorySourceType) => boolean;
+  addProjectMemory: (projectId: string, content: string, sourceSessionId?: string | null, sourceType?: ProjectMemorySourceType) => boolean;
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
-  commitAssistantMemory: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
-  createSessionFromMessages: (conversationMessages: Message[], assistantId?: string) => { id: string };
+  commitProjectMemory: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
+  createSessionFromMessages: (conversationMessages: Message[], projectId?: string) => { id: string };
   currentModel: string;
-  getAssistantById: (assistantId: string) => AssistantProfile | null;
+  getProjectById: (projectId: string) => Project | null;
   getChatSessionById: (sessionId: string) => SessionLite | null;
-  getRelatedContextForAssistant: (query: string) => {
+  getRelatedContextForProject: (query: string) => {
     summaries: SessionSummaryRecord[];
-    memories: AssistantMemoryRecord[];
+    memories: ProjectMemoryRecord[];
   };
   handleModelChange: (modelId: string) => void;
   renameChatSession: (sessionId: string, title: string) => boolean;
   searchChatSessions: (query: string) => SessionLite[];
-  setActiveAssistantId: React.Dispatch<React.SetStateAction<string>>;
+  setActiveProjectId: React.Dispatch<React.SetStateAction<string>>;
   setActiveChatId: React.Dispatch<React.SetStateAction<string | null>>;
   setInputDraft: React.Dispatch<React.SetStateAction<string>>;
   setInputDraftImages: React.Dispatch<React.SetStateAction<string[]>>;
@@ -53,19 +53,29 @@ type UseChatRuntimeArgs = {
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setOpenChatMenu: React.Dispatch<React.SetStateAction<{ id: string; x: number; y: number } | null>>;
   togglePinnedChatSession: (sessionId: string) => boolean;
-  updateAssistantProfile: (assistantId: string, patch: Partial<AssistantProfile>) => AssistantProfile | null;
+  updateProjectProfile: (projectId: string, patch: Partial<Project>) => Project | null;
   updateChatSessionMessages: (sessionId: string, nextMessages: Message[] | ((current: Message[]) => Message[])) => void;
   isCompactWindow: boolean;
   view: ViewMode;
 };
 
-function resolveEnabledToolNames(assistant: AssistantProfile | null) {
-  if (!assistant) {
-    return [];
+function resolveEnabledToolNames(project: Project | null) {
+  if (!project) {
+    return { toolNames: [], toolDescriptions: {} };
   }
-  return assistant.allowedToolIds
-    .map((toolId) => getToolManifestById(toolId)?.title)
-    .filter((title): title is string => Boolean(title));
+  const toolNames: string[] = [];
+  const toolDescriptions: Record<string, string> = {};
+  for (const toolId of new Set(project.allowedToolIds)) {
+    const manifest = getToolManifestById(toolId);
+    if (!manifest?.title) continue;
+    toolNames.push(manifest.title);
+    // 仿 deepseek「插件自带指令」：优先使用 manifest 的声明式提示贡献。
+    const contribution = manifest.promptContribution ?? manifest.description;
+    if (contribution) {
+      toolDescriptions[manifest.title] = contribution;
+    }
+  }
+  return { toolNames, toolDescriptions };
 }
 
 const SILENT_LOCAL_TOOL_IDS = new Set([
@@ -129,21 +139,21 @@ function safelyEmitPetThoughtEventTo(windowLabel: string, event: string, payload
 
 export function useChatRuntime({
   activeChatId,
-  activeAssistant,
+  activeProject,
   availableModels,
   messages,
-  addAssistantMemory,
+  addProjectMemory,
   applyUsageToSession,
-  commitAssistantMemory,
+  commitProjectMemory,
   createSessionFromMessages,
   currentModel,
-  getAssistantById,
+  getProjectById,
   getChatSessionById,
-  getRelatedContextForAssistant,
+  getRelatedContextForProject,
   handleModelChange,
   renameChatSession,
   searchChatSessions,
-  setActiveAssistantId,
+  setActiveProjectId,
   setActiveChatId,
   setInputDraft,
   setInputDraftImages,
@@ -151,7 +161,7 @@ export function useChatRuntime({
   setMessages,
   setOpenChatMenu,
   togglePinnedChatSession,
-  updateAssistantProfile,
+  updateProjectProfile,
   updateChatSessionMessages,
   isCompactWindow,
   view,
@@ -235,15 +245,15 @@ export function useChatRuntime({
     [setMessages, updateChatSessionMessages]
   );
 
-  const setLastAssistantContent = useCallback(
+  const setLastProjectContent = useCallback(
     (sessionId: string | null | undefined, content: string) => {
-      const updateLastAssistant = (prev: Message[]) => {
+      const updateLastProject = (prev: Message[]) => {
         if (prev.length === 0) {
           return prev;
         }
         const lastIdx = prev.length - 1;
         const lastMessage = prev[lastIdx];
-        if (lastMessage.role !== "assistant") {
+        if (lastMessage.role !== "project") {
           return prev;
         }
         if (lastMessage.content === content) {
@@ -255,21 +265,21 @@ export function useChatRuntime({
       };
 
       if (sessionId) {
-        updateChatSessionMessages(sessionId, updateLastAssistant);
+        updateChatSessionMessages(sessionId, updateLastProject);
         return;
       }
 
-      setMessages(updateLastAssistant);
+      setMessages(updateLastProject);
     },
     [setMessages, updateChatSessionMessages]
   );
 
   const executionModel = resolveExecutionModelId({
-    assistantModelId: activeAssistant?.defaultModelId,
+    projectModelId: activeProject?.defaultModelId,
     currentModelId: currentModel,
     availableModels,
   });
-  const assistantSystemPrompt = activeAssistant?.systemPrompt?.trim() ? activeAssistant.systemPrompt.trim() : undefined;
+  const projectSystemPrompt = activeProject?.systemPrompt?.trim() ? activeProject.systemPrompt.trim() : undefined;
 
   const getScopedConversationMessages = useCallback(() => {
     if (!activeChatId) {
@@ -281,21 +291,21 @@ export function useChatRuntime({
       return messages;
     }
 
-    if (activeAssistant?.id && session.assistantId && session.assistantId !== activeAssistant.id) {
+    if (activeProject?.id && session.projectId && session.projectId !== activeProject.id) {
       return [] as Message[];
     }
 
     // Use the visible pane messages as the source of truth to avoid
     // stale-session races right after switching/creating conversations.
     return messages;
-  }, [activeAssistant?.id, activeChatId, getChatSessionById, messages]);
+  }, [activeProject?.id, activeChatId, getChatSessionById, messages]);
 
-  const resolveAssistantSystemPrompt = useCallback(
-    (assistantOverride?: AssistantProfile | null) => {
-      const targetAssistant = assistantOverride ?? activeAssistant;
-      return targetAssistant?.systemPrompt?.trim() ? targetAssistant.systemPrompt.trim() : undefined;
+  const resolveProjectSystemPrompt = useCallback(
+    (projectOverride?: Project | null) => {
+      const targetProject = projectOverride ?? activeProject;
+      return targetProject?.systemPrompt?.trim() ? targetProject.systemPrompt.trim() : undefined;
     },
-    [activeAssistant]
+    [activeProject]
   );
 
   const resolvePetThoughtTitle = useCallback(
@@ -315,9 +325,9 @@ export function useChatRuntime({
         return sessionTitle;
       }
 
-      return activeAssistant?.kind === "basic" ? "Omni" : activeAssistant?.title?.trim() || "Omni";
+      return activeProject?.kind === "basic" ? "Omni" : activeProject?.title?.trim() || "Omni";
     },
-    [activeAssistant?.kind, activeAssistant?.title, getChatSessionById]
+    [activeProject?.kind, activeProject?.title, getChatSessionById]
   );
 
   const resolvePetThoughtResponseCount = useCallback((sessionId: string | null | undefined) => {
@@ -641,30 +651,30 @@ export function useChatRuntime({
         setConversationMessagesForSession(sessionId, [
           ...conversationMessages,
           {
-            role: "assistant",
+            role: "project",
             content: taskResult.finalResult.content,
             knowledgeContext: taskResult.finalResult.knowledgeContext ?? null,
           },
         ]);
         if (sessionId) {
           applyUsageToSession(sessionId, taskResult.finalResult, conversationMessages);
-          commitAssistantMemory(sessionId, conversationMessages, taskResult.finalResult);
+          commitProjectMemory(sessionId, conversationMessages, taskResult.finalResult);
         }
         return;
       }
 
       if (taskResult.toolResult?.outputText) {
-        setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "assistant", content: taskResult.toolResult.outputText }]);
+        setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "project", content: taskResult.toolResult.outputText }]);
       }
 
       if (taskResult.status === "failed") {
         setError(taskResult.error || "任务执行失败");
       }
     },
-    [applyUsageToSession, commitAssistantMemory, setConversationMessagesForSession]
+    [applyUsageToSession, commitProjectMemory, setConversationMessagesForSession]
   );
 
-  const applyAssistantReplyToTaskResult = useCallback((taskResult: TaskExecutionResult, assistantReply: string): TaskExecutionResult => {
+  const applyProjectReplyToTaskResult = useCallback((taskResult: TaskExecutionResult, projectReply: string): TaskExecutionResult => {
     if (!taskResult.finalResult) {
       return taskResult;
     }
@@ -672,7 +682,7 @@ export function useChatRuntime({
       ...taskResult,
       finalResult: {
         ...taskResult.finalResult,
-        content: assistantReply,
+        content: projectReply,
       },
     };
   }, []);
@@ -680,29 +690,29 @@ export function useChatRuntime({
   const runConversationTurn = useCallback(
     async (
       conversationMessages: Message[],
-      options: { sessionId?: string | null; createSession?: boolean; hiddenContext?: string; assistantOverride?: AssistantProfile | null } = {}
+      options: { sessionId?: string | null; createSession?: boolean; hiddenContext?: string; projectOverride?: Project | null } = {}
     ) => {
       let sessionId = options.sessionId ?? activeChatId;
       if (!sessionId && options.createSession) {
-        const nextSession = createSessionFromMessages(conversationMessages, options.assistantOverride?.id ?? activeAssistant?.id ?? undefined);
+        const nextSession = createSessionFromMessages(conversationMessages, options.projectOverride?.id ?? activeProject?.id ?? undefined);
         sessionId = nextSession.id;
       }
 
       const abortController = new AbortController();
       const runId = startSessionRun(sessionId, abortController);
       const petThoughtId = startPetThought(sessionId, conversationMessages);
-      const executionAssistant = options.assistantOverride ?? activeAssistant;
-      const systemPrompt = resolveAssistantSystemPrompt(options.assistantOverride);
-      const knowledgeCollectionId = executionAssistant?.knowledgeCollectionId ?? null;
+      const executionProject = options.projectOverride ?? activeProject;
+      const systemPrompt = resolveProjectSystemPrompt(options.projectOverride);
+      const knowledgeCollectionId = executionProject?.knowledgeCollectionId ?? null;
       const latestUserQuery = [...conversationMessages].reverse().find((message) => message.role === "user")?.content ?? "";
-      const relatedContext = getRelatedContextForAssistant(latestUserQuery);
-      let streamedAssistantReply = "";
-      let visibleStreamedAssistantReply = "";
+      const relatedContext = getRelatedContextForProject(latestUserQuery);
+      let streamedProjectReply = "";
+      let visibleStreamedProjectReply = "";
       let isStructuredOutputStreaming = false;
-      const updateStreamPreview = createPreviewThrottler(16, () => setLastAssistantContent(sessionId, visibleStreamedAssistantReply));
-      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, sessionId, conversationMessages, visibleStreamedAssistantReply));
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(sessionId, visibleStreamedProjectReply));
+      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, sessionId, conversationMessages, visibleStreamedProjectReply));
 
-      setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "assistant", content: "" }]);
+      setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "project", content: "" }]);
       setError(null);
 
       try {
@@ -710,28 +720,32 @@ export function useChatRuntime({
           throw new Error("请先在设置中配置一个可用模型");
         }
 
+        const { toolNames: resolvedToolNames, toolDescriptions: resolvedToolDescriptions } =
+          resolveEnabledToolNames(executionProject);
+
         const taskResult = await executeTask({
           model: executionModel,
           messages: conversationMessages,
           signal: abortController.signal,
           systemPrompt: [systemPrompt, options.hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
-          assistant: executionAssistant,
+          project: executionProject,
           relatedContext,
-          enabledToolNames: resolveEnabledToolNames(executionAssistant),
+          enabledToolNames: resolvedToolNames,
+          enabledToolDescriptions: resolvedToolDescriptions,
           knowledgeCollectionId,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
             }
-            streamedAssistantReply += chunk;
+            streamedProjectReply += chunk;
             if (!isStructuredOutputStreaming) {
-              const nextVisible = `${visibleStreamedAssistantReply}${chunk}`;
+              const nextVisible = `${visibleStreamedProjectReply}${chunk}`;
               const structuredStart = nextVisible.search(/<omni_(memory|summary)>/i);
               if (structuredStart >= 0) {
-                visibleStreamedAssistantReply = nextVisible.slice(0, structuredStart).trimEnd();
+                visibleStreamedProjectReply = nextVisible.slice(0, structuredStart).trimEnd();
                 isStructuredOutputStreaming = true;
               } else {
-                visibleStreamedAssistantReply = nextVisible;
+                visibleStreamedProjectReply = nextVisible;
               }
               updateThoughtPreview();
               updateStreamPreview();
@@ -767,17 +781,17 @@ export function useChatRuntime({
           return;
         }
 
-        const assistantReply = taskResult.finalResult?.content || streamedAssistantReply || taskResult.toolResult?.outputText || "";
+        const projectReply = taskResult.finalResult?.content || streamedProjectReply || taskResult.toolResult?.outputText || "";
         updateStreamPreview(true);
         updateThoughtPreview(true);
         completePetThought(
           petThoughtId,
           sessionId,
           conversationMessages,
-          assistantReply
+          projectReply
         );
         dismissPetThoughtWhenSessionVisible(sessionId, petThoughtId);
-        finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), sessionId, conversationMessages);
+        finishTaskResult(applyProjectReplyToTaskResult(taskResult, projectReply), sessionId, conversationMessages);
         return;
       } catch (runError) {
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {
@@ -810,10 +824,10 @@ export function useChatRuntime({
       }
     },
     [
-      activeAssistant?.id,
-      activeAssistant?.knowledgeCollectionId,
+      activeProject?.id,
+      activeProject?.knowledgeCollectionId,
       activeChatId,
-      applyAssistantReplyToTaskResult,
+      applyProjectReplyToTaskResult,
       clearPetThoughtSession,
       completePetThought,
       createSessionFromMessages,
@@ -826,9 +840,9 @@ export function useChatRuntime({
       isCurrentPetThought,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
-      resolveAssistantSystemPrompt,
+      resolveProjectSystemPrompt,
       setConversationMessagesForSession,
-      setLastAssistantContent,
+      setLastProjectContent,
       startSessionRun,
       startPetThought,
       updatePetThought,
@@ -838,9 +852,9 @@ export function useChatRuntime({
   const executeTool = useCallback(
     async (command: { command: string; args: string }) => {
       return executeLocalTool({
-        activeAssistant,
+        activeProject,
         activeChatId,
-        addAssistantMemory,
+        addProjectMemory,
         availableModels,
         getChatSessionById,
         handleModelChange,
@@ -852,13 +866,13 @@ export function useChatRuntime({
         setMessages,
         setOpenChatMenu,
         togglePinnedChatSession,
-        updateAssistantProfile,
+        updateProjectProfile,
       }, command);
     },
     [
-      activeAssistant,
+      activeProject,
       activeChatId,
-      addAssistantMemory,
+      addProjectMemory,
       availableModels,
       getChatSessionById,
       handleModelChange,
@@ -869,7 +883,7 @@ export function useChatRuntime({
       setMessages,
       setOpenChatMenu,
       togglePinnedChatSession,
-      updateAssistantProfile,
+      updateProjectProfile,
     ]
   );
 
@@ -884,10 +898,10 @@ export function useChatRuntime({
         return;
       }
 
-      const targetAssistant = session.assistantId ? getAssistantById(session.assistantId) : null;
-      const systemPrompt = resolveAssistantSystemPrompt(targetAssistant);
-      if (targetAssistant) {
-        setActiveAssistantId(targetAssistant.id);
+      const targetProject = session.projectId ? getProjectById(session.projectId) : null;
+      const systemPrompt = resolveProjectSystemPrompt(targetProject);
+      if (targetProject) {
+        setActiveProjectId(targetProject.id);
       }
       setActiveChatId(session.id);
       // Keep the visible chat pane aligned with the replied session immediately.
@@ -898,10 +912,10 @@ export function useChatRuntime({
         // Keep fallback model resolution below; reply should not fail on config hydration glitches.
       }
 
-      const preferredAssistantModelId = targetAssistant?.defaultModelId?.trim() ?? "";
+      const preferredProjectModelId = targetProject?.defaultModelId?.trim() ?? "";
       const resolvedModelId =
         resolveExecutionModelId({
-          assistantModelId: preferredAssistantModelId,
+          projectModelId: preferredProjectModelId,
           currentModelId: readSqliteBackedValue(CURRENT_MODEL_STORAGE_KEY) ?? modelRegistry.getCurrentModel(),
           availableModels: modelRegistry.getAvailableModels(),
         }) ||
@@ -920,9 +934,9 @@ export function useChatRuntime({
 
       let conversationMessagesForTask = session.messages;
       let petThoughtId: string | null = null;
-      let streamedAssistantReply = "";
-      const updateStreamPreview = createPreviewThrottler(16, () => setLastAssistantContent(session.id, streamedAssistantReply));
-      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, session.id, conversationMessagesForTask, streamedAssistantReply));
+      let streamedProjectReply = "";
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(session.id, streamedProjectReply));
+      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, session.id, conversationMessagesForTask, streamedProjectReply));
 
       try {
         const taskResult = await executeInputTask({
@@ -931,18 +945,18 @@ export function useChatRuntime({
           model: resolvedModelId,
           onPrepareConversation: (preparedMessages) => {
             conversationMessagesForTask = preparedMessages;
-            const nextMessages: Message[] = [...preparedMessages, { role: "assistant", content: "" }];
+            const nextMessages: Message[] = [...preparedMessages, { role: "project", content: "" }];
             setConversationMessagesForSession(sessionId, nextMessages);
             petThoughtId = startPetThought(session.id, preparedMessages);
           },
           signal: abortController.signal,
           systemPrompt,
-          knowledgeCollectionId: targetAssistant?.knowledgeCollectionId ?? null,
+          knowledgeCollectionId: targetProject?.knowledgeCollectionId ?? null,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(session.id, runId, abortController)) {
               return;
             }
-            streamedAssistantReply += chunk;
+            streamedProjectReply += chunk;
             updateThoughtPreview();
             updateStreamPreview();
           },
@@ -978,7 +992,7 @@ export function useChatRuntime({
           return;
         }
 
-        const assistantReply = taskResult.finalResult?.content || streamedAssistantReply || taskResult.toolResult?.outputText || "";
+        const projectReply = taskResult.finalResult?.content || streamedProjectReply || taskResult.toolResult?.outputText || "";
         updateStreamPreview(true);
         updateThoughtPreview(true);
         if (isCurrentPetThought(petThoughtId, session.id)) {
@@ -986,11 +1000,11 @@ export function useChatRuntime({
             petThoughtId,
             session.id,
             conversationMessages,
-            assistantReply
+            projectReply
           );
         }
         dismissPetThoughtWhenSessionVisible(session.id, petThoughtId);
-        finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), session.id, conversationMessages);
+        finishTaskResult(applyProjectReplyToTaskResult(taskResult, projectReply), session.id, conversationMessages);
       } catch (replyError) {
         if (!isCurrentSessionRun(session.id, runId, abortController)) {
           return;
@@ -1020,7 +1034,7 @@ export function useChatRuntime({
       }
     },
     [
-      applyAssistantReplyToTaskResult,
+      applyProjectReplyToTaskResult,
       clearPetThoughtSession,
       completePetThought,
       executeTool,
@@ -1028,18 +1042,18 @@ export function useChatRuntime({
       finishTaskResult,
       finishSessionRun,
       dismissPetThoughtWhenSessionVisible,
-      getAssistantById,
+      getProjectById,
       getChatSessionById,
       isCurrentSessionRun,
       isCurrentPetThought,
       isSessionLoading,
-      resolveAssistantSystemPrompt,
+      resolveProjectSystemPrompt,
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
-      setActiveAssistantId,
+      setActiveProjectId,
       setActiveChatId,
       setConversationMessagesForSession,
-      setLastAssistantContent,
+      setLastProjectContent,
       startSessionRun,
       startPetThought,
       updatePetThought,
@@ -1086,13 +1100,13 @@ export function useChatRuntime({
       let conversationMessagesForTask = scopedCurrentMessages;
       let hasPetThought = false;
       let petThoughtId: string | null = null;
-      let streamedAssistantReply = "";
-      const updateStreamPreview = createPreviewThrottler(16, () => setLastAssistantContent(sessionId, streamedAssistantReply));
+      let streamedProjectReply = "";
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(sessionId, streamedProjectReply));
       const updateThoughtPreview = createPreviewThrottler(66, () => {
         if (!hasPetThought) {
           return;
         }
-        updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, streamedAssistantReply);
+        updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, streamedProjectReply);
       });
 
       try {
@@ -1105,22 +1119,22 @@ export function useChatRuntime({
           onPrepareConversation: (preparedMessages) => {
             conversationMessagesForTask = preparedMessages;
             if (!sessionId) {
-              const nextSession = createSessionFromMessages(preparedMessages, activeAssistant?.id ?? undefined);
+              const nextSession = createSessionFromMessages(preparedMessages, activeProject?.id ?? undefined);
               sessionId = nextSession.id;
               runId = startSessionRun(sessionId, abortController);
             }
-            setConversationMessagesForSession(sessionId, [...preparedMessages, { role: "assistant", content: "" }]);
+            setConversationMessagesForSession(sessionId, [...preparedMessages, { role: "project", content: "" }]);
             petThoughtId = startPetThought(sessionId, preparedMessages);
             hasPetThought = true;
           },
           signal: abortController.signal,
-          systemPrompt: [assistantSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
-          knowledgeCollectionId: selectedKnowledgeCollectionId ?? activeAssistant?.knowledgeCollectionId ?? null,
+          systemPrompt: [projectSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+          knowledgeCollectionId: selectedKnowledgeCollectionId ?? activeProject?.knowledgeCollectionId ?? null,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
             }
-            streamedAssistantReply += chunk;
+            streamedProjectReply += chunk;
             updateThoughtPreview();
             updateStreamPreview();
           },
@@ -1143,7 +1157,7 @@ export function useChatRuntime({
           }
           const localCommandToolId = taskResult.plan.metadata?.toolId;
           if (taskResult.toolResult?.outputText && !SILENT_LOCAL_TOOL_IDS.has(String(localCommandToolId || ""))) {
-            setConversationMessagesForSession(sessionId, [...scopedCurrentMessages, { role: "assistant", content: taskResult.toolResult.outputText }]);
+            setConversationMessagesForSession(sessionId, [...scopedCurrentMessages, { role: "project", content: taskResult.toolResult.outputText }]);
           }
           return;
         }
@@ -1175,7 +1189,7 @@ export function useChatRuntime({
           return;
         }
 
-        const assistantReply = taskResult.finalResult?.content || streamedAssistantReply || taskResult.toolResult?.outputText || "";
+        const projectReply = taskResult.finalResult?.content || streamedProjectReply || taskResult.toolResult?.outputText || "";
         updateStreamPreview(true);
         updateThoughtPreview(true);
         if (hasPetThought && isCurrentPetThought(petThoughtId, sessionId)) {
@@ -1183,11 +1197,11 @@ export function useChatRuntime({
             petThoughtId,
             sessionId,
             conversationMessages,
-            assistantReply
+            projectReply
           );
         }
         dismissPetThoughtWhenSessionVisible(sessionId, petThoughtId);
-        finishTaskResult(applyAssistantReplyToTaskResult(taskResult, assistantReply), sessionId, conversationMessages);
+        finishTaskResult(applyProjectReplyToTaskResult(taskResult, projectReply), sessionId, conversationMessages);
       } catch (sendError) {
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {
           return;
@@ -1216,11 +1230,11 @@ export function useChatRuntime({
       }
     },
     [
-      activeAssistant?.id,
-      activeAssistant?.knowledgeCollectionId,
+      activeProject?.id,
+      activeProject?.knowledgeCollectionId,
       activeChatId,
-      applyAssistantReplyToTaskResult,
-      assistantSystemPrompt,
+      applyProjectReplyToTaskResult,
+      projectSystemPrompt,
       clearPetThoughtSession,
       completePetThought,
       createSessionFromMessages,
@@ -1237,7 +1251,7 @@ export function useChatRuntime({
       resolvePetThoughtResponseCount,
       resolvePetThoughtTitle,
       setConversationMessagesForSession,
-      setLastAssistantContent,
+      setLastProjectContent,
       startSessionRun,
       startPetThought,
       updatePetThought,
@@ -1298,7 +1312,7 @@ export function useChatRuntime({
       }
       const scopedMessages = getScopedConversationMessages();
       const targetMessage = scopedMessages[messageIndex];
-      if (!targetMessage || targetMessage.role !== "assistant") {
+      if (!targetMessage || targetMessage.role !== "project") {
         return;
       }
       const conversationMessages = scopedMessages.slice(0, messageIndex);
@@ -1326,7 +1340,7 @@ export function useChatRuntime({
   );
 
   const handleNewChat = useCallback(() => {
-    createSessionFromMessages([], activeAssistant?.id ?? undefined);
+    createSessionFromMessages([], activeProject?.id ?? undefined);
     setMessages([]);
     setInputDraft("");
     setInputDraftImages([]);
@@ -1334,7 +1348,7 @@ export function useChatRuntime({
     setError(null);
     setOpenChatMenu(null);
     setEditingMessageIndex(null);
-  }, [activeAssistant?.id, createSessionFromMessages, setEditingMessageIndex, setError, setInputDraft, setInputDraftImages, setInputDraftKey, setMessages, setOpenChatMenu]);
+  }, [activeProject?.id, createSessionFromMessages, setEditingMessageIndex, setError, setInputDraft, setInputDraftImages, setInputDraftKey, setMessages, setOpenChatMenu]);
 
   return {
     editingMessageIndex,

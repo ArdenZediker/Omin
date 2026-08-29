@@ -8,6 +8,8 @@ import { bootstrapSqliteStorage, readSqliteBackedValue } from "../app/sqliteStor
 import { executeChatTurn } from "../chat/engine";
 import { resolveCurrentModelId } from "../chat/modelSelection";
 import { USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
+import type { ChatSession } from "../chat/types";
+import type { Message } from "../adapters/types";
 import {
   CHARACTER_SCALE_BASELINE,
   COMPACT_APPEARANCE_OPTIONS,
@@ -17,7 +19,7 @@ import {
   MAIN_WINDOW_LABEL,
 } from "../app/constants";
 import type { BasicSettings, CompactReply, PetThoughtState } from "../app/types";
-import { PET_WINDOW_DECORATION_MARGIN_TOP } from "../app/pets/codexPetSizing";
+import { PET_WINDOW_DECORATION_MARGIN_TOP, PET_WINDOW_NATIVE_TOP_LIMIT, PET_WINDOW_TOP_OVERSCROLL } from "../app/pets/codexPetSizing";
 import type { CompactAppearance } from "./useCompactWindowState";
 import {
   clampCharacterScale,
@@ -63,7 +65,10 @@ function getSafeCurrentWindow() {
 const appWindow = getSafeCurrentWindow() as ReturnType<typeof getCurrentWindow>;
 
 function toNativePetWindowY(visualY: number) {
-  return Math.max(0, Math.round(visualY - PET_WINDOW_DECORATION_MARGIN_TOP));
+  // 宠物本体贴到屏幕最上方时，窗口顶边本来就要向上超出一个装饰边距；
+  // 气泡/菜单把视口撑大后还要再往上超一个视口偏移，所以这里只保留防御性下限，
+  // 真正的上边界由拖动逻辑按「宠物视觉顶边」计算。
+  return Math.max(PET_WINDOW_NATIVE_TOP_LIMIT, Math.round(visualY - PET_WINDOW_DECORATION_MARGIN_TOP));
 }
 
 function toVisualPetWindowY(nativeY: number) {
@@ -232,6 +237,15 @@ type UseCompactWindowControllerArgs = {
   setIsCompactQueryOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setIsCompactReplyLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setPetThoughtPlacement: React.Dispatch<React.SetStateAction<PetThoughtPlacement>>;
+  // 宠物窗口对话接入共享的持久化会话 store（useChatSessions），使宠物对话重启后不丢失、
+  // 并出现在工作台的话题列表中。
+  chatSessions: ChatSession[];
+  activeProjectId: string;
+  createSessionFromMessages: (messages: Message[], projectId?: string) => ChatSession;
+  updateChatSessionMessages: (
+    sessionId: string,
+    nextMessages: Message[] | ((current: Message[]) => Message[])
+  ) => void;
 };
 
 export function useCompactWindowController({
@@ -274,6 +288,10 @@ export function useCompactWindowController({
   setIsCompactQueryOpen,
   setIsCompactReplyLoading,
   setPetThoughtPlacement,
+  chatSessions,
+  activeProjectId,
+  createSessionFromMessages,
+  updateChatSessionMessages,
 }: UseCompactWindowControllerArgs) {
   const PET_CLICK_DRAG_THRESHOLD_PX = 4;
   const PET_CLICK_SUPPRESS_AFTER_DRAG_MS = 320;
@@ -283,12 +301,22 @@ export function useCompactWindowController({
   const [characterDragMotion, setCharacterDragMotion] = useState<"running-left" | "running-right" | "running" | null>(null);
   const [previewCharacterScale, setPreviewCharacterScale] = useState<number | null>(null);
   const [scaleGestureVersion, setScaleGestureVersion] = useState(0);
+  // 已提交的宠物视口偏移。它只在窗口几何（位置/大小）更新完成后才追上目标值，
+  // 避免 "CSS offset 已同步应用、但 Tauri setPosition 还是异步" 导致的那一帧跳变
+  // （菜单展开/收起时宠物闪烁移动的根因）。
+  const [committedPetOffset, setCommittedPetOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const hasPetThought = Boolean(petThought);
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
   const isCharacterDraggingRef = useRef(false);
   const characterPointerDownRef = useRef<{ screenX: number; screenY: number } | null>(null);
-  const characterDragOriginRef = useRef<{ screenX: number; screenY: number; windowX: number; windowY: number } | null>(null);
+  const characterDragOriginRef = useRef<{
+    screenX: number;
+    screenY: number;
+    windowX: number;
+    windowY: number;
+    petViewportOffsetY: number;
+  } | null>(null);
   const characterDragRafRef = useRef<number | null>(null);
   const characterDragPendingRef = useRef<CharacterDragPosition | null>(null);
   const characterDragMoveDrainRef = useRef<Promise<void> | null>(null);
@@ -308,6 +336,9 @@ export function useCompactWindowController({
   const petThoughtStateRef = useRef<PetThoughtState | null>(petThought);
   const petThoughtQueueRef = useRef<PetThoughtState[]>(petThoughtQueue);
   const petThoughtCountRef = useRef<number>(petThoughtCount);
+  // 宠物窗口当前正在使用的持久化会话（与工作台共享 useChatSessions store）。
+  const activePetSessionIdRef = useRef<string | null>(null);
+  const petSessionMessagesRef = useRef<Message[]>([]);
   const petThoughtLayoutRequestRef = useRef(0);
   const lastPetThoughtWindowLayoutRef = useRef<{
     x: number;
@@ -329,6 +360,10 @@ export function useCompactWindowController({
   const compactSuppressBlurUntilRef = useRef(0);
   const lastAppliedCompactSizeRef = useRef<{ width: number; height: number } | null>(null);
   const lastAppliedPetViewportOffsetRef = useRef({ x: 0, y: 0 });
+  // 上一次真正应用的「宠物本体尺寸」（不含气泡预留空间）。
+  // 以宠物中心为锚点调整窗口位置时，必须用宠物尺寸而不是窗口尺寸：
+  // 想法气泡存在时窗口被撑大、宠物被 offset 推离窗口中心，两者并不相等。
+  const lastAppliedPetSizeRef = useRef<{ width: number; height: number } | null>(null);
   const petThoughtCollapseHideTimerRef = useRef<number | null>(null);
   const petThoughtCollapseHideVersionRef = useRef(0);
 
@@ -1228,18 +1263,19 @@ export function useCompactWindowController({
           previousPetViewportOffset.x !== targetPetViewportOffset.x ||
           previousPetViewportOffset.y !== targetPetViewportOffset.y;
         if (hasSizeChanged || currentSizeChanged || hasPetViewportOffsetChanged) {
-          const shouldKeepPetVisualAnchor =
-            previousPetViewportOffset.x !== 0 ||
-            previousPetViewportOffset.y !== 0 ||
-            targetPetViewportOffset.x !== 0 ||
-            targetPetViewportOffset.y !== 0;
-          const nextX = Math.round(currentPosition.x + previousPetViewportOffset.x - targetPetViewportOffset.x);
-          const nextVisualY = toVisualPetWindowY(currentPosition.y) + previousPetViewportOffset.y - targetPetViewportOffset.y;
+          // 以「宠物中心」为锚点：宠物中心在窗口内 = viewportOffset + 宠物本体尺寸/2。
+          // 注意必须用宠物尺寸，不能用窗口尺寸——想法气泡存在时窗口被撑大、
+          // 宠物被 offset 推离窗口中心，两者不相等，用窗口尺寸会让宠物上下乱跳。
+          const previousPetSize = lastAppliedPetSizeRef.current ?? compactSize;
+          const prevCenterX = previousPetViewportOffset.x + previousPetSize.width / 2;
+          const prevCenterY = previousPetViewportOffset.y + previousPetSize.height / 2;
+          const nextCenterX = targetPetViewportOffset.x + previewCompactSize.width / 2;
+          const nextCenterY = targetPetViewportOffset.y + previewCompactSize.height / 2;
+          const nextX = Math.round(currentPosition.x + prevCenterX - nextCenterX);
+          const nextVisualY = toVisualPetWindowY(currentPosition.y) + prevCenterY - nextCenterY;
           compactInternalMoveRef.current = true;
           await Promise.all([
-            hasPetViewportOffsetChanged && shouldKeepPetVisualAnchor
-              ? appWindow.setPosition(new LogicalPosition(nextX, toNativePetWindowY(nextVisualY)))
-              : Promise.resolve(),
+            appWindow.setPosition(new LogicalPosition(nextX, toNativePetWindowY(nextVisualY))),
             appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height)),
             updatePetThoughtWindowForCurrentPositionAndSize(targetSize),
           ]);
@@ -1247,7 +1283,9 @@ export function useCompactWindowController({
             compactInternalMoveRef.current = false;
           }, 120);
           lastAppliedCompactSizeRef.current = { ...targetSize };
+          lastAppliedPetSizeRef.current = { ...previewCompactSize };
           lastAppliedPetViewportOffsetRef.current = targetPetViewportOffset;
+          setCommittedPetOffset(targetPetViewportOffset);
         }
         return;
       }
@@ -1305,9 +1343,14 @@ export function useCompactWindowController({
         }
         const scaleFactor = await appWindow.scaleFactor();
         const pos = event.payload.toLogical(scaleFactor);
+        const petOffset = lastAppliedPetViewportOffsetRef.current;
+        const isPetAppearance = compactAppearance === "pet";
+        // 记录「宠物本体」的视觉位置而不是窗口位置：想法气泡/菜单展开时宠物会被
+        // --pet-viewport-offset-* 推离窗口左上角，直接记窗口坐标的话，
+        // 气泡消失/重启后宠物会整体跑偏。想法气泡窗口同样锚在宠物本体上。
         const visualPos = {
-          x: Math.round(pos.x),
-          y: compactAppearance === "pet" ? toVisualPetWindowY(pos.y) : Math.round(pos.y),
+          x: Math.round(pos.x) + (isPetAppearance ? petOffset.x : 0),
+          y: isPetAppearance ? toVisualPetWindowY(pos.y) + petOffset.y : Math.round(pos.y),
         };
         if (!compactInternalMoveRef.current) {
           persistCompactPosition(visualPos);
@@ -1447,6 +1490,7 @@ export function useCompactWindowController({
           screenY: pointerDown.screenY,
           windowX: Number(window.screenX || 0),
           windowY: Number(window.screenY || 0),
+          petViewportOffsetY: lastAppliedPetViewportOffsetRef.current.y,
         };
       }
 
@@ -1455,7 +1499,11 @@ export function useCompactWindowController({
         return false;
       }
       const nextWindowX = origin.windowX + deltaX;
-      const nextWindowY = Math.max(0, origin.windowY + deltaY);
+      // origin.windowY 是 Tauri 窗口的 native Y；先转成视觉坐标再叠加拖动偏移。
+      // 上边界按「宠物本体的视觉顶边」算：想法气泡/菜单展开时宠物会被
+      // --pet-viewport-offset-y 推离窗口顶边，只限制窗口顶边的话，宠物就再也贴不到屏幕最上方。
+      const minWindowVisualY = -PET_WINDOW_TOP_OVERSCROLL - origin.petViewportOffsetY;
+      const nextWindowY = Math.max(minWindowVisualY, toVisualPetWindowY(origin.windowY) + deltaY);
       characterDragLastTargetRef.current = { x: nextWindowX, y: nextWindowY };
       scheduleCharacterDragPosition(nextWindowX, nextWindowY);
       return true;
@@ -1650,9 +1698,11 @@ export function useCompactWindowController({
       characterDragPendingRef.current = null;
     }
     if (pendingDragPosition) {
+      const petOffset = lastAppliedPetViewportOffsetRef.current;
+      // 与 onMoved 一致：持久化「宠物本体」的视觉位置（窗口位置 + 宠物视口偏移）。
       const finalVisualPosition = {
-        x: Math.round(pendingDragPosition.x),
-        y: Math.round(pendingDragPosition.y),
+        x: Math.round(pendingDragPosition.x + petOffset.x),
+        y: Math.round(pendingDragPosition.y + petOffset.y),
       };
       const lastPersisted = characterDragLastPersistedRef.current;
       if (!lastPersisted || lastPersisted.x !== finalVisualPosition.x || lastPersisted.y !== finalVisualPosition.y) {
@@ -1669,9 +1719,10 @@ export function useCompactWindowController({
       void (async () => {
         const scaleFactor = await appWindow.scaleFactor();
         const position = (await appWindow.outerPosition()).toLogical(scaleFactor);
+        const petOffset = lastAppliedPetViewportOffsetRef.current;
         const finalVisualPosition = {
-          x: Math.round(position.x),
-          y: toVisualPetWindowY(position.y),
+          x: Math.round(position.x + petOffset.x),
+          y: toVisualPetWindowY(position.y) + petOffset.y,
         };
         const lastPersisted = characterDragLastPersistedRef.current;
         if (!lastPersisted || lastPersisted.x !== finalVisualPosition.x || lastPersisted.y !== finalVisualPosition.y) {
@@ -1701,12 +1752,106 @@ export function useCompactWindowController({
     }
   }, [compactSize.height, compactSize.width, flushCharacterDragPosition, releaseCharacterDragWindowMove, updatePetThoughtWindowForRect]);
 
+  // Pet-mode window drag.
+  //
+  // Reuses the SAME JS-driven drag loop the character uses: arming the press by
+  // setting characterPointerDownRef makes the always-on window-capture listener
+  // (continueCharacterDrag) drive the drag. That loop moves the window via
+  // setPosition on every pointer move AND updates characterDragMotion to the
+  // running direction, so the webview keeps repainting and the pet's running
+  // animation actually plays.
+  //
+  // A previous version used appWindow.startDragging() (OS-native drag). That
+  // freezes the webview for the duration of the drag, so the animation never
+  // repaints — the pet looked like it only ever waved. JS-driven drag avoids
+  // that. The capture-phase listener also keeps working even when the cursor
+  // leaves the (small) pet button, which fixed the earlier "unresponsive drag".
+  const handlePetPointerDown = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      markCompactInteraction();
+      void raiseCompactWindow();
+      if (event.button !== 0) {
+        return;
+      }
+      if (isCharacterDraggingRef.current || characterPointerDownRef.current) {
+        return;
+      }
+      // Arm the shared drag loop. No hit-area check here — any press on the
+      // pet body should start a drag.
+      characterPointerDownRef.current = { screenX: event.screenX, screenY: event.screenY };
+      characterDragOriginRef.current = null;
+      characterPointerMovedRef.current = false;
+      characterDragLastTargetRef.current = null;
+      characterDragLastHandledPointerRef.current = null;
+      lastCharacterDragPointerRef.current = null;
+      characterDragMotionAccumRef.current = { x: 0, y: 0 };
+      characterDragMotionRef.current = null;
+      setCharacterDragMotion(null);
+      isCharacterDraggingRef.current = false;
+      setIsCharacterDragging(false);
+      compactInternalMoveRef.current = false;
+      characterDragWindowMoveActiveRef.current = false;
+    },
+    [markCompactInteraction, raiseCompactWindow]
+  );
+
+  // Kept for wiring compatibility; the always-on window-capture mouseup
+  // listener owns the canonical drag cleanup (handleCharacterPointerUp).
+  const handlePetPointerMove = useCallback(() => {}, []);
+
+  // The shared drag loop's window mouseup handler already calls
+  // handleCharacterPointerUp, which resets state and persists the position.
+  // This is a no-op kept for wiring compatibility.
+  const handlePetPointerUp = useCallback(() => {}, []);
+
   useEffect(() => {
     if (!isCompactWindow) {
       return;
     }
 
+    // Drop any drag state that survived without a matching mouseup (e.g. the
+    // release happened outside the webview while dragging the floating pet).
+    // Without this, a stuck `characterPointerDownRef` makes every later
+    // mousemove silently drag the pet to follow the cursor — it looks like the
+    // pet jumps to other positions on its own.
+    const resetStaleDragState = () => {
+      if (
+        !characterPointerDownRef.current &&
+        !isCharacterDraggingRef.current &&
+        !characterDragPendingRef.current &&
+        !characterPointerMovedRef.current
+      ) {
+        return;
+      }
+      characterPointerDownRef.current = null;
+      characterDragOriginRef.current = null;
+      characterDragLastTargetRef.current = null;
+      characterPointerMovedRef.current = false;
+      isCharacterDraggingRef.current = false;
+      characterDragMotionAccumRef.current = { x: 0, y: 0 };
+      characterDragMotionRef.current = null;
+      lastCharacterDragPointerRef.current = null;
+      characterDragLastHandledPointerRef.current = null;
+      if (characterDragRafRef.current !== null) {
+        window.cancelAnimationFrame(characterDragRafRef.current);
+        characterDragRafRef.current = null;
+      }
+      characterDragPendingRef.current = null;
+      characterDragMoveDrainRef.current = null;
+      characterDragWindowMoveActiveRef.current = false;
+      compactInternalMoveRef.current = false;
+      setCharacterDragMotion(null);
+    };
+
     const onWindowMouseMove = (event: MouseEvent) => {
+      // Only a real drag (primary button held) may move the pet. If the button
+      // is already up, any armed drag is stale — clear it instead of following
+      // the cursor.
+      if (!(event.buttons & 1)) {
+        resetStaleDragState();
+        return;
+      }
       const consumed = continueCharacterDrag(event.screenX, event.screenY);
       if (consumed) {
         event.preventDefault();
@@ -1720,13 +1865,33 @@ export function useCompactWindowController({
       handleCharacterPointerUp();
     };
 
+    const onWindowBlur = () => {
+      resetStaleDragState();
+    };
+
     window.addEventListener("mousemove", onWindowMouseMove, { capture: true });
     window.addEventListener("mouseup", onWindowMouseUp, { capture: true });
+    window.addEventListener("blur", onWindowBlur);
     return () => {
       window.removeEventListener("mousemove", onWindowMouseMove, { capture: true });
       window.removeEventListener("mouseup", onWindowMouseUp, { capture: true });
+      window.removeEventListener("blur", onWindowBlur);
     };
   }, [continueCharacterDrag, handleCharacterPointerUp, isCompactWindow]);
+
+  // 启动后把宠物窗口绑定到上一次的持久化会话：之后在宠物窗口的提问会继续追加到
+  // 这个会话（出现在工作台话题列表里），但**不再把上一轮问答回填进回答气泡**——
+  // 那样每次启动都会莫名其妙冒出上次的回答。
+  useEffect(() => {
+    if (activePetSessionIdRef.current !== null) return;
+    const target = [...chatSessions]
+      .filter((session) => session.projectId === activeProjectId)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (!target) return;
+    const messages = target.messages ?? [];
+    petSessionMessagesRef.current = messages;
+    activePetSessionIdRef.current = target.id;
+  }, [chatSessions, activeProjectId]);
 
   const handleCompactQuerySubmit = useCallback(
     async (openMain = false) => {
@@ -1743,7 +1908,6 @@ export function useCompactWindowController({
         availableModels: modelRegistry.getAvailableModels(),
       });
       if (!resolvedModel) {
-        setCompactReply({ question: draft, answer: "请先在设置中配置一个可用模型。", isError: true });
         return;
       }
       modelRegistry.setCurrentModel(resolvedModel);
@@ -1764,7 +1928,6 @@ export function useCompactWindowController({
 
       try {
         setIsCompactReplyLoading(true);
-        setCompactReply({ question: draft, answer: "", isError: false });
 
         let streamedAnswer = "";
         const response = await executeChatTurn({
@@ -1772,26 +1935,51 @@ export function useCompactWindowController({
           messages: [{ role: "user", content: draft }],
           onChunk: (chunk) => {
             streamedAnswer += chunk;
-            setCompactReply({ question: draft, answer: streamedAnswer, isError: false });
           },
         });
-        setCompactReply({ question: draft, answer: response.content || streamedAnswer, isError: false });
+        const finalAnswer = response.content || streamedAnswer;
+
+        // 把这一轮问答写入共享持久化 store，使宠物对话重启后不丢失，
+        // 并出现在工作台的话题列表中。
+        const nextMessages: Message[] = [
+          ...petSessionMessagesRef.current,
+          { role: "user", content: draft },
+          { role: "project", content: finalAnswer },
+        ];
+        petSessionMessagesRef.current = nextMessages;
+        if (activePetSessionIdRef.current) {
+          updateChatSessionMessages(activePetSessionIdRef.current, nextMessages);
+        } else {
+          const session = createSessionFromMessages(nextMessages, activeProjectId);
+          activePetSessionIdRef.current = session.id;
+        }
+
         setIsCompactQueryOpen(false);
         setCompactQuery("");
         setIsCompactQueryOpen(false);
         setCompactQuery("");
       } catch (error) {
-        setCompactReply({ question: draft, answer: error instanceof Error ? error.message : "閺屻儴顕楁径杈Е", isError: true });
+        // 回答气泡已移除，错误不再显示在宠物窗口；需要时可在工作台查看。
       } finally {
         setIsCompactReplyLoading(false);
       }
     },
-    [compactQuery, currentModel, onRestoreMain, setCompactQuery, setCompactReply, setCurrentModel, setIsCompactQueryOpen, setIsCompactReplyLoading]
+    [compactQuery, currentModel, onRestoreMain, setCompactQuery, setCurrentModel, setIsCompactQueryOpen, setIsCompactReplyLoading, activeProjectId, createSessionFromMessages, updateChatSessionMessages]
   );
 
   const handleCompactWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
       if (compactAppearance !== "pet") {
+        return;
+      }
+      // 鼠标在可滚动面板上滚动时，让面板自己处理滚动，不要缩放宠物。
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        (target.closest(".compact-reply") ||
+          target.closest(".pet-thought-bubble") ||
+          target.closest(".compact-query"))
+      ) {
         return;
       }
       markCompactInteraction();
@@ -1811,8 +1999,22 @@ export function useCompactWindowController({
       void updatePetThoughtWindowForCurrentPositionAndSize(previewSize).catch(() => undefined);
       void (async () => {
         try {
+          const scaleFactor = await appWindow.scaleFactor();
+          const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+          // 以「宠物中心」为锚点：想法气泡存在时窗口被撑大、宠物被 offset 推开，
+          // 所以要用 offset + 宠物本体尺寸/2 算中心，而不是用窗口尺寸。
+          const previousPetSize = lastAppliedPetSizeRef.current ?? compactSize;
+          const previousPetViewportOffset = lastAppliedPetViewportOffsetRef.current;
+          const prevCenterX = previousPetViewportOffset.x + previousPetSize.width / 2;
+          const prevCenterY = previousPetViewportOffset.y + previousPetSize.height / 2;
+          const nextX = Math.round(currentPosition.x + prevCenterX - previewSize.width / 2);
+          const nextVisualY = toVisualPetWindowY(currentPosition.y) + prevCenterY - previewSize.height / 2;
+          await appWindow.setPosition(new LogicalPosition(nextX, toNativePetWindowY(nextVisualY)));
           await appWindow.setSize(new LogicalSize(previewSize.width, previewSize.height));
           lastAppliedCompactSizeRef.current = { ...previewSize };
+          lastAppliedPetSizeRef.current = { ...previewSize };
+          // 预览缩放期间不预留气泡空间，窗口就是宠物本体，offset 归零。
+          lastAppliedPetViewportOffsetRef.current = { x: 0, y: 0 };
         } catch {
           // Fall back to React-driven resizing if the immediate native resize fails.
         }
@@ -1838,7 +2040,7 @@ export function useCompactWindowController({
         setScaleGestureVersion((value) => value + 1);
       }, 120);
     },
-    [characterScale, compactAppearance, markCompactInteraction, setCharacterScale, updatePetThoughtWindowForCurrentPositionAndSize]
+    [characterScale, compactAppearance, compactSize, markCompactInteraction, setCharacterScale, updatePetThoughtWindowForCurrentPositionAndSize]
   );
 
   const handleCompactAppearanceChange = useCallback(
@@ -2023,6 +2225,9 @@ export function useCompactWindowController({
     handleCharacterPointerDown,
     handleCharacterPointerMove,
     handleCharacterPointerUp,
+    handlePetPointerDown,
+    handlePetPointerMove,
+    handlePetPointerUp,
     handleCompactAppearanceChange,
     handleCompactDrag,
     handlePetPrimaryClick,
@@ -2036,5 +2241,6 @@ export function useCompactWindowController({
     isCharacterDragging,
     openCompactMenu,
     previewCharacterScale,
+    committedPetOffset,
   };
 }

@@ -4,7 +4,7 @@ import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
 // 为所有 AI 模型提供统一接口
 
 export interface Message {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "project";
   content: string;
   images?: string[]; // base64 编码图片
   knowledgeContext?: KnowledgeContextResult | null;

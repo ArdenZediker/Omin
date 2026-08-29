@@ -5,13 +5,13 @@ type AppStoragePayload = {
 };
 
 export type ManifestStoragePayload = {
-  assistantPresetsJson?: string | null;
+  projectPresetsJson?: string | null;
   toolManifestsJson?: string | null;
   skillManifestsJson?: string | null;
 };
 
 export type MemoryStoragePayload = {
-  assistantMemoriesJson?: string | null;
+  projectMemoriesJson?: string | null;
   userPreferencesJson?: string | null;
   sessionSummariesJson?: string | null;
 };
@@ -100,7 +100,7 @@ export function removeSqliteBackedValue(key: string) {
 export async function loadManifestStorage() {
   if (!canUseTauriInvoke()) {
     return {
-      assistantPresetsJson: null,
+      projectPresetsJson: null,
       toolManifestsJson: null,
       skillManifestsJson: null,
     } satisfies ManifestStoragePayload;
@@ -117,7 +117,7 @@ export async function saveManifestStorage(payload: ManifestStoragePayload) {
 export async function loadMemoryStorage() {
   if (!canUseTauriInvoke()) {
     return {
-      assistantMemoriesJson: null,
+      projectMemoriesJson: null,
       userPreferencesJson: null,
       sessionSummariesJson: null,
     } satisfies MemoryStoragePayload;

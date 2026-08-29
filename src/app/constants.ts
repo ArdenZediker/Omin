@@ -24,7 +24,6 @@ export const omniIconSrc = "/omni-mark.svg";
 export const omniSmallIconSrc = "/omni-mark-small.svg";
 
 export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
-  menuOpenMode: "hover",
   autoLaunch: false,
   minimizeBehavior: "compact",
   mainWindowWidth: EXPANDED_SIZE.width,

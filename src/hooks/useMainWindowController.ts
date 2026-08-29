@@ -270,7 +270,13 @@ export function useMainWindowController({
       .onMoved(async (event) => {
         const scaleFactor = await win.scaleFactor();
         const pos = event.payload.toLogical(scaleFactor);
-        persistMainPosition({ x: Math.round(pos.x), y: Math.round(pos.y) });
+        const next = { x: Math.round(pos.x), y: Math.round(pos.y) };
+        // 透明无边框窗口创建瞬间会在 (0,0) 闪现并触发 moved，
+        // 不要把这种退化坐标当作用户真实摆放持久化。
+        if (next.x <= 0 && next.y <= 0) {
+          return;
+        }
+        persistMainPosition(next);
       })
       .then((unlisten) => {
         moveCleanup = unlisten;

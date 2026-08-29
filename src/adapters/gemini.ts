@@ -32,7 +32,7 @@ export class GeminiAdapter implements ModelAdapter {
         }
         parts.push({ text: msg.content });
         return {
-          role: msg.role === "assistant" ? "model" : "user",
+          role: msg.role === "project" ? "model" : "user",
           parts,
         };
       });

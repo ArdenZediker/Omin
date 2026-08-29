@@ -4,7 +4,7 @@ import { runTaskPlan } from "./taskRunner";
 import type { ResolvedLocalSlashCommand } from "./skills";
 import { resolveLocalSlashCommand } from "./skills";
 import type { TaskExecutionResult, TaskIntent, TaskPlan, TaskStep } from "./taskTypes";
-import type { AssistantMemoryRecord, AssistantProfile, SessionSummaryRecord } from "./types";
+import type { ProjectMemoryRecord, Project, SessionSummaryRecord } from "./types";
 
 function createTaskId() {
   return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -67,18 +67,19 @@ export async function executeTask(options: {
   messages: Message[];
   signal?: AbortSignal;
   systemPrompt?: string;
-  assistant?: AssistantProfile | null;
+  project?: Project | null;
   relatedContext?: {
-    memories?: AssistantMemoryRecord[];
+    memories?: ProjectMemoryRecord[];
     summaries?: SessionSummaryRecord[];
   };
   enabledToolNames?: string[];
+  enabledToolDescriptions?: Record<string, string>;
   onChunk?: (chunk: string) => void;
   knowledgeCollectionId?: string | null;
   intent?: TaskIntent;
   plan?: TaskPlan;
 }): Promise<TaskExecutionResult> {
-  const { model, messages, signal, systemPrompt, assistant, relatedContext, enabledToolNames, onChunk, knowledgeCollectionId } = options;
+  const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
   const plan = options.plan ?? createTaskPlan({ intent, model, messages });
 
@@ -106,7 +107,7 @@ export async function executeTask(options: {
           messages,
           signal,
           systemPrompt,
-          assistant,
+          project,
           relatedContext,
           enabledToolNames,
           onChunk,
@@ -347,12 +348,13 @@ export async function executeInputTask(options: {
   model: string;
   signal?: AbortSignal;
   systemPrompt?: string;
-  assistant?: AssistantProfile | null;
+  project?: Project | null;
   relatedContext?: {
-    memories?: AssistantMemoryRecord[];
+    memories?: ProjectMemoryRecord[];
     summaries?: SessionSummaryRecord[];
   };
   enabledToolNames?: string[];
+  enabledToolDescriptions?: Record<string, string>;
   onChunk?: (chunk: string) => void;
   knowledgeCollectionId?: string | null;
   onPrepareConversation?: (messages: Message[]) => void;
@@ -367,7 +369,7 @@ export async function executeInputTask(options: {
     model,
     signal,
     systemPrompt,
-    assistant,
+    project,
     relatedContext,
     enabledToolNames,
     onChunk,
@@ -379,7 +381,7 @@ export async function executeInputTask(options: {
 
   if (localCommand) {
     if (localCommand.kind === "skill") {
-      if (assistant && !assistant.allowedSkillIds.includes(localCommand.id)) {
+      if (project && !project.allowedSkillIds.includes(localCommand.id)) {
         throw new Error(`当前助手未启用技能：${localCommand.title}`);
       }
       const skillMessages = buildSkillMessages(localCommand, currentMessages);
@@ -389,7 +391,7 @@ export async function executeInputTask(options: {
         messages: skillMessages,
         signal,
         systemPrompt: skillSystemPrompt,
-        assistant,
+        project,
         relatedContext,
         enabledToolNames,
         onChunk,
@@ -432,7 +434,7 @@ export async function executeInputTask(options: {
     messages: preparedMessages,
     signal,
     systemPrompt: [systemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
-    assistant,
+    project,
     relatedContext,
     enabledToolNames,
     onChunk,

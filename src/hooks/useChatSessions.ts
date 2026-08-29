@@ -1,26 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { Message } from "../adapters/types";
 import {
-  getInitialAssistantMemories,
+  getInitialProjectMemories,
   createChatSession,
-  createCustomAssistant,
-  DEFAULT_ASSISTANT_ID,
+  createCustomProject,
+  DEFAULT_PROJECT_ID,
   getChatSessionGroupLabel,
   getChatSessionTitle,
-  getInitialAssistants,
+  getInitialProjects,
   getInitialChatSessions,
   getInitialSessionSummaries,
   getInitialScheduledTasks,
   getInitialUserPreferences,
-  searchAssistantMemories,
+  searchProjectMemories,
   searchSessionSummaries,
 } from "../chat/storage";
 import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
 import { savePersistedAutomationState } from "../chat/persistence";
 import type {
-  AssistantMemoryRecord,
-  AssistantProfile,
-  AssistantProfileDraft,
+  ProjectMemoryRecord,
+  Project,
+  ProjectDraft,
   ChatExecutionResult,
   ChatSession,
   ScheduledTaskRecord,
@@ -32,11 +33,11 @@ function createMemoryId() {
   return `memory-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
-function buildSessionSummary(messages: Message[], assistantReply: string) {
+function buildSessionSummary(messages: Message[], projectReply: string) {
   const userTurns = messages.filter((message) => message.role === "user").map((message) => message.content.trim()).filter(Boolean);
   const latestUser = userTurns[userTurns.length - 1] ?? "";
-  const latestAssistant = assistantReply.trim();
-  const summaryParts = [latestUser, latestAssistant].filter(Boolean);
+  const latestProject = projectReply.trim();
+  const summaryParts = [latestUser, latestProject].filter(Boolean);
   const summary = summaryParts.join(" -> ");
   if (!summary) {
     return "";
@@ -44,7 +45,7 @@ function buildSessionSummary(messages: Message[], assistantReply: string) {
   return summary.length > 220 ? `${summary.slice(0, 217)}...` : summary;
 }
 
-function extractAssistantMemories(messages: Message[]) {
+function extractProjectMemories(messages: Message[]) {
   const memorySignals = ["记住", "偏好", "习惯", "以后", "默认", "总是", "不要", "优先", "我希望", "请用"];
   const userMessages = messages
     .filter((message) => message.role === "user")
@@ -66,42 +67,46 @@ type UseChatSessionsOptions = {
 
 export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const [initialState] = useState(() => {
-    const initialAssistants = getInitialAssistants();
+    const initialProjects = getInitialProjects();
     const initialSessions = getInitialChatSessions();
-    const initialAssistantId = initialAssistants[0]?.id ?? DEFAULT_ASSISTANT_ID;
-    const initialSession = initialSessions.find((session) => session.assistantId === initialAssistantId) ?? null;
+    const initialProjectId = initialProjects[0]?.id ?? DEFAULT_PROJECT_ID;
+    const initialSession = initialSessions.find((session) => session.projectId === initialProjectId) ?? null;
 
     return {
-      assistants: initialAssistants,
+      projects: initialProjects,
       sessions: initialSessions,
-      assistantMemories: getInitialAssistantMemories(),
+      projectMemories: getInitialProjectMemories(),
       sessionSummaries: getInitialSessionSummaries(),
       scheduledTasks: getInitialScheduledTasks(),
       userPreferences: getInitialUserPreferences(),
-      activeAssistantId: initialAssistantId,
+      activeProjectId: initialProjectId,
       activeChatId: initialSession?.id ?? null,
       messages: initialSession?.messages ?? [],
     };
   });
 
-  const [assistants, setAssistants] = useState<AssistantProfile[]>(initialState.assistants);
+  const [projects, setProjects] = useState<Project[]>(initialState.projects);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(initialState.sessions);
-  const [assistantMemories, setAssistantMemories] = useState<AssistantMemoryRecord[]>(initialState.assistantMemories);
+  const [projectMemories, setProjectMemories] = useState<ProjectMemoryRecord[]>(initialState.projectMemories);
   const [sessionSummaries, setSessionSummaries] = useState<SessionSummaryRecord[]>(initialState.sessionSummaries);
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTaskRecord[]>(initialState.scheduledTasks);
   const [userPreferences, setUserPreferences] = useState<UserPreferenceRecord[]>(initialState.userPreferences);
-  const [activeAssistantId, setActiveAssistantId] = useState<string>(initialState.activeAssistantId);
+  const [activeProjectId, setActiveProjectId] = useState<string>(initialState.activeProjectId);
   const [activeChatId, setActiveChatId] = useState<string | null>(initialState.activeChatId);
   const [messages, setMessages] = useState<Message[]>(initialState.messages);
   const [isStorageHydrated, setIsStorageHydrated] = useState(!persist);
-  const activeAssistantIdRef = useRef(activeAssistantId);
+  const activeProjectIdRef = useRef(activeProjectId);
   const activeChatIdRef = useRef(activeChatId);
   const persistTimerRef = useRef<number | null>(null);
   const activeMessagesSyncTimerRef = useRef<number | null>(null);
+  // 仅在「成功从存储加载过」的前提下才允许持久化写回。
+  // 若加载抛异常（catch 分支），保持 false，避免把空回退状态写回数据库、
+  // 从而把库里已有的会话清空（这正是「重启后记忆消失」的根因之一）。
+  const hydratedWithDataRef = useRef(false);
 
   useEffect(() => {
-    activeAssistantIdRef.current = activeAssistantId;
-  }, [activeAssistantId]);
+    activeProjectIdRef.current = activeProjectId;
+  }, [activeProjectId]);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -144,31 +149,36 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     let cancelled = false;
 
     void loadPersistedChatState()
-      .then(({ assistants: nextAssistants, sessions: nextSessions, assistantMemories: nextMemories, sessionSummaries: nextSummaries, userPreferences: nextPreferences, scheduledTasks: nextScheduledTasks }) => {
+      .then(({ projects: nextProjects, sessions: nextSessions, projectMemories: nextMemories, sessionSummaries: nextSummaries, userPreferences: nextPreferences, scheduledTasks: nextScheduledTasks }) => {
         if (cancelled) return;
 
-        const nextActiveAssistantId =
-          nextAssistants.find((assistant) => assistant.id === activeAssistantId)?.id ?? nextAssistants[0]?.id ?? DEFAULT_ASSISTANT_ID;
+        hydratedWithDataRef.current = true;
+
+        const nextActiveProjectId =
+          nextProjects.find((project) => project.id === activeProjectId)?.id ?? nextProjects[0]?.id ?? DEFAULT_PROJECT_ID;
         const nextActiveSession =
-          nextSessions.find((session) => session.id === activeChatId && session.assistantId === nextActiveAssistantId) ??
-          nextSessions.find((session) => session.assistantId === nextActiveAssistantId) ??
+          nextSessions.find((session) => session.id === activeChatId && session.projectId === nextActiveProjectId) ??
+          nextSessions.find((session) => session.projectId === nextActiveProjectId) ??
           null;
 
-        setAssistants(nextAssistants);
+        setProjects(nextProjects);
         setChatSessions(nextSessions);
-        setAssistantMemories(nextMemories);
+        setProjectMemories(nextMemories);
         setSessionSummaries(nextSummaries);
         setScheduledTasks(nextScheduledTasks);
         setUserPreferences(nextPreferences);
-        activeAssistantIdRef.current = nextActiveAssistantId;
+        activeProjectIdRef.current = nextActiveProjectId;
         activeChatIdRef.current = nextActiveSession?.id ?? null;
-        setActiveAssistantId(nextActiveAssistantId);
+        setActiveProjectId(nextActiveProjectId);
         setActiveChatId(nextActiveSession?.id ?? null);
         setMessages(nextActiveSession?.messages ?? []);
         setIsStorageHydrated(true);
       })
       .catch(() => {
         if (!cancelled) {
+          // 加载失败：仍让界面可用，但禁止后续持久化写回，
+          // 防止用空回退状态覆盖数据库中可能仍存在的会话。
+          hydratedWithDataRef.current = false;
           setIsStorageHydrated(true);
         }
       });
@@ -179,7 +189,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   }, [persist]);
 
   useEffect(() => {
-    if (!persist || !isStorageHydrated) return;
+    if (!persist || !isStorageHydrated || !hydratedWithDataRef.current) return;
 
     if (persistTimerRef.current !== null) {
       window.clearTimeout(persistTimerRef.current);
@@ -190,11 +200,27 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     // to avoid high-frequency IPC/storage writes that cause UI and drag stutter.
     persistTimerRef.current = window.setTimeout(() => {
       persistTimerRef.current = null;
-      void savePersistedChatState(assistants, chatSessions);
-      void savePersistedMemoryState(assistantMemories, sessionSummaries, userPreferences);
+      void savePersistedChatState(projects, chatSessions);
+      void savePersistedMemoryState(projectMemories, sessionSummaries, userPreferences);
       void savePersistedAutomationState(scheduledTasks);
     }, 260);
-  }, [assistants, chatSessions, assistantMemories, sessionSummaries, scheduledTasks, userPreferences, isStorageHydrated, persist]);
+  }, [projects, chatSessions, projectMemories, sessionSummaries, scheduledTasks, userPreferences, isStorageHydrated, persist]);
+
+  // 关闭窗口时尽力把最新状态写回，避免 260ms 防抖窗口内退出导致丢数据。
+  useEffect(() => {
+    const flush = () => {
+      if (!hydratedWithDataRef.current) return;
+      void savePersistedChatState(projects, chatSessions);
+      void savePersistedMemoryState(projectMemories, sessionSummaries, userPreferences);
+      void savePersistedAutomationState(scheduledTasks);
+    };
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+    };
+  }, [projects, chatSessions, projectMemories, sessionSummaries, scheduledTasks, userPreferences]);
 
   useEffect(
     () => () => {
@@ -210,14 +236,14 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     []
   );
 
-  const activeAssistant = useMemo(
-    () => assistants.find((assistant) => assistant.id === activeAssistantId) ?? assistants[0] ?? null,
-    [activeAssistantId, assistants]
+  const activeProject = useMemo(
+    () => projects.find((project) => project.id === activeProjectId) ?? projects[0] ?? null,
+    [activeProjectId, projects]
   );
 
-  const assistantSessions = useMemo(
-    () => chatSessions.filter((session) => session.assistantId === activeAssistantId),
-    [activeAssistantId, chatSessions]
+  const projectSessions = useMemo(
+    () => chatSessions.filter((session) => session.projectId === activeProjectId),
+    [activeProjectId, chatSessions]
   );
 
   const activeSessionById = useMemo(
@@ -226,8 +252,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   );
 
   const activeSession = useMemo(
-    () => (activeSessionById && activeSessionById.assistantId === activeAssistantId ? activeSessionById : null),
-    [activeAssistantId, activeSessionById]
+    () => (activeSessionById && activeSessionById.projectId === activeProjectId ? activeSessionById : null),
+    [activeProjectId, activeSessionById]
   );
 
   useEffect(() => {
@@ -238,12 +264,12 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       return;
     }
 
-    // Keep the active chat stable while session/assistant state is still converging.
+    // Keep the active chat stable while session/project state is still converging.
     // Clear only when the chat id truly does not exist anymore.
     if (activeSessionById) {
-      if (activeSessionById.assistantId !== activeAssistantId) {
-        activeAssistantIdRef.current = activeSessionById.assistantId;
-        setActiveAssistantId(activeSessionById.assistantId);
+      if (activeSessionById.projectId !== activeProjectId) {
+        activeProjectIdRef.current = activeSessionById.projectId;
+        setActiveProjectId(activeSessionById.projectId);
       }
       return;
     }
@@ -251,7 +277,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     activeChatIdRef.current = null;
     setActiveChatId(null);
     setMessages([]);
-  }, [activeAssistantId, activeChatId, activeSessionById, messages.length]);
+  }, [activeProjectId, activeChatId, activeSessionById, messages.length]);
 
   const applyUsageToSession = useCallback((sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => {
     const now = Date.now();
@@ -278,8 +304,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   }, []);
 
   const createSessionFromMessages = useCallback(
-    (conversationMessages: Message[], assistantId = activeAssistantIdRef.current) => {
-      const nextSession = createChatSession(conversationMessages, assistantId);
+    (conversationMessages: Message[], projectId = activeProjectIdRef.current) => {
+      const nextSession = createChatSession(conversationMessages, projectId);
       activeChatIdRef.current = nextSession.id;
       setActiveChatId(nextSession.id);
       setChatSessions((sessions) => [nextSession, ...sessions]);
@@ -311,12 +337,12 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     );
   }, []);
 
-  const selectAssistant = useCallback(
-    (assistantId: string) => {
-      activeAssistantIdRef.current = assistantId;
-      setActiveAssistantId(assistantId);
+  const selectProject = useCallback(
+    (projectId: string) => {
+      activeProjectIdRef.current = projectId;
+      setActiveProjectId(projectId);
       const latestSession = [...chatSessions]
-        .filter((session) => session.assistantId === assistantId)
+        .filter((session) => session.projectId === projectId)
         .sort((a, b) => b.updatedAt - a.updatedAt)[0];
 
       activeChatIdRef.current = latestSession?.id ?? null;
@@ -326,100 +352,120 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     [chatSessions]
   );
 
-  const createCustomAssistantProfile = useCallback((input?: string | AssistantProfileDraft) => {
-    const nextInput: AssistantProfileDraft =
+  const createCustomProjectProfile = useCallback((input?: string | ProjectDraft) => {
+    const nextInput: ProjectDraft =
       typeof input === "string"
         ? { title: input.trim() || "自定义助手" }
         : (input ?? {});
 
-    const nextAssistant = createCustomAssistant(nextInput);
+    const nextProject = createCustomProject(nextInput);
 
-    setAssistants((current) => [...current, nextAssistant]);
-    activeAssistantIdRef.current = nextAssistant.id;
+    setProjects((current) => [...current, nextProject]);
+    activeProjectIdRef.current = nextProject.id;
     activeChatIdRef.current = null;
-    setActiveAssistantId(nextAssistant.id);
+    setActiveProjectId(nextProject.id);
     setActiveChatId(null);
     setMessages([]);
-    return nextAssistant;
+    return nextProject;
   }, []);
 
-  const updateAssistantProfile = useCallback((assistantId: string, patch: Partial<AssistantProfile>) => {
-    let updatedAssistant: AssistantProfile | null = null;
+  const updateProjectProfile = useCallback((projectId: string, patch: Partial<Project>) => {
+    let updatedProject: Project | null = null;
     const now = Date.now();
 
-    setAssistants((current) =>
-      current.map((assistant) => {
-        if (assistant.id !== assistantId) {
-          return assistant;
+    setProjects((current) =>
+      current.map((project) => {
+        if (project.id !== projectId) {
+          return project;
         }
 
-        updatedAssistant = {
-          ...assistant,
+        updatedProject = {
+          ...project,
           ...patch,
-          title: typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : assistant.title,
-          description: typeof patch.description === "string" && patch.description.trim() ? patch.description.trim() : assistant.description,
+          title: typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : project.title,
+          description: typeof patch.description === "string" && patch.description.trim() ? patch.description.trim() : project.description,
           groupName:
             typeof patch.groupName === "string"
               ? patch.groupName.trim() || null
               : patch.groupName === null
               ? null
-              : assistant.groupName ?? null,
+              : project.groupName ?? null,
           updatedAt: now,
         };
 
-        return updatedAssistant;
+        return updatedProject;
       })
     );
 
-    return updatedAssistant;
+    return updatedProject;
   }, []);
 
-  const deleteAssistantProfile = useCallback(
-    (assistantId: string) => {
-      if (!assistantId || assistantId === DEFAULT_ASSISTANT_ID) {
+  const deleteProjectProfile = useCallback(
+    async (projectId: string): Promise<boolean> => {
+      if (!projectId || projectId === DEFAULT_PROJECT_ID) {
         return false;
       }
 
-      let removed = false;
-      const relatedSessionIds = new Set(chatSessions.filter((session) => session.assistantId === assistantId).map((session) => session.id));
-
-      setAssistants((current) => {
-        const target = current.find((assistant) => assistant.id === assistantId);
-        if (!target || target.kind !== "custom") {
-          removed = false;
-          return current;
-        }
-        removed = true;
-        return current.filter((assistant) => assistant.id !== assistantId);
-      });
-
-      if (!removed) {
+      const target = projects.find((project) => project.id === projectId);
+      if (!target || target.kind !== "custom") {
         return false;
       }
 
-      setChatSessions((current) => current.filter((session) => session.assistantId !== assistantId));
-      setAssistantMemories((current) => current.filter((memory) => memory.assistantId !== assistantId));
-      setSessionSummaries((current) => current.filter((summary) => summary.assistantId !== assistantId && !relatedSessionIds.has(summary.sessionId)));
-      setScheduledTasks((current) => current.filter((task) => !task.sessionId || !relatedSessionIds.has(task.sessionId)));
+      const relatedSessionIds = new Set(
+        chatSessions.filter((session) => session.projectId === projectId).map((session) => session.id)
+      );
 
-      if (activeAssistantId === assistantId) {
-        activeAssistantIdRef.current = DEFAULT_ASSISTANT_ID;
-        setActiveAssistantId(DEFAULT_ASSISTANT_ID);
-        const fallbackSession = chatSessions
-          .filter((session) => session.assistantId === DEFAULT_ASSISTANT_ID)
-          .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+      const nextProjects = projects.filter((project) => project.id !== projectId);
+      const nextSessions = chatSessions.filter((session) => session.projectId !== projectId);
+      const nextMemories = projectMemories.filter((memory) => memory.projectId !== projectId);
+      const nextSummaries = sessionSummaries.filter(
+        (summary) => summary.projectId !== projectId && !relatedSessionIds.has(summary.sessionId)
+      );
+      const nextTasks = scheduledTasks.filter(
+        (task) => !task.sessionId || !relatedSessionIds.has(task.sessionId)
+      );
+
+      setProjects(nextProjects);
+      setChatSessions(nextSessions);
+      setProjectMemories(nextMemories);
+      setSessionSummaries(nextSummaries);
+      setScheduledTasks(nextTasks);
+
+      if (activeProjectId === projectId) {
+        activeProjectIdRef.current = DEFAULT_PROJECT_ID;
+        setActiveProjectId(DEFAULT_PROJECT_ID);
+        const fallbackSession =
+          nextSessions.filter((session) => session.projectId === DEFAULT_PROJECT_ID).sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
         activeChatIdRef.current = fallbackSession?.id ?? null;
         setActiveChatId(fallbackSession?.id ?? null);
         setMessages(fallbackSession?.messages ?? []);
-      } else if (activeChatId && chatSessions.some((session) => session.id === activeChatId && session.assistantId === assistantId)) {
+      } else if (activeChatId && relatedSessionIds.has(activeChatId)) {
         activeChatIdRef.current = null;
         setActiveChatId(null);
         setMessages([]);
       }
 
+      try {
+        await invoke("delete_project", { id: projectId });
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("deleteProjectProfile: delete_project failed", error);
+        // 即使后端删除失败，后续强制 flush 也会以当前 state（已移除该助手）为真相源重写数据库，
+        // 借助 save_structured_chat_storage 现在会清理旧记录，避免"幽灵"助手复活。
+      }
+
+      try {
+        await savePersistedChatState(nextProjects, nextSessions);
+        await savePersistedMemoryState(nextMemories, nextSummaries, userPreferences);
+        await savePersistedAutomationState(nextTasks);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("deleteProjectProfile: flush failed", error);
+      }
+
       return true;
     },
-    [activeAssistantId, activeChatId, chatSessions]
+    [activeProjectId, activeChatId, projects, chatSessions, projectMemories, sessionSummaries, scheduledTasks, userPreferences]
   );
 
   const resetActiveChat = useCallback(() => {
@@ -432,9 +478,9 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     (sessionId: string) => {
       const session = chatSessions.find((item) => item.id === sessionId);
       if (!session) return null;
-      activeAssistantIdRef.current = session.assistantId;
+      activeProjectIdRef.current = session.projectId;
       activeChatIdRef.current = session.id;
-      setActiveAssistantId(session.assistantId);
+      setActiveProjectId(session.projectId);
       setActiveChatId(session.id);
       setMessages(session.messages);
       return session;
@@ -474,20 +520,35 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   }, []);
 
   const deleteChatSession = useCallback(
-    (sessionId: string) => {
-      setChatSessions((sessions) => sessions.filter((session) => session.id !== sessionId));
+    async (sessionId: string): Promise<void> => {
+      const nextSessions = chatSessions.filter((session) => session.id !== sessionId);
+      setChatSessions(nextSessions);
       if (sessionId === activeChatId) {
         activeChatIdRef.current = null;
         setActiveChatId(null);
         setMessages([]);
       }
+
+      try {
+        await invoke("delete_chat_session", { id: sessionId });
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("deleteChatSession: delete_chat_session failed", error);
+      }
+
+      try {
+        await savePersistedChatState(projects, nextSessions);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("deleteChatSession: flush failed", error);
+      }
     },
-    [activeChatId]
+    [activeChatId, projects, chatSessions]
   );
 
   const groupedChatSessions = useMemo(() => {
     const groups = new Map<string, ChatSession[]>();
-    [...assistantSessions]
+    [...projectSessions]
       .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt)
       .forEach((session) => {
         const label = session.pinned ? "置顶" : getChatSessionGroupLabel(session.updatedAt);
@@ -497,7 +558,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       });
 
     return Array.from(groups.entries()).map(([label, sessions]) => ({ label, sessions }));
-  }, [assistantSessions]);
+  }, [projectSessions]);
 
   const searchChatSessions = useCallback(
     (query: string) => {
@@ -519,24 +580,24 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const getChatSessionById = useCallback((sessionId: string) => chatSessions.find((session) => session.id === sessionId) ?? null, [chatSessions]);
 
-  const getAssistantMemories = useCallback(
-    (assistantId: string) =>
-      assistantMemories
-        .filter((memory) => memory.assistantId === assistantId)
+  const getProjectMemories = useCallback(
+    (projectId: string) =>
+      projectMemories
+        .filter((memory) => memory.projectId === projectId)
         .sort((a, b) => b.updatedAt - a.updatedAt),
-    [assistantMemories]
+    [projectMemories]
   );
 
-  const addAssistantMemory = useCallback((assistantId: string, content: string, sourceSessionId?: string | null, sourceType: AssistantMemoryRecord["sourceType"] = "manual") => {
+  const addProjectMemory = useCallback((projectId: string, content: string, sourceSessionId?: string | null, sourceType: ProjectMemoryRecord["sourceType"] = "manual") => {
     const nextContent = content.trim();
-    if (!assistantId || nextContent.length < 4) {
+    if (!projectId || nextContent.length < 4) {
       return false;
     }
 
     let added = false;
     const now = Date.now();
-    setAssistantMemories((current) => {
-      const exists = current.some((memory) => memory.assistantId === assistantId && memory.content === nextContent);
+    setProjectMemories((current) => {
+      const exists = current.some((memory) => memory.projectId === projectId && memory.content === nextContent);
       if (exists) {
         return current;
       }
@@ -544,7 +605,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       return [
         {
           id: createMemoryId(),
-          assistantId,
+          projectId,
           content: nextContent.length > 120 ? `${nextContent.slice(0, 117)}...` : nextContent,
           sourceSessionId: sourceSessionId ?? null,
           sourceType,
@@ -557,9 +618,9 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     return added;
   }, []);
 
-  const deleteAssistantMemory = useCallback((memoryId: string) => {
+  const deleteProjectMemory = useCallback((memoryId: string) => {
     let deleted = false;
-    setAssistantMemories((current) => {
+    setProjectMemories((current) => {
       const next = current.filter((memory) => memory.id !== memoryId);
       deleted = next.length !== current.length;
       return deleted ? next : current;
@@ -567,21 +628,21 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     return deleted;
   }, []);
 
-  const clearAssistantMemories = useCallback((assistantId: string) => {
-    if (!assistantId) {
+  const clearProjectMemories = useCallback((projectId: string) => {
+    if (!projectId) {
       return 0;
     }
 
     let removedCount = 0;
-    setAssistantMemories((current) => {
-      const next = current.filter((memory) => memory.assistantId !== assistantId);
+    setProjectMemories((current) => {
+      const next = current.filter((memory) => memory.projectId !== projectId);
       removedCount = current.length - next.length;
       return removedCount > 0 ? next : current;
     });
     return removedCount;
   }, []);
 
-  const updateAssistantMemory = useCallback((memoryId: string, content: string) => {
+  const updateProjectMemory = useCallback((memoryId: string, content: string) => {
     const nextContent = content.trim();
     if (!nextContent) {
       return false;
@@ -589,7 +650,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
     let updated = false;
     const now = Date.now();
-    setAssistantMemories((current) =>
+    setProjectMemories((current) =>
       current.map((memory) => {
         if (memory.id !== memoryId) return memory;
         updated = true;
@@ -603,16 +664,16 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     return updated;
   }, []);
 
-  const getRelatedContextForAssistant = useCallback(
+  const getRelatedContextForProject = useCallback(
     (query: string) => {
-      if (!activeAssistant) {
+      if (!activeProject) {
         return {
           summaries: [],
           memories: [],
         };
       }
 
-      if (activeAssistant.memoryScope === "off") {
+      if (activeProject.memoryScope === "off") {
         return {
           summaries: [],
           memories: [],
@@ -629,15 +690,15 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
       const summaryMatches = searchSessionSummaries(sessionSummaries, normalizedQuery)
         .filter((item) => {
-          if (activeAssistant.memoryScope === "session") {
+          if (activeProject.memoryScope === "session") {
             return item.sessionId === activeChatId;
           }
-          return item.assistantId === activeAssistantId;
+          return item.projectId === activeProjectId;
         })
         .slice(0, 5);
-      const memoryMatches = searchAssistantMemories(assistantMemories, activeAssistantId, normalizedQuery)
+      const memoryMatches = searchProjectMemories(projectMemories, activeProjectId, normalizedQuery)
         .filter((item) => {
-          if (activeAssistant.memoryScope === "session") {
+          if (activeProject.memoryScope === "session") {
             return item.sourceSessionId === activeChatId;
           }
           return true;
@@ -648,19 +709,19 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         memories: memoryMatches,
       };
     },
-    [activeAssistant, activeAssistantId, activeChatId, assistantMemories, sessionSummaries]
+    [activeProject, activeProjectId, activeChatId, projectMemories, sessionSummaries]
   );
 
-  const commitAssistantMemory = useCallback(
+  const commitProjectMemory = useCallback(
     (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => {
-      const assistant = assistants.find((item) => item.id === activeAssistantId) ?? activeAssistant;
-      if (!assistant) {
+      const project = projects.find((item) => item.id === activeProjectId) ?? activeProject;
+      if (!project) {
         return;
       }
 
       const now = Date.now();
 
-      if (assistant.autoSaveSummaries) {
+      if (project.autoSaveSummaries) {
         const summary = result.suggestedSummary?.summary ?? buildSessionSummary(conversationMessages, result.content);
         if (summary) {
           setSessionSummaries((current) => {
@@ -670,7 +731,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
               const next = [...current];
               next[existingIndex] = {
                 ...next[existingIndex],
-                assistantId: assistant.id,
+                projectId: project.id,
                 title: nextTitle,
                 summary,
                 updatedAt: now,
@@ -681,7 +742,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
             return [
               {
                 sessionId,
-                assistantId: assistant.id,
+                projectId: project.id,
                 title: nextTitle,
                 summary,
                 updatedAt: now,
@@ -692,17 +753,17 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         }
       }
 
-      if (assistant.autoSaveMemories) {
+      if (project.autoSaveMemories) {
         const modelMemoryItems = (result.suggestedMemories ?? []).map((memory) => memory.content);
-        const memoryItems = modelMemoryItems.length > 0 ? modelMemoryItems : extractAssistantMemories(conversationMessages);
+        const memoryItems = modelMemoryItems.length > 0 ? modelMemoryItems : extractProjectMemories(conversationMessages);
         if (memoryItems.length > 0) {
-          setAssistantMemories((current) => {
-            const existingKeys = new Set(current.filter((item) => item.assistantId === assistant.id).map((item) => item.content));
+          setProjectMemories((current) => {
+            const existingKeys = new Set(current.filter((item) => item.projectId === project.id).map((item) => item.content));
             const additions = memoryItems
               .filter((content) => !existingKeys.has(content))
               .map((content) => ({
                 id: createMemoryId(),
-                assistantId: assistant.id,
+                projectId: project.id,
                 content,
                 sourceSessionId: sessionId,
                 sourceType: "auto" as const,
@@ -719,38 +780,38 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         }
       }
     },
-    [activeAssistant, activeAssistantId, assistants]
+    [activeProject, activeProjectId, projects]
   );
 
   return {
-    activeAssistant,
-    activeAssistantId,
+    activeProject,
+    activeProjectId,
     activeChatId,
     activeSession,
     applyUsageToSession,
-    assistantSessions,
-    assistants,
+    projectSessions,
+    projects,
     chatSessions,
-    commitAssistantMemory,
-    createCustomAssistantProfile,
+    commitProjectMemory,
+    createCustomProjectProfile,
     createSessionFromMessages,
     deleteChatSession,
     getChatSessionById,
-    addAssistantMemory,
-    getAssistantMemories,
-    getRelatedContextForAssistant,
+    addProjectMemory,
+    getProjectMemories,
+    getRelatedContextForProject,
     groupedChatSessions,
     messages,
     renameChatSession,
     resetActiveChat,
     searchChatSessions,
     scheduledTasks,
-    selectAssistant,
+    selectProject,
     selectChatSession,
-    setActiveAssistantId,
+    setActiveProjectId,
     setActiveChatId,
-    setAssistants,
-    setAssistantMemories,
+    setProjects,
+    setProjectMemories,
     setChatSessions,
     setMessages,
     updateChatSessionMessages,
@@ -759,10 +820,10 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     setUserPreferences,
     toggleFavoriteChatSession,
     togglePinnedChatSession,
-    deleteAssistantProfile,
-    deleteAssistantMemory,
-    clearAssistantMemories,
-    updateAssistantMemory,
-    updateAssistantProfile,
+    deleteProjectProfile,
+    deleteProjectMemory,
+    clearProjectMemories,
+    updateProjectMemory,
+    updateProjectProfile,
   };
 }

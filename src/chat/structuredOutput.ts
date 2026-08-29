@@ -1,9 +1,9 @@
-import type { SuggestedAssistantMemory, SuggestedSessionSummary } from "./types";
+import type { SuggestedProjectMemory, SuggestedSessionSummary } from "./types";
 import { OMNI_STRUCTURED_MEMORY_TAG, OMNI_STRUCTURED_SUMMARY_TAG } from "./promptModules";
 
 type ParsedStructuredOutput = {
   content: string;
-  suggestedMemories: SuggestedAssistantMemory[];
+  suggestedMemories: SuggestedProjectMemory[];
   suggestedSummary: SuggestedSessionSummary | null;
 };
 
