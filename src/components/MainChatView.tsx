@@ -635,10 +635,10 @@ export default function MainChatView({
     if (projectPanelManualVisible === true) classNames.push("main-chat-layout--project-forced-open");
     if (!isProjectPanelVisible) classNames.push("main-chat-layout--project-collapsed");
     if (topicPanelManualVisible === true) classNames.push("main-chat-layout--topic-forced-open");
-    if (!isTopicPanelVisible) classNames.push("main-chat-layout--topic-collapsed");
+    if (!isTopicPanelVisible || showPluginMarketplace) classNames.push("main-chat-layout--topic-collapsed");
     if (isProjectSettingsMode) classNames.push("main-chat-layout--project-settings");
     return classNames.join(" ");
-  }, [projectPanelManualVisible, isProjectPanelVisible, isProjectSettingsMode, isTopicPanelVisible, topicPanelManualVisible]);
+  }, [projectPanelManualVisible, isProjectPanelVisible, isProjectSettingsMode, isTopicPanelVisible, topicPanelManualVisible, showPluginMarketplace]);
   const layoutStyle = useMemo<CSSProperties>(
     () =>
       ({
