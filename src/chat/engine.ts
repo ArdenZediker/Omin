@@ -1,14 +1,15 @@
 import { modelRegistry } from "../adapters/registry";
 import type { Message } from "../adapters/types";
-import { getUsagePreferences } from "./storage";
+import { invoke } from "@tauri-apps/api/core";
+import { getUsagePreferences, loadPersonaConfig } from "./storage";
 import type { ChatExecutionResult } from "./types";
 import { buildKnowledgeContextBlock } from "./knowledgeContext";
 import { buildOmniSystemPrompt } from "./promptModules";
 import { parseOmniStructuredOutput } from "./structuredOutput";
-import type { AssistantMemoryRecord, AssistantProfile, SessionSummaryRecord } from "./types";
+import type { ProjectMemoryRecord, Project, SessionSummaryRecord } from "./types";
 
 const DEFAULT_SYSTEM_PROMPT =
-  "You are Omni, a helpful, knowledgeable AI assistant. Be concise and clear. Use markdown when useful.";
+  "You are Omni, a helpful, knowledgeable AI project. Be concise and clear. Use markdown when useful.";
 
 const MODEL_PRICING_USD_PER_1K: Record<string, { input: number; output: number }> = {
   "gpt-4o": { input: 0.005, output: 0.015 },
@@ -57,12 +58,13 @@ export async function executeChatTurn(options: {
   messages: Message[];
   signal?: AbortSignal;
   systemPrompt?: string;
-  assistant?: AssistantProfile | null;
+  project?: Project | null;
   relatedContext?: {
-    memories?: AssistantMemoryRecord[];
+    memories?: ProjectMemoryRecord[];
     summaries?: SessionSummaryRecord[];
   };
   enabledToolNames?: string[];
+  enabledToolDescriptions?: Record<string, string>;
   onChunk?: (chunk: string) => void;
   knowledgeQuery?: string | null;
   knowledgeCollectionId?: string | null;
@@ -76,9 +78,10 @@ export async function executeChatTurn(options: {
     messages,
     signal,
     systemPrompt = DEFAULT_SYSTEM_PROMPT,
-    assistant,
+    project,
     relatedContext,
     enabledToolNames,
+    enabledToolDescriptions,
     onChunk,
     knowledgeQuery,
     knowledgeCollectionId,
@@ -104,6 +107,7 @@ export async function executeChatTurn(options: {
 
   const modelConfig = modelRegistry.getModelConfig(model);
   const preferences = getUsagePreferences();
+  const personaConfig = await loadPersonaConfig();
   const hasImages = messages.some((message) => (message.images?.length ?? 0) > 0);
   if (hasImages && (!modelConfig?.supportsVision || !preferences.enableVisionInput)) {
     throw new Error("当前模型或偏好设置不允许图片输入");
@@ -122,16 +126,23 @@ export async function executeChatTurn(options: {
         })
       : null;
 
+  const projectAgentsMd = project?.workspacePath
+    ? await invoke<string>("read_project_agents_md", { projectPath: project.workspacePath }).catch(() => "")
+    : "";
+
   const composedSystemPrompt = buildOmniSystemPrompt({
-    assistant,
+    project,
     baseSystemPrompt: systemPrompt,
     messages,
     relatedContext,
     knowledgeContext,
     enabledToolNames,
+    enabledToolDescriptions,
     includeMemoryExtraction: enableMemoryExtraction,
     includeSummaryExtraction: enableSummaryExtraction,
     includeToolProtocol: enableToolProtocol,
+    persona: personaConfig,
+    projectAgentsMd,
   });
   const systemMessage: Message = { role: "system", content: composedSystemPrompt };
   const knowledgeMessages: Message[] = knowledgeContext

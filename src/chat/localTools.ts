@@ -8,7 +8,7 @@ import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibilit
 import { saveSqliteBackedValue } from "../app/sqliteStorage";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
-import type { AssistantMemorySourceType, AssistantProfile } from "./types";
+import type { ProjectMemorySourceType, Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 
 export type LocalToolSession = {
@@ -18,9 +18,9 @@ export type LocalToolSession = {
 };
 
 export type LocalToolRuntime = {
-  activeAssistant: AssistantProfile | null;
+  activeProject: Project | null;
   activeChatId: string | null;
-  addAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null, sourceType?: AssistantMemorySourceType) => boolean;
+  addProjectMemory: (projectId: string, content: string, sourceSessionId?: string | null, sourceType?: ProjectMemorySourceType) => boolean;
   availableModels: ModelConfig[];
   getChatSessionById: (sessionId: string) => LocalToolSession | null;
   handleModelChange: (modelId: string) => void;
@@ -32,7 +32,7 @@ export type LocalToolRuntime = {
   setMessages: (messages: Message[]) => void;
   setOpenChatMenu: (menu: { id: string; x: number; y: number } | null) => void;
   togglePinnedChatSession: (sessionId: string) => boolean;
-  updateAssistantProfile?: (assistantId: string, patch: Partial<AssistantProfile>) => AssistantProfile | null;
+  updateProjectProfile?: (projectId: string, patch: Partial<Project>) => Project | null;
 };
 
 export const ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET = new Set(ALWAYS_ALLOWED_LOCAL_TOOL_IDS);
@@ -51,7 +51,7 @@ function canUseTauriEvents() {
 
 function getMessageRoleLabel(role: Message["role"]) {
   if (role === "user") return "用户";
-  if (role === "assistant") return "助手";
+  if (role === "project") return "项目";
   return "系统";
 }
 
@@ -79,6 +79,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   const readFileTool = requireTool("read_file");
   const searchFilesTool = requireTool("search_files");
   const analyzeFilesTool = requireTool("analyze_files");
+  const readPersonaTool = requireTool("read_persona");
+  const updatePersonaTool = requireTool("update_persona");
 
   registry.register({
     id: newTool.id,
@@ -163,11 +165,11 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     title: rememberTool.title,
     execute: async (resolvedCommand, context) => {
       const content = resolvedCommand.args.trim();
-      if (!runtime.activeAssistant) return { ok: false, error: "当前没有可写入记忆的助手" };
+      if (!runtime.activeProject) return { ok: false, error: "当前没有可写入记忆的项目" };
       if (!content) return { ok: false, error: "用法：/remember 要记住的长期偏好或约束" };
-      const added = runtime.addAssistantMemory(runtime.activeAssistant.id, content, context.activeChatId, "command");
+      const added = runtime.addProjectMemory(runtime.activeProject.id, content, context.activeChatId, "command");
       if (!added) return { ok: true, outputText: "这条记忆已经存在，未重复保存。" };
-      return { ok: true, outputText: "已保存到当前助手记忆库。" };
+      return { ok: true, outputText: "已保存到当前项目记忆库。" };
     },
   });
 
@@ -212,16 +214,16 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
       if (!matchedModel) return { ok: false, error: `未找到匹配模型：${resolvedCommand.args}` };
 
-      const updatedAssistantModel = Boolean(runtime.activeAssistant && runtime.updateAssistantProfile);
-      if (runtime.activeAssistant && runtime.updateAssistantProfile) {
-        runtime.updateAssistantProfile(runtime.activeAssistant.id, { defaultModelId: matchedModel.id });
+      const updatedProjectModel = Boolean(runtime.activeProject && runtime.updateProjectProfile);
+      if (runtime.activeProject && runtime.updateProjectProfile) {
+        runtime.updateProjectProfile(runtime.activeProject.id, { defaultModelId: matchedModel.id });
       } else {
         runtime.handleModelChange(matchedModel.id);
       }
       runtime.setError(null);
       return {
         ok: true,
-        outputText: updatedAssistantModel ? `已将当前助手默认模型切换为：${matchedModel.name}` : `已切换当前模型：${matchedModel.name}`,
+        outputText: updatedProjectModel ? `已将当前项目默认模型切换为：${matchedModel.name}` : `已切换当前模型：${matchedModel.name}`,
       };
     },
   });
@@ -286,6 +288,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     execute: async (resolvedCommand) => {
       const query = resolvedCommand.args.trim();
       const entries = await invoke<Array<{ path: string; is_dir: boolean }>>("list_workspace_files", {
+        projectPath: runtime.activeProject?.workspacePath || null,
         query: query || null,
         limit: 80,
       });
@@ -312,6 +315,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       if (!relativePath) return { ok: false, error: "用法：/read_file 相对路径" };
 
       const content = await invoke<string>("read_workspace_file", {
+        projectPath: runtime.activeProject?.workspacePath || null,
         path: relativePath,
         maxChars: 6000,
       });
@@ -333,6 +337,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       if (!query) return { ok: false, error: "用法：/search_files 关键词" };
 
       const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>("search_workspace_files", {
+        projectPath: runtime.activeProject?.workspacePath || null,
         query,
         limit: 50,
       });
@@ -353,6 +358,59 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     execute: async () => ({ ok: true }),
   });
 
+  const PERSONA_FIELDS = [
+    "style",
+    "userName",
+    "assistantName",
+    "personaDescription",
+    "customInstruction",
+    "longTermMemory",
+    "agentsMd",
+  ];
+
+  registry.register({
+    id: readPersonaTool.id,
+    command: readPersonaTool.command,
+    title: readPersonaTool.title,
+    execute: async (resolvedCommand) => {
+      const key = resolvedCommand.args.trim();
+      if (!key) return { ok: false, error: "用法：/read_persona <字段名>" };
+      if (!PERSONA_FIELDS.includes(key)) {
+        return { ok: false, error: `未知字段：${key}（可选：${PERSONA_FIELDS.join("、")}）` };
+      }
+      const config = await invoke<PersonaConfig>("read_persona_files");
+      const value = (config as unknown as Record<string, string>)[key] ?? "";
+      return {
+        ok: true,
+        outputText: value ? `【${key}】\n${value}` : `【${key}】暂无内容`,
+        data: { field: key, value },
+      };
+    },
+  });
+
+  registry.register({
+    id: updatePersonaTool.id,
+    command: updatePersonaTool.command,
+    title: updatePersonaTool.title,
+    execute: async (resolvedCommand) => {
+      const raw = resolvedCommand.args.trim();
+      const spaceIndex = raw.indexOf(" ");
+      if (spaceIndex < 0) {
+        return { ok: false, error: "用法：/update_persona <字段名> <内容>" };
+      }
+      const key = raw.slice(0, spaceIndex).trim();
+      const content = raw.slice(spaceIndex + 1).trim();
+      if (!PERSONA_FIELDS.includes(key)) {
+        return { ok: false, error: `未知字段：${key}（可选：${PERSONA_FIELDS.join("、")}）` };
+      }
+      if (!content) {
+        return { ok: false, error: "内容不能为空" };
+      }
+      await invoke("write_persona_file", { key, content });
+      return { ok: true, outputText: `已更新个性化字段【${key}】。` };
+    },
+  });
+
   return registry;
 }
 
@@ -363,8 +421,8 @@ export async function executeLocalTool(runtime: LocalToolRuntime, command: { com
     return { ok: false, error: `暂不支持命令：${command.command}` };
   }
 
-  if (runtime.activeAssistant && !ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET.has(tool.id) && !runtime.activeAssistant.allowedToolIds.includes(tool.id)) {
-    return { ok: false, error: `当前助手未启用工具：${tool.title}` };
+  if (runtime.activeProject && !ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET.has(tool.id) && !runtime.activeProject.allowedToolIds.includes(tool.id)) {
+    return { ok: false, error: `当前项目未启用工具：${tool.title}` };
   }
 
   return registry.execute(command, {

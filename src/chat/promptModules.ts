@@ -1,20 +1,24 @@
 import type { Message } from "../adapters/types";
-import type { AssistantMemoryRecord, AssistantProfile, SessionSummaryRecord } from "./types";
+import type { ProjectMemoryRecord, Project, PersonaConfig, PersonaStyle, SessionSummaryRecord } from "./types";
 import type { KnowledgeContextResult } from "./knowledgeTypes";
 
 export type PromptBuildOptions = {
-  assistant?: AssistantProfile | null;
+  project?: Project | null;
   baseSystemPrompt?: string | null;
   messages: Message[];
   relatedContext?: {
-    memories?: AssistantMemoryRecord[];
+    memories?: ProjectMemoryRecord[];
     summaries?: SessionSummaryRecord[];
   };
   knowledgeContext?: KnowledgeContextResult | null;
   enabledToolNames?: string[];
+  enabledToolDescriptions?: Record<string, string>;
   includeMemoryExtraction?: boolean;
   includeSummaryExtraction?: boolean;
   includeToolProtocol?: boolean;
+  persona?: PersonaConfig | null;
+  /** 来自项目工作目录下 AGENTS.md / AGENTS.override.md 的自由格式指令（仿 codex / deepseek-harness）。 */
+  projectAgentsMd?: string | null;
 };
 
 export const OMNI_STRUCTURED_MEMORY_TAG = "omni_memory";
@@ -78,13 +82,13 @@ const TOOL_REASONING_PROMPT = `工具协议：
 - 如果用户请求需要未启用工具，说明当前助手未启用，并给出可行替代方案。
 - 不要虚构工具执行结果。`;
 
-const ASSISTANT_OVERRIDE_PROMPT_HEADER = "当前助手设定：";
+const PROJECT_OVERRIDE_PROMPT_HEADER = "当前助手设定：";
 
 function compactList(items: string[], limit: number) {
   return items.map((item) => item.trim()).filter(Boolean).slice(0, limit);
 }
 
-function buildContextRecallPrompt(memories: AssistantMemoryRecord[] = [], summaries: SessionSummaryRecord[] = []) {
+function buildContextRecallPrompt(memories: ProjectMemoryRecord[] = [], summaries: SessionSummaryRecord[] = []) {
   const memoryLines = compactList(memories.map((memory) => `- ${memory.content}`), 8);
   const summaryLines = compactList(summaries.map((summary) => `- ${summary.title}: ${summary.summary}`), 5);
   if (memoryLines.length === 0 && summaryLines.length === 0) {
@@ -99,27 +103,149 @@ function buildContextRecallPrompt(memories: AssistantMemoryRecord[] = [], summar
   ].filter(Boolean).join("\n\n");
 }
 
-function buildToolPrompt(enabledToolNames: string[] = []) {
+function buildToolPrompt(enabledToolNames: string[] = [], descriptions?: Record<string, string>) {
   const tools = compactList(enabledToolNames, 16);
   if (tools.length === 0) {
     return TOOL_REASONING_PROMPT;
   }
-  return [TOOL_REASONING_PROMPT, `当前助手已启用工具：${tools.join("、")}`].join("\n\n");
+  const listed = tools.map((name) => {
+    const description = descriptions?.[name];
+    return description ? `${name}（${description}）` : name;
+  });
+  return [TOOL_REASONING_PROMPT, `当前助手已启用工具：${listed.join("、")}`].join("\n\n");
+}
+
+const PERSONA_STYLE_DESCRIPTIONS: Record<PersonaStyle, string> = {
+  default: "保持 Omni 默认风格：温和、清醒、协作，少说空话，多给可操作信息。",
+  professional: "保持专业严谨风格：表达清晰、准确、值得信赖；优先事实与可验证结论，避免情绪化修辞。",
+  friendly: "保持亲和友善风格：语气温暖、平易近人、鼓励支持；像一位耐心的同伴那样交流。",
+  direct: "保持直言不讳风格：简明扼要、不废话、直击要点；优先结论和行动项。",
+  creative: "保持天马行空风格：富有想象力、善用比喻和类比；在合适时提供新颖视角。",
+  efficient: "保持高效务实风格：用最少文字传递最大信息量；优先步骤、清单和可执行项。",
+  snarky: "保持毒舌吐槽风格：犀利、带点小幽默地吐槽，但绝不伤人、不冒犯、不越界。",
+  socratic: "保持启发引导风格：多用提问引导用户思考，授人以渔，而非直接给答案。",
+};
+
+const PERSONA_STYLE_HEADER = "基本风格与语调：";
+
+function buildPersonaPrompt(persona: PersonaConfig | null | undefined) {
+  const lines: string[] = [];
+
+  if (persona?.assistantName?.trim()) {
+    lines.push(`你的名字是「${persona.assistantName.trim()}」；用户可以这样称呼你。`);
+  }
+
+  if (persona?.userName?.trim()) {
+    lines.push(`用户的名字/称呼是「${persona.userName.trim()}」；请使用这个称呼与用户交流。`);
+  }
+
+  if (persona?.personaDescription?.trim()) {
+    lines.push("", "你的人设 / 人格描述：", persona.personaDescription.trim());
+  }
+
+  const styleDescription = PERSONA_STYLE_DESCRIPTIONS[persona?.style ?? "default"];
+  lines.push("", PERSONA_STYLE_HEADER, `- ${styleDescription}`);
+
+  if (persona?.customInstruction?.trim()) {
+    lines.push("", "额外自定义要求：", persona.customInstruction.trim());
+  }
+
+  if (persona?.longTermMemory?.trim()) {
+    lines.push("", "你需要始终记住的长期信息：", persona.longTermMemory.trim());
+  }
+
+  // 来自 AGENTS.md / AGENTS.override.md 的自由格式指令（仿 codex / deepseek-harness）。
+  if (persona?.agentsMd?.trim()) {
+    lines.push("", "来自 AGENTS.md 的额外指令：", persona.agentsMd.trim());
+  }
+
+  return lines.join("\n").trim();
 }
 
 export function buildOmniSystemPrompt(options: PromptBuildOptions) {
-  const assistantPrompt = options.assistant?.systemPrompt?.trim();
-  const includeMemoryExtraction = options.includeMemoryExtraction ?? true;
-  const includeSummaryExtraction = options.includeSummaryExtraction ?? true;
-  const modules = [
-    options.baseSystemPrompt?.trim() || DEFAULT_BASE_PROMPT,
-    assistantPrompt ? [ASSISTANT_OVERRIDE_PROMPT_HEADER, assistantPrompt].join("\n") : "",
-    buildContextRecallPrompt(options.relatedContext?.memories, options.relatedContext?.summaries),
-    options.knowledgeContext ? KNOWLEDGE_GROUNDING_PROMPT : "",
-    options.includeToolProtocol ? buildToolPrompt(options.enabledToolNames) : "",
-    includeMemoryExtraction ? MEMORY_EXTRACTION_PROMPT : "",
-    includeSummaryExtraction ? SUMMARY_EXTRACTION_PROMPT : "",
-  ];
+  return assemblePromptFragments(options);
+}
 
-  return modules.map((module) => module.trim()).filter(Boolean).join("\n\n---\n\n");
+/**
+ * Codex 风格的上下文分片（ContextualUserFragment）架构。
+ *
+ * 参考 openai/codex 的 `core/context` 模块：每类模型可见信息都是一个独立的、
+ * 有序的、带大小上限的“分片”，由装配器按固定顺序收集并拼接。这样每个关注点
+ * 自有边界、便于缓存、且不会无限膨胀上下文（对应 codex 的 “bounded size / no
+ * unbounded items” 约束）。新增一类上下文时，只需追加一个分片，无需改动装配逻辑。
+ */
+export type PromptFragment = {
+  /** 稳定的分片标识，便于调试与测试。 */
+  id: string;
+  /** 根据本次请求上下文生成该分片的纯文本；返回空串或 null 表示跳过。 */
+  build: (ctx: PromptBuildOptions) => string | null;
+  /** 该分片的字符预算上限，超出会被截断（仿 codex 的上下文大小上限）。 */
+  maxChars?: number;
+};
+
+/** 截断超出预算的分片，并附上提示，保持“有界”的不变式。 */
+function capFragment(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const truncated = text.slice(0, maxChars);
+  return `${truncated}\n\n[该部分超出 ${maxChars} 字符上限已被截断，以保持上下文有界]`;
+}
+
+export const SYSTEM_PROMPT_FRAGMENTS: PromptFragment[] = [
+  {
+    id: "baseIdentity",
+    build: (o) => o.baseSystemPrompt?.trim() || DEFAULT_BASE_PROMPT,
+  },
+  {
+    id: "persona",
+    build: (o) => buildPersonaPrompt(o.persona),
+    maxChars: 6_000,
+  },
+  {
+    id: "projectOverride",
+    build: (o) => {
+      const prompt = o.project?.systemPrompt?.trim();
+      return prompt ? [PROJECT_OVERRIDE_PROMPT_HEADER, prompt].join("\n") : null;
+    },
+  },
+  {
+    id: "projectAgentsMd",
+    build: (o) => {
+      const md = o.projectAgentsMd?.trim();
+      return md ? ["来自项目 AGENTS.md 的额外指令：", md].join("\n") : null;
+    },
+    maxChars: 12_000,
+  },
+  {
+    id: "contextRecall",
+    build: (o) => buildContextRecallPrompt(o.relatedContext?.memories, o.relatedContext?.summaries),
+    maxChars: 4_000,
+  },
+  {
+    id: "knowledgeGrounding",
+    build: (o) => (o.knowledgeContext ? KNOWLEDGE_GROUNDING_PROMPT : null),
+  },
+  {
+    id: "toolProtocol",
+    build: (o) => (o.includeToolProtocol ? buildToolPrompt(o.enabledToolNames, o.enabledToolDescriptions) : null),
+    maxChars: 4_000,
+  },
+  {
+    id: "memoryExtraction",
+    build: (o) => ((o.includeMemoryExtraction ?? true) ? MEMORY_EXTRACTION_PROMPT : null),
+  },
+  {
+    id: "summaryExtraction",
+    build: (o) => ((o.includeSummaryExtraction ?? true) ? SUMMARY_EXTRACTION_PROMPT : null),
+  },
+];
+
+function assemblePromptFragments(ctx: PromptBuildOptions): string {
+  const parts: string[] = [];
+  for (const fragment of SYSTEM_PROMPT_FRAGMENTS) {
+    const text = fragment.build(ctx);
+    if (!text?.trim()) continue;
+    const capped = fragment.maxChars ? capFragment(text, fragment.maxChars) : text;
+    parts.push(capped);
+  }
+  return parts.join("\n\n---\n\n");
 }
