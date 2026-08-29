@@ -91,14 +91,14 @@ export default function KnowledgeCollectionSidebar({
                 key={category.id}
                 type="button"
                 onClick={() => onSelectCategory(category.id)}
-                className={`flex w-full items-center gap-2 rounded-none border px-3 py-2 text-left text-sm transition ${
+                className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition ${
                   isActive
                     ? "border-slate-950 bg-white text-slate-950 shadow-sm"
                     : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                 }`}
                 title={category.title}
               >
-                <span className={`flex h-5 w-5 items-center justify-center rounded-none ${isActive ? "text-slate-950" : "text-slate-500"}`}>
+                <span className={`flex h-5 w-5 items-center justify-center rounded-lg ${isActive ? "text-slate-950" : "text-slate-500"}`}>
                   <Icon size={13} strokeWidth={1.8} stroke={categoryIconColor} color={categoryIconColor} />
                 </span>
                 <span className="flex-1">{category.title}</span>
@@ -113,7 +113,7 @@ export default function KnowledgeCollectionSidebar({
             <span>知识库</span>
             <button
               type="button"
-              className="no-drag rounded-none p-1 text-slate-400 hover:bg-white hover:text-slate-700"
+              className="no-drag rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700"
               title="新建知识库"
               onClick={onCreateCollection}
             >
@@ -127,14 +127,14 @@ export default function KnowledgeCollectionSidebar({
               return (
                 <div
                   key={collection.id}
-                  className={`flex items-center gap-1 rounded-none border px-1 py-0.5 text-sm transition ${
+                  className={`flex items-center gap-1 rounded-xl border px-1 py-0.5 text-sm transition ${
                     isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                   }`}
                 >
                   <button
                     type="button"
                     onClick={() => onSelectCollection(collection.id)}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-none px-2 py-1 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-left"
                     title={collection.name}
                   >
                     <KnowledgeCollectionIcon className="h-4 w-4 shrink-0 text-blue-600" />
@@ -148,7 +148,7 @@ export default function KnowledgeCollectionSidebar({
                         event.stopPropagation();
                         onToggleCollectionMenu(collection.id);
                       }}
-                      className="flex h-7 w-7 items-center justify-center rounded-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                       title="更多操作"
                     >
                       <EllipsisVertical size={14} strokeWidth={2} />
@@ -156,7 +156,7 @@ export default function KnowledgeCollectionSidebar({
 
                     {openCollectionMenuId === collection.id ? (
                       <div
-                        className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-none border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
+                        className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
                         onPointerDown={(event) => event.stopPropagation()}
                       >
                         <button
@@ -186,7 +186,7 @@ export default function KnowledgeCollectionSidebar({
       <div className="mt-auto border-t border-slate-200 p-3">
         <button
           type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-none border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
           onClick={onCreateCollection}
         >
           <Plus size={14} strokeWidth={2} />

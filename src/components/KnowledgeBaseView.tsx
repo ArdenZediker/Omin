@@ -129,10 +129,10 @@ class KnowledgeBaseDetailBoundary extends Component<
     }
 
     return (
-      <section className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-slate-200 bg-white p-6">
+      <section className="flex min-h-0 flex-1 items-center justify-center rounded-2xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] p-6">
         <div className="max-w-md space-y-4 text-center">
-          <div className="text-lg font-semibold text-slate-950">文档详情渲染失败</div>
-          <div className="text-sm leading-6 text-slate-500">{this.state.errorMessage ?? "请返回列表后重新打开。"}</div>
+          <div className="text-lg font-semibold text-[var(--omni-app-text)]">文档详情渲染失败</div>
+          <div className="text-sm leading-6 text-[var(--omni-app-muted)]">{this.state.errorMessage ?? "请返回列表后重新打开。"}</div>
           <div className="flex items-center justify-center gap-2">
             <button
               type="button"
@@ -140,14 +140,14 @@ class KnowledgeBaseDetailBoundary extends Component<
                 this.setState({ hasError: false, errorMessage: null });
                 this.props.onRetry();
               }}
-              className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-app-bg)] px-3 py-1.5 text-sm text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
             >
               重新打开
             </button>
             <button
               type="button"
               onClick={this.props.onBackToList}
-              className="rounded-none border border-slate-200 bg-slate-950 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+              className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
             >
               返回列表
             </button>
@@ -1864,7 +1864,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   <div className="omni-knowledge-title-actions flex shrink-0 items-center">
                     <div className="no-drag omni-knowledge-toolbar-actions" onPointerDown={(event) => event.stopPropagation()}>
                       {isSearchToolbarOpen || searchQuery ? (
-                        <div className="flex h-8 w-64 items-center gap-2 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2.5 transition-all duration-150 md:w-72">
+                        <div className="flex h-8 w-64 items-center gap-2 rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2.5 transition-all duration-150 md:w-72">
                           <Search size={14} strokeWidth={1.8} className="shrink-0 text-[var(--omni-app-muted)]" />
                           <input
                             ref={searchInputRef}
@@ -1908,7 +1908,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         {isUploadMenuOpen ? (
                           <div
                             ref={uploadMenuRef}
-                            className="no-drag absolute right-0 top-10 z-[130] w-40 rounded-none border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
+                            className="no-drag absolute right-0 top-10 z-[130] w-40 rounded-xl border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
                             onPointerDown={(event) => event.stopPropagation()}
                           >
                             <button
@@ -1961,7 +1961,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
           {uploadNotice ? (
             <div className="no-drag px-4 pt-3 md:px-6">
               <div
-                className={`flex items-start justify-between gap-3 rounded-none border px-4 py-3 text-sm ${
+                className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
                   uploadNotice.tone === "error"
                     ? "border-rose-200 bg-rose-50 text-rose-700"
                     : "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -2025,20 +2025,20 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     >
                       <div className="flex min-h-0 flex-1 flex-col gap-4">
                         {documentDetailError ? (
-                          <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                          <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-4 py-10 text-center text-sm text-[var(--omni-app-muted)]">
                             <div className="space-y-3">
                               <div>{documentDetailError}</div>
                               <button
                                 type="button"
                                 onClick={() => selectedDocumentId && openDocument(selectedDocumentId)}
-                                className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                                className="rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-app-bg)] px-3 py-1.5 text-sm text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
                               >
                                 重新加载
                               </button>
                             </div>
                           </div>
                         ) : isLoadingDocumentDetail || !selectedDocument || !selectedDocumentDetail ? (
-                          <div className="flex min-h-0 flex-1 items-center justify-center rounded-none border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                          <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-4 py-10 text-center text-sm text-[var(--omni-app-muted)]">
                             正在加载文档详情...
                           </div>
                         ) : selectedDocumentDetailView === "preview" ? (
@@ -2087,27 +2087,27 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                 ) : (
                   <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     {!isKnowledgeLibraryReady ? (
-                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center px-6 py-14 text-center">
+                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center rounded-2xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-8 py-12 text-center shadow-sm">
                         <div className="omni-knowledge-empty-state__title text-lg font-semibold tracking-[-0.02em]">正在加载知识库</div>
                         <div className="omni-knowledge-empty-state__desc mt-2 text-sm">请稍候，系统会读取当前已有的知识库。</div>
                       </div>
                     ) : library.collections.length === 0 ? (
-                      <div className="omni-knowledge-empty-state flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
+                      <div className="omni-knowledge-empty-state flex w-full max-w-md flex-col items-center justify-center rounded-2xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-8 py-12 text-center shadow-sm">
                         <div className="omni-knowledge-empty-state__title text-2xl font-semibold tracking-[-0.03em]">还没有知识库</div>
                         <div className="omni-knowledge-empty-state__desc mt-2 text-sm">先新建一个知识库，再上传文件或文件夹。</div>
                         {uploadError ? (
-                          <div className="omni-knowledge-empty-state__error mt-3 rounded-none border px-4 py-2 text-sm">
+                          <div className="omni-knowledge-empty-state__error mt-3 rounded-lg border px-4 py-2 text-sm">
                             {uploadError}
                           </div>
                         ) : null}
                         {createCollectionError ? (
-                          <div className="omni-knowledge-empty-state__error mt-3 rounded-none border px-4 py-2 text-sm">
+                          <div className="omni-knowledge-empty-state__error mt-3 rounded-lg border px-4 py-2 text-sm">
                             {createCollectionError}
                           </div>
                         ) : null}
                         <button
                           type="button"
-                          className="omni-knowledge-empty-state__action mt-8 inline-flex items-center gap-2 rounded-none border px-5 py-3 text-sm font-medium shadow-sm"
+                          className="omni-knowledge-empty-state__action mt-8 inline-flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium shadow-sm"
                           onClick={createCollection}
                         >
                           <Plus size={16} strokeWidth={2} />
@@ -2115,16 +2115,16 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         </button>
                       </div>
                     ) : (
-                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center px-6 py-14 text-center">
+                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center rounded-2xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-8 py-12 text-center shadow-sm">
                         <div className="omni-knowledge-empty-state__title text-lg font-semibold tracking-[-0.02em]">当前知识库暂无文档</div>
                         <div className="omni-knowledge-empty-state__desc mt-2 text-sm">请使用右上角上传按钮导入文件。</div>
                         {uploadError ? (
-                          <div className="omni-knowledge-empty-state__error mt-3 rounded-none border px-4 py-2 text-sm">
+                          <div className="omni-knowledge-empty-state__error mt-3 rounded-lg border px-4 py-2 text-sm">
                             {uploadError}
                           </div>
                         ) : null}
                         {createCollectionError ? (
-                          <div className="omni-knowledge-empty-state__error mt-3 rounded-none border px-4 py-2 text-sm">
+                          <div className="omni-knowledge-empty-state__error mt-3 rounded-lg border px-4 py-2 text-sm">
                             {createCollectionError}
                           </div>
                         ) : null}
@@ -2160,7 +2160,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               <button
                 type="button"
                 onClick={closeCollectionSettings}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                 title="关闭"
               >
                 <X size={16} strokeWidth={2} />
@@ -2175,7 +2175,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   <input
                     value={collectionSettingsDraft.name}
                     onChange={(event) => updateCollectionDraft({ name: event.target.value })}
-                    className="rounded-none border border-slate-300 px-3 py-2 text-sm"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
                     placeholder="请输入知识库名称"
                   />
 
@@ -2183,7 +2183,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   <textarea
                     value={collectionSettingsDraft.description}
                     onChange={(event) => updateCollectionDraft({ description: event.target.value })}
-                    className="min-h-24 rounded-none border border-slate-300 px-3 py-2 text-sm"
+                    className="min-h-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
                     placeholder="用于组织上传文件"
                   />
                 </div>
@@ -2316,7 +2316,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-none border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                   <div className="flex items-center gap-2 font-medium text-slate-900">
                     <Sparkles size={15} strokeWidth={1.9} className="text-amber-600" />
                     <span>当前入库策略</span>
@@ -2328,7 +2328,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
               </section>
 
               {collectionSettingsError ? (
-                <div className="rounded-none border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                   {collectionSettingsError}
                 </div>
               ) : null}
@@ -2339,7 +2339,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                 type="button"
                 onClick={closeCollectionSettings}
                 disabled={isSavingCollectionSettings}
-                className="rounded-none border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 取消
               </button>
@@ -2347,7 +2347,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                 type="button"
                 onClick={() => void saveCollectionSettings()}
                 disabled={isSavingCollectionSettings}
-                className="rounded-none border border-slate-950 bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg border border-slate-950 bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSavingCollectionSettings ? "保存中..." : "保存设置"}
               </button>
