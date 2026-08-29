@@ -9596,7 +9596,7 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px;
 }
 
@@ -9953,6 +9953,7 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace--main-view .plugin-marketplace__header {
   padding: 18px 20px 12px;
+  border-bottom: none;
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__body {
@@ -9961,6 +9962,8 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace--main-view .plugin-marketplace__footer {
   padding: 12px 20px;
+  border-top: none;
+  background: transparent;
 }
 
 .chat-history-panel__marketplace-nav {
