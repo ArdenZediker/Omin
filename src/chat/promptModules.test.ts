@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "../adapters/types";
-import type { AssistantProfile } from "./types";
+import type { Project } from "./types";
 import { buildOmniSystemPrompt } from "./promptModules";
 
 const messages: Message[] = [{ role: "user", content: "帮我优化这个项目" }];
 
-function createAssistant(patch: Partial<AssistantProfile> = {}): AssistantProfile {
+function createProject(patch: Partial<Project> = {}): Project {
   return {
-    id: "assistant-1",
+    id: "project-1",
     kind: "custom",
     title: "工程助手",
     description: "",
+    workspacePath: "",
     allowedToolIds: [],
     allowedSkillIds: [],
-    memoryScope: "assistant",
+    memoryScope: "project",
     autoSaveMemories: true,
     autoSaveSummaries: true,
     createdAt: 1,
@@ -36,10 +37,10 @@ describe("promptModules", () => {
   it("按场景追加助手、历史上下文、知识库和工具协议", () => {
     const prompt = buildOmniSystemPrompt({
       messages,
-      assistant: createAssistant({ systemPrompt: "你是偏工程审查的助手。" }),
+      project: createProject({ systemPrompt: "你是偏工程审查的助手。" }),
       relatedContext: {
-        memories: [{ id: "memory-1", assistantId: "assistant-1", content: "用户要求全部使用中文", createdAt: 1, updatedAt: 1 }],
-        summaries: [{ sessionId: "session-1", assistantId: "assistant-1", title: "优化", summary: "正在优化提示词系统", updatedAt: 1 }],
+        memories: [{ id: "memory-1", projectId: "project-1", content: "用户要求全部使用中文", createdAt: 1, updatedAt: 1 }],
+        summaries: [{ sessionId: "session-1", projectId: "project-1", title: "优化", summary: "正在优化提示词系统", updatedAt: 1 }],
       },
       knowledgeContext: {
         query: "提示词",

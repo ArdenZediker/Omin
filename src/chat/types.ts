@@ -8,6 +8,27 @@ export type ChatUsagePreferences = {
   maxOutputTokens: number;
 };
 
+export type PersonaStyle =
+  | "default"
+  | "professional"
+  | "friendly"
+  | "direct"
+  | "creative"
+  | "efficient"
+  | "snarky"
+  | "socratic";
+
+export type PersonaConfig = {
+  style: PersonaStyle;
+  customInstruction: string;
+  userName: string;
+  assistantName: string;
+  personaDescription: string;
+  longTermMemory: string;
+  /** 来自 AGENTS.md / AGENTS.override.md 的自由格式指令内容（仿 codex / deepseek 的指令文件约定）。 */
+  agentsMd: string;
+};
+
 export type ChatUsageStats = {
   requestCount: number;
   promptTokens: number;
@@ -19,14 +40,15 @@ export type ChatUsageStats = {
   hasEstimatedUsage: boolean;
 };
 
-export type AssistantKind = "basic" | "custom";
+export type ProjectKind = "basic" | "custom";
 
-export type AssistantMemoryScope = "off" | "session" | "assistant";
+export type ProjectMemoryScope = "off" | "session" | "project";
 
-export type AssistantProfileDraft = {
+export type ProjectDraft = {
   sourcePresetId?: string | null;
   title?: string;
   description?: string;
+  workspacePath?: string;
   groupName?: string | null;
   avatarType?: "emoji" | "image";
   avatarValue?: string;
@@ -35,17 +57,18 @@ export type AssistantProfileDraft = {
   knowledgeCollectionId?: string | null;
   allowedToolIds?: string[];
   allowedSkillIds?: string[];
-  memoryScope?: AssistantMemoryScope;
+  memoryScope?: ProjectMemoryScope;
   autoSaveMemories?: boolean;
   autoSaveSummaries?: boolean;
 };
 
-export type AssistantProfile = {
+export type Project = {
   id: string;
-  kind: AssistantKind;
+  kind: ProjectKind;
   sourcePresetId?: string | null;
   title: string;
   description: string;
+  workspacePath: string;
   groupName?: string | null;
   avatarType?: "emoji" | "image";
   avatarValue?: string;
@@ -54,14 +77,14 @@ export type AssistantProfile = {
   knowledgeCollectionId?: string | null;
   allowedToolIds: string[];
   allowedSkillIds: string[];
-  memoryScope: AssistantMemoryScope;
+  memoryScope: ProjectMemoryScope;
   autoSaveMemories: boolean;
   autoSaveSummaries: boolean;
   createdAt: number;
   updatedAt: number;
 };
 
-export type AssistantPresetRecord = {
+export type ProjectPresetRecord = {
   id: string;
   title: string;
   description: string;
@@ -73,32 +96,32 @@ export type AssistantPresetRecord = {
 };
 
 export type ManifestStorageSnapshot = {
-  assistantPresets: AssistantPresetRecord[];
+  projectPresets: ProjectPresetRecord[];
   toolManifests: Array<Record<string, unknown>>;
   skillManifests: Array<Record<string, unknown>>;
 };
 
 export type SessionSummaryRecord = {
   sessionId: string;
-  assistantId: string;
+  projectId: string;
   title: string;
   summary: string;
   updatedAt: number;
 };
 
-export type AssistantMemorySourceType = "auto" | "manual" | "command" | "legacy";
+export type ProjectMemorySourceType = "auto" | "manual" | "command" | "legacy";
 
-export type AssistantMemoryRecord = {
+export type ProjectMemoryRecord = {
   id: string;
-  assistantId: string;
+  projectId: string;
   content: string;
   sourceSessionId?: string | null;
-  sourceType?: AssistantMemorySourceType;
+  sourceType?: ProjectMemorySourceType;
   createdAt: number;
   updatedAt: number;
 };
 
-export type SuggestedAssistantMemory = {
+export type SuggestedProjectMemory = {
   content: string;
   reason?: string | null;
 };
@@ -129,7 +152,7 @@ export type ScheduledTaskRecord = {
 
 export type ChatSession = {
   id: string;
-  assistantId: string;
+  projectId: string;
   title: string;
   messages: Message[];
   pinned?: boolean;
@@ -150,7 +173,7 @@ export type ChatExecutionResult = {
   estimated: boolean;
   costUsd: number;
   knowledgeContext?: KnowledgeContextResult | null;
-  suggestedMemories?: SuggestedAssistantMemory[];
+  suggestedMemories?: SuggestedProjectMemory[];
   suggestedSummary?: SuggestedSessionSummary | null;
 };
 

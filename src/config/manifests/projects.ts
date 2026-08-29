@@ -1,6 +1,6 @@
-import type { AssistantPreset } from "./types";
+import type { ProjectPreset } from "./types";
 
-export const RECOMMENDED_ASSISTANT_PRESETS: AssistantPreset[] = [
+export const RECOMMENDED_PROJECT_PRESETS: ProjectPreset[] = [
   {
     id: "solution-planner",
     title: "方案梳理助手",
