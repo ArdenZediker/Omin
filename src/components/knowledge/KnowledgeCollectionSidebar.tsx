@@ -128,7 +128,9 @@ export default function KnowledgeCollectionSidebar({
                 <div
                   key={collection.id}
                   className={`flex items-center gap-1 rounded-xl border px-1 py-0.5 text-sm transition ${
-                    isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                    isActive
+                      ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
+                      : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                   }`}
                 >
                   <button
@@ -137,7 +139,7 @@ export default function KnowledgeCollectionSidebar({
                     className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-left"
                     title={collection.name}
                   >
-                    <KnowledgeCollectionIcon className="h-4 w-4 shrink-0 text-blue-600" />
+                    <KnowledgeCollectionIcon className="h-4 w-4 shrink-0 text-blue-500" />
                     <span className="flex-1 truncate">{collection.name}</span>
                   </button>
 
@@ -148,7 +150,7 @@ export default function KnowledgeCollectionSidebar({
                         event.stopPropagation();
                         onToggleCollectionMenu(collection.id);
                       }}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                       title="更多操作"
                     >
                       <EllipsisVertical size={14} strokeWidth={2} />
