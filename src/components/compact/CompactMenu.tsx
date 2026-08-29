@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { BasicSettings, ExternalChatEntry } from "../../app/types";
 import type { CompactAppearance } from "../../hooks/useCompactWindowState";
 import {
@@ -97,21 +97,37 @@ export default function CompactMenu({
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getInitialThemeMode(THEME_MODE_STORAGE_KEY));
   const [isThemeOpen, setIsThemeOpen] = useState(false);
 
+  // Keep the menu invisible until the compact window has finished resizing to
+  // its expanded size. This avoids painting a clipped first frame and prevents
+  // any layout shift from dismissing the hovering orb (the previous fix moved
+  // the window on open, which raced with the hover-leave handler).
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRevealed(true), 140);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const menuCssVars = {
+    "--compact-menu-edge-padding": `${COMPACT_MENU_EDGE_PADDING}px`,
+    "--compact-menu-width": `${COMPACT_MENU_WIDTH}px`,
+    "--compact-submenu-width": `${COMPACT_MENU_SUBMENU_WIDTH}px`,
+  } as CSSProperties;
+
   const menuPositionStyle =
     menuPosition && typeof window !== "undefined"
       ? {
+          ...menuCssVars,
           position: "fixed" as const,
-          "--compact-menu-edge-padding": `${COMPACT_MENU_EDGE_PADDING}px`,
-          "--compact-menu-width": `${COMPACT_MENU_WIDTH}px`,
-          "--compact-submenu-width": `${COMPACT_MENU_SUBMENU_WIDTH}px`,
           left: Math.max(COMPACT_MENU_EDGE_PADDING, menuPosition.x),
           top: Math.max(COMPACT_MENU_EDGE_PADDING, menuPosition.y),
         }
-      : ({
-          "--compact-menu-edge-padding": `${COMPACT_MENU_EDGE_PADDING}px`,
-          "--compact-menu-width": `${COMPACT_MENU_WIDTH}px`,
-          "--compact-submenu-width": `${COMPACT_MENU_SUBMENU_WIDTH}px`,
-        } as CSSProperties);
+      : menuCssVars;
+
+  const menuRevealStyle = {
+    opacity: revealed ? 1 : 0,
+    visibility: revealed ? "visible" : ("hidden" as const),
+    transition: "opacity 140ms ease, visibility 140ms",
+  } as CSSProperties;
 
   const submenuPositionStyle = {
     "--compact-submenu-top": `${menuPosition?.y ?? COMPACT_MENU_EDGE_PADDING}px`,
@@ -132,10 +148,10 @@ export default function CompactMenu({
 
   return (
     <div
-      className={`compact-menu animate-fade-in compact-menu--${compactMenuSide} ${
+      className={`compact-menu compact-menu--${compactMenuSide} ${
         menuPosition ? "compact-menu--cursor" : ""
       }`}
-      style={menuPositionStyle}
+      style={{ ...menuPositionStyle, ...menuRevealStyle }}
     >
       <div className="compact-menu__section">
         <button

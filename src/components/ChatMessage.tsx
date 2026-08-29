@@ -107,7 +107,7 @@ export default function ChatMessage({
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
       ) : (
-        <div className="message-assistant max-w-[95%] text-sm markdown-body">
+        <div className="message-project max-w-[95%] text-sm markdown-body">
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
             {isStreaming && !message.content.trim() ? <ThinkingIndicator /> : renderMarkdown(message.content)}
           </div>

@@ -68,7 +68,7 @@ describe("knowledgeViewHelpers", () => {
 
   it("规范化搜索文本并按长度排序高亮词", () => {
     expect(normalizeSearchText("  Omni   知识库  ")).toBe("omni 知识库");
-    expect(getSearchHighlightTerms("AI ai assistant")).toEqual(["assistant", "ai"]);
+    expect(getSearchHighlightTerms("AI ai project")).toEqual(["project", "ai"]);
   });
 
   it("格式化时间戳并处理空时间", () => {

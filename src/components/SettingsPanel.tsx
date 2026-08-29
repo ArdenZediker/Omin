@@ -4,7 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showCompactWindow } from "../app/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { Cuboid, MessageSquareText, Settings, Sparkles } from "lucide-react";
+import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
 import type { ChatUsagePreferences } from "../chat/types";
@@ -47,6 +47,8 @@ import BasicSettingsSection from "./settings/BasicSettingsSection";
 import KnowledgeEmbeddingSection from "./settings/KnowledgeEmbeddingSection";
 import KnowledgeMultimodalSection from "./settings/KnowledgeMultimodalSection";
 import ModelSettingsSection from "./settings/ModelSettingsSection";
+import PersonalizationSettingsSection from "./settings/PersonalizationSettingsSection";
+import StorageSettingsSection from "./settings/StorageSettingsSection";
 import TitleBar from "./TitleBar";
 
 interface SettingsPanelProps {
@@ -54,7 +56,7 @@ interface SettingsPanelProps {
   onBackToMain: () => void | Promise<void>;
   onModelChange: (modelId: string) => void;
 }
-type SettingsSection = "basic" | "models";
+type SettingsSection = "basic" | "personalization" | "models" | "storage";
 type ModelConfigSection = "chat" | "embedding" | "multimodal";
 type ModelSectionCard = {
   title: string;
@@ -696,6 +698,20 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
           </button>
           <button
             type="button"
+            onClick={() => setSection("personalization")}
+            className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
+              section === "personalization"
+                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
+                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
+            }`}
+          >
+            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-pink-100 text-pink-700">
+              <Paintbrush size={13} strokeWidth={1.8} />
+            </span>
+            个性化
+          </button>
+          <button
+            type="button"
             onClick={() => setSection("models")}
             className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
               section === "models"
@@ -708,15 +724,37 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
             </span>
             模型配置
           </button>
+          <button
+            type="button"
+            onClick={() => setSection("storage")}
+            className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
+              section === "storage"
+                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
+                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
+            }`}
+          >
+            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
+              <Database size={13} strokeWidth={1.8} />
+            </span>
+            数据存储
+          </button>
         </div>
       </aside>
 
       <section className="omni-settings-main flex min-w-0 flex-1 flex-col bg-white">
         <header className="omni-settings-header flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-5 select-none" onMouseDown={handleHeaderMouseDown}>
           <div className="min-w-0 flex-1 pr-3">
-            <h2 className="omni-settings-title text-sm font-semibold text-slate-950">{section === "basic" ? "基本设置" : "模型配置"}</h2>
+            <h2 className="omni-settings-title text-sm font-semibold text-slate-950">
+              {section === "basic" ? "基本设置" : section === "personalization" ? "个性化" : section === "storage" ? "数据存储" : "模型配置"}
+            </h2>
             <p className="omni-settings-muted text-[11px] text-slate-500">
-              {section === "basic" ? "管理 Omni 的通用基础选项。" : "通过模型列表新增或编辑 OpenAI 兼容模型。"}
+              {section === "basic"
+                ? "管理 Omni 的通用基础选项。"
+                : section === "personalization"
+                  ? "调整 Omni 的回复风格、语调与自定义指令。"
+                  : section === "storage"
+                    ? "管理数据库、知识库文件存放位置与整库备份。"
+                    : "通过模型列表新增或编辑 OpenAI 兼容模型。"}
             </p>
           </div>
           <div className="no-drag flex items-center gap-2">
@@ -758,9 +796,13 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                 themeMode={themeMode}
                 recordingShortcut={recordingShortcut}
               />
+            ) : section === "personalization" ? (
+              <PersonalizationSettingsSection />
+            ) : section === "storage" ? (
+              <StorageSettingsSection />
             ) : (
               <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-6">
-                <aside className="min-w-0 self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <aside className="omni-model-section-sidebar min-w-0 self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <div className="px-2 pb-3">
                     <div className="text-xs font-semibold text-slate-500">模型分类</div>
                     <div className="mt-1 text-[11px] leading-5 text-slate-400">聊天、向量和多模态模型分开配置，切换不会互相干扰。</div>
@@ -775,19 +817,19 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                           key={key}
                           type="button"
                           onClick={() => setModelSection(key)}
-                          className={`flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
+                          className={`omni-model-section-item flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
                             isActive
                               ? "bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
                               : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
                           }`}
                         >
-                          <span className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg ${isActive ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>
+                          <span className={`omni-model-section-icon mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg ${isActive ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>
                             <Icon size={15} strokeWidth={1.8} />
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center justify-between gap-2">
                               <span className="text-sm font-medium">{item.title}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[11px] ${isActive ? "bg-slate-100 text-slate-700" : "bg-slate-100 text-slate-500"}`}>
+                              <span className={`omni-model-section-count rounded-full px-2 py-0.5 text-[11px] ${isActive ? "bg-slate-100 text-slate-700" : "bg-slate-100 text-slate-500"}`}>
                                 {item.count}
                               </span>
                             </span>
@@ -800,13 +842,13 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                 </aside>
 
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6">
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <div className="omni-model-section-header rounded-2xl border border-slate-200 bg-white px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="text-sm font-semibold text-slate-900">{currentModelSectionCard.title}</h3>
                         <p className="mt-0.5 text-xs leading-5 text-slate-500">{currentModelSectionCard.description}</p>
                       </div>
-                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">{currentModelSectionCard.count} 项</span>
+                      <span className="omni-model-section-count rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">{currentModelSectionCard.count} 项</span>
                     </div>
                   </div>
 

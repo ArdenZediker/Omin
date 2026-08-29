@@ -57,7 +57,7 @@ type Props = {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[120px_1fr] gap-4">
-      <label className="pt-2 text-right text-sm text-slate-700">{label}</label>
+      <label className="omni-model-section-field__label pt-2 text-right text-sm text-slate-700">{label}</label>
       {children}
     </div>
   );
@@ -66,7 +66,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function Actions({ label, children }: { label?: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[120px_1fr] gap-4">
-      <span className="pt-1 text-right text-sm text-slate-700">{label}</span>
+      <span className="omni-model-section-field__label pt-1 text-right text-sm text-slate-700">{label}</span>
       <div className="flex items-center gap-3">{children}</div>
     </div>
   );
@@ -117,10 +117,10 @@ export default function ModelSettingsSection({
 
   return (
     <>
-      <section className="min-w-0 space-y-4">
+      <section className="omni-model-section-card min-w-0 space-y-4">
         <div className="border-b border-slate-100 pb-2">
           <h3 className="text-sm font-medium text-slate-900">主模型</h3>
-          <p className="mt-0.5 text-xs text-slate-500">主模型用于普通聊天和未单独指定模型的助手；助手设置里的默认模型会优先覆盖它。</p>
+          <p className="mt-0.5 text-xs text-slate-500">主模型用于普通聊天和未单独指定模型的项目；项目设置里的默认模型会优先覆盖它。</p>
         </div>
         <Field label="当前主模型">
           <div className="space-y-2">
@@ -145,13 +145,13 @@ export default function ModelSettingsSection({
         </Field>
       </section>
 
-      <section className="min-w-0 space-y-3">
+      <section className="omni-model-section-card min-w-0 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">模型列表</div>
             <div className="mt-0.5 text-xs text-slate-500">当前已创建的聊天模型会显示在这里。</div>
           </div>
-          <button onClick={onOpenNewModelForm} className="shrink-0 rounded-md bg-slate-900 px-4 py-2 text-xs text-white" type="button">
+          <button onClick={onOpenNewModelForm} className="omni-model-add-button shrink-0 rounded-md bg-slate-900 px-4 py-2 text-xs text-white" type="button">
             新增模型
           </button>
         </div>
@@ -191,7 +191,7 @@ export default function ModelSettingsSection({
         </div>
       </section>
 
-      <section className="min-w-0 space-y-4">
+      <section className="omni-model-section-card min-w-0 space-y-4">
         <div className="omni-model-prefs-heading border-b border-slate-100 pb-2">
           <div className="min-w-0">
             <h3 className="text-sm font-medium text-slate-900">使用偏好</h3>
@@ -204,7 +204,7 @@ export default function ModelSettingsSection({
       </section>
 
       {isPrefsPanelOpen && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/25 px-6">
+        <div className="omni-model-section-modal absolute inset-0 z-20 flex items-center justify-center bg-slate-950/25 px-6">
           <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
             <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
@@ -283,7 +283,7 @@ export default function ModelSettingsSection({
       )}
 
       {isModelFormOpen && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/25 px-6">
+        <div className="omni-model-section-modal absolute inset-0 z-20 flex items-center justify-center bg-slate-950/25 px-6">
           <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
             <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
               <div>

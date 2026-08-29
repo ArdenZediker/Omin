@@ -34,11 +34,9 @@ import {
   getCompactWindowSize,
   getExpandedCompactViewportSizeForAppearance,
   getPetCompactViewportSize,
-  getPetThoughtAnchorOffset,
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
-import { resolvePetMenuViewportOffset } from "./hooks/compactMenuGeometry";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -64,8 +62,8 @@ const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
 
 function formatShareRole(role: Message["role"]) {
   switch (role) {
-    case "assistant":
-      return "助手";
+    case "project":
+      return "项目";
     case "system":
       return "系统";
     case "user":
@@ -121,30 +119,31 @@ function App() {
 function MainApp() {
   const { openPrompt } = usePromptDialog();
   const {
-    activeAssistant,
-    activeAssistantId,
+    activeProject,
+    activeProjectId,
     activeChatId,
     activeSession,
-    addAssistantMemory,
+    addProjectMemory,
     applyUsageToSession,
-    assistants,
-    clearAssistantMemories,
-    commitAssistantMemory,
-    createCustomAssistantProfile,
+    projects,
+    chatSessions,
+    clearProjectMemories,
+    commitProjectMemory,
+    createCustomProjectProfile,
     createSessionFromMessages,
-    deleteAssistantProfile,
-    deleteAssistantMemory,
+    deleteProjectProfile,
+    deleteProjectMemory,
     deleteChatSession,
     getChatSessionById,
-    getAssistantMemories,
-    getRelatedContextForAssistant,
+    getProjectMemories,
+    getRelatedContextForProject,
     groupedChatSessions,
     messages,
     renameChatSession,
-    selectAssistant,
+    selectProject,
     selectChatSession,
     searchChatSessions,
-    setActiveAssistantId,
+    setActiveProjectId,
     setActiveChatId,
     setScheduledTasks,
     setMessages,
@@ -152,9 +151,9 @@ function MainApp() {
     toggleFavoriteChatSession,
     togglePinnedChatSession,
     updateChatSessionMessages,
-    updateAssistantMemory,
-    updateAssistantProfile,
-  } = useChatSessions({ persist: !isCompactWindow });
+    updateProjectMemory,
+    updateProjectProfile,
+  } = useChatSessions({ persist: true });
 
   const {
     characterMenuPosition,
@@ -196,7 +195,7 @@ function MainApp() {
   const [currentModel, setCurrentModel] = useState("");
   const [view, setView] = useState<"chat" | "knowledge">(getStoredMainView);
   const [inputFocusKey, setInputFocusKey] = useState(0);
-  const [assistantDrafts, setAssistantDrafts] = useState<Record<string, ComposerDraft>>({});
+  const [projectDrafts, setProjectDrafts] = useState<Record<string, ComposerDraft>>({});
   const [inputDraftKey, setInputDraftKey] = useState(0);
   const [basicSettings, setBasicSettings] = useState<BasicSettings>(getBasicSettings);
   const [previousModel, setPreviousModel] = useState<string | null>(null);
@@ -252,49 +251,23 @@ function MainApp() {
     petThoughtPlacement,
     shouldReservePetThoughtSpace,
   ]);
-  const petThoughtViewportOffset = useMemo(
-    () => {
-      if (compactAppearance !== "pet" || !compactViewportSize) {
-        return { x: 0, y: 0 };
-      }
 
-      if (isCompactMenuOpen) {
-        return resolvePetMenuViewportOffset(compactSize, compactViewportSize, {
-          menuSide: compactMenuSide,
-          submenuSide: compactSubmenuSide,
-        });
-      }
-
-      return shouldReservePetThoughtSpace
-        ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
-        : { x: 0, y: 0 };
-    },
-    [
-      compactAppearance,
-      compactSize.height,
-      compactSize.width,
-      compactViewportSize?.height,
-      compactViewportSize?.width,
-      compactMenuSide,
-      compactSubmenuSide,
-      isCompactMenuOpen,
-      shouldReservePetThoughtSpace,
-    ]
-  );
+  // 宠物视口偏移由 useCompactWindowController 内部在窗口几何（位置/大小）更新完成后
+  // 才提交（committedPetOffset），避免菜单展开/收起时的那一帧跳变。
 
   const availableModels = modelRegistry.getAvailableModels();
   const availableModelIdsKey = availableModels.map((model) => model.id).join("\n");
   const hasModels = availableModels.length > 0;
   const visibleMessages = messages;
-  const activeComposerDraft = assistantDrafts[activeAssistantId] ?? EMPTY_COMPOSER_DRAFT;
+  const activeComposerDraft = projectDrafts[activeProjectId] ?? EMPTY_COMPOSER_DRAFT;
   const relatedContextQuery = useMemo(() => {
     const latestUserMessage = [...visibleMessages].reverse().find((message) => message.role === "user")?.content ?? "";
     return latestUserMessage.trim();
   }, [visibleMessages]);
 
-  const updateAssistantDraft = useCallback((assistantId: string, updater: (draft: ComposerDraft) => ComposerDraft) => {
-    setAssistantDrafts((current) => {
-      const previousDraft = current[assistantId] ?? EMPTY_COMPOSER_DRAFT;
+  const updateProjectDraft = useCallback((projectId: string, updater: (draft: ComposerDraft) => ComposerDraft) => {
+    setProjectDrafts((current) => {
+      const previousDraft = current[projectId] ?? EMPTY_COMPOSER_DRAFT;
       const nextDraft = updater(previousDraft);
       const hasSameText = previousDraft.text === nextDraft.text;
       const hasSameImages =
@@ -306,16 +279,16 @@ function MainApp() {
       }
 
       if (!nextDraft.text && nextDraft.images.length === 0) {
-        if (!(assistantId in current)) {
+        if (!(projectId in current)) {
           return current;
         }
-        const { [assistantId]: _removed, ...rest } = current;
+        const { [projectId]: _removed, ...rest } = current;
         return rest;
       }
 
       return {
         ...current,
-        [assistantId]: {
+        [projectId]: {
           text: nextDraft.text,
           images: [...nextDraft.images],
         },
@@ -325,32 +298,32 @@ function MainApp() {
 
   const setInputDraft = useCallback<Dispatch<SetStateAction<string>>>(
     (value) => {
-      updateAssistantDraft(activeAssistantId, (draft) => ({
+      updateProjectDraft(activeProjectId, (draft) => ({
         ...draft,
         text: typeof value === "function" ? value(draft.text) : value,
       }));
     },
-    [activeAssistantId, updateAssistantDraft]
+    [activeProjectId, updateProjectDraft]
   );
 
   const setInputDraftImages = useCallback<Dispatch<SetStateAction<string[]>>>(
     (value) => {
-      updateAssistantDraft(activeAssistantId, (draft) => ({
+      updateProjectDraft(activeProjectId, (draft) => ({
         ...draft,
         images: typeof value === "function" ? value(draft.images) : value,
       }));
     },
-    [activeAssistantId, updateAssistantDraft]
+    [activeProjectId, updateProjectDraft]
   );
 
   const handleComposerDraftChange = useCallback(
     (text: string, images: string[]) => {
-      updateAssistantDraft(activeAssistantId, () => ({
+      updateProjectDraft(activeProjectId, () => ({
         text,
         images,
       }));
     },
-    [activeAssistantId, updateAssistantDraft]
+    [activeProjectId, updateProjectDraft]
   );
 
   const handleModelChange = useCallback((modelId: string) => {
@@ -390,9 +363,9 @@ function MainApp() {
     });
   }, []);
 
-  const getAssistantById = useCallback(
-    (assistantId: string) => assistants.find((assistant) => assistant.id === assistantId) ?? null,
-    [assistants]
+  const getProjectById = useCallback(
+    (projectId: string) => projects.find((project) => project.id === projectId) ?? null,
+    [projects]
   );
 
   const {
@@ -414,21 +387,21 @@ function MainApp() {
     setError,
   } = useChatRuntime({
     activeChatId,
-    activeAssistant,
+    activeProject,
     availableModels,
     messages,
-    addAssistantMemory,
+    addProjectMemory,
     applyUsageToSession,
-    commitAssistantMemory,
+    commitProjectMemory,
     createSessionFromMessages,
     currentModel,
-    getAssistantById,
+    getProjectById,
     handleModelChange,
-    getRelatedContextForAssistant,
+    getRelatedContextForProject,
     renameChatSession,
     getChatSessionById,
     searchChatSessions,
-    setActiveAssistantId,
+    setActiveProjectId,
     setActiveChatId,
     setInputDraft,
     setInputDraftImages,
@@ -436,18 +409,18 @@ function MainApp() {
     setMessages,
     setOpenChatMenu,
     togglePinnedChatSession,
-    updateAssistantProfile,
+    updateProjectProfile,
     updateChatSessionMessages,
     isCompactWindow,
     view,
   });
 
   const relatedContext = useMemo(
-    () => getRelatedContextForAssistant(relatedContextQuery),
-    [getRelatedContextForAssistant, relatedContextQuery]
+    () => getRelatedContextForProject(relatedContextQuery),
+    [getRelatedContextForProject, relatedContextQuery]
   );
   const activeExecutionModel = resolveExecutionModelId({
-    assistantModelId: activeAssistant?.defaultModelId,
+    projectModelId: activeProject?.defaultModelId,
     currentModelId: currentModel,
     availableModels,
   });
@@ -511,6 +484,10 @@ function MainApp() {
     setIsCompactQueryOpen,
     setIsCompactReplyLoading,
     setPetThoughtPlacement,
+    chatSessions,
+    activeProjectId,
+    createSessionFromMessages,
+    updateChatSessionMessages,
   });
 
   const displayCompactSize =
@@ -542,8 +519,8 @@ function MainApp() {
       "--compact-padding": `${compactPadding}px`,
       "--compact-character-size": `${compactCharacterSize}px`,
       "--compact-character-reply-gap": `${characterReplyGap}px`,
-      "--pet-viewport-offset-x": `${petThoughtViewportOffset.x}px`,
-      "--pet-viewport-offset-y": `${petThoughtViewportOffset.y}px`,
+      "--pet-viewport-offset-x": `${compactController.committedPetOffset.x}px`,
+      "--pet-viewport-offset-y": `${compactController.committedPetOffset.y}px`,
     } as CSSProperties;
   }, [
     compactViewportSize,
@@ -551,16 +528,16 @@ function MainApp() {
     displayCompactSize.width,
     isAnimatedCompactAppearance,
     compactAppearance,
-    petThoughtViewportOffset.x,
-    petThoughtViewportOffset.y,
+    compactController.committedPetOffset.x,
+    compactController.committedPetOffset.y,
     petThoughtPlacement,
   ]);
 
   const lastMessage = visibleMessages[visibleMessages.length - 1];
-  const hasPendingAssistantPlaceholder = lastMessage?.role === "assistant" && !lastMessage.content.trim();
-  const isActiveSessionLoading = Boolean((activeChatId && loadingSessionIds.includes(activeChatId)) || hasPendingAssistantPlaceholder);
+  const hasPendingProjectPlaceholder = lastMessage?.role === "project" && !lastMessage.content.trim();
+  const isActiveSessionLoading = Boolean((activeChatId && loadingSessionIds.includes(activeChatId)) || hasPendingProjectPlaceholder);
   const isSendBlockedByOtherSession = false;
-  const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "assistant");
+  const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "project");
 
   const handleCopyMessage = useCallback(async (message: Message) => {
     await navigator.clipboard.writeText(message.content);
@@ -715,12 +692,16 @@ function MainApp() {
         isCompactQueryOpen={isCompactQueryOpen}
         isCompactReplyLoading={isCompactReplyLoading}
         isCharacterDragging={compactController.isCharacterDragging}
+        previewCharacterScale={compactController.previewCharacterScale}
         characterDragMotion={compactController.characterDragMotion}
         omniSmallIconSrc={omniSmallIconSrc}
         onCharacterContextMenu={compactController.handleCharacterContextMenu}
         onCharacterPointerDown={compactController.handleCharacterPointerDown}
         onCharacterPointerMove={compactController.handleCharacterPointerMove}
         onCharacterPointerUp={compactController.handleCharacterPointerUp}
+        onPetPointerDown={compactController.handlePetPointerDown}
+        onPetPointerMove={compactController.handlePetPointerMove}
+        onPetPointerUp={compactController.handlePetPointerUp}
         onCancelCompactMenuClose={compactController.cancelCompactMenuClose}
         onCloseCompactMenu={compactController.closeCompactMenu}
         onCloseCompactMenuNow={compactController.closeCompactMenuNow}
@@ -751,11 +732,11 @@ function MainApp() {
     <div className="app-shell glass flex flex-col h-screen w-screen overflow-hidden">
       {view === "chat" ? (
         <MainChatView
-          activeAssistant={activeAssistant}
-          activeAssistantId={activeAssistantId}
+          activeProject={activeProject}
+          activeProjectId={activeProjectId}
           activeChatId={activeChatId}
           activeSession={activeSession}
-          assistants={assistants}
+          projects={projects}
           availableModels={availableModels}
           currentModel={currentModel}
           editingMessageIndex={editingMessageIndex}
@@ -767,13 +748,13 @@ function MainApp() {
           inputDraft={activeComposerDraft.text}
           inputDraftImages={activeComposerDraft.images}
           inputDraftKey={inputDraftKey}
-          inputDraftScopeKey={activeAssistantId}
+          inputDraftScopeKey={activeProjectId}
           inputFocusKey={inputFocusKey}
           isLoading={isActiveSessionLoading}
           isSendBlocked={isSendBlockedByOtherSession || !hasModels}
           isStreaming={isStreaming}
           relatedContext={relatedContext}
-          assistantMemories={activeAssistant ? getAssistantMemories(activeAssistant.id) : []}
+          projectMemories={activeProject ? getProjectMemories(activeProject.id) : []}
           latestTaskResult={latestTaskResult}
           taskRuntimeState={taskRuntimeState}
           messages={visibleMessages}
@@ -788,17 +769,17 @@ function MainApp() {
           onEditUserMessage={handleEditUserMessage}
           onModelChange={handleModelChange}
           onNewChat={handleNewChat}
-          onCreateCustomAssistant={createCustomAssistantProfile}
-          onAddAssistantMemory={addAssistantMemory}
-          onClearAssistantMemories={clearAssistantMemories}
-          onDeleteAssistant={deleteAssistantProfile}
-          onDeleteAssistantMemory={deleteAssistantMemory}
-          onUpdateAssistantMemory={updateAssistantMemory}
+          onCreateCustomProject={createCustomProjectProfile}
+          onAddProjectMemory={addProjectMemory}
+          onClearProjectMemories={clearProjectMemories}
+          onDeleteProject={deleteProjectProfile}
+          onDeleteProjectMemory={deleteProjectMemory}
+          onUpdateProjectMemory={updateProjectMemory}
           onRegenerateMessage={handleRegenerateMessage}
           onRenameChat={handleRenameChat}
-          onSelectAssistant={selectAssistant}
+          onSelectProject={selectProject}
           onSelectChat={handleSelectChat}
-          onUpdateAssistantProfile={updateAssistantProfile}
+          onUpdateProject={updateProjectProfile}
           onSend={handleSend}
           onSetOpenChatMenu={setOpenChatMenu}
           onSettingsOpen={desktopActions.openSettings}

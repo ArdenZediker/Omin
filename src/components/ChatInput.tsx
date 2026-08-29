@@ -35,6 +35,8 @@ interface ChatInputProps {
   draftImages?: string[];
   draftSignal?: number;
   onDraftChange?: (text: string, images: string[]) => void;
+  fixedHeight?: number | null;
+  onSubmit?: () => void;
 }
 
 const LOCAL_COMMAND_ICON_MAP: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
@@ -109,6 +111,8 @@ export default function ChatInput({
   draftImages,
   draftSignal,
   onDraftChange,
+  fixedHeight,
+  onSubmit,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -131,12 +135,16 @@ export default function ChatInput({
     if (!textarea) {
       return;
     }
+    // 固定高度模式下由外层容器高度控制，textarea 内部滚动，不再自动撑开。
+    if (fixedHeight) {
+      return;
+    }
     if (input.length === 0) {
       textarea.style.height = "36px";
       return;
     }
     textarea.style.height = "auto";
-    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 36), 280);
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 36), 320);
     const currentHeight = Number.parseFloat(textarea.style.height || "0");
     if (!Number.isFinite(currentHeight) || Math.abs(currentHeight - nextHeight) > 0.5) {
       textarea.style.height = `${nextHeight}px`;
@@ -361,6 +369,7 @@ export default function ChatInput({
     setCaretIndex(0);
     clearSuggestionDismissal();
     clearMentionDismissal();
+    onSubmit?.();
   };
 
   const submitImmediateCommand = (command: string) => {
@@ -544,7 +553,7 @@ export default function ChatInput({
   };
 
   return (
-    <div className="chat-composer">
+    <div className={`chat-composer${fixedHeight ? " chat-composer--fixed-height" : ""}`}>
       {images.length > 0 && (
         <div className="chat-composer__attachments">
           {images.map((img, index) => (

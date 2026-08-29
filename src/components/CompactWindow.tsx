@@ -12,7 +12,6 @@ import type { CodexPetPackage } from "../app/pets/codexPetTypes";
 import DesktopPet, { type DesktopPetState } from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
-import CompactReplyPanel from "./compact/CompactReplyPanel";
 import PetThoughtBubble from "./compact/PetThoughtBubble";
 
 type CompactWindowProps = {
@@ -37,6 +36,7 @@ type CompactWindowProps = {
   isCompactQueryOpen: boolean;
   isCompactReplyLoading: boolean;
   isCharacterDragging: boolean;
+  previewCharacterScale: number | null;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
   characterDragMotion: DesktopPetState | null;
@@ -46,6 +46,9 @@ type CompactWindowProps = {
   onCharacterPointerDown: (e: MouseEvent<HTMLButtonElement>) => void;
   onCharacterPointerMove: (e: MouseEvent<HTMLButtonElement>) => void;
   onCharacterPointerUp: () => void;
+  onPetPointerDown: (e: MouseEvent<HTMLButtonElement>) => void;
+  onPetPointerMove: (e: MouseEvent<HTMLButtonElement>) => void;
+  onPetPointerUp: () => void;
   onCancelCompactMenuClose: () => void;
   onCloseCompactMenu: () => void;
   onCloseCompactMenuNow: () => void;
@@ -93,6 +96,7 @@ export default function CompactWindow({
   isCompactQueryOpen,
   isCompactReplyLoading,
   isCharacterDragging,
+  previewCharacterScale,
   characterDragMotion,
   omniSmallIconSrc,
   compactMenuSide,
@@ -101,6 +105,9 @@ export default function CompactWindow({
   onCharacterPointerDown,
   onCharacterPointerMove,
   onCharacterPointerUp,
+  onPetPointerDown,
+  onPetPointerMove,
+  onPetPointerUp,
   onCancelCompactMenuClose,
   onCloseCompactMenu,
   onCloseCompactMenuNow,
@@ -140,7 +147,8 @@ export default function CompactWindow({
     !compactReply;
   const resolvedPetThoughtQueue = petThoughtQueue.length > 0 ? petThoughtQueue : petThought ? [petThought] : [];
   const visiblePetThoughts = petThoughtPlacement === "top" ? [...resolvedPetThoughtQueue].reverse() : resolvedPetThoughtQueue;
-  const isInlinePetThoughtStackVisible = isPetThoughtToggleVisible && resolvedPetThoughtQueue.length > 0;
+  const isInlinePetThoughtStackVisible =
+    isPetThoughtToggleVisible && resolvedPetThoughtQueue.length > 0 && typeof previewCharacterScale !== "number";
   const petViewportSize = getCodexPetViewportSize(compactSize);
   const petRenderHeight = petViewportSize.height;
   const petRenderWidth = petViewportSize.width;
@@ -175,6 +183,21 @@ export default function CompactWindow({
   const [petClickBounce, setPetClickBounce] = useState(false);
   const [isPetHovered, setIsPetHovered] = useState(false);
   const [petWavingHold, setPetWavingHold] = useState(false);
+  const petHoverGraceRef = useRef<number | null>(null);
+  const petMenuOpenGraceRef = useRef<number>(0);
+  // After the menu opens (hover mode), the window resizes to make room for it.
+  // That resize can momentarily push the cursor out of the hover zone and fire a
+  // spurious mouseleave, which would flip the pet back to idle and (after the
+  // short grace) close the menu — then re-open on re-enter, producing the
+  // "jitter/flash" loop. This timestamp keeps the menu + pet state stable for a
+  // while right after opening so the resize settles without flipping state.
+  const petMenuStableUntilRef = useRef<number>(0);
+  const PET_MENU_STABLE_MS = 700;
+  // Debounced close timer for hover mode: the menu closes only when the pointer
+  // truly leaves the whole floating window (root onMouseLeave), not when it
+  // merely moves across the pet body. Moving onto the menu (a child) never
+  // fires root onMouseLeave, which is what stops the open/close jitter.
+  const petHoverCloseTimerRef = useRef<number | null>(null);
   const petState: DesktopPetState = characterDragMotion
     ? characterDragMotion
     : petClickBounce
@@ -249,7 +272,7 @@ export default function CompactWindow({
 
     return Boolean(
       target.closest(
-        ".compact-menu, .compact-submenu, .compact-query, .compact-reply, .compact-menu-anchor, .pet-thought-compact-toggle, .compact-pet-thought-stack"
+        ".compact-menu, .compact-submenu, .compact-query, .compact-reply, .compact-menu-anchor, .compact-button--pet, .pet-thought-compact-toggle, .compact-pet-thought-stack"
       )
     );
   };
@@ -267,6 +290,14 @@ export default function CompactWindow({
       }`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
+        // The pet button owns its own press: never intercept it for panel
+        // dismissal. Otherwise, whenever a menu/panel is open (e.g. hover mode
+        // opens the menu the moment you hover), the capture-phase
+        // stopPropagation below swallows the pet's mousedown and dragging
+        // becomes completely unresponsive.
+        if (isPetAppearance && Boolean(target.closest(".compact-button--pet"))) {
+          return;
+        }
         const isInsideFloatingPanel = Boolean(
           target.closest(".compact-query") || target.closest(".compact-reply") || target.closest(".compact-menu") || target.closest(".compact-submenu")
         );
@@ -292,55 +323,112 @@ export default function CompactWindow({
       }}
       onMouseDown={onCompactDrag}
       onWheel={onCompactWheel}
+      onMouseEnter={() => {
+        // Cancel a pending hover-close if the pointer re-enters the window.
+        if (petHoverCloseTimerRef.current !== null) {
+          window.clearTimeout(petHoverCloseTimerRef.current);
+          petHoverCloseTimerRef.current = null;
+        }
+      }}
+      onMouseMove={(event) => {
+        if (!isCompactMenuOpen || isCompactQueryOpen) {
+          return;
+        }
+        // Ignore spurious moves that immediately follow the open-menu resize.
+        if (Date.now() < petMenuStableUntilRef.current) {
+          return;
+        }
+        if (isPointerInsideVisibleFloatingUi(event.target)) {
+          if (petHoverCloseTimerRef.current !== null) {
+            window.clearTimeout(petHoverCloseTimerRef.current);
+            petHoverCloseTimerRef.current = null;
+          }
+          return;
+        }
+        // Pointer is inside the window but outside the menu/pet area: schedule
+        // a close so that moving from a submenu back onto the desktop (or any
+        // blank transparent area) dismisses the whole menu.
+        if (petHoverCloseTimerRef.current === null) {
+          petHoverCloseTimerRef.current = window.setTimeout(() => {
+            if (isCompactMenuOpen && !isCompactQueryOpen) {
+              onCloseCompactMenu();
+            }
+            petHoverCloseTimerRef.current = null;
+          }, 140);
+        }
+      }}
+      onMouseLeave={() => {
+        if (isCompactQueryOpen || !isCompactMenuOpen) {
+          return;
+        }
+        // The pointer left the *entire* floating window. Because onMouseLeave
+        // does not fire when moving onto a child, this only triggers on a
+        // genuine exit.
+        if (petHoverCloseTimerRef.current !== null) {
+          window.clearTimeout(petHoverCloseTimerRef.current);
+        }
+        petHoverCloseTimerRef.current = window.setTimeout(() => {
+          if (isCompactMenuOpen && !isCompactQueryOpen) {
+            onCloseCompactMenu();
+          }
+          petHoverCloseTimerRef.current = null;
+        }, 160);
+      }}
     >
       <div
         className={`compact-hover-zone ${isAnimatedAppearance ? "compact-hover-zone--character" : ""} ${
           isPetAppearance ? "compact-hover-zone--pet" : ""
         }`}
         onMouseMove={(event) => {
-          if (!isPetAppearance || basicSettings.menuOpenMode !== "hover" || !isCompactMenuOpen || isCompactQueryOpen) {
+          if (isPetAppearance) {
+            // 宠物菜单的关闭由根 div 的 onMouseMove 统一处理（含 140ms 防抖）
             return;
           }
-
-          if (isPointerInsideVisibleFloatingUi(event.target)) {
+          // 菜单由进入/离开整个悬浮窗口（根 div 处理器）控制。
+          if (isCompactMenuOpen && isPointerInsideVisibleFloatingUi(event.target)) {
             onCancelCompactMenuClose();
-            return;
           }
-
-          onCloseCompactMenu();
         }}
         onMouseEnter={
           (e) => {
             if (isPetAppearance) {
+              if (petHoverGraceRef.current !== null) {
+                window.clearTimeout(petHoverGraceRef.current);
+                petHoverGraceRef.current = null;
+              }
               setIsPetHovered(true);
+              // 宠物菜单改为右键展开，hover 不再自动打开。
+              return;
             }
-            if (!isCompactQueryOpen && basicSettings.menuOpenMode === "hover") {
-                onCancelCompactMenuClose();
-                const anchor = resolveAnchorEdge(e.currentTarget);
-                void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
+            if (!isCompactQueryOpen) {
+              onCancelCompactMenuClose();
+              const anchor = resolveAnchorEdge(e.currentTarget);
+              petMenuOpenGraceRef.current = Date.now();
+              petMenuStableUntilRef.current = Date.now() + PET_MENU_STABLE_MS;
+              void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
             }
           }
         }
         onMouseLeave={
           () => {
+            const withinStableWindow = isPetAppearance && Date.now() < petMenuStableUntilRef.current;
             if (isPetAppearance) {
-              setIsPetHovered(false);
-            }
-            if (!isCompactQueryOpen && basicSettings.menuOpenMode === "hover") {
-              onCloseCompactMenu();
-            }
-          }
-        }
-        onClick={
-          !isCompactQueryOpen && basicSettings.menuOpenMode === "click"
-            ? (e) => {
-                const target = e.target as HTMLElement;
-                if (!target.closest("button")) {
-                  const anchor = resolveAnchorEdge(e.currentTarget);
-                  void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
+              if (withinStableWindow) {
+                // Ignore the spurious leave caused by the open-menu resize: keep
+                // the pet waving and do not schedule an idle flip.
+              } else {
+                if (petHoverGraceRef.current !== null) {
+                  window.clearTimeout(petHoverGraceRef.current);
                 }
+                petHoverGraceRef.current = window.setTimeout(() => {
+                  setIsPetHovered(false);
+                  petHoverGraceRef.current = null;
+                }, 140);
               }
-            : undefined
+            }
+            // Hover-mode menu close is now owned by the root onMouseLeave
+            // (leaving the whole floating window), so nothing to do here.
+          }
         }
       >
         <div
@@ -358,7 +446,20 @@ export default function CompactWindow({
               : compactStyle
           }
         >
-          <div className="compact-menu-anchor no-drag" onContextMenu={isAnimatedAppearance ? onCharacterContextMenu : undefined}>
+          <div
+            className="compact-menu-anchor no-drag"
+            onContextMenu={
+              isAnimatedAppearance || isPetAppearance
+                ? (e) => {
+                    if (isPetAppearance) {
+                      // 右键展开宠物菜单时设置稳定窗口，避免接着的 resize 误关。
+                      petMenuStableUntilRef.current = Date.now() + PET_MENU_STABLE_MS;
+                    }
+                    void onCharacterContextMenu(e);
+                  }
+                : undefined
+            }
+          >
             <button
               ref={petButtonRef}
               type="button"
@@ -366,7 +467,9 @@ export default function CompactWindow({
                 isPetAppearance ? "compact-button--pet" : ""
               }`}
               onMouseDown={
-                isAnimatedAppearance
+                isPetAppearance
+                  ? onPetPointerDown
+                  : isAnimatedAppearance
                   ? onCharacterPointerDown
                   : (e) => {
                       e.preventDefault();
@@ -378,7 +481,13 @@ export default function CompactWindow({
                 event.stopPropagation();
               }}
               onMouseMove={
-                isAnimatedAppearance
+                isPetAppearance
+                  ? (e) => {
+                      const nextCursor = onPointerHitTest(e.currentTarget, e.clientX, e.clientY) ? "grab" : "default";
+                      e.currentTarget.style.cursor = nextCursor;
+                      onPetPointerMove(e);
+                    }
+                  : isAnimatedAppearance
                   ? (e) => {
                       const nextCursor = onPointerHitTest(e.currentTarget, e.clientX, e.clientY) ? "grab" : "default";
                       e.currentTarget.style.cursor = nextCursor;
@@ -386,7 +495,7 @@ export default function CompactWindow({
                     }
                   : undefined
               }
-              onMouseUp={isAnimatedAppearance ? onCharacterPointerUp : undefined}
+              onMouseUp={isPetAppearance ? onPetPointerUp : isAnimatedAppearance ? onCharacterPointerUp : undefined}
               onMouseLeave={
                 isAnimatedAppearance
                   ? (e) => {
@@ -508,15 +617,6 @@ export default function CompactWindow({
               />
             )}
 
-            <CompactReplyPanel
-              compactReply={compactReply}
-              isCharacterAppearance={isAnimatedAppearance}
-              isCompactReplyLoading={isCompactReplyLoading}
-              panelSide="left"
-              speakerLabel="Omni"
-              variant={isPetAppearance ? "pet" : "default"}
-              onClose={closeReply}
-            />
           </div>
 
           {isCompactQueryOpen && isPetAppearance && (
@@ -580,6 +680,7 @@ export default function CompactWindow({
             onSetIsCompactModelOpen={onSetIsCompactModelOpen}
           />
         )}
+
       </div>
     </div>
   );

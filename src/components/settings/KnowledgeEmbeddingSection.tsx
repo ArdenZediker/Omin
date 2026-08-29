@@ -148,12 +148,12 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
   };
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <section className="omni-knowledge-embedding-section flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-slate-900">向量模型</h3>
         </div>
-        <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] ${normalizedConfig.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
+        <span className={`omni-knowledge-status-badge inline-flex items-center rounded-full px-2 py-1 text-[11px] ${normalizedConfig.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
           {normalizedConfig.enabled ? "已启用" : "已关闭"}
         </span>
       </div>
@@ -185,7 +185,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
               return (
                 <div
                   key={model.id}
-                  className={`rounded-lg border px-3 py-3 transition-colors ${
+                  className={`omni-knowledge-model-card rounded-lg border px-3 py-3 transition-colors ${
                     isActive
                       ? "border-violet-300 bg-violet-50 shadow-[inset_3px_0_0_rgba(124,58,237,0.68)]"
                       : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50"
@@ -227,7 +227,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
               );
             })
           ) : (
-            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-xs text-slate-400">
+            <div className="omni-knowledge-empty-state rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-xs text-slate-400">
               还没有模型，点击“添加模型”先建一个。
             </div>
           )}

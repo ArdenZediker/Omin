@@ -121,17 +121,6 @@ export default function BasicSettingsSection({
 
       <div className="space-y-4 border-t border-slate-100 pt-4">
         <h3 className="text-sm font-medium text-slate-900 omni-settings-title">悬浮与窗口</h3>
-        <Field label="菜单打开">
-          <OmniSelect
-            value={basicSettings.menuOpenMode}
-            onChange={(value) => onUpdateBasicSettings({ menuOpenMode: value as BasicSettings["menuOpenMode"] })}
-            ariaLabel="菜单打开方式"
-            options={[
-              { value: "hover", label: "悬停" },
-              { value: "click", label: "点击" },
-            ]}
-          />
-        </Field>
         <Actions label="开机自启">
           <OmniSwitch checked={basicSettings.autoLaunch} onChange={(checked) => onUpdateBasicSettings({ autoLaunch: checked })} ariaLabel="开机自启" />
           <span className="text-xs text-slate-500 omni-settings-muted">已保存开关，接入系统自启插件后生效。</span>

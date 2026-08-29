@@ -1761,7 +1761,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
             <button type="button" className="main-chat-nav__item no-drag" title="聊天" onClick={onBackToChat}>
               <MessageSquare size={18} strokeWidth={1.9} />
             </button>
-            <button type="button" className="main-chat-nav__item no-drag" title="助手">
+            <button type="button" className="main-chat-nav__item no-drag" title="项目">
               <Sparkles size={18} strokeWidth={1.9} />
             </button>
             <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="知识库">
@@ -2107,7 +2107,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         ) : null}
                         <button
                           type="button"
-                          className="mt-8 inline-flex items-center gap-2 rounded-none border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                          className="omni-knowledge-empty-action mt-8 inline-flex items-center gap-2 rounded-none border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                           onClick={createCollection}
                         >
                           <Plus size={16} strokeWidth={2} />

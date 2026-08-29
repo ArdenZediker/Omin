@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 export type OmniSelectOption = {
   value: string;
   label: string;
+  description?: string;
   disabled?: boolean;
 };
 
@@ -226,7 +227,12 @@ export default function OmniSelect({
                     onMouseEnter={() => !option.disabled && setActiveIndex(index)}
                     onClick={() => chooseOption(option)}
                   >
-                    <span>{option.label}</span>
+                    <span className="omni-select__option-text">
+                      <span className="omni-select__option-label">{option.label}</span>
+                      {option.description ? (
+                        <span className="omni-select__option-description">{option.description}</span>
+                      ) : null}
+                    </span>
                     {isSelected ? <Check size={14} strokeWidth={2.2} aria-hidden="true" /> : null}
                   </button>
                 );

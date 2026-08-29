@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { CSSProperties, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useLayoutEffect } from "react";
 import {
@@ -37,14 +38,14 @@ import type { Message } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
-import type { AssistantMemoryRecord, AssistantMemorySourceType, AssistantProfile, ChatSendOptions, ChatSession } from "../chat/types";
-import type { AssistantMemoryScope } from "../chat/types";
+import type { ProjectMemoryRecord, ProjectMemorySourceType, Project, ChatSendOptions, ChatSession } from "../chat/types";
+import type { ProjectMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
-import { RECOMMENDED_ASSISTANT_PRESETS } from "../config/manifests/assistants";
+import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 import { AVATAR_CATEGORIES, AVATAR_PRESETS } from "../config/manifests/avatars";
-import { filterAvatarPresets, getEmojiAssetSrc, resolveAssistantAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
-import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ASSISTANT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
+import { filterAvatarPresets, getEmojiAssetSrc, resolveProjectAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
+import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, PROJECT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
 import { LOCAL_SKILL_COMMANDS } from "../chat/skills";
 import type { AvatarCategoryManifest } from "../config/manifests/types";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
@@ -56,8 +57,8 @@ import OmniSwitch from "./ui/OmniSwitch";
 import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
-  ASSISTANT_GROUPS_STORAGE_KEY,
-  DEFAULT_ASSISTANT_GROUP_LABEL,
+  PROJECT_GROUPS_STORAGE_KEY,
+  DEFAULT_PROJECT_GROUP_LABEL,
   DEFAULT_TOPIC_PANEL_WIDTH,
   EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY,
   MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY,
@@ -66,11 +67,12 @@ import {
   buildTaskAggregateSummary,
   clampPanelWidth,
   enhancePresetPromptIfNeeded,
-  findPresetMetaByAssistant,
+  findPresetMetaByProject,
   formatMemoryScopeLabel,
+  getMemorySourceTypeLabel,
   normalizeSearchText,
   readStoredPanelWidth,
-  renderAssistantAvatar,
+  renderProjectAvatar,
   renderTopicGroupLabel,
 } from "./mainChatViewUtils";
 
@@ -88,35 +90,28 @@ type TopicDeleteConfirmState = {
   sessions: ChatSession[];
 } | null;
 
-type AssistantDeleteConfirmState = {
-  assistantId: string;
+type ProjectDeleteConfirmState = {
+  projectId: string;
   title: string;
   message: string;
 } | null;
 
-type AssistantNoticeState = {
+type ProjectNoticeState = {
   tone: "success" | "error";
   message: string;
 } | null;
 
-function getMemorySourceTypeLabel(sourceType?: AssistantMemorySourceType) {
-  if (sourceType === "auto") return "自动沉淀";
-  if (sourceType === "manual") return "手动添加";
-  if (sourceType === "command") return "命令写入";
-  return "旧记录";
-}
-
-type AssistantDisplayGroup = {
+type ProjectDisplayGroup = {
   label: string;
-  assistants: AssistantProfile[];
+  projects: Project[];
 };
 
 type MainChatViewProps = {
-  activeAssistant: AssistantProfile | null;
-  activeAssistantId: string;
+  activeProject: Project | null;
+  activeProjectId: string;
   activeChatId: string | null;
   activeSession: ChatSession | null;
-  assistants: AssistantProfile[];
+  projects: Project[];
   availableModels: ModelConfig[];
   currentModel: string;
   editingMessageIndex: number | null;
@@ -137,7 +132,7 @@ type MainChatViewProps = {
     summaries: Array<{ sessionId: string; title: string; summary: string }>;
     memories: Array<{ id: string; content: string; sourceSessionId?: string | null }>;
   };
-  assistantMemories: AssistantMemoryRecord[];
+  projectMemories: ProjectMemoryRecord[];
   latestTaskResult: TaskExecutionResult | null;
   taskRuntimeState: TaskRuntimeState;
   messages: Message[];
@@ -148,7 +143,7 @@ type MainChatViewProps = {
   onCancelEditUserMessage: () => void;
   onClearChat: () => void;
   onCopyMessage: (message: Message) => void | Promise<void>;
-  onCreateCustomAssistant: (input?: {
+  onCreateCustomProject: (input?: {
     sourcePresetId?: string | null;
     title?: string;
     description?: string;
@@ -158,12 +153,13 @@ type MainChatViewProps = {
     defaultModelId?: string | null;
     allowedToolIds?: string[];
     allowedSkillIds?: string[];
-  }) => void;
-  onAddAssistantMemory: (assistantId: string, content: string, sourceSessionId?: string | null, sourceType?: AssistantMemorySourceType) => boolean;
-  onClearAssistantMemories: (assistantId: string) => number;
-  onDeleteAssistant: (assistantId: string) => boolean;
-  onDeleteAssistantMemory: (memoryId: string) => boolean;
-  onUpdateAssistantMemory: (memoryId: string, content: string) => boolean;
+    workspacePath?: string;
+  }) => Project | null;
+  onAddProjectMemory: (projectId: string, content: string, sourceSessionId?: string | null, sourceType?: ProjectMemorySourceType) => boolean;
+  onClearProjectMemories: (projectId: string) => number;
+  onDeleteProject: (projectId: string) => boolean | Promise<boolean>;
+  onDeleteProjectMemory: (memoryId: string) => boolean;
+  onUpdateProjectMemory: (memoryId: string, content: string) => boolean;
   onDeleteChat: (session: ChatSession) => void;
   onDraftChange: (text: string, images: string[]) => void;
   onEditUserMessage: (messageIndex: number) => void;
@@ -171,9 +167,9 @@ type MainChatViewProps = {
   onNewChat: () => void;
   onRegenerateMessage: (messageIndex: number) => void | Promise<void>;
   onRenameChat: (session: ChatSession) => void;
-  onSelectAssistant: (assistantId: string) => void;
+  onSelectProject: (projectId: string) => void;
   onSelectChat: (sessionId: string) => void;
-  onUpdateAssistantProfile: (assistantId: string, patch: Partial<AssistantProfile>) => AssistantProfile | null;
+  onUpdateProject: (projectId: string, patch: Partial<Project>) => Project | null;
   onSend: (content: string, images?: string[], options?: ChatSendOptions) => void | Promise<void>;
   onSetOpenChatMenu: Dispatch<SetStateAction<{ id: string; x: number; y: number } | null>>;
   onSettingsOpen: () => void;
@@ -187,11 +183,11 @@ type MainChatViewProps = {
 };
 
 export default function MainChatView({
-  activeAssistant,
-  activeAssistantId,
+  activeProject,
+  activeProjectId,
   activeChatId,
   activeSession,
-  assistants,
+  projects,
   availableModels,
   currentModel,
   editingMessageIndex,
@@ -209,7 +205,7 @@ export default function MainChatView({
   isSendBlocked = false,
   isStreaming,
   relatedContext,
-  assistantMemories,
+  projectMemories,
   latestTaskResult,
   taskRuntimeState,
   messages,
@@ -219,12 +215,12 @@ export default function MainChatView({
   onCancelEditUserMessage,
   onClearChat,
   onCopyMessage,
-  onCreateCustomAssistant,
-  onAddAssistantMemory,
-  onClearAssistantMemories,
-  onDeleteAssistant,
-  onDeleteAssistantMemory,
-  onUpdateAssistantMemory,
+  onCreateCustomProject,
+  onAddProjectMemory,
+  onClearProjectMemories,
+  onDeleteProject,
+  onDeleteProjectMemory,
+  onUpdateProjectMemory,
   onDeleteChat,
   onDraftChange,
   onEditUserMessage,
@@ -232,9 +228,9 @@ export default function MainChatView({
   onNewChat,
   onRenameChat,
   onRegenerateMessage,
-  onSelectAssistant,
+  onSelectProject,
   onSelectChat,
-  onUpdateAssistantProfile,
+  onUpdateProject,
   onSend,
   onSettingsOpen,
   onShareChat,
@@ -249,28 +245,32 @@ export default function MainChatView({
   const [composerElement, setComposerElement] = useState<HTMLDivElement | null>(null);
   const [isTopicPanelAutoCollapsed, setIsTopicPanelAutoCollapsed] = useState(false);
   const [topicPanelManualVisible, setTopicPanelManualVisible] = useState<boolean | null>(null);
-  const [isAssistantPanelAutoCollapsed, setIsAssistantPanelAutoCollapsed] = useState(false);
-  const [assistantPanelManualVisible, setAssistantPanelManualVisible] = useState<boolean | null>(null);
+  const [isProjectPanelAutoCollapsed, setIsProjectPanelAutoCollapsed] = useState(false);
+  const [projectPanelManualVisible, setProjectPanelManualVisible] = useState<boolean | null>(null);
   const [composerHeight, setComposerHeight] = useState(0);
+  const [composerResizeHeight, setComposerResizeHeight] = useState<number | null>(null);
+  const composerSplitterDraggingRef = useRef(false);
+  const composerSplitterStartYRef = useRef(0);
+  const composerSplitterStartHeightRef = useRef(0);
   const [topicSearchOpen, setTopicSearchOpen] = useState(false);
   const [topicSearchQuery, setTopicSearchQuery] = useState("");
   const [topicMenuOpen, setTopicMenuOpen] = useState(false);
   const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
   const [topicDeleteConfirm, setTopicDeleteConfirm] = useState<TopicDeleteConfirmState>(null);
-  const [assistantDeleteConfirm, setAssistantDeleteConfirm] = useState<AssistantDeleteConfirmState>(null);
-  const [assistantSearchQuery, setAssistantSearchQuery] = useState("");
-  const [assistantMenuOpen, setAssistantMenuOpen] = useState(false);
-  const [assistantGroupManagerOpen, setAssistantGroupManagerOpen] = useState(false);
-  const [assistantGroupCreateMode, setAssistantGroupCreateMode] = useState(false);
-  const [assistantGroupDraft, setAssistantGroupDraft] = useState("");
-  const [assistantMoveGroupMenuId, setAssistantMoveGroupMenuId] = useState<string | null>(null);
-  const [assistantMoveGroupMenuPosition, setAssistantMoveGroupMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<ProjectDeleteConfirmState>(null);
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [projectGroupManagerOpen, setProjectGroupManagerOpen] = useState(false);
+  const [projectGroupCreateMode, setProjectGroupCreateMode] = useState(false);
+  const [projectGroupDraft, setProjectGroupDraft] = useState("");
+  const [projectMoveGroupMenuId, setProjectMoveGroupMenuId] = useState<string | null>(null);
+  const [projectMoveGroupMenuPosition, setProjectMoveGroupMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [topicPanelWidth, setTopicPanelWidth] = useState(() =>
     readStoredPanelWidth(MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY, DEFAULT_TOPIC_PANEL_WIDTH, MIN_TOPIC_PANEL_WIDTH, MAX_TOPIC_PANEL_WIDTH)
   );
-  const [assistantGroups, setAssistantGroups] = useState<string[]>(() => {
-    const saved = readSqliteBackedValue(ASSISTANT_GROUPS_STORAGE_KEY);
+  const [projectGroups, setProjectGroups] = useState<string[]>(() => {
+    const saved = readSqliteBackedValue(PROJECT_GROUPS_STORAGE_KEY);
     if (!saved) return [];
     try {
       const parsed = JSON.parse(saved);
@@ -281,32 +281,45 @@ export default function MainChatView({
       return [];
     }
   });
-  const [assistantSettingsId, setAssistantSettingsId] = useState<string | null>(null);
-  const [editingAssistantGroupName, setEditingAssistantGroupName] = useState<string | null>(null);
-  const [editingAssistantGroupDraft, setEditingAssistantGroupDraft] = useState("");
-  const [assistantAvatarPanelOpen, setAssistantAvatarPanelOpen] = useState(false);
-  const [assistantAvatarSearchQuery, setAssistantAvatarSearchQuery] = useState("");
-  const [assistantAvatarCategory, setAssistantAvatarCategory] = useState("recent");
-  const [assistantNotice, setAssistantNotice] = useState<AssistantNoticeState>(null);
+  const [projectSettingsId, setProjectSettingsId] = useState<string | null>(null);
+  const [editingProjectGroupName, setEditingProjectGroupName] = useState<string | null>(null);
+  const [editingProjectGroupDraft, setEditingProjectGroupDraft] = useState("");
+  const [projectAvatarPanelOpen, setProjectAvatarPanelOpen] = useState(false);
+  const [projectAvatarSearchQuery, setProjectAvatarSearchQuery] = useState("");
+  const [projectAvatarCategory, setProjectAvatarCategory] = useState("recent");
+  const [projectNotice, setProjectNotice] = useState<ProjectNoticeState>(null);
+  const [projectAgentsMd, setProjectAgentsMd] = useState("");
+  const refreshProjectAgentsMd = useCallback(async () => {
+    if (!activeProject?.workspacePath) {
+      setProjectAgentsMd("");
+      return;
+    }
+    try {
+      const md = await invoke<string>("read_project_agents_md", { projectPath: activeProject.workspacePath });
+      setProjectAgentsMd(md ?? "");
+    } catch {
+      setProjectAgentsMd("");
+    }
+  }, [activeProject?.workspacePath]);
   const [newMemoryDraft, setNewMemoryDraft] = useState("");
   const [memorySearchQuery, setMemorySearchQuery] = useState("");
   const [showAllMemories, setShowAllMemories] = useState(false);
   const [memoryClearConfirmOpen, setMemoryClearConfirmOpen] = useState(false);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState("");
-  const [customAssistantsCollapsed, setCustomAssistantsCollapsed] = useState(false);
-  const [openAssistantCardMenuId, setOpenAssistantCardMenuId] = useState<string | null>(null);
+  const [customProjectsCollapsed, setCustomProjectsCollapsed] = useState(false);
+  const [openProjectCardMenuId, setOpenProjectCardMenuId] = useState<string | null>(null);
   const [topicItemMenuSessionId, setTopicItemMenuSessionId] = useState<string | null>(null);
   const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
   const topicSearchInputRef = useRef<HTMLInputElement | null>(null);
   const topicMenuRef = useRef<HTMLDivElement | null>(null);
   const topicMenuButtonRef = useRef<HTMLButtonElement | null>(null);
-  const assistantMenuRef = useRef<HTMLDivElement | null>(null);
-  const assistantCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
-  const assistantMoveGroupMenuRef = useRef<HTMLDivElement | null>(null);
-  const assistantAvatarInputRef = useRef<HTMLInputElement | null>(null);
-  const assistantAvatarPanelRef = useRef<HTMLDivElement | null>(null);
-  const assistantAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
+  const projectCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const projectMoveGroupMenuRef = useRef<HTMLDivElement | null>(null);
+  const projectAvatarInputRef = useRef<HTMLInputElement | null>(null);
+  const projectAvatarPanelRef = useRef<HTMLDivElement | null>(null);
+  const projectAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
   const topicItemMenuRef = useRef<HTMLDivElement | null>(null);
   const topicItemActionRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const layoutDragRef = useRef<{
@@ -333,27 +346,27 @@ export default function MainChatView({
   );
   const allTopicSessions = useMemo(() => groupedChatSessions.flatMap((group) => group.sessions), [groupedChatSessions]);
   const filteredTopicSessions = useMemo(() => filteredTopicGroups.flatMap((group) => group.sessions), [filteredTopicGroups]);
-  const currentTopicTitle = activeSession?.title || (activeAssistant?.kind === "basic" ? "Omni" : activeAssistant?.title) || "Omni";
+  const currentTopicTitle = activeSession?.title || (activeProject?.kind === "basic" ? "Omni" : activeProject?.title) || "Omni";
   const defaultTopicPanelVisible = !isTopicPanelAutoCollapsed;
   const isTopicPanelVisible = topicPanelManualVisible ?? defaultTopicPanelVisible;
-  const defaultAssistantPanelVisible = !isAssistantPanelAutoCollapsed;
-  const isAssistantPanelVisible = assistantPanelManualVisible ?? defaultAssistantPanelVisible;
-  const basicAssistant = assistants.find((assistant) => assistant.kind === "basic") ?? null;
-  const customAssistants = assistants.filter((assistant) => assistant.kind === "custom");
-  const assistantGroupNames = useMemo(
+  const defaultProjectPanelVisible = !isProjectPanelAutoCollapsed;
+  const isProjectPanelVisible = projectPanelManualVisible ?? defaultProjectPanelVisible;
+  const basicProject = projects.find((project) => project.kind === "basic") ?? null;
+  const customProjects = projects.filter((project) => project.kind === "custom");
+  const projectGroupNames = useMemo(
     () =>
       Array.from(
         new Set([
-          ...assistantGroups,
-          ...customAssistants
-            .map((assistant) => assistant.groupName?.trim())
+          ...projectGroups,
+          ...customProjects
+            .map((project) => project.groupName?.trim())
             .filter((groupName): groupName is string => Boolean(groupName)),
         ])
       ).sort((a, b) => a.localeCompare(b, "zh-CN")),
-    [assistantGroups, customAssistants]
+    [projectGroups, customProjects]
   );
-  const activeAssistantAvatarSeed = resolveAssistantAvatarSeed(assistants, activeAssistant?.id ?? null);
-  const activeAssistantPresetMeta = findPresetMetaByAssistant(activeAssistant);
+  const activeProjectAvatarSeed = resolveProjectAvatarSeed(projects, activeProject?.id ?? null);
+  const activeProjectPresetMeta = findPresetMetaByProject(activeProject);
   const handleLayoutDragPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -388,12 +401,52 @@ export default function MainChatView({
       window.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [topicPanelWidth]);
+
+  const MIN_COMPOSER_RESIZE_HEIGHT = 120;
+  const MAX_COMPOSER_RESIZE_HEIGHT = 520;
+
+  const handleComposerSplitterPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = composerElement?.getBoundingClientRect();
+    composerSplitterDraggingRef.current = true;
+    composerSplitterStartYRef.current = event.clientY;
+    composerSplitterStartHeightRef.current = rect?.height ?? composerHeight;
+  }, [composerElement, composerHeight]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!composerSplitterDraggingRef.current) return;
+      const delta = event.clientY - composerSplitterStartYRef.current;
+      const nextHeight = Math.min(
+        Math.max(composerSplitterStartHeightRef.current + delta, MIN_COMPOSER_RESIZE_HEIGHT),
+        MAX_COMPOSER_RESIZE_HEIGHT
+      );
+      setComposerResizeHeight(nextHeight);
+    };
+
+    const handlePointerUp = () => {
+      if (!composerSplitterDraggingRef.current) return;
+      composerSplitterDraggingRef.current = false;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, []);
+
   const allowedComposerToolIds = useMemo(
-    () => [...ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ...(activeAssistant?.allowedToolIds ?? [])],
-    [activeAssistant?.allowedToolIds]
+    () => [...ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ...(activeProject?.allowedToolIds ?? [])],
+    [activeProject?.allowedToolIds]
   );
-  const allowedComposerSkillIds = activeAssistant?.allowedSkillIds ?? [];
-  const activeMemoryScopeLabel = formatMemoryScopeLabel(activeAssistant?.memoryScope ?? "assistant");
+  const allowedComposerSkillIds = activeProject?.allowedSkillIds ?? [];
+  const activeMemoryScopeLabel = formatMemoryScopeLabel(activeProject?.memoryScope ?? "project");
   const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
   const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
   const hasVisibleContextRecallBanner = showContextRecallBanner && !isContextRecallBannerDismissed;
@@ -401,108 +454,124 @@ export default function MainChatView({
   const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
   const showTaskPanel = sidePanelTab === "tasks";
   const composerContextPresetText = useMemo(() => "", []);
-  const normalizedAssistantSearchQuery = normalizeSearchText(assistantSearchQuery);
-  const isBasicAssistantVisible = Boolean(
-    basicAssistant &&
-      (!normalizedAssistantSearchQuery ||
-        normalizeSearchText(`${basicAssistant.title} ${basicAssistant.description}`).includes(normalizedAssistantSearchQuery))
+  const normalizedProjectSearchQuery = normalizeSearchText(projectSearchQuery);
+  const isBasicProjectVisible = Boolean(
+    basicProject &&
+      (!normalizedProjectSearchQuery ||
+        normalizeSearchText(`${basicProject.title} ${basicProject.description}`).includes(normalizedProjectSearchQuery))
   );
-  const filteredCustomAssistants = customAssistants.filter((assistant) => {
-    if (!normalizedAssistantSearchQuery) return true;
-    return normalizeSearchText(`${assistant.title} ${assistant.description}`).includes(normalizedAssistantSearchQuery);
+  const filteredCustomProjects = customProjects.filter((project) => {
+    if (!normalizedProjectSearchQuery) return true;
+    return normalizeSearchText(`${project.title} ${project.description}`).includes(normalizedProjectSearchQuery);
   });
-  const groupedCustomAssistants = useMemo<AssistantDisplayGroup[]>(() => {
-    const grouped = new Map<string, AssistantProfile[]>();
-    filteredCustomAssistants.forEach((assistant) => {
-      const label = assistant.groupName?.trim() || DEFAULT_ASSISTANT_GROUP_LABEL;
+  const groupedCustomProjects = useMemo<ProjectDisplayGroup[]>(() => {
+    const grouped = new Map<string, Project[]>();
+    filteredCustomProjects.forEach((project) => {
+      const label = project.groupName?.trim() || DEFAULT_PROJECT_GROUP_LABEL;
       const list = grouped.get(label) ?? [];
-      list.push(assistant);
+      list.push(project);
       grouped.set(label, list);
     });
 
     return Array.from(grouped.entries())
       .sort(([labelA], [labelB]) => {
-        if (labelA === DEFAULT_ASSISTANT_GROUP_LABEL) return -1;
-        if (labelB === DEFAULT_ASSISTANT_GROUP_LABEL) return 1;
+        if (labelA === DEFAULT_PROJECT_GROUP_LABEL) return -1;
+        if (labelB === DEFAULT_PROJECT_GROUP_LABEL) return 1;
         return labelA.localeCompare(labelB, "zh-CN");
       })
-      .map(([label, nextAssistants]) => ({ label, assistants: nextAssistants }));
-  }, [filteredCustomAssistants]);
-  const defaultAssistantGroup = useMemo(
-    () => groupedCustomAssistants.find((group) => group.label === DEFAULT_ASSISTANT_GROUP_LABEL) ?? { label: DEFAULT_ASSISTANT_GROUP_LABEL, assistants: [] },
-    [groupedCustomAssistants]
+      .map(([label, nextProjects]) => ({ label, projects: nextProjects }));
+  }, [filteredCustomProjects]);
+  const defaultProjectGroup = useMemo(
+    () => groupedCustomProjects.find((group) => group.label === DEFAULT_PROJECT_GROUP_LABEL) ?? { label: DEFAULT_PROJECT_GROUP_LABEL, projects: [] },
+    [groupedCustomProjects]
   );
-  const namedAssistantGroups = useMemo(
-    () => groupedCustomAssistants.filter((group) => group.label !== DEFAULT_ASSISTANT_GROUP_LABEL),
-    [groupedCustomAssistants]
+  const namedProjectGroups = useMemo(
+    () => groupedCustomProjects.filter((group) => group.label !== DEFAULT_PROJECT_GROUP_LABEL),
+    [groupedCustomProjects]
   );
   const topicTitleById = useMemo(() => {
     const entries = groupedChatSessions.flatMap((group) => group.sessions.map((session) => [session.id, session.title] as const));
     return new Map(entries);
   }, [groupedChatSessions]);
   const normalizedMemorySearchQuery = normalizeSearchText(memorySearchQuery);
-  const filteredAssistantMemories = useMemo(() => {
+  const filteredProjectMemories = useMemo(() => {
     if (!normalizedMemorySearchQuery) {
-      return assistantMemories;
+      return projectMemories;
     }
 
-    return assistantMemories.filter((memory) => {
+    return projectMemories.filter((memory) => {
       const sourceTitle = memory.sourceSessionId ? topicTitleById.get(memory.sourceSessionId) ?? "" : "";
       return normalizeSearchText(`${memory.content} ${sourceTitle} ${getMemorySourceTypeLabel(memory.sourceType)}`).includes(normalizedMemorySearchQuery);
     });
-  }, [assistantMemories, normalizedMemorySearchQuery, topicTitleById]);
-  const visibleAssistantMemories = showAllMemories ? filteredAssistantMemories : filteredAssistantMemories.slice(0, 12);
-  const filteredAssistantAvatars = filterAvatarPresets(AVATAR_PRESETS, assistantAvatarCategory, assistantAvatarSearchQuery);
-  const isAssistantSettingsMode = Boolean(assistantSettingsId && activeAssistant);
-  const isCustomAssistantSettingsMode = Boolean(isAssistantSettingsMode && activeAssistant?.kind === "custom");
-  const [assistantTitleDraft, setAssistantTitleDraft] = useState(activeAssistant?.title ?? "");
-  const [assistantDescriptionDraft, setAssistantDescriptionDraft] = useState(activeAssistant?.description ?? "");
-  const [assistantPromptDraft, setAssistantPromptDraft] = useState(activeAssistant?.systemPrompt ?? "");
-  const [assistantModelDraft, setAssistantModelDraft] = useState(activeAssistant?.defaultModelId ?? "");
+  }, [projectMemories, normalizedMemorySearchQuery, topicTitleById]);
+  const visibleProjectMemories = showAllMemories ? filteredProjectMemories : filteredProjectMemories.slice(0, 12);
+  const filteredProjectAvatars = filterAvatarPresets(AVATAR_PRESETS, projectAvatarCategory, projectAvatarSearchQuery);
+  const isProjectSettingsMode = Boolean(projectSettingsId && activeProject);
+  const isCustomProjectSettingsMode = Boolean(isProjectSettingsMode && activeProject?.kind === "custom");
+  useEffect(() => {
+    if (isProjectSettingsMode) void refreshProjectAgentsMd();
+  }, [isProjectSettingsMode, refreshProjectAgentsMd]);
+  const [projectTitleDraft, setProjectTitleDraft] = useState(activeProject?.title ?? "");
+  const [projectDescriptionDraft, setProjectDescriptionDraft] = useState(activeProject?.description ?? "");
+  const [projectPromptDraft, setProjectPromptDraft] = useState(activeProject?.systemPrompt ?? "");
+  const [projectModelDraft, setProjectModelDraft] = useState(activeProject?.defaultModelId ?? "");
   const [knowledgeCollections, setKnowledgeCollections] = useState<KnowledgeCollection[]>([]);
   const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
   const isMessagesAtBottomRef = useRef(true);
   const lastAutoScrolledSessionRef = useRef<string | null>(null);
   const selectedExecutionModel = availableModels.find((model) => model.id === executionModel) ?? null;
-  const selectedAssistantModel = availableModels.find((model) => model.id === assistantModelDraft) ?? null;
-  const selectedAssistantKnowledgeCollection = knowledgeCollections.find((collection) => collection.id === activeAssistant?.knowledgeCollectionId) ?? null;
-  const showAssistantNotice = useCallback((message: string, tone: "success" | "error" = "success") => {
-    setAssistantNotice({ tone, message });
+  const selectedProjectModel = availableModels.find((model) => model.id === projectModelDraft) ?? null;
+  const selectedProjectKnowledgeCollection = knowledgeCollections.find((collection) => collection.id === activeProject?.knowledgeCollectionId) ?? null;
+  const showProjectNotice = useCallback((message: string, tone: "success" | "error" = "success") => {
+    setProjectNotice({ tone, message });
   }, []);
-  const saveAssistantPatch = useCallback(
-    (patch: Partial<AssistantProfile>, message: string) => {
-      if (!activeAssistant) return null;
-      const updated = onUpdateAssistantProfile(activeAssistant.id, patch);
-      showAssistantNotice(updated ? message : "保存失败，请稍后重试", updated ? "success" : "error");
+  const saveProjectPatch = useCallback(
+    (patch: Partial<Project>, message: string) => {
+      if (!activeProject) return null;
+      const updated = onUpdateProject(activeProject.id, patch);
+      showProjectNotice(updated ? message : "保存失败，请稍后重试", updated ? "success" : "error");
       return updated;
     },
-    [activeAssistant, onUpdateAssistantProfile, showAssistantNotice]
+    [activeProject, onUpdateProject, showProjectNotice]
   );
+  const handleCreateProject = useCallback(async () => {
+    try {
+      const selected = await open({ directory: true, title: "选择项目工作目录（可取消以创建空项目）" });
+      const workspacePath = typeof selected === "string" ? selected.trim() : "";
+      const created = onCreateCustomProject(workspacePath ? { workspacePath } : undefined);
+      if (created && created.id) {
+        showProjectNotice("项目已创建，可在项目设置中完善信息");
+        setProjectSettingsId(created.id);
+      }
+    } catch {
+      showProjectNotice("无法打开目录选择器", "error");
+    }
+  }, [onCreateCustomProject, showProjectNotice]);
   const handleShareActiveSession = useCallback(async () => {
     if (!activeSession) {
-      showAssistantNotice("当前没有可分享的会话", "error");
+      showProjectNotice("当前没有可分享的会话", "error");
       return;
     }
 
     try {
       await onShareChat(activeSession);
-      showAssistantNotice("会话 Markdown 已复制");
+      showProjectNotice("会话 Markdown 已复制");
     } catch {
-      showAssistantNotice("复制失败，请检查剪贴板权限", "error");
+      showProjectNotice("复制失败，请检查剪贴板权限", "error");
     }
-  }, [activeSession, onShareChat, showAssistantNotice]);
+  }, [activeSession, onShareChat, showProjectNotice]);
   const handleCopyMessageWithNotice = useCallback(
     async (message: Message) => {
       try {
         await onCopyMessage(message);
-        showAssistantNotice("消息已复制");
+        showProjectNotice("消息已复制");
       } catch {
-        showAssistantNotice("复制失败，请检查剪贴板权限", "error");
+        showProjectNotice("复制失败，请检查剪贴板权限", "error");
       }
     },
-    [onCopyMessage, showAssistantNotice]
+    [onCopyMessage, showProjectNotice]
   );
-  const startEditMemory = useCallback((memory: AssistantMemoryRecord) => {
+  const startEditMemory = useCallback((memory: ProjectMemoryRecord) => {
     setEditingMemoryId(memory.id);
     setEditingMemoryDraft(memory.content);
   }, []);
@@ -512,52 +581,52 @@ export default function MainChatView({
   }, []);
   const saveEditingMemory = useCallback(() => {
     if (!editingMemoryId) return;
-    const updated = onUpdateAssistantMemory(editingMemoryId, editingMemoryDraft);
-    showAssistantNotice(updated ? "记忆已更新" : "记忆更新失败", updated ? "success" : "error");
+    const updated = onUpdateProjectMemory(editingMemoryId, editingMemoryDraft);
+    showProjectNotice(updated ? "记忆已更新" : "记忆更新失败", updated ? "success" : "error");
     if (updated) {
       cancelEditMemory();
     }
-  }, [cancelEditMemory, editingMemoryDraft, editingMemoryId, onUpdateAssistantMemory, showAssistantNotice]);
+  }, [cancelEditMemory, editingMemoryDraft, editingMemoryId, onUpdateProjectMemory, showProjectNotice]);
   const addManualMemory = useCallback(() => {
-    if (!activeAssistant) return;
-    const added = onAddAssistantMemory(activeAssistant.id, newMemoryDraft, activeChatId, "manual");
-    showAssistantNotice(added ? "记忆已添加" : "记忆已存在或内容太短", added ? "success" : "error");
+    if (!activeProject) return;
+    const added = onAddProjectMemory(activeProject.id, newMemoryDraft, activeChatId, "manual");
+    showProjectNotice(added ? "记忆已添加" : "记忆已存在或内容太短", added ? "success" : "error");
     if (added) {
       setNewMemoryDraft("");
     }
-  }, [activeAssistant, activeChatId, newMemoryDraft, onAddAssistantMemory, showAssistantNotice]);
+  }, [activeProject, activeChatId, newMemoryDraft, onAddProjectMemory, showProjectNotice]);
   const openMemorySourceSession = useCallback(
     (sessionId: string | null | undefined) => {
       if (!sessionId || !topicTitleById.has(sessionId)) {
-        showAssistantNotice("来源会话已删除或不可用", "error");
+        showProjectNotice("来源会话已删除或不可用", "error");
         return;
       }
 
       onSelectChat(sessionId);
-      setAssistantSettingsId(null);
+      setProjectSettingsId(null);
       setMemorySearchQuery("");
       setShowAllMemories(false);
-      showAssistantNotice("已打开记忆来源会话");
+      showProjectNotice("已打开记忆来源会话");
     },
-    [onSelectChat, showAssistantNotice, topicTitleById]
+    [onSelectChat, showProjectNotice, topicTitleById]
   );
-  const clearCurrentAssistantMemories = useCallback(() => {
-    if (!activeAssistant) return;
-    const removedCount = onClearAssistantMemories(activeAssistant.id);
+  const clearCurrentProjectMemories = useCallback(() => {
+    if (!activeProject) return;
+    const removedCount = onClearProjectMemories(activeProject.id);
     setMemoryClearConfirmOpen(false);
     setEditingMemoryId(null);
     setEditingMemoryDraft("");
-    showAssistantNotice(removedCount > 0 ? `已清空 ${removedCount} 条记忆` : "当前没有可清空的记忆", removedCount > 0 ? "success" : "error");
-  }, [activeAssistant, onClearAssistantMemories, showAssistantNotice]);
+    showProjectNotice(removedCount > 0 ? `已清空 ${removedCount} 条记忆` : "当前没有可清空的记忆", removedCount > 0 ? "success" : "error");
+  }, [activeProject, onClearProjectMemories, showProjectNotice]);
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
-    if (assistantPanelManualVisible === true) classNames.push("main-chat-layout--assistant-forced-open");
-    if (!isAssistantPanelVisible) classNames.push("main-chat-layout--assistant-collapsed");
+    if (projectPanelManualVisible === true) classNames.push("main-chat-layout--project-forced-open");
+    if (!isProjectPanelVisible) classNames.push("main-chat-layout--project-collapsed");
     if (topicPanelManualVisible === true) classNames.push("main-chat-layout--topic-forced-open");
     if (!isTopicPanelVisible) classNames.push("main-chat-layout--topic-collapsed");
-    if (isAssistantSettingsMode) classNames.push("main-chat-layout--assistant-settings");
+    if (isProjectSettingsMode) classNames.push("main-chat-layout--project-settings");
     return classNames.join(" ");
-  }, [assistantPanelManualVisible, isAssistantPanelVisible, isAssistantSettingsMode, isTopicPanelVisible, topicPanelManualVisible]);
+  }, [projectPanelManualVisible, isProjectPanelVisible, isProjectSettingsMode, isTopicPanelVisible, topicPanelManualVisible]);
   const layoutStyle = useMemo<CSSProperties>(
     () =>
       ({
@@ -571,12 +640,12 @@ export default function MainChatView({
   }, [isMessagesAtBottom]);
 
   useEffect(() => {
-    if (!assistantNotice) {
+    if (!projectNotice) {
       return;
     }
-    const timeoutId = window.setTimeout(() => setAssistantNotice(null), 2600);
+    const timeoutId = window.setTimeout(() => setProjectNotice(null), 2600);
     return () => window.clearTimeout(timeoutId);
-  }, [assistantNotice]);
+  }, [projectNotice]);
 
   useEffect(() => {
     if (messages.length === 0 || isEmptyGuideCompact) {
@@ -692,28 +761,28 @@ export default function MainChatView({
   }, [messagesScrollRef]);
 
   useEffect(() => {
-    setAssistantTitleDraft(activeAssistant?.title ?? "");
-    setAssistantDescriptionDraft(activeAssistant?.description ?? "");
-    setAssistantPromptDraft(activeAssistant?.systemPrompt ?? "");
-    setAssistantModelDraft(activeAssistant?.defaultModelId ?? "");
+    setProjectTitleDraft(activeProject?.title ?? "");
+    setProjectDescriptionDraft(activeProject?.description ?? "");
+    setProjectPromptDraft(activeProject?.systemPrompt ?? "");
+    setProjectModelDraft(activeProject?.defaultModelId ?? "");
     setMemorySearchQuery("");
     setShowAllMemories(false);
     setMemoryClearConfirmOpen(false);
     setEditingMemoryId(null);
     setEditingMemoryDraft("");
-  }, [activeAssistant]);
+  }, [activeProject]);
 
   useEffect(() => {
-    saveSqliteBackedValue(ASSISTANT_GROUPS_STORAGE_KEY, JSON.stringify(assistantGroups));
-  }, [assistantGroups]);
+    saveSqliteBackedValue(PROJECT_GROUPS_STORAGE_KEY, JSON.stringify(projectGroups));
+  }, [projectGroups]);
 
   useEffect(() => {
     if (!workspaceElement) return;
 
     const topicCollapseThreshold = 1080;
     const topicExpandThreshold = 1160;
-    const assistantCollapseThreshold = 980;
-    const assistantExpandThreshold = 1040;
+    const projectCollapseThreshold = 980;
+    const projectExpandThreshold = 1040;
 
     const updateAutoCollapsed = () => {
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth || workspaceElement.getBoundingClientRect().width || 0;
@@ -723,8 +792,8 @@ export default function MainChatView({
         return next;
       });
 
-      setIsAssistantPanelAutoCollapsed((current) => {
-        const next = current ? viewportWidth < assistantExpandThreshold : viewportWidth < assistantCollapseThreshold;
+      setIsProjectPanelAutoCollapsed((current) => {
+        const next = current ? viewportWidth < projectExpandThreshold : viewportWidth < projectCollapseThreshold;
         return next;
       });
     };
@@ -769,38 +838,38 @@ export default function MainChatView({
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [topicMenuOpen]);
   useEffect(() => {
-    if (!assistantMenuOpen) return;
+    if (!projectMenuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
-      if (assistantMenuRef.current?.contains(target)) return;
-      setAssistantMenuOpen(false);
-      setAssistantGroupDraft("");
+      if (projectMenuRef.current?.contains(target)) return;
+      setProjectMenuOpen(false);
+      setProjectGroupDraft("");
     };
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [assistantMenuOpen]);
+  }, [projectMenuOpen]);
 
   useEffect(() => {
-    if (!openAssistantCardMenuId) return;
+    if (!openProjectCardMenuId) return;
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
-      const activeMenu = assistantCardMenuRefs.current[openAssistantCardMenuId];
+      const activeMenu = projectCardMenuRefs.current[openProjectCardMenuId];
       if (activeMenu?.contains(target)) return;
-      if (assistantMoveGroupMenuRef.current?.contains(target)) return;
-      setOpenAssistantCardMenuId(null);
-      setAssistantDeleteConfirm(null);
-      setAssistantMoveGroupMenuId(null);
-      setAssistantMoveGroupMenuPosition(null);
+      if (projectMoveGroupMenuRef.current?.contains(target)) return;
+      setOpenProjectCardMenuId(null);
+      setProjectDeleteConfirm(null);
+      setProjectMoveGroupMenuId(null);
+      setProjectMoveGroupMenuPosition(null);
     };
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [openAssistantCardMenuId]);
+  }, [openProjectCardMenuId]);
 
   useEffect(() => {
     if (!topicItemMenuSessionId) return;
@@ -819,19 +888,19 @@ export default function MainChatView({
   }, [topicItemMenuSessionId]);
 
   useEffect(() => {
-    if (!assistantAvatarPanelOpen) return;
+    if (!projectAvatarPanelOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
-      if (assistantAvatarPanelRef.current?.contains(target)) return;
-      if (assistantAvatarTriggerRef.current?.contains(target)) return;
-      setAssistantAvatarPanelOpen(false);
+      if (projectAvatarPanelRef.current?.contains(target)) return;
+      if (projectAvatarTriggerRef.current?.contains(target)) return;
+      setProjectAvatarPanelOpen(false);
     };
 
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [assistantAvatarPanelOpen]);
+  }, [projectAvatarPanelOpen]);
 
   const resolveAvatarCategoryIcon = (category: AvatarCategoryManifest["icon"]) => {
     switch (category) {
@@ -863,54 +932,54 @@ export default function MainChatView({
     setTopicMenuOpen(false);
   };
 
-  const handleCreateAssistantGroup = () => {
-    const nextGroupName = assistantGroupDraft.trim();
+  const handleCreateProjectGroup = () => {
+    const nextGroupName = projectGroupDraft.trim();
     if (!nextGroupName) {
       return;
     }
-    const exists = assistantGroupNames.some((groupName) => groupName === nextGroupName);
+    const exists = projectGroupNames.some((groupName) => groupName === nextGroupName);
     if (!exists) {
-      setAssistantGroups((current) => [...current, nextGroupName]);
+      setProjectGroups((current) => [...current, nextGroupName]);
     }
-    setAssistantGroupDraft("");
+    setProjectGroupDraft("");
   };
 
-  const handleDeleteAssistantGroup = (groupName: string) => {
-    setAssistantGroups((current) => current.filter((item) => item !== groupName));
-    customAssistants
-      .filter((assistant) => (assistant.groupName?.trim() || "") === groupName)
-      .forEach((assistant) => {
-        onUpdateAssistantProfile(assistant.id, { groupName: null });
+  const handleDeleteProjectGroup = (groupName: string) => {
+    setProjectGroups((current) => current.filter((item) => item !== groupName));
+    customProjects
+      .filter((project) => (project.groupName?.trim() || "") === groupName)
+      .forEach((project) => {
+        onUpdateProject(project.id, { groupName: null });
       });
   };
 
-  const handleRenameAssistantGroup = (groupName: string) => {
-    const nextGroupName = editingAssistantGroupDraft.trim();
+  const handleRenameProjectGroup = (groupName: string) => {
+    const nextGroupName = editingProjectGroupDraft.trim();
     if (!nextGroupName || nextGroupName === groupName) {
-      setEditingAssistantGroupName(null);
-      setEditingAssistantGroupDraft("");
+      setEditingProjectGroupName(null);
+      setEditingProjectGroupDraft("");
       return;
     }
-    setAssistantGroups((current) => current.map((item) => (item === groupName ? nextGroupName : item)));
-    customAssistants
-      .filter((assistant) => (assistant.groupName?.trim() || "") === groupName)
-      .forEach((assistant) => {
-        onUpdateAssistantProfile(assistant.id, { groupName: nextGroupName });
+    setProjectGroups((current) => current.map((item) => (item === groupName ? nextGroupName : item)));
+    customProjects
+      .filter((project) => (project.groupName?.trim() || "") === groupName)
+      .forEach((project) => {
+        onUpdateProject(project.id, { groupName: nextGroupName });
       });
-    setEditingAssistantGroupName(null);
-    setEditingAssistantGroupDraft("");
+    setEditingProjectGroupName(null);
+    setEditingProjectGroupDraft("");
   };
 
-  const handleConfirmDeleteAssistant = () => {
-    if (!assistantDeleteConfirm) return;
-    const deleted = onDeleteAssistant(assistantDeleteConfirm.assistantId);
+  const handleConfirmDeleteProject = async () => {
+    if (!projectDeleteConfirm) return;
+    const deleted = await onDeleteProject(projectDeleteConfirm.projectId);
     if (!deleted) return;
-    if (assistantSettingsId === assistantDeleteConfirm.assistantId) {
-      setAssistantSettingsId(null);
-      setAssistantAvatarPanelOpen(false);
+    if (projectSettingsId === projectDeleteConfirm.projectId) {
+      setProjectSettingsId(null);
+      setProjectAvatarPanelOpen(false);
     }
-    setAssistantDeleteConfirm(null);
-    setOpenAssistantCardMenuId(null);
+    setProjectDeleteConfirm(null);
+    setOpenProjectCardMenuId(null);
   };
 
   const renderTopicItemActionMenu = (session: ChatSession) => (
@@ -1049,7 +1118,7 @@ export default function MainChatView({
           <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="聊天">
             <MessageSquare size={18} strokeWidth={1.9} />
           </button>
-          <button type="button" className="main-chat-nav__item no-drag" title="助手">
+          <button type="button" className="main-chat-nav__item no-drag" title="项目">
             <Sparkles size={18} strokeWidth={1.9} />
           </button>
           <button type="button" className="main-chat-nav__item no-drag" title="知识" onClick={onOpenKnowledge}>
@@ -1072,47 +1141,47 @@ export default function MainChatView({
           </div>
         </div>
 
-        <div className="chat-history-panel__assistant-search">
+        <div className="chat-history-panel__project-search">
           <Search size={14} strokeWidth={1.9} />
           <input
-            value={assistantSearchQuery}
-            onChange={(event) => setAssistantSearchQuery(event.target.value)}
-            placeholder="搜索助手..."
+            value={projectSearchQuery}
+            onChange={(event) => setProjectSearchQuery(event.target.value)}
+            placeholder="搜索项目..."
           />
         </div>
 
-        <div className="chat-history-panel__assistants">
-          {isBasicAssistantVisible && basicAssistant && (
-            <div className="chat-history-panel__assistant-section">
+        <div className="chat-history-panel__projects">
+          {isBasicProjectVisible && basicProject && (
+            <div className="chat-history-panel__project-section">
               <button
                 type="button"
-                className={`chat-history-panel__assistant ${activeAssistantId === basicAssistant.id ? "chat-history-panel__assistant--active" : ""}`}
+                className={`chat-history-panel__project ${activeProjectId === basicProject.id ? "chat-history-panel__project--active" : ""}`}
                 onClick={() => {
-                  setAssistantSettingsId(null);
-                  setAssistantAvatarPanelOpen(false);
-                  onSelectAssistant(basicAssistant.id);
+                  setProjectSettingsId(null);
+                  setProjectAvatarPanelOpen(false);
+                  onSelectProject(basicProject.id);
                 }}
               >
-                <span className="chat-history-panel__assistant-icon">
-                  {renderAssistantAvatar(basicAssistant)}
+                <span className="chat-history-panel__project-icon">
+                  {renderProjectAvatar(basicProject)}
                 </span>
-                <span className="chat-history-panel__assistant-copy">
-                  <strong>{basicAssistant.title}</strong>
+                <span className="chat-history-panel__project-copy">
+                  <strong>{basicProject.title}</strong>
                 </span>
                 <span
-                  className="chat-history-panel__assistant-menu"
+                  className="chat-history-panel__project-menu"
                   onClick={(event) => event.stopPropagation()}
                   onKeyDown={(event) => event.stopPropagation()}
                 >
                   <button
                     type="button"
-                    className="chat-history-panel__assistant-action"
+                    className="chat-history-panel__project-action"
                     title="记忆管理"
                     aria-label="打开 Omni 记忆管理"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onSelectAssistant(basicAssistant.id);
-                      setAssistantSettingsId(basicAssistant.id);
+                      onSelectProject(basicProject.id);
+                      setProjectSettingsId(basicProject.id);
                     }}
                   >
                     <Settings size={13} strokeWidth={1.9} />
@@ -1122,36 +1191,36 @@ export default function MainChatView({
             </div>
           )}
 
-            <div className="chat-history-panel__assistant-section">
-              <div className="chat-history-panel__assistant-group-header">
-                <div className="chat-history-panel__assistant-group-label">{DEFAULT_ASSISTANT_GROUP_LABEL}</div>
+            <div className="chat-history-panel__project-section">
+              <div className="chat-history-panel__project-group-header">
+                <div className="chat-history-panel__project-group-label">{DEFAULT_PROJECT_GROUP_LABEL}</div>
                 <div className="chat-history-panel__section-actions">
-                  <div ref={assistantMenuRef} className="chat-history-panel__section-menu">
+                  <div ref={projectMenuRef} className="chat-history-panel__section-menu">
                     <button
                       type="button"
-                      className={`chat-history-panel__section-action ${assistantMenuOpen ? "chat-history-panel__section-action--active" : ""}`}
-                      onClick={() => setAssistantMenuOpen((current) => !current)}
-                      title="助手菜单"
+                      className={`chat-history-panel__section-action ${projectMenuOpen ? "chat-history-panel__section-action--active" : ""}`}
+                      onClick={() => setProjectMenuOpen((current) => !current)}
+                      title="项目菜单"
                     >
                       <MoreHorizontal size={14} strokeWidth={1.8} />
                     </button>
-                    {assistantMenuOpen && (
+                    {projectMenuOpen && (
                       <div className="chat-history-panel__section-dropdown">
                         <button
                           type="button"
                           onClick={() => {
-                            setAssistantMenuOpen(false);
-                            onCreateCustomAssistant();
+                            setProjectMenuOpen(false);
+                            void handleCreateProject();
                           }}
                         >
                           <Plus size={14} strokeWidth={1.9} />
-                          <span>新建助手</span>
+                          <span>新建项目</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => {
-                            setAssistantMenuOpen(false);
-                            setAssistantGroupManagerOpen(true);
+                            setProjectMenuOpen(false);
+                            setProjectGroupManagerOpen(true);
                           }}
                         >
                           <FolderOpen size={14} strokeWidth={1.9} />
@@ -1162,76 +1231,76 @@ export default function MainChatView({
                   </div>
                   <button
                     type="button"
-                    className={`chat-history-panel__section-action ${customAssistantsCollapsed ? "" : "chat-history-panel__section-action--active"}`}
-                    onClick={() => setCustomAssistantsCollapsed((current) => !current)}
-                    title={customAssistantsCollapsed ? "展开列表" : "收起列表"}
+                    className={`chat-history-panel__section-action ${customProjectsCollapsed ? "" : "chat-history-panel__section-action--active"}`}
+                    onClick={() => setCustomProjectsCollapsed((current) => !current)}
+                    title={customProjectsCollapsed ? "展开列表" : "收起列表"}
                   >
-                    {customAssistantsCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
+                    {customProjectsCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
                   </button>
                 </div>
               </div>
-              {!customAssistantsCollapsed && <div className="chat-history-panel__assistant-list">
-                <div className="chat-history-panel__assistant-group">
-                  {defaultAssistantGroup.assistants.length === 0 ? (
+              {!customProjectsCollapsed && <div className="chat-history-panel__project-list">
+                <div className="chat-history-panel__project-group">
+                  {defaultProjectGroup.projects.length === 0 ? (
                     <button
                       type="button"
-                      className="chat-history-panel__assistant-create"
-                      onClick={() => onCreateCustomAssistant()}
+                      className="chat-history-panel__project-create"
+                      onClick={() => void handleCreateProject()}
                     >
                       <Plus size={14} strokeWidth={1.9} />
-                      <span>新建助手</span>
+                      <span>新建项目</span>
                     </button>
                   ) : (
-                    defaultAssistantGroup.assistants.map((assistant, index) => (
+                    defaultProjectGroup.projects.map((project, index) => (
                       <button
-                        key={assistant.id}
+                        key={project.id}
                         type="button"
-                        className={`chat-history-panel__assistant ${activeAssistantId === assistant.id ? "chat-history-panel__assistant--active" : ""} ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant--menu-open" : ""}`}
+                        className={`chat-history-panel__project ${activeProjectId === project.id ? "chat-history-panel__project--active" : ""} ${openProjectCardMenuId === project.id ? "chat-history-panel__project--menu-open" : ""}`}
                         onClick={() => {
-                          setAssistantSettingsId(null);
-                          setAssistantAvatarPanelOpen(false);
-                          onSelectAssistant(assistant.id);
+                          setProjectSettingsId(null);
+                          setProjectAvatarPanelOpen(false);
+                          onSelectProject(project.id);
                         }}
                       >
-                        <span className="chat-history-panel__assistant-icon chat-history-panel__assistant-icon--custom">
-                          {renderAssistantAvatar(assistant, index)}
+                        <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">
+                          {renderProjectAvatar(project, index)}
                         </span>
-                        <span className="chat-history-panel__assistant-copy">
-                          <strong>{assistant.title}</strong>
+                        <span className="chat-history-panel__project-copy">
+                          <strong>{project.title}</strong>
                         </span>
                         <span
                           ref={(node) => {
-                            assistantCardMenuRefs.current[assistant.id] = node;
+                            projectCardMenuRefs.current[project.id] = node;
                           }}
-                          className="chat-history-panel__assistant-menu"
+                          className="chat-history-panel__project-menu"
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
                           <button
                             type="button"
-                            className={`chat-history-panel__assistant-action ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant-action--active" : ""}`}
+                            className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`}
                             title="更多操作"
                             aria-label="更多操作"
                             onClick={(event) => {
                               event.stopPropagation();
-                              setOpenAssistantCardMenuId((current) => (current === assistant.id ? null : assistant.id));
+                              setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id));
                             }}
                           >
                             <MoreHorizontal size={13} strokeWidth={1.9} />
                           </button>
-                          {openAssistantCardMenuId === assistant.id && (
-                            <div className="chat-history-panel__assistant-dropdown">
-                              {assistantDeleteConfirm?.assistantId === assistant.id ? (
-                                <div className="chat-topic-panel__menu-confirm chat-history-panel__assistant-dropdown-confirm">
-                                  <div className="chat-topic-panel__menu-confirm-title">{assistantDeleteConfirm.title}</div>
-                                  <div className="chat-topic-panel__menu-confirm-message">{assistantDeleteConfirm.message}</div>
+                          {openProjectCardMenuId === project.id && (
+                            <div className="chat-history-panel__project-dropdown">
+                              {projectDeleteConfirm?.projectId === project.id ? (
+                                <div className="chat-topic-panel__menu-confirm chat-history-panel__project-dropdown-confirm">
+                                  <div className="chat-topic-panel__menu-confirm-title">{projectDeleteConfirm.title}</div>
+                                  <div className="chat-topic-panel__menu-confirm-message">{projectDeleteConfirm.message}</div>
                                   <div className="chat-topic-panel__menu-confirm-actions">
                                     <button
                                       type="button"
                                       className="chat-topic-panel__menu-button"
                                       onClick={(event) => {
                                         event.stopPropagation();
-                                        setAssistantDeleteConfirm(null);
+                                        setProjectDeleteConfirm(null);
                                       }}
                                     >
                                       取消
@@ -1241,7 +1310,7 @@ export default function MainChatView({
                                       className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
                                       onClick={(event) => {
                                         event.stopPropagation();
-                                        handleConfirmDeleteAssistant();
+                                        handleConfirmDeleteProject();
                                       }}
                                     >
                                       确认删除
@@ -1254,18 +1323,18 @@ export default function MainChatView({
                                     type="button"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setOpenAssistantCardMenuId(null);
-                                      onSelectAssistant(assistant.id);
-                                      setAssistantSettingsId(assistant.id);
+                                      setOpenProjectCardMenuId(null);
+                                      onSelectProject(project.id);
+                                      setProjectSettingsId(project.id);
                                     }}
                                   >
                                     <Settings size={13} strokeWidth={1.9} />
-                                    <span>助手设置</span>
+                                    <span>项目设置</span>
                                   </button>
-                                  <div className="chat-history-panel__assistant-dropdown-divider" />
+                                  <div className="chat-history-panel__project-dropdown-divider" />
                                   <button
                                     type="button"
-                                    className="chat-history-panel__assistant-dropdown-branch"
+                                    className="chat-history-panel__project-dropdown-branch"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       const triggerRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
@@ -1280,31 +1349,31 @@ export default function MainChatView({
                                         Math.max(12, triggerRect.top - 8),
                                         Math.max(12, window.innerHeight - estimatedSubmenuHeight - 12)
                                       );
-                                      setAssistantMoveGroupMenuPosition({ top: nextTop, left: nextLeft });
-                                      setAssistantMoveGroupMenuId((current) => (current === assistant.id ? null : assistant.id));
+                                      setProjectMoveGroupMenuPosition({ top: nextTop, left: nextLeft });
+                                      setProjectMoveGroupMenuId((current) => (current === project.id ? null : project.id));
                                     }}
                                   >
-                                    <span className="chat-history-panel__assistant-dropdown-main">
+                                    <span className="chat-history-panel__project-dropdown-main">
                                       <FolderOpen size={13} strokeWidth={1.9} />
                                       <span>移动到分组</span>
                                     </span>
                                     <ChevronRight size={13} strokeWidth={1.9} />
                                   </button>
-                                  <div className="chat-history-panel__assistant-dropdown-divider" />
+                                  <div className="chat-history-panel__project-dropdown-divider" />
                                   <button
                                     type="button"
-                                    className="chat-history-panel__assistant-dropdown-danger"
+                                    className="chat-history-panel__project-dropdown-danger"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setAssistantDeleteConfirm({
-                                        assistantId: assistant.id,
-                                        title: "删除助手",
-                                        message: `确认删除“${assistant.title}”吗？相关话题和记忆会一并删除。`,
+                                      setProjectDeleteConfirm({
+                                        projectId: project.id,
+                                        title: "删除项目",
+                                        message: `确认删除“${project.title}”吗？相关话题和记忆会一并删除。`,
                                       });
                                     }}
                                   >
                                     <Trash2 size={13} strokeWidth={1.9} />
-                                    <span>删除助手</span>
+                                    <span>删除项目</span>
                                   </button>
                                 </>
                               )}
@@ -1315,59 +1384,59 @@ export default function MainChatView({
                     ))
                   )}
                 </div>
-                {namedAssistantGroups.length === 0 ? null : namedAssistantGroups.map((group) => (
-                  <div key={group.label} className="chat-history-panel__assistant-group">
-                    <div className="chat-history-panel__assistant-group-label">{group.label}</div>
-                    {group.assistants.map((assistant, index) => (
+                {namedProjectGroups.length === 0 ? null : namedProjectGroups.map((group) => (
+                  <div key={group.label} className="chat-history-panel__project-group">
+                    <div className="chat-history-panel__project-group-label">{group.label}</div>
+                    {group.projects.map((project, index) => (
                       <button
-                        key={assistant.id}
+                        key={project.id}
                         type="button"
-                        className={`chat-history-panel__assistant ${activeAssistantId === assistant.id ? "chat-history-panel__assistant--active" : ""} ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant--menu-open" : ""}`}
+                        className={`chat-history-panel__project ${activeProjectId === project.id ? "chat-history-panel__project--active" : ""} ${openProjectCardMenuId === project.id ? "chat-history-panel__project--menu-open" : ""}`}
                         onClick={() => {
-                          setAssistantSettingsId(null);
-                          setAssistantAvatarPanelOpen(false);
-                          onSelectAssistant(assistant.id);
+                          setProjectSettingsId(null);
+                          setProjectAvatarPanelOpen(false);
+                          onSelectProject(project.id);
                         }}
                       >
-                        <span className="chat-history-panel__assistant-icon chat-history-panel__assistant-icon--custom">
-                          {renderAssistantAvatar(assistant, index)}
+                        <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">
+                          {renderProjectAvatar(project, index)}
                         </span>
-                        <span className="chat-history-panel__assistant-copy">
-                          <strong>{assistant.title}</strong>
+                        <span className="chat-history-panel__project-copy">
+                          <strong>{project.title}</strong>
                         </span>
                         <span
                           ref={(node) => {
-                            assistantCardMenuRefs.current[assistant.id] = node;
+                            projectCardMenuRefs.current[project.id] = node;
                           }}
-                          className="chat-history-panel__assistant-menu"
+                          className="chat-history-panel__project-menu"
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
                           <button
                             type="button"
-                            className={`chat-history-panel__assistant-action ${openAssistantCardMenuId === assistant.id ? "chat-history-panel__assistant-action--active" : ""}`}
+                            className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`}
                             title="更多操作"
                             aria-label="更多操作"
                             onClick={(event) => {
                               event.stopPropagation();
-                              setOpenAssistantCardMenuId((current) => (current === assistant.id ? null : assistant.id));
+                              setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id));
                             }}
                           >
                             <MoreHorizontal size={13} strokeWidth={1.9} />
                           </button>
-                          {openAssistantCardMenuId === assistant.id && (
-                            <div className="chat-history-panel__assistant-dropdown">
-                              {assistantDeleteConfirm?.assistantId === assistant.id ? (
-                                <div className="chat-topic-panel__menu-confirm chat-history-panel__assistant-dropdown-confirm">
-                                  <div className="chat-topic-panel__menu-confirm-title">{assistantDeleteConfirm.title}</div>
-                                  <div className="chat-topic-panel__menu-confirm-message">{assistantDeleteConfirm.message}</div>
+                          {openProjectCardMenuId === project.id && (
+                            <div className="chat-history-panel__project-dropdown">
+                              {projectDeleteConfirm?.projectId === project.id ? (
+                                <div className="chat-topic-panel__menu-confirm chat-history-panel__project-dropdown-confirm">
+                                  <div className="chat-topic-panel__menu-confirm-title">{projectDeleteConfirm.title}</div>
+                                  <div className="chat-topic-panel__menu-confirm-message">{projectDeleteConfirm.message}</div>
                                   <div className="chat-topic-panel__menu-confirm-actions">
                                     <button
                                       type="button"
                                       className="chat-topic-panel__menu-button"
                                       onClick={(event) => {
                                         event.stopPropagation();
-                                        setAssistantDeleteConfirm(null);
+                                        setProjectDeleteConfirm(null);
                                       }}
                                     >
                                       取消
@@ -1377,7 +1446,7 @@ export default function MainChatView({
                                       className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
                                       onClick={(event) => {
                                         event.stopPropagation();
-                                        handleConfirmDeleteAssistant();
+                                        handleConfirmDeleteProject();
                                       }}
                                     >
                                       确认删除
@@ -1390,18 +1459,18 @@ export default function MainChatView({
                                     type="button"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setOpenAssistantCardMenuId(null);
-                                      onSelectAssistant(assistant.id);
-                                      setAssistantSettingsId(assistant.id);
+                                      setOpenProjectCardMenuId(null);
+                                      onSelectProject(project.id);
+                                      setProjectSettingsId(project.id);
                                     }}
                                   >
                                     <Settings size={13} strokeWidth={1.9} />
-                                    <span>助手设置</span>
+                                    <span>项目设置</span>
                                   </button>
-                                  <div className="chat-history-panel__assistant-dropdown-divider" />
+                                  <div className="chat-history-panel__project-dropdown-divider" />
                                   <button
                                     type="button"
-                                    className="chat-history-panel__assistant-dropdown-branch"
+                                    className="chat-history-panel__project-dropdown-branch"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       const triggerRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
@@ -1416,31 +1485,31 @@ export default function MainChatView({
                                         Math.max(12, triggerRect.top - 8),
                                         Math.max(12, window.innerHeight - estimatedSubmenuHeight - 12)
                                       );
-                                      setAssistantMoveGroupMenuPosition({ top: nextTop, left: nextLeft });
-                                      setAssistantMoveGroupMenuId((current) => (current === assistant.id ? null : assistant.id));
+                                      setProjectMoveGroupMenuPosition({ top: nextTop, left: nextLeft });
+                                      setProjectMoveGroupMenuId((current) => (current === project.id ? null : project.id));
                                     }}
                                   >
-                                    <span className="chat-history-panel__assistant-dropdown-main">
+                                    <span className="chat-history-panel__project-dropdown-main">
                                       <FolderOpen size={13} strokeWidth={1.9} />
                                       <span>移动到分组</span>
                                     </span>
                                     <ChevronRight size={13} strokeWidth={1.9} />
                                   </button>
-                                  <div className="chat-history-panel__assistant-dropdown-divider" />
+                                  <div className="chat-history-panel__project-dropdown-divider" />
                                   <button
                                     type="button"
-                                    className="chat-history-panel__assistant-dropdown-danger"
+                                    className="chat-history-panel__project-dropdown-danger"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setAssistantDeleteConfirm({
-                                        assistantId: assistant.id,
-                                        title: "删除助手",
-                                        message: `确认删除“${assistant.title}”吗？相关话题和记忆会一并删除。`,
+                                      setProjectDeleteConfirm({
+                                        projectId: project.id,
+                                        title: "删除项目",
+                                        message: `确认删除“${project.title}”吗？相关话题和记忆会一并删除。`,
                                       });
                                     }}
                                   >
                                     <Trash2 size={13} strokeWidth={1.9} />
-                                    <span>删除助手</span>
+                                    <span>删除项目</span>
                                   </button>
                                 </>
                               )}
@@ -1457,12 +1526,12 @@ export default function MainChatView({
         </div>
       </aside>
 
-      {assistantGroupManagerOpen && (
+      {projectGroupManagerOpen && (
         <div
           className="omni-confirm-overlay"
           onClick={() => {
-            setAssistantGroupManagerOpen(false);
-            setAssistantGroupDraft("");
+            setProjectGroupManagerOpen(false);
+            setProjectGroupDraft("");
           }}
         >
           <div
@@ -1475,8 +1544,8 @@ export default function MainChatView({
                 type="button"
                 className="chat-history-panel__group-dialog-close"
                 onClick={() => {
-                  setAssistantGroupManagerOpen(false);
-                  setAssistantGroupDraft("");
+                  setProjectGroupManagerOpen(false);
+                  setProjectGroupDraft("");
                 }}
               >
                 <span aria-hidden="true">×</span>
@@ -1489,16 +1558,16 @@ export default function MainChatView({
                     <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
                       <GripVertical size={14} strokeWidth={1.9} />
                     </span>
-                    <span>{DEFAULT_ASSISTANT_GROUP_LABEL}</span>
+                    <span>{DEFAULT_PROJECT_GROUP_LABEL}</span>
                   </div>
                   <span className="chat-history-panel__group-manager-badge">系统</span>
                 </div>
-                {assistantGroupNames.length === 0 ? (
+                {projectGroupNames.length === 0 ? (
                   <div className="chat-history-panel__group-manager-empty">还没有自定义分组</div>
                 ) : (
-                  assistantGroupNames.map((groupName) => (
+                  projectGroupNames.map((groupName) => (
                     <div key={groupName} className="chat-history-panel__group-manager-item">
-                      {editingAssistantGroupName === groupName ? (
+                      {editingProjectGroupName === groupName ? (
                         <>
                           <div className="chat-history-panel__group-manager-row">
                             <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
@@ -1506,19 +1575,19 @@ export default function MainChatView({
                             </span>
                             <input
                               className="chat-history-panel__group-manager-inline-input"
-                              value={editingAssistantGroupDraft}
-                              onChange={(event) => setEditingAssistantGroupDraft(event.target.value)}
-                              onBlur={() => handleRenameAssistantGroup(groupName)}
+                              value={editingProjectGroupDraft}
+                              onChange={(event) => setEditingProjectGroupDraft(event.target.value)}
+                              onBlur={() => handleRenameProjectGroup(groupName)}
                               onKeyDown={(event) => {
                                 if (event.key === "Enter") {
-                                  handleRenameAssistantGroup(groupName);
+                                  handleRenameProjectGroup(groupName);
                                 }
                               }}
                               autoFocus
                             />
                           </div>
                           <div className="chat-history-panel__group-manager-actions">
-                            <button type="button" onClick={() => handleRenameAssistantGroup(groupName)}>
+                            <button type="button" onClick={() => handleRenameProjectGroup(groupName)}>
                               <Check size={14} strokeWidth={2} />
                             </button>
                           </div>
@@ -1535,13 +1604,13 @@ export default function MainChatView({
                             <button
                               type="button"
                               onClick={() => {
-                                setEditingAssistantGroupName(groupName);
-                                setEditingAssistantGroupDraft(groupName);
+                                setEditingProjectGroupName(groupName);
+                                setEditingProjectGroupDraft(groupName);
                               }}
                             >
                               <Pencil size={14} strokeWidth={1.9} />
                             </button>
-                            <button type="button" onClick={() => handleDeleteAssistantGroup(groupName)}>
+                            <button type="button" onClick={() => handleDeleteProjectGroup(groupName)}>
                               <Trash2 size={14} strokeWidth={1.9} />
                             </button>
                           </div>
@@ -1553,24 +1622,24 @@ export default function MainChatView({
               </div>
             </div>
             <div className="chat-history-panel__group-dialog-footer">
-              {assistantGroupCreateMode ? (
+              {projectGroupCreateMode ? (
                 <div className="chat-history-panel__group-create chat-history-panel__group-create--dialog">
                   <input
-                    value={assistantGroupDraft}
-                    onChange={(event) => setAssistantGroupDraft(event.target.value)}
+                    value={projectGroupDraft}
+                    onChange={(event) => setProjectGroupDraft(event.target.value)}
                     placeholder="添加新分组"
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
-                        handleCreateAssistantGroup();
-                        setAssistantGroupCreateMode(false);
+                        handleCreateProjectGroup();
+                        setProjectGroupCreateMode(false);
                       }
                     }}
                   />
                   <button
                     type="button"
                     onClick={() => {
-                      handleCreateAssistantGroup();
-                      setAssistantGroupCreateMode(false);
+                      handleCreateProjectGroup();
+                      setProjectGroupCreateMode(false);
                     }}
                   >
                     <Check size={14} strokeWidth={2} />
@@ -1581,7 +1650,7 @@ export default function MainChatView({
                 <button
                   type="button"
                   className="chat-history-panel__group-add-button"
-                  onClick={() => setAssistantGroupCreateMode(true)}
+                  onClick={() => setProjectGroupCreateMode(true)}
                 >
                   <Plus size={14} strokeWidth={1.9} />
                   <span>添加新分组</span>
@@ -1592,53 +1661,53 @@ export default function MainChatView({
         </div>
       )}
 
-      {assistantMoveGroupMenuId && assistantMoveGroupMenuPosition && (
+      {projectMoveGroupMenuId && projectMoveGroupMenuPosition && (
         <div
-          ref={assistantMoveGroupMenuRef}
-          className="chat-history-panel__assistant-submenu chat-history-panel__assistant-submenu--floating"
+          ref={projectMoveGroupMenuRef}
+          className="chat-history-panel__project-submenu chat-history-panel__project-submenu--floating"
           style={{
-            top: assistantMoveGroupMenuPosition.top,
-            left: assistantMoveGroupMenuPosition.left,
+            top: projectMoveGroupMenuPosition.top,
+            left: projectMoveGroupMenuPosition.left,
           }}
           onClick={(event) => event.stopPropagation()}
         >
-          {[DEFAULT_ASSISTANT_GROUP_LABEL, ...assistantGroupNames].map((groupName) => {
-            const currentAssistant = customAssistants.find((assistant) => assistant.id === assistantMoveGroupMenuId);
-            const currentGroupName = currentAssistant?.groupName?.trim() || DEFAULT_ASSISTANT_GROUP_LABEL;
+          {[DEFAULT_PROJECT_GROUP_LABEL, ...projectGroupNames].map((groupName) => {
+            const currentProject = customProjects.find((project) => project.id === projectMoveGroupMenuId);
+            const currentGroupName = currentProject?.groupName?.trim() || DEFAULT_PROJECT_GROUP_LABEL;
             const isActive = currentGroupName === groupName;
             return (
             <button
-              key={`${assistantMoveGroupMenuId}-${groupName}-choice`}
+              key={`${projectMoveGroupMenuId}-${groupName}-choice`}
               type="button"
-              className={isActive ? "chat-history-panel__assistant-group-choice--active" : ""}
+              className={isActive ? "chat-history-panel__project-group-choice--active" : ""}
               onClick={(event) => {
                 event.stopPropagation();
-                onUpdateAssistantProfile(assistantMoveGroupMenuId, {
-                  groupName: groupName === DEFAULT_ASSISTANT_GROUP_LABEL ? null : groupName,
+                onUpdateProject(projectMoveGroupMenuId, {
+                  groupName: groupName === DEFAULT_PROJECT_GROUP_LABEL ? null : groupName,
                 });
-                setAssistantMoveGroupMenuId(null);
-                setAssistantMoveGroupMenuPosition(null);
-                setOpenAssistantCardMenuId(null);
+                setProjectMoveGroupMenuId(null);
+                setProjectMoveGroupMenuPosition(null);
+                setOpenProjectCardMenuId(null);
               }}
             >
-              {isActive ? <Check size={13} strokeWidth={2.2} /> : <span className="chat-history-panel__assistant-group-choice-spacer" aria-hidden="true" />}
+              {isActive ? <Check size={13} strokeWidth={2.2} /> : <span className="chat-history-panel__project-group-choice-spacer" aria-hidden="true" />}
               <span>{groupName}</span>
-              <span className="chat-history-panel__assistant-group-choice-tail" aria-hidden="true" />
+              <span className="chat-history-panel__project-group-choice-tail" aria-hidden="true" />
             </button>
             );
           })}
-          <div className="chat-history-panel__assistant-dropdown-divider" />
+          <div className="chat-history-panel__project-dropdown-divider" />
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              setAssistantMoveGroupMenuId(null);
-              setAssistantMoveGroupMenuPosition(null);
-              setOpenAssistantCardMenuId(null);
-              setAssistantGroupManagerOpen(true);
+              setProjectMoveGroupMenuId(null);
+              setProjectMoveGroupMenuPosition(null);
+              setOpenProjectCardMenuId(null);
+              setProjectGroupManagerOpen(true);
             }}
           >
-            <span className="chat-history-panel__assistant-dropdown-main">
+            <span className="chat-history-panel__project-dropdown-main">
               <Plus size={13} strokeWidth={1.9} />
               <span>添加新分组</span>
             </span>
@@ -1647,58 +1716,58 @@ export default function MainChatView({
       )}
 
       <section className="main-chat-stage">
-        {assistantNotice && (
+        {projectNotice && (
           <div
-            className={`main-chat-notice main-chat-notice--${assistantNotice.tone}`}
-            role={assistantNotice.tone === "error" ? "alert" : "status"}
+            className={`main-chat-notice main-chat-notice--${projectNotice.tone}`}
+            role={projectNotice.tone === "error" ? "alert" : "status"}
             aria-live="polite"
           >
-            {assistantNotice.message}
+            {projectNotice.message}
           </div>
         )}
         <header className="main-chat-header drag-region">
           <div className="main-chat-toolbar">
             <div className="main-chat-toolbar__session main-chat-toolbar__session--hero">
-              <div className="main-chat-toolbar__assistant main-chat-toolbar__assistant--single-line">
-                {!isAssistantSettingsMode && (
+              <div className="main-chat-toolbar__project main-chat-toolbar__project--single-line">
+                {!isProjectSettingsMode && (
                   <button
                     type="button"
                     className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
-                    aria-label={isAssistantPanelVisible ? "收起助手栏" : "展开助手栏"}
-                    title={isAssistantPanelVisible ? "收起助手栏" : "展开助手栏"}
+                    aria-label={isProjectPanelVisible ? "收起项目栏" : "展开项目栏"}
+                    title={isProjectPanelVisible ? "收起项目栏" : "展开项目栏"}
                     onClick={() =>
-                      setAssistantPanelManualVisible((currentValue) => {
-                        const currentVisible = currentValue ?? defaultAssistantPanelVisible;
+                      setProjectPanelManualVisible((currentValue) => {
+                        const currentVisible = currentValue ?? defaultProjectPanelVisible;
                         const nextVisible = !currentVisible;
-                        return nextVisible === defaultAssistantPanelVisible ? null : nextVisible;
+                        return nextVisible === defaultProjectPanelVisible ? null : nextVisible;
                       })
                     }
                   >
-                    {isAssistantPanelVisible ? (
+                    {isProjectPanelVisible ? (
                       <PanelLeftClose className="main-chat-toolbar__icon" strokeWidth={1.7} />
                     ) : (
                       <PanelLeftOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />
                     )}
                   </button>
                 )}
-                {isAssistantSettingsMode && (
+                {isProjectSettingsMode && (
                   <button
                     type="button"
                     className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
                     title="返回聊天"
                     onClick={() => {
-                      setAssistantSettingsId(null);
-                      setAssistantAvatarPanelOpen(false);
+                      setProjectSettingsId(null);
+                      setProjectAvatarPanelOpen(false);
                     }}
                   >
                     <ChevronLeft className="main-chat-toolbar__icon" strokeWidth={1.8} />
                   </button>
                 )}
-                <div className="main-chat-toolbar__assistant-mark">
-                  {renderAssistantAvatar(activeAssistant, activeAssistantAvatarSeed)}
+                <div className="main-chat-toolbar__project-mark">
+                  {renderProjectAvatar(activeProject, activeProjectAvatarSeed)}
                 </div>
-                <div className="main-chat-toolbar__assistant-copy main-chat-toolbar__assistant-copy--single-line">
-                  <strong>{isAssistantSettingsMode ? "助手设置" : currentTopicTitle}</strong>
+                <div className="main-chat-toolbar__project-copy main-chat-toolbar__project-copy--single-line">
+                  <strong>{isProjectSettingsMode ? "项目设置" : currentTopicTitle}</strong>
                 </div>
               </div>
 
@@ -1710,7 +1779,7 @@ export default function MainChatView({
                     label="主模型"
                     title={
                       selectedExecutionModel && executionModel !== currentModel
-                        ? `当前助手会优先使用：${selectedExecutionModel.name}`
+                        ? `当前项目会优先使用：${selectedExecutionModel.name}`
                         : undefined
                     }
                   />
@@ -1756,49 +1825,49 @@ export default function MainChatView({
         <div className="main-chat-body">
           <section ref={setWorkspaceElement} className="main-chat-workspace" style={{ "--composer-height": `${composerHeight}px` } as CSSProperties}>
             <main className="main-chat-pane">
-          {isAssistantSettingsMode && activeAssistant ? (
+          {isProjectSettingsMode && activeProject ? (
             <div className="main-chat-scroll hide-scrollbar">
               <div className="omni-settings-dialog__sections omni-settings-dialog__sections--page">
-                {isCustomAssistantSettingsMode && (
+                {isCustomProjectSettingsMode && (
                 <>
                 <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">助手信息</div>
-                  <div className="omni-settings-dialog__assistant-overview">
-                    <div className="omni-settings-dialog__assistant-form">
-                      <div className="omni-settings-dialog__assistant-copy">
+                  <div className="omni-settings-dialog__section-title">项目信息</div>
+                  <div className="omni-settings-dialog__project-overview">
+                    <div className="omni-settings-dialog__project-form">
+                      <div className="omni-settings-dialog__project-copy">
                         <div className="omni-settings-dialog__setting-label">基础信息</div>
-                        <div className="omni-settings-dialog__setting-hint">名称、描述和角色设定会决定这个助手在聊天中的定位与表现。</div>
+                        <div className="omni-settings-dialog__setting-hint">名称、描述和角色设定会决定这个项目在聊天中的定位与表现。</div>
                       </div>
-                      {activeAssistantPresetMeta && (
+                      {activeProjectPresetMeta && (
                         <div className="omni-settings-dialog__preset-badge">
                           <span>来源预设</span>
-                          <strong>{activeAssistantPresetMeta.label}</strong>
-                          <small>{activeAssistantPresetMeta.hint}</small>
+                          <strong>{activeProjectPresetMeta.label}</strong>
+                          <small>{activeProjectPresetMeta.hint}</small>
                         </div>
                       )}
-                      <div className="omni-settings-dialog__assistant-side">
-                        <div className="omni-settings-dialog__assistant-copy">
-                          <div className="omni-settings-dialog__setting-label">助手头像</div>
-                          <div className="omni-settings-dialog__setting-hint">头像会同步影响助手列表、当前助手头部和相关卡片展示。</div>
+                      <div className="omni-settings-dialog__project-side">
+                        <div className="omni-settings-dialog__project-copy">
+                          <div className="omni-settings-dialog__setting-label">项目头像</div>
+                          <div className="omni-settings-dialog__setting-hint">头像会同步影响项目列表、当前项目头部和相关卡片展示。</div>
                         </div>
                         <div className="omni-settings-dialog__setting-control omni-settings-dialog__setting-control--avatar">
                           <button
-                            ref={assistantAvatarTriggerRef}
+                            ref={projectAvatarTriggerRef}
                             type="button"
                             className="omni-settings-dialog__avatar-hero"
-                            onClick={() => setAssistantAvatarPanelOpen((current) => !current)}
+                            onClick={() => setProjectAvatarPanelOpen((current) => !current)}
                             title="选择头像"
                           >
                             <span className="omni-settings-dialog__avatar-hero-preview">
-                              {renderAssistantAvatar(activeAssistant, activeAssistantAvatarSeed)}
+                              {renderProjectAvatar(activeProject, activeProjectAvatarSeed)}
                             </span>
                             <span className="omni-settings-dialog__avatar-hero-copy">
                               <strong>点击更换头像</strong>
-                              <span>{activeAssistant.avatarType === "image" ? "当前使用自定义图片" : "当前使用头像包图标"}</span>
+                              <span>{activeProject.avatarType === "image" ? "当前使用自定义图片" : "当前使用头像包图标"}</span>
                             </span>
                           </button>
-                          {assistantAvatarPanelOpen && (
-                            <div ref={assistantAvatarPanelRef} className="omni-settings-dialog__avatar-panel">
+                          {projectAvatarPanelOpen && (
+                            <div ref={projectAvatarPanelRef} className="omni-settings-dialog__avatar-panel">
                               <div className="omni-settings-dialog__avatar-categories">
                                 {AVATAR_CATEGORIES.map((category) => {
                                   const CategoryIcon = resolveAvatarCategoryIcon(category.icon);
@@ -1806,9 +1875,9 @@ export default function MainChatView({
                                   <button
                                     key={category.id}
                                     type="button"
-                                    className={`omni-settings-dialog__avatar-category ${assistantAvatarCategory === category.id ? "omni-settings-dialog__avatar-category--active" : ""}`}
+                                    className={`omni-settings-dialog__avatar-category ${projectAvatarCategory === category.id ? "omni-settings-dialog__avatar-category--active" : ""}`}
                                     title={category.label}
-                                    onClick={() => setAssistantAvatarCategory(category.id)}
+                                    onClick={() => setProjectAvatarCategory(category.id)}
                                   >
                                     <CategoryIcon size={14} strokeWidth={1.8} />
                                     <span>{category.label}</span>
@@ -1819,31 +1888,31 @@ export default function MainChatView({
                               <div className="omni-settings-dialog__avatar-search">
                                 <Search size={14} strokeWidth={1.8} />
                                 <input
-                                  value={assistantAvatarSearchQuery}
-                                  onChange={(event) => setAssistantAvatarSearchQuery(event.target.value)}
+                                  value={projectAvatarSearchQuery}
+                                  onChange={(event) => setProjectAvatarSearchQuery(event.target.value)}
                                   placeholder="搜索头像"
                                 />
                               </div>
                               <div className="chat-history-panel__avatar-grid chat-history-panel__avatar-grid--detailed">
-                              {filteredAssistantAvatars.length > 0 ? (
-                                filteredAssistantAvatars.map((avatar) => (
+                              {filteredProjectAvatars.length > 0 ? (
+                                filteredProjectAvatars.map((avatar) => (
                                     <button
                                       key={avatar.code}
                                       type="button"
-                                      className={`chat-history-panel__avatar-option chat-history-panel__avatar-option--detailed chat-history-panel__avatar-option--tone-${avatar.tone} ${activeAssistant.avatarType !== "image" && resolveEmojiAvatarCode(activeAssistant.avatarValue) === avatar.code ? "chat-history-panel__avatar-option--active" : ""}`}
+                                      className={`chat-history-panel__avatar-option chat-history-panel__avatar-option--detailed chat-history-panel__avatar-option--tone-${avatar.tone} ${activeProject.avatarType !== "image" && resolveEmojiAvatarCode(activeProject.avatarValue) === avatar.code ? "chat-history-panel__avatar-option--active" : ""}`}
                                       onClick={() => {
-                                      saveAssistantPatch({
+                                      saveProjectPatch({
                                         sourcePresetId: avatar.code,
                                         avatarType: "emoji",
                                         avatarValue: `emoji:${avatar.code}`,
                                         systemPrompt: enhancePresetPromptIfNeeded(avatar.code, avatar.prompt),
-                                        allowedToolIds: avatar.allowedToolIds ?? activeAssistant.allowedToolIds,
-                                        allowedSkillIds: avatar.allowedSkillIds ?? activeAssistant.allowedSkillIds,
-                                        defaultModelId: avatar.defaultModelId ?? activeAssistant.defaultModelId ?? null,
+                                        allowedToolIds: avatar.allowedToolIds ?? activeProject.allowedToolIds,
+                                        allowedSkillIds: avatar.allowedSkillIds ?? activeProject.allowedSkillIds,
+                                        defaultModelId: avatar.defaultModelId ?? activeProject.defaultModelId ?? null,
                                       }, "头像与预设已更新");
-                                      setAssistantPromptDraft(enhancePresetPromptIfNeeded(avatar.code, avatar.prompt));
-                                        setAssistantModelDraft(avatar.defaultModelId ?? activeAssistant.defaultModelId ?? "");
-                                        setAssistantAvatarPanelOpen(false);
+                                      setProjectPromptDraft(enhancePresetPromptIfNeeded(avatar.code, avatar.prompt));
+                                        setProjectModelDraft(avatar.defaultModelId ?? activeProject.defaultModelId ?? "");
+                                        setProjectAvatarPanelOpen(false);
                                       }}
                                       title={avatar.label}
                                     >
@@ -1863,7 +1932,7 @@ export default function MainChatView({
                               <button
                                 type="button"
                                 className="chat-history-panel__avatar-upload"
-                                onClick={() => assistantAvatarInputRef.current?.click()}
+                                onClick={() => projectAvatarInputRef.current?.click()}
                               >
                                 上传图片
                               </button>
@@ -1875,32 +1944,32 @@ export default function MainChatView({
                         <label className="chat-topic-panel__field">
                           <span>名称</span>
                           <input
-                            value={assistantTitleDraft}
-                            onChange={(event) => setAssistantTitleDraft(event.target.value)}
-                            onBlur={() => saveAssistantPatch({ title: assistantTitleDraft }, "助手名称已保存")}
+                            value={projectTitleDraft}
+                            onChange={(event) => setProjectTitleDraft(event.target.value)}
+                            onBlur={() => saveProjectPatch({ title: projectTitleDraft }, "项目名称已保存")}
                           />
                         </label>
                         <label className="chat-topic-panel__field">
                           <span>默认模型</span>
                           <div className="omni-settings-dialog__model-select">
                             <OmniSelect
-                              value={assistantModelDraft}
+                              value={projectModelDraft}
                               onChange={(nextValue) => {
-                                const nextModelId = assistantModelDraft === nextValue ? "" : nextValue;
-                                setAssistantModelDraft(nextModelId);
-                                saveAssistantPatch({ defaultModelId: nextModelId || null }, "默认模型已更新");
+                                const nextModelId = projectModelDraft === nextValue ? "" : nextValue;
+                                setProjectModelDraft(nextModelId);
+                                saveProjectPatch({ defaultModelId: nextModelId || null }, "默认模型已更新");
                               }}
-                              ariaLabel="助手默认模型"
+                              ariaLabel="项目默认模型"
                               className="omni-select--field"
                               placeholder="跟随主模型"
                               options={availableModels.map((model) => ({ value: model.id, label: model.name }))}
                             />
-                            {selectedAssistantModel && (
+                            {selectedProjectModel && (
                               <div className="omni-settings-dialog__model-select-meta">
-                                {selectedAssistantModel.provider} / {selectedAssistantModel.id} · 会覆盖主模型，仅当前助手生效
+                                {selectedProjectModel.provider} / {selectedProjectModel.id} · 会覆盖主模型，仅当前项目生效
                               </div>
                             )}
-                            {!selectedAssistantModel && (
+                            {!selectedProjectModel && (
                               <div className="omni-settings-dialog__model-select-meta">
                                 未单独指定时使用顶部选择的主模型
                               </div>
@@ -1911,11 +1980,11 @@ export default function MainChatView({
                           <span>绑定知识库</span>
                           <div className="omni-settings-dialog__model-select">
                             <OmniSelect
-                              value={activeAssistant.knowledgeCollectionId ?? ""}
+                              value={activeProject.knowledgeCollectionId ?? ""}
                               onChange={(nextValue) => {
-                                saveAssistantPatch({ knowledgeCollectionId: nextValue || null }, "知识库绑定已更新");
+                                saveProjectPatch({ knowledgeCollectionId: nextValue || null }, "知识库绑定已更新");
                               }}
-                              ariaLabel="助手绑定知识库"
+                              ariaLabel="项目绑定知识库"
                               className="omni-select--field"
                               options={[
                                 { value: "", label: "全部知识库" },
@@ -1923,8 +1992,8 @@ export default function MainChatView({
                               ]}
                             />
                             <div className="omni-settings-dialog__model-select-meta">
-                              {selectedAssistantKnowledgeCollection
-                                ? `仅检索：${selectedAssistantKnowledgeCollection.name}`
+                              {selectedProjectKnowledgeCollection
+                                ? `仅检索：${selectedProjectKnowledgeCollection.name}`
                                 : knowledgeCollections.length > 0
                                   ? "未绑定时会从全部知识库召回"
                                   : "还没有可绑定的知识库"}
@@ -1934,38 +2003,82 @@ export default function MainChatView({
                         <label className="chat-topic-panel__field">
                           <span>所属分组</span>
                           <OmniSelect
-                            value={activeAssistant.groupName ?? ""}
+                            value={activeProject.groupName ?? ""}
                             onChange={(nextValue) => {
-                              saveAssistantPatch({ groupName: nextValue || null }, "助手分组已更新");
+                              saveProjectPatch({ groupName: nextValue || null }, "项目分组已更新");
                             }}
-                            ariaLabel="助手所属分组"
+                            ariaLabel="项目所属分组"
                             className="omni-select--field"
                             options={[
-                              { value: "", label: DEFAULT_ASSISTANT_GROUP_LABEL },
-                              ...assistantGroupNames.map((groupName) => ({ value: groupName, label: groupName })),
+                              { value: "", label: DEFAULT_PROJECT_GROUP_LABEL },
+                              ...projectGroupNames.map((groupName) => ({ value: groupName, label: groupName })),
                             ]}
                           />
                         </label>
                         <label className="chat-topic-panel__field omni-settings-dialog__field--full">
                           <span>描述</span>
                           <input
-                            value={assistantDescriptionDraft}
-                            onChange={(event) => setAssistantDescriptionDraft(event.target.value)}
-                            onBlur={() => saveAssistantPatch({ description: assistantDescriptionDraft }, "助手描述已保存")}
+                            value={projectDescriptionDraft}
+                            onChange={(event) => setProjectDescriptionDraft(event.target.value)}
+                            onBlur={() => saveProjectPatch({ description: projectDescriptionDraft }, "项目描述已保存")}
                           />
                         </label>
                         <label className="chat-topic-panel__field omni-settings-dialog__field--full">
                           <span>角色设定</span>
                           <textarea
-                            value={assistantPromptDraft}
-                            onChange={(event) => setAssistantPromptDraft(event.target.value)}
-                            onBlur={() => saveAssistantPatch({ systemPrompt: assistantPromptDraft }, "角色设定已保存")}
+                            value={projectPromptDraft}
+                            onChange={(event) => setProjectPromptDraft(event.target.value)}
+                            onBlur={() => saveProjectPatch({ systemPrompt: projectPromptDraft }, "角色设定已保存")}
                             rows={5}
                           />
                         </label>
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div className="omni-settings-dialog__section">
+                  <div className="omni-settings-dialog__section-title">项目工作目录</div>
+                  <div className="omni-settings-dialog__setting-hint">
+                    绑定本地目录后，对话可读取该目录下的文件，并自动加载目录中的 AGENTS.md 作为本项目的额外指令。
+                  </div>
+                  <div className="omni-settings-dialog__workspace-row">
+                    <input
+                      className="omni-settings-dialog__workspace-path"
+                      value={activeProject.workspacePath}
+                      readOnly
+                      placeholder="未绑定工作目录"
+                    />
+                    <button
+                      type="button"
+                      className="omni-settings-dialog__workspace-pick"
+                      onClick={async () => {
+                        try {
+                          const selected = await open({ directory: true, title: "选择项目工作目录（可取消以跳过）" });
+                          if (typeof selected === "string" && selected.trim()) {
+                            saveProjectPatch({ workspacePath: selected.trim() }, "工作目录已更新");
+                            await refreshProjectAgentsMd();
+                          }
+                        } catch {
+                          showProjectNotice("无法打开目录选择器", "error");
+                        }
+                      }}
+                    >
+                      选择目录
+                    </button>
+                  </div>
+                  {activeProject.workspacePath ? (
+                    <div className="omni-settings-dialog__agents-md">
+                      <div className="omni-settings-dialog__setting-label">AGENTS.md（自动读取，只读）</div>
+                      <textarea
+                        className="omni-settings-dialog__agents-md-text"
+                        value={projectAgentsMd}
+                        readOnly
+                        rows={6}
+                        placeholder="该目录没有 AGENTS.md 文件"
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="omni-settings-dialog__section">
@@ -1977,7 +2090,7 @@ export default function MainChatView({
                         type="button"
                         className="omni-settings-dialog__preset-card"
                         onClick={() => {
-                          saveAssistantPatch({ allowedToolIds: toolset.toolIds }, "工具集模板已应用");
+                          saveProjectPatch({ allowedToolIds: toolset.toolIds }, "工具集模板已应用");
                         }}
                       >
                         <div className="omni-settings-dialog__toggle-copy">
@@ -1998,21 +2111,21 @@ export default function MainChatView({
                     <label className="omni-settings-dialog__toggle-row">
                       <div className="omni-settings-dialog__toggle-copy">
                         <strong>记忆范围</strong>
-                        <span>控制这个助手能否读取历史记忆，以及召回的边界。</span>
+                        <span>控制这个项目能否读取历史记忆，以及召回的边界。</span>
                       </div>
                       <OmniSelect
-                        value={activeAssistant.memoryScope}
+                        value={activeProject.memoryScope}
                         onChange={(value) =>
-                          saveAssistantPatch({
-                            memoryScope: value as AssistantMemoryScope,
+                          saveProjectPatch({
+                            memoryScope: value as ProjectMemoryScope,
                           }, "记忆范围已更新")
                         }
-                        ariaLabel="助手记忆范围"
+                        ariaLabel="项目记忆范围"
                         className="omni-select--memory"
                         options={[
                           { value: "off", label: "关闭记忆" },
                           { value: "session", label: "仅当前话题" },
-                          { value: "assistant", label: "当前助手全局" },
+                          { value: "project", label: "当前项目全局" },
                         ]}
                       />
                     </label>
@@ -2020,12 +2133,12 @@ export default function MainChatView({
                     <label className="omni-settings-dialog__toggle-row">
                       <div className="omni-settings-dialog__toggle-copy">
                         <strong>自动沉淀记忆</strong>
-                        <span>将稳定偏好、约束或长期信息保存到该助手的记忆库。</span>
+                        <span>将稳定偏好、约束或长期信息保存到该项目的记忆库。</span>
                       </div>
                       <OmniSwitch
-                        checked={activeAssistant.autoSaveMemories}
+                        checked={activeProject.autoSaveMemories}
                         onChange={(checked) =>
-                          saveAssistantPatch({
+                          saveProjectPatch({
                             autoSaveMemories: checked,
                           }, checked ? "自动沉淀记忆已开启" : "自动沉淀记忆已关闭")
                         }
@@ -2039,9 +2152,9 @@ export default function MainChatView({
                         <span>把当前话题的阶段结论保存为摘要，供后续继续接力。</span>
                       </div>
                       <OmniSwitch
-                        checked={activeAssistant.autoSaveSummaries}
+                        checked={activeProject.autoSaveSummaries}
                         onChange={(checked) =>
-                          saveAssistantPatch({
+                          saveProjectPatch({
                             autoSaveSummaries: checked,
                           }, checked ? "自动沉淀摘要已开启" : "自动沉淀摘要已关闭")
                         }
@@ -2053,10 +2166,10 @@ export default function MainChatView({
 
                 <div className="omni-settings-dialog__section">
                   <div className="omni-settings-dialog__section-title">记忆库</div>
-                  <div className="omni-settings-dialog__assistant-copy">
+                  <div className="omni-settings-dialog__project-copy">
                     <div className="omni-settings-dialog__setting-hint">
-                      当前助手已沉淀 {assistantMemories.length} 条长期记忆。记忆范围：{activeMemoryScopeLabel}，自动记忆
-                      {activeAssistant.autoSaveMemories ? "已开启" : "已关闭"}，自动摘要{activeAssistant.autoSaveSummaries ? "已开启" : "已关闭"}。
+                      当前项目已沉淀 {projectMemories.length} 条长期记忆。记忆范围：{activeMemoryScopeLabel}，自动记忆
+                      {activeProject.autoSaveMemories ? "已开启" : "已关闭"}，自动摘要{activeProject.autoSaveSummaries ? "已开启" : "已关闭"}。
                     </div>
                   </div>
                   <div className="omni-settings-dialog__memory-add">
@@ -2088,14 +2201,14 @@ export default function MainChatView({
                       type="button"
                       className="omni-settings-dialog__memory-clear"
                       onClick={() => setMemoryClearConfirmOpen(true)}
-                      disabled={assistantMemories.length === 0}
+                      disabled={projectMemories.length === 0}
                     >
                       清空记忆
                     </button>
                   </div>
-                  {assistantMemories.length > 0 ? (
+                  {projectMemories.length > 0 ? (
                     <div className="omni-settings-dialog__memory-list">
-                      {visibleAssistantMemories.map((memory) => (
+                      {visibleProjectMemories.map((memory) => (
                         <div key={memory.id} className="omni-settings-dialog__memory-item">
                           {editingMemoryId === memory.id ? (
                             <div className="omni-settings-dialog__memory-editor">
@@ -2142,8 +2255,8 @@ export default function MainChatView({
                                   type="button"
                                   className="omni-settings-dialog__memory-delete"
                                   onClick={() => {
-                                    const deleted = onDeleteAssistantMemory(memory.id);
-                                    showAssistantNotice(deleted ? "记忆已删除" : "记忆删除失败", deleted ? "success" : "error");
+                                    const deleted = onDeleteProjectMemory(memory.id);
+                                    showProjectNotice(deleted ? "记忆已删除" : "记忆删除失败", deleted ? "success" : "error");
                                   }}
                                 >
                                   删除
@@ -2153,16 +2266,16 @@ export default function MainChatView({
                           )}
                         </div>
                       ))}
-                      {filteredAssistantMemories.length === 0 && (
+                      {filteredProjectMemories.length === 0 && (
                         <div className="omni-settings-dialog__memory-empty">没有匹配的记忆</div>
                       )}
-                      {filteredAssistantMemories.length > 12 && (
+                      {filteredProjectMemories.length > 12 && (
                         <button
                           type="button"
                           className="omni-settings-dialog__memory-more"
                           onClick={() => setShowAllMemories((current) => !current)}
                         >
-                          {showAllMemories ? "收起部分记忆" : `显示全部 ${filteredAssistantMemories.length} 条记忆`}
+                          {showAllMemories ? "收起部分记忆" : `显示全部 ${filteredProjectMemories.length} 条记忆`}
                         </button>
                       )}
                     </div>
@@ -2171,15 +2284,15 @@ export default function MainChatView({
                   )}
                   {memoryClearConfirmOpen && (
                     <div className="chat-topic-panel__menu-confirm omni-settings-dialog__memory-confirm">
-                      <div className="chat-topic-panel__menu-confirm-title">清空当前助手记忆</div>
+                      <div className="chat-topic-panel__menu-confirm-title">清空当前项目记忆</div>
                       <div className="chat-topic-panel__menu-confirm-message">
-                        将删除当前助手的 {assistantMemories.length} 条长期记忆。此操作不会删除会话记录。
+                        将删除当前项目的 {projectMemories.length} 条长期记忆。此操作不会删除会话记录。
                       </div>
                       <div className="chat-topic-panel__menu-confirm-actions">
                         <button type="button" className="chat-topic-panel__menu-button" onClick={() => setMemoryClearConfirmOpen(false)}>
                           取消
                         </button>
-                        <button type="button" className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger" onClick={clearCurrentAssistantMemories}>
+                        <button type="button" className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger" onClick={clearCurrentProjectMemories}>
                           确认清空
                         </button>
                       </div>
@@ -2187,13 +2300,13 @@ export default function MainChatView({
                   )}
                 </div>
 
-                {isCustomAssistantSettingsMode && (
+                {isCustomProjectSettingsMode && (
                 <>
                 <div className="omni-settings-dialog__section">
                   <div className="omni-settings-dialog__section-title">工具权限</div>
                   <div className="omni-settings-dialog__toggle-list">
-                    {ASSISTANT_TOOL_OPTIONS.map((tool) => {
-                      const checked = activeAssistant.allowedToolIds.includes(tool.id);
+                    {PROJECT_TOOL_OPTIONS.map((tool) => {
+                      const checked = activeProject.allowedToolIds.includes(tool.id);
                       return (
                         <label key={tool.id} className="omni-settings-dialog__toggle-row">
                           <div className="omni-settings-dialog__toggle-copy">
@@ -2204,9 +2317,9 @@ export default function MainChatView({
                             checked={checked}
                             onChange={(nextChecked) => {
                               const nextAllowedToolIds = nextChecked
-                                ? [...activeAssistant.allowedToolIds, tool.id]
-                                : activeAssistant.allowedToolIds.filter((item) => item !== tool.id);
-                              saveAssistantPatch({ allowedToolIds: nextAllowedToolIds }, "工具权限已更新");
+                                ? [...activeProject.allowedToolIds, tool.id]
+                                : activeProject.allowedToolIds.filter((item) => item !== tool.id);
+                              saveProjectPatch({ allowedToolIds: nextAllowedToolIds }, "工具权限已更新");
                             }}
                             ariaLabel={tool.label}
                           />
@@ -2220,7 +2333,7 @@ export default function MainChatView({
                   <div className="omni-settings-dialog__section-title">技能权限</div>
                   <div className="omni-settings-dialog__toggle-list">
                     {LOCAL_SKILL_COMMANDS.map((skill) => {
-                      const checked = activeAssistant.allowedSkillIds.includes(skill.id);
+                      const checked = activeProject.allowedSkillIds.includes(skill.id);
                       return (
                         <label key={skill.id} className="omni-settings-dialog__toggle-row">
                           <div className="omni-settings-dialog__toggle-copy">
@@ -2231,9 +2344,9 @@ export default function MainChatView({
                             checked={checked}
                             onChange={(nextChecked) => {
                               const nextAllowedSkillIds = nextChecked
-                                ? [...activeAssistant.allowedSkillIds, skill.id]
-                                : activeAssistant.allowedSkillIds.filter((item) => item !== skill.id);
-                              saveAssistantPatch({ allowedSkillIds: nextAllowedSkillIds }, "技能权限已更新");
+                                ? [...activeProject.allowedSkillIds, skill.id]
+                                : activeProject.allowedSkillIds.filter((item) => item !== skill.id);
+                              saveProjectPatch({ allowedSkillIds: nextAllowedSkillIds }, "技能权限已更新");
                             }}
                             ariaLabel={skill.title}
                           />
@@ -2246,9 +2359,9 @@ export default function MainChatView({
                 )}
 
               </div>
-              {isCustomAssistantSettingsMode && (
+              {isCustomProjectSettingsMode && (
               <input
-                ref={assistantAvatarInputRef}
+                ref={projectAvatarInputRef}
                 type="file"
                 accept="image/*"
                 className="chat-history-panel__avatar-file"
@@ -2259,8 +2372,8 @@ export default function MainChatView({
                   reader.onload = () => {
                     const result = reader.result;
                     if (typeof result === "string") {
-                      saveAssistantPatch({ avatarType: "image", avatarValue: result }, "自定义头像已更新");
-                      setAssistantAvatarPanelOpen(false);
+                      saveProjectPatch({ avatarType: "image", avatarValue: result }, "自定义头像已更新");
+                      setProjectAvatarPanelOpen(false);
                     }
                   };
                   reader.readAsDataURL(file);
@@ -2321,11 +2434,11 @@ export default function MainChatView({
                       <div className="empty-chat-state__icon">
                         <img src={omniIconSrc} alt="Omni" />
                       </div>
-                      <h2>从当前助手开始</h2>
+                      <h2>从当前项目开始</h2>
                       <p>
                         {isEmptyGuideCompact
                           ? "直接输入问题开始对话。需要推荐模板时可展开引导。"
-                          : "你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前助手。"}
+                          : "你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前项目。"}
                       </p>
                     </div>
                     <div className="empty-chat-state__actions">
@@ -2350,8 +2463,8 @@ export default function MainChatView({
                                 {index % 2 === 0 ? <Compass size={18} strokeWidth={1.8} /> : <Sparkles size={18} strokeWidth={1.8} />}
                               </div>
                               <div className="empty-chat-state__card-copy">
-                                <strong>{RECOMMENDED_ASSISTANT_PRESETS[index]?.title || "快速开始"}</strong>
-                                <span>{RECOMMENDED_ASSISTANT_PRESETS[index]?.description || prompt}</span>
+                                <strong>{RECOMMENDED_PROJECT_PRESETS[index]?.title || "快速开始"}</strong>
+                                <span>{RECOMMENDED_PROJECT_PRESETS[index]?.description || prompt}</span>
                               </div>
                               <ArrowRight size={16} strokeWidth={1.8} />
                             </button>
@@ -2359,7 +2472,7 @@ export default function MainChatView({
                         </div>
                         <div className="empty-chat-state__subhead">
                           <Sparkles size={14} strokeWidth={1.9} />
-                          <span>快速创建助手</span>
+                          <span>快速创建项目</span>
                         </div>
                         <div className="empty-chat-state__cards">
                           {AVATAR_PRESETS.slice(0, 4).map((preset) => (
@@ -2368,7 +2481,7 @@ export default function MainChatView({
                               type="button"
                               className="empty-chat-state__card"
                               onClick={() =>
-                              onCreateCustomAssistant({
+                              onCreateCustomProject({
                                   sourcePresetId: preset.code,
                                   title: preset.label,
                                   description: preset.hint,
@@ -2399,7 +2512,7 @@ export default function MainChatView({
 
                 {messages.map((msg, index) => {
                   const isCurrentStreamingMessage = isStreaming && index === messages.length - 1;
-                  if (msg.role === "assistant" && !msg.content.trim() && !isCurrentStreamingMessage) {
+                  if (msg.role === "project" && !msg.content.trim() && !isCurrentStreamingMessage) {
                     return null;
                   }
 
@@ -2434,11 +2547,23 @@ export default function MainChatView({
                 </button>
               )}
 
-              <div ref={setComposerElement}>
+              <div
+                className="main-chat-composer-splitter"
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="调整对话台高度"
+                onPointerDown={handleComposerSplitterPointerDown}
+              />
+
+              <div
+                ref={setComposerElement}
+                className="main-chat-composer-outer"
+                style={composerResizeHeight ? { height: `${composerResizeHeight}px` } : undefined}
+              >
                 <ChatInput
                   allowedToolIds={allowedComposerToolIds}
                   allowedSkillIds={allowedComposerSkillIds}
-                  canStartNewTopic={Boolean(activeAssistant)}
+                  canStartNewTopic={Boolean(activeProject)}
                   contextPresetText={composerContextPresetText}
                   knowledgeCollections={knowledgeCollections}
                   onSend={onSend}
@@ -2449,6 +2574,8 @@ export default function MainChatView({
                   onStop={onStop}
                   onStartNewTopic={onNewChat}
                   focusSignal={inputFocusKey}
+                  fixedHeight={composerResizeHeight}
+                  onSubmit={() => setComposerResizeHeight(null)}
                   draftScopeKey={inputDraftScopeKey}
                   draftValue={inputDraft}
                   draftImages={inputDraftImages}
@@ -2462,7 +2589,7 @@ export default function MainChatView({
             </main>
           </section>
 
-          {!isAssistantSettingsMode && (
+          {!isProjectSettingsMode && (
             <div
               className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
               role="separator"
@@ -2472,7 +2599,7 @@ export default function MainChatView({
             />
           )}
 
-          {!isAssistantSettingsMode && <aside className="chat-topic-panel">
+          {!isProjectSettingsMode && <aside className="chat-topic-panel">
           <div className="chat-topic-panel__body">
             <div className="chat-topic-panel__toolbar">
               <div className="chat-topic-panel__title">
@@ -2552,7 +2679,7 @@ export default function MainChatView({
                         <button
                           type="button"
                           className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
-                          onClick={() => handleDeleteSessions(allTopicSessions, "删除全部话题", "确定删除当前助手下的全部话题吗？")}
+                          onClick={() => handleDeleteSessions(allTopicSessions, "删除全部话题", "确定删除当前项目下的全部话题吗？")}
                         >
                           <Trash2 size={14} strokeWidth={1.9} />
                           <span>删除全部话题</span>
@@ -2613,8 +2740,8 @@ export default function MainChatView({
                             type="button"
                             className={`chat-topic-panel__item ${session.id === activeChatId ? "chat-topic-panel__item--active" : ""}`}
                             onClick={() => {
-                              setAssistantSettingsId(null);
-                              setAssistantAvatarPanelOpen(false);
+                              setProjectSettingsId(null);
+                              setProjectAvatarPanelOpen(false);
                               setTopicItemMenuSessionId(null);
                               onSelectChat(session.id);
                             }}
@@ -2638,8 +2765,8 @@ export default function MainChatView({
                       type="button"
                       className={`chat-topic-panel__item ${session.id === activeChatId ? "chat-topic-panel__item--active" : ""}`}
                       onClick={() => {
-                        setAssistantSettingsId(null);
-                        setAssistantAvatarPanelOpen(false);
+                        setProjectSettingsId(null);
+                        setProjectAvatarPanelOpen(false);
                         setTopicItemMenuSessionId(null);
                         onSelectChat(session.id);
                       }}

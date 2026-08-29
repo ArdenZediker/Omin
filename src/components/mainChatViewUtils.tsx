@@ -1,9 +1,9 @@
 import { Pin } from "lucide-react";
-import type { AssistantMemoryScope } from "../chat/types";
-import type { AssistantProfile } from "../chat/types";
+import type { ProjectMemoryScope, ProjectMemorySourceType } from "../chat/types";
+import type { Project } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import { AVATAR_PRESETS } from "../config/manifests/avatars";
-import { resolveAssistantAvatarImageSrc } from "../config/manifests/avatarHelpers";
+import { resolveProjectAvatarImageSrc } from "../config/manifests/avatarHelpers";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 
 export const MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY = "main_layout_topic_width";
@@ -11,8 +11,8 @@ export const EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY = "main_empty_chat_guide_compa
 export const DEFAULT_TOPIC_PANEL_WIDTH = 240;
 export const MIN_TOPIC_PANEL_WIDTH = 220;
 export const MAX_TOPIC_PANEL_WIDTH = 360;
-export const ASSISTANT_GROUPS_STORAGE_KEY = "assistant_groups";
-export const DEFAULT_ASSISTANT_GROUP_LABEL = "默认列表";
+export const PROJECT_GROUPS_STORAGE_KEY = "assistant_groups";
+export const DEFAULT_PROJECT_GROUP_LABEL = "默认列表";
 
 export function clampPanelWidth(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -30,6 +30,13 @@ export function normalizeSearchText(value: string) {
   return value.toLocaleLowerCase().replace(/\s+/g, "");
 }
 
+export function getMemorySourceTypeLabel(sourceType?: ProjectMemorySourceType) {
+  if (sourceType === "auto") return "自动沉淀";
+  if (sourceType === "manual") return "手动添加";
+  if (sourceType === "command") return "命令写入";
+  return "旧记录";
+}
+
 export function renderTopicGroupLabel(label: string) {
   if (label === "置顶") {
     return (
@@ -43,9 +50,9 @@ export function renderTopicGroupLabel(label: string) {
   return <span>{label}</span>;
 }
 
-export function findPresetMetaByAssistant(assistant: AssistantProfile | null) {
-  if (!assistant?.sourcePresetId) return null;
-  return AVATAR_PRESETS.find((preset) => preset.code === assistant.sourcePresetId) ?? null;
+export function findPresetMetaByProject(project: Project | null) {
+  if (!project?.sourcePresetId) return null;
+  return AVATAR_PRESETS.find((preset) => preset.code === project.sourcePresetId) ?? null;
 }
 
 export function buildTaskAggregateSummary(task: TaskExecutionResult) {
@@ -58,15 +65,15 @@ export function buildTaskAggregateSummary(task: TaskExecutionResult) {
   };
 }
 
-export function formatMemoryScopeLabel(scope: AssistantMemoryScope) {
+export function formatMemoryScopeLabel(scope: ProjectMemoryScope) {
   switch (scope) {
     case "off":
       return "不启用记忆";
     case "session":
       return "仅当前话题";
-    case "assistant":
+    case "project":
     default:
-      return "当前助手全局";
+      return "当前项目全局";
   }
 }
 
@@ -106,6 +113,6 @@ export function enhancePresetPromptIfNeeded(presetCode: string, prompt: string) 
 - 尽量给出用户下一步可以直接执行的建议。`;
 }
 
-export function renderAssistantAvatar(assistant: AssistantProfile | null, seed = 0) {
-  return <img src={resolveAssistantAvatarImageSrc(assistant, seed)} alt="" className="chat-history-panel__assistant-image" />;
+export function renderProjectAvatar(project: Project | null, seed = 0) {
+  return <img src={resolveProjectAvatarImageSrc(project, seed)} alt="" className="chat-history-panel__project-image" />;
 }
