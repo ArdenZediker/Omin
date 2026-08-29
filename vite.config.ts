@@ -60,6 +60,11 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
+      target: "es2022",
+      cssCodeSplit: true,
+      sourcemap: false,
+      chunkSizeWarningLimit: 2000,
+      reportCompressedSize: false,
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
