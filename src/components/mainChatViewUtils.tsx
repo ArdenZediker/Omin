@@ -1,5 +1,8 @@
 import { Pin } from "lucide-react";
-import type { ProjectMemoryScope, ProjectMemorySourceType } from "../chat/types";
+import type {
+  ProjectMemoryScope,
+  ProjectMemorySourceType,
+} from "../chat/types";
 import type { Project } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import { AVATAR_PRESETS } from "../config/manifests/avatars";
@@ -7,23 +10,32 @@ import { resolveProjectAvatarImageSrc } from "../config/manifests/avatarHelpers"
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 
 export const MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY = "main_layout_topic_width";
-export const EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY = "main_empty_chat_guide_compact";
+export const EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY =
+  "main_empty_chat_guide_compact";
 export const DEFAULT_TOPIC_PANEL_WIDTH = 240;
 export const MIN_TOPIC_PANEL_WIDTH = 220;
 export const MAX_TOPIC_PANEL_WIDTH = 360;
 export const LEGACY_PROJECT_GROUPS_STORAGE_KEY = "assistant_groups";
 export const PROJECT_GROUPS_STORAGE_KEY = "project_groups";
-export const DEFAULT_PROJECT_GROUP_LABEL = "默认项目";
+export const DEFAULT_PROJECT_GROUP_LABEL = "项目空间";
 
 export function readProjectGroupsStorageValue(): string | null {
-  return readSqliteBackedValue(PROJECT_GROUPS_STORAGE_KEY) ?? readSqliteBackedValue(LEGACY_PROJECT_GROUPS_STORAGE_KEY);
+  return (
+    readSqliteBackedValue(PROJECT_GROUPS_STORAGE_KEY) ??
+    readSqliteBackedValue(LEGACY_PROJECT_GROUPS_STORAGE_KEY)
+  );
 }
 
 export function clampPanelWidth(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function readStoredPanelWidth(storageKey: string, fallback: number, min: number, max: number) {
+export function readStoredPanelWidth(
+  storageKey: string,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const saved = readSqliteBackedValue(storageKey);
   if (!saved) return fallback;
   const parsed = Number.parseInt(saved, 10);
@@ -57,12 +69,18 @@ export function renderTopicGroupLabel(label: string) {
 
 export function findPresetMetaByProject(project: Project | null) {
   if (!project?.sourcePresetId) return null;
-  return AVATAR_PRESETS.find((preset) => preset.code === project.sourcePresetId) ?? null;
+  return (
+    AVATAR_PRESETS.find((preset) => preset.code === project.sourcePresetId) ??
+    null
+  );
 }
 
 export function buildTaskAggregateSummary(task: TaskExecutionResult) {
   const childCount = task.plan.childTaskIds?.length ?? 0;
-  const lastTrace = task.trace.slice(-2).map((entry) => entry.message).join(" · ");
+  const lastTrace = task.trace
+    .slice(-2)
+    .map((entry) => entry.message)
+    .join(" · ");
   if (childCount <= 0 && !lastTrace) return null;
   return {
     childCount,
@@ -82,7 +100,10 @@ export function formatMemoryScopeLabel(scope: ProjectMemoryScope) {
   }
 }
 
-export function enhancePresetPromptIfNeeded(presetCode: string, prompt: string) {
+export function enhancePresetPromptIfNeeded(
+  presetCode: string,
+  prompt: string,
+) {
   if (presetCode !== "2728") {
     return prompt;
   }
@@ -119,5 +140,11 @@ export function enhancePresetPromptIfNeeded(presetCode: string, prompt: string) 
 }
 
 export function renderProjectAvatar(project: Project | null, seed = 0) {
-  return <img src={resolveProjectAvatarImageSrc(project, seed)} alt="" className="chat-history-panel__project-image" />;
+  return (
+    <img
+      src={resolveProjectAvatarImageSrc(project, seed)}
+      alt=""
+      className="chat-history-panel__project-image"
+    />
+  );
 }
