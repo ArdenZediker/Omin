@@ -1848,14 +1848,14 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                     <button
                       type="button"
                       onClick={() => setIsSidebarCollapsed((current) => !current)}
-                      className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                      className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                       title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
                     >
                       {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
                     </button>
                     <div className="min-w-0">
-                      <div className="truncate text-base font-semibold text-slate-950">{activeCollectionName}</div>
-                      <div className="mt-1 text-sm text-slate-500">
+                      <div className="truncate text-base font-semibold text-[var(--omni-app-text)]">{activeCollectionName}</div>
+                      <div className="mt-1 text-sm text-[var(--omni-app-muted)]">
                         {pageMode === "empty" ? "当前知识库还没有文档" : `${activeCategoryData.title} · ${visibleDocuments.length} 个文档`}
                       </div>
                     </div>
@@ -1864,8 +1864,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                   <div className="omni-knowledge-title-actions flex shrink-0 items-center">
                     <div className="no-drag omni-knowledge-toolbar-actions" onPointerDown={(event) => event.stopPropagation()}>
                       {isSearchToolbarOpen || searchQuery ? (
-                        <div className="flex h-8 w-64 items-center gap-2 rounded-none border border-slate-200 bg-white px-2.5 transition-all duration-150 md:w-72">
-                          <Search size={14} strokeWidth={1.8} className="shrink-0 text-slate-400" />
+                        <div className="flex h-8 w-64 items-center gap-2 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2.5 transition-all duration-150 md:w-72">
+                          <Search size={14} strokeWidth={1.8} className="shrink-0 text-[var(--omni-app-muted)]" />
                           <input
                             ref={searchInputRef}
                             value={searchQuery}
@@ -1877,7 +1877,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                               }
                             }}
                             placeholder="搜索文档"
-                            className="w-full min-w-0 border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                            className="w-full min-w-0 border-0 bg-transparent text-sm text-[var(--omni-app-text)] outline-none placeholder:text-[var(--omni-app-muted)]"
                           />
                         </div>
                       ) : null}
@@ -2087,27 +2087,27 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                 ) : (
                   <section className="no-drag flex min-h-0 min-w-0 flex-1 items-center justify-center">
                     {!isKnowledgeLibraryReady ? (
-                      <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-                        <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">正在加载知识库</div>
-                        <div className="mt-2 text-sm text-slate-500">请稍候，系统会读取当前已有的知识库。</div>
+                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center px-6 py-14 text-center">
+                        <div className="omni-knowledge-empty-state__title text-lg font-semibold tracking-[-0.02em]">正在加载知识库</div>
+                        <div className="omni-knowledge-empty-state__desc mt-2 text-sm">请稍候，系统会读取当前已有的知识库。</div>
                       </div>
                     ) : library.collections.length === 0 ? (
-                      <div className="flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
-                        <div className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">还没有知识库</div>
-                        <div className="mt-2 text-sm text-slate-500">先新建一个知识库，再上传文件或文件夹。</div>
+                      <div className="omni-knowledge-empty-state flex w-full max-w-4xl flex-col items-center justify-center px-6 py-14 text-center">
+                        <div className="omni-knowledge-empty-state__title text-2xl font-semibold tracking-[-0.03em]">还没有知识库</div>
+                        <div className="omni-knowledge-empty-state__desc mt-2 text-sm">先新建一个知识库，再上传文件或文件夹。</div>
                         {uploadError ? (
-                          <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                          <div className="omni-knowledge-empty-state__error mt-3 rounded-none border px-4 py-2 text-sm">
                             {uploadError}
                           </div>
                         ) : null}
                         {createCollectionError ? (
-                          <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                          <div className="omni-knowledge-empty-state__error mt-3 rounded-none border px-4 py-2 text-sm">
                             {createCollectionError}
                           </div>
                         ) : null}
                         <button
                           type="button"
-                          className="omni-knowledge-empty-action mt-8 inline-flex items-center gap-2 rounded-none border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                          className="omni-knowledge-empty-state__action mt-8 inline-flex items-center gap-2 rounded-none border px-5 py-3 text-sm font-medium shadow-sm"
                           onClick={createCollection}
                         >
                           <Plus size={16} strokeWidth={2} />
@@ -2115,16 +2115,16 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
                         </button>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-                        <div className="text-lg font-semibold tracking-[-0.02em] text-slate-950">当前知识库暂无文档</div>
-                        <div className="mt-2 text-sm text-slate-500">请使用右上角上传按钮导入文件。</div>
+                      <div className="omni-knowledge-empty-state flex flex-col items-center justify-center px-6 py-14 text-center">
+                        <div className="omni-knowledge-empty-state__title text-lg font-semibold tracking-[-0.02em]">当前知识库暂无文档</div>
+                        <div className="omni-knowledge-empty-state__desc mt-2 text-sm">请使用右上角上传按钮导入文件。</div>
                         {uploadError ? (
-                          <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                          <div className="omni-knowledge-empty-state__error mt-3 rounded-none border px-4 py-2 text-sm">
                             {uploadError}
                           </div>
                         ) : null}
                         {createCollectionError ? (
-                          <div className="mt-3 rounded-none border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                          <div className="omni-knowledge-empty-state__error mt-3 rounded-none border px-4 py-2 text-sm">
                             {createCollectionError}
                           </div>
                         ) : null}

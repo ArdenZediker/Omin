@@ -4074,6 +4074,35 @@ body:has(.pet-thought-window),
   box-shadow: none;
 }
 
+.omni-knowledge-empty-state {
+  color: var(--omni-app-text);
+}
+
+.omni-knowledge-empty-state__title {
+  color: var(--omni-app-text);
+}
+
+.omni-knowledge-empty-state__desc {
+  color: var(--omni-app-muted);
+}
+
+.omni-knowledge-empty-state__action {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  box-shadow: var(--omni-surface-shadow);
+}
+
+.omni-knowledge-empty-state__action:hover {
+  background: var(--omni-soft-bg);
+}
+
+.omni-knowledge-empty-state__error {
+  border-color: color-mix(in srgb, #ef4444 32%, var(--omni-panel-border));
+  background: color-mix(in srgb, #ef4444 10%, var(--omni-panel-bg));
+  color: #ef4444;
+}
+
 .omni-knowledge-main > header {
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
