@@ -156,19 +156,19 @@ export default function KnowledgeCollectionSidebar({
 
                     {openCollectionMenuId === collection.id ? (
                       <div
-                        className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
+                        className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] py-1 shadow-lg"
                         onPointerDown={(event) => event.stopPropagation()}
                       >
                         <button
                           type="button"
-                          className="flex w-full items-center px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                          className="flex w-full items-center px-3 py-2 text-left text-sm text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
                           onClick={() => onOpenCollectionSettings(collection)}
                         >
                           设置
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+                          className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-500 hover:bg-rose-500/10"
                           onClick={() => onDeleteCollection(collection.id)}
                         >
                           删除
