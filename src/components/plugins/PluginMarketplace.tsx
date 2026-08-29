@@ -127,10 +127,12 @@ export default function PluginMarketplace({ initialFilter = {}, onPick, onClose,
           <p className="plugin-marketplace__subtitle">参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能</p>
 
           {!onPick && (
-            <div className="plugin-marketplace__kind-tabs">
+            <div className="plugin-marketplace__source-tabs" role="tablist" aria-label="插件来源">
               <button
                 type="button"
-                className={`plugin-marketplace__kind-tab ${source === "local" ? "plugin-marketplace__kind-tab--active" : ""}`}
+                role="tab"
+                aria-selected={source === "local"}
+                className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
                 onClick={() => setSource("local")}
               >
                 <LayoutTemplate size={14} strokeWidth={1.8} />
@@ -138,7 +140,9 @@ export default function PluginMarketplace({ initialFilter = {}, onPick, onClose,
               </button>
               <button
                 type="button"
-                className={`plugin-marketplace__kind-tab ${source === "skillhub" ? "plugin-marketplace__kind-tab--active" : ""}`}
+                role="tab"
+                aria-selected={source === "skillhub"}
+                className={`plugin-marketplace__source-tab ${source === "skillhub" ? "plugin-marketplace__source-tab--active" : ""}`}
                 onClick={() => setSource("skillhub")}
               >
                 <Bot size={14} strokeWidth={1.8} />

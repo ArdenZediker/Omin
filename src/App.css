@@ -9512,6 +9512,38 @@ body:has(.pet-thought-window),
   border-color: var(--omni-app-text);
 }
 
+/* 来源切换：分段控制器样式，避免中间出现双边框分割线 */
+.plugin-marketplace__source-tabs {
+  display: inline-flex;
+  margin-top: 14px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.plugin-marketplace__source-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-right: 1px solid var(--omni-panel-border);
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.plugin-marketplace__source-tabs button:last-child {
+  border-right: none;
+}
+
+.plugin-marketplace__source-tab--active {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
 .plugin-marketplace__category-tabs {
   display: flex;
   gap: 8px;
@@ -9551,6 +9583,14 @@ body:has(.pet-thought-window),
 }
 
 .plugin-marketplace__body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.plugin-marketplace__body::-webkit-scrollbar-track,
+.plugin-marketplace__body::-webkit-scrollbar-thumb,
+.plugin-marketplace__body::-webkit-scrollbar-corner {
   display: none;
 }
 
