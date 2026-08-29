@@ -2,13 +2,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tauri::Manager;
 
 pub(crate) fn knowledge_files_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
-    let root = app_data_dir.join("knowledge_files");
-    fs::create_dir_all(&root).map_err(|err| err.to_string())?;
-    Ok(root)
+    // 与数据库共用同一个数据根目录，避免「库在新位置、文件在旧位置」的分裂。
+    crate::storage_paths::knowledge_root(app)
 }
 
 pub(crate) fn sanitize_storage_file_name(value: &str) -> String {

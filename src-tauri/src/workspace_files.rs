@@ -17,11 +17,23 @@ pub(crate) struct WorkspaceSearchMatch {
     line_preview: String,
 }
 
+/// 解析文件操作的根目录：优先使用项目工作目录，否则回退到全局 workspace_root。
+fn resolve_root(project_path: &Option<String>) -> Result<PathBuf, String> {
+    if let Some(raw) = project_path {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+    crate::workspace_root()
+}
+
 pub(crate) fn list_files(
+    project_path: Option<String>,
     query: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<WorkspaceFileEntry>, String> {
-    let root = crate::workspace_root()?;
+    let root = resolve_root(&project_path)?;
     let normalized_query = query.unwrap_or_default().trim().to_lowercase();
     let limit = limit.unwrap_or(100).clamp(1, 500);
     let mut results = Vec::new();
@@ -29,8 +41,8 @@ pub(crate) fn list_files(
     Ok(results)
 }
 
-pub(crate) fn read_file(path: String, max_chars: Option<usize>) -> Result<String, String> {
-    let root = crate::workspace_root()?;
+pub(crate) fn read_file(project_path: Option<String>, path: String, max_chars: Option<usize>) -> Result<String, String> {
+    let root = resolve_root(&project_path)?;
     let relative = normalize_relative_path(&path)?;
     let full_path = root.join(relative);
 
@@ -54,6 +66,7 @@ pub(crate) fn read_file(path: String, max_chars: Option<usize>) -> Result<String
 }
 
 pub(crate) fn search_files(
+    project_path: Option<String>,
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<WorkspaceSearchMatch>, String> {
@@ -62,7 +75,7 @@ pub(crate) fn search_files(
         return Err("Query cannot be empty".into());
     }
 
-    let root = crate::workspace_root()?;
+    let root = resolve_root(&project_path)?;
     let limit = limit.unwrap_or(50).clamp(1, 200);
     let mut results = Vec::new();
     collect_workspace_matches(&root, &root, &normalized_query, limit, &mut results)?;

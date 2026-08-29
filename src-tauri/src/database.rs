@@ -1,12 +1,38 @@
 use rusqlite::Connection;
-use std::{fs, path::PathBuf};
-use tauri::Manager;
+use std::path::PathBuf;
 
 use crate::knowledge_schema::{ensure_knowledge_defaults, ensure_knowledge_schema};
 use crate::storage::{
     has_structured_chat_storage, read_kv, read_structured_app_value, save_structured_chat_storage,
     write_structured_app_value, KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
 };
+
+/// 把旧版以“助手”命名的表与列迁移到“项目”命名，避免已有数据丢失。
+/// 所有语句都做了容错：表/列不存在或已存在时静默跳过。
+pub(crate) fn migrate_legacy_project_data(connection: &Connection) -> Result<(), String> {
+    let guarded = |sql: &str| {
+        if let Err(err) = connection.execute_batch(sql) {
+            let msg = err.to_string();
+            let ignorable = msg.contains("no such table")
+                || msg.contains("no such column")
+                || msg.contains("already exists")
+                || msg.contains("duplicate column");
+            if !ignorable {
+                eprintln!("[omni] project migration warning: {msg}");
+            }
+        }
+    };
+
+    guarded("ALTER TABLE assistants RENAME TO projects");
+    guarded("ALTER TABLE assistant_presets RENAME TO project_presets");
+    guarded("ALTER TABLE assistant_memories RENAME TO project_memories");
+    guarded("ALTER TABLE project_memories RENAME COLUMN assistant_id TO project_id");
+    guarded("ALTER TABLE session_summaries RENAME COLUMN assistant_id TO project_id");
+    guarded("ALTER TABLE chat_sessions RENAME COLUMN assistant_id TO project_id");
+    guarded("ALTER TABLE projects ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''");
+
+    Ok(())
+}
 
 pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connection, String> {
     let connection = Connection::open(sqlite_db_path(app)?).map_err(|err| err.to_string())?;
@@ -18,6 +44,7 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
         "#,
         )
         .map_err(|err| err.to_string())?;
+    migrate_legacy_project_data(&connection)?;
     connection
         .execute_batch(
             r#"
@@ -54,12 +81,13 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
           updated_at INTEGER NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS assistants (
+        CREATE TABLE IF NOT EXISTS projects (
           id TEXT PRIMARY KEY,
           kind TEXT NOT NULL,
           source_preset_id TEXT,
           title TEXT NOT NULL,
           description TEXT NOT NULL,
+          workspace_path TEXT NOT NULL DEFAULT '',
           system_prompt TEXT,
           default_model_id TEXT,
           allowed_tool_ids_json TEXT NOT NULL,
@@ -68,7 +96,7 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
           updated_at INTEGER NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS assistant_presets (
+        CREATE TABLE IF NOT EXISTS project_presets (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
           description TEXT NOT NULL,
@@ -92,9 +120,9 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
           updated_at INTEGER NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS assistant_memories (
+        CREATE TABLE IF NOT EXISTS project_memories (
           id TEXT PRIMARY KEY,
-          assistant_id TEXT NOT NULL,
+          project_id TEXT NOT NULL,
           content TEXT NOT NULL,
           source_session_id TEXT,
           created_at INTEGER NOT NULL,
@@ -109,7 +137,7 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
 
         CREATE TABLE IF NOT EXISTS session_summaries (
           session_id TEXT PRIMARY KEY,
-          assistant_id TEXT NOT NULL,
+          project_id TEXT NOT NULL,
           title TEXT NOT NULL,
           summary TEXT NOT NULL,
           updated_at INTEGER NOT NULL
@@ -123,7 +151,7 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
 
         CREATE TABLE IF NOT EXISTS chat_sessions (
           id TEXT PRIMARY KEY,
-          assistant_id TEXT NOT NULL,
+          project_id TEXT NOT NULL,
           title TEXT NOT NULL,
           messages_json TEXT NOT NULL,
           pinned INTEGER NOT NULL DEFAULT 0,
@@ -188,9 +216,8 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
 }
 
 fn sqlite_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
-    fs::create_dir_all(&app_data_dir).map_err(|err| err.to_string())?;
-    Ok(app_data_dir.join("omni.sqlite3"))
+    // 统一走 storage_paths：自定义目录 > 便携模式（exe 同级 data）> 默认 AppData。
+    crate::storage_paths::database_path(app)
 }
 
 fn run_database_migrations(connection: &Connection) -> Result<(), String> {
@@ -230,16 +257,16 @@ fn migrate_legacy_chat_kv_to_structured(connection: &Connection) -> Result<(), S
         return Ok(());
     }
 
-    let assistants_json = read_kv(connection, "chat_assistants")?;
+    let projects_json = read_kv(connection, "chat_assistants")?;
     let sessions_json = read_kv(connection, "chat_sessions")?;
 
-    if assistants_json.is_none() && sessions_json.is_none() {
+    if projects_json.is_none() && sessions_json.is_none() {
         return Ok(());
     }
 
     save_structured_chat_storage(
         connection,
-        assistants_json.as_deref().unwrap_or("[]"),
+        projects_json.as_deref().unwrap_or("[]"),
         sessions_json.as_deref().unwrap_or("[]"),
     )
 }

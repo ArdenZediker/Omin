@@ -295,27 +295,48 @@ pub(crate) fn ensure_knowledge_schema(connection: &Connection) -> Result<(), Str
             [],
         )
         .map_err(|err| err.to_string())?;
-    connection
-        .execute(
-            "CREATE INDEX IF NOT EXISTS idx_knowledge_document_assets_document ON knowledge_document_assets (document_id, asset_index)",
-            [],
-        )
-        .map_err(|err| err.to_string())?;
-    connection
-        .execute(
-            "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_parent_chunk_id ON knowledge_chunks (parent_chunk_id)",
-            [],
-        )
-        .map_err(|err| err.to_string())?;
-    connection
-        .execute(
-            "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_asset_id ON knowledge_chunks (asset_id)",
-            [],
-        )
-        .map_err(|err| err.to_string())?;
 
+    ensure_knowledge_indexes(connection)?;
+    ensure_embedding_cache_table(connection)?;
     crate::knowledge_pipeline::ensure_pipeline_schema(connection)?;
     ensure_knowledge_defaults(connection)?;
 
+    Ok(())
+}
+
+/// 建检索 / worker 扫描热点列索引（P3-#7）。幂等、可单独调用（测试用）。
+pub(crate) fn ensure_knowledge_indexes(connection: &Connection) -> Result<(), String> {
+    let index_ddls = [
+        "CREATE INDEX IF NOT EXISTS idx_knowledge_document_assets_document ON knowledge_document_assets (document_id, asset_index)",
+        "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_parent_chunk_id ON knowledge_chunks (parent_chunk_id)",
+        "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_asset_id ON knowledge_chunks (asset_id)",
+        // 新增索引：加速检索与 worker 扫描（P3-#7）
+        "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document ON knowledge_chunks (document_id)",
+        "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_collection ON knowledge_chunks (collection_id)",
+        "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document_collection ON knowledge_chunks (document_id, collection_id)",
+        "CREATE INDEX IF NOT EXISTS idx_knowledge_documents_collection ON knowledge_documents (collection_id)",
+        "CREATE INDEX IF NOT EXISTS idx_knowledge_documents_status ON knowledge_documents (processing_status)",
+    ];
+    for ddl in index_ddls {
+        connection
+            .execute(ddl, [])
+            .map_err(|err| format!("create index failed ({ddl}): {err}"))?;
+    }
+    Ok(())
+}
+
+/// 建向量缓存表（P3-#8）。幂等、可单独调用（测试用）。
+pub(crate) fn ensure_embedding_cache_table(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute(
+            "CREATE TABLE IF NOT EXISTS embedding_cache (\
+                model_key TEXT NOT NULL, \
+                content_hash TEXT NOT NULL, \
+                embedding_json TEXT NOT NULL, \
+                created_at INTEGER NOT NULL, \
+                PRIMARY KEY (model_key, content_hash))",
+            [],
+        )
+        .map_err(|err| err.to_string())?;
     Ok(())
 }

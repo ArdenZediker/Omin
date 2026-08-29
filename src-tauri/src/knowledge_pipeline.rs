@@ -18,7 +18,6 @@ use std::{
     time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::Manager;
 
 pub const DOCUMENT_STATUS_PENDING: &str = "pending";
 pub const DOCUMENT_STATUS_PROCESSING: &str = "processing";
@@ -894,12 +893,8 @@ fn preview_text(value: &str, max_chars: usize) -> String {
     format!("{clipped}...")
 }
 
-fn knowledge_files_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
-    let root = app_data_dir.join("knowledge_files");
-    fs::create_dir_all(&root).map_err(|err| err.to_string())?;
-    Ok(root)
-}
+// 原本这里和 knowledge_files.rs 各写了一份相同的逻辑，现在统一复用同一份实现。
+pub(crate) use crate::knowledge_files::knowledge_files_root;
 
 fn document_file_name(source_name: &str, document_id: &str) -> String {
     let base = sanitize_storage_file_name(source_name);
@@ -3603,8 +3598,10 @@ fn complete_partial_job(
     }
 
     start_step(connection, job, "embed", 65)?;
+    // P1：embedding 改走非阻塞异步路径（worker 线程不再被长时 HTTP 钉死）。
+    // 返回形状与同步版完全一致，下游 vectorized_chunk_count / 落库逻辑无需改动。
     let (chunk_embeddings, embedding_model_key) =
-        crate::generate_chunk_embeddings_safe(connection, &chunk_slices);
+        crate::generate_chunk_embeddings_async_blocking(connection, &chunk_slices);
     let vectorized_chunk_count = crate::count_vectorized_chunks(&chunk_embeddings);
     let embedding_error = if chunk_slices.is_empty() {
         None

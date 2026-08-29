@@ -12,22 +12,25 @@ pub(crate) const KNOWLEDGE_MULTIMODAL_CONFIG_KEY: &str = "omni_knowledge_multimo
 #[serde(rename_all = "camelCase")]
 struct DbProviderConfigRecord {
     api_key: String,
+    #[serde(default)]
     base_url: Option<String>,
+    #[serde(default)]
     name: Option<String>,
+    #[serde(default)]
     custom_models: Option<JsonValue>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ChatStoragePayload {
-    pub(crate) assistants_json: Option<String>,
+    pub(crate) projects_json: Option<String>,
     pub(crate) sessions_json: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ManifestStoragePayload {
-    pub(crate) assistant_presets_json: Option<String>,
+    pub(crate) project_presets_json: Option<String>,
     pub(crate) tool_manifests_json: Option<String>,
     pub(crate) skill_manifests_json: Option<String>,
 }
@@ -35,7 +38,7 @@ pub(crate) struct ManifestStoragePayload {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MemoryStoragePayload {
-    pub(crate) assistant_memories_json: Option<String>,
+    pub(crate) project_memories_json: Option<String>,
     pub(crate) user_preferences_json: Option<String>,
     pub(crate) session_summaries_json: Option<String>,
 }
@@ -48,13 +51,18 @@ pub(crate) struct AutomationStoragePayload {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DbAssistantProfile {
+struct DbProject {
     id: String,
     kind: String,
+    #[serde(default)]
     source_preset_id: Option<String>,
     title: String,
     description: String,
+    #[serde(default)]
+    workspace_path: String,
+    #[serde(default)]
     system_prompt: Option<String>,
+    #[serde(default)]
     default_model_id: Option<String>,
     allowed_tool_ids: Vec<String>,
     allowed_skill_ids: Vec<String>,
@@ -79,7 +87,7 @@ struct DbChatUsageStats {
 #[serde(rename_all = "camelCase")]
 struct DbChatSession {
     id: String,
-    assistant_id: String,
+    project_id: String,
     title: String,
     messages: serde_json::Value,
     pinned: Option<bool>,
@@ -424,40 +432,40 @@ pub(crate) fn remove_structured_app_value(
 }
 
 pub(crate) fn has_structured_chat_storage(connection: &Connection) -> Result<bool, String> {
-    let assistant_count: i64 = connection
-        .query_row("SELECT COUNT(1) FROM assistants", [], |row| row.get(0))
+    let project_count: i64 = connection
+        .query_row("SELECT COUNT(1) FROM projects", [], |row| row.get(0))
         .map_err(|err| err.to_string())?;
     let session_count: i64 = connection
         .query_row("SELECT COUNT(1) FROM chat_sessions", [], |row| row.get(0))
         .map_err(|err| err.to_string())?;
-    Ok(assistant_count > 0 || session_count > 0)
+    Ok(project_count > 0 || session_count > 0)
 }
 
 pub(crate) fn load_structured_chat_storage(
     connection: &Connection,
 ) -> Result<ChatStoragePayload, String> {
-    let mut assistant_stmt = connection
+    let mut project_stmt = connection
         .prepare(
             r#"
-            SELECT id, kind, title, description, system_prompt, default_model_id, allowed_tool_ids_json, allowed_skill_ids_json, created_at, updated_at
-            SELECT id, kind, source_preset_id, title, description, system_prompt, default_model_id, allowed_tool_ids_json, allowed_skill_ids_json, created_at, updated_at
-            FROM assistants
+            SELECT id, kind, source_preset_id, title, description, system_prompt, default_model_id, allowed_tool_ids_json, allowed_skill_ids_json, created_at, updated_at, workspace_path
+            FROM projects
             ORDER BY created_at ASC, id ASC
             "#,
         )
         .map_err(|err| err.to_string())?;
 
-    let assistants = assistant_stmt
+    let projects = project_stmt
         .query_map([], |row| {
             let allowed_tool_ids_json: String = row.get(7)?;
             let allowed_skill_ids_json: String = row.get(8)?;
 
-            Ok(DbAssistantProfile {
+            Ok(DbProject {
                 id: row.get(0)?,
                 kind: row.get(1)?,
                 source_preset_id: row.get(2)?,
                 title: row.get(3)?,
                 description: row.get(4)?,
+                workspace_path: row.get(11).unwrap_or_default(),
                 system_prompt: row.get(5)?,
                 default_model_id: row.get(6)?,
                 allowed_tool_ids: serde_json::from_str(&allowed_tool_ids_json).unwrap_or_default(),
@@ -474,7 +482,7 @@ pub(crate) fn load_structured_chat_storage(
     let mut session_stmt = connection
         .prepare(
             r#"
-            SELECT id, assistant_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json
+            SELECT id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json
             FROM chat_sessions
             ORDER BY updated_at DESC, created_at DESC, id DESC
             "#,
@@ -488,7 +496,7 @@ pub(crate) fn load_structured_chat_storage(
 
             Ok(DbChatSession {
                 id: row.get(0)?,
-                assistant_id: row.get(1)?,
+                project_id: row.get(1)?,
                 title: row.get(2)?,
                 messages: serde_json::from_str(&messages_json)
                     .unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
@@ -513,25 +521,28 @@ pub(crate) fn load_structured_chat_storage(
         .map_err(|err| err.to_string())?;
 
     Ok(ChatStoragePayload {
-        assistants_json: Some(serde_json::to_string(&assistants).map_err(|err| err.to_string())?),
+        projects_json: Some(serde_json::to_string(&projects).map_err(|err| err.to_string())?),
         sessions_json: Some(serde_json::to_string(&sessions).map_err(|err| err.to_string())?),
     })
 }
 
 pub(crate) fn save_structured_chat_storage(
     connection: &Connection,
-    assistants_json: &str,
+    projects_json: &str,
     sessions_json: &str,
 ) -> Result<(), String> {
-    let assistants: Vec<DbAssistantProfile> =
-        serde_json::from_str(assistants_json).map_err(|err| err.to_string())?;
+    let projects: Vec<DbProject> =
+        serde_json::from_str(projects_json).map_err(|err| err.to_string())?;
     let sessions: Vec<DbChatSession> =
         serde_json::from_str(sessions_json).map_err(|err| err.to_string())?;
 
     let tx = connection
         .unchecked_transaction()
         .map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM assistants", [])
+
+    // 前端以整个快照为真相源，保存前清理不在快照中的旧记录，
+    // 避免 delete_project/delete_chat_session 异步失败或窗口提前关闭导致"幽灵"记录复活。
+    tx.execute("DELETE FROM projects WHERE kind != 'basic'", [])
         .map_err(|err| err.to_string())?;
     tx.execute("DELETE FROM chat_sessions", [])
         .map_err(|err| err.to_string())?;
@@ -540,28 +551,29 @@ pub(crate) fn save_structured_chat_storage(
         let mut stmt = tx
             .prepare(
                 r#"
-                INSERT INTO assistants (
-                  id, kind, source_preset_id, title, description, system_prompt, default_model_id,
+                INSERT OR REPLACE INTO projects (
+                  id, kind, source_preset_id, title, description, workspace_path, system_prompt, default_model_id,
                   allowed_tool_ids_json, allowed_skill_ids_json, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                 "#,
             )
             .map_err(|err| err.to_string())?;
 
-        for assistant in assistants {
+        for project in projects {
             stmt.execute(params![
-                assistant.id,
-                assistant.kind,
-                assistant.source_preset_id,
-                assistant.title,
-                assistant.description,
-                assistant.system_prompt,
-                assistant.default_model_id,
-                serde_json::to_string(&assistant.allowed_tool_ids).map_err(|err| err.to_string())?,
-                serde_json::to_string(&assistant.allowed_skill_ids)
+                project.id,
+                project.kind,
+                project.source_preset_id,
+                project.title,
+                project.description,
+                project.workspace_path,
+                project.system_prompt,
+                project.default_model_id,
+                serde_json::to_string(&project.allowed_tool_ids).map_err(|err| err.to_string())?,
+                serde_json::to_string(&project.allowed_skill_ids)
                     .map_err(|err| err.to_string())?,
-                assistant.created_at,
-                assistant.updated_at,
+                project.created_at,
+                project.updated_at,
             ])
             .map_err(|err| err.to_string())?;
         }
@@ -571,8 +583,8 @@ pub(crate) fn save_structured_chat_storage(
         let mut stmt = tx
             .prepare(
                 r#"
-                INSERT INTO chat_sessions (
-                  id, assistant_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json
+                INSERT OR REPLACE INTO chat_sessions (
+                  id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                 "#,
             )
@@ -581,7 +593,7 @@ pub(crate) fn save_structured_chat_storage(
         for session in sessions {
             stmt.execute(params![
                 session.id,
-                session.assistant_id,
+                session.project_id,
                 session.title,
                 serde_json::to_string(&session.messages).map_err(|err| err.to_string())?,
                 if session.pinned.unwrap_or(false) {
@@ -606,16 +618,34 @@ pub(crate) fn save_structured_chat_storage(
     Ok(())
 }
 
+pub(crate) fn delete_chat_session_by_id(connection: &Connection, id: &str) -> Result<(), String> {
+    connection
+        .execute("DELETE FROM chat_sessions WHERE id = ?1", params![id])
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn delete_project_by_id(connection: &Connection, id: &str) -> Result<(), String> {
+    // 默认助手不允许删除；同时清理其所属会话，避免孤儿记录。
+    connection
+        .execute("DELETE FROM projects WHERE id = ?1 AND kind != 'basic'", params![id])
+        .map_err(|err| err.to_string())?;
+    connection
+        .execute("DELETE FROM chat_sessions WHERE project_id = ?1", params![id])
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
 pub(crate) fn load_manifest_storage(
     connection: &Connection,
 ) -> Result<ManifestStoragePayload, String> {
-    let assistant_presets_json =
-        read_simple_table_value(connection, "assistant_presets", "builtin")?;
+    let project_presets_json =
+        read_simple_table_value(connection, "project_presets", "builtin")?;
     let tool_manifests_json = read_simple_table_value(connection, "tool_manifests", "builtin")?;
     let skill_manifests_json = read_simple_table_value(connection, "skill_manifests", "builtin")?;
 
     Ok(ManifestStoragePayload {
-        assistant_presets_json,
+        project_presets_json,
         tool_manifests_json,
         skill_manifests_json,
     })
@@ -623,12 +653,12 @@ pub(crate) fn load_manifest_storage(
 
 pub(crate) fn save_manifest_storage(
     connection: &Connection,
-    assistant_presets_json: Option<&str>,
+    project_presets_json: Option<&str>,
     tool_manifests_json: Option<&str>,
     skill_manifests_json: Option<&str>,
 ) -> Result<(), String> {
-    if let Some(value) = assistant_presets_json {
-        write_simple_table_value(connection, "assistant_presets", "builtin", value)?;
+    if let Some(value) = project_presets_json {
+        write_simple_table_value(connection, "project_presets", "builtin", value)?;
     }
     if let Some(value) = tool_manifests_json {
         write_simple_table_value(connection, "tool_manifests", "builtin", value)?;
@@ -640,14 +670,14 @@ pub(crate) fn save_manifest_storage(
 }
 
 pub(crate) fn load_memory_storage(connection: &Connection) -> Result<MemoryStoragePayload, String> {
-    let assistant_memories_json =
-        read_simple_table_value(connection, "assistant_memories", "builtin")?;
+    let project_memories_json =
+        read_simple_table_value(connection, "project_memories", "builtin")?;
     let user_preferences_json = read_simple_table_value(connection, "user_preferences", "builtin")?;
     let session_summaries_json =
         read_simple_table_value(connection, "session_summaries", "builtin")?;
 
     Ok(MemoryStoragePayload {
-        assistant_memories_json,
+        project_memories_json,
         user_preferences_json,
         session_summaries_json,
     })
@@ -655,12 +685,12 @@ pub(crate) fn load_memory_storage(connection: &Connection) -> Result<MemoryStora
 
 pub(crate) fn save_memory_storage(
     connection: &Connection,
-    assistant_memories_json: Option<&str>,
+    project_memories_json: Option<&str>,
     user_preferences_json: Option<&str>,
     session_summaries_json: Option<&str>,
 ) -> Result<(), String> {
-    if let Some(value) = assistant_memories_json {
-        write_simple_table_value(connection, "assistant_memories", "builtin", value)?;
+    if let Some(value) = project_memories_json {
+        write_simple_table_value(connection, "project_memories", "builtin", value)?;
     }
     if let Some(value) = user_preferences_json {
         write_simple_table_value(connection, "user_preferences", "builtin", value)?;
