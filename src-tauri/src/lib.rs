@@ -3926,7 +3926,7 @@ async fn list_skillhub_skill_categories(
 ) -> Result<SkillhubCategoriesResult, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<SkillhubCategoriesResult, String> {
         let base = api_base.unwrap_or_else(|| "https://api.skillhub.cn".to_string());
-        let url = format!("{}/api/skills?limit=200", base);
+        let url = format!("{}/api/v1/categories", base);
 
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -3937,26 +3937,32 @@ async fn list_skillhub_skill_categories(
             return Err(format!("SkillHub 接口返回 {}", resp.status()));
         }
         let json: serde_json::Value = resp.json().map_err(|e| format!("解析失败: {e}"))?;
-        let skills = json
-            .get("data")
-            .and_then(|d| d.get("skills"))
+
+        // /api/v1/categories 返回 { count, items: [{ key, name, nameEn, sortOrder, ... }] }
+        // 按官方 sortOrder 排序后，把 name 作为 displayName 返回给前端。
+        let mut items: Vec<serde_json::Value> = json
+            .get("items")
             .and_then(|s| s.as_array())
             .cloned()
             .unwrap_or_default();
+        items.sort_by(|a, b| {
+            let ao = a.get("sortOrder").and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+            let bo = b.get("sortOrder").and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+            ao.cmp(&bo)
+        });
 
-        let mut keys: Vec<String> = skills
-            .iter()
-            .filter_map(|s| s.get("category").and_then(|v| v.as_str()).map(|s| s.to_string()))
-            .collect();
-        keys.sort();
-        keys.dedup();
-
-        let categories: Vec<serde_json::Value> = keys
+        let categories: Vec<serde_json::Value> = items
             .into_iter()
-            .map(|key| {
+            .map(|item| {
+                let key = item.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let display_name = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&key)
+                    .to_string();
                 serde_json::json!({
                     "key": key,
-                    "displayName": key
+                    "displayName": display_name
                 })
             })
             .collect();

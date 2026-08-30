@@ -2,10 +2,12 @@
  * SkillHub 实时接入（参考 @cocofhu/skillhub —— DeepSeek Harness 的 SkillHub 插件）。
  *
  * 该 npm 包文档了 SkillHub 的公共 HTTP API 与安装机制：
- *   - 技能列表   GET /api/skills
- *   - 技能详情   GET /api/v1/skills/{slug}
- *   - 技能下载   GET /api/v1/download?slug={slug}&source=dsh  (zip)
- *   - DSH 插件   GET /api/v1/plugins  /  GET /api/v1/plugins/categories
+ *   - 技能列表       GET /api/skills
+ *   - 技能分类       GET /api/v1/categories
+ *   - 技能详情       GET /api/v1/skills/{slug}
+ *   - 技能下载       GET /api/v1/download?slug={slug}&source=dsh  (zip)
+ *   - DSH 插件       GET /api/v1/plugins
+ *   - DSH 插件分类   GET /api/v1/plugins/categories
  *
  * 我们复用同一套公开 API，并把「技能」落地为 Omni 的 skill 插件：
  * 由 Rust 命令 install_skillhub_skill 下载 zip、解压（带路径穿越防护）、
@@ -53,16 +55,22 @@ export interface SkillhubPluginSummary {
 }
 
 /** SkillHub 技能分类 key → Omni 中文分类。
- * 仅保留 SkillHub /api/skills 实际接受的合法 category key，
- * 避免反向映射时选到一个服务端不认识的别名而报 400。 */
+ * 数据来自 SkillHub 官方 /api/v1/categories（2026-08-30 共 13 个），
+ * 必须与服务端真实 category key 严格对应，避免传中文名或别名导致 400。
+ */
 const SKILLHUB_CATEGORY_MAP: Record<string, string> = {
-  "ai-agent": "AI Agent",
-  "business-ops": "商业运营",
+  "pay-skill": "Pay Skill",
+  "office-efficiency": "办公效率",
   "content-creation": "内容创作",
+  "dev-programming": "开发编程",
   "data-analysis": "数据分析",
   "design-media": "设计多媒体",
-  "dev-programming": "开发编程",
+  "ai-agent": "AI Agent",
   "knowledge-management": "知识管理",
+  "business-ops": "商业运营",
+  "education": "教育学习",
+  "professional": "行业专业",
+  "it-ops-security": "IT 运维与安全",
   "life-service": "生活服务",
 };
 
@@ -99,7 +107,7 @@ export async function listSkillhubSkills(opts: {
 } = {}): Promise<SkillhubSkillSummary[]> {
   // /api/skills 服务端支持英文 category key，前端传中文时反向映射成 key。
   // 不合法的 category 会被服务端 400 拒绝，所以空/全部/未知分类时不传该参数。
-  // sortBy 为服务端排序：downloads / updated / score / stars / installs。
+  // sortBy 真实取值（对齐官网）：downloads / score(默认) / updated_at / stars。
   const categoryKey = reverseSkillhubCategory(opts.category);
   const result = await invoke<{ skills: SkillhubSkillSummary[] }>("list_skillhub_skills", {
     query: opts.query ?? null,

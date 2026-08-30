@@ -280,7 +280,12 @@ export default function SkillhubBrowser() {
     if (tab === "skills") {
       listSkillhubSkillCategories()
         .then((cats) => {
-          const mapped = cats.map((c) => ({ key: c.key, displayName: mapSkillhubCategory(c.key) }));
+          // 后端 /api/v1/categories 已按 sortOrder 排序，displayName 已是中文。
+          // 直接用后端返回的 displayName，避免前端映射表滞后导致显示异常。
+          const mapped: CategoryItem[] = cats.map((c) => ({
+            key: c.key,
+            displayName: c.displayName || mapSkillhubCategory(c.key),
+          }));
           const unique: CategoryItem[] = [{ key: "", displayName: "全部" }];
           for (const item of mapped) {
             if (!unique.some((u) => u.displayName === item.displayName)) {
