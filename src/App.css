@@ -10063,29 +10063,33 @@ body:has(.pet-thought-window),
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__header {
-  padding: 10px 20px 0;
+  padding: 12px 20px 8px;
   border-bottom: none;
 }
 
+.plugin-marketplace--main-view .plugin-marketplace__subtitle {
+  margin-top: 2px;
+}
+
 .plugin-marketplace--main-view .plugin-marketplace__source-tabs {
-  margin-top: 0;
+  margin-top: 10px;
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__search {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__kind-tabs {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__category-bar,
 .plugin-marketplace--main-view .plugin-marketplace__category-tabs {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__body {
-  padding: 0 20px 12px;
+  padding: 8px 20px 12px;
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__footer {
