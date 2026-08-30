@@ -9555,9 +9555,9 @@ body:has(.pet-thought-window),
   margin-top: 10px;
   padding: 0 12px;
   justify-content: flex-start;
-  border: 1px solid var(--omni-panel-border);
+  border: 1px solid var(--omni-frame-border);
   border-radius: 10px;
-  background: var(--omni-soft-bg);
+  background: var(--omni-panel-bg);
   opacity: 1;
   overflow: visible;
 }
