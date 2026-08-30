@@ -9509,6 +9509,30 @@ body:has(.pet-thought-window),
   margin-top: 0;
 }
 
+/* SkillHub 浏览器：搜索与 kind tabs 共用一行，减少垂直留白 */
+.skillhub-browser__top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.skillhub-browser__top-bar .plugin-marketplace__kind-tabs {
+  flex: 1;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.skillhub-browser__top-bar .plugin-marketplace__search {
+  margin-top: 0;
+  flex-shrink: 0;
+  width: 220px;
+}
+
+.plugin-marketplace--main-view .skillhub-browser__top-bar {
+  margin-top: 4px;
+}
+
 .plugin-marketplace__kind-tabs {
   display: flex;
   gap: 8px;

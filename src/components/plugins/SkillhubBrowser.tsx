@@ -360,36 +360,38 @@ export default function SkillhubBrowser() {
 
   return (
     <div className="skillhub-browser">
-      <div className="plugin-marketplace__search">
-        <Search size={15} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索…"
-        />
-      </div>
+      <div className="skillhub-browser__top-bar">
+        <div className="plugin-marketplace__kind-tabs">
+          <button
+            className={
+              tab === "skills"
+                ? "plugin-marketplace__kind-tab plugin-marketplace__kind-tab--active"
+                : "plugin-marketplace__kind-tab"
+            }
+            onClick={() => setTab("skills")}
+          >
+            <Bot size={13} /> 技能（可安装）
+          </button>
+          <button
+            className={
+              tab === "plugins"
+                ? "plugin-marketplace__kind-tab plugin-marketplace__kind-tab--active"
+                : "plugin-marketplace__kind-tab"
+            }
+            onClick={() => setTab("plugins")}
+          >
+            <Puzzle size={13} /> DSH 插件（参考）
+          </button>
+        </div>
 
-      <div className="plugin-marketplace__kind-tabs">
-        <button
-          className={
-            tab === "skills"
-              ? "plugin-marketplace__kind-tab plugin-marketplace__kind-tab--active"
-              : "plugin-marketplace__kind-tab"
-          }
-          onClick={() => setTab("skills")}
-        >
-          <Bot size={13} /> 技能（可安装）
-        </button>
-        <button
-          className={
-            tab === "plugins"
-              ? "plugin-marketplace__kind-tab plugin-marketplace__kind-tab--active"
-              : "plugin-marketplace__kind-tab"
-          }
-          onClick={() => setTab("plugins")}
-        >
-          <Puzzle size={13} /> DSH 插件（参考）
-        </button>
+        <div className="plugin-marketplace__search skillhub-browser__search">
+          <Search size={15} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索…"
+          />
+        </div>
       </div>
 
       {tab === "skills" && skillCategories.length > 1 && (
