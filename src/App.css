@@ -9643,6 +9643,12 @@ body:has(.pet-thought-window),
   display: flex;
   flex-direction: column;
   gap: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.plugin-marketplace__filter-menu::-webkit-scrollbar {
+  display: none;
 }
 
 .plugin-marketplace__filter-item {
@@ -9944,6 +9950,22 @@ body:has(.pet-thought-window),
 
 .skillhub-browser {
   margin-top: 14px;
+}
+
+/* SkillHub 浏览器：统一隐藏所有滚动条 */
+.skillhub-browser * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.skillhub-browser *::-webkit-scrollbar {
+  display: none;
+}
+
+.skillhub-browser *::-webkit-scrollbar-track,
+.skillhub-browser *::-webkit-scrollbar-thumb,
+.skillhub-browser *::-webkit-scrollbar-corner {
+  display: none;
 }
 
 .plugin-card__header {
