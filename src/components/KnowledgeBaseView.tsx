@@ -1,5 +1,5 @@
-import { Component, useEffect, useMemo, useRef, useState } from "react";
-import type { ErrorInfo, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -25,10 +25,7 @@ import {
 } from "lucide-react";
 import type {
   KnowledgeCollection,
-  DeadLetterQueryInput,
   KnowledgeProcessingDeadLetter,
-  DeadLetterQueryResult,
-  KnowledgeDocumentBinaryPayload,
   KnowledgeDocumentDetail,
   KnowledgeLibraryPayload,
   KnowledgePipelineSettings,
@@ -38,13 +35,34 @@ import type {
   RetryFailedJobsResult,
 } from "../chat/knowledgeTypes";
 import {
-  getDefaultCollectionMultimodalConfig,
   getKnowledgeMultimodalModelsByCapability,
   loadKnowledgeMultimodalConfig,
   type KnowledgeCollectionMultimodalConfig,
   type KnowledgeMultimodalConfig,
 } from "../chat/knowledgeMultimodal";
 import { usePromptDialog } from "./PromptDialog";
+import KnowledgeBaseDetailBoundary from "./knowledge/KnowledgeBaseDetailBoundary";
+import {
+  createCollectionSettingsDraft,
+  getKnowledgeUploadBlockMessage,
+  type CollectionSettingsDraft,
+} from "./knowledge/knowledgeCollectionConfig";
+import { renderHighlightedSearchText } from "./knowledge/knowledgeHighlight";
+import {
+  createImageKnowledgeContent,
+  createThumbnailDataUrl,
+  createThumbnailDataUrlFromContent,
+} from "./knowledge/knowledgeThumbnail";
+import {
+  loadKnowledgeDocumentBinary,
+  loadKnowledgeDocumentDetail,
+  loadKnowledgeLibrary,
+  loadKnowledgePipelineSettings,
+  loadKnowledgeProcessingDeadLetters,
+  loadKnowledgeProcessingStatusSummary,
+  saveKnowledgePipelineSettings,
+} from "./knowledge/knowledgeApi";
+import { convertDocxBytesToText, convertPdfBytesToText } from "./knowledge/knowledgeFileConversion";
 import KnowledgeAssetInspector from "./knowledge/KnowledgeAssetInspector";
 import KnowledgeCollectionSidebar from "./knowledge/KnowledgeCollectionSidebar";
 import type { KnowledgeSidebarCategory } from "./knowledge/KnowledgeCollectionSidebar";
@@ -61,12 +79,11 @@ import OmniSwitch from "./ui/OmniSwitch";
 import {
   KNOWLEDGE_UPLOAD_ACCEPT,
   classifyResource,
-  extractThumbnailPreviewLines,
   formatTimestamp,
   getExtension,
   getPreviewKindFromFile,
-  getSearchHighlightTerms,
   normalizeSearchText,
+  openFilePicker,
 } from "./knowledge/knowledgeViewHelpers";
 
 type KnowledgeBaseViewProps = {
@@ -77,13 +94,6 @@ type KnowledgeBaseViewProps = {
 };
 
 type KnowledgePageMode = "empty" | "list" | "detail";
-type CollectionSettingsDraft = {
-  id: string;
-  name: string;
-  description: string;
-  retrievalMode: string;
-  multimodalConfig: KnowledgeCollectionMultimodalConfig;
-};
 type UploadNotice = {
   tone: "success" | "error";
   message: string;
@@ -96,507 +106,6 @@ const CATEGORIES: Omit<KnowledgeSidebarCategory, "count">[] = [
   { id: "audio", title: "音频", description: "音频类资源", icon: Mic },
   { id: "video", title: "视频", description: "视频类资源", icon: PlaySquare },
 ];
-
-class KnowledgeBaseDetailBoundary extends Component<
-  {
-    onBackToList: () => void;
-    onRetry: () => void;
-    children: ReactNode;
-  },
-  {
-    hasError: boolean;
-    errorMessage: string | null;
-  }
-> {
-  state = {
-    hasError: false,
-    errorMessage: null,
-  };
-
-  static getDerivedStateFromError(error: unknown) {
-    return {
-      hasError: true,
-      errorMessage: error instanceof Error ? error.message : "文档详情渲染失败",
-    };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("知识库详情页渲染失败", error, errorInfo);
-  }
-
-  render() {
-    if (!this.state.hasError) {
-      return this.props.children;
-    }
-
-    return (
-      <section className="flex min-h-0 flex-1 items-center justify-center rounded-2xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] p-6">
-        <div className="max-w-md space-y-4 text-center">
-          <div className="text-lg font-semibold text-[var(--omni-app-text)]">文档详情渲染失败</div>
-          <div className="text-sm leading-6 text-[var(--omni-app-muted)]">{this.state.errorMessage ?? "请返回列表后重新打开。"}</div>
-          <div className="flex items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                this.setState({ hasError: false, errorMessage: null });
-                this.props.onRetry();
-              }}
-              className="rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-app-bg)] px-3 py-1.5 text-sm text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
-            >
-              重新打开
-            </button>
-            <button
-              type="button"
-              onClick={this.props.onBackToList}
-              className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
-            >
-              返回列表
-            </button>
-          </div>
-        </div>
-      </section>
-    );
-  }
-}
-
-function hasUsableKnowledgeMultimodalModel(
-  config: KnowledgeMultimodalConfig,
-  capability: "image" | "audio",
-  modelId: string
-) {
-  const normalizedModelId = modelId.trim();
-  if (!config.enabled || !normalizedModelId) {
-    return false;
-  }
-
-  return config.models.some(
-    (model) =>
-      model.id === normalizedModelId &&
-      model.capability === capability &&
-      model.baseUrl.trim() &&
-      model.model.trim() &&
-      model.apiKey.trim()
-  );
-}
-
-function getKnowledgeUploadBlockMessage(
-  file: File,
-  collection: KnowledgeCollection,
-  globalMultimodalConfig: KnowledgeMultimodalConfig
-) {
-  const previewKind = getPreviewKindFromFile(file);
-  const collectionMultimodalConfig = normalizeCollectionMultimodalConfig(collection.multimodalConfig);
-
-  if (previewKind === "video") {
-    return "已阻止本次上传：当前版本暂不支持视频上传到知识库，请先移除视频文件后再上传。";
-  }
-
-  if (previewKind !== "image" && previewKind !== "audio") {
-    return null;
-  }
-
-  const label = previewKind === "image" ? "图片" : "音频";
-  const capabilityConfig = previewKind === "image" ? collectionMultimodalConfig.image : collectionMultimodalConfig.audio;
-
-  if (!collectionMultimodalConfig.enabled) {
-    return `已阻止本次上传：当前知识库未开启多模态分析，请先到知识库设置 -> 多模态中启用并配置${label}模型后再上传${label}。`;
-  }
-
-  if (!capabilityConfig.enabled) {
-    return `已阻止本次上传：当前知识库未开启${label}多模态分析，请先到知识库设置 -> 多模态中开启并配置${label}模型后再上传${label}。`;
-  }
-
-  if (!capabilityConfig.modelId.trim()) {
-    return `已阻止本次上传：当前知识库尚未选择${label}模型，请先到知识库设置 -> 多模态中完成${label}模型配置后再上传${label}。`;
-  }
-
-  if (!hasUsableKnowledgeMultimodalModel(globalMultimodalConfig, previewKind, capabilityConfig.modelId)) {
-    return `已阻止本次上传：当前知识库缺少可用的${label}多模态模型，请先到设置 -> 模型配置 -> 多模态中补充可用模型，并确认知识库设置里已选中对应${label}模型后再上传。`;
-  }
-
-  return null;
-}
-
-function normalizeCollectionMultimodalConfig(
-  config?: KnowledgeCollection["multimodalConfig"] | null
-): KnowledgeCollectionMultimodalConfig {
-  const defaults = getDefaultCollectionMultimodalConfig();
-  return {
-    ...defaults,
-    ...config,
-    image: {
-      ...defaults.image,
-      ...(config?.image ?? {}),
-    },
-    audio: {
-      ...defaults.audio,
-      ...(config?.audio ?? {}),
-    },
-    mergeMode: "append",
-  };
-}
-
-function createCollectionSettingsDraft(collection: KnowledgeCollection): CollectionSettingsDraft {
-  return {
-    id: collection.id,
-    name: collection.name,
-    description: collection.description,
-    retrievalMode: collection.retrievalMode ?? "hybrid",
-    multimodalConfig: normalizeCollectionMultimodalConfig(collection.multimodalConfig),
-  };
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function renderHighlightedSearchText(text: string, query: string) {
-  if (!text) {
-    return text;
-  }
-
-  const terms = getSearchHighlightTerms(query);
-  if (terms.length === 0) {
-    return text;
-  }
-
-  const pattern = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
-  const parts = text.split(pattern);
-  if (parts.length === 1) {
-    return text;
-  }
-
-  const normalizedTerms = new Set(terms.map((term) => term.toLowerCase()));
-  return parts.map((part, index) => {
-    if (!part) {
-      return null;
-    }
-    if (normalizedTerms.has(part.toLowerCase())) {
-      return (
-        <mark key={`match-${index}`} className="rounded bg-amber-100 px-0.5 text-slate-900">
-          {part}
-        </mark>
-      );
-    }
-    return <span key={`text-${index}`}>{part}</span>;
-  });
-}
-
-function fitCanvasTextToWidth(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return "";
-  }
-  if (context.measureText(normalized).width <= maxWidth) {
-    return normalized;
-  }
-
-  const ellipsis = "...";
-  if (context.measureText(ellipsis).width > maxWidth) {
-    return "";
-  }
-
-  let low = 0;
-  let high = normalized.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    const candidate = `${normalized.slice(0, mid).trimEnd()}${ellipsis}`;
-    if (context.measureText(candidate).width <= maxWidth) {
-      low = mid;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  return `${normalized.slice(0, Math.max(0, low)).trimEnd()}${ellipsis}`;
-}
-
-function roundRectPath(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
-  const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
-  context.beginPath();
-  context.moveTo(x + r, y);
-  context.arcTo(x + width, y, x + width, y + height, r);
-  context.arcTo(x + width, y + height, x, y + height, r);
-  context.arcTo(x, y + height, x, y, r);
-  context.arcTo(x, y, x + width, y, r);
-  context.closePath();
-}
-
-function createThumbnailDataUrlFromContent(content: string) {
-  const canvas = document.createElement("canvas");
-  const scale = 2;
-  const width = 320;
-  const height = 180;
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return null;
-  }
-
-  context.scale(scale, scale);
-  context.fillStyle = "#f8fafc";
-  context.fillRect(0, 0, width, height);
-
-  const cardX = 16;
-  const cardY = 14;
-  const cardWidth = 288;
-  const cardHeight = 152;
-
-  context.shadowColor = "rgba(15, 23, 42, 0.08)";
-  context.shadowBlur = 10;
-  context.shadowOffsetY = 3;
-  context.fillStyle = "#ffffff";
-  roundRectPath(context, cardX, cardY, cardWidth, cardHeight, 14);
-  context.fill();
-  context.shadowColor = "transparent";
-  context.strokeStyle = "#dbe3ee";
-  context.lineWidth = 1;
-  context.stroke();
-
-  const lineHeight = 16;
-  const lineTop = 30;
-  const lineLeft = 30;
-  const maxLines = 7;
-  const maxLineWidth = 248;
-  const lines = extractThumbnailPreviewLines(content, maxLines, 96);
-
-  context.save();
-  roundRectPath(context, cardX + 10, cardY + 10, cardWidth - 20, cardHeight - 20, 10);
-  context.clip();
-
-  lines.forEach((line, index) => {
-    context.fillStyle = index === 0 ? "#111827" : "#374151";
-    context.font = index === 0 ? "600 12px 'Segoe UI', sans-serif" : "11px 'Segoe UI', sans-serif";
-    context.textAlign = "left";
-    context.textBaseline = "top";
-    const fittedLine = fitCanvasTextToWidth(context, line, maxLineWidth);
-    context.fillText(fittedLine, lineLeft, lineTop + index * lineHeight);
-  });
-  context.restore();
-
-  return canvas.toDataURL("image/png");
-}
-
-async function createThumbnailDataUrl(file: File, content: string) {
-  if (file.type.startsWith("image/")) {
-    return await new Promise<string | null>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const source = String(reader.result ?? "");
-        const image = new Image();
-        image.onload = () => {
-          const canvas = document.createElement("canvas");
-          const width = 320;
-          const height = 180;
-          canvas.width = width;
-          canvas.height = height;
-          const context = canvas.getContext("2d");
-          if (!context) {
-            resolve(source);
-            return;
-          }
-
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, width, height);
-          context.imageSmoothingEnabled = true;
-          context.imageSmoothingQuality = "high";
-
-          const sourceRatio = image.width / image.height;
-          const targetRatio = width / height;
-          let drawWidth = image.width;
-          let drawHeight = image.height;
-          let offsetX = 0;
-          let offsetY = 0;
-
-          if (sourceRatio > targetRatio) {
-            drawHeight = image.height;
-            drawWidth = drawHeight * targetRatio;
-            offsetX = (image.width - drawWidth) / 2;
-          } else {
-            drawWidth = image.width;
-            drawHeight = drawWidth / targetRatio;
-            offsetY = (image.height - drawHeight) / 2;
-          }
-
-          const inset = 10;
-          context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight, inset, inset, width - inset * 2, height - inset * 2);
-          resolve(canvas.toDataURL("image/png"));
-        };
-        image.onerror = () => resolve(source);
-        image.src = source;
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    });
-  }
-
-  return createThumbnailDataUrlFromContent(content || file.name);
-}
-
-async function createImageKnowledgeContent(file: File) {
-  if (!file.type.startsWith("image/")) {
-    return null;
-  }
-
-  return await new Promise<string | null>((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const source = String(reader.result ?? "");
-      const image = new Image();
-      image.onload = () => {
-        const extension = (getExtension(file.name) || "image").toUpperCase();
-        const sizeKb = Math.max(1, Math.round(file.size / 1024));
-        const mimeLine = file.type ? `MIME: ${file.type}` : null;
-        resolve(
-          [
-            "图片文件",
-            `文件名: ${file.name}`,
-            `格式: ${extension}`,
-            mimeLine,
-            `尺寸: ${image.width} x ${image.height} 像素`,
-            `大小: ${sizeKb} KB`,
-            "说明: 该图片已上传到知识库，可按文件名、格式、尺寸等信息检索。",
-          ]
-            .filter(Boolean)
-            .join("\n")
-        );
-      };
-      image.onerror = () => {
-        const extension = (getExtension(file.name) || "image").toUpperCase();
-        const sizeKb = Math.max(1, Math.round(file.size / 1024));
-        resolve(
-          [
-            "图片文件",
-            `文件名: ${file.name}`,
-            `格式: ${extension}`,
-            file.type ? `MIME: ${file.type}` : null,
-            `大小: ${sizeKb} KB`,
-            "说明: 该图片已上传到知识库，可按文件名和格式信息检索。",
-          ]
-            .filter(Boolean)
-            .join("\n")
-        );
-      };
-      image.src = source;
-    };
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(file);
-  });
-}
-
-function openFilePicker(input: HTMLInputElement | null) {
-  if (!input) {
-    return;
-  }
-  // In desktop webviews, showPicker() may exist but fail silently for file inputs.
-  // click() is the most reliable way to trigger the native file chooser.
-  input.click();
-}
-
-async function loadKnowledgeLibrary() {
-  const payload = await invoke<
-    Omit<KnowledgeLibraryPayload, "collections"> & {
-      collections: Array<KnowledgeCollection & { multimodalConfigJson?: string | null }>;
-    }
-  >("load_knowledge_library_command");
-
-  return {
-    ...payload,
-    collections: payload.collections.map((collection) => {
-      const parsed =
-        collection.multimodalConfig ??
-        (() => {
-          const raw = collection.multimodalConfigJson;
-          if (!raw) {
-            return null;
-          }
-          try {
-            return normalizeCollectionMultimodalConfig(JSON.parse(raw) as KnowledgeCollectionMultimodalConfig);
-          } catch {
-            return normalizeCollectionMultimodalConfig();
-          }
-        })();
-
-      return {
-        ...collection,
-        multimodalConfig: parsed ? normalizeCollectionMultimodalConfig(parsed) : normalizeCollectionMultimodalConfig(),
-      };
-    }),
-  };
-}
-
-async function loadKnowledgeDocumentDetail(documentId: string) {
-  return invoke<KnowledgeDocumentDetail>("load_knowledge_document_command", {
-    input: { documentId },
-  });
-}
-
-async function loadKnowledgeDocumentBinary(documentId: string) {
-  return invoke<KnowledgeDocumentBinaryPayload>("load_knowledge_document_file_command", {
-    input: { documentId },
-  });
-}
-
-async function loadKnowledgeProcessingStatusSummary(collectionId?: string | null) {
-  return invoke<KnowledgeProcessingStatusSummary>("load_knowledge_processing_status_summary_command", {
-    collectionId: collectionId ?? null,
-  });
-}
-
-async function loadKnowledgePipelineSettings() {
-  return invoke<KnowledgePipelineSettings>("load_knowledge_pipeline_settings_command");
-}
-
-async function saveKnowledgePipelineSettings(settings: KnowledgePipelineSettings) {
-  return invoke<KnowledgePipelineSettings>("save_knowledge_pipeline_settings_command", { settings });
-}
-
-async function loadKnowledgeProcessingDeadLetters(input: DeadLetterQueryInput) {
-  return invoke<DeadLetterQueryResult>("load_knowledge_processing_dead_letters_command", { input });
-}
-
-async function convertDocxBytesToText(bytes: Uint8Array) {
-  const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const { default: mammoth } = await import("mammoth/mammoth.browser");
-  const result = await mammoth.extractRawText({ arrayBuffer });
-  return result.value;
-}
-
-async function loadPdfJs() {
-  const [{ getDocument, GlobalWorkerOptions }, workerModule] = await Promise.all([
-    import("pdfjs-dist"),
-    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-  ]);
-  GlobalWorkerOptions.workerSrc = workerModule.default;
-  return { getDocument };
-}
-
-async function convertPdfBytesToText(bytes: Uint8Array) {
-  const { getDocument } = await loadPdfJs();
-  const loadingTask = getDocument({ data: bytes.slice() });
-  const pdf = await loadingTask.promise;
-  const parts: string[] = [];
-
-  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
-    const page = await pdf.getPage(pageIndex);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item) => {
-        if (typeof item === "object" && item && "str" in item) {
-          return String((item as { str: string }).str);
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join(" ");
-    if (pageText.trim()) {
-      parts.push(pageText);
-    }
-  }
-
-  return parts.join("\n\n");
-}
 
 export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpenMarketplace, windowControls }: KnowledgeBaseViewProps) {
   const { openPrompt } = usePromptDialog();

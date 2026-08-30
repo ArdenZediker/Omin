@@ -307,3 +307,16 @@ export function extractThumbnailPreviewLines(content: string, maxLines: number, 
 
   return lines.slice(0, maxLines);
 }
+
+/**
+ * 打开原生文件选择器。
+ *
+ * 桌面 webview 里 showPicker() 可能存在但对 file input 静默失败，
+ * click() 是唯一稳定能唤起系统文件框的方式。
+ */
+export function openFilePicker(input: HTMLInputElement | null) {
+  if (!input) {
+    return;
+  }
+  input.click();
+}

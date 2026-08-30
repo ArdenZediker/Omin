@@ -9,7 +9,6 @@ import {
   Bot,
   Cable,
   Check,
-  GripVertical,
   Compass,
   Cpu,
   FolderOpen,
@@ -56,6 +55,8 @@ import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStora
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import CreateProjectDialog from "./CreateProjectDialog";
+import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
+import ProjectMoveGroupMenu from "./chat/ProjectMoveGroupMenu";
 import ModelSelector from "./ModelSelector";
 import OmniSelect from "./ui/OmniSelect";
 import OmniSwitch from "./ui/OmniSwitch";
@@ -1603,192 +1604,43 @@ export default function MainChatView({
       </aside>
 
       {projectGroupManagerOpen && (
-        <div
-          className="omni-confirm-overlay"
-          onClick={() => {
+        <ProjectGroupManagerDialog
+          groupNames={projectGroupNames}
+          draft={projectGroupDraft}
+          onDraftChange={setProjectGroupDraft}
+          createMode={projectGroupCreateMode}
+          onCreateModeChange={setProjectGroupCreateMode}
+          editingGroupName={editingProjectGroupName}
+          onEditingGroupNameChange={setEditingProjectGroupName}
+          editingDraft={editingProjectGroupDraft}
+          onEditingDraftChange={setEditingProjectGroupDraft}
+          onCreateGroup={handleCreateProjectGroup}
+          onRenameGroup={handleRenameProjectGroup}
+          onDeleteGroup={handleDeleteProjectGroup}
+          onClose={() => {
             setProjectGroupManagerOpen(false);
             setProjectGroupDraft("");
           }}
-        >
-          <div
-            className="omni-confirm-dialog chat-history-panel__group-dialog"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="chat-history-panel__group-dialog-header">
-              <div className="chat-history-panel__group-dialog-title">分组管理</div>
-              <button
-                type="button"
-                className="chat-history-panel__group-dialog-close"
-                onClick={() => {
-                  setProjectGroupManagerOpen(false);
-                  setProjectGroupDraft("");
-                }}
-              >
-                <span aria-hidden="true">×</span>
-              </button>
-            </div>
-            <div className="chat-history-panel__group-dialog-body">
-              <div className="chat-history-panel__group-manager-list">
-                <div className="chat-history-panel__group-manager-item chat-history-panel__group-manager-item--default">
-                  <div className="chat-history-panel__group-manager-row">
-                    <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
-                      <GripVertical size={14} strokeWidth={1.9} />
-                    </span>
-                    <span>{DEFAULT_PROJECT_GROUP_LABEL}</span>
-                  </div>
-                  <span className="chat-history-panel__group-manager-badge">系统</span>
-                </div>
-                {projectGroupNames.length === 0 ? (
-                  <div className="chat-history-panel__group-manager-empty">还没有自定义分组</div>
-                ) : (
-                  projectGroupNames.map((groupName) => (
-                    <div key={groupName} className="chat-history-panel__group-manager-item">
-                      {editingProjectGroupName === groupName ? (
-                        <>
-                          <div className="chat-history-panel__group-manager-row">
-                            <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
-                              <GripVertical size={14} strokeWidth={1.9} />
-                            </span>
-                            <input
-                              className="chat-history-panel__group-manager-inline-input"
-                              value={editingProjectGroupDraft}
-                              onChange={(event) => setEditingProjectGroupDraft(event.target.value)}
-                              onBlur={() => handleRenameProjectGroup(groupName)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  handleRenameProjectGroup(groupName);
-                                }
-                              }}
-                              autoFocus
-                            />
-                          </div>
-                          <div className="chat-history-panel__group-manager-actions">
-                            <button type="button" onClick={() => handleRenameProjectGroup(groupName)}>
-                              <Check size={14} strokeWidth={2} />
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="chat-history-panel__group-manager-row">
-                            <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
-                              <GripVertical size={14} strokeWidth={1.9} />
-                            </span>
-                            <span>{groupName}</span>
-                          </div>
-                          <div className="chat-history-panel__group-manager-actions">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingProjectGroupName(groupName);
-                                setEditingProjectGroupDraft(groupName);
-                              }}
-                            >
-                              <Pencil size={14} strokeWidth={1.9} />
-                            </button>
-                            <button type="button" onClick={() => handleDeleteProjectGroup(groupName)}>
-                              <Trash2 size={14} strokeWidth={1.9} />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-            <div className="chat-history-panel__group-dialog-footer">
-              {projectGroupCreateMode ? (
-                <div className="chat-history-panel__group-create chat-history-panel__group-create--dialog">
-                  <input
-                    value={projectGroupDraft}
-                    onChange={(event) => setProjectGroupDraft(event.target.value)}
-                    placeholder="添加新分组"
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        handleCreateProjectGroup();
-                        setProjectGroupCreateMode(false);
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleCreateProjectGroup();
-                      setProjectGroupCreateMode(false);
-                    }}
-                  >
-                    <Check size={14} strokeWidth={2} />
-                    <span>确认添加</span>
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="chat-history-panel__group-add-button"
-                  onClick={() => setProjectGroupCreateMode(true)}
-                >
-                  <Plus size={14} strokeWidth={1.9} />
-                  <span>添加新分组</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        />
       )}
 
       {projectMoveGroupMenuId && projectMoveGroupMenuPosition && (
-        <div
-          ref={projectMoveGroupMenuRef}
-          className="chat-history-panel__project-submenu chat-history-panel__project-submenu--floating"
-          style={{
-            top: projectMoveGroupMenuPosition.top,
-            left: projectMoveGroupMenuPosition.left,
+        <ProjectMoveGroupMenu
+          projectId={projectMoveGroupMenuId}
+          position={projectMoveGroupMenuPosition}
+          containerRef={projectMoveGroupMenuRef}
+          projects={customProjects}
+          groupNames={projectGroupNames}
+          onSelectGroup={(projectId, groupName) => {
+            onUpdateProject(projectId, { groupName });
           }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {[DEFAULT_PROJECT_GROUP_LABEL, ...projectGroupNames].map((groupName) => {
-            const currentProject = customProjects.find((project) => project.id === projectMoveGroupMenuId);
-            const currentGroupName = currentProject?.groupName?.trim() || DEFAULT_PROJECT_GROUP_LABEL;
-            const isActive = currentGroupName === groupName;
-            return (
-            <button
-              key={`${projectMoveGroupMenuId}-${groupName}-choice`}
-              type="button"
-              className={isActive ? "chat-history-panel__project-group-choice--active" : ""}
-              onClick={(event) => {
-                event.stopPropagation();
-                onUpdateProject(projectMoveGroupMenuId, {
-                  groupName: groupName === DEFAULT_PROJECT_GROUP_LABEL ? null : groupName,
-                });
-                setProjectMoveGroupMenuId(null);
-                setProjectMoveGroupMenuPosition(null);
-                setOpenProjectCardMenuId(null);
-              }}
-            >
-              {isActive ? <Check size={13} strokeWidth={2.2} /> : <span className="chat-history-panel__project-group-choice-spacer" aria-hidden="true" />}
-              <span>{groupName}</span>
-              <span className="chat-history-panel__project-group-choice-tail" aria-hidden="true" />
-            </button>
-            );
-          })}
-          <div className="chat-history-panel__project-dropdown-divider" />
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setProjectMoveGroupMenuId(null);
-              setProjectMoveGroupMenuPosition(null);
-              setOpenProjectCardMenuId(null);
-              setProjectGroupManagerOpen(true);
-            }}
-          >
-            <span className="chat-history-panel__project-dropdown-main">
-              <Plus size={13} strokeWidth={1.9} />
-              <span>添加新分组</span>
-            </span>
-          </button>
-        </div>
+          onDismiss={() => {
+            setProjectMoveGroupMenuId(null);
+            setProjectMoveGroupMenuPosition(null);
+            setOpenProjectCardMenuId(null);
+          }}
+          onOpenGroupManager={() => setProjectGroupManagerOpen(true)}
+        />
       )}
 
       <section className="main-chat-stage">
