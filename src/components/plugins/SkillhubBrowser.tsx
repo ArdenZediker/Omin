@@ -40,9 +40,21 @@ const SORT_OPTIONS = [
 ];
 
 /** SkillHub 的 homepage 字段是接口域名（api.skillhub.cn，不渲染网页），
- * 打开来源页时需要换成能渲染的前端域名（skillhub.cn）。 */
+ * 且路径缺少 /skills/ 前缀。打开来源页时需要：
+ * 1) 换成前端域名 skillhub.cn；
+ * 2) 技能路径前补 /skills/；
+ * 3) DSH 插件路径保持 /plugins/... */
 function toWebUrl(url: string): string {
-  return url.replace(/^https?:\/\/api\.(skillhub\.cn)/i, "https://$1");
+  try {
+    const u = new URL(url);
+    let path = u.pathname.replace(/^\/+/, "");
+    if (path.startsWith("plugins/")) {
+      return `https://skillhub.cn/${path}`;
+    }
+    return `https://skillhub.cn/skills/${path}`;
+  } catch {
+    return url;
+  }
 }
 
 type SkillCardProps = {
