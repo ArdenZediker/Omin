@@ -30,13 +30,15 @@ import {
 type Tab = "skills" | "plugins";
 type CategoryItem = { key: string; displayName: string };
 
+// 排序值严格对齐 SkillHub 官网前端（skill-hub.*.js 的 fetchSkillsPage / 排序下拉），
+// 实测确认生效：downloads / score(默认) / updated_at / stars；
+// 官网无 installs 排序，trending 直连 /api/skills 返回 400，故不纳入。
 const SORT_OPTIONS = [
   { key: "", label: "默认排序" },
   { key: "downloads", label: "下载量" },
-  { key: "updated", label: "最近更新" },
   { key: "score", label: "评分" },
-  { key: "stars", label: "星标" },
-  { key: "installs", label: "安装量" },
+  { key: "updated_at", label: "最近更新" },
+  { key: "stars", label: "收藏量" },
 ];
 
 /** SkillHub 的 homepage 字段是接口域名（api.skillhub.cn，不渲染网页），
