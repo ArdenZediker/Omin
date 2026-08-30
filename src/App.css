@@ -9447,7 +9447,7 @@ body:has(.pet-thought-window),
   background: var(--omni-soft-bg);
 }
 
-.plugin-marketplace__search:not(.plugin-marketplace__search--expanded) {
+.plugin-marketplace__search:not(.plugin-marketplace__search--expanded):not(.skillhub-browser__search) {
   width: 34px;
   height: 34px;
   padding: 0;
@@ -9550,6 +9550,7 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace__search.skillhub-browser__search--expanded,
 .skillhub-browser__search--expanded {
+  width: 100%;
   height: 44px;
   max-height: 44px;
   margin-top: 10px;
