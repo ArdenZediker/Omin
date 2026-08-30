@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
   Download,
@@ -7,50 +7,43 @@ import {
   ExternalLink,
   Loader2,
   AlertTriangle,
-  Puzzle,
   Bot,
+  ChevronDown,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
 import {
   listSkillhubSkills,
-  listSkillhubPlugins,
   listSkillhubSkillCategories,
-  listSkillhubPluginCategories,
   installSkillhubSkill,
   uninstallSkillhubSkill,
   mapSkillToManifest,
   mapSkillhubCategory,
   skillUniqueKey,
   type SkillhubSkillSummary,
-  type SkillhubPluginSummary,
 } from "../../plugins/skillhub";
 
-type Tab = "skills" | "plugins";
 type CategoryItem = { key: string; displayName: string };
 
-// 排序 tab 参考 SkillHub 官网顶部筛选栏（全部 / 近期飙升 / 下载量 / 最近上新）。
-// 底层接口仍使用实测生效的 sortBy：downloads / score / updated_at / stars；
-// 官网无 trending 参数，故「近期飙升」使用 score 作为热门度代理。
-const SORT_TABS = [
-  { key: "", label: "全部" },
-  { key: "score", label: "近期飙升" },
+// 排序值严格对齐 SkillHub 官网前端（skill-hub.*.js 的 fetchSkillsPage / 排序下拉），
+// 实测确认生效：downloads / score(默认) / updated_at / stars；
+// 官网无 installs 排序，trending 直连 /api/skills 返回 400，故不纳入。
+const SORT_OPTIONS = [
+  { key: "", label: "默认排序" },
   { key: "downloads", label: "下载量" },
-  { key: "updated_at", label: "最近上新" },
+  { key: "score", label: "评分" },
+  { key: "updated_at", label: "最近更新" },
+  { key: "stars", label: "收藏量" },
 ];
 
 /** SkillHub 的 homepage 字段是接口域名（api.skillhub.cn，不渲染网页），
  * 且路径缺少 /skills/ 前缀。打开来源页时需要：
  * 1) 换成前端域名 skillhub.cn；
- * 2) 技能路径前补 /skills/；
- * 3) DSH 插件路径保持 /plugins/... */
+ * 2) 技能路径前补 /skills/。 */
 function toWebUrl(url: string): string {
   try {
     const u = new URL(url);
-    let path = u.pathname.replace(/^\/+/, "");
-    if (path.startsWith("plugins/")) {
-      return `https://skillhub.cn/${path}`;
-    }
+    const path = u.pathname.replace(/^\/+/, "");
     return `https://skillhub.cn/skills/${path}`;
   } catch {
     return url;
@@ -137,19 +130,16 @@ const SkillCard = memo(function SkillCard({ skill, isInstalled, isInstalling, on
 
 /**
  * SkillHub 实时浏览/安装面板。
- * - 「技能」标签：来自 SkillHub 的 DSH 风格 SKILL.md 技能，可一键安装进 Omni（一切皆插件）。
- * - 「DSH 插件」标签：SkillHub 上的 DSH/Cordis 插件，仅作参考（需在 DeepSeek Harness 中安装）。
+ * 来自 SkillHub 的 DSH 风格 SKILL.md 技能，可一键安装进 Omni（一切皆插件）。
  * 参考 @cocofhu/skillhub（DeepSeek Harness 的 SkillHub 插件）的 API 与安装机制。
  */
 export default function SkillhubBrowser() {
-  const [tab, setTab] = useState<Tab>("skills");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("全部");
   const [sortBy, setSortBy] = useState("");
+  const [sortOpen, setSortOpen] = useState(false);
   const [skills, setSkills] = useState<SkillhubSkillSummary[]>([]);
-  const [plugins, setPlugins] = useState<SkillhubPluginSummary[]>([]);
   const [skillCategories, setSkillCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
-  const [pluginCategories, setPluginCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,18 +148,10 @@ export default function SkillhubBrowser() {
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const sortRef = useRef<HTMLDivElement | null>(null);
   // 异步回调里需要读到最新的 skills 做去重，用 ref 避免闭包过期
   const skillsRef = useRef<SkillhubSkillSummary[]>([]);
   skillsRef.current = skills;
-
-  // 当前分类对应的英文 key：技能用映射表反查，插件直接用分类列表中的 key
-  const currentCategoryKey = useMemo(() => {
-    if (category === "全部") return "";
-    if (tab === "skills") {
-      return skillCategories.find((c) => c.displayName === category)?.key ?? "";
-    }
-    return pluginCategories.find((c) => c.displayName === category)?.key ?? "";
-  }, [category, tab, skillCategories, pluginCategories]);
 
   const refreshInstalled = useCallback(() => {
     setInstalled((prev) => {
@@ -204,10 +186,10 @@ export default function SkillhubBrowser() {
       try {
         const pageSkills = await listSkillhubSkills({
           query,
-          category: tab === "skills" ? category : undefined,
+          category,
           page: targetPage,
           limit: 60,
-          sortBy: tab === "skills" ? sortBy : undefined,
+          sortBy,
         });
         // 按唯一键去重（不同 namespace 下 slug 可能重复），只保留本次真正新增的条目
         const prevKeys = append ? new Set(skillsRef.current.map(skillUniqueKey)) : new Set<string>();
@@ -234,59 +216,44 @@ export default function SkillhubBrowser() {
     [query, category, sortBy],
   );
 
-  const loadPlugins = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setPlugins(await listSkillhubPlugins({ query, category: currentCategoryKey }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [query, currentCategoryKey]);
-
-  // 切换 tab / 搜索 / 分类 / 排序时重置并加载第一页
+  // 搜索 / 分类 / 排序变化时重置并加载第一页
   useEffect(() => {
     resetSkills();
-    if (tab === "skills") void loadSkills(1, false);
-    else void loadPlugins();
-  }, [tab, query, category, sortBy, loadSkills, loadPlugins, resetSkills]);
-
-  // 切换 tab 时清空当前分类选择
-  useEffect(() => {
-    setCategory("全部");
-    setSortBy("");
-  }, [tab]);
+    void loadSkills(1, false);
+  }, [query, category, sortBy, loadSkills, resetSkills]);
 
   // 动态加载 SkillHub 官方分类，避免写死分类导致空 tab
   useEffect(() => {
-    if (tab === "skills") {
-      listSkillhubSkillCategories()
-        .then((cats) => {
-          // 后端 /api/v1/categories 已按 sortOrder 排序，displayName 已是中文。
-          // 直接用后端返回的 displayName，避免前端映射表滞后导致显示异常。
-          const mapped: CategoryItem[] = cats.map((c) => ({
-            key: c.key,
-            displayName: c.displayName || mapSkillhubCategory(c.key),
-          }));
-          const unique: CategoryItem[] = [{ key: "", displayName: "全部" }];
-          for (const item of mapped) {
-            if (!unique.some((u) => u.displayName === item.displayName)) {
-              unique.push(item);
-            }
+    listSkillhubSkillCategories()
+      .then((cats) => {
+        // 后端 /api/v1/categories 已按 sortOrder 排序，displayName 已是中文。
+        // 直接用后端返回的 displayName，避免前端映射表滞后导致显示异常。
+        const mapped: CategoryItem[] = cats.map((c) => ({
+          key: c.key,
+          displayName: c.displayName || mapSkillhubCategory(c.key),
+        }));
+        const unique: CategoryItem[] = [{ key: "", displayName: "全部" }];
+        for (const item of mapped) {
+          if (!unique.some((u) => u.displayName === item.displayName)) {
+            unique.push(item);
           }
-          setSkillCategories(unique);
-        })
-        .catch(() => {});
-    } else {
-      listSkillhubPluginCategories()
-        .then((cats) => {
-          setPluginCategories([{ key: "", displayName: "全部" }, ...cats]);
-        })
-        .catch(() => {});
+        }
+        setSkillCategories(unique);
+      })
+      .catch(() => {});
+  }, []);
+
+  // 点击外部关闭排序下拉菜单
+  useEffect(() => {
+    if (!sortOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
+        setSortOpen(false);
+      }
     }
-  }, [tab]);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [sortOpen]);
 
   useEffect(() => {
     refreshInstalled();
@@ -372,82 +339,53 @@ export default function SkillhubBrowser() {
 
   return (
     <div className="skillhub-browser">
-      <div className="skillhub-browser__top-bar">
-        <div className="plugin-marketplace__kind-tabs">
-          <button
-            className={
-              tab === "skills"
-                ? "plugin-marketplace__kind-tab plugin-marketplace__kind-tab--active"
-                : "plugin-marketplace__kind-tab"
-            }
-            onClick={() => setTab("skills")}
-          >
-            <Bot size={13} /> 技能（可安装）
-          </button>
-          <button
-            className={
-              tab === "plugins"
-                ? "plugin-marketplace__kind-tab plugin-marketplace__kind-tab--active"
-                : "plugin-marketplace__kind-tab"
-            }
-            onClick={() => setTab("plugins")}
-          >
-            <Puzzle size={13} /> DSH 插件（参考）
-          </button>
-        </div>
-      </div>
-
-      {tab === "skills" && (
-        <div className="plugin-marketplace__sort-tabs">
-          {SORT_TABS.map((o) => (
+      {skillCategories.length > 1 && (
+        <div className="plugin-marketplace__category-bar">
+          <div className="plugin-marketplace__category-tabs">
+            {skillCategories.map((c) => (
+              <button
+                key={c.key || c.displayName}
+                className={
+                  category === c.displayName
+                    ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
+                    : "plugin-marketplace__category-tab"
+                }
+                onClick={() => setCategory(c.displayName)}
+              >
+                {c.displayName}
+              </button>
+            ))}
+          </div>
+          <div className="plugin-marketplace__sort" ref={sortRef}>
             <button
-              key={o.key || "default"}
-              className={
-                sortBy === o.key
-                  ? "plugin-marketplace__sort-tab plugin-marketplace__sort-tab--active"
-                  : "plugin-marketplace__sort-tab"
-              }
-              onClick={() => setSortBy(o.key)}
+              className="plugin-marketplace__sort-trigger"
+              onClick={() => setSortOpen((v) => !v)}
+              title="排序"
             >
-              {o.label}
+              {SORT_OPTIONS.find((o) => o.key === sortBy)?.label ?? "默认排序"}
+              <ChevronDown size={14} />
             </button>
-          ))}
-        </div>
-      )}
-
-      {tab === "skills" && skillCategories.length > 1 && (
-        <div className="plugin-marketplace__category-tabs">
-          {skillCategories.map((c) => (
-            <button
-              key={c.key || c.displayName}
-              className={
-                category === c.displayName
-                  ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
-                  : "plugin-marketplace__category-tab"
-              }
-              onClick={() => setCategory(c.displayName)}
-            >
-              {c.displayName}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {tab === "plugins" && pluginCategories.length > 1 && (
-        <div className="plugin-marketplace__category-tabs">
-          {pluginCategories.map((c) => (
-            <button
-              key={c.key || c.displayName}
-              className={
-                category === c.displayName
-                  ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
-                  : "plugin-marketplace__category-tab"
-              }
-              onClick={() => setCategory(c.displayName)}
-            >
-              {c.displayName}
-            </button>
-          ))}
+            {sortOpen && (
+              <div className="plugin-marketplace__sort-menu">
+                {SORT_OPTIONS.map((o) => (
+                  <button
+                    key={o.key || "default"}
+                    className={
+                      sortBy === o.key
+                        ? "plugin-marketplace__sort-item plugin-marketplace__sort-item--active"
+                        : "plugin-marketplace__sort-item"
+                    }
+                    onClick={() => {
+                      setSortBy(o.key);
+                      setSortOpen(false);
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -470,82 +408,26 @@ export default function SkillhubBrowser() {
           <AlertTriangle size={15} /> {error}
         </div>
       )}
-      {!loading && !error && tab === "skills" && skills.length === 0 && (
+      {!loading && !error && skills.length === 0 && (
         <div className="skillhub-browser__empty">未找到技能</div>
-      )}
-      {!loading && !error && tab === "plugins" && plugins.length === 0 && (
-        <div className="skillhub-browser__empty">未找到 DSH 插件</div>
       )}
 
       <div ref={gridRef} className="plugin-marketplace__grid" style={{ marginTop: 14 }}>
-        {tab === "skills" &&
-          skills.map((s) => {
-            const key = skillUniqueKey(s);
-            return (
-              <SkillCard
-                key={key}
-                skill={s}
-                isInstalled={installed.has(key)}
-                isInstalling={installing === key}
-                onInstall={handleInstall}
-                onUninstall={handleUninstall}
-              />
-            );
-          })}
+        {skills.map((s) => {
+          const key = skillUniqueKey(s);
+          return (
+            <SkillCard
+              key={key}
+              skill={s}
+              isInstalled={installed.has(key)}
+              isInstalling={installing === key}
+              onInstall={handleInstall}
+              onUninstall={handleUninstall}
+            />
+          );
+        })}
 
-        {tab === "plugins" &&
-          plugins.map((p) => (
-            <div className="plugin-card" key={p.fullName}>
-              <div className="plugin-card__header">
-                <div className="plugin-card__icon">
-                  {p.avatarUrl ? (
-                    <img
-                      src={p.avatarUrl}
-                      alt=""
-                      style={{ width: 22, height: 22, borderRadius: 6 }}
-                    />
-                  ) : (
-                    <Puzzle size={18} />
-                  )}
-                </div>
-                <div className="plugin-card__main">
-                  <div className="plugin-card__title-row">
-                    <h3>{p.name}</h3>
-                    <span className="plugin-card__badge">{p.categoryKey}</span>
-                  </div>
-                </div>
-              </div>
-              <p className="plugin-card__description">{p.description}</p>
-              <div className="plugin-card__meta">
-                <span>
-                  <Star size={12} /> {p.stars ?? 0}
-                </span>
-                {p.license && <span>{p.license}</span>}
-                {p.installability && <span>{p.installability}</span>}
-              </div>
-              <div className="plugin-card__actions">
-                {p.repositoryUrl && (
-                  <a
-                    className="plugin-card__button plugin-card__button--secondary"
-                    href={p.repositoryUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <ExternalLink size={14} /> GitHub
-                  </a>
-                )}
-                <span
-                  className="plugin-card__badge"
-                  style={{ flex: 1, textAlign: "center" }}
-                  title="DSH 插件为 Cordis 插件，需在 DeepSeek Harness 中安装"
-                >
-                  DSH 专用
-                </span>
-              </div>
-            </div>
-          ))}
-
-        {tab === "skills" && !loading && skills.length > 0 && (
+        {!loading && skills.length > 0 && (
           <div className="skillhub-browser__load-more">
             {loadingMore ? (
               <span className="skillhub-browser__loading">
