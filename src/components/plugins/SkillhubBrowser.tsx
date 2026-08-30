@@ -41,6 +41,12 @@ const API_KEY_OPTIONS = [
   { key: "required", label: "需要 API Key" },
 ];
 
+const SOURCE_OPTIONS = [
+  { key: "", label: "所有来源" },
+  { key: "clawhub", label: "ClawHub" },
+  { key: "skillhub", label: "SkillHub" },
+];
+
 /** SkillHub 的 homepage 字段是接口域名（api.skillhub.cn，不渲染网页），
  * 且路径缺少 /skills/ 前缀。打开来源页时需要：
  * 1) 换成前端域名 skillhub.cn；
@@ -145,6 +151,8 @@ export default function SkillhubBrowser() {
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [apiKeyFilter, setApiKeyFilter] = useState<"all" | "required" | "not_required">("all");
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [sourceOpen, setSourceOpen] = useState(false);
   const [skills, setSkills] = useState<SkillhubSkillSummary[]>([]);
   const [skillCategories, setSkillCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
   const [loading, setLoading] = useState(false);
@@ -158,6 +166,7 @@ export default function SkillhubBrowser() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const categoryRef = useRef<HTMLDivElement | null>(null);
   const apiKeyRef = useRef<HTMLDivElement | null>(null);
+  const sourceRef = useRef<HTMLDivElement | null>(null);
   // 异步回调里需要读到最新的 skills 做去重，用 ref 避免闭包过期
   const skillsRef = useRef<SkillhubSkillSummary[]>([]);
   skillsRef.current = skills;
@@ -204,6 +213,7 @@ export default function SkillhubBrowser() {
           limit: 60,
           sortBy,
           labels,
+          source: sourceFilter,
         });
         // 按唯一键去重（不同 namespace 下 slug 可能重复），只保留本次真正新增的条目
         const prevKeys = append ? new Set(skillsRef.current.map(skillUniqueKey)) : new Set<string>();
@@ -227,14 +237,14 @@ export default function SkillhubBrowser() {
         setLoadingMore(false);
       }
     },
-    [query, category, sortBy, apiKeyFilter],
+    [query, category, sortBy, apiKeyFilter, sourceFilter],
   );
 
-  // 搜索 / 分类 / 排序 / API Key 筛选变化时重置并加载第一页
+  // 搜索 / 分类 / 排序 / API Key / 来源筛选变化时重置并加载第一页
   useEffect(() => {
     resetSkills();
     void loadSkills(1, false);
-  }, [query, category, sortBy, apiKeyFilter, loadSkills, resetSkills]);
+  }, [query, category, sortBy, apiKeyFilter, sourceFilter, loadSkills, resetSkills]);
 
   // 动态加载 SkillHub 官方分类，避免写死分类导致空 tab
   useEffect(() => {
@@ -257,9 +267,9 @@ export default function SkillhubBrowser() {
       .catch(() => {});
   }, []);
 
-  // 点击外部关闭分类 / API Key 下拉菜单
+  // 点击外部关闭分类 / API Key / 来源下拉菜单
   useEffect(() => {
-    if (!categoryOpen && !apiKeyOpen) return;
+    if (!categoryOpen && !apiKeyOpen && !sourceOpen) return;
     function handleClick(e: MouseEvent) {
       if (categoryRef.current && !categoryRef.current.contains(e.target as Node)) {
         setCategoryOpen(false);
@@ -267,10 +277,13 @@ export default function SkillhubBrowser() {
       if (apiKeyRef.current && !apiKeyRef.current.contains(e.target as Node)) {
         setApiKeyOpen(false);
       }
+      if (sourceRef.current && !sourceRef.current.contains(e.target as Node)) {
+        setSourceOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [categoryOpen, apiKeyOpen]);
+  }, [categoryOpen, apiKeyOpen, sourceOpen]);
 
   useEffect(() => {
     refreshInstalled();
@@ -427,6 +440,37 @@ export default function SkillhubBrowser() {
                     onClick={() => {
                       setApiKeyFilter(o.key as typeof apiKeyFilter);
                       setApiKeyOpen(false);
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="plugin-marketplace__filter" ref={sourceRef}>
+            <button
+              className="plugin-marketplace__filter-trigger"
+              onClick={() => setSourceOpen((v) => !v)}
+              title="来源"
+            >
+              {SOURCE_OPTIONS.find((o) => o.key === sourceFilter)?.label ?? "所有来源"}
+              <ChevronDown size={14} />
+            </button>
+            {sourceOpen && (
+              <div className="plugin-marketplace__filter-menu">
+                {SOURCE_OPTIONS.map((o) => (
+                  <button
+                    key={o.key || "all"}
+                    className={
+                      sourceFilter === o.key
+                        ? "plugin-marketplace__filter-item plugin-marketplace__filter-item--active"
+                        : "plugin-marketplace__filter-item"
+                    }
+                    onClick={() => {
+                      setSourceFilter(o.key);
+                      setSourceOpen(false);
                     }}
                   >
                     {o.label}

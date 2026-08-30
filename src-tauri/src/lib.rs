@@ -3870,6 +3870,7 @@ async fn list_skillhub_skills(
     limit: Option<u32>,
     sort_by: Option<String>,
     labels: Option<String>,
+    source: Option<String>,
     api_base: Option<String>,
 ) -> Result<SkillhubListSkillsResult, String> {
     // 关键：这里必须用 spawn_blocking 把阻塞的 HTTP 请求挪出 UI 线程。
@@ -3901,6 +3902,11 @@ async fn list_skillhub_skills(
                 // 服务端 label 过滤形如 labels=requires_api_key:true（冒号需 URL 编码）
                 let encoded = l.replace(':', "%3A").replace(',', "%2C");
                 url.push_str(&format!("&labels={}", encoded));
+            }
+        }
+        if let Some(s) = source.as_deref() {
+            if !s.is_empty() {
+                url.push_str(&format!("&source={}", s));
             }
         }
 
