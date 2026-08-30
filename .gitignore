@@ -26,18 +26,12 @@ src-tauri/gen/schemas
 # Tauri / Rust local files
 **/*.rs.bk
 # 临时 cargo 编译目录（沙箱/验证用，非项目产物）
+# 用通配一次性覆盖所有编号变体，避免再次漏写导致构建产物误入库。
 target_check/
+target_check*/
 target_verify/
 target_fresh/
-target_check2/
-target_check3/
-target_check4/
-target_check5/
-target_check6/
-target_check7/
-target_check8/
-target_check9/
-target_sandbox3/
+target_sandbox*/
 target_skillhub_fix/
 cargo_check.log
 
