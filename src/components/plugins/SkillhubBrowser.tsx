@@ -43,8 +43,9 @@ const API_KEY_OPTIONS = [
 
 const SOURCE_OPTIONS = [
   { key: "", label: "所有来源" },
-  { key: "clawhub", label: "ClawHub" },
-  { key: "skillhub", label: "SkillHub" },
+  { key: "dev-programming", label: "dev-programming" },
+  { key: "clawhub", label: "clawhub" },
+  { key: "community", label: "community" },
 ];
 
 /** SkillHub 的 homepage 字段是接口域名（api.skillhub.cn，不渲染网页），
