@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { emit, emitTo, listen } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import type { Message, ModelConfig } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { isMainWindowUserVisible } from "../app/window";
@@ -14,17 +14,22 @@ import { executeLocalTool } from "../chat/localTools";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { ProjectMemorySourceType, Project, ChatExecutionResult, ChatSendOptions } from "../chat/types";
 import type { ProjectMemoryRecord, SessionSummaryRecord } from "../chat/types";
-import { getToolManifestById } from "../config/manifests/tools";
 import type { PetThoughtState } from "../app/types";
 import type { ViewMode } from "../app/types";
 import { getPetThoughtKey, matchesPetThought } from "../app/petThoughts";
-
-type SessionLite = {
-  id: string;
-  projectId?: string;
-  title: string;
-  messages: Message[];
-};
+import {
+  type SessionLite,
+  resolveEnabledToolNames,
+  SILENT_LOCAL_TOOL_IDS,
+  PET_THOUGHT_QUEUE_LIMIT,
+  PET_THOUGHT_DISMISS_DELAY_MS,
+  type PetThoughtSyncRequestPayload,
+  type PetThoughtSyncResponsePayload,
+  createPreviewThrottler,
+  safelyEmitPetThoughtEvent,
+  safelyEmitPetThoughtEventTo,
+  canUseTauriEvents,
+} from "./chatRuntimeHelpers";
 
 type UseChatRuntimeArgs = {
   activeChatId: string | null;
@@ -59,83 +64,9 @@ type UseChatRuntimeArgs = {
   view: ViewMode;
 };
 
-function resolveEnabledToolNames(project: Project | null) {
-  if (!project) {
-    return { toolNames: [], toolDescriptions: {} };
-  }
-  const toolNames: string[] = [];
-  const toolDescriptions: Record<string, string> = {};
-  for (const toolId of new Set(project.allowedToolIds)) {
-    const manifest = getToolManifestById(toolId);
-    if (!manifest?.title) continue;
-    toolNames.push(manifest.title);
-    // 仿 deepseek「插件自带指令」：优先使用 manifest 的声明式提示贡献。
-    const contribution = manifest.promptContribution ?? manifest.description;
-    if (contribution) {
-      toolDescriptions[manifest.title] = contribution;
-    }
-  }
-  return { toolNames, toolDescriptions };
-}
+// 会话运行时辅助函数（工具解析 / 宠物思考事件同步 / 节流器）已抽到 ./chatRuntimeHelpers。
 
-const SILENT_LOCAL_TOOL_IDS = new Set([
-  "model",
-  "pet",
-]);
 
-const PET_THOUGHT_QUEUE_LIMIT = 12;
-const PET_THOUGHT_DISMISS_DELAY_MS = 900;
-
-type PetThoughtSyncRequestPayload = {
-  requesterLabel?: string;
-  requestId?: string;
-};
-
-type PetThoughtSyncResponsePayload = {
-  requestId?: string;
-  queue: PetThoughtState[];
-  currentThought: PetThoughtState | null;
-};
-
-function createPreviewThrottler(intervalMs: number, update: () => void) {
-  let lastUpdateAt = 0;
-  return (force = false) => {
-    const now = performance.now();
-    if (!force && now - lastUpdateAt < intervalMs) {
-      return;
-    }
-    lastUpdateAt = now;
-    update();
-  };
-}
-
-function canUseTauriEvents() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-function safelyEmitPetThoughtEvent(event: string, payload: unknown) {
-  if (!canUseTauriEvents()) {
-    return;
-  }
-
-  try {
-    void emit(event, payload).catch(() => undefined);
-  } catch {
-    // Pet bubble sync must never interrupt the model response stream.
-  }
-}
-
-function safelyEmitPetThoughtEventTo(windowLabel: string, event: string, payload: unknown) {
-  if (!canUseTauriEvents()) {
-    return;
-  }
-
-  try {
-    void emitTo(windowLabel, event, payload).catch(() => undefined);
-  } catch {
-    // A missing/closing auxiliary window should not affect chat execution.
-  }
-}
 
 export function useChatRuntime({
   activeChatId,

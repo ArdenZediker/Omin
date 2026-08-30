@@ -42,6 +42,7 @@ import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
 import { useMainWindowController } from "./hooks/useMainWindowController";
 import { useCompactWindowController } from "./hooks/useCompactWindowController";
+import ErrorBoundary from "./components/ErrorBoundary";
 import {
   type CompactAppearance,
   useCompactWindowState,
@@ -108,14 +109,26 @@ const isSettingsWindow = appWindow?.label === "settings";
 
 function App() {
   if (isSettingsWindow) {
-    return <SettingsWindow />;
+    return (
+      <ErrorBoundary>
+        <SettingsWindow />
+      </ErrorBoundary>
+    );
   }
 
   if (isPetThoughtWindow) {
-    return <PetThoughtWindow petSize={getCompactWindowSize("pet", getPetWindowScale())} />;
+    return (
+      <ErrorBoundary>
+        <PetThoughtWindow petSize={getCompactWindowSize("pet", getPetWindowScale())} />
+      </ErrorBoundary>
+    );
   }
 
-  return <MainApp />;
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
+  );
 }
 
 function MainApp() {
