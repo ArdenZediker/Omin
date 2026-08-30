@@ -365,7 +365,7 @@ export default function SkillhubBrowser() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索 SkillHub 技能 / 插件…"
+          placeholder="搜索…"
         />
       </div>
 
