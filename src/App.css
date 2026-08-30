@@ -9548,6 +9548,7 @@ body:has(.pet-thought-window),
     border-width 0.22s ease;
 }
 
+.plugin-marketplace__search.skillhub-browser__search--expanded,
 .skillhub-browser__search--expanded {
   height: 44px;
   max-height: 44px;
@@ -9561,6 +9562,7 @@ body:has(.pet-thought-window),
   overflow: visible;
 }
 
+.plugin-marketplace--main-view .plugin-marketplace__search.skillhub-browser__search--expanded,
 .plugin-marketplace--main-view .skillhub-browser__search--expanded {
   margin-top: 8px;
 }
