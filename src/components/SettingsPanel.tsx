@@ -4,9 +4,8 @@ import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showCompactWindow } from "../app/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { Cuboid, Database, MessageSquareText, Paintbrush, Puzzle, Settings, Sparkles } from "lucide-react";
+import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
-import PluginMarketplace from "./plugins/PluginMarketplace";
 import type { CustomModelConfig } from "../adapters/types";
 import type { ChatUsagePreferences } from "../chat/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
@@ -739,20 +738,6 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
             </span>
             数据存储
           </button>
-          <button
-            type="button"
-            onClick={() => setSection("plugins")}
-            className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
-              section === "plugins"
-                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
-            }`}
-          >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-amber-100 text-amber-700">
-              <Puzzle size={13} strokeWidth={1.8} />
-            </span>
-            插件广场
-          </button>
         </div>
       </aside>
 
@@ -766,9 +751,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                   ? "个性化"
                   : section === "storage"
                     ? "数据存储"
-                    : section === "plugins"
-                      ? "插件广场"
-                      : "模型配置"}
+                    : "模型配置"}
             </h2>
             <p className="omni-settings-muted text-[11px] text-slate-500">
               {section === "basic"
@@ -777,9 +760,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                   ? "调整 Omni 的回复风格、语调与自定义指令。"
                   : section === "storage"
                     ? "管理数据库、知识库文件存放位置与整库备份。"
-                    : section === "plugins"
-                      ? "发现、安装和管理技能、工具、连接器与专家插件。"
-                      : "通过模型列表新增或编辑 OpenAI 兼容模型。"}
+                    : "通过模型列表新增或编辑 OpenAI 兼容模型。"}
             </p>
           </div>
           <div className="no-drag flex items-center gap-2">
@@ -825,8 +806,6 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
               <PersonalizationSettingsSection />
             ) : section === "storage" ? (
               <StorageSettingsSection />
-            ) : section === "plugins" ? (
-              <PluginMarketplace onClose={() => setSection("basic")} />
             ) : (
               <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-6">
                 <aside className="omni-model-section-sidebar min-w-0 self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">
