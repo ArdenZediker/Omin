@@ -104,10 +104,12 @@ export async function listSkillhubSkills(opts: {
   page?: number;
   limit?: number;
   sortBy?: string;
+  labels?: string;
 } = {}): Promise<SkillhubSkillSummary[]> {
   // /api/skills 服务端支持英文 category key，前端传中文时反向映射成 key。
   // 不合法的 category 会被服务端 400 拒绝，所以空/全部/未知分类时不传该参数。
   // sortBy 真实取值（对齐官网）：downloads / score(默认) / updated_at / stars。
+  // labels 用于服务端 label 过滤（如 requires_api_key:true，Rust 侧做 URL 编码）。
   const categoryKey = reverseSkillhubCategory(opts.category);
   const result = await invoke<{ skills: SkillhubSkillSummary[] }>("list_skillhub_skills", {
     query: opts.query ?? null,
@@ -115,6 +117,7 @@ export async function listSkillhubSkills(opts: {
     page: opts.page ?? 1,
     limit: opts.limit ?? 60,
     sortBy: opts.sortBy ?? null,
+    labels: opts.labels ?? null,
   });
   // 搜索已由服务端 keyword 参数完成，这里不再做前端过滤。
   return result.skills ?? [];

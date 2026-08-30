@@ -192,6 +192,10 @@ export default function SkillhubBrowser() {
       if (targetPage === 1) setLoading(true);
       else setLoadingMore(true);
       setError(null);
+      // API Key 筛选改为服务端 labels 参数（requires_api_key:true / :false），
+      // 避免前端过滤造成分页数量错位。
+      const labels =
+        apiKeyFilter === "all" ? undefined : `requires_api_key:${apiKeyFilter === "required" ? "true" : "false"}`;
       try {
         const pageSkills = await listSkillhubSkills({
           query,
@@ -199,6 +203,7 @@ export default function SkillhubBrowser() {
           page: targetPage,
           limit: 60,
           sortBy,
+          labels,
         });
         // 按唯一键去重（不同 namespace 下 slug 可能重复），只保留本次真正新增的条目
         const prevKeys = append ? new Set(skillsRef.current.map(skillUniqueKey)) : new Set<string>();
@@ -209,20 +214,11 @@ export default function SkillhubBrowser() {
           seen.add(key);
           return true;
         });
-        // API Key 筛选在前端做（服务端无对应参数）
-        const filtered =
-          apiKeyFilter === "all"
-            ? fresh
-            : fresh.filter((s) => {
-                const requires = s.labels?.requires_api_key === "true";
-                if (apiKeyFilter === "required") return requires;
-                return !requires;
-              });
-        setSkills((prev) => (append ? [...prev, ...filtered] : filtered));
+        setSkills((prev) => (append ? [...prev, ...fresh] : fresh));
         const stillMore = pageSkills.length >= 20; // 服务端每页约 20 条，等于 20 认为还有下一页
         setHasMore(stillMore);
         setPage(targetPage);
-        return { added: filtered.length, hasMore: stillMore };
+        return { added: fresh.length, hasMore: stillMore };
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         return { added: 0, hasMore: false };
