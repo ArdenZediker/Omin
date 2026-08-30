@@ -9549,12 +9549,14 @@ body:has(.pet-thought-window),
 }
 
 .skillhub-browser__search--expanded {
+  height: 44px;
   max-height: 44px;
   margin-top: 10px;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-top-width: 1px;
-  border-bottom-width: 1px;
+  padding: 0 12px;
+  justify-content: flex-start;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  background: var(--omni-soft-bg);
   opacity: 1;
   overflow: visible;
 }
