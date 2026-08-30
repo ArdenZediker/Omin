@@ -9798,10 +9798,13 @@ body:has(.pet-thought-window),
 .plugin-card__meta {
   margin-top: 8px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   font-size: 11px;
   color: var(--omni-app-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .plugin-card__tags {
@@ -9823,7 +9826,8 @@ body:has(.pet-thought-window),
 .plugin-card__actions {
   display: flex;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: auto;
+  flex-shrink: 0;
 }
 
 .plugin-card__button {
