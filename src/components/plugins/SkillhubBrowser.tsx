@@ -43,7 +43,6 @@ const API_KEY_OPTIONS = [
 
 const SOURCE_OPTIONS = [
   { key: "", label: "所有来源" },
-  { key: "dev-programming", label: "dev-programming" },
   { key: "clawhub", label: "clawhub" },
   { key: "community", label: "community" },
 ];
