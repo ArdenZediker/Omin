@@ -108,15 +108,8 @@ export async function listSkillhubSkills(opts: {
     limit: opts.limit ?? 60,
     sortBy: opts.sortBy ?? null,
   });
-  let skills: SkillhubSkillSummary[] = result.skills ?? [];
-
-  const q = opts.query?.trim().toLowerCase();
-  if (q) {
-    skills = skills.filter((s) =>
-      `${s.name} ${s.description} ${s.description_zh ?? ""} ${s.slug}`.toLowerCase().includes(q),
-    );
-  }
-  return skills;
+  // 搜索已由服务端 keyword 参数完成，这里不再做前端过滤。
+  return result.skills ?? [];
 }
 
 /** 从 SkillHub 获取技能分类列表（用于前端 tabs）。 */

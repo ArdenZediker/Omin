@@ -3874,9 +3874,14 @@ async fn list_skillhub_skills(
     // 关键：这里必须用 spawn_blocking 把阻塞的 HTTP 请求挪出 UI 线程。
     // 同步命令 + reqwest::blocking 会直接卡住界面（滚动都动不了），滚动加载时尤其明显。
     tauri::async_runtime::spawn_blocking(move || -> Result<SkillhubListSkillsResult, String> {
-        let _ = query.as_deref(); // 搜索在前端过滤，这里仅保留参数兼容
         let base = api_base.unwrap_or_else(|| "https://api.skillhub.cn".to_string());
         let mut url = format!("{}/api/skills?limit={}", base, limit.unwrap_or(60));
+        if let Some(q) = query.as_deref() {
+            if !q.is_empty() {
+                // 服务端真实搜索参数名为 keyword（不是 query）
+                url.push_str(&format!("&keyword={}", q));
+            }
+        }
         if let Some(c) = category.as_deref() {
             if !c.is_empty() {
                 url.push_str(&format!("&category={}", c));
