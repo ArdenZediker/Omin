@@ -1,3 +1,4 @@
+import { emit } from "@tauri-apps/api/event";
 import type { BasicSettings } from "./types";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
 
@@ -23,11 +24,14 @@ export function resolveThemeMode(mode: ThemeMode) {
   return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
-export function applyThemeMode(themeStorageKey: string, mode: ThemeMode) {
+export function applyThemeMode(themeStorageKey: string, mode: ThemeMode, emitEvent = true) {
   const resolved = resolveThemeMode(mode);
   document.documentElement.dataset.omniThemeMode = mode;
   document.documentElement.dataset.omniTheme = resolved;
   saveSqliteBackedValue(themeStorageKey, mode);
+  if (emitEvent && typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    void emit("omni-theme-mode-changed", { mode });
+  }
 }
 
 export function loadBasicSettings(storageKey: string, defaults: BasicSettings): BasicSettings {

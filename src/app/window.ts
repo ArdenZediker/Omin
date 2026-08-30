@@ -2,7 +2,24 @@ import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { availableMonitors, cursorPosition, getCurrentWindow, monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emit } from "@tauri-apps/api/event";
-import { CHARACTER_SCALE_BASELINE, CHAT_WINDOW_SIZE, COMPACT_MENU_PANEL_HEIGHT, COMPACT_MENU_PANEL_WIDTH, COMPACT_APPEARANCE_PRESETS, COMPACT_POSITION_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, EXPANDED_SIZE, MAIN_POSITION_STORAGE_KEY, MAIN_VIEW_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL, SETTINGS_WINDOW_LABEL, SETTINGS_WINDOW_SIZE, THEME_MODE_STORAGE_KEY } from "./constants";
+import {
+  CHARACTER_SCALE_BASELINE,
+  CHAT_WINDOW_SIZE,
+  COMPACT_MENU_PANEL_HEIGHT,
+  COMPACT_MENU_PANEL_WIDTH,
+  COMPACT_APPEARANCE_PRESETS,
+  COMPACT_POSITION_STORAGE_KEY,
+  DEFAULT_BASIC_SETTINGS,
+  EXPANDED_SIZE,
+  MAIN_POSITION_STORAGE_KEY,
+  MAIN_VIEW_STORAGE_KEY,
+  MAIN_WINDOW_LABEL,
+  PET_THOUGHT_WINDOW_LABEL,
+  SETTINGS_WINDOW_LABEL,
+  SETTINGS_WINDOW_SIZE,
+  THEME_MODE_STORAGE_KEY,
+} from "./constants";
+import { applyThemeMode } from "./settings";
 import type { BasicSettings, ExternalChatEntry, ViewMode } from "./types";
 import { isCompactPetHidden } from "./compactVisibility";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
@@ -82,9 +99,8 @@ export function applyThemeFromStorage() {
   if (typeof window === "undefined") return;
   const saved = readSqliteBackedValue(THEME_MODE_STORAGE_KEY);
   const mode = saved === "dark" || saved === "light" ? saved : "auto";
-  const resolved = mode === "auto" ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : mode;
-  document.documentElement.dataset.omniThemeMode = mode;
-  document.documentElement.dataset.omniTheme = resolved;
+  // applyThemeMode 会设置 data-* 属性、持久化并广播跨窗口同步事件。
+  applyThemeMode(THEME_MODE_STORAGE_KEY, mode);
 }
 
 export function getStoredCompactPosition() {

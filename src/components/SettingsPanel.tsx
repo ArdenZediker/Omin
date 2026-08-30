@@ -8,7 +8,7 @@ import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles } f
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import type { CustomModelConfig } from "../adapters/types";
 import type { ChatUsagePreferences } from "../chat/types";
-import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, THEME_MODE_STORAGE_KEY } from "../app/constants";
+import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
 import {
   loadCodexPetLibraryState,
   loadCodexPetPackages,
@@ -24,7 +24,8 @@ import {
   type CodexPetPackage,
 } from "../app/pets/codexPetTypes";
 import type { BasicSettings } from "../app/types";
-import { applyThemeMode, getInitialThemeMode, type ThemeMode } from "../app/settings";
+import { type ThemeMode } from "../app/settings";
+import { useThemeSync } from "../hooks/useThemeSync";
 import { COMPACT_WINDOW_LABEL } from "../app/constants";
 import { saveSqliteBackedValue } from "../app/sqliteStorage";
 import { resolveCurrentModelId } from "../chat/modelSelection";
@@ -140,7 +141,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [modelSection, setModelSection] = useState<ModelConfigSection>("chat");
   const [version, setVersion] = useState(0);
   const [currentModel, setCurrentModel] = useState(modelRegistry.getCurrentModel());
-  const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode(THEME_MODE_STORAGE_KEY));
+  const { themeMode, setMode: setThemeMode } = useThemeSync();
   const [basicSettings, setBasicSettings] = useState<BasicSettings>(
     loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS)
   );
@@ -336,7 +337,6 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
 
   const changeThemeMode = (mode: ThemeMode) => {
     setThemeMode(mode);
-    applyThemeMode(THEME_MODE_STORAGE_KEY, mode);
   };
 
   const saveCapturedShortcut = (event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">, keyName: ShortcutSettingKey) => {

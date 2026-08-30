@@ -47,6 +47,7 @@ import {
   useCompactWindowState,
 } from "./hooks/useCompactWindowState";
 import { initializePluginRegistry } from "./plugins/registry";
+import { useThemeSync } from "./hooks/useThemeSync";
 import "./App.css";
 
 const KnowledgeBaseView = lazy(() => import("./components/KnowledgeBaseView"));
@@ -118,6 +119,7 @@ function App() {
 }
 
 function MainApp() {
+  useThemeSync(false);
   const { openPrompt } = usePromptDialog();
   const {
     activeProject,
