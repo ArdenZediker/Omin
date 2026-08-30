@@ -11,6 +11,7 @@ import {
   Bot,
   ChevronDown,
 } from "lucide-react";
+import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
 import {
   listSkillhubSkills,
@@ -104,14 +105,12 @@ const SkillCard = memo(function SkillCard({ skill, isInstalled, isInstalling, on
           </button>
         )}
         {skill.homepage && (
-          <a
+          <button
             className="plugin-card__button plugin-card__button--secondary"
-            href={skill.homepage}
-            target="_blank"
-            rel="noreferrer"
+            onClick={() => void open(skill.homepage!)}
           >
             <ExternalLink size={14} /> 来源
-          </a>
+          </button>
         )}
       </div>
     </div>
