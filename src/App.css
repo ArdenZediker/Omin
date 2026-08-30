@@ -9532,10 +9532,34 @@ body:has(.pet-thought-window),
 
 .skillhub-browser__search {
   width: 100%;
-  margin-top: 10px;
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height 0.22s ease,
+    opacity 0.18s ease,
+    margin-top 0.22s ease,
+    padding 0.22s ease,
+    border-width 0.22s ease;
 }
 
-.plugin-marketplace--main-view .skillhub-browser__search {
+.skillhub-browser__search--expanded {
+  max-height: 44px;
+  margin-top: 10px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+  opacity: 1;
+  overflow: visible;
+}
+
+.plugin-marketplace--main-view .skillhub-browser__search--expanded {
   margin-top: 8px;
 }
 
@@ -9690,6 +9714,12 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace__icon-btn:hover {
   background: var(--omni-soft-bg);
+}
+
+.plugin-marketplace__icon-btn--active {
+  background: var(--omni-app-text);
+  color: var(--omni-panel-bg);
+  border-color: var(--omni-app-text);
 }
 
 .plugin-marketplace__sort-tabs {

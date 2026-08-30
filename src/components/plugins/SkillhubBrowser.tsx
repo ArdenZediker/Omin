@@ -153,6 +153,7 @@ export default function SkillhubBrowser() {
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
   const [sourceFilter, setSourceFilter] = useState("");
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [skills, setSkills] = useState<SkillhubSkillSummary[]>([]);
   const [skillCategories, setSkillCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
   const [loading, setLoading] = useState(false);
@@ -284,6 +285,13 @@ export default function SkillhubBrowser() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [categoryOpen, apiKeyOpen, sourceOpen]);
+
+  // 展开搜索框时自动 focus 输入框
+  useEffect(() => {
+    if (searchExpanded) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchExpanded]);
 
   useEffect(() => {
     refreshInstalled();
@@ -481,16 +489,26 @@ export default function SkillhubBrowser() {
           </div>
 
           <button
-            className="plugin-marketplace__icon-btn"
-            onClick={() => searchInputRef.current?.focus()}
-            title="搜索"
+            className={
+              searchExpanded
+                ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
+                : "plugin-marketplace__icon-btn"
+            }
+            onClick={() => setSearchExpanded((v) => !v)}
+            title={searchExpanded ? "收起搜索" : "展开搜索"}
           >
             <Search size={16} />
           </button>
         </div>
       </div>
 
-      <div className="plugin-marketplace__search skillhub-browser__search">
+      <div
+        className={
+          searchExpanded
+            ? "plugin-marketplace__search skillhub-browser__search skillhub-browser__search--expanded"
+            : "plugin-marketplace__search skillhub-browser__search"
+        }
+      >
         <Search size={15} />
         <input
           ref={searchInputRef}
