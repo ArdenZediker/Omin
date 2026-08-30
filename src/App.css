@@ -9820,9 +9820,17 @@ body:has(.pet-thought-window),
   min-width: 120px;
 }
 
+.skillhub-browser__loading,
 .skillhub-browser__end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--omni-app-muted);
   font-size: 12px;
+}
+
+.skillhub-browser__loading {
+  color: var(--omni-app-text);
 }
 
 .spin {

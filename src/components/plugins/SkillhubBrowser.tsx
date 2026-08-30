@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
   Download,
@@ -60,6 +60,7 @@ export default function SkillhubBrowser() {
   const [hasMore, setHasMore] = useState(true);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   const refreshInstalled = useCallback(() => {
     const next = new Set<string>();
@@ -159,6 +160,24 @@ export default function SkillhubBrowser() {
     }
   };
 
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const scrollContainer = grid.closest(".plugin-marketplace__body") as HTMLElement | null;
+    if (!scrollContainer) return;
+
+    const onScroll = () => {
+      const threshold = 120;
+      const nearBottom = scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - threshold;
+      if (nearBottom) {
+        handleLoadMore();
+      }
+    };
+
+    scrollContainer.addEventListener("scroll", onScroll);
+    return () => scrollContainer.removeEventListener("scroll", onScroll);
+  }, []);
+
   return (
     <div className="skillhub-browser">
       <div className="plugin-marketplace__search">
@@ -228,7 +247,7 @@ export default function SkillhubBrowser() {
         <div className="skillhub-browser__empty">未找到 DSH 插件</div>
       )}
 
-      <div className="plugin-marketplace__grid" style={{ marginTop: 14 }}>
+      <div ref={gridRef} className="plugin-marketplace__grid" style={{ marginTop: 14 }}>
         {tab === "skills" &&
           skills.map((s) => {
             const key = skillUniqueKey(s);
@@ -364,22 +383,11 @@ export default function SkillhubBrowser() {
 
         {tab === "skills" && !loading && skills.length > 0 && (
           <div className="skillhub-browser__load-more">
-            {hasMore ? (
-              <button
-                type="button"
-                className="plugin-card__button plugin-card__button--secondary"
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-              >
-                {loadingMore ? (
-                  <>
-                    <Loader2 size={14} className="spin" /> 加载中…
-                  </>
-                ) : (
-                  <>加载更多</>
-                )}
-              </button>
-            ) : (
+            {loadingMore ? (
+              <span className="skillhub-browser__loading">
+                <Loader2 size={14} className="spin" /> 加载中…
+              </span>
+            ) : hasMore ? null : (
               <span className="skillhub-browser__end">已加载全部</span>
             )}
           </div>
