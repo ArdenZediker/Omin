@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   Download,
@@ -14,32 +14,19 @@ import { pluginRegistry } from "../../plugins/registry";
 import {
   listSkillhubSkills,
   listSkillhubPlugins,
+  listSkillhubSkillCategories,
+  listSkillhubPluginCategories,
   installSkillhubSkill,
   uninstallSkillhubSkill,
   mapSkillToManifest,
+  mapSkillhubCategory,
   skillUniqueKey,
   type SkillhubSkillSummary,
   type SkillhubPluginSummary,
 } from "../../plugins/skillhub";
 
-const SKILL_CATEGORIES = [
-  "全部",
-  "Pay Skill",
-  "办公效率",
-  "内容创作",
-  "开发编程",
-  "数据分析",
-  "设计多媒体",
-  "AI Agent",
-  "知识管理",
-  "商业运营",
-  "教育学习",
-  "行业专业",
-  "IT 运维与安全",
-  "生活服务",
-];
-
 type Tab = "skills" | "plugins";
+type CategoryItem = { key: string; displayName: string };
 
 type SkillCardProps = {
   skill: SkillhubSkillSummary;
@@ -129,6 +116,8 @@ export default function SkillhubBrowser() {
   const [category, setCategory] = useState("全部");
   const [skills, setSkills] = useState<SkillhubSkillSummary[]>([]);
   const [plugins, setPlugins] = useState<SkillhubPluginSummary[]>([]);
+  const [skillCategories, setSkillCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
+  const [pluginCategories, setPluginCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +129,15 @@ export default function SkillhubBrowser() {
   // 异步回调里需要读到最新的 skills 做去重，用 ref 避免闭包过期
   const skillsRef = useRef<SkillhubSkillSummary[]>([]);
   skillsRef.current = skills;
+
+  // 当前分类对应的英文 key：技能用映射表反查，插件直接用分类列表中的 key
+  const currentCategoryKey = useMemo(() => {
+    if (category === "全部") return "";
+    if (tab === "skills") {
+      return skillCategories.find((c) => c.displayName === category)?.key ?? "";
+    }
+    return pluginCategories.find((c) => c.displayName === category)?.key ?? "";
+  }, [category, tab, skillCategories, pluginCategories]);
 
   const refreshInstalled = useCallback(() => {
     setInstalled((prev) => {
@@ -172,7 +170,12 @@ export default function SkillhubBrowser() {
       else setLoadingMore(true);
       setError(null);
       try {
-        const pageSkills = await listSkillhubSkills({ query, category, page: targetPage, limit: 60 });
+        const pageSkills = await listSkillhubSkills({
+          query,
+          category: tab === "skills" ? category : undefined,
+          page: targetPage,
+          limit: 60,
+        });
         // 按唯一键去重（不同 namespace 下 slug 可能重复），只保留本次真正新增的条目
         const prevKeys = append ? new Set(skillsRef.current.map(skillUniqueKey)) : new Set<string>();
         const seen = new Set<string>();
@@ -202,13 +205,13 @@ export default function SkillhubBrowser() {
     setLoading(true);
     setError(null);
     try {
-      setPlugins(await listSkillhubPlugins({ query }));
+      setPlugins(await listSkillhubPlugins({ query, category: currentCategoryKey }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, currentCategoryKey]);
 
   // 切换 tab / 搜索 / 分类时重置并加载第一页
   useEffect(() => {
@@ -216,6 +219,35 @@ export default function SkillhubBrowser() {
     if (tab === "skills") void loadSkills(1, false);
     else void loadPlugins();
   }, [tab, query, category, loadSkills, loadPlugins, resetSkills]);
+
+  // 切换 tab 时清空当前分类选择
+  useEffect(() => {
+    setCategory("全部");
+  }, [tab]);
+
+  // 动态加载 SkillHub 官方分类，避免写死分类导致空 tab
+  useEffect(() => {
+    if (tab === "skills") {
+      listSkillhubSkillCategories()
+        .then((cats) => {
+          const mapped = cats.map((c) => ({ key: c.key, displayName: mapSkillhubCategory(c.key) }));
+          const unique: CategoryItem[] = [{ key: "", displayName: "全部" }];
+          for (const item of mapped) {
+            if (!unique.some((u) => u.displayName === item.displayName)) {
+              unique.push(item);
+            }
+          }
+          setSkillCategories(unique);
+        })
+        .catch(() => {});
+    } else {
+      listSkillhubPluginCategories()
+        .then((cats) => {
+          setPluginCategories([{ key: "", displayName: "全部" }, ...cats]);
+        })
+        .catch(() => {});
+    }
+  }, [tab]);
 
   useEffect(() => {
     refreshInstalled();
@@ -333,19 +365,37 @@ export default function SkillhubBrowser() {
         </button>
       </div>
 
-      {tab === "skills" && (
+      {tab === "skills" && skillCategories.length > 1 && (
         <div className="plugin-marketplace__category-tabs">
-          {SKILL_CATEGORIES.map((c) => (
+          {skillCategories.map((c) => (
             <button
-              key={c}
+              key={c.key || c.displayName}
               className={
-                category === c
+                category === c.displayName
                   ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
                   : "plugin-marketplace__category-tab"
               }
-              onClick={() => setCategory(c)}
+              onClick={() => setCategory(c.displayName)}
             >
-              {c}
+              {c.displayName}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "plugins" && pluginCategories.length > 1 && (
+        <div className="plugin-marketplace__category-tabs">
+          {pluginCategories.map((c) => (
+            <button
+              key={c.key || c.displayName}
+              className={
+                category === c.displayName
+                  ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
+                  : "plugin-marketplace__category-tab"
+              }
+              onClick={() => setCategory(c.displayName)}
+            >
+              {c.displayName}
             </button>
           ))}
         </div>

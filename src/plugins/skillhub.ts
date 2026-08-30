@@ -52,49 +52,36 @@ export interface SkillhubPluginSummary {
   topics?: string[];
 }
 
-/** SkillHub 分类 key → Omni 中文分类（PLUGIN_CATEGORIES）。 */
+/** SkillHub 技能分类 key → Omni 中文分类。
+ * 仅保留 SkillHub /api/skills 实际接受的合法 category key，
+ * 避免反向映射时选到一个服务端不认识的别名而报 400。 */
 const SKILLHUB_CATEGORY_MAP: Record<string, string> = {
-  "pay-skill": "Pay Skill",
-  "office-efficiency": "办公效率",
-  office: "办公效率",
-  productivity: "办公效率",
-  "content-creation": "内容创作",
-  content: "内容创作",
-  dev: "开发编程",
-  "dev-programming": "开发编程",
-  development: "开发编程",
-  "data-analysis": "数据分析",
-  data: "数据分析",
-  "design-multimedia": "设计多媒体",
-  design: "设计多媒体",
-  multimedia: "设计多媒体",
-  agent: "AI Agent",
   "ai-agent": "AI Agent",
-  "agent-workflow": "AI Agent",
-  workflow: "AI Agent",
-  "web-tools": "AI Agent",
-  tools: "AI Agent",
-  knowledge: "知识管理",
+  "business-ops": "商业运营",
+  "content-creation": "内容创作",
+  "data-analysis": "数据分析",
+  "design-media": "设计多媒体",
+  "dev-programming": "开发编程",
   "knowledge-management": "知识管理",
-  business: "商业运营",
-  "business-operations": "商业运营",
-  education: "教育学习",
-  "education-learning": "教育学习",
-  industry: "行业专业",
-  "industry-professional": "行业专业",
-  "it-ops": "IT 运维与安全",
-  "it-operations-security": "IT 运维与安全",
-  "admin-security": "IT 运维与安全",
-  security: "IT 运维与安全",
-  system: "IT 运维与安全",
-  life: "生活服务",
-  "life-services": "生活服务",
-  memory: "生活服务",
+  "life-service": "生活服务",
 };
 
+/** 中文分类 → SkillHub 英文 key（取第一个匹配的 key）。 */
+const REVERSE_SKILLHUB_CATEGORY_MAP: Record<string, string> = {};
+for (const [key, value] of Object.entries(SKILLHUB_CATEGORY_MAP)) {
+  if (!REVERSE_SKILLHUB_CATEGORY_MAP[value]) {
+    REVERSE_SKILLHUB_CATEGORY_MAP[value] = key;
+  }
+}
+
 export function mapSkillhubCategory(key?: string): string {
-  if (!key) return "知识管理";
-  return SKILLHUB_CATEGORY_MAP[key] ?? "知识管理";
+  if (!key) return "其他";
+  return SKILLHUB_CATEGORY_MAP[key] ?? "其他";
+}
+
+export function reverseSkillhubCategory(zh?: string): string | undefined {
+  if (!zh || zh === "全部") return undefined;
+  return REVERSE_SKILLHUB_CATEGORY_MAP[zh];
 }
 
 export function skillUniqueKey(s: SkillhubSkillSummary): string {
@@ -109,9 +96,12 @@ export async function listSkillhubSkills(opts: {
   page?: number;
   limit?: number;
 } = {}): Promise<SkillhubSkillSummary[]> {
-  // /api/skills 服务端不支持 category 参数，传了会 400，所以只拉全量后前端过滤；支持 page 翻页
+  // /api/skills 服务端支持英文 category key，前端传中文时反向映射成 key。
+  // 不合法的 category 会被服务端 400 拒绝，所以空/全部/未知分类时不传该参数。
+  const categoryKey = reverseSkillhubCategory(opts.category);
   const result = await invoke<{ skills: SkillhubSkillSummary[] }>("list_skillhub_skills", {
     query: opts.query ?? null,
+    category: categoryKey ?? null,
     page: opts.page ?? 1,
     limit: opts.limit ?? 60,
   });
@@ -123,12 +113,13 @@ export async function listSkillhubSkills(opts: {
       `${s.name} ${s.description} ${s.description_zh ?? ""} ${s.slug}`.toLowerCase().includes(q),
     );
   }
-
-  const zhCategory = opts.category?.trim();
-  if (zhCategory && zhCategory !== "全部") {
-    skills = skills.filter((s) => mapSkillhubCategory(s.category) === zhCategory);
-  }
   return skills;
+}
+
+/** 从 SkillHub 获取技能分类列表（用于前端 tabs）。 */
+export async function listSkillhubSkillCategories(): Promise<{ key: string; displayName: string }[]> {
+  const result = await invoke<{ categories: { key: string; displayName: string }[] }>("list_skillhub_skill_categories");
+  return result.categories ?? [];
 }
 
 export async function listSkillhubPlugins(opts: {
@@ -138,10 +129,16 @@ export async function listSkillhubPlugins(opts: {
 } = {}): Promise<SkillhubPluginSummary[]> {
   const result = await invoke<SkillhubPluginSummary[]>("list_skillhub_plugins", {
     query: opts.query ?? null,
-    category: opts.category ?? "全部",
+    category: opts.category && opts.category !== "全部" ? opts.category : null,
     limit: opts.limit ?? 60,
   });
   return result ?? [];
+}
+
+/** 从 SkillHub 获取 DSH 插件分类列表。 */
+export async function listSkillhubPluginCategories(): Promise<{ key: string; displayName: string }[]> {
+  const result = await invoke<{ categories: { key: string; displayName: string }[] }>("list_skillhub_plugin_categories");
+  return result.categories ?? [];
 }
 
 export function mapSkillToManifest(s: SkillhubSkillSummary): PluginManifest {

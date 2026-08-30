@@ -3646,7 +3646,9 @@ pub fn run() {
             install_skillhub_skill,
             uninstall_skillhub_skill,
             list_skillhub_skills,
-            list_skillhub_plugins
+            list_skillhub_plugins,
+            list_skillhub_skill_categories,
+            list_skillhub_plugin_categories
         ])
         .setup(|app| {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -3855,9 +3857,15 @@ struct SkillhubListSkillsResult {
     skills: Vec<serde_json::Value>,
 }
 
+#[derive(serde::Serialize)]
+struct SkillhubCategoriesResult {
+    categories: Vec<serde_json::Value>,
+}
+
 #[tauri::command]
 async fn list_skillhub_skills(
     query: Option<String>,
+    category: Option<String>,
     page: Option<u32>,
     limit: Option<u32>,
     api_base: Option<String>,
@@ -3866,9 +3874,13 @@ async fn list_skillhub_skills(
     // 同步命令 + reqwest::blocking 会直接卡住界面（滚动都动不了），滚动加载时尤其明显。
     tauri::async_runtime::spawn_blocking(move || -> Result<SkillhubListSkillsResult, String> {
         let _ = query.as_deref(); // 搜索在前端过滤，这里仅保留参数兼容
-                                  // /api/skills 服务端不接受 category 参数，传任意值都会 400；支持 page 翻页，每页固定约 20 条
         let base = api_base.unwrap_or_else(|| "https://api.skillhub.cn".to_string());
         let mut url = format!("{}/api/skills?limit={}", base, limit.unwrap_or(60));
+        if let Some(c) = category.as_deref() {
+            if !c.is_empty() {
+                url.push_str(&format!("&category={}", c));
+            }
+        }
         if let Some(p) = page {
             url.push_str(&format!("&page={}", p.max(1)));
         }
@@ -3892,6 +3904,80 @@ async fn list_skillhub_skills(
             .cloned()
             .unwrap_or_default();
         Ok(SkillhubListSkillsResult { skills })
+    })
+    .await
+    .map_err(|e| format!("SkillHub 任务失败: {e}"))?
+}
+
+#[tauri::command]
+async fn list_skillhub_skill_categories(
+    api_base: Option<String>,
+) -> Result<SkillhubCategoriesResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<SkillhubCategoriesResult, String> {
+        let base = api_base.unwrap_or_else(|| "https://api.skillhub.cn".to_string());
+        let url = format!("{}/api/skills?limit=200", base);
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client.get(&url).send().map_err(|e| format!("SkillHub 请求失败: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("SkillHub 接口返回 {}", resp.status()));
+        }
+        let json: serde_json::Value = resp.json().map_err(|e| format!("解析失败: {e}"))?;
+        let skills = json
+            .get("data")
+            .and_then(|d| d.get("skills"))
+            .and_then(|s| s.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let mut keys: Vec<String> = skills
+            .iter()
+            .filter_map(|s| s.get("category").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .collect();
+        keys.sort();
+        keys.dedup();
+
+        let categories: Vec<serde_json::Value> = keys
+            .into_iter()
+            .map(|key| {
+                serde_json::json!({
+                    "key": key,
+                    "displayName": key
+                })
+            })
+            .collect();
+        Ok(SkillhubCategoriesResult { categories })
+    })
+    .await
+    .map_err(|e| format!("SkillHub 任务失败: {e}"))?
+}
+
+#[tauri::command]
+async fn list_skillhub_plugin_categories(
+    api_base: Option<String>,
+) -> Result<SkillhubCategoriesResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<SkillhubCategoriesResult, String> {
+        let base = api_base.unwrap_or_else(|| "https://api.skillhub.cn".to_string());
+        let url = format!("{}/api/v1/plugins/categories", base);
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client.get(&url).send().map_err(|e| format!("SkillHub 请求失败: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("SkillHub 接口返回 {}", resp.status()));
+        }
+        let json: serde_json::Value = resp.json().map_err(|e| format!("解析失败: {e}"))?;
+        let items = json
+            .get("items")
+            .and_then(|s| s.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(SkillhubCategoriesResult { categories: items })
     })
     .await
     .map_err(|e| format!("SkillHub 任务失败: {e}"))?
