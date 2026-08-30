@@ -108,23 +108,22 @@ export default function PluginMarketplace({ initialFilter = {}, onPick, onClose,
       className={`plugin-marketplace ${embedded ? "plugin-marketplace--embedded" : ""} ${mainView ? "plugin-marketplace--main-view" : ""}`}
       role={embedded || mainView ? undefined : "dialog"}
       aria-modal={embedded || mainView ? undefined : "true"}
-      aria-labelledby="plugin-marketplace-title"
+      aria-labelledby={embedded || mainView ? undefined : "plugin-marketplace-title"}
     >
       <div className="plugin-marketplace__header">
-        <div className="plugin-marketplace__title-row">
-          <h2 id="plugin-marketplace-title">插件广场</h2>
-          {!embedded && !mainView && (
-            <button type="button" className="plugin-marketplace__close" onClick={onClose} aria-label="关闭">
-              <X size={18} strokeWidth={1.8} />
-            </button>
-          )}
-          {mainView && (
-            <button type="button" className="plugin-marketplace__close" onClick={onClose} aria-label="返回聊天">
-              <X size={18} strokeWidth={1.8} />
-            </button>
-          )}
-        </div>
-          <p className="plugin-marketplace__subtitle">参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能</p>
+        {!mainView && (
+          <>
+            <div className="plugin-marketplace__title-row">
+              <h2 id="plugin-marketplace-title">插件广场</h2>
+              {!embedded && (
+                <button type="button" className="plugin-marketplace__close" onClick={onClose} aria-label="关闭">
+                  <X size={18} strokeWidth={1.8} />
+                </button>
+              )}
+            </div>
+            <p className="plugin-marketplace__subtitle">参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能</p>
+          </>
+        )}
 
           {!onPick && (
             <div className="plugin-marketplace__source-tabs" role="tablist" aria-label="插件来源">

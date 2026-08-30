@@ -95,15 +95,18 @@ export async function listSkillhubSkills(opts: {
   category?: string;
   page?: number;
   limit?: number;
+  sortBy?: string;
 } = {}): Promise<SkillhubSkillSummary[]> {
   // /api/skills 服务端支持英文 category key，前端传中文时反向映射成 key。
   // 不合法的 category 会被服务端 400 拒绝，所以空/全部/未知分类时不传该参数。
+  // sortBy 为服务端排序：downloads / updated / score / stars / installs。
   const categoryKey = reverseSkillhubCategory(opts.category);
   const result = await invoke<{ skills: SkillhubSkillSummary[] }>("list_skillhub_skills", {
     query: opts.query ?? null,
     category: categoryKey ?? null,
     page: opts.page ?? 1,
     limit: opts.limit ?? 60,
+    sortBy: opts.sortBy ?? null,
   });
   let skills: SkillhubSkillSummary[] = result.skills ?? [];
 

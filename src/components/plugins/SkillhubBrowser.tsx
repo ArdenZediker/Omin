@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Puzzle,
   Bot,
+  ChevronDown,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import {
@@ -27,6 +28,15 @@ import {
 
 type Tab = "skills" | "plugins";
 type CategoryItem = { key: string; displayName: string };
+
+const SORT_OPTIONS = [
+  { key: "", label: "默认排序" },
+  { key: "downloads", label: "下载量" },
+  { key: "updated", label: "最近更新" },
+  { key: "score", label: "评分" },
+  { key: "stars", label: "星标" },
+  { key: "installs", label: "安装量" },
+];
 
 type SkillCardProps = {
   skill: SkillhubSkillSummary;
@@ -114,6 +124,8 @@ export default function SkillhubBrowser() {
   const [tab, setTab] = useState<Tab>("skills");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("全部");
+  const [sortBy, setSortBy] = useState("");
+  const [sortOpen, setSortOpen] = useState(false);
   const [skills, setSkills] = useState<SkillhubSkillSummary[]>([]);
   const [plugins, setPlugins] = useState<SkillhubPluginSummary[]>([]);
   const [skillCategories, setSkillCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
@@ -126,6 +138,7 @@ export default function SkillhubBrowser() {
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const sortRef = useRef<HTMLDivElement | null>(null);
   // 异步回调里需要读到最新的 skills 做去重，用 ref 避免闭包过期
   const skillsRef = useRef<SkillhubSkillSummary[]>([]);
   skillsRef.current = skills;
@@ -175,6 +188,7 @@ export default function SkillhubBrowser() {
           category: tab === "skills" ? category : undefined,
           page: targetPage,
           limit: 60,
+          sortBy: tab === "skills" ? sortBy : undefined,
         });
         // 按唯一键去重（不同 namespace 下 slug 可能重复），只保留本次真正新增的条目
         const prevKeys = append ? new Set(skillsRef.current.map(skillUniqueKey)) : new Set<string>();
@@ -198,7 +212,7 @@ export default function SkillhubBrowser() {
         setLoadingMore(false);
       }
     },
-    [query, category],
+    [query, category, sortBy],
   );
 
   const loadPlugins = useCallback(async () => {
@@ -213,17 +227,30 @@ export default function SkillhubBrowser() {
     }
   }, [query, currentCategoryKey]);
 
-  // 切换 tab / 搜索 / 分类时重置并加载第一页
+  // 切换 tab / 搜索 / 分类 / 排序时重置并加载第一页
   useEffect(() => {
     resetSkills();
     if (tab === "skills") void loadSkills(1, false);
     else void loadPlugins();
-  }, [tab, query, category, loadSkills, loadPlugins, resetSkills]);
+  }, [tab, query, category, sortBy, loadSkills, loadPlugins, resetSkills]);
 
   // 切换 tab 时清空当前分类选择
   useEffect(() => {
     setCategory("全部");
+    setSortBy("");
   }, [tab]);
+
+  // 点击外部关闭排序下拉菜单
+  useEffect(() => {
+    if (!sortOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
+        setSortOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [sortOpen]);
 
   // 动态加载 SkillHub 官方分类，避免写死分类导致空 tab
   useEffect(() => {
@@ -366,20 +393,52 @@ export default function SkillhubBrowser() {
       </div>
 
       {tab === "skills" && skillCategories.length > 1 && (
-        <div className="plugin-marketplace__category-tabs">
-          {skillCategories.map((c) => (
+        <div className="plugin-marketplace__category-bar">
+          <div className="plugin-marketplace__category-tabs">
+            {skillCategories.map((c) => (
+              <button
+                key={c.key || c.displayName}
+                className={
+                  category === c.displayName
+                    ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
+                    : "plugin-marketplace__category-tab"
+                }
+                onClick={() => setCategory(c.displayName)}
+              >
+                {c.displayName}
+              </button>
+            ))}
+          </div>
+          <div className="plugin-marketplace__sort" ref={sortRef}>
             <button
-              key={c.key || c.displayName}
-              className={
-                category === c.displayName
-                  ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
-                  : "plugin-marketplace__category-tab"
-              }
-              onClick={() => setCategory(c.displayName)}
+              className="plugin-marketplace__sort-trigger"
+              onClick={() => setSortOpen((v) => !v)}
+              title="排序"
             >
-              {c.displayName}
+              {SORT_OPTIONS.find((o) => o.key === sortBy)?.label ?? "默认排序"}
+              <ChevronDown size={14} />
             </button>
-          ))}
+            {sortOpen && (
+              <div className="plugin-marketplace__sort-menu">
+                {SORT_OPTIONS.map((o) => (
+                  <button
+                    key={o.key || "default"}
+                    className={
+                      sortBy === o.key
+                        ? "plugin-marketplace__sort-item plugin-marketplace__sort-item--active"
+                        : "plugin-marketplace__sort-item"
+                    }
+                    onClick={() => {
+                      setSortBy(o.key);
+                      setSortOpen(false);
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

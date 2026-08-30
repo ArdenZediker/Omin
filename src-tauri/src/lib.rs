@@ -3868,6 +3868,7 @@ async fn list_skillhub_skills(
     category: Option<String>,
     page: Option<u32>,
     limit: Option<u32>,
+    sort_by: Option<String>,
     api_base: Option<String>,
 ) -> Result<SkillhubListSkillsResult, String> {
     // 关键：这里必须用 spawn_blocking 把阻塞的 HTTP 请求挪出 UI 线程。
@@ -3883,6 +3884,11 @@ async fn list_skillhub_skills(
         }
         if let Some(p) = page {
             url.push_str(&format!("&page={}", p.max(1)));
+        }
+        if let Some(s) = sort_by.as_deref() {
+            if !s.is_empty() {
+                url.push_str(&format!("&sortBy={}", s));
+            }
         }
 
         let client = reqwest::blocking::Client::builder()
