@@ -39,6 +39,12 @@ const SORT_OPTIONS = [
   { key: "installs", label: "安装量" },
 ];
 
+/** SkillHub 的 homepage 字段是接口域名（api.skillhub.cn，不渲染网页），
+ * 打开来源页时需要换成能渲染的前端域名（skillhub.cn）。 */
+function toWebUrl(url: string): string {
+  return url.replace(/^https?:\/\/api\.(skillhub\.cn)/i, "https://$1");
+}
+
 type SkillCardProps = {
   skill: SkillhubSkillSummary;
   isInstalled: boolean;
@@ -107,7 +113,7 @@ const SkillCard = memo(function SkillCard({ skill, isInstalled, isInstalling, on
         {skill.homepage && (
           <button
             className="plugin-card__button plugin-card__button--secondary"
-            onClick={() => void open(skill.homepage!)}
+            onClick={() => void open(toWebUrl(skill.homepage!))}
           >
             <ExternalLink size={14} /> 来源
           </button>
