@@ -70,14 +70,18 @@ const SkillCard = memo(function SkillCard({ skill, isInstalled, isInstalling, on
       </div>
       <p className="plugin-card__description">{skill.description_zh || skill.description}</p>
       <div className="plugin-card__meta">
-        <span>
-          <Star size={12} /> {skill.stars ?? 0}
-        </span>
-        <span>
-          <Download size={12} /> {skill.downloads ?? 0}
-        </span>
-        {skill.namespace?.canonicalName && <span>{skill.namespace.canonicalName}</span>}
-        {skill.labels?.requires_api_key === "true" && <span className="skillhub-browser__api">需 API Key</span>}
+        <div className="plugin-card__meta-left">
+          <span>
+            <Star size={12} /> {skill.stars ?? 0}
+          </span>
+          <span>
+            <Download size={12} /> {skill.downloads ?? 0}
+          </span>
+        </div>
+        <div className="plugin-card__meta-right">
+          {skill.namespace?.canonicalName && <span className="plugin-card__author">{skill.namespace.canonicalName}</span>}
+          {skill.labels?.requires_api_key === "true" && <span className="skillhub-browser__api">需 API Key</span>}
+        </div>
       </div>
       <div className="plugin-card__actions">
         {isInstalled ? (

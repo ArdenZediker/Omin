@@ -9798,13 +9798,37 @@ body:has(.pet-thought-window),
 .plugin-card__meta {
   margin-top: 8px;
   display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
   color: var(--omni-app-muted);
+}
+
+.plugin-card__meta-left,
+.plugin-card__meta-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   overflow: hidden;
+}
+
+.plugin-card__meta-right {
+  justify-content: flex-end;
+}
+
+.plugin-card__meta-left > span,
+.plugin-card__meta-right > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   white-space: nowrap;
+}
+
+.plugin-card__author {
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plugin-card__tags {
