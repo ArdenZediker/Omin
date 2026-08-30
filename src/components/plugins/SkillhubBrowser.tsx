@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
   Download,
@@ -41,6 +41,82 @@ const SKILL_CATEGORIES = [
 
 type Tab = "skills" | "plugins";
 
+type SkillCardProps = {
+  skill: SkillhubSkillSummary;
+  isInstalled: boolean;
+  isInstalling: boolean;
+  onInstall: (skill: SkillhubSkillSummary) => void;
+  onUninstall: (skill: SkillhubSkillSummary) => void;
+};
+
+/**
+ * 技能卡片。用 memo 包裹，加载下一页时已存在的卡片不会重渲染 —— 这是滚动流畅的关键。
+ */
+const SkillCard = memo(function SkillCard({ skill, isInstalled, isInstalling, onInstall, onUninstall }: SkillCardProps) {
+  const meta = mapSkillToManifest(skill);
+  return (
+    <div className="plugin-card">
+      <div className="plugin-card__header">
+        <div className="plugin-card__icon">
+          {skill.iconUrl ? (
+            <img src={skill.iconUrl} alt="" style={{ width: 22, height: 22, borderRadius: 6 }} loading="lazy" />
+          ) : (
+            <Bot size={18} />
+          )}
+        </div>
+        <div className="plugin-card__main">
+          <div className="plugin-card__title-row">
+            <h3>{skill.name}</h3>
+            <span className="plugin-card__badge">{meta.category}</span>
+          </div>
+        </div>
+      </div>
+      <p className="plugin-card__description">{skill.description_zh || skill.description}</p>
+      <div className="plugin-card__meta">
+        <span>
+          <Star size={12} /> {skill.stars ?? 0}
+        </span>
+        <span>
+          <Download size={12} /> {skill.downloads ?? 0}
+        </span>
+        {skill.namespace?.canonicalName && <span>{skill.namespace.canonicalName}</span>}
+        {skill.labels?.requires_api_key === "true" && <span className="skillhub-browser__api">需 API Key</span>}
+      </div>
+      <div className="plugin-card__actions">
+        {isInstalled ? (
+          <button className="plugin-card__button plugin-card__button--installed" disabled>
+            <Check size={14} /> 已安装
+          </button>
+        ) : (
+          <button
+            className="plugin-card__button plugin-card__button--primary"
+            onClick={() => onInstall(skill)}
+            disabled={isInstalling}
+          >
+            {isInstalling ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+            {isInstalling ? "安装中…" : "安装"}
+          </button>
+        )}
+        {isInstalled && (
+          <button className="plugin-card__button plugin-card__button--secondary" onClick={() => onUninstall(skill)}>
+            卸载
+          </button>
+        )}
+        {skill.homepage && (
+          <a
+            className="plugin-card__button plugin-card__button--secondary"
+            href={skill.homepage}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink size={14} /> 来源
+          </a>
+        )}
+      </div>
+    </div>
+  );
+});
+
 /**
  * SkillHub 实时浏览/安装面板。
  * - 「技能」标签：来自 SkillHub 的 DSH 风格 SKILL.md 技能，可一键安装进 Omni（一切皆插件）。
@@ -61,11 +137,27 @@ export default function SkillhubBrowser() {
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  // 异步回调里需要读到最新的 skills 做去重，用 ref 避免闭包过期
+  const skillsRef = useRef<SkillhubSkillSummary[]>([]);
+  skillsRef.current = skills;
 
   const refreshInstalled = useCallback(() => {
-    const next = new Set<string>();
-    for (const s of skills) if (pluginRegistry.isInstalled(skillUniqueKey(s))) next.add(skillUniqueKey(s));
-    setInstalled(next);
+    setInstalled((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const s of skills) {
+        const key = skillUniqueKey(s);
+        const isInst = pluginRegistry.isInstalled(key);
+        if (isInst && !next.has(key)) {
+          next.add(key);
+          changed = true;
+        } else if (!isInst && next.has(key)) {
+          next.delete(key);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [skills]);
 
   const resetSkills = useCallback(() => {
@@ -75,27 +167,29 @@ export default function SkillhubBrowser() {
   }, []);
 
   const loadSkills = useCallback(
-    async (targetPage: number, append: boolean) => {
+    async (targetPage: number, append: boolean): Promise<{ added: number; hasMore: boolean }> => {
       if (targetPage === 1) setLoading(true);
       else setLoadingMore(true);
       setError(null);
       try {
         const pageSkills = await listSkillhubSkills({ query, category, page: targetPage, limit: 60 });
-        setSkills((prev) => {
-          const combined = append ? [...prev, ...pageSkills] : pageSkills;
-          // 按唯一键去重（不同 namespace 下 slug 可能重复）
-          const seen = new Set<string>();
-          return combined.filter((s) => {
-            const key = skillUniqueKey(s);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
+        // 按唯一键去重（不同 namespace 下 slug 可能重复），只保留本次真正新增的条目
+        const prevKeys = append ? new Set(skillsRef.current.map(skillUniqueKey)) : new Set<string>();
+        const seen = new Set<string>();
+        const fresh = pageSkills.filter((s) => {
+          const key = skillUniqueKey(s);
+          if (seen.has(key) || prevKeys.has(key)) return false;
+          seen.add(key);
+          return true;
         });
-        setHasMore(pageSkills.length >= 20); // 服务端每页约 20 条，等于 20 认为还有下一页
+        setSkills((prev) => (append ? [...prev, ...fresh] : fresh));
+        const stillMore = pageSkills.length >= 20; // 服务端每页约 20 条，等于 20 认为还有下一页
+        setHasMore(stillMore);
         setPage(targetPage);
+        return { added: fresh.length, hasMore: stillMore };
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        return { added: 0, hasMore: false };
       } finally {
         setLoading(false);
         setLoadingMore(false);
@@ -127,24 +221,26 @@ export default function SkillhubBrowser() {
     refreshInstalled();
   }, [skills, refreshInstalled]);
 
-  const handleInstall = async (s: SkillhubSkillSummary) => {
+  // 用 useCallback 稳定引用，配合 SkillCard 的 memo 才能真正避免整列表重渲染
+  const handleInstall = useCallback(async (s: SkillhubSkillSummary) => {
     const key = skillUniqueKey(s);
     setInstalling(key);
     try {
       await installSkillhubSkill(s.slug);
-      setInstalled((prev) => new Set(prev).add(key));
+      setInstalled((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setInstalling(null);
     }
-  };
+  }, []);
 
-  const handleUninstall = async (s: SkillhubSkillSummary) => {
+  const handleUninstall = useCallback(async (s: SkillhubSkillSummary) => {
     const key = skillUniqueKey(s);
     try {
       await uninstallSkillhubSkill(s.slug);
       setInstalled((prev) => {
+        if (!prev.has(key)) return prev;
         const n = new Set(prev);
         n.delete(key);
         return n;
@@ -152,12 +248,30 @@ export default function SkillhubBrowser() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  };
+  }, []);
 
-  const handleLoadMore = () => {
-    if (!loading && !loadingMore && hasMore) {
-      void loadSkills(page + 1, true);
-    }
+  // 滚动加载：rAF 节流 + ref 锁。
+  // 关键点：loading/loadingMore 是 state，更新是异步的，如果直接依赖它们做 guard，
+  // 一次快速滚动会在 state 落地前并发发起多个请求，导致界面卡顿。这里用同步的 ref 锁拦截。
+  const isLoadingRef = useRef(false);
+  const loadMoreRef = useRef<() => void>(() => {});
+  loadMoreRef.current = () => {
+    if (isLoadingRef.current || !hasMore) return;
+    isLoadingRef.current = true;
+    void (async () => {
+      try {
+        let nextPage = page + 1;
+        // 分类过滤在前端做，某一页可能整页都被过滤掉。此时继续往后翻，
+        // 避免用户滚到底却看不到新内容；最多连翻 3 页，防止请求风暴。
+        for (let i = 0; i < 3; i += 1) {
+          const result = await loadSkills(nextPage, true);
+          nextPage += 1;
+          if (result.added > 0 || !result.hasMore) break;
+        }
+      } finally {
+        isLoadingRef.current = false;
+      }
+    })();
   };
 
   useEffect(() => {
@@ -166,15 +280,22 @@ export default function SkillhubBrowser() {
     const scrollContainer = grid.closest(".plugin-marketplace__body") as HTMLElement | null;
     if (!scrollContainer) return;
 
+    let ticking = false;
     const onScroll = () => {
-      const threshold = 120;
-      const nearBottom = scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - threshold;
-      if (nearBottom) {
-        handleLoadMore();
-      }
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const threshold = 240;
+        const nearBottom =
+          scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - threshold;
+        if (nearBottom) {
+          loadMoreRef.current();
+        }
+      });
     };
 
-    scrollContainer.addEventListener("scroll", onScroll);
+    scrollContainer.addEventListener("scroll", onScroll, { passive: true });
     return () => scrollContainer.removeEventListener("scroll", onScroll);
   }, []);
 
@@ -251,81 +372,15 @@ export default function SkillhubBrowser() {
         {tab === "skills" &&
           skills.map((s) => {
             const key = skillUniqueKey(s);
-            const isInst = installed.has(key);
-            const meta = mapSkillToManifest(s);
             return (
-              <div className="plugin-card" key={key}>
-                <div className="plugin-card__header">
-                  <div className="plugin-card__icon">
-                    {s.iconUrl ? (
-                      <img
-                        src={s.iconUrl}
-                        alt=""
-                        style={{ width: 22, height: 22, borderRadius: 6 }}
-                      />
-                    ) : (
-                      <Bot size={18} />
-                    )}
-                  </div>
-                  <div className="plugin-card__main">
-                    <div className="plugin-card__title-row">
-                      <h3>{s.name}</h3>
-                      <span className="plugin-card__badge">{meta.category}</span>
-                    </div>
-                  </div>
-                </div>
-                <p className="plugin-card__description">{s.description_zh || s.description}</p>
-                <div className="plugin-card__meta">
-                  <span>
-                    <Star size={12} /> {s.stars ?? 0}
-                  </span>
-                  <span>
-                    <Download size={12} /> {s.downloads ?? 0}
-                  </span>
-                  {s.namespace?.canonicalName && <span>{s.namespace.canonicalName}</span>}
-                  {s.labels?.requires_api_key === "true" && (
-                    <span className="skillhub-browser__api">需 API Key</span>
-                  )}
-                </div>
-                <div className="plugin-card__actions">
-                  {isInst ? (
-                    <button className="plugin-card__button plugin-card__button--installed" disabled>
-                      <Check size={14} /> 已安装
-                    </button>
-                  ) : (
-                    <button
-                      className="plugin-card__button plugin-card__button--primary"
-                      onClick={() => handleInstall(s)}
-                      disabled={installing === key}
-                    >
-                      {installing === key ? (
-                        <Loader2 size={14} className="spin" />
-                      ) : (
-                        <Download size={14} />
-                      )}
-                      {installing === key ? "安装中…" : "安装"}
-                    </button>
-                  )}
-                  {isInst && (
-                    <button
-                      className="plugin-card__button plugin-card__button--secondary"
-                      onClick={() => handleUninstall(s)}
-                    >
-                      卸载
-                    </button>
-                  )}
-                  {s.homepage && (
-                    <a
-                      className="plugin-card__button plugin-card__button--secondary"
-                      href={s.homepage}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <ExternalLink size={14} /> 来源
-                    </a>
-                  )}
-                </div>
-              </div>
+              <SkillCard
+                key={key}
+                skill={s}
+                isInstalled={installed.has(key)}
+                isInstalling={installing === key}
+                onInstall={handleInstall}
+                onUninstall={handleUninstall}
+              />
             );
           })}
 
