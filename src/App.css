@@ -9397,6 +9397,7 @@ body:has(.pet-thought-window),
 .plugin-marketplace__header {
   padding: 20px 22px 14px;
   border-bottom: 1px solid var(--omni-panel-border);
+  flex-shrink: 0;
 }
 
 .plugin-marketplace__title-row {
@@ -9679,6 +9680,7 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace__body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px 22px 20px;
   scrollbar-width: none;
@@ -10049,13 +10051,13 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace--main-view {
   position: absolute;
-  inset: 0;
+  inset: 76px 0 0 0;
   z-index: 20;
   transform: none;
   width: 100%;
   max-width: none;
   max-height: none;
-  height: 100%;
+  height: auto;
   border-radius: 0;
   border: none;
   box-shadow: none;
