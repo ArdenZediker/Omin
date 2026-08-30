@@ -25,15 +25,20 @@ import {
 
 type CategoryItem = { key: string; displayName: string };
 
-// 排序值严格对齐 SkillHub 官网前端（skill-hub.*.js 的 fetchSkillsPage / 排序下拉），
-// 实测确认生效：downloads / score(默认) / updated_at / stars；
-// 官网无 installs 排序，trending 直连 /api/skills 返回 400，故不纳入。
-const SORT_OPTIONS = [
-  { key: "", label: "默认排序" },
+// 排序 tab 参考 SkillHub 官网顶部筛选栏（全部 / 近期飙升 / 下载量 / 最近上新）。
+// 底层接口仍使用实测生效的 sortBy：downloads / score / updated_at / stars；
+// 官网无 trending 参数，故「近期飙升」使用 score 作为热门度代理。
+const SORT_TABS = [
+  { key: "", label: "全部" },
+  { key: "score", label: "近期飙升" },
   { key: "downloads", label: "下载量" },
-  { key: "score", label: "评分" },
-  { key: "updated_at", label: "最近更新" },
-  { key: "stars", label: "收藏量" },
+  { key: "updated_at", label: "最近上新" },
+];
+
+const API_KEY_OPTIONS = [
+  { key: "all", label: "不限 API Key" },
+  { key: "not_required", label: "无需 API Key" },
+  { key: "required", label: "需要 API Key" },
 ];
 
 /** SkillHub 的 homepage 字段是接口域名（api.skillhub.cn，不渲染网页），
@@ -137,7 +142,9 @@ export default function SkillhubBrowser() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("全部");
   const [sortBy, setSortBy] = useState("");
-  const [sortOpen, setSortOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [apiKeyFilter, setApiKeyFilter] = useState<"all" | "required" | "not_required">("all");
+  const [apiKeyOpen, setApiKeyOpen] = useState(false);
   const [skills, setSkills] = useState<SkillhubSkillSummary[]>([]);
   const [skillCategories, setSkillCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
   const [loading, setLoading] = useState(false);
@@ -148,7 +155,9 @@ export default function SkillhubBrowser() {
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const sortRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const categoryRef = useRef<HTMLDivElement | null>(null);
+  const apiKeyRef = useRef<HTMLDivElement | null>(null);
   // 异步回调里需要读到最新的 skills 做去重，用 ref 避免闭包过期
   const skillsRef = useRef<SkillhubSkillSummary[]>([]);
   skillsRef.current = skills;
@@ -200,11 +209,20 @@ export default function SkillhubBrowser() {
           seen.add(key);
           return true;
         });
-        setSkills((prev) => (append ? [...prev, ...fresh] : fresh));
+        // API Key 筛选在前端做（服务端无对应参数）
+        const filtered =
+          apiKeyFilter === "all"
+            ? fresh
+            : fresh.filter((s) => {
+                const requires = s.labels?.requires_api_key === "true";
+                if (apiKeyFilter === "required") return requires;
+                return !requires;
+              });
+        setSkills((prev) => (append ? [...prev, ...filtered] : filtered));
         const stillMore = pageSkills.length >= 20; // 服务端每页约 20 条，等于 20 认为还有下一页
         setHasMore(stillMore);
         setPage(targetPage);
-        return { added: fresh.length, hasMore: stillMore };
+        return { added: filtered.length, hasMore: stillMore };
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         return { added: 0, hasMore: false };
@@ -213,14 +231,14 @@ export default function SkillhubBrowser() {
         setLoadingMore(false);
       }
     },
-    [query, category, sortBy],
+    [query, category, sortBy, apiKeyFilter],
   );
 
-  // 搜索 / 分类 / 排序变化时重置并加载第一页
+  // 搜索 / 分类 / 排序 / API Key 筛选变化时重置并加载第一页
   useEffect(() => {
     resetSkills();
     void loadSkills(1, false);
-  }, [query, category, sortBy, loadSkills, resetSkills]);
+  }, [query, category, sortBy, apiKeyFilter, loadSkills, resetSkills]);
 
   // 动态加载 SkillHub 官方分类，避免写死分类导致空 tab
   useEffect(() => {
@@ -243,17 +261,20 @@ export default function SkillhubBrowser() {
       .catch(() => {});
   }, []);
 
-  // 点击外部关闭排序下拉菜单
+  // 点击外部关闭分类 / API Key 下拉菜单
   useEffect(() => {
-    if (!sortOpen) return;
+    if (!categoryOpen && !apiKeyOpen) return;
     function handleClick(e: MouseEvent) {
-      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
-        setSortOpen(false);
+      if (categoryRef.current && !categoryRef.current.contains(e.target as Node)) {
+        setCategoryOpen(false);
+      }
+      if (apiKeyRef.current && !apiKeyRef.current.contains(e.target as Node)) {
+        setApiKeyOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [sortOpen]);
+  }, [categoryOpen, apiKeyOpen]);
 
   useEffect(() => {
     refreshInstalled();
@@ -339,45 +360,77 @@ export default function SkillhubBrowser() {
 
   return (
     <div className="skillhub-browser">
-      {skillCategories.length > 1 && (
-        <div className="plugin-marketplace__category-bar">
-          <div className="plugin-marketplace__category-tabs">
-            {skillCategories.map((c) => (
-              <button
-                key={c.key || c.displayName}
-                className={
-                  category === c.displayName
-                    ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
-                    : "plugin-marketplace__category-tab"
-                }
-                onClick={() => setCategory(c.displayName)}
-              >
-                {c.displayName}
-              </button>
-            ))}
-          </div>
-          <div className="plugin-marketplace__sort" ref={sortRef}>
+      <div className="skillhub-browser__filter-bar">
+        <div className="plugin-marketplace__sort-tabs">
+          {SORT_TABS.map((o) => (
             <button
-              className="plugin-marketplace__sort-trigger"
-              onClick={() => setSortOpen((v) => !v)}
-              title="排序"
+              key={o.key || "default"}
+              className={
+                sortBy === o.key
+                  ? "plugin-marketplace__sort-tab plugin-marketplace__sort-tab--active"
+                  : "plugin-marketplace__sort-tab"
+              }
+              onClick={() => setSortBy(o.key)}
             >
-              {SORT_OPTIONS.find((o) => o.key === sortBy)?.label ?? "默认排序"}
+              {o.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="skillhub-browser__filters">
+          <div className="plugin-marketplace__filter" ref={categoryRef}>
+            <button
+              className="plugin-marketplace__filter-trigger"
+              onClick={() => setCategoryOpen((v) => !v)}
+              title="场景分类"
+            >
+              {skillCategories.find((c) => c.displayName === category)?.displayName ?? "所有场景分类"}
               <ChevronDown size={14} />
             </button>
-            {sortOpen && (
-              <div className="plugin-marketplace__sort-menu">
-                {SORT_OPTIONS.map((o) => (
+            {categoryOpen && (
+              <div className="plugin-marketplace__filter-menu">
+                {skillCategories.map((c) => (
                   <button
-                    key={o.key || "default"}
+                    key={c.key || c.displayName}
                     className={
-                      sortBy === o.key
-                        ? "plugin-marketplace__sort-item plugin-marketplace__sort-item--active"
-                        : "plugin-marketplace__sort-item"
+                      category === c.displayName
+                        ? "plugin-marketplace__filter-item plugin-marketplace__filter-item--active"
+                        : "plugin-marketplace__filter-item"
                     }
                     onClick={() => {
-                      setSortBy(o.key);
-                      setSortOpen(false);
+                      setCategory(c.displayName);
+                      setCategoryOpen(false);
+                    }}
+                  >
+                    {c.displayName}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="plugin-marketplace__filter" ref={apiKeyRef}>
+            <button
+              className="plugin-marketplace__filter-trigger"
+              onClick={() => setApiKeyOpen((v) => !v)}
+              title="API Key 筛选"
+            >
+              {API_KEY_OPTIONS.find((o) => o.key === apiKeyFilter)?.label ?? "不限 API Key"}
+              <ChevronDown size={14} />
+            </button>
+            {apiKeyOpen && (
+              <div className="plugin-marketplace__filter-menu">
+                {API_KEY_OPTIONS.map((o) => (
+                  <button
+                    key={o.key}
+                    className={
+                      apiKeyFilter === o.key
+                        ? "plugin-marketplace__filter-item plugin-marketplace__filter-item--active"
+                        : "plugin-marketplace__filter-item"
+                    }
+                    onClick={() => {
+                      setApiKeyFilter(o.key as typeof apiKeyFilter);
+                      setApiKeyOpen(false);
                     }}
                   >
                     {o.label}
@@ -386,12 +439,21 @@ export default function SkillhubBrowser() {
               </div>
             )}
           </div>
+
+          <button
+            className="plugin-marketplace__icon-btn"
+            onClick={() => searchInputRef.current?.focus()}
+            title="搜索"
+          >
+            <Search size={16} />
+          </button>
         </div>
-      )}
+      </div>
 
       <div className="plugin-marketplace__search skillhub-browser__search">
         <Search size={15} />
         <input
+          ref={searchInputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索技能名称、描述或关键词…"
