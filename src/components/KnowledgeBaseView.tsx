@@ -72,6 +72,7 @@ import {
 type KnowledgeBaseViewProps = {
   onSettingsOpen: () => void;
   onBackToChat: () => void;
+  onOpenMarketplace?: () => void;
   windowControls?: ReactNode;
 };
 
@@ -597,7 +598,7 @@ async function convertPdfBytesToText(bytes: Uint8Array) {
   return parts.join("\n\n");
 }
 
-export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, windowControls }: KnowledgeBaseViewProps) {
+export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpenMarketplace, windowControls }: KnowledgeBaseViewProps) {
   const { openPrompt } = usePromptDialog();
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1761,7 +1762,12 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, window
             <button type="button" className="main-chat-nav__item no-drag" title="聊天" onClick={onBackToChat}>
               <MessageSquare size={18} strokeWidth={1.9} />
             </button>
-            <button type="button" className="main-chat-nav__item no-drag" title="项目">
+            <button
+              type="button"
+              className="main-chat-nav__item no-drag"
+              title="项目"
+              onClick={() => onOpenMarketplace?.()}
+            >
               <Sparkles size={18} strokeWidth={1.9} />
             </button>
             <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="知识库">

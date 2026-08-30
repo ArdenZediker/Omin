@@ -188,6 +188,8 @@ type MainChatViewProps = {
   onTogglePinChat: (session: ChatSession) => void;
   onUseEmptyPrompt: (prompt: string) => void;
   onOpenKnowledge: () => void;
+  openMarketplace?: boolean;
+  onMarketplaceChange?: (open: boolean) => void;
 };
 
 export default function MainChatView({
@@ -248,6 +250,8 @@ export default function MainChatView({
   onTogglePinChat,
   onUseEmptyPrompt,
   onOpenKnowledge,
+  openMarketplace,
+  onMarketplaceChange,
 }: MainChatViewProps) {
   const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
   const [composerElement, setComposerElement] = useState<HTMLDivElement | null>(null);
@@ -265,8 +269,19 @@ export default function MainChatView({
   const [topicMenuOpen, setTopicMenuOpen] = useState(false);
   const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
-  const [showPluginMarketplace, setShowPluginMarketplace] = useState(false);
+  const [showPluginMarketplace, setShowPluginMarketplace] = useState(openMarketplace ?? false);
   const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind | "all"; category: string }>({ kind: "all", category: "全部" });
+
+  useEffect(() => {
+    if (openMarketplace !== undefined) {
+      setShowPluginMarketplace(openMarketplace);
+    }
+  }, [openMarketplace]);
+
+  const closeMarketplace = useCallback(() => {
+    setShowPluginMarketplace(false);
+    onMarketplaceChange?.(false);
+  }, [onMarketplaceChange]);
   const [topicDeleteConfirm, setTopicDeleteConfirm] = useState<TopicDeleteConfirmState>(null);
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -1131,7 +1146,7 @@ export default function MainChatView({
             type="button"
             className={`main-chat-nav__item no-drag ${!showPluginMarketplace ? "main-chat-nav__item--active" : ""}`}
             title="聊天"
-            onClick={() => setShowPluginMarketplace(false)}
+            onClick={closeMarketplace}
           >
             <MessageSquare size={18} strokeWidth={1.9} />
           </button>
@@ -1173,7 +1188,7 @@ export default function MainChatView({
           <div className="chat-history-panel__marketplace-nav">
             <div className="chat-history-panel__marketplace-nav-header">
               <span>插件广场</span>
-              <button type="button" onClick={() => setShowPluginMarketplace(false)} title="返回项目">
+              <button type="button" onClick={closeMarketplace} title="返回项目">
                 <ChevronLeft size={16} strokeWidth={1.8} />
               </button>
             </div>
@@ -1782,7 +1797,7 @@ export default function MainChatView({
             key={`marketplace-${marketplaceFilter.kind}-${marketplaceFilter.category}`}
             mainView
             initialFilter={marketplaceFilter}
-            onClose={() => setShowPluginMarketplace(false)}
+            onClose={closeMarketplace}
           />
         )}
         {projectNotice && (

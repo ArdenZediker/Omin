@@ -195,6 +195,7 @@ function MainApp() {
 
   const [currentModel, setCurrentModel] = useState("");
   const [view, setView] = useState<"chat" | "knowledge">(getStoredMainView);
+  const [openMarketplace, setOpenMarketplace] = useState(false);
   const [inputFocusKey, setInputFocusKey] = useState(0);
   const [projectDrafts, setProjectDrafts] = useState<Record<string, ComposerDraft>>({});
   const [inputDraftKey, setInputDraftKey] = useState(0);
@@ -794,6 +795,8 @@ function MainApp() {
           onUseEmptyPrompt={handleUseEmptyPrompt}
           onDraftChange={handleComposerDraftChange}
           onOpenKnowledge={() => setView("knowledge")}
+          openMarketplace={openMarketplace}
+          onMarketplaceChange={setOpenMarketplace}
         />
       ) : (
         <Suspense
@@ -805,6 +808,10 @@ function MainApp() {
         >
           <KnowledgeBaseView
             onBackToChat={() => setView("chat")}
+            onOpenMarketplace={() => {
+              setOpenMarketplace(true);
+              setView("chat");
+            }}
             onSettingsOpen={desktopActions.openSettings}
             windowControls={<TitleBar inline onMinimizeToCompact={handleOpenCompact} minimizeBehavior={basicSettings.minimizeBehavior} />}
           />
