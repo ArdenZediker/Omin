@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 use std::path::PathBuf;
-use std::sync::Once;
+use std::sync::{Mutex, OnceLock};
 
 use crate::knowledge_schema::{ensure_knowledge_defaults, ensure_knowledge_schema, table_has_column};
 use crate::storage::{
@@ -238,18 +238,24 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
         )
         .map_err(|err| err.to_string())?;
 
-    // 进程内只执行一次建表与迁移：worker 线程每 750ms 重开连接，
+    // 进程内只成功执行一次建表与迁移：worker 线程每 750ms 重开连接，
     // 若每次都重跑会持续刷屏 harmless 警告并做无用功。
-    static SCHEMA_INIT: Once = Once::new();
-    let mut init_error: Option<String> = None;
-    SCHEMA_INIT.call_once(|| {
-        if let Err(err) = init_schema_once(&connection) {
-            init_error = Some(err);
-        }
-    });
-    if let Some(err) = init_error {
-        return Err(err);
+    //
+    // 这里不能用 `Once`：`call_once` 只要闭包跑完就会永久标记为已完成，
+    // 即使建表失败也一样。那样只有第一个调用方能看到错误，
+    // 之后所有调用都会拿到「Ok(connection) + 未初始化的库」，
+    // 故障被静默吞掉、表现为后续查询各种莫名报错。
+    // 改为「只有成功才置位」：失败时不置位，下次调用会重试并继续把错误抛出去。
+    static SCHEMA_READY: OnceLock<Mutex<bool>> = OnceLock::new();
+    let schema_ready = SCHEMA_READY.get_or_init(|| Mutex::new(false));
+    let mut ready = schema_ready
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !*ready {
+        init_schema_once(&connection)?;
+        *ready = true;
     }
+    drop(ready);
 
     Ok(connection)
 }

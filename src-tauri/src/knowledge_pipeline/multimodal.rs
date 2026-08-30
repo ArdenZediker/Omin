@@ -3,25 +3,15 @@
 //! 由 knowledge_pipeline 单文件拆分而来，保持逻辑不变。
 
 use crate::{
-    find_exact_usable_knowledge_multimodal_model, infer_preview_type,
-    load_knowledge_collection_multimodal_config, load_knowledge_multimodal_config,
-    validate_knowledge_multimodal_upload, KnowledgeCollectionMultimodalConfigRecord,
+    find_exact_usable_knowledge_multimodal_model,
+    load_knowledge_collection_multimodal_config, load_knowledge_multimodal_config, KnowledgeCollectionMultimodalConfigRecord,
     KnowledgeMultimodalModelConfigRecord,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use regex::Regex;
 use reqwest::blocking::{multipart, Client as BlockingHttpClient};
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use rusqlite::Connection;
 use serde_json::Value as JsonValue;
-use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::OnceLock,
-    time::Duration,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::Duration;
 
 use super::*;
 
