@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   Puzzle,
   Bot,
-  ChevronDown,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
@@ -30,15 +29,14 @@ import {
 type Tab = "skills" | "plugins";
 type CategoryItem = { key: string; displayName: string };
 
-// 排序值严格对齐 SkillHub 官网前端（skill-hub.*.js 的 fetchSkillsPage / 排序下拉），
-// 实测确认生效：downloads / score(默认) / updated_at / stars；
-// 官网无 installs 排序，trending 直连 /api/skills 返回 400，故不纳入。
-const SORT_OPTIONS = [
-  { key: "", label: "默认排序" },
+// 排序 tab 参考 SkillHub 官网顶部筛选栏（全部 / 近期飙升 / 下载量 / 最近上新）。
+// 底层接口仍使用实测生效的 sortBy：downloads / score / updated_at / stars；
+// 官网无 trending 参数，故「近期飙升」使用 score 作为热门度代理。
+const SORT_TABS = [
+  { key: "", label: "全部" },
+  { key: "score", label: "近期飙升" },
   { key: "downloads", label: "下载量" },
-  { key: "score", label: "评分" },
-  { key: "updated_at", label: "最近更新" },
-  { key: "stars", label: "收藏量" },
+  { key: "updated_at", label: "最近上新" },
 ];
 
 /** SkillHub 的 homepage 字段是接口域名（api.skillhub.cn，不渲染网页），
@@ -148,7 +146,6 @@ export default function SkillhubBrowser() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("全部");
   const [sortBy, setSortBy] = useState("");
-  const [sortOpen, setSortOpen] = useState(false);
   const [skills, setSkills] = useState<SkillhubSkillSummary[]>([]);
   const [plugins, setPlugins] = useState<SkillhubPluginSummary[]>([]);
   const [skillCategories, setSkillCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
@@ -161,7 +158,6 @@ export default function SkillhubBrowser() {
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const sortRef = useRef<HTMLDivElement | null>(null);
   // 异步回调里需要读到最新的 skills 做去重，用 ref 避免闭包过期
   const skillsRef = useRef<SkillhubSkillSummary[]>([]);
   skillsRef.current = skills;
@@ -262,18 +258,6 @@ export default function SkillhubBrowser() {
     setCategory("全部");
     setSortBy("");
   }, [tab]);
-
-  // 点击外部关闭排序下拉菜单
-  useEffect(() => {
-    if (!sortOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
-        setSortOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [sortOpen]);
 
   // 动态加载 SkillHub 官方分类，避免写死分类导致空 tab
   useEffect(() => {
@@ -411,64 +395,41 @@ export default function SkillhubBrowser() {
             <Puzzle size={13} /> DSH 插件（参考）
           </button>
         </div>
-
-        <div className="plugin-marketplace__search skillhub-browser__search">
-          <Search size={15} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索…"
-          />
-        </div>
       </div>
 
-      {tab === "skills" && skillCategories.length > 1 && (
-        <div className="plugin-marketplace__category-bar">
-          <div className="plugin-marketplace__category-tabs">
-            {skillCategories.map((c) => (
-              <button
-                key={c.key || c.displayName}
-                className={
-                  category === c.displayName
-                    ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
-                    : "plugin-marketplace__category-tab"
-                }
-                onClick={() => setCategory(c.displayName)}
-              >
-                {c.displayName}
-              </button>
-            ))}
-          </div>
-          <div className="plugin-marketplace__sort" ref={sortRef}>
+      {tab === "skills" && (
+        <div className="plugin-marketplace__sort-tabs">
+          {SORT_TABS.map((o) => (
             <button
-              className="plugin-marketplace__sort-trigger"
-              onClick={() => setSortOpen((v) => !v)}
-              title="排序"
+              key={o.key || "default"}
+              className={
+                sortBy === o.key
+                  ? "plugin-marketplace__sort-tab plugin-marketplace__sort-tab--active"
+                  : "plugin-marketplace__sort-tab"
+              }
+              onClick={() => setSortBy(o.key)}
             >
-              {SORT_OPTIONS.find((o) => o.key === sortBy)?.label ?? "默认排序"}
-              <ChevronDown size={14} />
+              {o.label}
             </button>
-            {sortOpen && (
-              <div className="plugin-marketplace__sort-menu">
-                {SORT_OPTIONS.map((o) => (
-                  <button
-                    key={o.key || "default"}
-                    className={
-                      sortBy === o.key
-                        ? "plugin-marketplace__sort-item plugin-marketplace__sort-item--active"
-                        : "plugin-marketplace__sort-item"
-                    }
-                    onClick={() => {
-                      setSortBy(o.key);
-                      setSortOpen(false);
-                    }}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "skills" && skillCategories.length > 1 && (
+        <div className="plugin-marketplace__category-tabs">
+          {skillCategories.map((c) => (
+            <button
+              key={c.key || c.displayName}
+              className={
+                category === c.displayName
+                  ? "plugin-marketplace__category-tab plugin-marketplace__category-tab--active"
+                  : "plugin-marketplace__category-tab"
+              }
+              onClick={() => setCategory(c.displayName)}
+            >
+              {c.displayName}
+            </button>
+          ))}
         </div>
       )}
 
@@ -489,6 +450,15 @@ export default function SkillhubBrowser() {
           ))}
         </div>
       )}
+
+      <div className="plugin-marketplace__search skillhub-browser__search">
+        <Search size={15} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索技能名称、描述或关键词…"
+        />
+      </div>
 
       {loading && (
         <div className="skillhub-browser__status">
