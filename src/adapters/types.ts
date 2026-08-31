@@ -10,6 +10,16 @@ export interface Message {
   knowledgeContext?: KnowledgeContextResult | null;
 }
 
+/**
+ * 把应用内部消息角色映射为 OpenAI 兼容接口的线上(wire)角色。
+ * "project" 是 Omni 内部角色（项目/桌宠的发言，语义等同 assistant），
+ * OpenAI 系接口只接受 system/assistant/user/tool/function，透传会被 400 拒绝
+ * （"project is not one of ['system', 'assistant', 'user', 'tool', 'function']"）。
+ */
+export function toWireRole(role: Message["role"]): "system" | "user" | "assistant" {
+  return role === "project" ? "assistant" : role;
+}
+
 export interface ModelConfig {
   id: string;
   name: string;

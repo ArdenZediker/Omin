@@ -1,5 +1,6 @@
 // Omni - Ollama 适配器（本地模型）
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import { toWireRole } from "./types";
 
 const OLLAMA_MODELS: ModelConfig[] = [
   { id: "llama3", name: "Llama 3 (Local)", provider: "ollama", maxTokens: 8192, supportsVision: false, supportsStreaming: true },
@@ -28,12 +29,12 @@ export class OllamaAdapter implements ModelAdapter {
         messages: request.messages.map((msg) => {
           if (msg.images && msg.images.length > 0) {
             return {
-              role: msg.role,
+              role: toWireRole(msg.role),
               content: msg.content,
               images: msg.images.map((img) => (img.startsWith("data:") ? img.split(",")[1] : img)),
             };
           }
-          return { role: msg.role, content: msg.content };
+          return { role: toWireRole(msg.role), content: msg.content };
         }),
         stream: false,
         options: {
@@ -64,12 +65,12 @@ export class OllamaAdapter implements ModelAdapter {
         messages: request.messages.map((msg) => {
           if (msg.images && msg.images.length > 0) {
             return {
-              role: msg.role,
+              role: toWireRole(msg.role),
               content: msg.content,
               images: msg.images.map((img) => (img.startsWith("data:") ? img.split(",")[1] : img)),
             };
           }
-          return { role: msg.role, content: msg.content };
+          return { role: toWireRole(msg.role), content: msg.content };
         }),
         stream: true,
         options: {

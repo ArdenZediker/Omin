@@ -1,5 +1,6 @@
 // Omni - Claude 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import { toWireRole } from "./types";
 
 const CLAUDE_MODELS: ModelConfig[] = [
   { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, supportsVision: true, supportsStreaming: true },
@@ -27,7 +28,7 @@ export class ClaudeAdapter implements ModelAdapter {
     const messages = chatMsgs.map((msg) => {
       if (msg.images && msg.images.length > 0) {
         return {
-          role: msg.role,
+          role: toWireRole(msg.role),
           content: [
             ...msg.images.map((img) => ({
               type: "image" as const,
@@ -41,7 +42,7 @@ export class ClaudeAdapter implements ModelAdapter {
           ],
         };
       }
-      return { role: msg.role, content: msg.content };
+      return { role: toWireRole(msg.role), content: msg.content };
     });
 
     return { system: systemMsg?.content || "", messages };

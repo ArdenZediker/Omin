@@ -1,5 +1,6 @@
 // Omni - DeepSeek 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import { toWireRole } from "./types";
 
 const DEEPSEEK_MODELS: ModelConfig[] = [
   { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, supportsVision: false, supportsStreaming: true },
@@ -29,7 +30,7 @@ export class DeepSeekAdapter implements ModelAdapter {
       },
       body: JSON.stringify({
         model: request.model,
-        messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: request.messages.map((m) => ({ role: toWireRole(m.role), content: m.content })),
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens,
         stream: false,
@@ -65,7 +66,7 @@ export class DeepSeekAdapter implements ModelAdapter {
       },
       body: JSON.stringify({
         model: request.model,
-        messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: request.messages.map((m) => ({ role: toWireRole(m.role), content: m.content })),
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens,
         stream: true,
