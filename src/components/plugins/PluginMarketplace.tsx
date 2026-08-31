@@ -162,32 +162,26 @@ export default function PluginMarketplace({
       }
     >
       <div className="plugin-marketplace__header">
-        <div className="plugin-marketplace__title-row">
-          <h2 id="plugin-marketplace-title">扩展中心</h2>
-          {!embedded && !mainView && (
-            <button
-              type="button"
-              className="plugin-marketplace__close"
-              onClick={onClose}
-              aria-label="关闭"
-            >
-              <X size={18} strokeWidth={1.8} />
-            </button>
-          )}
-          {mainView && (
-            <button
-              type="button"
-              className="plugin-marketplace__close"
-              onClick={onClose}
-              aria-label="返回聊天"
-            >
-              <X size={18} strokeWidth={1.8} />
-            </button>
-          )}
-        </div>
-        <p className="plugin-marketplace__subtitle">
-          参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能
-        </p>
+        {!mainView && (
+          <>
+            <div className="plugin-marketplace__title-row">
+              <h2 id="plugin-marketplace-title">扩展中心</h2>
+              {!embedded && (
+                <button
+                  type="button"
+                  className="plugin-marketplace__close"
+                  onClick={onClose}
+                  aria-label="关闭"
+                >
+                  <X size={18} strokeWidth={1.8} />
+                </button>
+              )}
+            </div>
+            <p className="plugin-marketplace__subtitle">
+              参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能
+            </p>
+          </>
+        )}
 
         {!onPick && kind === "skill" && (
           <div
