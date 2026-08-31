@@ -13,6 +13,8 @@ node_modules
 # Build outputs
 dist
 dist-ssr
+# 构建冒烟测试用的临时输出目录（vite build --outDir dist-check*）
+dist-check*/
 output
 src-tauri/target
 src-tauri/gen/schemas

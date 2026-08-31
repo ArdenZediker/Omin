@@ -1,8 +1,7 @@
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
