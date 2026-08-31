@@ -7,6 +7,7 @@ import {
   Loader2,
   AlertTriangle,
   ExternalLink,
+  Info,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
@@ -52,6 +53,12 @@ const ConnectorCard = memo(function ConnectorCard({
         </div>
       </div>
       <p className="plugin-card__description">{description}</p>
+      {isInstalled && (
+        <p className="connectorhub-browser__hint">
+          <Info size={12} strokeWidth={1.8} />
+          已安装 — 请到「本地连接器」中配置启动命令并连接
+        </p>
+      )}
       <div className="plugin-card__meta">
         <div className="plugin-card__meta-left">
           <span>{skill.category}</span>

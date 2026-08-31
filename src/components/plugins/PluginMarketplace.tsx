@@ -15,6 +15,7 @@ import {
   Package,
   PlugZap,
   Unplug,
+  AlertTriangle,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import { listMarketplacePlugins } from "../../plugins/marketplace";
@@ -84,6 +85,11 @@ export default function PluginMarketplace({
   const [connectedList, setConnectedList] = useState(() =>
     listConnectedMcpServers(),
   );
+  // 连接失败的错误提示（卡片上展示）
+  const [mcpError, setMcpError] = useState<{
+    connectorId: string;
+    message: string;
+  } | null>(null);
   // 「本地 / SkillHub / 套件 / 远程连接器」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
   // 点「技能」直接展示 SkillHub 浏览界面；点「连接器」直接展示外部服务接入型技能浏览；
   // 其他分类仍是本地列表。页内保留子开关切换回本地。
@@ -252,8 +258,12 @@ export default function PluginMarketplace({
       if (isMcpConnector(manifest) && String(values.command ?? "").trim()) {
         try {
           await ensureMcpConnector(manifest);
-        } catch {
-          // 连接失败不阻塞保存；用户可在卡片上重试「连接」
+        } catch (error) {
+          setMcpError({
+            connectorId: manifest.id,
+            message:
+              error instanceof Error ? error.message : String(error),
+          });
         }
       }
       refreshConnected();
@@ -268,8 +278,14 @@ export default function PluginMarketplace({
         openConfig(manifest);
         return;
       }
+      setMcpError(null);
       try {
         await ensureMcpConnector(manifest);
+      } catch (error) {
+        setMcpError({
+          connectorId: manifest.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
       } finally {
         refreshConnected();
       }
@@ -637,6 +653,12 @@ export default function PluginMarketplace({
                       )}
                     </button>
                   </div>
+                  {mcpError?.connectorId === manifest.id && (
+                    <div className="plugin-card__mcp-error">
+                      <AlertTriangle size={13} strokeWidth={1.8} />
+                      <span>{mcpError.message}</span>
+                    </div>
+                  )}
                   {configuringId === manifest.id &&
                     ((manifest.configFields?.length ?? 0) > 0 ||
                       isMcpConnector(manifest)) && (
