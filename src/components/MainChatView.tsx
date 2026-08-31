@@ -1189,9 +1189,6 @@ export default function MainChatView({
           <div className="chat-history-panel__marketplace-nav">
             <div className="chat-history-panel__marketplace-nav-header">
               <span>扩展中心</span>
-              <button type="button" onClick={closeMarketplace} title="返回项目">
-                <ChevronLeft size={16} strokeWidth={1.8} />
-              </button>
             </div>
             <div className="chat-history-panel__marketplace-kind-list">
               {[
