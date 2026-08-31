@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   X,
   Search,
@@ -69,8 +69,18 @@ export default function PluginMarketplace({
   const [refreshKey, setRefreshKey] = useState(0);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
-  const [source, setSource] = useState<"local" | "skillhub">("local");
+  // 「本地 / SkillHub」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
+  // 点「技能」直接展示 SkillHub 浏览界面；其他分类仍是本地列表。
+  // 技能页内保留一个小的子开关，用于查看本地已内置的技能。
+  const [source, setSource] = useState<"local" | "skillhub">(
+    initialFilter.kind === "skill" ? "skillhub" : "local",
+  );
   const [searchExpanded, setSearchExpanded] = useState(!mainView);
+
+  // 一级分类切换时联动来源：技能 → SkillHub，其他 → 本地。
+  useEffect(() => {
+    setSource(kind === "skill" ? "skillhub" : "local");
+  }, [kind]);
 
   const allPlugins = useMemo(() => {
     const builtins = pluginRegistry.list({
@@ -93,6 +103,9 @@ export default function PluginMarketplace({
   }, [allPlugins, category]);
 
   const stats = useMemo(() => pluginRegistry.stats(), [refreshKey]);
+
+  // SkillHub 浏览界面只在「技能」一级分类下出现（SkillHub 仅提供技能）。
+  const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
 
   const handleCopyInstallPrompt = useCallback((manifest: PluginManifest) => {
     const prompt = buildPluginInstallPrompt(manifest);
@@ -184,11 +197,11 @@ export default function PluginMarketplace({
           参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能
         </p>
 
-        {!onPick && (
+        {!onPick && kind === "skill" && (
           <div
             className="plugin-marketplace__source-tabs"
             role="tablist"
-            aria-label="插件来源"
+            aria-label="技能来源"
           >
             <button
               type="button"
@@ -213,7 +226,7 @@ export default function PluginMarketplace({
           </div>
         )}
 
-        {!onPick && source === "skillhub" ? null : (
+        {showSkillhub ? null : (
           <>
             {mainView ? (
               <div className="plugin-marketplace__top-bar">
@@ -318,7 +331,7 @@ export default function PluginMarketplace({
       </div>
 
       <div className="plugin-marketplace__body">
-        {!onPick && source === "skillhub" ? (
+        {showSkillhub ? (
           <SkillhubBrowser />
         ) : filteredPlugins.length === 0 ? (
           <div className="plugin-marketplace__empty">
