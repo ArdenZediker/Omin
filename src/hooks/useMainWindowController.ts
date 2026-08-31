@@ -163,7 +163,7 @@ export function useMainWindowController({
     }
     if (!isCompactWindow && appWindow) {
       const initialBasicSettings = getBasicSettings();
-      if (initialBasicSettings.showCompactBall && (import.meta.env.PROD || import.meta.env.VITE_ENABLE_COMPACT_STARTUP === "1")) {
+      if (initialBasicSettings.showCompactBall) {
         // 等主窗口和 WebView 完成首屏初始化后再创建紧凑窗口，避免 Windows
         // 原生窗口属性调用与主窗口初始化同时发生导致 WebView2 卡死。
         compactStartupTimer = window.setTimeout(() => {
@@ -202,10 +202,6 @@ export function useMainWindowController({
 
   useEffect(() => {
     if (isCompactWindow || !appWindow) {
-      return;
-    }
-
-    if (!import.meta.env.PROD && import.meta.env.VITE_ENABLE_WINDOW_GEOMETRY !== "1") {
       return;
     }
 

@@ -46,11 +46,7 @@ type PersistedChatState = {
 };
 
 function canUseTauriStorage() {
-  return (
-    typeof window !== "undefined" &&
-    "__TAURI_INTERNALS__" in window &&
-    (import.meta.env.PROD || import.meta.env.VITE_ENABLE_TAURI_STORAGE === "1")
-  );
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function getLegacyProjectsJson() {

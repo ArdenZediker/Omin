@@ -169,7 +169,7 @@ function MainApp() {
     updateChatSessionMessages,
     updateProjectMemory,
     updateProjectProfile,
-  } = useChatSessions({ persist: import.meta.env.VITE_DISABLE_CHAT_PERSISTENCE !== "1" });
+  } = useChatSessions({ persist: true });
 
   const {
     characterMenuPosition,
@@ -561,10 +561,6 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
-    if (!import.meta.env.PROD && import.meta.env.VITE_ENABLE_PET_STARTUP !== "1") {
-      return;
-    }
-
     initializePluginRegistry();
 
     let cancelled = false;
