@@ -532,16 +532,40 @@ export async function applyExpandedWindowChrome(targetWindow: ReturnType<typeof 
   await targetWindow.setDecorations(false);
 }
 
+/**
+ * 读取存储的紧凑窗口位置，并校验它是否落在某个显示器的可见范围内。
+ *
+ * 注意：availableMonitors() 偶发失败（返回空数组 / reject），此时不能再把
+ * 有效位置判为「不可见」丢弃——位置本来就是在真实显示器上保存的，丢弃后
+ * 窗口会以无坐标方式创建，在 Windows 上落到默认位置（≈屏幕左上角）。
+ * 因此显示器枚举为空时做一次重试，仍为空则直接信任存储值。
+ */
+async function getSafeStoredCompactPosition(size: { width: number; height: number }) {
+  const storedPosition = getStoredCompactPosition();
+  if (!storedPosition) {
+    return null;
+  }
+  let monitors = await availableMonitors().catch(() => [] as Monitor[]);
+  if (monitors.length === 0) {
+    await new Promise((resolve) => window.setTimeout(resolve, 120));
+    monitors = await availableMonitors().catch(() => [] as Monitor[]);
+  }
+  if (monitors.length === 0 || isWindowRectVisibleOnAnyMonitor(storedPosition, size, monitors)) {
+    return storedPosition;
+  }
+  return null;
+}
+
 export async function ensureCompactWindow(appearance: CompactAppearance, scale: number, compactWindowLabel: string) {
   const size = getCompactWindowSize(appearance, scale);
   const expandedViewport = getExpandedCompactViewportSize(true);
-  const storedPosition = getStoredCompactPosition();
-  const monitors = await availableMonitors().catch(() => [] as Monitor[]);
-  const safeStoredPosition =
-    storedPosition && isWindowRectVisibleOnAnyMonitor(storedPosition, size, monitors) ? storedPosition : null;
+  const safeStoredPosition = await getSafeStoredCompactPosition(size);
   let compactWindow = await WebviewWindow.getByLabel(compactWindowLabel);
 
   if (!compactWindow) {
+    const nativeStoredPosition = safeStoredPosition
+      ? toNativePetCompactPosition(appearance, safeStoredPosition)
+      : null;
     compactWindow = new WebviewWindow(compactWindowLabel, {
       url: "/?compact=1",
       title: "Omni Compact",
@@ -560,9 +584,9 @@ export async function ensureCompactWindow(appearance: CompactAppearance, scale: 
       resizable: false,
       visible: false,
       focus: false,
-      center: safeStoredPosition == null,
-      x: safeStoredPosition?.x,
-      y: safeStoredPosition?.y,
+      center: nativeStoredPosition == null,
+      x: nativeStoredPosition?.x,
+      y: nativeStoredPosition?.y,
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -573,6 +597,11 @@ export async function ensureCompactWindow(appearance: CompactAppearance, scale: 
 
   await applyCompactWindowChrome(compactWindow);
   await compactWindow.setSize(new LogicalSize(size.width, size.height));
+  if (!safeStoredPosition) {
+    // Windows/WebView2 对 visible:false 的隐藏窗口，创建参数里的 center:true
+    // 经常不生效，窗口会落到系统默认位置（≈屏幕左上角）。创建后显式居中兜底。
+    await compactWindow.center().catch(() => undefined);
+  }
   return compactWindow;
 }
 
@@ -593,10 +622,7 @@ export async function showCompactWindow(
   const compactWindow = await ensureCompactWindow(appearance, scale, compactWindowLabel);
   const settings = getBasicSettings();
   const size = getCompactWindowSize(appearance, scale);
-  const storedPosition = getStoredCompactPosition();
-  const monitors = await availableMonitors().catch(() => [] as Monitor[]);
-  const safeStoredPosition =
-    storedPosition && isWindowRectVisibleOnAnyMonitor(storedPosition, size, monitors) ? storedPosition : null;
+  const safeStoredPosition = await getSafeStoredCompactPosition(size);
   const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
   const cursorMonitor = settings.followCursorScreen ? await getMonitorForCursor() : null;
 
@@ -619,8 +645,12 @@ export async function showCompactWindow(
   try {
     const scaleFactor = await compactWindow.scaleFactor();
     const currentPosition = (await compactWindow.outerPosition()).toLogical(scaleFactor);
-    if (!isWindowRectVisibleOnAnyMonitor({ x: currentPosition.x, y: currentPosition.y }, size, monitors)) {
-      const fallbackMonitor = (await getMonitorForCursor().catch(() => null)) ?? monitors[0] ?? null;
+    const currentMonitors = await availableMonitors().catch(() => [] as Monitor[]);
+    if (
+      currentMonitors.length > 0 &&
+      !isWindowRectVisibleOnAnyMonitor({ x: currentPosition.x, y: currentPosition.y }, size, currentMonitors)
+    ) {
+      const fallbackMonitor = (await getMonitorForCursor().catch(() => null)) ?? currentMonitors[0] ?? null;
       if (fallbackMonitor) {
         await moveCompactWindowToMonitor(compactWindow, fallbackMonitor, size);
       }
