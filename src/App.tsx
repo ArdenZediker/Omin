@@ -562,6 +562,8 @@ function MainApp() {
 
   useEffect(() => {
     initializePluginRegistry();
+    // 拉起已启用且已配置的连接器 MCP 服务器（静默失败，不阻塞启动）
+    void import("./plugins/mcp").then((module) => module.syncMcpConnectors());
 
     let cancelled = false;
 

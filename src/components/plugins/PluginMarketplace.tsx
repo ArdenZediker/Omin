@@ -13,9 +13,16 @@ import {
   LayoutTemplate,
   Settings,
   Package,
+  PlugZap,
+  Unplug,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import { listMarketplacePlugins } from "../../plugins/marketplace";
+import {
+  ensureMcpConnector,
+  disconnectMcpConnector,
+  listConnectedMcpServers,
+} from "../../plugins/mcp";
 import { PLUGIN_CATEGORIES } from "../../plugins/builtins";
 import type {
   PluginFilter,
@@ -26,6 +33,7 @@ import { buildPluginInstallPrompt } from "../../plugins/registry";
 import SkillhubBrowser from "./SkillhubBrowser";
 import CbteamsBrowser from "./CbteamsBrowser";
 import ConnectorhubBrowser from "./ConnectorhubBrowser";
+import { getMcpCommandTemplate } from "../../plugins/connectorhub";
 
 type PluginMarketplaceProps = {
   initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind };
@@ -70,6 +78,12 @@ export default function PluginMarketplace({
   const [refreshKey, setRefreshKey] = useState(0);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
+  // MCP 型连接器（无 provider 的 connector）启动配置草稿
+  const [mcpDraft, setMcpDraft] = useState({ command: "", args: "", env: "" });
+  // 当前已连接的 MCP 服务器（内存态，来自 mcp.ts）
+  const [connectedList, setConnectedList] = useState(() =>
+    listConnectedMcpServers(),
+  );
   // 「本地 / SkillHub / 套件 / 远程连接器」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
   // 点「技能」直接展示 SkillHub 浏览界面；点「连接器」直接展示外部服务接入型技能浏览；
   // 其他分类仍是本地列表。页内保留子开关切换回本地。
@@ -132,6 +146,43 @@ export default function PluginMarketplace({
   const isInstalled = (id: string) =>
     pluginRegistry.isInstalled(id) || pluginRegistry.isBuiltin(id);
 
+  // MCP 型连接器：kind=connector 且无 provider（provider 是模型连接器的标志，
+  // 模型连接器走 API Key 配置；MCP 型走 command/args/env 启动配置）。
+  const isMcpConnector = (manifest: PluginManifest) =>
+    manifest.kind === "connector" && !manifest.provider;
+
+  /** 解析命令行参数（支持双引号/单引号包裹的空格参数）。 */
+  const parseArgsLine = (input: string): string[] => {
+    const tokens: string[] = [];
+    const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(input)) !== null) {
+      tokens.push(m[1] ?? m[2] ?? m[3]);
+    }
+    return tokens;
+  };
+
+  /** 解析环境变量文本（每行 KEY=VALUE，忽略空行与 # 注释）。 */
+  const parseEnvLines = (input: string): Record<string, string> => {
+    const env: Record<string, string> = {};
+    for (const line of input.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) continue;
+      env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+    }
+    return env;
+  };
+
+  const refreshConnected = useCallback(() => {
+    setConnectedList(listConnectedMcpServers());
+  }, []);
+
+  useEffect(() => {
+    refreshConnected();
+  }, [refreshKey, refreshConnected]);
+
   const openConfig = useCallback((manifest: PluginManifest) => {
     const existing = (pluginRegistry.getConnectorConfig(manifest.id) ??
       {}) as Record<string, unknown>;
@@ -141,6 +192,32 @@ export default function PluginMarketplace({
       draft[field.id] = value == null ? "" : String(value);
     }
     setConfigDraft(draft);
+    if (isMcpConnector(manifest)) {
+      const args = Array.isArray(existing.args)
+        ? (existing.args as unknown[]).map(String)
+        : [];
+      const env =
+        existing.env && typeof existing.env === "object"
+          ? (existing.env as Record<string, unknown>)
+          : {};
+      // 未配置过 command 时用高频服务模板预填
+      const template = String(existing.command ?? "").trim()
+        ? null
+        : getMcpCommandTemplate(manifest.id);
+      setMcpDraft({
+        command: String(existing.command ?? template?.command ?? ""),
+        args:
+          args.length > 0
+            ? args.join(" ")
+            : (template?.args ?? ""),
+        env:
+          Object.keys(env).length > 0
+            ? Object.entries(env)
+                .map(([key, value]) => `${key}=${String(value)}`)
+                .join("\n")
+            : (template?.env ?? ""),
+      });
+    }
     setConfiguringId(manifest.id);
   }, []);
 
@@ -148,19 +225,64 @@ export default function PluginMarketplace({
     setConfigDraft((current) => ({ ...current, [id]: value }));
   }, []);
 
+  const updateMcpDraft = useCallback(
+    (key: "command" | "args" | "env", value: string) => {
+      setMcpDraft((current) => ({ ...current, [key]: value }));
+    },
+    [],
+  );
+
   const saveConfig = useCallback(
-    (manifest: PluginManifest) => {
+    async (manifest: PluginManifest) => {
       const values: Record<string, unknown> = {};
       for (const field of manifest.configFields ?? []) {
         const raw = configDraft[field.id];
         if (raw === undefined || raw === "") continue;
         values[field.id] = field.type === "number" ? Number(raw) : raw;
       }
+      if (isMcpConnector(manifest)) {
+        values.command = mcpDraft.command.trim();
+        values.args = parseArgsLine(mcpDraft.args);
+        values.env = parseEnvLines(mcpDraft.env);
+      }
       pluginRegistry.setConnectorConfig(manifest.id, values);
       setConfiguringId(null);
       setRefreshKey((current) => current + 1);
+      // MCP 型连接器保存后若已配 command，立即拉起服务器
+      if (isMcpConnector(manifest) && String(values.command ?? "").trim()) {
+        try {
+          await ensureMcpConnector(manifest);
+        } catch {
+          // 连接失败不阻塞保存；用户可在卡片上重试「连接」
+        }
+      }
+      refreshConnected();
     },
-    [configDraft],
+    [configDraft, mcpDraft, refreshConnected],
+  );
+
+  const handleConnect = useCallback(
+    async (manifest: PluginManifest) => {
+      const config = pluginRegistry.getConnectorConfig(manifest.id) ?? {};
+      if (!String(config.command ?? "").trim()) {
+        openConfig(manifest);
+        return;
+      }
+      try {
+        await ensureMcpConnector(manifest);
+      } finally {
+        refreshConnected();
+      }
+    },
+    [openConfig, refreshConnected],
+  );
+
+  const handleDisconnect = useCallback(
+    async (manifest: PluginManifest) => {
+      await disconnectMcpConnector(manifest.id);
+      refreshConnected();
+    },
+    [refreshConnected],
   );
 
   const renderMarketplace = () => (
@@ -384,6 +506,9 @@ export default function PluginMarketplace({
             {filteredPlugins.map((manifest) => {
               const Icon = ICON_MAP[manifest.kind] ?? Puzzle;
               const installed = isInstalled(manifest.id);
+              const mcpConnected = connectedList.find(
+                (s) => s.connectorId === manifest.id,
+              );
               return (
                 <div key={manifest.id} className="plugin-card">
                   <div className="plugin-card__icon">
@@ -434,7 +559,7 @@ export default function PluginMarketplace({
                           <Settings size={14} strokeWidth={1.8} />
                           <span>配置</span>
                         </button>
-                        {!installed && (
+                        {!installed ? (
                           <button
                             type="button"
                             className="plugin-card__button plugin-card__button--primary"
@@ -443,7 +568,36 @@ export default function PluginMarketplace({
                             <Download size={14} strokeWidth={1.8} />
                             <span>安装</span>
                           </button>
-                        )}
+                        ) : isMcpConnector(manifest) ? (
+                          mcpConnected ? (
+                            <>
+                              <span
+                                className="plugin-card__connected"
+                                title={`已连接 · 暴露 ${mcpConnected.toolCount} 个工具`}
+                              >
+                                <span className="plugin-card__connected-dot" />
+                                <span>{mcpConnected.toolCount} 工具</span>
+                              </span>
+                              <button
+                                type="button"
+                                className="plugin-card__button plugin-card__button--secondary"
+                                onClick={() => void handleDisconnect(manifest)}
+                              >
+                                <Unplug size={14} strokeWidth={1.8} />
+                                <span>断开</span>
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className="plugin-card__button plugin-card__button--primary"
+                              onClick={() => void handleConnect(manifest)}
+                            >
+                              <PlugZap size={14} strokeWidth={1.8} />
+                              <span>连接</span>
+                            </button>
+                          )
+                        ) : null}
                       </>
                     ) : installed ? (
                       <button
@@ -484,10 +638,10 @@ export default function PluginMarketplace({
                     </button>
                   </div>
                   {configuringId === manifest.id &&
-                    manifest.configFields &&
-                    manifest.configFields.length > 0 && (
+                    ((manifest.configFields?.length ?? 0) > 0 ||
+                      isMcpConnector(manifest)) && (
                       <div className="plugin-card__config">
-                        {manifest.configFields.map((field) => (
+                        {manifest.configFields?.map((field) => (
                           <label
                             key={field.id}
                             className="plugin-card__config-field"
@@ -544,6 +698,44 @@ export default function PluginMarketplace({
                             )}
                           </label>
                         ))}
+                        {isMcpConnector(manifest) && (
+                          <>
+                            <div className="plugin-card__config-section">
+                              MCP 启动配置
+                            </div>
+                            <label className="plugin-card__config-field">
+                              <span>启动命令 *</span>
+                              <input
+                                value={mcpDraft.command}
+                                onChange={(event) =>
+                                  updateMcpDraft("command", event.target.value)
+                                }
+                                placeholder="如 npx / node / python"
+                              />
+                            </label>
+                            <label className="plugin-card__config-field">
+                              <span>参数（支持引号包裹的空格）</span>
+                              <input
+                                value={mcpDraft.args}
+                                onChange={(event) =>
+                                  updateMcpDraft("args", event.target.value)
+                                }
+                                placeholder='如 -y @modelcontextprotocol/server-github'
+                              />
+                            </label>
+                            <label className="plugin-card__config-field">
+                              <span>环境变量（每行 KEY=VALUE）</span>
+                              <textarea
+                                value={mcpDraft.env}
+                                onChange={(event) =>
+                                  updateMcpDraft("env", event.target.value)
+                                }
+                                rows={3}
+                                placeholder="GITHUB_TOKEN=ghp_xxxxxxxx&#10;GITHUB_REPO_OWNER=..."
+                              />
+                            </label>
+                          </>
+                        )}
                         <div className="plugin-card__config-actions">
                           <button
                             type="button"

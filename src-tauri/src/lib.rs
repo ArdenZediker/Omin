@@ -30,6 +30,7 @@ mod knowledge_embedding_batch;
 mod knowledge_search;
 mod skillhub;
 mod connectorhub;
+mod mcp;
 
 // 从 lib.rs 拆分出去的四个模块，用私有 glob 取回其中的函数与类型。
 // 这些模块内部**不要**写 `use super::*`：那会把 crate 根的 `__cmd__*` 宏吸进模块，
@@ -40,6 +41,7 @@ use knowledge_search::*;
 use skillhub::*;
 use cbteams::*;
 use connectorhub::*;
+use mcp::*;
 
 // 需要被其它模块以 `crate::X` 引用的条目，改为显式重导出（显式重导出不会牵扯宏命名空间）。
 pub(crate) use knowledge_embedding_config::{
@@ -554,7 +556,12 @@ pub fn run() {
             list_cbteams_suites,
             install_cbteams_suite,
             list_connectorhub_skills,
-            install_connectorhub_skill
+            install_connectorhub_skill,
+            start_mcp_server,
+            stop_mcp_server,
+            list_mcp_tools,
+            call_mcp_tool,
+            read_mcp_stderr
         ])
         .setup(|app| {
             let show_hide = MenuItemBuilder::with_id("toggle", "打开主界面").build(app)?;

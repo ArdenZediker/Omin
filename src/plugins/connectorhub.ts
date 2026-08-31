@@ -88,6 +88,36 @@ export function isConnectorSource(source: string): boolean {
   return source in CONNECTOR_SOURCE_WHITELIST;
 }
 
+/**
+ * 现成可 npx 拉起的 MCP 服务器命令模板（source → 启动配置）。
+ * 仅收录确定存在官方/知名 npm 包的服务器；其余连接器是 CLI/OpenAPI
+ * 接入型技能，需用户自行填写启动命令。
+ */
+const MCP_COMMAND_TEMPLATES: Record<
+  string,
+  { command: string; args: string; env: string }
+> = {
+  github: {
+    command: "npx",
+    args: "-y @modelcontextprotocol/server-github",
+    env: "GITHUB_PERSONAL_ACCESS_TOKEN=",
+  },
+  trello: {
+    command: "npx",
+    args: "-y @kiberty/trello-mcp",
+    env: "TRELLO_API_KEY=\nTRELLO_API_TOKEN=",
+  },
+};
+
+/** 取 MCP 命令模板；无模板返回 null（用户需自行填写）。 */
+export function getMcpCommandTemplate(source: string): {
+  command: string;
+  args: string;
+  env: string;
+} | null {
+  return MCP_COMMAND_TEMPLATES[source] ?? null;
+}
+
 /** 接入型技能分组（用于浏览面板分类 tab）。 */
 export function connectorCategory(source: string): string {
   const tencent = [

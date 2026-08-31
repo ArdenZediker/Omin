@@ -9983,6 +9983,30 @@ body:has(.pet-thought-window),
   cursor: default;
 }
 
+.plugin-card__connected {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 0;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #22c55e;
+  white-space: nowrap;
+}
+
+.plugin-card__connected-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+}
+
 .skillhub-browser {
   margin-top: 14px;
 }
@@ -10097,7 +10121,8 @@ body:has(.pet-thought-window),
 }
 
 .plugin-card__config-field input,
-.plugin-card__config-field select {
+.plugin-card__config-field select,
+.plugin-card__config-field textarea {
   width: 100%;
   padding: 7px 10px;
   font-size: 13px;
@@ -10108,9 +10133,29 @@ body:has(.pet-thought-window),
   outline: none;
 }
 
+.plugin-card__config-field textarea {
+  resize: vertical;
+  min-height: 52px;
+  font-family: var(--omni-font-mono, "Cascadia Code", Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .plugin-card__config-field input:focus,
-.plugin-card__config-field select:focus {
+.plugin-card__config-field select:focus,
+.plugin-card__config-field textarea:focus {
   border-color: var(--omni-accent, #6366f1);
+}
+
+.plugin-card__config-section {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--omni-app-muted);
+  padding-top: 4px;
+  margin-top: 2px;
+  border-top: 1px dashed var(--omni-panel-border);
 }
 
 .plugin-card__config-field input[type="checkbox"] {
