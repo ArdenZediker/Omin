@@ -220,7 +220,7 @@ export default function PluginMarketplace({
                   {PLUGIN_CATEGORIES.filter(
                     (c) =>
                       c === "全部" ||
-                      filteredPlugins.some((m) => m.category === c),
+                      allPlugins.some((m) => m.category === c),
                   ).map((c) => (
                     <button
                       key={c}
@@ -298,7 +298,7 @@ export default function PluginMarketplace({
                   {PLUGIN_CATEGORIES.filter(
                     (c) =>
                       c === "全部" ||
-                      filteredPlugins.some((m) => m.category === c),
+                      allPlugins.some((m) => m.category === c),
                   ).map((c) => (
                     <button
                       key={c}
