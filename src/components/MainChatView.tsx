@@ -271,7 +271,7 @@ export default function MainChatView({
   const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
   const [showPluginMarketplace, setShowPluginMarketplace] = useState(openMarketplace ?? false);
-  const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind | "all"; category: string }>({ kind: "all", category: "全部" });
+  const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind; category: string }>({ kind: "skill", category: "全部" });
 
   useEffect(() => {
     if (openMarketplace !== undefined) {
@@ -1195,7 +1195,6 @@ export default function MainChatView({
             </div>
             <div className="chat-history-panel__marketplace-kind-list">
               {[
-                { kind: "all" as const, label: "全部", icon: Puzzle },
                 { kind: "skill" as const, label: "技能", icon: Wand2 },
                 { kind: "tool" as const, label: "工具", icon: Puzzle },
                 { kind: "connector" as const, label: "连接器", icon: Cable },

@@ -25,7 +25,7 @@ import { buildPluginInstallPrompt } from "../../plugins/registry";
 import SkillhubBrowser from "./SkillhubBrowser";
 
 type PluginMarketplaceProps = {
-  initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind | "all" };
+  initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind };
   onPick?: (manifest: PluginManifest) => void;
   onClose: () => void;
   embedded?: boolean;
@@ -33,11 +33,10 @@ type PluginMarketplaceProps = {
 };
 
 const KIND_TABS: {
-  kind: PluginKind | "all";
+  kind: PluginKind;
   label: string;
   icon: typeof Puzzle;
 }[] = [
-  { kind: "all", label: "全部", icon: Puzzle },
   { kind: "skill", label: "技能", icon: Wand2 },
   { kind: "tool", label: "工具", icon: Puzzle },
   { kind: "connector", label: "连接器", icon: Cable },
@@ -61,9 +60,8 @@ export default function PluginMarketplace({
   mainView = false,
 }: PluginMarketplaceProps) {
   const [query, setQuery] = useState(initialFilter.query ?? "");
-  const [kind, setKind] = useState<PluginKind | "all">(
-    initialFilter.kind ?? "all",
-  );
+  // 不设「全部」混合列表：一级分类必须具体，默认落在技能（SkillHub）。
+  const [kind, setKind] = useState<PluginKind>(initialFilter.kind ?? "skill");
   const [category, setCategory] = useState(initialFilter.category ?? "全部");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -83,14 +81,8 @@ export default function PluginMarketplace({
   }, [kind]);
 
   const allPlugins = useMemo(() => {
-    const builtins = pluginRegistry.list({
-      kind: kind === "all" ? undefined : kind,
-      query,
-    });
-    const marketplace = listMarketplacePlugins({
-      kind: kind === "all" ? undefined : kind,
-      query,
-    });
+    const builtins = pluginRegistry.list({ kind, query });
+    const marketplace = listMarketplacePlugins({ kind, query });
     // 去重：marketplace 同名已安装的不重复展示
     const installedIds = new Set(builtins.map((m) => m.id));
     return [...builtins, ...marketplace.filter((m) => !installedIds.has(m.id))];
