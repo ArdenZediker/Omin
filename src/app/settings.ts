@@ -26,10 +26,13 @@ export function resolveThemeMode(mode: ThemeMode) {
 
 export function applyThemeMode(themeStorageKey: string, mode: ThemeMode, emitEvent = true) {
   const resolved = resolveThemeMode(mode);
+  const previous = readSqliteBackedValue(themeStorageKey);
   document.documentElement.dataset.omniThemeMode = mode;
   document.documentElement.dataset.omniTheme = resolved;
   saveSqliteBackedValue(themeStorageKey, mode);
-  if (emitEvent && typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+  // 只有真正发生变化时才广播：否则「emit → 对端 applyThemeMode → 再 emit」会在
+  // 多窗口之间来回触发，与 storage 事件叠加后形成回环。
+  if (emitEvent && previous !== mode && typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
     void emit("omni-theme-mode-changed", { mode });
   }
 }

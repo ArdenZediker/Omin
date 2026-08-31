@@ -49,6 +49,10 @@ export async function bootstrapSqliteStorage(keys: string[]) {
     });
 
     Object.entries(payload.entries).forEach(([key, value]) => {
+      // 仅在与本地值不同时才覆盖并通知，避免向监听者广播无变化的事件。
+      if (localStorage.getItem(key) === value) {
+        return;
+      }
       localStorage.setItem(key, value);
       window.dispatchEvent(new StorageEvent("storage", { key, newValue: value }));
     });
@@ -75,8 +79,17 @@ export function readSqliteBackedJson<T>(key: string, fallback: T): T {
 
 export function saveSqliteBackedValue(key: string, value: string) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(key, value);
-  window.dispatchEvent(new StorageEvent("storage", { key, newValue: value }));
+
+  const unchanged = localStorage.getItem(key) === value;
+
+  // 值未变化时只跳过 setItem 与 storage 事件派发。
+  // 否则「写入 → storage 事件 → 监听回调再次写入」会形成同步无限递归
+  // （主题同步链路曾因此 Maximum call stack size exceeded）。
+  // 仍然照常落库：localStorage 有值并不代表 SQLite 里一定有（换库/首次迁移）。
+  if (!unchanged) {
+    localStorage.setItem(key, value);
+    window.dispatchEvent(new StorageEvent("storage", { key, newValue: value }));
+  }
 
   if (!canUseTauriInvoke()) {
     return;
@@ -89,8 +102,13 @@ export function saveSqliteBackedValue(key: string, value: string) {
 
 export function removeSqliteBackedValue(key: string) {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(key);
-  window.dispatchEvent(new StorageEvent("storage", { key, newValue: null }));
+
+  // 同 saveSqliteBackedValue：键本就不存在时不再派发事件（避免无意义回环），
+  // 但仍照常请求删除，保证 SQLite 侧同步。
+  if (localStorage.getItem(key) !== null) {
+    localStorage.removeItem(key);
+    window.dispatchEvent(new StorageEvent("storage", { key, newValue: null }));
+  }
 
   if (!canUseTauriInvoke()) {
     return;
