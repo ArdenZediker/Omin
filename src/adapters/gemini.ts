@@ -1,5 +1,6 @@
 // Omni - Gemini 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import { toGeminiTools, toGeminiContent, parseGeminiToolCalls } from "./wireTools";
 
 const GEMINI_MODELS: ModelConfig[] = [
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "gemini", maxTokens: 1048576, supportsVision: true, supportsStreaming: true },
@@ -21,21 +22,25 @@ export class GeminiAdapter implements ModelAdapter {
 
   private buildContents(request: ChatRequest) {
     return request.messages
-      .filter((m) => m.role !== "system")
       .map((msg) => {
-        const parts: Array<Record<string, unknown>> = [];
-        if (msg.images && msg.images.length > 0) {
-          for (const img of msg.images) {
-            const base64 = img.startsWith("data:") ? img.split(",")[1] : img;
-            parts.push({ inline_data: { mime_type: "image/png", data: base64 } });
+        // 工具调用/工具结果走公共转换；普通文本/图片消息在此处理
+        if (msg.role !== "system" && msg.role !== "tool" && !(msg.role === "assistant" && msg.toolCalls?.length)) {
+          const parts: Array<Record<string, unknown>> = [];
+          if (msg.images && msg.images.length > 0) {
+            for (const img of msg.images) {
+              const base64 = img.startsWith("data:") ? img.split(",")[1] : img;
+              parts.push({ inline_data: { mime_type: "image/png", data: base64 } });
+            }
           }
+          parts.push({ text: msg.content });
+          return {
+            role: msg.role === "project" ? "model" : "user",
+            parts,
+          };
         }
-        parts.push({ text: msg.content });
-        return {
-          role: msg.role === "project" ? "model" : "user",
-          parts,
-        };
-      });
+        return toGeminiContent(msg);
+      })
+      .filter((c): c is { role: "user" | "model"; parts: Array<Record<string, unknown>> } => c !== null);
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
@@ -49,6 +54,9 @@ export class GeminiAdapter implements ModelAdapter {
     };
     if (systemInstruction) {
       body.systemInstruction = { parts: [{ text: systemInstruction.content }] };
+    }
+    if (request.tools && request.tools.length > 0) {
+      body.tools = toGeminiTools(request.tools);
     }
 
     const response = await fetch(
@@ -78,6 +86,7 @@ export class GeminiAdapter implements ModelAdapter {
             totalTokens: data.usageMetadata.totalTokenCount,
           }
         : undefined,
+      toolCalls: parseGeminiToolCalls(data),
     };
   }
 

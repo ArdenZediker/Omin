@@ -1,6 +1,6 @@
 import { emit, emitTo } from "@tauri-apps/api/event";
 import { getToolManifestById } from "../config/manifests/tools";
-import type { Message } from "../adapters/types";
+import type { ChatToolParam, Message } from "../adapters/types";
 import type { Project } from "../chat/types";
 import type { PetThoughtState } from "../app/types";
 
@@ -28,6 +28,84 @@ export function resolveEnabledToolNames(project: Project | null) {
     }
   }
   return { toolNames, toolDescriptions };
+}
+
+/**
+ * function calling 用的工具声明：把项目已允许的工具转为模型可调用的工具定义。
+ *
+ * 只暴露「只读/分析类」工具给模型（搜索会话、读取文件、搜索文件等），
+ * 避免模型擅自执行有 UI 副作用的命令（切模型/清空对话/开关设置等）。
+ */
+export function buildChatTools(project: Project | null): ChatToolParam[] {
+  if (!project) return [];
+  const SAFE_TOOL_IDS = new Set([
+    "search_sessions",
+    "read_session",
+    "list_files",
+    "read_file",
+    "search_files",
+    "analyze_files",
+  ]);
+  const tools: ChatToolParam[] = [];
+  for (const toolId of new Set(project.allowedToolIds)) {
+    if (!SAFE_TOOL_IDS.has(toolId)) continue;
+    const manifest = getToolManifestById(toolId);
+    if (!manifest) continue;
+    tools.push({
+      name: manifest.id,
+      description: manifest.promptContribution ?? manifest.description,
+      parameters: { type: "object", properties: {} },
+    });
+  }
+  return tools;
+}
+
+/**
+ * 把模型发起的工具调用 arguments（JSON 字符串）宽容解析为本地命令的 args 文本。
+ * 支持 {args}/{query}/{input}/{text}/{content}/{keyword} 字段，或纯字符串/拼接。
+ */
+export function extractToolCallArgs(raw: string): string {
+  if (!raw || raw === "{}") return "";
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === "string") return parsed;
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as Record<string, unknown>;
+      const directKeys = ["args", "query", "input", "text", "content", "keyword"];
+      for (const key of directKeys) {
+        if (typeof record[key] === "string") return record[key];
+      }
+      const parts = Object.entries(record)
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        .map(([key, value]) => `${key}=${value}`);
+      return parts.join(" ");
+    }
+    return String(parsed);
+  } catch {
+    return raw;
+  }
+}
+
+/** 工具调用名（如 search_files）还原为本地 slash 命令（/search_files）。 */
+export function toolCallNameToCommand(name: string): string {
+  return name.startsWith("/") ? name : `/${name}`;
+}
+
+/** 执行结果统一转成回填给模型的文本。 */
+export function formatToolCallResult(
+  result: { ok: boolean; error?: string; outputText?: string; data?: unknown } | void
+): string {
+  if (!result) return "工具执行完成（无输出）";
+  if (result.ok === false) return result.error || "工具执行失败";
+  if (result.outputText) return result.outputText;
+  if (result.data !== undefined) {
+    try {
+      return typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2);
+    } catch {
+      return String(result.data);
+    }
+  }
+  return "工具执行完成（无输出）";
 }
 
 export const SILENT_LOCAL_TOOL_IDS = new Set([

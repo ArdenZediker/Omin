@@ -1,4 +1,4 @@
-import type { Message } from "../adapters/types";
+import type { ChatToolCall, ChatToolParam, Message } from "../adapters/types";
 import { executeChatTurn } from "./engine";
 import { runTaskPlan } from "./taskRunner";
 import type { ResolvedLocalSlashCommand } from "./skills";
@@ -78,6 +78,10 @@ export async function executeTask(options: {
   knowledgeCollectionId?: string | null;
   intent?: TaskIntent;
   plan?: TaskPlan;
+  /** function calling：工具声明（透传给 executeChatTurn） */
+  tools?: ChatToolParam[];
+  /** 执行一次模型发起的工具调用（透传给 executeChatTurn） */
+  executeToolCall?: (toolCall: ChatToolCall) => Promise<string>;
 }): Promise<TaskExecutionResult> {
   const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
@@ -116,6 +120,8 @@ export async function executeTask(options: {
           enableMemoryExtraction: intent === "chat",
           enableSummaryExtraction: intent === "chat",
           enableToolProtocol: intent !== "chat",
+          tools: options.tools,
+          executeToolCall: options.executeToolCall,
         });
         api.setFinalResult(finalResult);
         api.appendTrace("模型回复生成完成");
@@ -359,6 +365,10 @@ export async function executeInputTask(options: {
   knowledgeCollectionId?: string | null;
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown } | void>;
+  /** function calling：工具声明（透传给 executeTask） */
+  tools?: ChatToolParam[];
+  /** 执行一次模型发起的工具调用（透传给 executeTask） */
+  executeToolCall?: (toolCall: ChatToolCall) => Promise<string>;
 }): Promise<TaskExecutionResult> {
   const {
     input,
@@ -397,6 +407,8 @@ export async function executeInputTask(options: {
         onChunk,
         knowledgeCollectionId,
         intent: "chat",
+        tools: options.tools,
+        executeToolCall: options.executeToolCall,
       });
     }
 
@@ -441,5 +453,7 @@ export async function executeInputTask(options: {
     knowledgeCollectionId,
     intent: "chat",
     plan,
+    tools: options.tools,
+    executeToolCall: options.executeToolCall,
   });
 }

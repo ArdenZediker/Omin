@@ -1,6 +1,7 @@
 // Omni - Ollama 适配器（本地模型）
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toWireRole } from "./types";
+import { toOllamaTools, toOllamaMessage, parseOllamaToolCalls } from "./wireTools";
 
 const OLLAMA_MODELS: ModelConfig[] = [
   { id: "llama3", name: "Llama 3 (Local)", provider: "ollama", maxTokens: 8192, supportsVision: false, supportsStreaming: true },
@@ -20,27 +21,32 @@ export class OllamaAdapter implements ModelAdapter {
     return this.config.baseUrl || "http://localhost:11434";
   }
 
+  private buildMessages(request: ChatRequest) {
+    return request.messages.map((msg) => {
+      if (msg.images && msg.images.length > 0) {
+        return {
+          role: toWireRole(msg.role),
+          content: msg.content,
+          images: msg.images.map((img) => (img.startsWith("data:") ? img.split(",")[1] : img)),
+        };
+      }
+      return toOllamaMessage(msg);
+    });
+  }
+
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const response = await fetch(`${this.getBaseUrl()}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...this.config.customHeaders },
       body: JSON.stringify({
         model: request.model,
-        messages: request.messages.map((msg) => {
-          if (msg.images && msg.images.length > 0) {
-            return {
-              role: toWireRole(msg.role),
-              content: msg.content,
-              images: msg.images.map((img) => (img.startsWith("data:") ? img.split(",")[1] : img)),
-            };
-          }
-          return { role: toWireRole(msg.role), content: msg.content };
-        }),
+        messages: this.buildMessages(request),
         stream: false,
         options: {
           temperature: request.temperature ?? 0.7,
           num_predict: request.maxTokens,
         },
+        ...(request.tools && request.tools.length > 0 ? { tools: toOllamaTools(request.tools) } : {}),
       }),
     });
 
@@ -53,6 +59,7 @@ export class OllamaAdapter implements ModelAdapter {
     return {
       content: data.message?.content || "",
       model: data.model || request.model,
+      toolCalls: parseOllamaToolCalls(data),
     };
   }
 

@@ -4,10 +4,16 @@ import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
 // 为所有 AI 模型提供统一接口
 
 export interface Message {
-  role: "system" | "user" | "project";
+  role: "system" | "user" | "project" | "assistant" | "tool";
   content: string;
   images?: string[]; // base64 编码图片
   knowledgeContext?: KnowledgeContextResult | null;
+  /** role === "tool" 时：对应当前轮次 assistant.toolCalls 里某次调用的 id */
+  toolCallId?: string;
+  /** role === "tool" 时：对应工具名（Gemini functionResponse 必须回传 name） */
+  toolCallName?: string;
+  /** role === "assistant" 时：模型发起的工具调用（function calling 循环用） */
+  toolCalls?: ChatToolCall[];
 }
 
 /**
@@ -16,8 +22,24 @@ export interface Message {
  * OpenAI 系接口只接受 system/assistant/user/tool/function，透传会被 400 拒绝
  * （"project is not one of ['system', 'assistant', 'user', 'tool', 'function']"）。
  */
-export function toWireRole(role: Message["role"]): "system" | "user" | "assistant" {
-  return role === "project" ? "assistant" : role;
+export function toWireRole(role: Message["role"]): "system" | "user" | "assistant" | "tool" {
+  if (role === "project") return "assistant";
+  return role;
+}
+
+/** 模型发起的一次工具调用。arguments 是 JSON 字符串。 */
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+/** 声明式工具定义（OpenAI function calling 风格的跨适配器统一形态）。 */
+export interface ChatToolParam {
+  name: string;
+  description?: string;
+  /** JSON Schema（OpenAI 兼容接口直接透传；Claude/Gemini 内部转换） */
+  parameters?: Record<string, unknown>;
 }
 
 export interface ModelConfig {
@@ -36,6 +58,8 @@ export interface ChatRequest {
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
+  /** function calling 工具声明；提供后模型可主动发起工具调用 */
+  tools?: ChatToolParam[];
 }
 
 export interface ChatResponse {
@@ -46,6 +70,8 @@ export interface ChatResponse {
     completionTokens: number;
     totalTokens: number;
   };
+  /** 模型请求调用的工具（非流式 function calling 时返回） */
+  toolCalls?: ChatToolCall[];
 }
 
 export interface EmbeddingResponse {

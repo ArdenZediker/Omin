@@ -1,6 +1,7 @@
 // Omni - Claude 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toWireRole } from "./types";
+import { toClaudeTools, toClaudeMessage, parseClaudeToolCalls } from "./wireTools";
 
 const CLAUDE_MODELS: ModelConfig[] = [
   { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, supportsVision: true, supportsStreaming: true },
@@ -25,25 +26,27 @@ export class ClaudeAdapter implements ModelAdapter {
     const systemMsg = request.messages.find((m) => m.role === "system");
     const chatMsgs = request.messages.filter((m) => m.role !== "system");
 
-    const messages = chatMsgs.map((msg) => {
-      if (msg.images && msg.images.length > 0) {
-        return {
-          role: toWireRole(msg.role),
-          content: [
-            ...msg.images.map((img) => ({
-              type: "image" as const,
-              source: {
-                type: "base64" as const,
-                media_type: "image/png",
-                data: img.startsWith("data:") ? img.split(",")[1] : img,
-              },
-            })),
-            { type: "text" as const, text: msg.content },
-          ],
-        };
-      }
-      return { role: toWireRole(msg.role), content: msg.content };
-    });
+    const messages = chatMsgs
+      .map((msg) => {
+        if (msg.images && msg.images.length > 0) {
+          return {
+            role: toWireRole(msg.role),
+            content: [
+              ...msg.images.map((img) => ({
+                type: "image" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: "image/png",
+                  data: img.startsWith("data:") ? img.split(",")[1] : img,
+                },
+              })),
+              { type: "text" as const, text: msg.content },
+            ],
+          };
+        }
+        return toClaudeMessage(msg);
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null);
 
     return { system: systemMsg?.content || "", messages };
   }
@@ -65,6 +68,7 @@ export class ClaudeAdapter implements ModelAdapter {
         system,
         messages,
         stream: false,
+        ...(request.tools && request.tools.length > 0 ? { tools: toClaudeTools(request.tools) } : {}),
       }),
     });
 
@@ -86,6 +90,7 @@ export class ClaudeAdapter implements ModelAdapter {
             totalTokens: data.usage.input_tokens + data.usage.output_tokens,
           }
         : undefined,
+      toolCalls: parseClaudeToolCalls(data),
     };
   }
 

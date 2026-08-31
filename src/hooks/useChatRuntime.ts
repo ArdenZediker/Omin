@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import type { Message, ModelConfig } from "../adapters/types";
+import type { ChatToolCall, Message, ModelConfig } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { isMainWindowUserVisible } from "../app/window";
 import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
@@ -20,6 +20,10 @@ import { getPetThoughtKey, matchesPetThought } from "../app/petThoughts";
 import {
   type SessionLite,
   resolveEnabledToolNames,
+  buildChatTools,
+  extractToolCallArgs,
+  toolCallNameToCommand,
+  formatToolCallResult,
   SILENT_LOCAL_TOOL_IDS,
   PET_THOUGHT_QUEUE_LIMIT,
   PET_THOUGHT_DISMISS_DELAY_MS,
@@ -818,6 +822,21 @@ export function useChatRuntime({
     ]
   );
 
+  /**
+   * function calling 的执行器：把模型发起的工具调用（name + JSON arguments）
+   * 映射回本地 slash 命令执行，结果转成文本回填给模型继续推理。
+   */
+  const executeToolCall = useCallback(
+    async (toolCall: ChatToolCall) => {
+      const result = await executeTool({
+        command: toolCallNameToCommand(toolCall.name),
+        args: extractToolCallArgs(toolCall.arguments),
+      });
+      return formatToolCallResult(result);
+    },
+    [executeTool]
+  );
+
   const handlePetThoughtReply = useCallback(
     async (sessionId: string, content: string) => {
       if (isSessionLoading(sessionId)) {
@@ -892,6 +911,8 @@ export function useChatRuntime({
             updateStreamPreview();
           },
           executeTool,
+          tools: buildChatTools(targetProject),
+          executeToolCall,
         });
 
         if (!isCurrentSessionRun(session.id, runId, abortController)) {
@@ -1070,6 +1091,8 @@ export function useChatRuntime({
             updateStreamPreview();
           },
           executeTool,
+          tools: buildChatTools(activeProject),
+          executeToolCall,
         });
 
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {

@@ -1,6 +1,7 @@
 // Omni - DeepSeek 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toWireRole } from "./types";
+import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls } from "./wireTools";
 
 const DEEPSEEK_MODELS: ModelConfig[] = [
   { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, supportsVision: false, supportsStreaming: true },
@@ -20,6 +21,11 @@ export class DeepSeekAdapter implements ModelAdapter {
     return this.config.baseUrl || "https://api.deepseek.com/v1";
   }
 
+  /** deepseek-reasoner 不支持 tools 参数，传入时静默忽略。 */
+  private supportsTools(request: ChatRequest): boolean {
+    return Boolean(request.tools?.length) && !String(request.model).includes("reasoner");
+  }
+
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {
       method: "POST",
@@ -30,10 +36,11 @@ export class DeepSeekAdapter implements ModelAdapter {
       },
       body: JSON.stringify({
         model: request.model,
-        messages: request.messages.map((m) => ({ role: toWireRole(m.role), content: m.content })),
+        messages: request.messages.map((m) => toOpenAIMessage(m)),
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens,
         stream: false,
+        ...(this.supportsTools(request) ? { tools: toOpenAITools(request.tools) } : {}),
       }),
     });
 
@@ -44,7 +51,7 @@ export class DeepSeekAdapter implements ModelAdapter {
 
     const data = await response.json();
     return {
-      content: data.choices[0].message.content,
+      content: data.choices[0].message.content ?? "",
       model: data.model,
       usage: data.usage
         ? {
@@ -53,6 +60,7 @@ export class DeepSeekAdapter implements ModelAdapter {
             totalTokens: data.usage.total_tokens,
           }
         : undefined,
+      toolCalls: this.supportsTools(request) ? parseOpenAIToolCalls(data) : undefined,
     };
   }
 

@@ -1,6 +1,7 @@
 // Omni - OpenAI 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, EmbeddingResponse } from "./types";
 import { toWireRole } from "./types";
+import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls } from "./wireTools";
 
 const OPENAI_MODELS: ModelConfig[] = [
   { id: "gpt-4o", name: "GPT-4o", provider: "openai", maxTokens: 128000, supportsVision: true, supportsStreaming: true },
@@ -36,7 +37,7 @@ export class OpenAIAdapter implements ModelAdapter {
           ],
         };
       }
-      return { role: toWireRole(msg.role), content: msg.content };
+      return toOpenAIMessage(msg);
     });
   }
 
@@ -54,6 +55,7 @@ export class OpenAIAdapter implements ModelAdapter {
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens,
         stream: false,
+        ...(request.tools && request.tools.length > 0 ? { tools: toOpenAITools(request.tools) } : {}),
       }),
     });
 
@@ -64,7 +66,7 @@ export class OpenAIAdapter implements ModelAdapter {
 
     const data = await response.json();
     return {
-      content: data.choices[0].message.content,
+      content: data.choices[0].message.content ?? "",
       model: data.model,
       usage: data.usage
         ? {
@@ -73,6 +75,7 @@ export class OpenAIAdapter implements ModelAdapter {
             totalTokens: data.usage.total_tokens,
           }
         : undefined,
+      toolCalls: parseOpenAIToolCalls(data),
     };
   }
 
