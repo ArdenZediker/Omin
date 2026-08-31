@@ -1232,13 +1232,22 @@ export default function MainChatView({
         <div className="chat-history-panel__projects">
           {isBasicProjectVisible && basicProject && (
             <div className="chat-history-panel__project-section">
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 className={`chat-history-panel__project ${activeProjectId === basicProject.id ? "chat-history-panel__project--active" : ""}`}
                 onClick={() => {
                   setProjectSettingsId(null);
                   setProjectAvatarPanelOpen(false);
                   onSelectProject(basicProject.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setProjectSettingsId(null);
+                    setProjectAvatarPanelOpen(false);
+                    onSelectProject(basicProject.id);
+                  }
                 }}
               >
                 <span className="chat-history-panel__project-icon">
@@ -1266,7 +1275,7 @@ export default function MainChatView({
                     <Settings size={13} strokeWidth={1.9} />
                   </button>
                 </span>
-              </button>
+              </div>
             </div>
           )}
 
@@ -1331,14 +1340,23 @@ export default function MainChatView({
                     </button>
                   ) : (
                     defaultProjectGroup.projects.map((project, index) => (
-                      <button
+                      <div
                         key={project.id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         className={`chat-history-panel__project ${activeProjectId === project.id ? "chat-history-panel__project--active" : ""} ${openProjectCardMenuId === project.id ? "chat-history-panel__project--menu-open" : ""}`}
                         onClick={() => {
                           setProjectSettingsId(null);
                           setProjectAvatarPanelOpen(false);
                           onSelectProject(project.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setProjectSettingsId(null);
+                            setProjectAvatarPanelOpen(false);
+                            onSelectProject(project.id);
+                          }
                         }}
                       >
                         <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">
@@ -1459,7 +1477,7 @@ export default function MainChatView({
                             </div>
                           )}
                         </span>
-                      </button>
+                      </div>
                     ))
                   )}
                 </div>
@@ -1467,14 +1485,23 @@ export default function MainChatView({
                   <div key={group.label} className="chat-history-panel__project-group">
                     <div className="chat-history-panel__project-group-label">{group.label}</div>
                     {group.projects.map((project, index) => (
-                      <button
+                      <div
                         key={project.id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         className={`chat-history-panel__project ${activeProjectId === project.id ? "chat-history-panel__project--active" : ""} ${openProjectCardMenuId === project.id ? "chat-history-panel__project--menu-open" : ""}`}
                         onClick={() => {
                           setProjectSettingsId(null);
                           setProjectAvatarPanelOpen(false);
                           onSelectProject(project.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setProjectSettingsId(null);
+                            setProjectAvatarPanelOpen(false);
+                            onSelectProject(project.id);
+                          }
                         }}
                       >
                         <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">
@@ -1595,7 +1622,7 @@ export default function MainChatView({
                             </div>
                           )}
                         </span>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 ))}
