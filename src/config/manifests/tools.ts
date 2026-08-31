@@ -122,6 +122,14 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     promptContribution:
       "可调用 /update_persona <字段> <内容> 把稳定的偏好、称呼或人设写入对应个性化 md 文件（含 AGENTS.md），用法：/update_persona <字段> <内容>。",
   },
+  {
+    id: "install_expert",
+    command: "/install_expert",
+    title: "安装专家",
+    description: "把一条符合 Omni 规范的专家定义（kind 为 expert 的 PluginManifest）注册进本地插件库，注册后可在「专家分类 → 我的专家」查看使用",
+    promptContribution:
+      "可调用 /install_expert 把符合 Omni 规范的专家定义（PluginManifest，kind 固定为 expert）注册进本地插件库，注册后立即在「专家分类 → 我的专家」生效；仅在用户要求创建/安装/更新专家时使用，参数为完整专家 manifest JSON。",
+  },
 ];
 
 export const TOOLSET_MANIFESTS: ToolsetManifest[] = [
@@ -172,6 +180,7 @@ export const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [
   "pin",
   "read_persona",
   "update_persona",
+  "install_expert",
 ];
 
 export function getToolManifestById(id: string) {

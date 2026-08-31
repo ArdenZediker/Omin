@@ -8,6 +8,8 @@ import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibilit
 import { saveSqliteBackedValue } from "../app/sqliteStorage";
 import { showCompactWindow, showSettingsWindow } from "../app/window";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
+import type { PluginManifest } from "../plugins/types";
+import { pluginRegistry } from "../plugins/registry";
 import type { ProjectMemorySourceType, Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 
@@ -62,6 +64,72 @@ async function showDesktopPet() {
   await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
 }
 
+/**
+ * 宽容解析 /install_expert 的参数为专家 manifest。
+ * 支持：裸 JSON、```json 代码围栏包裹、字符串二次编码、{ manifest: {...} } 包装。
+ */
+export function parseExpertManifestFromArgs(raw: string): PluginManifest {
+  let text = (raw ?? "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    text = text.slice(firstBrace, lastBrace + 1);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("无法解析专家定义：请传入完整的专家 manifest JSON（对象）");
+  }
+  if (typeof parsed === "string") {
+    parsed = JSON.parse(parsed);
+  }
+  if (parsed && typeof parsed === "object") {
+    const record = parsed as Record<string, unknown>;
+    if (record.manifest && typeof record.manifest === "object") {
+      return record.manifest as PluginManifest;
+    }
+    return parsed as PluginManifest;
+  }
+  throw new Error("专家定义必须是 JSON 对象");
+}
+
+/** 校验并补全专家 manifest 的必填字段与默认值。 */
+export function normalizeExpertManifest(input: PluginManifest): PluginManifest {
+  if (!input || typeof input !== "object") {
+    throw new Error("专家定义格式错误：应为 JSON 对象");
+  }
+  if (input.kind && input.kind !== "expert") {
+    throw new Error(`install_expert 只接受 kind 为 expert 的专家定义，收到「${input.kind}」`);
+  }
+  const id = String(input.id ?? "").trim();
+  const name = String(input.name ?? "").trim();
+  const description = String(input.description ?? "").trim();
+  const templatePrompt = String(input.templatePrompt ?? "").trim();
+  if (!id) throw new Error("缺少必填字段 id（kebab-case 唯一标识，如 dev-expert）");
+  if (!/^[a-z][a-z0-9-]*$/.test(id)) {
+    throw new Error(`id「${id}」不是合法 kebab-case：只能小写字母开头，包含小写字母、数字、连字符`);
+  }
+  if (pluginRegistry.isBuiltin(id)) {
+    throw new Error(`id「${id}」与内置插件冲突，请换一个 id`);
+  }
+  if (!name) throw new Error("缺少必填字段 name（专家展示名）");
+  if (!description) throw new Error("缺少必填字段 description（一句话描述）");
+  if (!templatePrompt) throw new Error("缺少必填字段 templatePrompt（专家系统提示词，应可直接执行、不含占位符）");
+  return {
+    ...input,
+    id,
+    name,
+    description,
+    templatePrompt,
+    kind: "expert",
+    version: String(input.version ?? "1.0.0"),
+    author: input.author ?? "Omni",
+    category: input.category ?? "AI Agent",
+    tags: Array.isArray(input.tags) ? input.tags.filter((tag): tag is string => typeof tag === "string") : [],
+  };
+}
+
 export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   const registry = new ToolRegistry();
 
@@ -81,6 +149,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   const analyzeFilesTool = requireTool("analyze_files");
   const readPersonaTool = requireTool("read_persona");
   const updatePersonaTool = requireTool("update_persona");
+  const installExpertTool = requireTool("install_expert");
 
   registry.register({
     id: newTool.id,
@@ -408,6 +477,28 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       }
       await invoke("write_persona_file", { key, content });
       return { ok: true, outputText: `已更新个性化字段【${key}】。` };
+    },
+  });
+
+  registry.register({
+    id: installExpertTool.id,
+    command: installExpertTool.command,
+    title: installExpertTool.title,
+    execute: async (resolvedCommand) => {
+      try {
+        const manifest = normalizeExpertManifest(parseExpertManifestFromArgs(resolvedCommand.args));
+        const existed = pluginRegistry.isInstalled(manifest.id);
+        pluginRegistry.install(manifest, { type: "local", path: "expert-created" });
+        return {
+          ok: true,
+          outputText: existed
+            ? `专家「${manifest.name}」（${manifest.id}）已更新，可在「专家分类 → 我的专家」查看。`
+            : `专家「${manifest.name}」（${manifest.id}）已安装，可在「专家分类 → 我的专家」查看。`,
+          data: { id: manifest.id, name: manifest.name, existed },
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : "专家定义校验失败" };
+      }
     },
   });
 

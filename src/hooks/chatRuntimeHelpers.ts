@@ -57,6 +57,26 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
       parameters: { type: "object", properties: {} },
     });
   }
+  // 专家管理闭环：install_expert 无条件暴露（不依赖项目 allowedToolIds），
+  // 让「创建专家 → 一键注册」在任何项目下都可用。
+  const installExpertManifest = getToolManifestById("install_expert");
+  if (installExpertManifest) {
+    tools.push({
+      name: installExpertManifest.id,
+      description: installExpertManifest.promptContribution ?? installExpertManifest.description,
+      parameters: {
+        type: "object",
+        properties: {
+          manifest: {
+            type: "object",
+            description:
+              "符合 Omni 规范的专家 PluginManifest 定义：id（kebab-case 唯一标识）、name（展示名）、description（一句话描述）、version、kind（固定 expert）、category（行业分类）、icon（lucide 图标名）、tags（3 个擅长领域标签）、templatePrompt（专家系统提示词，可直接执行、不含占位符）、defaultToolIds（推荐工具 id）、defaultSkillIds（推荐技能 id）",
+          },
+        },
+        required: ["manifest"],
+      },
+    });
+  }
   return tools;
 }
 
@@ -74,6 +94,10 @@ export function extractToolCallArgs(raw: string): string {
       const directKeys = ["args", "query", "input", "text", "content", "keyword"];
       for (const key of directKeys) {
         if (typeof record[key] === "string") return record[key];
+      }
+      // 专家安装：模型传 { manifest: {...} } 时保留完整 JSON，供 /install_expert 自行解析。
+      if (record.manifest && typeof record.manifest === "object") {
+        return JSON.stringify(record.manifest);
       }
       const parts = Object.entries(record)
         .filter((entry): entry is [string, string] => typeof entry[1] === "string")

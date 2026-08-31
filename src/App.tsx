@@ -343,6 +343,19 @@ function MainApp() {
     [activeProjectId, updateProjectDraft]
   );
 
+  /** 跳到对话框：预填草稿并聚焦输入框（draftSignal/focusSignal 递增触发 ChatInput 应用）。 */
+  const handleJumpToChat = useCallback(
+    (text: string) => {
+      updateProjectDraft(activeProjectId, () => ({
+        text,
+        images: [],
+      }));
+      setInputDraftKey((key) => key + 1);
+      setInputFocusKey((key) => key + 1);
+    },
+    [activeProjectId, updateProjectDraft]
+  );
+
   const handleModelChange = useCallback((modelId: string) => {
     setCurrentModel((current) => {
       if (current && current !== modelId) {
@@ -811,6 +824,7 @@ function MainApp() {
           onTogglePinChat={handleTogglePinChat}
           onUseEmptyPrompt={handleUseEmptyPrompt}
           onDraftChange={handleComposerDraftChange}
+          onJumpToChat={handleJumpToChat}
           onOpenKnowledge={() => setView("knowledge")}
           openMarketplace={openMarketplace}
           onMarketplaceChange={setOpenMarketplace}

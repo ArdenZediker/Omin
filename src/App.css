@@ -10218,6 +10218,58 @@ body:has(.pet-thought-window),
   font-size: 12px;
 }
 
+/* 我的专家：工具栏 + 创建按钮 + 空状态 */
+.plugin-marketplace__my-experts {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.plugin-marketplace__my-experts-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--omni-app-muted);
+}
+
+.plugin-marketplace__create-expert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--omni-accent, #7c3aed) 46%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 14%, var(--omni-panel-bg));
+  color: color-mix(in srgb, var(--omni-accent, #7c3aed) 86%, var(--omni-app-text));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.plugin-marketplace__create-expert:hover {
+  border-color: color-mix(in srgb, var(--omni-accent, #7c3aed) 62%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 20%, var(--omni-panel-bg));
+}
+
+.plugin-marketplace__create-expert:active {
+  transform: scale(0.97);
+}
+
+.plugin-marketplace__empty--my-experts {
+  flex: 1;
+  gap: 12px;
+  text-align: center;
+}
+
+.plugin-marketplace__empty--my-experts .plugin-marketplace__create-expert {
+  margin-top: 6px;
+}
+
 .plugin-marketplace__footer {
   padding: 12px 22px;
   border-top: 1px solid var(--omni-panel-border);

@@ -15,6 +15,7 @@ import {
   Package,
   PlugZap,
   Unplug,
+  Plus,
   AlertTriangle,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
@@ -42,6 +43,8 @@ type PluginMarketplaceProps = {
   onClose: () => void;
   embedded?: boolean;
   mainView?: boolean;
+  /** 「创建专家」入口：点击后由宿主跳转到对话框预填创建指令。 */
+  onCreateExpert?: () => void;
 };
 
 const KIND_TABS: {
@@ -70,6 +73,7 @@ export default function PluginMarketplace({
   onClose,
   embedded = false,
   mainView = false,
+  onCreateExpert,
 }: PluginMarketplaceProps) {
   const [query, setQuery] = useState(initialFilter.query ?? "");
   // 不设「全部」混合列表：一级分类必须具体，默认落在技能（SkillHub）。
@@ -90,22 +94,30 @@ export default function PluginMarketplace({
     connectorId: string;
     message: string;
   } | null>(null);
-  // 「本地 / SkillHub / 套件 / 远程连接器」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
+  // 「本地 / SkillHub / 套件 / 远程连接器 / 我的专家」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
   // 点「技能」直接展示 SkillHub 浏览界面；点「连接器」直接展示外部服务接入型技能浏览；
-  // 其他分类仍是本地列表。页内保留子开关切换回本地。
-  const [source, setSource] = useState<"local" | "skillhub" | "suites" | "connectors">(
+  // 专家分类默认落在「我的专家」（用户自建/自装）；其他分类仍是本地列表。页内保留子开关切换回本地。
+  const [source, setSource] = useState<"local" | "skillhub" | "suites" | "connectors" | "my">(
     initialFilter.kind === "skill"
       ? "skillhub"
       : initialFilter.kind === "connector"
         ? "connectors"
-        : "local",
+        : initialFilter.kind === "expert"
+          ? "my"
+          : "local",
   );
   const [searchExpanded, setSearchExpanded] = useState(!mainView);
 
-  // 一级分类切换时联动来源：技能 → SkillHub，连接器 → 远程连接器，其他 → 本地。
+  // 一级分类切换时联动来源：技能 → SkillHub，连接器 → 远程连接器，专家 → 我的专家，其他 → 本地。
   useEffect(() => {
     setSource(
-      kind === "skill" ? "skillhub" : kind === "connector" ? "connectors" : "local",
+      kind === "skill"
+        ? "skillhub"
+        : kind === "connector"
+          ? "connectors"
+          : kind === "expert"
+            ? "my"
+            : "local",
     );
   }, [kind]);
 
@@ -129,6 +141,16 @@ export default function PluginMarketplace({
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
   const showSuites = !onPick && source === "suites" && kind === "skill";
   const showConnectorhub = !onPick && source === "connectors" && kind === "connector";
+  // 「我的专家」：用户自己创建/安装的专家（非内置）。
+  const showMyExperts = !onPick && source === "my" && kind === "expert";
+  const myExperts = useMemo(
+    () =>
+      pluginRegistry
+        .list({ kind: "expert" })
+        .filter((manifest) => !pluginRegistry.isBuiltin(manifest.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [refreshKey],
+  );
 
   const handleCopyInstallPrompt = useCallback((manifest: PluginManifest) => {
     const prompt = buildPluginInstallPrompt(manifest);
@@ -400,7 +422,36 @@ export default function PluginMarketplace({
           </div>
         )}
 
-        {showSkillhub || showSuites || showConnectorhub ? null : (
+        {!onPick && kind === "expert" && (
+          <div
+            className="plugin-marketplace__source-tabs"
+            role="tablist"
+            aria-label="专家来源"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "my"}
+              className={`plugin-marketplace__source-tab ${source === "my" ? "plugin-marketplace__source-tab--active" : ""}`}
+              onClick={() => setSource("my")}
+            >
+              <Bot size={14} strokeWidth={1.8} />
+              <span>我的专家</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "local"}
+              className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
+              onClick={() => setSource("local")}
+            >
+              <LayoutTemplate size={14} strokeWidth={1.8} />
+              <span>本地内置</span>
+            </button>
+          </div>
+        )}
+
+        {showSkillhub || showSuites || showConnectorhub || showMyExperts ? null : (
           <>
             {mainView ? (
               <div className="plugin-marketplace__top-bar">
@@ -511,6 +562,81 @@ export default function PluginMarketplace({
           <CbteamsBrowser />
         ) : showConnectorhub ? (
           <ConnectorhubBrowser />
+        ) : showMyExperts ? (
+          <div className="plugin-marketplace__my-experts">
+            <div className="plugin-marketplace__my-experts-toolbar">
+              <span>你创建或从市场安装的专家</span>
+              <button
+                type="button"
+                className="plugin-marketplace__create-expert"
+                onClick={onCreateExpert}
+              >
+                <Plus size={14} strokeWidth={2} />
+                <span>创建专家</span>
+              </button>
+            </div>
+            {myExperts.length === 0 ? (
+              <div className="plugin-marketplace__empty plugin-marketplace__empty--my-experts">
+                <Bot size={40} strokeWidth={1.2} />
+                <p>还没有自定义专家</p>
+                <span>
+                  点击「创建专家」跳到对话框，让 AI 按 Omni 专家规范帮你生成专家定义并注册
+                </span>
+                <button
+                  type="button"
+                  className="plugin-marketplace__create-expert"
+                  onClick={onCreateExpert}
+                >
+                  <Plus size={14} strokeWidth={2} />
+                  <span>创建专家</span>
+                </button>
+              </div>
+            ) : (
+              <div className="plugin-marketplace__grid">
+                {myExperts.map((manifest) => {
+                  const Icon = ICON_MAP[manifest.kind] ?? Puzzle;
+                  return (
+                    <div key={manifest.id} className="plugin-card">
+                      <div className="plugin-card__icon">
+                        <Icon size={22} strokeWidth={1.7} />
+                      </div>
+                      <div className="plugin-card__main">
+                        <div className="plugin-card__title-row">
+                          <h3>{manifest.name}</h3>
+                          <span className="plugin-card__badge">expert</span>
+                        </div>
+                        <p className="plugin-card__description">
+                          {manifest.description}
+                        </p>
+                        <div className="plugin-card__meta">
+                          <span>{manifest.author ?? "Omni"}</span>
+                          {manifest.category && (
+                            <span>· {manifest.category}</span>
+                          )}
+                          <span>· v{manifest.version}</span>
+                        </div>
+                        {manifest.tags && manifest.tags.length > 0 && (
+                          <div className="plugin-card__tags">
+                            {manifest.tags.map((tag) => (
+                              <span key={tag} className="plugin-card__tag">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="plugin-card__actions">
+                        <span className="plugin-card__connected">
+                          <span className="plugin-card__connected-dot" />
+                          <span>已启用</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         ) : filteredPlugins.length === 0 ? (
           <div className="plugin-marketplace__empty">
             <Puzzle size={40} strokeWidth={1.2} />
