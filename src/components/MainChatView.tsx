@@ -10,14 +10,12 @@ import {
   Cable,
   Check,
   Compass,
-  Cpu,
   FolderOpen,
   History,
   LayoutDashboard,
   LayoutTemplate,
   MessageSquare,
   MoreHorizontal,
-  PawPrint,
   Pencil,
   PanelRightClose,
   PanelRightOpen,
@@ -46,11 +44,9 @@ import type { ProjectMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
 import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
-import { AVATAR_CATEGORIES, AVATAR_PRESETS } from "../config/manifests/avatars";
-import { filterAvatarPresets, getEmojiAssetSrc, resolveProjectAvatarSeed, resolveEmojiAvatarCode } from "../config/manifests/avatarHelpers";
+import { resolveProjectAvatarSeed } from "../config/manifests/avatarHelpers";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, PROJECT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
 import { pluginRegistry } from "../plugins/registry";
-import type { AvatarCategoryManifest } from "../config/manifests/types";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
@@ -75,8 +71,6 @@ import {
   MIN_TOPIC_PANEL_WIDTH,
   buildTaskAggregateSummary,
   clampPanelWidth,
-  enhancePresetPromptIfNeeded,
-  findPresetMetaByProject,
   formatMemoryScopeLabel,
   getMemorySourceTypeLabel,
   normalizeSearchText,
@@ -153,7 +147,6 @@ type MainChatViewProps = {
   onClearChat: () => void;
   onCopyMessage: (message: Message) => void | Promise<void>;
   onCreateCustomProject: (input?: {
-    sourcePresetId?: string | null;
     title?: string;
     description?: string;
     systemPrompt?: string;
@@ -191,6 +184,8 @@ type MainChatViewProps = {
   onOpenKnowledge: () => void;
   openMarketplace?: boolean;
   onMarketplaceChange?: (open: boolean) => void;
+  /** 跳转到对话框并预填草稿（如「创建专家」入口）。 */
+  onJumpToChat?: (text: string) => void;
 };
 
 export default function MainChatView({
@@ -253,6 +248,7 @@ export default function MainChatView({
   onOpenKnowledge,
   openMarketplace,
   onMarketplaceChange,
+  onJumpToChat,
 }: MainChatViewProps) {
   const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
   const [composerElement, setComposerElement] = useState<HTMLDivElement | null>(null);
@@ -283,6 +279,13 @@ export default function MainChatView({
     setShowPluginMarketplace(false);
     onMarketplaceChange?.(false);
   }, [onMarketplaceChange]);
+
+  /** 「创建专家」：关闭扩展中心，跳回对话框并预填 /expert-manager 创建指令。 */
+  const handleCreateExpert = useCallback(() => {
+    setShowPluginMarketplace(false);
+    onMarketplaceChange?.(false);
+    onJumpToChat?.("/expert-manager ");
+  }, [onMarketplaceChange, onJumpToChat]);
   const [topicDeleteConfirm, setTopicDeleteConfirm] = useState<TopicDeleteConfirmState>(null);
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -312,8 +315,6 @@ export default function MainChatView({
   const [editingProjectGroupName, setEditingProjectGroupName] = useState<string | null>(null);
   const [editingProjectGroupDraft, setEditingProjectGroupDraft] = useState("");
   const [projectAvatarPanelOpen, setProjectAvatarPanelOpen] = useState(false);
-  const [projectAvatarSearchQuery, setProjectAvatarSearchQuery] = useState("");
-  const [projectAvatarCategory, setProjectAvatarCategory] = useState("recent");
   const [projectNotice, setProjectNotice] = useState<ProjectNoticeState>(null);
   const [projectAgentsMd, setProjectAgentsMd] = useState("");
   const refreshProjectAgentsMd = useCallback(async () => {
@@ -393,7 +394,6 @@ export default function MainChatView({
     [projectGroups, customProjects]
   );
   const activeProjectAvatarSeed = resolveProjectAvatarSeed(projects, activeProject?.id ?? null);
-  const activeProjectPresetMeta = findPresetMetaByProject(activeProject);
   const handleLayoutDragPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -532,7 +532,6 @@ export default function MainChatView({
     });
   }, [projectMemories, normalizedMemorySearchQuery, topicTitleById]);
   const visibleProjectMemories = showAllMemories ? filteredProjectMemories : filteredProjectMemories.slice(0, 12);
-  const filteredProjectAvatars = filterAvatarPresets(AVATAR_PRESETS, projectAvatarCategory, projectAvatarSearchQuery);
   const isProjectSettingsMode = Boolean(projectSettingsId && activeProject);
   const isCustomProjectSettingsMode = Boolean(isProjectSettingsMode && activeProject?.kind === "custom");
   useEffect(() => {
@@ -929,21 +928,6 @@ export default function MainChatView({
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [projectAvatarPanelOpen]);
-
-  const resolveAvatarCategoryIcon = (category: AvatarCategoryManifest["icon"]) => {
-    switch (category) {
-      case "history":
-        return History;
-      case "sparkles":
-        return Sparkles;
-      case "cpu":
-        return Cpu;
-      case "paw":
-        return PawPrint;
-      default:
-        return Sparkles;
-    }
-  };
 
   const handleDeleteSessions = (sessions: ChatSession[], title: string, message: string) => {
     if (sessions.length === 0) {
@@ -1673,6 +1657,7 @@ export default function MainChatView({
             mainView
             initialFilter={marketplaceFilter}
             onClose={closeMarketplace}
+            onCreateExpert={handleCreateExpert}
           />
         )}
         {projectNotice && (
@@ -1807,13 +1792,6 @@ export default function MainChatView({
                         <div className="omni-settings-dialog__setting-label">基础信息</div>
                         <div className="omni-settings-dialog__setting-hint">名称、描述和角色设定会决定这个项目在聊天中的定位与表现。</div>
                       </div>
-                      {activeProjectPresetMeta && (
-                        <div className="omni-settings-dialog__preset-badge">
-                          <span>来源预设</span>
-                          <strong>{activeProjectPresetMeta.label}</strong>
-                          <small>{activeProjectPresetMeta.hint}</small>
-                        </div>
-                      )}
                       <div className="omni-settings-dialog__project-side">
                         <div className="omni-settings-dialog__project-copy">
                           <div className="omni-settings-dialog__setting-label">项目头像</div>
@@ -1837,67 +1815,7 @@ export default function MainChatView({
                           </button>
                           {projectAvatarPanelOpen && (
                             <div ref={projectAvatarPanelRef} className="omni-settings-dialog__avatar-panel">
-                              <div className="omni-settings-dialog__avatar-categories">
-                                {AVATAR_CATEGORIES.map((category) => {
-                                  const CategoryIcon = resolveAvatarCategoryIcon(category.icon);
-                                  return (
-                                  <button
-                                    key={category.id}
-                                    type="button"
-                                    className={`omni-settings-dialog__avatar-category ${projectAvatarCategory === category.id ? "omni-settings-dialog__avatar-category--active" : ""}`}
-                                    title={category.label}
-                                    onClick={() => setProjectAvatarCategory(category.id)}
-                                  >
-                                    <CategoryIcon size={14} strokeWidth={1.8} />
-                                    <span>{category.label}</span>
-                                  </button>
-                                  );
-                                })}
-                              </div>
-                              <div className="omni-settings-dialog__avatar-search">
-                                <Search size={14} strokeWidth={1.8} />
-                                <input
-                                  value={projectAvatarSearchQuery}
-                                  onChange={(event) => setProjectAvatarSearchQuery(event.target.value)}
-                                  placeholder="搜索头像"
-                                />
-                              </div>
-                              <div className="chat-history-panel__avatar-grid chat-history-panel__avatar-grid--detailed">
-                              {filteredProjectAvatars.length > 0 ? (
-                                filteredProjectAvatars.map((avatar) => (
-                                    <button
-                                      key={avatar.code}
-                                      type="button"
-                                      className={`chat-history-panel__avatar-option chat-history-panel__avatar-option--detailed chat-history-panel__avatar-option--tone-${avatar.tone} ${activeProject.avatarType !== "image" && resolveEmojiAvatarCode(activeProject.avatarValue) === avatar.code ? "chat-history-panel__avatar-option--active" : ""}`}
-                                      onClick={() => {
-                                      saveProjectPatch({
-                                        sourcePresetId: avatar.code,
-                                        avatarType: "emoji",
-                                        avatarValue: `emoji:${avatar.code}`,
-                                        systemPrompt: enhancePresetPromptIfNeeded(avatar.code, avatar.prompt),
-                                        allowedToolIds: avatar.allowedToolIds ?? activeProject.allowedToolIds,
-                                        allowedSkillIds: avatar.allowedSkillIds ?? activeProject.allowedSkillIds,
-                                        defaultModelId: avatar.defaultModelId ?? activeProject.defaultModelId ?? null,
-                                      }, "头像与预设已更新");
-                                      setProjectPromptDraft(enhancePresetPromptIfNeeded(avatar.code, avatar.prompt));
-                                        setProjectModelDraft(avatar.defaultModelId ?? activeProject.defaultModelId ?? "");
-                                        setProjectAvatarPanelOpen(false);
-                                      }}
-                                      title={avatar.label}
-                                    >
-                                      <span className="chat-history-panel__avatar-option-badge">
-                                        <img src={getEmojiAssetSrc(avatar.code)} alt={avatar.label} className="chat-history-panel__avatar-option-image" />
-                                      </span>
-                                        <span className="chat-history-panel__avatar-option-copy">
-                                          <span className="chat-history-panel__avatar-option-label">{avatar.label}</span>
-                                          <span className="chat-history-panel__avatar-option-meta">{avatar.hint}</span>
-                                        </span>
-                                      </button>
-                                  ))
-                                ) : (
-                                  <div className="omni-settings-dialog__avatar-empty">没有匹配的头像</div>
-                                )}
-                              </div>
+                              <div className="omni-settings-dialog__avatar-panel-hint">仅支持上传图片作为项目头像。</div>
                               <button
                                 type="button"
                                 className="chat-history-panel__avatar-upload"
@@ -2443,41 +2361,6 @@ export default function MainChatView({
                               <div className="empty-chat-state__card-copy">
                                 <strong>{RECOMMENDED_PROJECT_PRESETS[index]?.title || "快速开始"}</strong>
                                 <span>{RECOMMENDED_PROJECT_PRESETS[index]?.description || prompt}</span>
-                              </div>
-                              <ArrowRight size={16} strokeWidth={1.8} />
-                            </button>
-                          ))}
-                        </div>
-                        <div className="empty-chat-state__subhead">
-                          <Sparkles size={14} strokeWidth={1.9} />
-                          <span>快速创建项目</span>
-                        </div>
-                        <div className="empty-chat-state__cards">
-                          {AVATAR_PRESETS.slice(0, 4).map((preset) => (
-                            <button
-                              key={preset.code}
-                              type="button"
-                              className="empty-chat-state__card"
-                              onClick={() =>
-                              onCreateCustomProject({
-                                  sourcePresetId: preset.code,
-                                  title: preset.label,
-                                  description: preset.hint,
-                                  systemPrompt: enhancePresetPromptIfNeeded(preset.code, preset.prompt),
-                                  avatarType: "emoji",
-                                  avatarValue: `emoji:${preset.code}`,
-                                  defaultModelId: preset.defaultModelId ?? null,
-                                  allowedToolIds: preset.allowedToolIds,
-                                  allowedSkillIds: preset.allowedSkillIds,
-                                })
-                              }
-                            >
-                              <div className="empty-chat-state__card-icon">
-                                <img src={getEmojiAssetSrc(preset.code)} alt={preset.label} className="chat-history-panel__avatar-option-image" />
-                              </div>
-                              <div className="empty-chat-state__card-copy">
-                                <strong>{preset.label}</strong>
-                                <span>{preset.hint}</span>
                               </div>
                               <ArrowRight size={16} strokeWidth={1.8} />
                             </button>

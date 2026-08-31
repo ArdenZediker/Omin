@@ -32,21 +32,3 @@ export type SkillManifest = {
   }>;
   supportedProjectKinds?: Array<"basic" | "custom">;
 };
-
-export type AvatarCategoryManifest = {
-  id: string;
-  label: string;
-  icon: "history" | "sparkles" | "cpu" | "paw";
-};
-
-export type AvatarPreset = {
-  code: string;
-  label: string;
-  category: string;
-  tone: "blue" | "violet" | "amber" | "cyan" | "green" | "pink" | "slate" | "red" | "orange";
-  hint: string;
-  prompt: string;
-  allowedToolIds?: string[];
-  allowedSkillIds?: string[];
-  defaultModelId?: string | null;
-};

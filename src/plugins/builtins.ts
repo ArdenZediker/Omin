@@ -8,71 +8,6 @@ import type { PluginManifest } from "./types";
 
 export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
   {
-    id: "summarize",
-    name: "总结",
-    description: "当需要总结对话或输入内容时使用。压缩信息但保留关键结论、约束、风险和后续待办。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "skill",
-    category: "内容创作",
-    icon: "ScrollText",
-    command: "/summarize",
-    systemPrompt: "当前任务是总结。压缩信息但保留关键结论、约束、风险和后续待办，不扩写无根据内容。",
-    promptPrefix: "请总结下面内容，保留关键结论、约束和待办：",
-  },
-  {
-    id: "rewrite",
-    name: "改写",
-    description: "当需要改写内容、让表达更清晰自然时使用。保持原意和事实不变，优化结构、语气和可读性。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "skill",
-    category: "内容创作",
-    icon: "Pencil",
-    command: "/rewrite",
-    systemPrompt: "当前任务是改写。保持原意和事实不变，优化结构、语气和可读性，不新增未提供的信息。",
-    promptPrefix: "请改写下面内容，让表达更清晰、自然、可直接使用：",
-  },
-  {
-    id: "translate",
-    name: "翻译",
-    description: "当需要翻译文本时使用。未指定目标语言时默认翻译成中文，保留术语、代码和专有名词。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "skill",
-    category: "内容创作",
-    icon: "Languages",
-    command: "/translate",
-    systemPrompt: "当前任务是翻译。优先准确传达原意；未指定目标语言时翻译成中文；保留必要的术语、代码和专有名词。",
-    promptPrefix: "请翻译下面内容；如果用户没有指定目标语言，默认翻译成中文：",
-  },
-  {
-    id: "explain",
-    name: "解释",
-    description: "当需要解释概念、代码或文本时使用。先给简明结论，再说明背景、关键点、例子和常见误解。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "skill",
-    category: "知识管理",
-    icon: "BookOpen",
-    command: "/explain",
-    systemPrompt: "当前任务是解释。先给简明结论，再说明背景、关键点、例子和常见误解；不要把解释写成泛泛教程。",
-    promptPrefix: "请解释下面内容，说明背景、关键点和容易误解的地方：",
-  },
-  {
-    id: "compare",
-    name: "比较",
-    description: "当需要比较多个方案、概念或文本差异时使用。围绕差异、适用场景、优缺点和推荐结论组织回答。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "skill",
-    category: "知识管理",
-    icon: "GitCompare",
-    command: "/compare",
-    systemPrompt: "当前任务是比较。围绕差异、适用场景、优缺点和推荐结论组织回答；如果信息不足，明确比较依据有限。",
-    promptPrefix: "请比较下面内容，给出差异、优缺点和推荐结论：",
-  },
-  {
     id: "expert-manager",
     name: "专家管理",
     description:
@@ -99,7 +34,7 @@ export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
 - tags：擅长领域标签，固定 3 个（中英文均可）
 - templatePrompt：专家系统提示词，写明角色定位 + 工作方式 + 输出偏好，可直接执行、不含占位符
 - defaultToolIds：推荐工具 id 列表（从内置工具中选：list_files、read_file、search_files、analyze_files、search_sessions、read_session）
-- defaultSkillIds：推荐技能 id 列表（从内置技能中选：summarize、rewrite、translate、explain、compare）
+- defaultSkillIds：推荐技能 id 列表，从已安装技能中选；如无可推荐项可留空数组
 
 【类型与分类判定】单角色 = agent 型专家（一条 manifest）；多角色协作团队 Omni 暂不支持单条目表达，应拆分为多个 agent 专家并在 templatePrompt 中注明协作方式。分类判定优先级：①主要输出物属于哪个领域；②服务对象是谁；③跨领域时选最核心的一个。
 
@@ -111,7 +46,7 @@ export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
 
 【校验自检清单】生成后逐项检查：id 为 kebab-case；tags 恰好 3 个；description 简洁准确；templatePrompt 不含 [TODO]/占位符且可执行；category 与能力匹配；defaultToolIds/defaultSkillIds 引用的 id 真实存在；无同名（id 冲突）专家。
 
-【交付】输出完整专家定义（JSON），供用户核对；说明内置版需写入 builtins.ts、安装版可在插件市场安装。不要声称已经完成注册，除非用户明确要求并且存在可用入口。`,
+【交付】输出完整专家定义（JSON）供用户核对；用户确认后，调用 install_expert 工具把该定义注册进本地插件库（工具参数为完整专家 manifest JSON）。注册成功后如实告知用户：专家已安装，可在「专家分类 → 我的专家」查看与使用；若用户希望成为所有用户可见的内置专家，才说明需要写入 builtins.ts 的 BUILTIN_EXPERT_PLUGINS（需开发者操作）。注册返回失败（如 id 冲突、字段校验不过）时，按错误提示修正后重试。`,
   },
 ];
 
@@ -310,6 +245,19 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     promptContribution:
       "可调用 /update_persona <字段> <内容> 把稳定的偏好、称呼或人设写入对应个性化 md 文件（含 AGENTS.md），用法：/update_persona <字段> <内容>。",
   },
+  {
+    id: "install_expert",
+    name: "安装专家",
+    description: "当用户要求把一条符合 Omni 规范的专家定义注册进本地插件库（kind 为 expert 的 PluginManifest）时调用。",
+    version: "1.0.0",
+    author: "Omni",
+    kind: "tool",
+    category: "AI Agent",
+    icon: "UserPlus",
+    command: "/install_expert",
+    promptContribution:
+      "可调用 /install_expert 把符合 Omni 规范的专家定义（PluginManifest，kind 固定为 expert）注册进本地插件库，注册后立即在「专家分类 → 我的专家」生效；仅在用户要求创建/安装/更新专家时使用，参数为完整专家 manifest JSON。",
+  },
 ];
 
 export const BUILTIN_CONNECTOR_PLUGINS: PluginManifest[] = [
@@ -397,7 +345,7 @@ export const BUILTIN_EXPERT_PLUGINS: PluginManifest[] = [
     templatePrompt:
       "你是一名资深工程师。优先给出可运行的代码或清晰的排查步骤，不做空泛描述。需要时主动请求查看相关文件。",
     defaultToolIds: ["list_files", "read_file", "search_files", "analyze_files"],
-    defaultSkillIds: ["explain", "compare"],
+    defaultSkillIds: [],
   },
   {
     id: "writer-expert",
@@ -412,7 +360,7 @@ export const BUILTIN_EXPERT_PLUGINS: PluginManifest[] = [
     templatePrompt:
       "你是一名专业文字编辑。保持原意不变，优化结构、语气和可读性，给出可直接使用的版本，并说明修改理由。",
     defaultToolIds: ["read_file"],
-    defaultSkillIds: ["rewrite", "summarize"],
+    defaultSkillIds: [],
   },
   {
     id: "pm-expert",
@@ -427,7 +375,7 @@ export const BUILTIN_EXPERT_PLUGINS: PluginManifest[] = [
     templatePrompt:
       "你是一名产品经理。先把需求拆成目标、约束、可选方案和下一步行动，再给出推荐并说明依据。",
     defaultToolIds: ["search_sessions", "read_session"],
-    defaultSkillIds: ["compare", "summarize"],
+    defaultSkillIds: [],
   },
 ];
 
@@ -443,7 +391,7 @@ export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
     icon: "Map",
     templatePrompt: "请帮我梳理当前问题的背景、目标、约束、可选方案和下一步执行计划。",
     defaultToolIds: ["search_sessions", "read_session"],
-    defaultSkillIds: ["summarize", "compare"],
+    defaultSkillIds: [],
   },
   {
     id: "code-debugger",
@@ -457,7 +405,7 @@ export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
     templatePrompt:
       "请帮我定位问题根因。优先查看报错堆栈和相关代码，给出最小复现步骤和修复方案。",
     defaultToolIds: ["list_files", "read_file", "search_files", "analyze_files"],
-    defaultSkillIds: ["explain"],
+    defaultSkillIds: [],
   },
   {
     id: "copy-polisher",
@@ -470,7 +418,7 @@ export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
     icon: "Highlighter",
     templatePrompt: "请润色下面这段文字，使其表达清晰、自然、可直接使用，并保持原意不变。",
     defaultToolIds: ["read_file"],
-    defaultSkillIds: ["rewrite"],
+    defaultSkillIds: [],
   },
   {
     id: "command-helper",
@@ -483,7 +431,7 @@ export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
     icon: "Terminal",
     templatePrompt: "请根据我的需求生成对应的命令或脚本，并说明每个关键参数的含义和风险。",
     defaultToolIds: ["search_sessions"],
-    defaultSkillIds: ["explain"],
+    defaultSkillIds: [],
   },
 ];
 

@@ -45,7 +45,6 @@ export type ProjectKind = "basic" | "custom";
 export type ProjectMemoryScope = "off" | "session" | "project";
 
 export type ProjectDraft = {
-  sourcePresetId?: string | null;
   title?: string;
   description?: string;
   workspacePath?: string;
@@ -65,7 +64,6 @@ export type ProjectDraft = {
 export type Project = {
   id: string;
   kind: ProjectKind;
-  sourcePresetId?: string | null;
   title: string;
   description: string;
   workspacePath: string;

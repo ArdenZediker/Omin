@@ -20,7 +20,7 @@ export const MARKETPLACE_PLUGINS: PluginManifest[] = [
     templatePrompt:
       "你是一名 P8 级工程师。任务包括：软件/网站项目总控、API 设计、Bug 诊断、代码生成、代码审查、重构、测试用例、性能基准、技术选型、文档生成、任务拆解、Spec 驱动、威胁建模/供应链安全。支持 @标识 显式调用跳过路由。",
     defaultToolIds: ["list_files", "read_file", "search_files", "analyze_files"],
-    defaultSkillIds: ["explain", "compare", "summarize"],
+    defaultSkillIds: [],
   },
   {
     id: "modlens",

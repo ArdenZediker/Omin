@@ -49,13 +49,7 @@ export const DEFAULT_PROJECT_TOOL_IDS = [
   "read_persona",
   "update_persona",
 ];
-export const DEFAULT_PROJECT_SKILL_IDS = [
-  "summarize",
-  "translate",
-  "rewrite",
-  "explain",
-  "compare",
-];
+export const DEFAULT_PROJECT_SKILL_IDS: string[] = [];
 export const DEFAULT_PROJECT_MEMORY_SCOPE: ProjectMemoryScope = "project";
 
 export const DEFAULT_USAGE_PREFERENCES: ChatUsagePreferences = {
@@ -160,7 +154,6 @@ export function createCustomProject(input?: ProjectDraft): Project {
   return {
     id,
     kind: "custom",
-    sourcePresetId: input?.sourcePresetId ?? null,
     title: input?.title?.trim() || "自定义助手",
     description: input?.description?.trim() || "可配置角色设定、模型和工具权限",
     workspacePath: input?.workspacePath?.trim() || "",
@@ -273,7 +266,6 @@ function normalizeProject(input: Partial<Project> & Pick<Project, "id" | "title"
   return {
     id: input.id,
     kind: input.kind,
-    sourcePresetId: typeof input.sourcePresetId === "string" ? input.sourcePresetId : null,
     title:
       input.kind === "basic"
         ? defaultProject.title

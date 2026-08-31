@@ -1,5 +1,4 @@
 import type { Project } from "../../chat/types";
-import type { AvatarPreset } from "./types";
 
 const LEGACY_AVATAR_CODE_MAP: Record<string, string> = {
   "🦉": "1F989",
@@ -65,16 +64,4 @@ export function resolveProjectAvatarImageSrc(project: Project | null, seed = 0) 
   }
 
   return getEmojiAssetSrc(fallbackCode);
-}
-
-export function filterAvatarPresets(presets: AvatarPreset[], categoryId: string, query: string) {
-  const normalizedQuery = query.toLocaleLowerCase().replace(/\s+/g, "");
-
-  return presets.filter((avatar) => {
-    const matchesCategory = categoryId === "recent" ? true : avatar.category === categoryId;
-    if (!matchesCategory) return false;
-    if (!normalizedQuery) return true;
-    const searchable = `${avatar.code} ${avatar.label} ${avatar.category} ${avatar.tone} ${avatar.hint}`.toLocaleLowerCase().replace(/\s+/g, "");
-    return searchable.includes(normalizedQuery);
-  });
 }

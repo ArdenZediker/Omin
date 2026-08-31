@@ -8,16 +8,16 @@ describe("skills", () => {
   });
 
   it("解析技能命令并保留技能系统提示词", () => {
-    const command = resolveLocalSlashCommand("/translate hello");
+    const command = resolveLocalSlashCommand("/expert-manager 帮我创建一个专家");
 
     expect(command?.kind).toBe("skill");
-    expect(command?.args).toBe("hello");
-    expect(command?.systemPrompt).toContain("当前任务是翻译");
+    expect(command?.args).toBe("帮我创建一个专家");
+    expect(command?.systemPrompt).toContain("专家");
   });
 
   it("按权限过滤技能建议", () => {
-    const suggestions = getMatchingSlashSuggestions("/t", [], ["translate"]);
+    const suggestions = getMatchingSlashSuggestions("/e", [], ["expert-manager"]);
 
-    expect(suggestions.map((item) => item.command)).toEqual(["/translate"]);
+    expect(suggestions.map((item) => item.command)).toEqual(["/expert-manager"]);
   });
 });

@@ -95,7 +95,6 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
       title: title.trim() || "新项目",
       systemPrompt: instruction.trim(),
       workspacePath: workspacePath.trim() || undefined,
-      sourcePresetId: selectedTemplateId || null,
       allowedToolIds: [
         ...new Set([
           ...picked.connectors.flatMap((m) => m.defaultToolIds ?? []),
