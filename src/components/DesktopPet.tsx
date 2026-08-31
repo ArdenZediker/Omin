@@ -12,6 +12,10 @@ type DesktopPetProps = {
 export type DesktopPetState = "idle" | "running-right" | "running-left" | "waving" | "jumping" | "failed" | "waiting" | "running" | "review";
 
 const PET_PLAYBACK_RATE = 1.55;
+// 兜底精灵图：必须是 public/pets 下真实存在的包（宠物包根目录即 workspace/public/pets，
+// 由 Rust 端 current_pet_root() 决定）。此前这里写的是 /pets/omni-schnauzer/... ，
+// 该目录并不存在，一旦 packageData 为空就会加载 404 图片，表现为宠物完全不显示。
+const FALLBACK_PET_SPRITESHEET = "/pets/Miniature%20Schnauzer/spritesheet.webp";
 const PET_ROWS: Record<DesktopPetState, { row: number; frames: number[]; durations: number[] }> = {
   idle: { row: 0, frames: [0, 1, 2, 3, 4, 5], durations: [280, 110, 110, 140, 140, 320] },
   "running-right": { row: 1, frames: [0, 1, 2, 3, 4, 5, 6, 7], durations: [120, 120, 120, 120, 120, 120, 120, 220] },
@@ -31,7 +35,10 @@ const DesktopPet = forwardRef<HTMLDivElement, DesktopPetProps>(function DesktopP
   const [frameIndex, setFrameIndex] = useState(0);
   const actualState = state;
   const frameset = PET_ROWS[actualState];
-  const sheetSrc = packageData?.spritesheetWebPath ?? "/pets/omni-schnauzer/spritesheet.webp";
+  const sheetSrc =
+    packageData && packageData.spritesheetExists !== false
+      ? packageData.spritesheetWebPath
+      : FALLBACK_PET_SPRITESHEET;
   const atlasColumns = 8;
   const atlasRows = 9;
   const { width: scaledCellWidth, height: scaledCellHeight } = fitCodexPetToBounds({
