@@ -171,7 +171,7 @@ export default function PluginMarketplace({
     >
       <div className="plugin-marketplace__header">
         <div className="plugin-marketplace__title-row">
-          <h2 id="plugin-marketplace-title">插件广场</h2>
+          <h2 id="plugin-marketplace-title">扩展中心</h2>
           {!embedded && !mainView && (
             <button
               type="button"

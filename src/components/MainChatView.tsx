@@ -1154,7 +1154,7 @@ export default function MainChatView({
           <button
             type="button"
             className={`main-chat-nav__item no-drag ${showPluginMarketplace ? "main-chat-nav__item--active" : ""}`}
-            title="插件广场"
+            title="扩展中心"
             onClick={() => {
               setShowPluginMarketplace((current) => {
                 const next = !current;
@@ -1188,7 +1188,7 @@ export default function MainChatView({
         {showPluginMarketplace ? (
           <div className="chat-history-panel__marketplace-nav">
             <div className="chat-history-panel__marketplace-nav-header">
-              <span>插件广场</span>
+              <span>扩展中心</span>
               <button type="button" onClick={closeMarketplace} title="返回项目">
                 <ChevronLeft size={16} strokeWidth={1.8} />
               </button>
@@ -2268,7 +2268,7 @@ export default function MainChatView({
                 <div className="omni-settings-dialog__section">
                   <div className="omni-settings-dialog__section-title">
                     工具权限
-                    <span className="omni-settings-dialog__section-subtitle">来自插件广场已启用的工具</span>
+                    <span className="omni-settings-dialog__section-subtitle">来自扩展中心已启用的工具</span>
                   </div>
                   <div className="omni-settings-dialog__toggle-list">
                     {pluginRegistry
@@ -2301,7 +2301,7 @@ export default function MainChatView({
                 <div className="omni-settings-dialog__section">
                   <div className="omni-settings-dialog__section-title">
                     技能权限
-                    <span className="omni-settings-dialog__section-subtitle">来自插件广场已启用的技能</span>
+                    <span className="omni-settings-dialog__section-subtitle">来自扩展中心已启用的技能</span>
                   </div>
                   <div className="omni-settings-dialog__toggle-list">
                     {pluginRegistry.listEnabledSkills().map((skill) => {
