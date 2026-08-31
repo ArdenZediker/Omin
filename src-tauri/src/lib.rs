@@ -19,6 +19,7 @@ mod knowledge_files;
 mod knowledge_pipeline;
 mod knowledge;
 mod backup;
+mod cbteams;
 mod knowledge_schema;
 mod persona;
 mod storage;
@@ -36,6 +37,7 @@ use knowledge_embedding_batch::*;
 use knowledge_embedding_config::*;
 use knowledge_search::*;
 use skillhub::*;
+use cbteams::*;
 
 // 需要被其它模块以 `crate::X` 引用的条目，改为显式重导出（显式重导出不会牵扯宏命名空间）。
 pub(crate) use knowledge_embedding_config::{
@@ -546,7 +548,9 @@ pub fn run() {
             list_skillhub_skills,
             list_skillhub_plugins,
             list_skillhub_skill_categories,
-            list_skillhub_plugin_categories
+            list_skillhub_plugin_categories,
+            list_cbteams_suites,
+            install_cbteams_suite
         ])
         .setup(|app| {
             let show_hide = MenuItemBuilder::with_id("toggle", "打开主界面").build(app)?;

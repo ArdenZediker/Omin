@@ -12,6 +12,7 @@ import {
   Wand2,
   LayoutTemplate,
   Settings,
+  Package,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import { listMarketplacePlugins } from "../../plugins/marketplace";
@@ -23,6 +24,7 @@ import type {
 } from "../../plugins/types";
 import { buildPluginInstallPrompt } from "../../plugins/registry";
 import SkillhubBrowser from "./SkillhubBrowser";
+import CbteamsBrowser from "./CbteamsBrowser";
 
 type PluginMarketplaceProps = {
   initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind };
@@ -67,10 +69,10 @@ export default function PluginMarketplace({
   const [refreshKey, setRefreshKey] = useState(0);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
-  // 「本地 / SkillHub」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
+  // 「本地 / SkillHub / 套件」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
   // 点「技能」直接展示 SkillHub 浏览界面；其他分类仍是本地列表。
-  // 技能页内保留一个小的子开关，用于查看本地已内置的技能。
-  const [source, setSource] = useState<"local" | "skillhub">(
+  // 技能页内保留子开关：本地内置 / SkillHub 实时 / 套件（CB Teams 插件包）。
+  const [source, setSource] = useState<"local" | "skillhub" | "suites">(
     initialFilter.kind === "skill" ? "skillhub" : "local",
   );
   const [searchExpanded, setSearchExpanded] = useState(!mainView);
@@ -96,8 +98,9 @@ export default function PluginMarketplace({
 
   const stats = useMemo(() => pluginRegistry.stats(), [refreshKey]);
 
-  // SkillHub 浏览界面只在「技能」一级分类下出现（SkillHub 仅提供技能）。
+  // SkillHub / 套件浏览界面只在「技能」一级分类下出现（两者仅提供技能）。
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
+  const showSuites = !onPick && source === "suites" && kind === "skill";
 
   const handleCopyInstallPrompt = useCallback((manifest: PluginManifest) => {
     const prompt = buildPluginInstallPrompt(manifest);
@@ -209,10 +212,20 @@ export default function PluginMarketplace({
               <Bot size={14} strokeWidth={1.8} />
               <span>SkillHub 实时</span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "suites"}
+              className={`plugin-marketplace__source-tab ${source === "suites" ? "plugin-marketplace__source-tab--active" : ""}`}
+              onClick={() => setSource("suites")}
+            >
+              <Package size={14} strokeWidth={1.8} />
+              <span>套件</span>
+            </button>
           </div>
         )}
 
-        {showSkillhub ? null : (
+        {showSkillhub || showSuites ? null : (
           <>
             {mainView ? (
               <div className="plugin-marketplace__top-bar">
@@ -319,6 +332,8 @@ export default function PluginMarketplace({
       <div className="plugin-marketplace__body">
         {showSkillhub ? (
           <SkillhubBrowser />
+        ) : showSuites ? (
+          <CbteamsBrowser />
         ) : filteredPlugins.length === 0 ? (
           <div className="plugin-marketplace__empty">
             <Puzzle size={40} strokeWidth={1.2} />
