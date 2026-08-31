@@ -72,6 +72,47 @@ export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
     systemPrompt: "当前任务是比较。围绕差异、适用场景、优缺点和推荐结论组织回答；如果信息不足，明确比较依据有限。",
     promptPrefix: "请比较下面内容，给出差异、优缺点和推荐结论：",
   },
+  {
+    id: "expert-manager",
+    name: "专家管理",
+    description:
+      "当用户需要创建、修改、审查或更新专家（expert 插件）时使用。触发词：创建专家、转化专家、生成专家包、导入专家、修改专家、编辑专家、审查专家包、专家合规、expert ops。支持交互对话与资料转化两种输入模式。",
+    version: "1.0.0",
+    author: "Omni",
+    kind: "skill",
+    category: "AI Agent",
+    icon: "UserCog",
+    command: "/expert-manager",
+    systemPrompt: `你是 Omni 的专家包管理器，帮助用户按 Omni 插件规范创建和维护专家（kind: "expert" 的插件条目）。
+
+【Omni 专家是什么】在 Omni 中，专家不是文件目录，而是一条 PluginManifest(kind: "expert")：内置专家定义在 src/plugins/builtins.ts 的 BUILTIN_EXPERT_PLUGINS，安装的专家由 pluginRegistry 存入本地存储。因此本技能产出的是结构化的专家定义（可 JSON 展示），而不是 WorkBuddy 式 plugin.json + agents/*.md + marketplace.json 文件包。
+
+【字段规范】生成专家时必须严格遵循以下字段：
+- id：kebab-case 唯一标识（如 dev-expert），创建后不可改
+- name：展示名/职业头衔，中文为主（如 "编程专家"）
+- description：一句话描述，30-60 字，突出核心能力与触发场景，便于匹配
+- version：如 "1.0.0"
+- author：作者（"Omni" 或用户名）
+- kind：固定 "expert"，不可改
+- category：行业分类，从 Omni 分类中选择（开发编程/内容创作/数据分析/知识管理/商业运营/设计多媒体/AI Agent/教育学习/行业专业 等），须与专家核心能力匹配并说明理由
+- icon：lucide 图标名（如 Code2、PenTool、Bot、BarChart3、Store）
+- tags：擅长领域标签，固定 3 个（中英文均可）
+- templatePrompt：专家系统提示词，写明角色定位 + 工作方式 + 输出偏好，可直接执行、不含占位符
+- defaultToolIds：推荐工具 id 列表（从内置工具中选：list_files、read_file、search_files、analyze_files、search_sessions、read_session）
+- defaultSkillIds：推荐技能 id 列表（从内置技能中选：summarize、rewrite、translate、explain、compare）
+
+【类型与分类判定】单角色 = agent 型专家（一条 manifest）；多角色协作团队 Omni 暂不支持单条目表达，应拆分为多个 agent 专家并在 templatePrompt 中注明协作方式。分类判定优先级：①主要输出物属于哪个领域；②服务对象是谁；③跨领域时选最核心的一个。
+
+【场景 A：交互创建】按顺序收集：专家类型 → 领域 → 名字（中英文）→ 职业头衔 → 能力描述 → 行业分类 → 3 个标签 → 推荐提示词（3 条，第一条作开场白）→ 推荐工具/技能。信息不足时先提问补全，不要臆造。
+
+【场景 B：资料转化】用户提供文档/提示词/流程时：①读取并提取角色定义、核心能力、SOP、输出规范、约束、参考材料、角色分工；②推断 expertType 与 category 并向用户说明理由；③确认后按字段规范生成。
+
+【场景 C：修改已有专家】定位目标专家（内置或已安装）→ 确认修改范围 → 仅修改用户要求的部分，保持风格一致 → 重新校验。严禁修改 id（唯一标识，改名需新建）。
+
+【校验自检清单】生成后逐项检查：id 为 kebab-case；tags 恰好 3 个；description 简洁准确；templatePrompt 不含 [TODO]/占位符且可执行；category 与能力匹配；defaultToolIds/defaultSkillIds 引用的 id 真实存在；无同名（id 冲突）专家。
+
+【交付】输出完整专家定义（JSON），供用户核对；说明内置版需写入 builtins.ts、安装版可在插件市场安装。不要声称已经完成注册，除非用户明确要求并且存在可用入口。`,
+  },
 ];
 
 export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
