@@ -25,6 +25,7 @@ import type {
 import { buildPluginInstallPrompt } from "../../plugins/registry";
 import SkillhubBrowser from "./SkillhubBrowser";
 import CbteamsBrowser from "./CbteamsBrowser";
+import ConnectorhubBrowser from "./ConnectorhubBrowser";
 
 type PluginMarketplaceProps = {
   initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind };
@@ -69,17 +70,23 @@ export default function PluginMarketplace({
   const [refreshKey, setRefreshKey] = useState(0);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
-  // 「本地 / SkillHub / 套件」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
-  // 点「技能」直接展示 SkillHub 浏览界面；其他分类仍是本地列表。
-  // 技能页内保留子开关：本地内置 / SkillHub 实时 / 套件（CB Teams 插件包）。
-  const [source, setSource] = useState<"local" | "skillhub" | "suites">(
-    initialFilter.kind === "skill" ? "skillhub" : "local",
+  // 「本地 / SkillHub / 套件 / 远程连接器」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
+  // 点「技能」直接展示 SkillHub 浏览界面；点「连接器」直接展示外部服务接入型技能浏览；
+  // 其他分类仍是本地列表。页内保留子开关切换回本地。
+  const [source, setSource] = useState<"local" | "skillhub" | "suites" | "connectors">(
+    initialFilter.kind === "skill"
+      ? "skillhub"
+      : initialFilter.kind === "connector"
+        ? "connectors"
+        : "local",
   );
   const [searchExpanded, setSearchExpanded] = useState(!mainView);
 
-  // 一级分类切换时联动来源：技能 → SkillHub，其他 → 本地。
+  // 一级分类切换时联动来源：技能 → SkillHub，连接器 → 远程连接器，其他 → 本地。
   useEffect(() => {
-    setSource(kind === "skill" ? "skillhub" : "local");
+    setSource(
+      kind === "skill" ? "skillhub" : kind === "connector" ? "connectors" : "local",
+    );
   }, [kind]);
 
   const allPlugins = useMemo(() => {
@@ -98,9 +105,10 @@ export default function PluginMarketplace({
 
   const stats = useMemo(() => pluginRegistry.stats(), [refreshKey]);
 
-  // SkillHub / 套件浏览界面只在「技能」一级分类下出现（两者仅提供技能）。
+  // SkillHub / 套件浏览界面只在「技能」一级分类下出现；远程连接器只在「连接器」下出现。
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
   const showSuites = !onPick && source === "suites" && kind === "skill";
+  const showConnectorhub = !onPick && source === "connectors" && kind === "connector";
 
   const handleCopyInstallPrompt = useCallback((manifest: PluginManifest) => {
     const prompt = buildPluginInstallPrompt(manifest);
@@ -225,7 +233,36 @@ export default function PluginMarketplace({
           </div>
         )}
 
-        {showSkillhub || showSuites ? null : (
+        {!onPick && kind === "connector" && (
+          <div
+            className="plugin-marketplace__source-tabs"
+            role="tablist"
+            aria-label="连接器来源"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "local"}
+              className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
+              onClick={() => setSource("local")}
+            >
+              <Settings size={14} strokeWidth={1.8} />
+              <span>本地连接器</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "connectors"}
+              className={`plugin-marketplace__source-tab ${source === "connectors" ? "plugin-marketplace__source-tab--active" : ""}`}
+              onClick={() => setSource("connectors")}
+            >
+              <Cable size={14} strokeWidth={1.8} />
+              <span>远程接入</span>
+            </button>
+          </div>
+        )}
+
+        {showSkillhub || showSuites || showConnectorhub ? null : (
           <>
             {mainView ? (
               <div className="plugin-marketplace__top-bar">
@@ -334,6 +371,8 @@ export default function PluginMarketplace({
           <SkillhubBrowser />
         ) : showSuites ? (
           <CbteamsBrowser />
+        ) : showConnectorhub ? (
+          <ConnectorhubBrowser />
         ) : filteredPlugins.length === 0 ? (
           <div className="plugin-marketplace__empty">
             <Puzzle size={40} strokeWidth={1.2} />
