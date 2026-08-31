@@ -1709,7 +1709,7 @@ export default function MainChatView({
                     )}
                   </button>
                 )}
-                {isProjectSettingsMode && (
+                {isProjectSettingsMode && !showPluginMarketplace && (
                   <button
                     type="button"
                     className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
@@ -1722,60 +1722,70 @@ export default function MainChatView({
                     <ChevronLeft className="main-chat-toolbar__icon" strokeWidth={1.8} />
                   </button>
                 )}
-                <div className="main-chat-toolbar__project-mark">
-                  {renderProjectAvatar(activeProject, activeProjectAvatarSeed)}
-                </div>
-                <div className="main-chat-toolbar__project-copy main-chat-toolbar__project-copy--single-line">
-                  <strong>{isProjectSettingsMode ? "项目设置" : currentTopicTitle}</strong>
-                </div>
+                {!showPluginMarketplace && (
+                  <>
+                    <div className="main-chat-toolbar__project-mark">
+                      {renderProjectAvatar(activeProject, activeProjectAvatarSeed)}
+                    </div>
+                    <div className="main-chat-toolbar__project-copy main-chat-toolbar__project-copy--single-line">
+                      <strong>{isProjectSettingsMode ? "项目设置" : currentTopicTitle}</strong>
+                    </div>
+                  </>
+                )}
               </div>
 
-              <div className="no-drag">
-                <div className="main-chat-toolbar__model-stack">
-                  <ModelSelector
-                    currentModel={currentModel}
-                    onModelChange={onModelChange}
-                    label="主模型"
-                    title={
-                      selectedExecutionModel && executionModel !== currentModel
-                        ? `当前项目会优先使用：${selectedExecutionModel.name}`
-                        : undefined
-                    }
-                  />
+              {!showPluginMarketplace && (
+                <div className="no-drag">
+                  <div className="main-chat-toolbar__model-stack">
+                    <ModelSelector
+                      currentModel={currentModel}
+                      onModelChange={onModelChange}
+                      label="主模型"
+                      title={
+                        selectedExecutionModel && executionModel !== currentModel
+                          ? `当前项目会优先使用：${selectedExecutionModel.name}`
+                          : undefined
+                      }
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="main-chat-toolbar__actions no-drag">
-              {messages.length > 0 && (
+              {!showPluginMarketplace && messages.length > 0 && (
                 <button onClick={onClearChat} className="main-chat-toolbar__icon-button" title="清空对话" type="button">
                   <Trash2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
                 </button>
               )}
-              <button
-                className="main-chat-toolbar__icon-button"
-                title="分享会话"
-                type="button"
-                onClick={() => void handleShareActiveSession()}
-                disabled={!activeSession}
-              >
-                <Share2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
-              </button>
-              <button
-                type="button"
-                className="main-chat-toolbar__icon-button main-chat-toolbar__collapse-button"
-                aria-label={isTopicPanelVisible ? "收起话题栏" : "展开话题栏"}
-                title={isTopicPanelVisible ? "收起话题栏" : "展开话题栏"}
-                onClick={() =>
-                  setTopicPanelManualVisible((currentValue) => {
-                    const currentVisible = currentValue ?? defaultTopicPanelVisible;
-                    const nextVisible = !currentVisible;
-                    return nextVisible === defaultTopicPanelVisible ? null : nextVisible;
-                  })
-                }
-              >
-                {isTopicPanelVisible ? <PanelRightClose className="main-chat-toolbar__icon" strokeWidth={1.7} /> : <PanelRightOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />}
-              </button>
+              {!showPluginMarketplace && (
+                <button
+                  className="main-chat-toolbar__icon-button"
+                  title="分享会话"
+                  type="button"
+                  onClick={() => void handleShareActiveSession()}
+                  disabled={!activeSession}
+                >
+                  <Share2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                </button>
+              )}
+              {!showPluginMarketplace && (
+                <button
+                  type="button"
+                  className="main-chat-toolbar__icon-button main-chat-toolbar__collapse-button"
+                  aria-label={isTopicPanelVisible ? "收起话题栏" : "展开话题栏"}
+                  title={isTopicPanelVisible ? "收起话题栏" : "展开话题栏"}
+                  onClick={() =>
+                    setTopicPanelManualVisible((currentValue) => {
+                      const currentVisible = currentValue ?? defaultTopicPanelVisible;
+                      const nextVisible = !currentVisible;
+                      return nextVisible === defaultTopicPanelVisible ? null : nextVisible;
+                    })
+                  }
+                >
+                  {isTopicPanelVisible ? <PanelRightClose className="main-chat-toolbar__icon" strokeWidth={1.7} /> : <PanelRightOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />}
+                </button>
+              )}
               <div className="omni-window-control-slot">{windowControls}</div>
             </div>
           </div>
