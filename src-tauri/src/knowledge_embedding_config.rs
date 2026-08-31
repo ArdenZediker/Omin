@@ -1,24 +1,18 @@
 //! 由 lib.rs 拆分而来，逻辑保持不变。
 
-use reqwest::blocking::Client as BlockingHttpClient;
-use reqwest::Client as HttpClient;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
-};
 
-use super::*;
+// 显式导入 crate 根条目，而不是 `use super::*`：
+// `use super::*` 会把 crate 根的一堆名字（含 trait 的隐式可见性）整体吸进来，
+// 与 lib.rs 的 `use 本模块::*;` 形成回环，也让依赖关系变得不可见。
+use crate::{
+    read_kv, write_kv, EmptyFallback, KNOWLEDGE_EMBEDDING_CONFIG_KEY,
+    KNOWLEDGE_MULTIMODAL_CONFIG_KEY, KnowledgeCollectionAudioMultimodalConfigRecord,
+    KnowledgeCollectionImageMultimodalConfigRecord, KnowledgeCollectionMultimodalConfigRecord,
+    KnowledgeEmbeddingConfigRecord, KnowledgeEmbeddingModelConfigRecord,
+    KnowledgeMultimodalConfigRecord, KnowledgeMultimodalModelConfigRecord,
+};
 
 pub(crate) const OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS: [&str; 6] = [
     "openai",

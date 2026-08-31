@@ -1,24 +1,7 @@
 //! 由 lib.rs 拆分而来，逻辑保持不变。
 
-use reqwest::blocking::Client as BlockingHttpClient;
-use reqwest::Client as HttpClient;
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
-};
-
-use super::*;
+// 本模块不依赖 crate 根条目，因此没有 `use super::*` /
+// `use crate::...`：glob 吸回 `__cmd__*` 宏会导致 lib.rs 报 E0255。
 
 // ---- SkillHub 技能安装（一切皆插件：从 SkillHub 实时安装 DSH 风格 SKILL.md 技能）----
 #[derive(serde::Serialize)]

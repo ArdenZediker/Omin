@@ -2,23 +2,15 @@
 
 use reqwest::blocking::Client as BlockingHttpClient;
 use reqwest::Client as HttpClient;
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
-};
+use rusqlite::Connection;
+use serde::Deserialize;
 
-use super::*;
+// 显式导入依赖，不用 `use super::*`（避免吸回 `__cmd__*` 宏导致 E0255）。
+use crate::{knowledge_chunker, KnowledgeEmbeddingModelConfigRecord};
+// 这三个条目原本由 lib.rs 的 glob 再经 `use super::*` 间接可见，改为直接引用来源模块。
+use crate::knowledge_embedding_config::{
+    fingerprint_text, load_knowledge_embedding_active_model, EMBEDDING_BATCH_SIZE,
+};
 
 #[derive(Deserialize)]
 pub(crate) struct EmbeddingApiItem {

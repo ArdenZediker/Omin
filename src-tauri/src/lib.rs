@@ -1,10 +1,6 @@
-use reqwest::blocking::Client as BlockingHttpClient;
-use reqwest::Client as HttpClient;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use std::{
-    cmp::Ordering,
     collections::HashMap,
     fs,
     path::PathBuf,
@@ -34,10 +30,9 @@ mod knowledge_embedding_batch;
 mod knowledge_search;
 mod skillhub;
 
-// 这里用「私有 glob」而不是 `pub(crate) use ...::*`：
-// 子模块内部的 `use super::*` 会把 `#[tauri::command]` 生成的 `__cmd__*` 宏带进子模块，
-// 若再用 pub 形式 glob 回根模块，会与原始定义撞成 E0255。
-// 私有 glob 只影响 lib.rs 自身的名字解析，glob 冲突由本地定义静默胜出。
+// 从 lib.rs 拆分出去的四个模块，用私有 glob 取回其中的函数与类型。
+// 这些模块内部**不要**写 `use super::*`：那会把 crate 根的 `__cmd__*` 宏吸进模块，
+// 再通过下面的 glob 拉回 lib.rs，与本地定义撞成 E0255。各模块改为显式 `use crate::...`。
 use knowledge_embedding_batch::*;
 use knowledge_embedding_config::*;
 use knowledge_search::*;
@@ -342,17 +337,17 @@ pub(crate) struct SearchKnowledgeChunkResult {
 }
 
 #[tauri::command]
-pub(crate) fn greet(name: &str) -> String {
+fn greet(name: &str) -> String {
     format!("你好，{}！欢迎使用 Omni AI 助手！", name)
 }
 
 #[tauri::command]
-pub(crate) fn load_codex_pet_packages() -> Result<codex_pets::CodexPetPackageListPayload, String> {
+fn load_codex_pet_packages() -> Result<codex_pets::CodexPetPackageListPayload, String> {
     codex_pets::load_packages()
 }
 
 #[tauri::command]
-pub(crate) fn import_codex_pet_package(
+fn import_codex_pet_package(
     input: codex_pets::ImportCodexPetPackageInput,
 ) -> Result<codex_pets::CodexPetPackageRecord, String> {
     codex_pets::import_package(input)
@@ -370,7 +365,7 @@ pub(crate) fn workspace_root() -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-pub(crate) fn load_workspace_pet_dir_command() -> Result<String, String> {
+fn load_workspace_pet_dir_command() -> Result<String, String> {
     codex_pets::load_workspace_pet_dir()
 }
 
@@ -1263,7 +1258,7 @@ pub(crate) fn rebuild_document_embeddings(
 
 
 #[tauri::command]
-pub(crate) fn load_knowledge_library_command(
+fn load_knowledge_library_command(
     app: tauri::AppHandle,
 ) -> Result<KnowledgeLibraryPayload, String> {
     let connection = open_sqlite_connection(&app)?;
@@ -1271,7 +1266,7 @@ pub(crate) fn load_knowledge_library_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_knowledge_document_command(
+fn load_knowledge_document_command(
     app: tauri::AppHandle,
     input: LoadKnowledgeDocumentInput,
 ) -> Result<KnowledgeDocumentDetailPayload, String> {
@@ -1280,7 +1275,7 @@ pub(crate) fn load_knowledge_document_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_knowledge_document_file_command(
+fn load_knowledge_document_file_command(
     app: tauri::AppHandle,
     input: LoadKnowledgeDocumentFileInput,
 ) -> Result<KnowledgeDocumentBinaryPayload, String> {
@@ -1289,7 +1284,7 @@ pub(crate) fn load_knowledge_document_file_command(
 }
 
 #[tauri::command]
-pub(crate) fn create_knowledge_collection_command(
+fn create_knowledge_collection_command(
     app: tauri::AppHandle,
     name: String,
     description: String,
@@ -1300,7 +1295,7 @@ pub(crate) fn create_knowledge_collection_command(
 }
 
 #[tauri::command]
-pub(crate) fn ensure_default_knowledge_collection_command(
+fn ensure_default_knowledge_collection_command(
     app: tauri::AppHandle,
 ) -> Result<KnowledgeCollectionRecord, String> {
     let connection = open_sqlite_connection(&app)?;
@@ -1331,7 +1326,7 @@ pub(crate) fn ensure_default_knowledge_collection_command(
 }
 
 #[tauri::command]
-pub(crate) fn update_knowledge_collection_command(
+fn update_knowledge_collection_command(
     app: tauri::AppHandle,
     input: UpdateKnowledgeCollectionInput,
 ) -> Result<KnowledgeCollectionRecord, String> {
@@ -1340,7 +1335,7 @@ pub(crate) fn update_knowledge_collection_command(
 }
 
 #[tauri::command]
-pub(crate) fn delete_knowledge_collection_command(
+fn delete_knowledge_collection_command(
     app: tauri::AppHandle,
     collection_id: String,
 ) -> Result<(), String> {
@@ -1349,7 +1344,7 @@ pub(crate) fn delete_knowledge_collection_command(
 }
 
 #[tauri::command]
-pub(crate) fn delete_knowledge_document_command(
+fn delete_knowledge_document_command(
     app: tauri::AppHandle,
     document_id: String,
 ) -> Result<(), String> {
@@ -1358,7 +1353,7 @@ pub(crate) fn delete_knowledge_document_command(
 }
 
 #[tauri::command]
-pub(crate) fn import_knowledge_document_command(
+fn import_knowledge_document_command(
     app: tauri::AppHandle,
     input: ImportKnowledgeDocumentInput,
 ) -> Result<KnowledgeDocumentRecord, String> {
@@ -1367,7 +1362,7 @@ pub(crate) fn import_knowledge_document_command(
 }
 
 #[tauri::command]
-pub(crate) fn import_knowledge_document_pipeline_command(
+fn import_knowledge_document_pipeline_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::PipelineImportInput,
 ) -> Result<knowledge_pipeline::PipelineImportResult, String> {
@@ -1376,7 +1371,7 @@ pub(crate) fn import_knowledge_document_pipeline_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_knowledge_processing_jobs_command(
+fn load_knowledge_processing_jobs_command(
     app: tauri::AppHandle,
     document_id: Option<String>,
 ) -> Result<Vec<knowledge_pipeline::KnowledgeProcessingJobRecord>, String> {
@@ -1385,7 +1380,7 @@ pub(crate) fn load_knowledge_processing_jobs_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_knowledge_processing_job_detail_command(
+fn load_knowledge_processing_job_detail_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobDetail, String> {
@@ -1394,7 +1389,7 @@ pub(crate) fn load_knowledge_processing_job_detail_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_knowledge_processing_status_summary_command(
+fn load_knowledge_processing_status_summary_command(
     app: tauri::AppHandle,
     collection_id: Option<String>,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingStatusSummary, String> {
@@ -1403,7 +1398,7 @@ pub(crate) fn load_knowledge_processing_status_summary_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_failed_knowledge_processing_jobs_command(
+fn load_failed_knowledge_processing_jobs_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::FailedJobQueryInput,
 ) -> Result<knowledge_pipeline::FailedJobQueryResult, String> {
@@ -1412,7 +1407,7 @@ pub(crate) fn load_failed_knowledge_processing_jobs_command(
 }
 
 #[tauri::command]
-pub(crate) fn retry_failed_knowledge_processing_jobs_command(
+fn retry_failed_knowledge_processing_jobs_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::RetryFailedJobsInput,
 ) -> Result<knowledge_pipeline::RetryFailedJobsResult, String> {
@@ -1421,7 +1416,7 @@ pub(crate) fn retry_failed_knowledge_processing_jobs_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_knowledge_processing_dead_letters_command(
+fn load_knowledge_processing_dead_letters_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::DeadLetterQueryInput,
 ) -> Result<knowledge_pipeline::DeadLetterQueryResult, String> {
@@ -1430,7 +1425,7 @@ pub(crate) fn load_knowledge_processing_dead_letters_command(
 }
 
 #[tauri::command]
-pub(crate) fn replay_knowledge_processing_dead_letters_command(
+fn replay_knowledge_processing_dead_letters_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::ReplayDeadLettersInput,
 ) -> Result<knowledge_pipeline::ReplayDeadLettersResult, String> {
@@ -1439,7 +1434,7 @@ pub(crate) fn replay_knowledge_processing_dead_letters_command(
 }
 
 #[tauri::command]
-pub(crate) fn pause_knowledge_processing_job_command(
+fn pause_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<(), String> {
@@ -1448,7 +1443,7 @@ pub(crate) fn pause_knowledge_processing_job_command(
 }
 
 #[tauri::command]
-pub(crate) fn resume_knowledge_processing_job_command(
+fn resume_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<(), String> {
@@ -1457,7 +1452,7 @@ pub(crate) fn resume_knowledge_processing_job_command(
 }
 
 #[tauri::command]
-pub(crate) fn cancel_knowledge_processing_job_command(
+fn cancel_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<(), String> {
@@ -1466,7 +1461,7 @@ pub(crate) fn cancel_knowledge_processing_job_command(
 }
 
 #[tauri::command]
-pub(crate) fn retry_knowledge_processing_job_command(
+fn retry_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
@@ -1475,7 +1470,7 @@ pub(crate) fn retry_knowledge_processing_job_command(
 }
 
 #[tauri::command]
-pub(crate) fn reparse_knowledge_document_command(
+fn reparse_knowledge_document_command(
     app: tauri::AppHandle,
     document_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
@@ -1484,7 +1479,7 @@ pub(crate) fn reparse_knowledge_document_command(
 }
 
 #[tauri::command]
-pub(crate) fn rechunk_knowledge_document_command(
+fn rechunk_knowledge_document_command(
     app: tauri::AppHandle,
     document_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
@@ -1493,7 +1488,7 @@ pub(crate) fn rechunk_knowledge_document_command(
 }
 
 #[tauri::command]
-pub(crate) fn revectorize_knowledge_document_command(
+fn revectorize_knowledge_document_command(
     app: tauri::AppHandle,
     document_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
@@ -1502,7 +1497,7 @@ pub(crate) fn revectorize_knowledge_document_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_knowledge_pipeline_settings_command(
+fn load_knowledge_pipeline_settings_command(
     app: tauri::AppHandle,
 ) -> Result<knowledge_pipeline::KnowledgePipelineSettings, String> {
     let connection = open_sqlite_connection(&app)?;
@@ -1510,7 +1505,7 @@ pub(crate) fn load_knowledge_pipeline_settings_command(
 }
 
 #[tauri::command]
-pub(crate) fn save_knowledge_pipeline_settings_command(
+fn save_knowledge_pipeline_settings_command(
     app: tauri::AppHandle,
     settings: knowledge_pipeline::KnowledgePipelineSettings,
 ) -> Result<knowledge_pipeline::KnowledgePipelineSettings, String> {
@@ -1519,13 +1514,13 @@ pub(crate) fn save_knowledge_pipeline_settings_command(
 }
 
 #[tauri::command]
-pub(crate) fn cleanup_knowledge_processing_logs_command(app: tauri::AppHandle) -> Result<i64, String> {
+fn cleanup_knowledge_processing_logs_command(app: tauri::AppHandle) -> Result<i64, String> {
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::cleanup_processing_logs(&connection)
 }
 
 #[tauri::command]
-pub(crate) fn load_knowledge_multimodal_config_command(
+fn load_knowledge_multimodal_config_command(
     app: tauri::AppHandle,
 ) -> Result<KnowledgeMultimodalConfigRecord, String> {
     let connection = open_sqlite_connection(&app)?;
@@ -1533,7 +1528,7 @@ pub(crate) fn load_knowledge_multimodal_config_command(
 }
 
 #[tauri::command]
-pub(crate) fn save_knowledge_multimodal_config_command(
+fn save_knowledge_multimodal_config_command(
     app: tauri::AppHandle,
     config: KnowledgeMultimodalConfigRecord,
 ) -> Result<KnowledgeMultimodalConfigRecord, String> {
@@ -1542,7 +1537,7 @@ pub(crate) fn save_knowledge_multimodal_config_command(
 }
 
 #[tauri::command]
-pub(crate) fn rebuild_knowledge_document_embeddings_command(
+fn rebuild_knowledge_document_embeddings_command(
     app: tauri::AppHandle,
     input: RevectorizeKnowledgeDocumentInput,
 ) -> Result<KnowledgeDocumentRecord, String> {
@@ -1551,7 +1546,7 @@ pub(crate) fn rebuild_knowledge_document_embeddings_command(
 }
 
 #[tauri::command]
-pub(crate) fn search_knowledge_chunks_command(
+fn search_knowledge_chunks_command(
     app: tauri::AppHandle,
     input: SearchKnowledgeChunksInput,
 ) -> Result<Vec<SearchKnowledgeChunkResult>, String> {
@@ -1560,7 +1555,7 @@ pub(crate) fn search_knowledge_chunks_command(
 }
 
 #[tauri::command]
-pub(crate) fn list_workspace_files(
+fn list_workspace_files(
     project_path: Option<String>,
     query: Option<String>,
     limit: Option<usize>,
@@ -1569,12 +1564,12 @@ pub(crate) fn list_workspace_files(
 }
 
 #[tauri::command]
-pub(crate) fn read_workspace_file(project_path: Option<String>, path: String, max_chars: Option<usize>) -> Result<String, String> {
+fn read_workspace_file(project_path: Option<String>, path: String, max_chars: Option<usize>) -> Result<String, String> {
     workspace_files::read_file(project_path, path, max_chars)
 }
 
 #[tauri::command]
-pub(crate) fn search_workspace_files(
+fn search_workspace_files(
     project_path: Option<String>,
     query: String,
     limit: Option<usize>,
@@ -1585,7 +1580,7 @@ pub(crate) fn search_workspace_files(
 /// 读取项目工作目录下的 AGENTS.md（仿 codex / deepseek 的指令文件约定）。
 /// AGENTS.override.md 优先于 AGENTS.md。目录为空或文件不存在时返回空串。
 #[tauri::command]
-pub(crate) fn read_project_agents_md(project_path: Option<String>) -> String {
+fn read_project_agents_md(project_path: Option<String>) -> String {
     let raw = match project_path {
         Some(value) => value.trim().to_string(),
         None => return String::new(),
@@ -1606,7 +1601,7 @@ pub(crate) fn read_project_agents_md(project_path: Option<String>) -> String {
 }
 
 #[tauri::command]
-pub(crate) fn load_chat_storage(
+fn load_chat_storage(
     app: tauri::AppHandle,
     legacy_projects_json: Option<String>,
     legacy_sessions_json: Option<String>,
@@ -1636,7 +1631,7 @@ pub(crate) fn load_chat_storage(
 }
 
 #[tauri::command]
-pub(crate) fn save_chat_storage(
+fn save_chat_storage(
     app: tauri::AppHandle,
     projects_json: String,
     sessions_json: String,
@@ -1647,25 +1642,25 @@ pub(crate) fn save_chat_storage(
 }
 
 #[tauri::command]
-pub(crate) fn delete_chat_session(app: tauri::AppHandle, id: String) -> Result<(), String> {
+fn delete_chat_session(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let connection = open_sqlite_connection(&app)?;
     delete_chat_session_by_id(&connection, &id)
 }
 
 #[tauri::command]
-pub(crate) fn delete_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
+fn delete_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let connection = open_sqlite_connection(&app)?;
     delete_project_by_id(&connection, &id)
 }
 
 #[tauri::command]
-pub(crate) fn load_manifest_storage_command(app: tauri::AppHandle) -> Result<ManifestStoragePayload, String> {
+fn load_manifest_storage_command(app: tauri::AppHandle) -> Result<ManifestStoragePayload, String> {
     let connection = open_sqlite_connection(&app)?;
     load_manifest_storage(&connection)
 }
 
 #[tauri::command]
-pub(crate) fn save_manifest_storage_command(
+fn save_manifest_storage_command(
     app: tauri::AppHandle,
     project_presets_json: Option<String>,
     tool_manifests_json: Option<String>,
@@ -1681,13 +1676,13 @@ pub(crate) fn save_manifest_storage_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_memory_storage_command(app: tauri::AppHandle) -> Result<MemoryStoragePayload, String> {
+fn load_memory_storage_command(app: tauri::AppHandle) -> Result<MemoryStoragePayload, String> {
     let connection = open_sqlite_connection(&app)?;
     load_memory_storage(&connection)
 }
 
 #[tauri::command]
-pub(crate) fn save_memory_storage_command(
+fn save_memory_storage_command(
     app: tauri::AppHandle,
     project_memories_json: Option<String>,
     user_preferences_json: Option<String>,
@@ -1703,7 +1698,7 @@ pub(crate) fn save_memory_storage_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_automation_storage_command(
+fn load_automation_storage_command(
     app: tauri::AppHandle,
 ) -> Result<AutomationStoragePayload, String> {
     let connection = open_sqlite_connection(&app)?;
@@ -1711,7 +1706,7 @@ pub(crate) fn load_automation_storage_command(
 }
 
 #[tauri::command]
-pub(crate) fn save_automation_storage_command(
+fn save_automation_storage_command(
     app: tauri::AppHandle,
     scheduled_tasks_json: Option<String>,
 ) -> Result<(), String> {
@@ -1720,7 +1715,7 @@ pub(crate) fn save_automation_storage_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_app_kv(
+fn load_app_kv(
     app: tauri::AppHandle,
     keys: Vec<String>,
     legacy_entries: Option<HashMap<String, String>>,
@@ -1750,13 +1745,13 @@ pub(crate) fn load_app_kv(
 }
 
 #[tauri::command]
-pub(crate) fn save_app_kv(app: tauri::AppHandle, key: String, value: String) -> Result<(), String> {
+fn save_app_kv(app: tauri::AppHandle, key: String, value: String) -> Result<(), String> {
     let connection = open_sqlite_connection(&app)?;
     write_structured_app_value(&connection, &key, &value)
 }
 
 #[tauri::command]
-pub(crate) fn remove_app_kv(app: tauri::AppHandle, key: String) -> Result<(), String> {
+fn remove_app_kv(app: tauri::AppHandle, key: String) -> Result<(), String> {
     let connection = open_sqlite_connection(&app)?;
     remove_structured_app_value(&connection, &key)?;
     connection
@@ -1766,14 +1761,14 @@ pub(crate) fn remove_app_kv(app: tauri::AppHandle, key: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub(crate) fn get_data_root_info(
+fn get_data_root_info(
     app: tauri::AppHandle,
 ) -> Result<storage_paths::DataRootInfo, String> {
     storage_paths::data_root_info(&app)
 }
 
 #[tauri::command]
-pub(crate) fn set_data_root(
+fn set_data_root(
     app: tauri::AppHandle,
     new_path: String,
 ) -> Result<storage_paths::DataRootInfo, String> {
@@ -1781,14 +1776,14 @@ pub(crate) fn set_data_root(
 }
 
 #[tauri::command]
-pub(crate) fn reset_data_root(
+fn reset_data_root(
     app: tauri::AppHandle,
 ) -> Result<storage_paths::DataRootInfo, String> {
     storage_paths::clear_custom_root(&app)
 }
 
 #[tauri::command]
-pub(crate) fn open_data_dir(app: tauri::AppHandle) -> Result<(), String> {
+fn open_data_dir(app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let info = storage_paths::data_root_info(&app)?;
     app.opener()
@@ -1797,7 +1792,7 @@ pub(crate) fn open_data_dir(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub(crate) fn export_data_backup(
+fn export_data_backup(
     app: tauri::AppHandle,
     target_path: String,
     secret: Option<String>,
@@ -1810,7 +1805,7 @@ pub(crate) fn export_data_backup(
 }
 
 #[tauri::command]
-pub(crate) fn import_data_backup(
+fn import_data_backup(
     app: tauri::AppHandle,
     source_path: String,
     target_dir: String,
@@ -1828,12 +1823,12 @@ pub(crate) fn import_data_backup(
 }
 
 #[tauri::command]
-pub(crate) fn read_persona_files(app: tauri::AppHandle) -> Result<persona::PersonaConfigDto, String> {
+fn read_persona_files(app: tauri::AppHandle) -> Result<persona::PersonaConfigDto, String> {
     persona::read_persona_files(&app)
 }
 
 #[tauri::command]
-pub(crate) fn write_persona_file(app: tauri::AppHandle, key: String, content: String) -> Result<(), String> {
+fn write_persona_file(app: tauri::AppHandle, key: String, content: String) -> Result<(), String> {
     persona::write_persona_file(&app, key, content)
 }
 

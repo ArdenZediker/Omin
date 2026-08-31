@@ -1,24 +1,17 @@
 //! 由 lib.rs 拆分而来，逻辑保持不变。
 
-use reqwest::blocking::Client as BlockingHttpClient;
-use reqwest::Client as HttpClient;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use std::{
     cmp::Ordering,
     collections::HashMap,
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
 };
 
-use super::*;
+// 显式导入 crate 根条目，不用 `use super::*`（避免吸回 `__cmd__*` 宏导致 E0255）。
+use crate::{
+    ensure_knowledge_defaults, normalize_knowledge_retrieval_mode, normalize_text_for_search,
+    parse_tags_json, tokenize_search_query, KnowledgeChunkRecord, KnowledgeDocumentAssetRecord,
+    SearchKnowledgeChunkResult, SearchKnowledgeChunksInput,
+};
 
 pub(crate) fn score_search_candidate(
     query: &str,
