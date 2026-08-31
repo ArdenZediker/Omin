@@ -46,7 +46,11 @@ type PersistedChatState = {
 };
 
 function canUseTauriStorage() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  return (
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window &&
+    (import.meta.env.PROD || import.meta.env.VITE_ENABLE_TAURI_STORAGE === "1")
+  );
 }
 
 function getLegacyProjectsJson() {
@@ -86,14 +90,16 @@ export async function loadPersistedChatState(): Promise<PersistedChatState> {
   let memoryPayload: Awaited<ReturnType<typeof loadMemoryStorage>> | null = null;
   let automationPayload: Awaited<ReturnType<typeof loadAutomationStorage>> | null = null;
 
-  try {
-    payload = await invoke<ChatStoragePayload>("load_chat_storage", {
-      legacyProjectsJson: getLegacyProjectsJson(),
-      legacySessionsJson: getLegacySessionsJson(),
-    });
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("loadPersistedChatState: load_chat_storage failed", error);
+  if (canUseTauriStorage()) {
+    try {
+      payload = await invoke<ChatStoragePayload>("load_chat_storage", {
+        legacyProjectsJson: getLegacyProjectsJson(),
+        legacySessionsJson: getLegacySessionsJson(),
+      });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("loadPersistedChatState: load_chat_storage failed", error);
+    }
   }
 
   try {
@@ -137,20 +143,24 @@ export async function savePersistedChatState(projects: Project[], sessions: Chat
     localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, sessionsJson);
   }
 
-  try {
-    await invoke("save_chat_storage", {
-      projectsJson,
-      sessionsJson,
-    });
-    if (typeof window !== "undefined" && canUseTauriStorage()) {
-      localStorage.removeItem(CHAT_PROJECTS_STORAGE_KEY);
-      localStorage.removeItem(CHAT_SESSIONS_STORAGE_KEY);
+  if (canUseTauriStorage()) {
+    try {
+      await invoke("save_chat_storage", {
+        projectsJson,
+        sessionsJson,
+      });
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(CHAT_PROJECTS_STORAGE_KEY);
+        localStorage.removeItem(CHAT_SESSIONS_STORAGE_KEY);
+      }
+      return;
+    } catch {
+      // Fall back to localStorage below.
     }
-  } catch {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(CHAT_PROJECTS_STORAGE_KEY, projectsJson);
-      localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, sessionsJson);
-    }
+  }
+  if (typeof window !== "undefined") {
+    localStorage.setItem(CHAT_PROJECTS_STORAGE_KEY, projectsJson);
+    localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, sessionsJson);
   }
 }
 

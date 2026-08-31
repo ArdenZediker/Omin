@@ -476,12 +476,10 @@ export async function resizeWindow(targetWindow: ReturnType<typeof getCurrentWin
 }
 
 export async function applyCompactWindowChrome(targetWindow: ReturnType<typeof getCurrentWindow>) {
-  await Promise.all([
-    targetWindow.setShadow(false),
-    targetWindow.setResizable(false),
-    targetWindow.setAlwaysOnTop(true),
-    targetWindow.setSkipTaskbar(true),
-  ]);
+  await targetWindow.setShadow(false);
+  await targetWindow.setResizable(false);
+  await targetWindow.setAlwaysOnTop(true);
+  await targetWindow.setSkipTaskbar(true);
 
   try {
     await targetWindow.setVisibleOnAllWorkspaces(true);
@@ -527,13 +525,11 @@ export async function ensurePetThoughtWindow() {
 }
 
 export async function applyExpandedWindowChrome(targetWindow: ReturnType<typeof getCurrentWindow>) {
-  await Promise.all([
-    targetWindow.setShadow(false),
-    targetWindow.setResizable(true),
-    targetWindow.setAlwaysOnTop(false),
-    targetWindow.setSkipTaskbar(false),
-    targetWindow.setDecorations(false),
-  ]);
+  await targetWindow.setShadow(false);
+  await targetWindow.setResizable(true);
+  await targetWindow.setAlwaysOnTop(false);
+  await targetWindow.setSkipTaskbar(false);
+  await targetWindow.setDecorations(false);
 }
 
 export async function ensureCompactWindow(appearance: CompactAppearance, scale: number, compactWindowLabel: string) {

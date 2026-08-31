@@ -5,7 +5,11 @@ import { loadAppKvEntries, removeAppKvEntry, readSqliteBackedJson, removeSqliteB
 const MODEL_CONNECTION_STATUS_KEY = "omni_model_connection_status";
 
 function canUseTauriStorage() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  return (
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window &&
+    (import.meta.env.PROD || import.meta.env.VITE_ENABLE_TAURI_STORAGE === "1")
+  );
 }
 
 export function loadUsagePreferences() {

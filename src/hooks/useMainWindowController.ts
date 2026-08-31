@@ -3,7 +3,6 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
-import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import {
   BASIC_SETTINGS_STORAGE_KEY,
@@ -22,7 +21,6 @@ import { COMPACT_PET_HIDDEN_STORAGE_KEY, isCompactPetHidden } from "../app/compa
 import { CHARACTER_SCALE_STORAGE_KEY, type CompactAppearance } from "./useCompactWindowState";
 import {
   applyCompactWindowChrome,
-  applyExpandedWindowChrome,
   applyThemeFromStorage,
   getBasicSettings,
   getMainWindowSizeForView,
@@ -158,21 +156,33 @@ export function useMainWindowController({
   }, [isCompactWindow]);
 
   useEffect(() => {
-    if (appWindow) {
-      void (isCompactWindow ? applyCompactWindowChrome(appWindow) : applyExpandedWindowChrome(appWindow));
+    let compactStartupTimer: number | null = null;
+
+    if (isCompactWindow && appWindow) {
+      void applyCompactWindowChrome(appWindow);
     }
     if (!isCompactWindow && appWindow) {
       const initialBasicSettings = getBasicSettings();
-      if (initialBasicSettings.showCompactBall) {
-        const storedAppearance = readSqliteBackedValue("omni_compact_appearance");
-        const appearance: CompactAppearance = storedAppearance === "compact" || storedAppearance === "large" || storedAppearance === "pet" ? storedAppearance : "default";
-        void showCompactWindow(
-          appearance,
-          appearance === "pet" && isCompactPetHidden() ? 1 : appearance === "pet" ? getPetWindowScale() : 1,
-          COMPACT_WINDOW_LABEL
-        );
+      if (initialBasicSettings.showCompactBall && (import.meta.env.PROD || import.meta.env.VITE_ENABLE_COMPACT_STARTUP === "1")) {
+        // 等主窗口和 WebView 完成首屏初始化后再创建紧凑窗口，避免 Windows
+        // 原生窗口属性调用与主窗口初始化同时发生导致 WebView2 卡死。
+        compactStartupTimer = window.setTimeout(() => {
+          const storedAppearance = readSqliteBackedValue("omni_compact_appearance");
+          const appearance: CompactAppearance = storedAppearance === "compact" || storedAppearance === "large" || storedAppearance === "pet" ? storedAppearance : "default";
+          void showCompactWindow(
+            appearance,
+            appearance === "pet" && isCompactPetHidden() ? 1 : appearance === "pet" ? getPetWindowScale() : 1,
+            COMPACT_WINDOW_LABEL
+          );
+        }, 2000);
       }
     }
+
+    return () => {
+      if (compactStartupTimer !== null) {
+        window.clearTimeout(compactStartupTimer);
+      }
+    };
   }, [isCompactWindow, setCurrentModel]);
 
   useEffect(() => {
@@ -192,6 +202,10 @@ export function useMainWindowController({
 
   useEffect(() => {
     if (isCompactWindow || !appWindow) {
+      return;
+    }
+
+    if (!import.meta.env.PROD && import.meta.env.VITE_ENABLE_WINDOW_GEOMETRY !== "1") {
       return;
     }
 
@@ -324,31 +338,6 @@ export function useMainWindowController({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [basicSettings.openMainShortcut, basicSettings.switchPreviousModelShortcut, isCompactWindow, onModelChange, previousModel, setView]);
-
-  useEffect(() => {
-    if (isCompactWindow || basicSettings.openMainShortcut === UNSET_SHORTCUT) {
-      return;
-    }
-
-    let registered = false;
-    void register(basicSettings.openMainShortcut, () => {
-      saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, "chat");
-      setView("chat");
-      void restoreMainWindow(false);
-    })
-      .then(() => {
-        registered = true;
-      })
-      .catch(() => {
-        registered = false;
-      });
-
-    return () => {
-      if (registered) {
-        void unregister(basicSettings.openMainShortcut);
-      }
-    };
-  }, [basicSettings.openMainShortcut, isCompactWindow, setView]);
 
   const handleOpenCompact = useCallback(async () => {
     if (basicSettings.showCompactBall) {

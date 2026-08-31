@@ -683,6 +683,10 @@ export default function MainChatView({
   }, [isEmptyGuideCompact, messages.length, updateEmptyGuideCompact]);
 
   useEffect(() => {
+    if (!import.meta.env.PROD && import.meta.env.VITE_ENABLE_KNOWLEDGE_STARTUP !== "1") {
+      return;
+    }
+
     let cancelled = false;
 
     void invoke<{ collections: KnowledgeCollection[] }>("load_knowledge_library_command")
