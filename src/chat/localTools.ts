@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Message } from "../adapters/types";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
 import type { PluginManifest } from "../plugins/types";
-import { pluginRegistry } from "../plugins/registry";
+import { pluginRegistry, parseSkillMarkdown } from "../plugins/registry";
 import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 
@@ -99,6 +99,38 @@ export function normalizeExpertManifest(input: PluginManifest): PluginManifest {
     category: input.category ?? "AI Agent",
     tags: Array.isArray(input.tags) ? input.tags.filter((tag): tag is string => typeof tag === "string") : [],
   };
+}
+
+/** 工具调用参数宽容解析为 JSON 对象（仅当整段 args 是 JSON 对象时成功）。 */
+function parseToolJsonArgs(raw: string): Record<string, unknown> | null {
+  const text = raw.trim();
+  if (!text.startsWith("{")) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function strArg(record: Record<string, unknown> | null, ...keys: string[]): string | undefined {
+  if (!record) return undefined;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function numArg(record: Record<string, unknown> | null, key: string): number | undefined {
+  const value = record?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return undefined;
 }
 
 export function createLocalToolRegistry(runtime: LocalToolRuntime) {
@@ -307,6 +339,229 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : "专家定义校验失败" };
+      }
+    },
+  });
+
+  // ---- 联网工具（Rust：webtools.rs） ----
+
+  registry.register({
+    id: "web_search",
+    command: "/web_search",
+    title: "联网搜索",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const query = strArg(json, "query", "keyword", "q") ?? resolvedCommand.args.trim();
+      if (!query) return { ok: false, error: "用法：/web_search 关键词" };
+      try {
+        const results = await invoke<Array<{ title: string; url: string; snippet: string }>>("web_search", {
+          query,
+          limit: numArg(json, "limit") ?? null,
+        });
+        if (results.length === 0) {
+          return { ok: true, outputText: `没有找到与「${query}」相关的结果。`, data: [] };
+        }
+        const lines = results.map(
+          (r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`,
+        );
+        return {
+          ok: true,
+          outputText: [`「${query}」搜索结果（${results.length} 条）：`, ...lines].join("\n"),
+          data: results,
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  registry.register({
+    id: "web_fetch",
+    command: "/web_fetch",
+    title: "网页抓取",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const url = strArg(json, "url", "link") ?? resolvedCommand.args.trim();
+      if (!url) return { ok: false, error: "用法：/web_fetch <url>" };
+      try {
+        const result = await invoke<{ final_url: string; title: string; text: string; links: Array<{ url: string; text: string }> }>(
+          "web_fetch",
+          { url, maxChars: numArg(json, "max_chars") ?? numArg(json, "maxChars") ?? null },
+        );
+        const linkLines = result.links.length
+          ? ["", "页面主要链接：", ...result.links.slice(0, 10).map((l) => `- ${l.text || l.url}：${l.url}`)]
+          : [];
+        return {
+          ok: true,
+          outputText: [
+            `标题：${result.title || "（无）"}`,
+            `地址：${result.final_url}`,
+            "",
+            result.text,
+            ...linkLines,
+          ].join("\n"),
+          data: { title: result.title, url: result.final_url, links: result.links },
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  // ---- Git 工作流（Rust：gittools.rs） ----
+
+  const resolveGitPath = (json: Record<string, unknown> | null) =>
+    strArg(json, "path", "repo") ?? runtime.activeProject?.workspacePath ?? null;
+
+  registry.register({
+    id: "git_info",
+    command: "/git_info",
+    title: "Git 查看",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const operation = strArg(json, "operation", "op") ?? resolvedCommand.args.trim().split(/\s+/)[0];
+      if (!operation) return { ok: false, error: "用法：/git_info status|log|diff|diff-staged|branch" };
+      try {
+        const output = await invoke<string>("git_info", {
+          projectPath: resolveGitPath(json),
+          operation,
+          limit: numArg(json, "limit") ?? null,
+        });
+        return { ok: true, outputText: output, data: { operation, output } };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  registry.register({
+    id: "git_commit",
+    command: "/git_commit",
+    title: "Git 提交",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const message = strArg(json, "message", "msg");
+      if (!message) return { ok: false, error: "用法：/git_commit <message>（或传 JSON {message, addAll?, paths?}）" };
+      try {
+        const output = await invoke<string>("git_commit", {
+          projectPath: resolveGitPath(json),
+          message,
+          addAll: typeof json?.add_all === "boolean" ? json.add_all : typeof json?.addAll === "boolean" ? json.addAll : null,
+          paths: Array.isArray(json?.paths) ? json.paths.filter((p): p is string => typeof p === "string") : null,
+        });
+        return { ok: true, outputText: output };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  registry.register({
+    id: "git_pr",
+    command: "/git_pr",
+    title: "Git 创建 PR",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const title = strArg(json, "title");
+      if (!title) return { ok: false, error: "用法：/git_pr <title>（或传 JSON {title, body?, base?}）" };
+      try {
+        const output = await invoke<string>("git_pr", {
+          projectPath: resolveGitPath(json),
+          title,
+          body: strArg(json, "body", "description") ?? null,
+          base: strArg(json, "base") ?? null,
+        });
+        return { ok: true, outputText: output };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  // ---- Office 导出（Rust：office_export.rs） ----
+
+  const registerExportTool = (
+    id: string,
+    title: string,
+    command: string,
+    tauriCommand: "export_docx" | "export_xlsx" | "export_pptx",
+  ) => {
+    registry.register({
+      id,
+      command,
+      title,
+      execute: async (resolvedCommand) => {
+        const json = parseToolJsonArgs(resolvedCommand.args);
+        const path = strArg(json, "path", "output", "file");
+        const specRaw = json?.spec ?? json?.document ?? json?.data;
+        if (!path) return { ok: false, error: `用法：/${id} JSON{path, spec, overwrite?}（path 为输出文件绝对路径）` };
+        if (specRaw === undefined || specRaw === null) {
+          return { ok: false, error: `缺少 spec：请按 schema 提供${title}的结构化内容对象` };
+        }
+        try {
+          const outcome = await invoke<{ path: string; size: number }>(tauriCommand, {
+            path,
+            specJson: JSON.stringify(specRaw),
+            overwrite:
+              typeof json?.overwrite === "boolean"
+                ? json.overwrite
+                : json?.overwrite === true || json?.overwrite === "true",
+          });
+          return {
+            ok: true,
+            outputText: `${title}已生成：${outcome.path}（${(outcome.size / 1024).toFixed(1)} KB）`,
+            data: outcome,
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+    });
+  };
+
+  registerExportTool("export_docx", "Word 文档", "/export_docx", "export_docx");
+  registerExportTool("export_xlsx", "Excel 表格", "/export_xlsx", "export_xlsx");
+  registerExportTool("export_pptx", "PPT 演示", "/export_pptx", "export_pptx");
+
+  // ---- 自造技能安装（Rust：skillhub.rs install_local_skill） ----
+
+  registry.register({
+    id: "install_skill",
+    command: "/install_skill",
+    title: "安装自造技能",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const id = strArg(json, "id", "slug");
+      const content = strArg(json, "content", "body", "markdown");
+      if (!id) return { ok: false, error: "用法：/install_skill JSON{id, name?, description?, content}" };
+      if (!content) return { ok: false, error: "缺少 content：技能正文（Markdown）" };
+      if (!/^[a-z][a-z0-9-_]*$/i.test(id)) {
+        return { ok: false, error: `技能 id「${id}」不合法：仅允许字母、数字、连字符、下划线` };
+      }
+      try {
+        const res = await invoke<{ slug: string; path: string; skill_md: string }>("install_local_skill", {
+          slug: id,
+          name: strArg(json, "name", "title") ?? null,
+          description: strArg(json, "description", "desc") ?? null,
+          content,
+        });
+        const parsed = parseSkillMarkdown(res.skill_md);
+        if (!parsed) return { ok: false, error: "SKILL.md 解析失败，技能已写入但未注册，请检查 frontmatter" };
+        parsed.id = res.slug;
+        parsed.kind = "skill";
+        parsed.command = parsed.command || `/${res.slug}`;
+        if (!parsed.category) parsed.category = "AI Agent";
+        const tags = Array.isArray(json?.tags) ? json.tags.filter((t): t is string => typeof t === "string") : [];
+        if (tags.length) parsed.tags = tags;
+        const existed = pluginRegistry.isInstalled(res.slug);
+        pluginRegistry.install(parsed, { type: "local", path: res.path });
+        return {
+          ok: true,
+          outputText: `技能「${parsed.name}」（${res.slug}）已${existed ? "更新" : "安装"}：${res.path}`,
+          data: { id: res.slug, path: res.path, existed },
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     },
   });

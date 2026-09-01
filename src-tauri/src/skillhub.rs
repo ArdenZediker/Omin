@@ -492,3 +492,53 @@ pub(crate) async fn install_skillhub_meta_skill(
     .await
     .map_err(|e| format!("专家团安装任务失败: {e}"))?
 }
+
+/// 本地自造技能落盘（skill-creator 工作流的后端）：
+/// 把模型产出的技能正文写入 skills_dir/<slug>/SKILL.md，缺 frontmatter 时按
+/// name/description 参数合成。与 SkillHub 安装共用同一目录与注册链路。
+#[tauri::command]
+pub(crate) async fn install_local_skill(
+    slug: String,
+    name: Option<String>,
+    description: Option<String>,
+    content: String,
+) -> Result<SkillhubInstallResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<SkillhubInstallResult, String> {
+        let safe_slug = sanitize_skillhub_slug(&slug);
+        if safe_slug.is_empty() || safe_slug == "/" {
+            return Err("无效的技能 id".to_string());
+        }
+        if content.trim().is_empty() {
+            return Err("技能内容为空，已拒绝安装".to_string());
+        }
+        let trimmed = content.trim_start();
+        let skill_md = if trimmed.starts_with("---") {
+            content.trim().to_string()
+        } else {
+            let name = name.unwrap_or_else(|| safe_slug.clone());
+            let description = description.unwrap_or_default();
+            format!(
+                "---\nname: {}\ndescription: {}\n---\n\n{}",
+                name.trim(),
+                description.trim(),
+                content.trim()
+            )
+        };
+        let dir = default_skillhub_skills_dir()?;
+        std::fs::create_dir_all(&dir).map_err(|e| format!("创建技能目录失败: {e}"))?;
+        let target = dir.join(&safe_slug);
+        if target.exists() {
+            std::fs::remove_dir_all(&target).map_err(|e| format!("清理旧技能失败: {e}"))?;
+        }
+        std::fs::create_dir_all(&target).map_err(|e| format!("创建技能目录失败: {e}"))?;
+        std::fs::write(target.join("SKILL.md"), &skill_md)
+            .map_err(|e| format!("写入 SKILL.md 失败: {e}"))?;
+        Ok(SkillhubInstallResult {
+            slug: safe_slug,
+            path: target.to_string_lossy().to_string(),
+            skill_md,
+        })
+    })
+    .await
+    .map_err(|e| format!("本地技能安装任务失败: {e}"))?
+}

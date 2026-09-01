@@ -40,8 +40,18 @@ export const DEFAULT_PROJECT_TOOL_IDS = [
   "search_files",
   "read_persona",
   "update_persona",
+  // 内置基础盘：联网 + Git 工作流 + Office 导出（用户可在项目设置中关闭）。
+  "web_search",
+  "web_fetch",
+  "git_info",
+  "git_commit",
+  "git_pr",
+  "export_docx",
+  "export_xlsx",
+  "export_pptx",
 ];
-export const DEFAULT_PROJECT_SKILL_IDS: string[] = [];
+// 内置技能默认启用（纯提示词技能，无副作用）。
+export const DEFAULT_PROJECT_SKILL_IDS: string[] = ["plan", "code-review", "skill-creator"];
 export const DEFAULT_PROJECT_MEMORY_SCOPE: ProjectMemoryScope = "project";
 
 export const DEFAULT_USAGE_PREFERENCES: ChatUsagePreferences = {
@@ -290,8 +300,13 @@ function normalizeProject(input: Partial<Project> & Pick<Project, "id" | "title"
           : "",
     defaultModelId: input.defaultModelId ?? null,
     knowledgeCollectionId: typeof input.knowledgeCollectionId === "string" && input.knowledgeCollectionId.trim() ? input.knowledgeCollectionId.trim() : null,
-    allowedToolIds: Array.isArray(input.allowedToolIds) && input.allowedToolIds.length > 0 ? [...input.allowedToolIds] : [...DEFAULT_PROJECT_TOOL_IDS],
-    allowedSkillIds: Array.isArray(input.allowedSkillIds) && input.allowedSkillIds.length > 0 ? [...input.allowedSkillIds] : [...DEFAULT_PROJECT_SKILL_IDS],
+    // 前向兼容：既有项目补齐新增的内置默认工具/技能（用户随后可手动关闭）。
+    allowedToolIds: Array.isArray(input.allowedToolIds) && input.allowedToolIds.length > 0
+      ? [...new Set([...DEFAULT_PROJECT_TOOL_IDS, ...input.allowedToolIds])]
+      : [...DEFAULT_PROJECT_TOOL_IDS],
+    allowedSkillIds: Array.isArray(input.allowedSkillIds) && input.allowedSkillIds.length > 0
+      ? [...new Set([...DEFAULT_PROJECT_SKILL_IDS, ...input.allowedSkillIds])]
+      : [...DEFAULT_PROJECT_SKILL_IDS],
     memoryScope:
       input.memoryScope === "off" || input.memoryScope === "session" || input.memoryScope === "project"
         ? input.memoryScope

@@ -39,6 +39,7 @@ export function resolveEnabledToolNames(project: Project | null) {
  */
 export function buildChatTools(project: Project | null): ChatToolParam[] {
   if (!project) return [];
+  // 只读/分析类：搜索、读取、联网检索、git 只读查看。
   const SAFE_TOOL_IDS = new Set([
     "search_sessions",
     "read_session",
@@ -46,10 +47,21 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
     "read_file",
     "search_files",
     "read_persona",
+    "web_search",
+    "web_fetch",
+    "git_info",
+  ]);
+  // 写操作类：文件导出与 git 写操作——不放进无条件面，但项目启用后即对模型可见。
+  const OFFERED_TOOL_IDS = new Set([
+    "export_docx",
+    "export_xlsx",
+    "export_pptx",
+    "git_commit",
+    "git_pr",
   ]);
   const tools: ChatToolParam[] = [];
   for (const toolId of new Set(project.allowedToolIds)) {
-    if (!SAFE_TOOL_IDS.has(toolId)) continue;
+    if (!SAFE_TOOL_IDS.has(toolId) && !OFFERED_TOOL_IDS.has(toolId)) continue;
     const manifest = getToolManifestById(toolId);
     if (!manifest) continue;
     tools.push({
@@ -58,24 +70,30 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
       parameters: manifest.parameters ?? { type: "object", properties: {} },
     });
   }
-  // 专家管理闭环：install_expert 无条件暴露（不依赖项目 allowedToolIds），
-  // 让「创建专家 → 一键注册」在任何项目下都可用。
-  const installExpertManifest = getToolManifestById("install_expert");
-  if (installExpertManifest) {
-    tools.push({
-      name: installExpertManifest.id,
-      description: installExpertManifest.promptContribution ?? installExpertManifest.description,
-      parameters:
-        installExpertManifest.parameters ?? { type: "object", properties: {} },
-    });
+  // 管理闭环：install_expert / install_skill 无条件暴露（不依赖项目 allowedToolIds），
+  // 让「创建专家/技能 → 一键注册」在任何项目下都可用。
+  for (const alwaysOnId of ["install_expert", "install_skill"]) {
+    const manifest = getToolManifestById(alwaysOnId);
+    if (manifest) {
+      tools.push({
+        name: manifest.id,
+        description: manifest.promptContribution ?? manifest.description,
+        parameters: manifest.parameters ?? { type: "object", properties: {} },
+      });
+    }
   }
   return tools;
 }
 
 /**
  * 把模型发起的工具调用 arguments（JSON 字符串）宽容解析为本地命令的 args 文本。
- * directKeys 覆盖各工具 manifest.parameters 的字段名（query/keyword/path/
- * sessionId/field 等），或纯字符串/拼接。
+ *
+ * 解析规则（按序）：
+ * 1. 纯字符串直接返回；
+ * 2. {manifest:{...}} → 返回 manifest 的 JSON（/install_expert 自行解析）；
+ * 3. 多字段或含对象/数组等复杂值 → 保留原始 JSON（多参数工具 execute 自行解析）；
+ * 4. 单字段命中 directKeys → 返回该字符串（老工具单参数形态）；
+ * 5. 其余对象兜底拼接 key=value。
  */
 export function extractToolCallArgs(raw: string): string {
   if (!raw || raw === "{}") return "";
@@ -84,6 +102,18 @@ export function extractToolCallArgs(raw: string): string {
     if (typeof parsed === "string") return parsed;
     if (parsed && typeof parsed === "object") {
       const record = parsed as Record<string, unknown>;
+      // 专家安装：模型传 { manifest: {...} } 时保留完整 JSON，供 /install_expert 自行解析。
+      if (record.manifest && typeof record.manifest === "object") {
+        return JSON.stringify(record.manifest);
+      }
+      const hasComplexValue = Object.values(record).some(
+        (v) => v !== null && typeof v === "object",
+      );
+      // 多参数工具（web_fetch / export_* / git_* / install_skill 等）：
+      // 保留原始 JSON，execute 侧按 manifest.parameters 自行解析。
+      if (Object.keys(record).length > 1 || hasComplexValue) {
+        return raw.trim();
+      }
       const directKeys = [
         "args",
         "query",
@@ -97,10 +127,6 @@ export function extractToolCallArgs(raw: string): string {
       ];
       for (const key of directKeys) {
         if (typeof record[key] === "string") return record[key];
-      }
-      // 专家安装：模型传 { manifest: {...} } 时保留完整 JSON，供 /install_expert 自行解析。
-      if (record.manifest && typeof record.manifest === "object") {
-        return JSON.stringify(record.manifest);
       }
       const parts = Object.entries(record)
         .filter((entry): entry is [string, string] => typeof entry[1] === "string")

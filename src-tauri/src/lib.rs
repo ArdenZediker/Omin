@@ -28,6 +28,9 @@ mod knowledge_embedding_config;
 mod knowledge_embedding_batch;
 mod knowledge_search;
 mod skillhub;
+mod webtools;
+mod gittools;
+mod office_export;
 mod connectorhub;
 mod mcp;
 
@@ -38,6 +41,9 @@ use knowledge_embedding_batch::*;
 use knowledge_embedding_config::*;
 use knowledge_search::*;
 use skillhub::*;
+use webtools::*;
+use gittools::*;
+use office_export::*;
 use connectorhub::*;
 use mcp::*;
 
@@ -555,6 +561,15 @@ pub fn run() {
             get_skillhub_skillset,
             batch_skillhub_skills,
             install_skillhub_meta_skill,
+            install_local_skill,
+            web_search,
+            web_fetch,
+            git_info,
+            git_commit,
+            git_pr,
+            export_docx,
+            export_xlsx,
+            export_pptx,
             list_connectorhub_skills,
             install_connectorhub_skill,
             start_mcp_server,
