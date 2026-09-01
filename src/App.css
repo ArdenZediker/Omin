@@ -3653,7 +3653,7 @@ body:has(.pet-thought-window),
   -webkit-app-region: no-drag;
   app-region: no-drag;
   flex: 0 0 auto;
-  margin-top: -3px;
+  margin: 0;
 }
 
 .chat-topic-panel__body {
@@ -9385,6 +9385,9 @@ body:has(.pet-thought-window),
   border: 1px solid var(--omni-panel-border);
   border-radius: 10px;
   overflow: hidden;
+}
+.main-chat-toolbar__project .plugin-marketplace__source-tabs {
+  margin-top: -3px;
 }
 
 .plugin-marketplace__source-tab {
