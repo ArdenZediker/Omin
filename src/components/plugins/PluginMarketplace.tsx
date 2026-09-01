@@ -492,17 +492,25 @@ export default function PluginMarketplace({
     setRefreshKey((current) => current + 1);
   }, []);
 
-  /** 卸载非内置插件：先删本地技能目录（~/.dsh/skills/<slug>），再移除注册表。
-   *  Rust 删目录失败（如本地导入无磁盘目录）时兜底仅移除注册表，保证列表即时消失。 */
+  /** 卸载非内置插件：
+   *  - skill 走 uninstallSkillhubSkill（删 ~/.dsh/skills/<slug> + 移注册表），
+   *    Rust 失败兜底仅移注册表；
+   *  - expert / tool / connector / template 没有磁盘目录，仅 pluginRegistry.uninstall
+   *    即可（不调 Rust 命令，避免 Rust 端找不到目录抛错）。 */
   const handleUninstall = useCallback((manifest: PluginManifest) => {
     const parts = manifest.id.split("/");
     const slug = parts[parts.length - 1] ?? manifest.id;
     const namespace = parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
-    uninstallSkillhubSkill(slug, namespace)
-      .catch(() => {
-        pluginRegistry.uninstall(manifest.id);
-      })
-      .finally(() => setRefreshKey((current) => current + 1));
+    if (manifest.kind === "skill") {
+      uninstallSkillhubSkill(slug, namespace)
+        .catch(() => {
+          pluginRegistry.uninstall(manifest.id);
+        })
+        .finally(() => setRefreshKey((current) => current + 1));
+    } else {
+      pluginRegistry.uninstall(manifest.id);
+      setRefreshKey((current) => current + 1);
+    }
   }, []);
 
   const isInstalled = (id: string) =>
@@ -1015,6 +1023,16 @@ export default function PluginMarketplace({
                           <span className="plugin-card__connected-dot" />
                           <span>已启用</span>
                         </span>
+                        <button
+                          type="button"
+                          className="plugin-card__button plugin-card__button--danger"
+                          onClick={() => handleUninstall(manifest)}
+                          title="卸载并删除此专家"
+                          aria-label={`删除 ${manifest.name}`}
+                        >
+                          <Trash2 size={14} strokeWidth={1.8} />
+                          <span>删除</span>
+                        </button>
                       </div>
                     </div>
                   );
