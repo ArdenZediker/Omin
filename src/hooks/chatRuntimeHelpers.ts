@@ -131,11 +131,6 @@ export function formatToolCallResult(
   return "工具执行完成（无输出）";
 }
 
-export const SILENT_LOCAL_TOOL_IDS = new Set([
-  "model",
-  "pet",
-]);
-
 export const PET_THOUGHT_QUEUE_LIMIT = 12;
 export const PET_THOUGHT_DISMISS_DELAY_MS = 900;
 

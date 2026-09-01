@@ -1,16 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { Message, ModelConfig } from "../adapters/types";
-import { COMPACT_WINDOW_LABEL } from "../app/constants";
-import { getPetWindowScale } from "../app/compactPetScale";
-import { isCompactPetHidden, setCompactPetHidden } from "../app/compactVisibility";
-import { saveSqliteBackedValue } from "../app/sqliteStorage";
-import { showCompactWindow, showSettingsWindow } from "../app/window";
+import type { Message } from "../adapters/types";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
 import type { PluginManifest } from "../plugins/types";
 import { pluginRegistry } from "../plugins/registry";
-import type { ProjectMemorySourceType, Project, PersonaConfig } from "./types";
+import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 
 export type LocalToolSession = {
@@ -22,19 +15,8 @@ export type LocalToolSession = {
 export type LocalToolRuntime = {
   activeProject: Project | null;
   activeChatId: string | null;
-  addProjectMemory: (projectId: string, content: string, sourceSessionId?: string | null, sourceType?: ProjectMemorySourceType) => boolean;
-  availableModels: ModelConfig[];
   getChatSessionById: (sessionId: string) => LocalToolSession | null;
-  handleModelChange: (modelId: string) => void;
-  renameChatSession: (sessionId: string, title: string) => boolean;
   searchChatSessions: (query: string) => LocalToolSession[];
-  setActiveChatId: (chatId: string | null) => void;
-  setEditingMessageIndex: (index: number | null) => void;
-  setError: (error: string | null) => void;
-  setMessages: (messages: Message[]) => void;
-  setOpenChatMenu: (menu: { id: string; x: number; y: number } | null) => void;
-  togglePinnedChatSession: (sessionId: string) => boolean;
-  updateProjectProfile?: (projectId: string, patch: Partial<Project>) => Project | null;
 };
 
 export const ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET = new Set(ALWAYS_ALLOWED_LOCAL_TOOL_IDS);
@@ -47,21 +29,10 @@ function requireTool(id: string) {
   return manifest as typeof manifest & { command: string };
 }
 
-function canUseTauriEvents() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 function getMessageRoleLabel(role: Message["role"]) {
   if (role === "user") return "用户";
   if (role === "project") return "项目";
   return "系统";
-}
-
-async function showDesktopPet() {
-  setCompactPetHidden(false);
-  saveSqliteBackedValue("omni_compact_appearance", "pet");
-  await emit("omni-compact-appearance-changed", { appearance: "pet" });
-  await showCompactWindow("pet", getPetWindowScale(), COMPACT_WINDOW_LABEL);
 }
 
 /**
@@ -133,14 +104,6 @@ export function normalizeExpertManifest(input: PluginManifest): PluginManifest {
 export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   const registry = new ToolRegistry();
 
-  const newTool = requireTool("new");
-  const clearTool = requireTool("clear");
-  const settingsTool = requireTool("settings");
-  const petTool = requireTool("pet");
-  const rememberTool = requireTool("remember");
-  const renameTool = requireTool("rename");
-  const pinTool = requireTool("pin");
-  const modelTool = requireTool("model");
   const searchSessionsTool = requireTool("search_sessions");
   const readSessionTool = requireTool("read_session");
   const listFilesTool = requireTool("list_files");
@@ -149,152 +112,6 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   const readPersonaTool = requireTool("read_persona");
   const updatePersonaTool = requireTool("update_persona");
   const installExpertTool = requireTool("install_expert");
-
-  registry.register({
-    id: newTool.id,
-    command: newTool.command,
-    title: newTool.title,
-    execute: async () => {
-      runtime.setActiveChatId(null);
-      runtime.setMessages([]);
-      runtime.setError(null);
-      runtime.setOpenChatMenu(null);
-      runtime.setEditingMessageIndex(null);
-      return { ok: true };
-    },
-  });
-
-  registry.register({
-    id: clearTool.id,
-    command: clearTool.command,
-    title: clearTool.title,
-    execute: async () => {
-      runtime.setMessages([]);
-      runtime.setError(null);
-      runtime.setEditingMessageIndex(null);
-      return { ok: true };
-    },
-  });
-
-  registry.register({
-    id: settingsTool.id,
-    command: settingsTool.command,
-    title: settingsTool.title,
-    execute: async () => {
-      await showSettingsWindow();
-      return { ok: true };
-    },
-  });
-
-  registry.register({
-    id: petTool.id,
-    command: petTool.command,
-    title: petTool.title,
-    execute: async (resolvedCommand) => {
-      if (!canUseTauriEvents()) {
-        return { ok: false, error: "桌面宠物仅在桌面应用中可用。" };
-      }
-
-      const action = resolvedCommand.args.trim().toLowerCase();
-      const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
-      const isCompactWindowVisible = compactWindow ? await compactWindow.isVisible().catch(() => false) : false;
-      const hideCompactPet = async () => {
-        setCompactPetHidden(true);
-        await compactWindow?.close().catch(() => undefined);
-      };
-
-      if (!action) {
-        if (compactWindow && isCompactWindowVisible && !isCompactPetHidden()) {
-          await hideCompactPet();
-          return { ok: true, outputText: "已隐藏桌面宠物。" };
-        }
-
-        await showDesktopPet();
-        return { ok: true, outputText: "已打开桌面宠物。" };
-      }
-
-      if (["wake", "open", "show", "on"].includes(action)) {
-        await showDesktopPet();
-        return { ok: true, outputText: "已打开桌面宠物。" };
-      }
-
-      if (["close", "hide", "off"].includes(action)) {
-        await hideCompactPet();
-        return { ok: true, outputText: "已隐藏桌面宠物。" };
-      }
-
-      return { ok: false, error: "用法：/pet、/pet wake 或 /pet close" };
-    },
-  });
-
-  registry.register({
-    id: rememberTool.id,
-    command: rememberTool.command,
-    title: rememberTool.title,
-    execute: async (resolvedCommand, context) => {
-      const content = resolvedCommand.args.trim();
-      if (!runtime.activeProject) return { ok: false, error: "当前没有可写入记忆的项目" };
-      if (!content) return { ok: false, error: "用法：/remember 要记住的长期偏好或约束" };
-      const added = runtime.addProjectMemory(runtime.activeProject.id, content, context.activeChatId, "command");
-      if (!added) return { ok: true, outputText: "这条记忆已经存在，未重复保存。" };
-      return { ok: true, outputText: "已保存到当前项目记忆库。" };
-    },
-  });
-
-  registry.register({
-    id: renameTool.id,
-    command: renameTool.command,
-    title: renameTool.title,
-    execute: async (resolvedCommand, context) => {
-      if (!context.activeChatId) return { ok: false, error: "当前没有可重命名的会话。" };
-      if (!resolvedCommand.args) return { ok: false, error: "用法：/rename 会话标题" };
-      runtime.renameChatSession(context.activeChatId, resolvedCommand.args);
-      runtime.setError(null);
-      runtime.setOpenChatMenu(null);
-      return { ok: true };
-    },
-  });
-
-  registry.register({
-    id: pinTool.id,
-    command: pinTool.command,
-    title: pinTool.title,
-    execute: async (_, context) => {
-      if (!context.activeChatId) return { ok: false, error: "当前没有可置顶的会话。" };
-      runtime.togglePinnedChatSession(context.activeChatId);
-      runtime.setError(null);
-      runtime.setOpenChatMenu(null);
-      return { ok: true };
-    },
-  });
-
-  registry.register({
-    id: modelTool.id,
-    command: modelTool.command,
-    title: modelTool.title,
-    execute: async (resolvedCommand) => {
-      const query = resolvedCommand.args.trim().toLowerCase();
-      if (!query) return { ok: false, error: "用法：/model 模型 ID 或名称" };
-
-      const matchedModel =
-        runtime.availableModels.find((model) => model.id.toLowerCase() === query || model.name.toLowerCase() === query) ??
-        runtime.availableModels.find((model) => model.id.toLowerCase().includes(query) || model.name.toLowerCase().includes(query));
-
-      if (!matchedModel) return { ok: false, error: `未找到匹配模型：${resolvedCommand.args}` };
-
-      const updatedProjectModel = Boolean(runtime.activeProject && runtime.updateProjectProfile);
-      if (runtime.activeProject && runtime.updateProjectProfile) {
-        runtime.updateProjectProfile(runtime.activeProject.id, { defaultModelId: matchedModel.id });
-      } else {
-        runtime.handleModelChange(matchedModel.id);
-      }
-      runtime.setError(null);
-      return {
-        ok: true,
-        outputText: updatedProjectModel ? `已将当前项目默认模型切换为：${matchedModel.name}` : `已切换当前模型：${matchedModel.name}`,
-      };
-    },
-  });
 
   registry.register({
     id: searchSessionsTool.id,

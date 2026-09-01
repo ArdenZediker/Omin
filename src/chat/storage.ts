@@ -33,13 +33,6 @@ export type PersonaFieldKey =
   | "agentsMd";
 export const DEFAULT_PROJECT_ID = "project-basic-chat";
 export const DEFAULT_PROJECT_TOOL_IDS = [
-  "new",
-  "clear",
-  "settings",
-  "pet",
-  "rename",
-  "pin",
-  "model",
   "search_sessions",
   "read_session",
   "list_files",

@@ -4,11 +4,7 @@ import {
   BookOpen,
   Bot,
   CirclePlus,
-  Eraser,
   Paperclip,
-  Pencil,
-  Pin,
-  Settings,
   Square,
   X,
 } from "lucide-react";
@@ -38,20 +34,6 @@ interface ChatInputProps {
   fixedHeight?: number | null;
   onSubmit?: () => void;
 }
-
-const LOCAL_COMMAND_ICON_MAP: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
-  new: CirclePlus,
-  clear: Eraser,
-  settings: Settings,
-  model: Bot,
-  rename: Pencil,
-  pin: Pin,
-};
-
-const IMMEDIATE_COMMAND_IDS = new Set(["new", "clear", "settings", "pet", "pin"]);
-const IMMEDIATE_COMMAND_PAYLOADS: Record<string, string> = {
-  pet: "/pet",
-};
 
 type KnowledgeMentionTrigger = {
   start: number;
@@ -87,9 +69,8 @@ function scrollElementIntoView(element: HTMLElement | null | undefined) {
   element.scrollIntoView({ block: "nearest" });
 }
 
-function SuggestionIcon({ suggestion }: { suggestion: SlashSuggestion }) {
-  const Icon = LOCAL_COMMAND_ICON_MAP[suggestion.id] ?? CirclePlus;
-  return <Icon size={16} strokeWidth={1.8} />;
+function SuggestionIcon() {
+  return <CirclePlus size={16} strokeWidth={1.8} />;
 }
 
 export default function ChatInput({
@@ -372,29 +353,9 @@ export default function ChatInput({
     onSubmit?.();
   };
 
-  const submitImmediateCommand = (command: string) => {
-    if (isLoading || isSendBlocked) {
-      return;
-    }
-
-    void onSend(command, undefined, {
-      hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
-    });
-    setInput("");
-    setImages([]);
-    setSelectedKnowledgeCollection(null);
-    setCaretIndex(0);
-    clearSuggestionDismissal();
-    clearMentionDismissal();
-  };
   const sendDisabledTitle = isSendBlocked ? "请先配置可用模型或等待当前会话完成" : "发送消息";
 
   const applySuggestion = (suggestion: SlashSuggestion) => {
-    if (IMMEDIATE_COMMAND_IDS.has(suggestion.id)) {
-      submitImmediateCommand(IMMEDIATE_COMMAND_PAYLOADS[suggestion.id] ?? suggestion.command);
-      return;
-    }
-
     setInput(buildSlashDraft(suggestion));
     clearSuggestionDismissal();
     textareaRef.current?.focus();
@@ -734,7 +695,7 @@ export default function ChatInput({
                   onMouseEnter={() => setSelectedSuggestionIndex(index)}
                 >
                   <span className="chat-composer__suggestion-icon" aria-hidden="true">
-                    <SuggestionIcon suggestion={suggestion} />
+                    <SuggestionIcon />
                   </span>
                   <span className="chat-composer__suggestion-copy">
                     <span className="chat-composer__suggestion-command">{suggestion.command}</span>

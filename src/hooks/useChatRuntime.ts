@@ -13,7 +13,7 @@ import { getChatSessionTitle } from "../chat/storage";
 import { executeLocalTool } from "../chat/localTools";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
-import type { ProjectMemorySourceType, Project, ChatExecutionResult, ChatSendOptions } from "../chat/types";
+import type { Project, ChatExecutionResult, ChatSendOptions } from "../chat/types";
 import type { ProjectMemoryRecord, SessionSummaryRecord } from "../chat/types";
 import type { PetThoughtState } from "../app/types";
 import type { ViewMode } from "../app/types";
@@ -25,7 +25,6 @@ import {
   extractToolCallArgs,
   toolCallNameToCommand,
   formatToolCallResult,
-  SILENT_LOCAL_TOOL_IDS,
   PET_THOUGHT_QUEUE_LIMIT,
   PET_THOUGHT_DISMISS_DELAY_MS,
   type PetThoughtSyncRequestPayload,
@@ -41,7 +40,6 @@ type UseChatRuntimeArgs = {
   activeProject: Project | null;
   availableModels: ModelConfig[];
   messages: Message[];
-  addProjectMemory: (projectId: string, content: string, sourceSessionId?: string | null, sourceType?: ProjectMemorySourceType) => boolean;
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
   commitProjectMemory: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
   createSessionFromMessages: (conversationMessages: Message[], projectId?: string) => { id: string };
@@ -52,8 +50,6 @@ type UseChatRuntimeArgs = {
     summaries: SessionSummaryRecord[];
     memories: ProjectMemoryRecord[];
   };
-  handleModelChange: (modelId: string) => void;
-  renameChatSession: (sessionId: string, title: string) => boolean;
   searchChatSessions: (query: string) => SessionLite[];
   setActiveProjectId: React.Dispatch<React.SetStateAction<string>>;
   setActiveChatId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -62,8 +58,6 @@ type UseChatRuntimeArgs = {
   setInputDraftKey: React.Dispatch<React.SetStateAction<number>>;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setOpenChatMenu: React.Dispatch<React.SetStateAction<{ id: string; x: number; y: number } | null>>;
-  togglePinnedChatSession: (sessionId: string) => boolean;
-  updateProjectProfile: (projectId: string, patch: Partial<Project>) => Project | null;
   updateChatSessionMessages: (sessionId: string, nextMessages: Message[] | ((current: Message[]) => Message[])) => void;
   isCompactWindow: boolean;
   view: ViewMode;
@@ -78,7 +72,6 @@ export function useChatRuntime({
   activeProject,
   availableModels,
   messages,
-  addProjectMemory,
   applyUsageToSession,
   commitProjectMemory,
   createSessionFromMessages,
@@ -86,8 +79,6 @@ export function useChatRuntime({
   getProjectById,
   getChatSessionById,
   getRelatedContextForProject,
-  handleModelChange,
-  renameChatSession,
   searchChatSessions,
   setActiveProjectId,
   setActiveChatId,
@@ -96,8 +87,6 @@ export function useChatRuntime({
   setInputDraftKey,
   setMessages,
   setOpenChatMenu,
-  togglePinnedChatSession,
-  updateProjectProfile,
   updateChatSessionMessages,
   isCompactWindow,
   view,
@@ -790,36 +779,15 @@ export function useChatRuntime({
       return executeLocalTool({
         activeProject,
         activeChatId,
-        addProjectMemory,
-        availableModels,
         getChatSessionById,
-        handleModelChange,
-        renameChatSession,
         searchChatSessions,
-        setActiveChatId,
-        setEditingMessageIndex,
-        setError,
-        setMessages,
-        setOpenChatMenu,
-        togglePinnedChatSession,
-        updateProjectProfile,
       }, command);
     },
     [
       activeProject,
       activeChatId,
-      addProjectMemory,
-      availableModels,
       getChatSessionById,
-      handleModelChange,
-      renameChatSession,
       searchChatSessions,
-      setActiveChatId,
-      setEditingMessageIndex,
-      setMessages,
-      setOpenChatMenu,
-      togglePinnedChatSession,
-      updateProjectProfile,
     ]
   );
 
@@ -1114,8 +1082,7 @@ export function useChatRuntime({
           if (taskResult.status === "failed") {
             setError(taskResult.error || "工具执行失败");
           }
-          const localCommandToolId = taskResult.plan.metadata?.toolId;
-          if (taskResult.toolResult?.outputText && !SILENT_LOCAL_TOOL_IDS.has(String(localCommandToolId || ""))) {
+          if (taskResult.toolResult?.outputText) {
             setConversationMessagesForSession(sessionId, [...scopedCurrentMessages, { role: "project", content: taskResult.toolResult.outputText }]);
           }
           return;

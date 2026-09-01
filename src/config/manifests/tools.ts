@@ -9,62 +9,6 @@ export type ToolsetManifest = {
 
 export const TOOL_MANIFESTS: ToolManifest[] = [
   {
-    id: "new",
-    command: "/new",
-    title: "新对话",
-    description: "创建一个新的空白对话",
-    promptContribution: "可调用 /new 开始一个全新空白对话，适合切换话题或清理上下文。",
-  },
-  {
-    id: "clear",
-    command: "/clear",
-    title: "清空消息",
-    description: "清空当前对话中的消息",
-    promptContribution: "可调用 /clear 清空当前对话中的消息，但保留助手与个性化设定。",
-  },
-  {
-    id: "settings",
-    command: "/settings",
-    title: "打开设置",
-    description: "打开设置页面",
-    promptContribution: "可调用 /settings 打开设置页面，引导用户调整偏好、模型或个性化。",
-  },
-  {
-    id: "pet",
-    command: "/pet",
-    title: "宠物",
-    description: "唤醒或收起桌面宠物",
-    promptContribution: "可调用 /pet 唤醒或收起桌面宠物（桌宠形态），用于轻量陪伴交互。",
-  },
-  {
-    id: "model",
-    command: "/model",
-    title: "切换模型",
-    description: "输入模型 ID 或名称后切换模型",
-    promptContribution: "可调用 /model <模型 ID 或名称> 切换当前会话使用的模型。",
-  },
-  {
-    id: "remember",
-    command: "/remember",
-    title: "记住",
-    description: "把一条长期偏好或约束保存到当前助手记忆库",
-    promptContribution: "可调用 /remember <内容> 把一条稳定偏好或约束写入当前助手的长期记忆库。",
-  },
-  {
-    id: "rename",
-    command: "/rename",
-    title: "重命名对话",
-    description: "重命名当前对话",
-    promptContribution: "可调用 /rename <标题> 重命名当前对话，便于后续检索。",
-  },
-  {
-    id: "pin",
-    command: "/pin",
-    title: "置顶对话",
-    description: "置顶或取消置顶当前对话",
-    promptContribution: "可调用 /pin 置顶或取消置顶当前对话。",
-  },
-  {
     id: "search_sessions",
     command: "/search_sessions",
     title: "搜索会话",
@@ -163,14 +107,6 @@ export const PROJECT_TOOL_OPTIONS = PROJECT_TOOL_MANIFESTS.map((tool) => ({
 }));
 
 export const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [
-  "new",
-  "clear",
-  "settings",
-  "pet",
-  "model",
-  "remember",
-  "rename",
-  "pin",
   "read_persona",
   "update_persona",
   "install_expert",
