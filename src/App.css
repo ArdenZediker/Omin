@@ -9607,7 +9607,7 @@ body:has(.pet-thought-window),
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-areas: "header actions";
-  align-items: center;
+  align-items: stretch;
   column-gap: 14px;
   padding: 12px 16px;
 }
@@ -9627,13 +9627,17 @@ body:has(.pet-thought-window),
   align-self: center;
 }
 
-/* list 模式下 main 纵向堆叠 title-row / description / meta，整体贴左 */
+/* list 模式下 main 纵向堆叠 title-row / description / meta，整体贴左。
+ * 关键：main 撑满 header 列高度，让 enable 行（margin-top: auto）能可靠
+ * 推到 main 底部，与右侧 actions 列的按钮基线对齐。
+ * 不论卡片内容长短（缺 description/无 tags），所有卡的 enable 行 Y 坐标统一。 */
 .plugin-marketplace__grid--list .plugin-card__main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  align-self: stretch;
 }
 
 .plugin-marketplace__grid--list .plugin-card__title-row {
@@ -9691,11 +9695,13 @@ body:has(.pet-thought-window),
   text-overflow: ellipsis;
 }
 
-/* actions 单独占右列：右对齐紧凑 */
+/* actions 单独占右列：右对齐，贴卡底部（与左侧 enable 行同一基线对齐）。
+ * 即使左列 main 内容多寡不一致，右列按钮始终在卡片底部同一 Y 位置。 */
 .plugin-marketplace__grid--list .plugin-card__actions {
   grid-area: actions;
+  align-self: stretch;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: flex-end;
   gap: 8px;
   border-top: none;
@@ -10167,85 +10173,11 @@ body:has(.pet-thought-window),
 /* 底部批量工具栏（fixed/sticky，跨卡片），含「已选 N 项 / 全选 / 清空 /
    开启 / 关闭 / 卸载 / 取消」。左右两组布局：左为选择计数 + 全选/清空，
    右为 4 个批量动作。 */
-.plugin-marketplace__batch-bar {
-  position: sticky;
-  bottom: 0;
-  margin: 12px -16px -16px;
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  background: var(--omni-bg-soft, #f8fafc);
-  border-top: 1px solid var(--omni-panel-border);
-  border-radius: 0 0 12px 12px;
-  z-index: 5;
-}
-.plugin-marketplace__batch-left {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-.plugin-marketplace__batch-count {
-  font-size: 12px;
-  color: var(--omni-app-muted);
-}
-.plugin-marketplace__batch-count strong {
-  color: var(--omni-accent-strong, #1d4ed8);
-  font-weight: 600;
-  margin: 0 2px;
-}
-.plugin-marketplace__batch-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.plugin-marketplace__batch-secondary,
-.plugin-marketplace__batch-danger {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  border: 1px solid transparent;
-}
-.plugin-marketplace__batch-secondary {
-  background: transparent;
-  border-color: var(--omni-panel-border);
-  color: var(--omni-app-muted);
-}
-.plugin-marketplace__batch-secondary:hover {
-  border-color: var(--omni-accent, #64748b);
-  color: var(--omni-app-fg, #0f172a);
-}
-.plugin-marketplace__batch-danger {
-  background: #fff1f0;
-  border-color: #fecaca;
-  color: #b91c1c;
-}
-.plugin-marketplace__batch-danger:hover:not(:disabled) {
-  background: #fee2e2;
-  border-color: #fca5a5;
-}
-.plugin-marketplace__batch-danger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 批量 toolbar 通用：secondary/danger 在 :disabled 时统一灰化（扩展上面 --danger 规则） */
-.plugin-marketplace__batch-secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* 顶部批量 toolbar（卡片上方，搜索栏下方，batchMode + showMySkills 下显示）。
-   区别于底部 batch-bar：本 toolbar 不依赖 selectedIds，对**所有**当前可见
-   非内置项生效（不需要先选中）。样式上跟 batch-secondary 共享基础胶囊
-   形态，但宽度更大、间隔更松、左侧带 label，与底部 toolbar 形成视觉层级。 */
+   合并原底部 batch-bar：选中统计 + 全选/清空 + 4 动作按钮（开启 / 关闭 /
+   卸载 / 取消）统一在此处。顶部 toolbar 对所有当前可见非内置项生效
+   （不需要先选中），保持与底部 bar 视觉层级：胶囊更宽，左侧带「批量操作」
+   label 与「已选 N 项」计数。 */
 .plugin-marketplace__batch-top-bar {
   display: flex;
   align-items: center;
@@ -10256,6 +10188,7 @@ body:has(.pet-thought-window),
   border: 1px solid var(--omni-panel-border);
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  flex-wrap: wrap;
 }
 .plugin-marketplace__batch-top-label {
   font-size: 12px;
@@ -10263,6 +10196,23 @@ body:has(.pet-thought-window),
   color: var(--omni-app-fg, #0f172a);
   margin-right: 4px;
   letter-spacing: 0.2px;
+}
+.plugin-marketplace__batch-top-count {
+  font-size: 12px;
+  color: var(--omni-app-muted);
+  margin-right: 2px;
+}
+.plugin-marketplace__batch-top-count strong {
+  color: var(--omni-accent-strong, #1d4ed8);
+  font-weight: 600;
+  margin: 0 2px;
+}
+.plugin-marketplace__batch-top-sep {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--omni-panel-border);
+  margin: 0 4px;
 }
 .plugin-marketplace__batch-top-btn {
   display: inline-flex;
@@ -10281,6 +10231,11 @@ body:has(.pet-thought-window),
 .plugin-marketplace__batch-top-btn:hover {
   border-color: var(--omni-accent, #64748b);
   background: rgba(100, 116, 139, 0.06);
+}
+.plugin-marketplace__batch-top-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: transparent;
 }
 .plugin-marketplace__batch-top-btn--primary {
   background: var(--omni-accent-soft, rgba(100, 116, 139, 0.12));
@@ -10314,6 +10269,12 @@ body:has(.pet-thought-window),
   font-size: 12px;
   color: var(--omni-app-fg, #0f172a);
   user-select: none;
+}
+/* list 视图（紧凑横向布局）下：main 是 flex column 且 stretch 撑满 header 列
+   高度。给 enable margin-top: auto 让它被推到 main 底部——与右侧 actions 列
+   按钮同一基线对齐（用户 2026-09-01 反馈「启用按钮要统一行位置」）。 */
+.plugin-marketplace__grid--list .plugin-card__enable {
+  margin-top: auto;
 }
 .plugin-card__enable-label {
   font-weight: 500;

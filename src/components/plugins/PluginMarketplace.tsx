@@ -533,17 +533,6 @@ export default function PluginMarketplace({
     }
   }, []);
 
-  /** 批量卸载：依次对 selectedIds 命中项调 handleUninstall；内置项跳过以免破坏内置。 */
-  const handleBatchUninstall = useCallback(() => {
-    if (selectedIds.size === 0) return;
-    const targets = filteredPlugins.filter(
-      (m) => selectedIds.has(m.id) && !pluginRegistry.isBuiltin(m.id),
-    );
-    for (const m of targets) handleUninstall(m);
-    setSelectedIds(new Set());
-    setBatchMode(false);
-  }, [selectedIds, filteredPlugins, handleUninstall]);
-
   /** 切换/设置单张卡的选中状态（在 batchMode 下被整卡 onClick 调用）。 */
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -565,20 +554,6 @@ export default function PluginMarketplace({
       setRefreshKey((current) => current + 1);
     },
     [],
-  );
-
-  /** 批量启用/关闭选中的项；选中为空时返回（不静默吞操作，避免返回后 0 选状态下按钮看起来啥也没发生）。 */
-  const handleBatchSetEnabled = useCallback(
-    (next: boolean) => {
-      const targets = filteredPlugins.filter(
-        (m) => selectedIds.has(m.id) && !pluginRegistry.isBuiltin(m.id),
-      );
-      for (const m of targets) {
-        pluginRegistry.setEnabled(m.id, next);
-      }
-      if (targets.length > 0) setRefreshKey((current) => current + 1);
-    },
-    [selectedIds, filteredPlugins],
   );
 
   /** 顶部 batch toolbar 用的「全局」actions：对所有可见非内置项生效（不需要先选中）。
@@ -1068,6 +1043,38 @@ export default function PluginMarketplace({
             aria-label="批量操作 · 全局"
           >
             <span className="plugin-marketplace__batch-top-label">批量操作</span>
+            <span className="plugin-marketplace__batch-top-count">
+              已选 <strong>{selectedIds.size}</strong> 项
+            </span>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn"
+              onClick={() => {
+                const selectable = filteredPlugins.filter(
+                  (m) => !pluginRegistry.isBuiltin(m.id),
+                );
+                const allSelected =
+                  selectable.length > 0 &&
+                  selectable.every((m) => selectedIds.has(m.id));
+                if (allSelected) setSelectedIds(new Set());
+                else setSelectedIds(new Set(selectable.map((m) => m.id)));
+              }}
+            >
+              {filteredPlugins
+                .filter((m) => !pluginRegistry.isBuiltin(m.id))
+                .every((m) => selectedIds.has(m.id))
+                ? "取消全选"
+                : "全选"}
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn"
+              disabled={selectedIds.size === 0}
+              onClick={() => setSelectedIds(new Set())}
+            >
+              清空
+            </button>
+            <span className="plugin-marketplace__batch-top-sep" aria-hidden />
             <button
               type="button"
               className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--primary"
@@ -1617,90 +1624,6 @@ export default function PluginMarketplace({
           <span>{stats.template} 模板</span>
         </div>
       </div>
-
-      {batchMode && showMySkills && (
-        <div
-          className="plugin-marketplace__batch-bar"
-          role="toolbar"
-          aria-label="批量操作"
-        >
-          <div className="plugin-marketplace__batch-left">
-            <span className="plugin-marketplace__batch-count">
-              已选 <strong>{selectedIds.size}</strong> 项
-            </span>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-secondary"
-              onClick={() => {
-                const selectable = filteredPlugins.filter(
-                  (m) => !pluginRegistry.isBuiltin(m.id),
-                );
-                const allSelected = selectable.every((m) =>
-                  selectedIds.has(m.id),
-                );
-                if (allSelected) setSelectedIds(new Set());
-                else setSelectedIds(new Set(selectable.map((m) => m.id)));
-              }}
-            >
-              {filteredPlugins.every((m) => selectedIds.has(m.id)) ||
-              filteredPlugins.filter((m) => !pluginRegistry.isBuiltin(m.id))
-                .every((m) => selectedIds.has(m.id))
-                ? "取消全选"
-                : "全选"}
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-secondary"
-              disabled={selectedIds.size === 0}
-              onClick={() => setSelectedIds(new Set())}
-            >
-              清空
-            </button>
-          </div>
-          <div className="plugin-marketplace__batch-actions">
-            <button
-              type="button"
-              className="plugin-marketplace__batch-secondary"
-              disabled={selectedIds.size === 0}
-              onClick={() => handleBatchSetEnabled(true)}
-              title="批量开启选中的技能"
-            >
-              <Power size={14} strokeWidth={1.8} />
-              <span>开启</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-secondary"
-              disabled={selectedIds.size === 0}
-              onClick={() => handleBatchSetEnabled(false)}
-              title="批量关闭选中的技能"
-            >
-              <PowerOff size={14} strokeWidth={1.8} />
-              <span>关闭</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-danger"
-              disabled={selectedIds.size === 0}
-              onClick={() => void handleBatchUninstall()}
-              title="卸载并删除选中的技能"
-            >
-              <Trash2 size={14} strokeWidth={1.8} />
-              <span>卸载</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-secondary"
-              onClick={() => {
-                setBatchMode(false);
-                setSelectedIds(new Set());
-              }}
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      )}
 
       <PluginDetailDrawer
         manifest={detailManifest}
