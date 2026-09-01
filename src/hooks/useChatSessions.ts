@@ -297,6 +297,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
             lastModel: result.model,
             lastUsedAt: now,
             hasEstimatedUsage: session.usage.hasEstimatedUsage || result.estimated,
+            toolRounds: session.usage.toolRounds + (result.toolRounds ?? 0),
           },
         };
       })

@@ -75,6 +75,8 @@ export async function executeTask(options: {
   enabledToolNames?: string[];
   enabledToolDescriptions?: Record<string, string>;
   onChunk?: (chunk: string) => void;
+  /** 推理模型思考链增量回调（透传给 executeChatTurn） */
+  onReasoning?: (reasoning: string) => void;
   knowledgeCollectionId?: string | null;
   intent?: TaskIntent;
   plan?: TaskPlan;
@@ -83,7 +85,7 @@ export async function executeTask(options: {
   /** 执行一次模型发起的工具调用（透传给 executeChatTurn） */
   executeToolCall?: (toolCall: ChatToolCall) => Promise<string>;
 }): Promise<TaskExecutionResult> {
-  const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, knowledgeCollectionId } = options;
+  const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, onReasoning, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
   const plan = options.plan ?? createTaskPlan({ intent, model, messages });
 
@@ -115,6 +117,7 @@ export async function executeTask(options: {
           relatedContext,
           enabledToolNames,
           onChunk,
+          onReasoning,
           knowledgeCollectionId,
           enableKnowledgeContext: intent === "chat",
           enableMemoryExtraction: intent === "chat",
@@ -221,6 +224,8 @@ export async function executeInputTask(options: {
   enabledToolNames?: string[];
   enabledToolDescriptions?: Record<string, string>;
   onChunk?: (chunk: string) => void;
+  /** 推理模型思考链增量回调（透传给 executeChatTurn） */
+  onReasoning?: (reasoning: string) => void;
   knowledgeCollectionId?: string | null;
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown } | void>;
@@ -261,15 +266,16 @@ export async function executeInputTask(options: {
         signal,
         systemPrompt: skillSystemPrompt,
         project,
-        relatedContext,
-        enabledToolNames,
-        onChunk,
-        knowledgeCollectionId,
-        intent: "chat",
-        tools: options.tools,
-        executeToolCall: options.executeToolCall,
-      });
-    }
+    relatedContext,
+    enabledToolNames,
+    onChunk,
+    onReasoning: options.onReasoning,
+    knowledgeCollectionId,
+    intent: "chat",
+    tools: options.tools,
+    executeToolCall: options.executeToolCall,
+  });
+}
 
     return executeLocalCommandTask({
       model,

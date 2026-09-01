@@ -1479,6 +1479,24 @@ body:has(.pet-thought-window),
   line-height: 1;
 }
 
+.model-selector__badge--thinking {
+  background: rgba(168, 85, 247, 0.14);
+  color: #a855f7;
+}
+
+.model-selector__badge--danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+
+.model-selector__window {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--omni-app-muted, #646a73);
+  opacity: 0.72;
+  margin-left: 4px;
+}
+
 .model-selector__vision {
   width: 14px;
   height: 14px;
@@ -1495,6 +1513,20 @@ body:has(.pet-thought-window),
 :root[data-omni-theme="dark"] .model-selector__badge {
   background: rgba(139, 92, 246, 0.22);
   color: rgba(196, 181, 253, 0.9);
+}
+
+:root[data-omni-theme="dark"] .model-selector__badge--thinking {
+  background: rgba(168, 85, 247, 0.22);
+  color: rgba(216, 180, 254, 0.92);
+}
+
+:root[data-omni-theme="dark"] .model-selector__badge--danger {
+  background: rgba(239, 68, 68, 0.18);
+  color: rgba(252, 165, 165, 0.92);
+}
+
+:root[data-omni-theme="dark"] .model-selector__window {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 :root[data-omni-theme="dark"] .chat-history-panel__item--active {
@@ -8005,6 +8037,91 @@ body:has(.pet-thought-window),
   gap: 8px;
   color: var(--omni-message-muted, rgba(100, 106, 115, 0.88));
   font-size: 13px;
+}
+
+/* 推理模型思考链折叠块 */
+.message-reasoning {
+  margin-bottom: 8px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--omni-message-muted, #646a73) 22%, transparent);
+  background: color-mix(in srgb, var(--omni-message-muted, #646a73) 5%, transparent);
+  overflow: hidden;
+}
+
+.message-reasoning__toggle {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: var(--omni-message-muted, rgba(100, 106, 115, 0.9));
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.message-reasoning__toggle:hover {
+  background: color-mix(in srgb, var(--omni-message-muted, #646a73) 8%, transparent);
+}
+
+.message-reasoning__icon {
+  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 70%, transparent);
+  flex-shrink: 0;
+}
+
+.message-reasoning__label {
+  font-weight: 600;
+}
+
+.message-reasoning__meta {
+  opacity: 0.72;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.message-reasoning__chevron {
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.message-reasoning__chevron--open {
+  transform: rotate(180deg);
+}
+
+.message-reasoning__body {
+  border-top: 1px solid color-mix(in srgb, var(--omni-message-muted, #646a73) 16%, transparent);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.message-reasoning__text {
+  margin: 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--omni-message-muted, rgba(100, 106, 115, 0.92));
+}
+
+:root[data-omni-theme="dark"] .message-reasoning {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__body {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__text {
+  color: rgba(255, 255, 255, 0.66);
 }
 
 .message-thinking__spinner {

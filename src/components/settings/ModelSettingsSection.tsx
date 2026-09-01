@@ -320,7 +320,12 @@ export default function ModelSettingsSection({
                 <input value={endpointName} onChange={(e) => onSetEndpointName(e.target.value)} className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm" />
               </Field>
               <Field label="接口地址">
-                <input value={baseUrl} onChange={(e) => onSetBaseUrl(e.target.value)} className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm" />
+                <input
+                  value={baseUrl}
+                  onChange={(e) => onSetBaseUrl(e.target.value)}
+                  placeholder="留空使用官方默认端点"
+                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                />
               </Field>
               <Field label="访问密钥">
                 <input
@@ -350,7 +355,7 @@ export default function ModelSettingsSection({
               <Actions>
                 <button
                   onClick={onTestConnection}
-                  disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim() || !baseUrl.trim() || (!apiKey.trim() && !getRawApiKey(modelEndpointId.trim()))}
+                  disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim() || (!apiKey.trim() && !getRawApiKey(modelEndpointId.trim()))}
                   className="rounded-md border border-slate-200 px-4 py-2 text-xs text-slate-600 disabled:opacity-40"
                   type="button"
                 >
@@ -358,7 +363,7 @@ export default function ModelSettingsSection({
                 </button>
                 <button
                   onClick={onSaveModel}
-                  disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim() || !baseUrl.trim() || !modelId.trim() || (!apiKey.trim() && !getRawApiKey(modelEndpointId.trim()))}
+                  disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim() || !modelId.trim() || (!apiKey.trim() && !getRawApiKey(modelEndpointId.trim()))}
                   className="rounded-md bg-violet-600 px-4 py-2 text-xs font-medium text-white disabled:opacity-40"
                   type="button"
                 >

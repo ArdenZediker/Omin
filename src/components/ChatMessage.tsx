@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Copy, Pencil, RefreshCw } from "lucide-react";
+import { Brain, ChevronDown, Copy, Pencil, RefreshCw } from "lucide-react";
 import type { Message } from "../adapters/types";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
@@ -108,6 +108,7 @@ export default function ChatMessage({
         </div>
       ) : (
         <div className="message-project max-w-[95%] text-sm markdown-body">
+          {message.reasoning ? <ReasoningBlock reasoning={message.reasoning} /> : null}
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
             {isStreaming && !message.content.trim() ? <ThinkingIndicator /> : renderMarkdown(message.content)}
           </div>
@@ -175,6 +176,34 @@ function ThinkingIndicator() {
         <span />
         <span />
       </span>
+    </div>
+  );
+}
+
+/** 推理模型的思考链折叠块（R1 / Gemini thinking / o 系列）。默认收起，点击展开。 */
+function ReasoningBlock({ reasoning }: { reasoning: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const trimmed = reasoning.trim();
+  const isStreamingTail = /[。！？；…\s]$/.test(trimmed) === false;
+
+  return (
+    <div className={`message-reasoning ${expanded ? "message-reasoning--expanded" : ""}`}>
+      <button
+        type="button"
+        className="message-reasoning__toggle"
+        onClick={() => setExpanded((current) => !current)}
+        aria-expanded={expanded}
+      >
+        <Brain size={14} strokeWidth={1.8} className="message-reasoning__icon" />
+        <span className="message-reasoning__label">思考过程</span>
+        <span className="message-reasoning__meta">{trimmed.length} 字{isStreamingTail ? "…" : ""}</span>
+        <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
+      </button>
+      {expanded && (
+        <div className="message-reasoning__body">
+          <pre className="message-reasoning__text">{trimmed}</pre>
+        </div>
+      )}
     </div>
   );
 }

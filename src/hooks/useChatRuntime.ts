@@ -199,6 +199,36 @@ export function useChatRuntime({
     [setMessages, updateChatSessionMessages]
   );
 
+  /** 流式思考链写入最后一条 project 消息（与 setLastProjectContent 互不覆盖） */
+  const setLastProjectReasoning = useCallback(
+    (sessionId: string | null | undefined, reasoning: string) => {
+      const updateLastProject = (prev: Message[]) => {
+        if (prev.length === 0) {
+          return prev;
+        }
+        const lastIdx = prev.length - 1;
+        const lastMessage = prev[lastIdx];
+        if (lastMessage.role !== "project") {
+          return prev;
+        }
+        if ((lastMessage.reasoning ?? "") === reasoning) {
+          return prev;
+        }
+        const updated = [...prev];
+        updated[lastIdx] = { ...lastMessage, reasoning };
+        return updated;
+      };
+
+      if (sessionId) {
+        updateChatSessionMessages(sessionId, updateLastProject);
+        return;
+      }
+
+      setMessages(updateLastProject);
+    },
+    [setMessages, updateChatSessionMessages]
+  );
+
   const executionModel = resolveExecutionModelId({
     projectModelId: activeProject?.defaultModelId,
     currentModelId: currentModel,
@@ -579,6 +609,7 @@ export function useChatRuntime({
             role: "project",
             content: taskResult.finalResult.content,
             knowledgeContext: taskResult.finalResult.knowledgeContext ?? null,
+            reasoning: taskResult.finalResult.reasoning || undefined,
           },
         ]);
         if (sessionId) {
@@ -634,8 +665,10 @@ export function useChatRuntime({
       let streamedProjectReply = "";
       let visibleStreamedProjectReply = "";
       let isStructuredOutputStreaming = false;
+      let streamedReasoning = "";
       const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(sessionId, visibleStreamedProjectReply));
       const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, sessionId, conversationMessages, visibleStreamedProjectReply));
+      const updateReasoningPreview = createPreviewThrottler(33, () => setLastProjectReasoning(sessionId, streamedReasoning));
 
       setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "project", content: "" }]);
       setError(null);
@@ -675,6 +708,13 @@ export function useChatRuntime({
               updateThoughtPreview();
               updateStreamPreview();
             }
+          },
+          onReasoning: (reasoning) => {
+            if (!isCurrentSessionRun(sessionId, runId, abortController)) {
+              return;
+            }
+            streamedReasoning += reasoning;
+            updateReasoningPreview();
           },
         });
 
@@ -768,6 +808,7 @@ export function useChatRuntime({
       resolveProjectSystemPrompt,
       setConversationMessagesForSession,
       setLastProjectContent,
+      setLastProjectReasoning,
       startSessionRun,
       startPetThought,
       updatePetThought,
@@ -858,8 +899,10 @@ export function useChatRuntime({
       let conversationMessagesForTask = session.messages;
       let petThoughtId: string | null = null;
       let streamedProjectReply = "";
+      let streamedReasoning = "";
       const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(session.id, streamedProjectReply));
       const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, session.id, conversationMessagesForTask, streamedProjectReply));
+      const updateReasoningPreview = createPreviewThrottler(33, () => setLastProjectReasoning(session.id, streamedReasoning));
 
       try {
         const taskResult = await executeInputTask({
@@ -882,6 +925,13 @@ export function useChatRuntime({
             streamedProjectReply += chunk;
             updateThoughtPreview();
             updateStreamPreview();
+          },
+          onReasoning: (reasoning) => {
+            if (!isCurrentSessionRun(session.id, runId, abortController)) {
+              return;
+            }
+            streamedReasoning += reasoning;
+            updateReasoningPreview();
           },
           executeTool,
           tools: [...buildChatTools(targetProject), ...listActiveMcpTools()],
@@ -979,6 +1029,7 @@ export function useChatRuntime({
       setActiveChatId,
       setConversationMessagesForSession,
       setLastProjectContent,
+      setLastProjectReasoning,
       startSessionRun,
       startPetThought,
       updatePetThought,
@@ -1026,6 +1077,7 @@ export function useChatRuntime({
       let hasPetThought = false;
       let petThoughtId: string | null = null;
       let streamedProjectReply = "";
+      let streamedReasoning = "";
       const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(sessionId, streamedProjectReply));
       const updateThoughtPreview = createPreviewThrottler(66, () => {
         if (!hasPetThought) {
@@ -1033,6 +1085,7 @@ export function useChatRuntime({
         }
         updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, streamedProjectReply);
       });
+      const updateReasoningPreview = createPreviewThrottler(33, () => setLastProjectReasoning(sessionId, streamedReasoning));
 
       try {
         const taskResult = await executeInputTask({
@@ -1062,6 +1115,13 @@ export function useChatRuntime({
             streamedProjectReply += chunk;
             updateThoughtPreview();
             updateStreamPreview();
+          },
+          onReasoning: (reasoning) => {
+            if (!isCurrentSessionRun(sessionId, runId, abortController)) {
+              return;
+            }
+            streamedReasoning += reasoning;
+            updateReasoningPreview();
           },
           executeTool,
           tools: [...buildChatTools(activeProject), ...listActiveMcpTools()],
@@ -1178,6 +1238,7 @@ export function useChatRuntime({
       resolvePetThoughtTitle,
       setConversationMessagesForSession,
       setLastProjectContent,
+      setLastProjectReasoning,
       startSessionRun,
       startPetThought,
       updatePetThought,

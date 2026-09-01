@@ -81,6 +81,7 @@ export function createEmptyUsageStats(): ChatUsageStats {
     lastModel: null,
     lastUsedAt: null,
     hasEstimatedUsage: false,
+    toolRounds: 0,
   };
 }
 
@@ -257,6 +258,8 @@ function normalizeUsageStats(input: Partial<ChatUsageStats> | undefined): ChatUs
   return {
     ...createEmptyUsageStats(),
     ...input,
+    // 旧数据无 toolRounds 字段时兜底为 0
+    toolRounds: input?.toolRounds ?? 0,
   };
 }
 
@@ -491,5 +494,6 @@ export function formatUsageLabel(usage: ChatUsageStats) {
   const tokenLabel = usage.totalTokens >= 1000 ? `${(usage.totalTokens / 1000).toFixed(1)}k tokens` : `${usage.totalTokens} tokens`;
   const costLabel = usage.totalCostUsd > 0 ? ` / $${usage.totalCostUsd.toFixed(4)}` : "";
   const estimatedLabel = usage.hasEstimatedUsage ? " / 估算" : "";
-  return `${tokenLabel}${costLabel}${estimatedLabel}`;
+  const toolRoundsLabel = usage.toolRounds > 0 ? ` / ${usage.toolRounds} 轮工具` : "";
+  return `${tokenLabel}${costLabel}${estimatedLabel}${toolRoundsLabel}`;
 }

@@ -14,6 +14,8 @@ export interface Message {
   toolCallName?: string;
   /** role === "assistant" 时：模型发起的工具调用（function calling 循环用） */
   toolCalls?: ChatToolCall[];
+  /** 推理模型思考链全文（如 R1 reasoning_content / Gemini thought），用于 UI 折叠展示 */
+  reasoning?: string;
 }
 
 /**

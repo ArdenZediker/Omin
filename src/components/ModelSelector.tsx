@@ -38,6 +38,12 @@ function getModelConnectionStatus(modelId: string) {
   }
 }
 
+function formatContextWindow(tokens: number) {
+  if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`;
+  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
+  return `${tokens}`;
+}
+
 export default function ModelSelector({ currentModel, label, title, onModelChange }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -119,6 +125,22 @@ export default function ModelSelector({ currentModel, label, title, onModelChang
                     <span>{model.name}</span>
 
                     {isCustom && <span className="model-selector__badge">Custom</span>}
+
+                    {model.thinking && (
+                      <span className="model-selector__badge model-selector__badge--thinking" title="推理模型：带思考链输出">
+                        深度思考
+                      </span>
+                    )}
+
+                    {model.toolCalling === false && (
+                      <span className="model-selector__badge model-selector__badge--danger" title="该模型不支持工具调用">
+                        无工具
+                      </span>
+                    )}
+
+                    <span className="model-selector__window" title={`上下文窗口 ${model.maxTokens.toLocaleString()} tokens`}>
+                      {formatContextWindow(model.maxTokens)}
+                    </span>
 
                     {model.supportsVision && <Eye className="model-selector__vision" aria-label="支持视觉" strokeWidth={1.5} />}
                   </button>

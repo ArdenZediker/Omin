@@ -38,6 +38,8 @@ export type ChatUsageStats = {
   lastModel: string | null;
   lastUsedAt: number | null;
   hasEstimatedUsage: boolean;
+  /** 累计工具调用轮数（无工具对话为 0） */
+  toolRounds: number;
 };
 
 export type ProjectKind = "basic" | "custom";
