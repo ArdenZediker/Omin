@@ -1083,89 +1083,91 @@ export default function PluginMarketplace({
           <div
             className="plugin-marketplace__batch-top-bar"
             role="toolbar"
-            aria-label="批量操作 · 全局"
+            aria-label="批量操作"
           >
-            <span className="plugin-marketplace__batch-top-label">批量操作</span>
-            <span className="plugin-marketplace__batch-top-count">
-              已选 <strong>{selectedIds.size}</strong> 项
-            </span>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn"
-              onClick={() => {
-                const selectable = filteredPlugins.filter(
-                  (m) => !pluginRegistry.isBuiltin(m.id),
-                );
-                const allSelected =
-                  selectable.length > 0 &&
-                  selectable.every((m) => selectedIds.has(m.id));
-                if (allSelected) setSelectedIds(new Set());
-                else setSelectedIds(new Set(selectable.map((m) => m.id)));
-              }}
-            >
-              {filteredPlugins
-                .filter((m) => !pluginRegistry.isBuiltin(m.id))
-                .every((m) => selectedIds.has(m.id))
-                ? "取消全选"
-                : "全选"}
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn"
-              disabled={selectedIds.size === 0}
-              onClick={() => setSelectedIds(new Set())}
-            >
-              清空
-            </button>
-            <span className="plugin-marketplace__batch-top-sep" aria-hidden />
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--primary"
-              onClick={() => handleBatchAllSetEnabled(true)}
-              title="开启所有非内置技能"
-            >
-              <Power size={14} strokeWidth={1.8} />
-              <span>开启</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn"
-              onClick={() => handleBatchAllSetEnabled(false)}
-              title="关闭所有非内置技能"
-            >
-              <PowerOff size={14} strokeWidth={1.8} />
-              <span>关闭</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--danger"
-              onClick={() => {
-                const targets = filteredPlugins.filter(
-                  (m) => !pluginRegistry.isBuiltin(m.id),
-                );
-                if (targets.length === 0) return;
-                setConfirmDialog({
-                  title: "确认批量卸载",
-                  message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 套件 / 工具 / 连接器 / 专家 / 模板）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
-                  danger: true,
-                  onConfirm: () => handleBatchAllUninstall(),
-                });
-              }}
-              title="卸载所有非内置技能"
-            >
-              <Trash2 size={14} strokeWidth={1.8} />
-              <span>卸载</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn"
-              onClick={() => {
-                setBatchMode(false);
-                setSelectedIds(new Set());
-              }}
-            >
-              取消
-            </button>
+            <div className="plugin-marketplace__batch-top-left">
+              <span className="plugin-marketplace__batch-top-count">
+                已选 <strong>{selectedIds.size}</strong> 项
+              </span>
+              <button
+                type="button"
+                className="plugin-marketplace__batch-top-mini"
+                onClick={() => {
+                  const selectable = filteredPlugins.filter(
+                    (m) => !pluginRegistry.isBuiltin(m.id),
+                  );
+                  const allSelected =
+                    selectable.length > 0 &&
+                    selectable.every((m) => selectedIds.has(m.id));
+                  if (allSelected) setSelectedIds(new Set());
+                  else setSelectedIds(new Set(selectable.map((m) => m.id)));
+                }}
+              >
+                {filteredPlugins
+                  .filter((m) => !pluginRegistry.isBuiltin(m.id))
+                  .every((m) => selectedIds.has(m.id))
+                  ? "取消全选"
+                  : "全选"}
+              </button>
+              <button
+                type="button"
+                className="plugin-marketplace__batch-top-mini"
+                disabled={selectedIds.size === 0}
+                onClick={() => setSelectedIds(new Set())}
+              >
+                清空
+              </button>
+            </div>
+            <div className="plugin-marketplace__batch-top-right">
+              <button
+                type="button"
+                className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--primary"
+                onClick={() => handleBatchAllSetEnabled(true)}
+                title="开启所有非内置技能"
+              >
+                <Power size={14} strokeWidth={1.8} />
+                <span>开启</span>
+              </button>
+              <button
+                type="button"
+                className="plugin-marketplace__batch-top-btn"
+                onClick={() => handleBatchAllSetEnabled(false)}
+                title="关闭所有非内置技能"
+              >
+                <PowerOff size={14} strokeWidth={1.8} />
+                <span>关闭</span>
+              </button>
+              <button
+                type="button"
+                className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--danger"
+                onClick={() => {
+                  const targets = filteredPlugins.filter(
+                    (m) => !pluginRegistry.isBuiltin(m.id),
+                  );
+                  if (targets.length === 0) return;
+                  setConfirmDialog({
+                    title: "确认批量卸载",
+                    message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 套件 / 工具 / 连接器 / 专家 / 模板）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
+                    danger: true,
+                    onConfirm: () => handleBatchAllUninstall(),
+                  });
+                }}
+                title="卸载所有非内置技能"
+              >
+                <Trash2 size={14} strokeWidth={1.8} />
+                <span>卸载</span>
+              </button>
+              <button
+                type="button"
+                className="plugin-marketplace__batch-top-btn"
+                onClick={() => {
+                  setBatchMode(false);
+                  setSelectedIds(new Set());
+                }}
+              >
+                取消
+              </button>
+            </div>
           </div>
         )}
         {showSkillhub ? (

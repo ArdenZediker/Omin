@@ -10218,7 +10218,8 @@ body:has(.pet-thought-window),
 .plugin-marketplace__batch-top-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 16px;
   padding: 10px 14px;
   margin-bottom: 12px;
   background: var(--omni-panel-bg, #ffffff);
@@ -10227,12 +10228,16 @@ body:has(.pet-thought-window),
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   flex-wrap: wrap;
 }
-.plugin-marketplace__batch-top-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--omni-app-fg, #0f172a);
-  margin-right: 4px;
-  letter-spacing: 0.2px;
+.plugin-marketplace__batch-top-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.plugin-marketplace__batch-top-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .plugin-marketplace__batch-top-count {
   font-size: 12px;
@@ -10244,12 +10249,26 @@ body:has(.pet-thought-window),
   font-weight: 600;
   margin: 0 2px;
 }
-.plugin-marketplace__batch-top-sep {
-  display: inline-block;
-  width: 1px;
-  height: 18px;
-  background: var(--omni-panel-border);
-  margin: 0 4px;
+/* 左组辅助链接样式按钮（已选/全选/清空）。比右组 4 动作 pill 更轻——避免与
+   右侧主操作按钮争夺视觉权重。禁用态灰化，hover 加色即可。 */
+.plugin-marketplace__batch-top-mini {
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--omni-accent-strong, #1d4ed8);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.plugin-marketplace__batch-top-mini:hover:not(:disabled) {
+  background: rgba(100, 116, 139, 0.08);
+}
+.plugin-marketplace__batch-top-mini:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--omni-app-muted);
 }
 .plugin-marketplace__batch-top-btn {
   display: inline-flex;
