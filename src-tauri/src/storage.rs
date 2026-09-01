@@ -8,6 +8,16 @@ use crate::current_timestamp_ms;
 pub(crate) const KNOWLEDGE_EMBEDDING_CONFIG_KEY: &str = "omni_knowledge_embedding_profile";
 pub(crate) const KNOWLEDGE_MULTIMODAL_CONFIG_KEY: &str = "omni_knowledge_multimodal_profile";
 
+/// 整包快照在 app_kv 表中的固定 key（快照 = 前端序列化后的整包 JSON）。
+/// 统一 omni_snapshot_ 前缀，与前端 localStorage key（omni_*）及结构化 key 区分。
+const SNAPSHOT_PROJECT_PRESETS_KEY: &str = "omni_snapshot_project_presets";
+const SNAPSHOT_TOOL_MANIFESTS_KEY: &str = "omni_snapshot_tool_manifests";
+const SNAPSHOT_SKILL_MANIFESTS_KEY: &str = "omni_snapshot_skill_manifests";
+const SNAPSHOT_PROJECT_MEMORIES_KEY: &str = "omni_snapshot_project_memories";
+const SNAPSHOT_USER_PREFERENCES_KEY: &str = "omni_snapshot_user_preferences";
+const SNAPSHOT_SESSION_SUMMARIES_KEY: &str = "omni_snapshot_session_summaries";
+const SNAPSHOT_SCHEDULED_TASKS_KEY: &str = "omni_snapshot_scheduled_tasks";
+
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct DbProviderConfigRecord {
@@ -639,10 +649,9 @@ pub(crate) fn delete_project_by_id(connection: &Connection, id: &str) -> Result<
 pub(crate) fn load_manifest_storage(
     connection: &Connection,
 ) -> Result<ManifestStoragePayload, String> {
-    let project_presets_json =
-        read_simple_table_value(connection, "project_presets", "builtin")?;
-    let tool_manifests_json = read_simple_table_value(connection, "tool_manifests", "builtin")?;
-    let skill_manifests_json = read_simple_table_value(connection, "skill_manifests", "builtin")?;
+    let project_presets_json = read_kv(connection, SNAPSHOT_PROJECT_PRESETS_KEY)?;
+    let tool_manifests_json = read_kv(connection, SNAPSHOT_TOOL_MANIFESTS_KEY)?;
+    let skill_manifests_json = read_kv(connection, SNAPSHOT_SKILL_MANIFESTS_KEY)?;
 
     Ok(ManifestStoragePayload {
         project_presets_json,
@@ -658,23 +667,21 @@ pub(crate) fn save_manifest_storage(
     skill_manifests_json: Option<&str>,
 ) -> Result<(), String> {
     if let Some(value) = project_presets_json {
-        write_simple_table_value(connection, "project_presets", "builtin", value)?;
+        write_kv(connection, SNAPSHOT_PROJECT_PRESETS_KEY, value)?;
     }
     if let Some(value) = tool_manifests_json {
-        write_simple_table_value(connection, "tool_manifests", "builtin", value)?;
+        write_kv(connection, SNAPSHOT_TOOL_MANIFESTS_KEY, value)?;
     }
     if let Some(value) = skill_manifests_json {
-        write_simple_table_value(connection, "skill_manifests", "builtin", value)?;
+        write_kv(connection, SNAPSHOT_SKILL_MANIFESTS_KEY, value)?;
     }
     Ok(())
 }
 
 pub(crate) fn load_memory_storage(connection: &Connection) -> Result<MemoryStoragePayload, String> {
-    let project_memories_json =
-        read_simple_table_value(connection, "project_memories", "builtin")?;
-    let user_preferences_json = read_simple_table_value(connection, "user_preferences", "builtin")?;
-    let session_summaries_json =
-        read_simple_table_value(connection, "session_summaries", "builtin")?;
+    let project_memories_json = read_kv(connection, SNAPSHOT_PROJECT_MEMORIES_KEY)?;
+    let user_preferences_json = read_kv(connection, SNAPSHOT_USER_PREFERENCES_KEY)?;
+    let session_summaries_json = read_kv(connection, SNAPSHOT_SESSION_SUMMARIES_KEY)?;
 
     Ok(MemoryStoragePayload {
         project_memories_json,
@@ -690,13 +697,13 @@ pub(crate) fn save_memory_storage(
     session_summaries_json: Option<&str>,
 ) -> Result<(), String> {
     if let Some(value) = project_memories_json {
-        write_simple_table_value(connection, "project_memories", "builtin", value)?;
+        write_kv(connection, SNAPSHOT_PROJECT_MEMORIES_KEY, value)?;
     }
     if let Some(value) = user_preferences_json {
-        write_simple_table_value(connection, "user_preferences", "builtin", value)?;
+        write_kv(connection, SNAPSHOT_USER_PREFERENCES_KEY, value)?;
     }
     if let Some(value) = session_summaries_json {
-        write_simple_table_value(connection, "session_summaries", "builtin", value)?;
+        write_kv(connection, SNAPSHOT_SESSION_SUMMARIES_KEY, value)?;
     }
     Ok(())
 }
@@ -704,7 +711,7 @@ pub(crate) fn save_memory_storage(
 pub(crate) fn load_automation_storage(
     connection: &Connection,
 ) -> Result<AutomationStoragePayload, String> {
-    let scheduled_tasks_json = read_simple_table_value(connection, "scheduled_tasks", "builtin")?;
+    let scheduled_tasks_json = read_kv(connection, SNAPSHOT_SCHEDULED_TASKS_KEY)?;
     Ok(AutomationStoragePayload {
         scheduled_tasks_json,
     })
@@ -715,7 +722,7 @@ pub(crate) fn save_automation_storage(
     scheduled_tasks_json: Option<&str>,
 ) -> Result<(), String> {
     if let Some(value) = scheduled_tasks_json {
-        write_simple_table_value(connection, "scheduled_tasks", "builtin", value)?;
+        write_kv(connection, SNAPSHOT_SCHEDULED_TASKS_KEY, value)?;
     }
     Ok(())
 }
