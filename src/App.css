@@ -4035,7 +4035,12 @@ body:has(.pet-thought-window),
    * 之前让 KB header 高度 ≧80px，比 chat toolbar 的 76px 高出 4-8px，用户感觉
    * "知识库的顶部栏明显比聊天顶部栏高一点"。三条 height/min/max 一起写是
    * 为了压过 Tailwind .min-h-20 (80px) 的 specificity，让 KB header 严格
-   * 76px（chat toolbar 也是 height:76px + min/max-height:76px）。 */
+   * 76px（chat toolbar 也是 height:76px + min/max-height:76px）。
+   * **关键**：header 是 `flex flex-col`，固定 76px 后必须 `justify-content:center`
+   * 让唯一子 div 垂直居中，否则 flex-col 默认从顶部排列，造成「文字按钮明显
+   * 往底部下沉」视觉。inner div 的 Tailwind `py-3` (24px) 与本 padding 12px
+   * * 2 (24px) 会重复，所以下方再覆写 inner div 垂直 padding 为 0，由 header
+   * 的 12px 统一控制上下留白。 */
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
   overflow: hidden;
@@ -4047,6 +4052,20 @@ body:has(.pet-thought-window),
   min-height: 76px;
   max-height: 76px;
   padding: 12px 14px;
+  justify-content: center;
+}
+
+/* header 是 flex-col，唯一直接子 div 是左侧 collapse+标题/副标题 与右侧
+ * 工具栏按钮那一行的容器（JSX: <div className="flex items-center ... py-3">）。
+ * Tailwind py-3 给该 div 上下 24px padding 与 header padding:12px14px 重复，
+ * 让 inner div 高度变成 48px内容+24px=72px，在 76px 容器内（内容区 52px）
+ * 居中后上下各溢出 10px（被 overflow:hidden 裁掉），结果是「文字按钮往
+ * 底部下沉」—— 实际是 div 垂直居中后，顶部 10px 被裁只显出底部，但 Tailwind
+ * 的 py-3 让 div 内文字块中心比 header 中心偏下 10px。覆写 inner div 垂直
+ * padding 为 0，统一由 header padding 12px 管控垂直留白。 */
+.omni-knowledge-main > header > div {
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .omni-knowledge-body-shell {
