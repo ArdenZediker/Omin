@@ -1,14 +1,20 @@
 // Omni - OpenAI 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, EmbeddingResponse } from "./types";
 import { toWireRole } from "./types";
-import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls } from "./wireTools";
+import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
+import { postJsonWithRetry, postJsonStream } from "./http";
 
 const OPENAI_MODELS: ModelConfig[] = [
-  { id: "gpt-4o", name: "GPT-4o", provider: "openai", maxTokens: 128000, supportsVision: true, supportsStreaming: true },
-  { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", maxTokens: 128000, supportsVision: true, supportsStreaming: true },
-  { id: "o1", name: "o1", provider: "openai", maxTokens: 200000, supportsVision: true, supportsStreaming: false },
-  { id: "o3-mini", name: "o3 Mini", provider: "openai", maxTokens: 200000, supportsVision: false, supportsStreaming: true },
+  { id: "gpt-4o", name: "GPT-4o", provider: "openai", maxTokens: 128000, maxOutput: 16384, supportsVision: true, supportsStreaming: true, toolCalling: true },
+  { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", maxTokens: 128000, maxOutput: 16384, supportsVision: true, supportsStreaming: true, toolCalling: true },
+  { id: "o1", name: "o1", provider: "openai", maxTokens: 200000, maxOutput: 100000, supportsVision: true, supportsStreaming: false, toolCalling: true, thinking: true },
+  { id: "o3-mini", name: "o3 Mini", provider: "openai", maxTokens: 200000, maxOutput: 100000, supportsVision: false, supportsStreaming: true, toolCalling: true, thinking: true },
 ];
+
+/** o 系列只接受 max_completion_tokens 且不支持 temperature。 */
+function isOSeries(model: string): boolean {
+  return /^o[1-4](-|$)/.test(model);
+}
 
 export class OpenAIAdapter implements ModelAdapter {
   readonly provider = "openai";
@@ -21,6 +27,14 @@ export class OpenAIAdapter implements ModelAdapter {
 
   private getBaseUrl(): string {
     return this.config.baseUrl || "https://api.openai.com/v1";
+  }
+
+  private getHeaders(): Record<string, string> {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.config.apiKey}`,
+      ...this.config.customHeaders,
+    };
   }
 
   private buildMessages(request: ChatRequest) {
@@ -41,28 +55,33 @@ export class OpenAIAdapter implements ModelAdapter {
     });
   }
 
-  async chat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-        ...this.config.customHeaders,
-      },
-      body: JSON.stringify({
-        model: request.model,
-        messages: this.buildMessages(request),
-        temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens,
-        stream: false,
-        ...(request.tools && request.tools.length > 0 ? { tools: toOpenAITools(request.tools) } : {}),
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+  private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model: request.model,
+      messages: this.buildMessages(request),
+      stream,
+    };
+    if (isOSeries(request.model)) {
+      // o 系列：只认 max_completion_tokens，无 temperature
+      body.max_completion_tokens = request.maxTokens ?? 32768;
+    } else {
+      if (request.temperature !== undefined) body.temperature = request.temperature;
+      if (request.maxTokens) body.max_tokens = request.maxTokens;
     }
+    if (request.tools && request.tools.length > 0) {
+      body.tools = toOpenAITools(request.tools);
+      body.tool_choice = "auto";
+    }
+    return body;
+  }
+
+  async chat(request: ChatRequest): Promise<ChatResponse> {
+    const response = await postJsonWithRetry(
+      `${this.getBaseUrl()}/chat/completions`,
+      this.buildBody(request, false),
+      this.getHeaders(),
+      request.signal
+    );
 
     const data = await response.json();
     return {
@@ -80,26 +99,12 @@ export class OpenAIAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-        ...this.config.customHeaders,
-      },
-      body: JSON.stringify({
-        model: request.model,
-        messages: this.buildMessages(request),
-        temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens,
-        stream: true,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} - ${err}`);
-    }
+    const response = await postJsonStream(
+      `${this.getBaseUrl()}/chat/completions`,
+      this.buildBody(request, true),
+      this.getHeaders(),
+      request.signal
+    );
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
@@ -108,6 +113,7 @@ export class OpenAIAdapter implements ModelAdapter {
     let fullContent = "";
     let model = request.model;
     let buffer = "";
+    const toolAccumulator = new OpenAIStreamToolAccumulator();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -132,11 +138,19 @@ export class OpenAIAdapter implements ModelAdapter {
         }
         try {
           const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta?.content;
+          const delta = parsed.choices?.[0]?.delta;
           if (delta) {
-            fullContent += delta;
             model = parsed.model || model;
-            onChunk({ content: delta, done: false, model });
+            if (delta.content) {
+              fullContent += delta.content;
+              onChunk({ content: delta.content, done: false, model });
+            }
+            if (delta.reasoning_content) {
+              onChunk({ content: "", done: false, model, reasoning: delta.reasoning_content });
+            }
+            if (delta.tool_calls) {
+              toolAccumulator.add(delta.tool_calls);
+            }
           }
         } catch {
           // 跳过格式异常的块
@@ -145,28 +159,17 @@ export class OpenAIAdapter implements ModelAdapter {
       if (done) break;
     }
 
-    return { content: fullContent, model };
+    return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls() };
   }
 
   async embed(input: string, model = "text-embedding-3-small"): Promise<EmbeddingResponse> {
     const embeddingModel = model.trim() || "text-embedding-3-small";
-    const response = await fetch(`${this.getBaseUrl()}/embeddings`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-        ...this.config.customHeaders,
-      },
-      body: JSON.stringify({
-        model: embeddingModel,
-        input,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} - ${err}`);
-    }
+    const response = await postJsonWithRetry(
+      `${this.getBaseUrl()}/embeddings`,
+      { model: embeddingModel, input },
+      this.getHeaders(),
+      undefined
+    );
 
     const data = await response.json();
     return {
@@ -179,6 +182,7 @@ export class OpenAIAdapter implements ModelAdapter {
     try {
       const response = await fetch(`${this.getBaseUrl()}/models`, {
         headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        signal: AbortSignal.timeout(10_000),
       });
       return response.ok;
     } catch {

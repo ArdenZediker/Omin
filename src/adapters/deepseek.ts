@@ -1,11 +1,11 @@
 // Omni - DeepSeek 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
-import { toWireRole } from "./types";
-import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls } from "./wireTools";
+import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
+import { postJsonWithRetry, postJsonStream } from "./http";
 
 const DEEPSEEK_MODELS: ModelConfig[] = [
-  { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, supportsVision: false, supportsStreaming: true },
-  { id: "deepseek-reasoner", name: "DeepSeek R1", provider: "deepseek", maxTokens: 65536, supportsVision: false, supportsStreaming: true },
+  { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, maxOutput: 8192, supportsVision: false, supportsStreaming: true, toolCalling: true },
+  { id: "deepseek-reasoner", name: "DeepSeek R1", provider: "deepseek", maxTokens: 65536, maxOutput: 8192, supportsVision: false, supportsStreaming: true, thinking: true },
 ];
 
 export class DeepSeekAdapter implements ModelAdapter {
@@ -21,33 +21,33 @@ export class DeepSeekAdapter implements ModelAdapter {
     return this.config.baseUrl || "https://api.deepseek.com/v1";
   }
 
+  private getHeaders(): Record<string, string> {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.config.apiKey}`,
+      ...this.config.customHeaders,
+    };
+  }
+
   /** deepseek-reasoner 不支持 tools 参数，传入时静默忽略。 */
   private supportsTools(request: ChatRequest): boolean {
     return Boolean(request.tools?.length) && !String(request.model).includes("reasoner");
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-        ...this.config.customHeaders,
-      },
-      body: JSON.stringify({
+    const response = await postJsonWithRetry(
+      `${this.getBaseUrl()}/chat/completions`,
+      {
         model: request.model,
         messages: request.messages.map((m) => toOpenAIMessage(m)),
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens,
         stream: false,
         ...(this.supportsTools(request) ? { tools: toOpenAITools(request.tools) } : {}),
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`DeepSeek API error: ${response.status} - ${err}`);
-    }
+      },
+      this.getHeaders(),
+      request.signal
+    );
 
     const data = await response.json();
     return {
@@ -65,26 +65,19 @@ export class DeepSeekAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const response = await fetch(`${this.getBaseUrl()}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-        ...this.config.customHeaders,
-      },
-      body: JSON.stringify({
+    const response = await postJsonStream(
+      `${this.getBaseUrl()}/chat/completions`,
+      {
         model: request.model,
-        messages: request.messages.map((m) => ({ role: toWireRole(m.role), content: m.content })),
+        messages: request.messages.map((m) => toOpenAIMessage(m)),
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens,
         stream: true,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`DeepSeek API error: ${response.status} - ${err}`);
-    }
+        ...(this.supportsTools(request) ? { tools: toOpenAITools(request.tools) } : {}),
+      },
+      this.getHeaders(),
+      request.signal
+    );
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
@@ -93,6 +86,7 @@ export class DeepSeekAdapter implements ModelAdapter {
     let fullContent = "";
     let model = request.model;
     let buffer = "";
+    const toolAccumulator = new OpenAIStreamToolAccumulator();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -117,11 +111,20 @@ export class DeepSeekAdapter implements ModelAdapter {
         }
         try {
           const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta?.content;
+          const delta = parsed.choices?.[0]?.delta;
           if (delta) {
-            fullContent += delta;
             model = parsed.model || model;
-            onChunk({ content: delta, done: false, model });
+            // R1 的思考链独立字段，透传而非丢弃
+            if (delta.reasoning_content) {
+              onChunk({ content: "", done: false, model, reasoning: delta.reasoning_content });
+            }
+            if (delta.content) {
+              fullContent += delta.content;
+              onChunk({ content: delta.content, done: false, model });
+            }
+            if (delta.tool_calls) {
+              toolAccumulator.add(delta.tool_calls);
+            }
           }
         } catch {
           // 跳过
@@ -130,13 +133,14 @@ export class DeepSeekAdapter implements ModelAdapter {
       if (done) break;
     }
 
-    return { content: fullContent, model };
+    return { content: fullContent, model, toolCalls: this.supportsTools(request) ? toolAccumulator.getToolCalls() : undefined };
   }
 
   async validate(): Promise<boolean> {
     try {
       const response = await fetch(`${this.getBaseUrl()}/models`, {
         headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        signal: AbortSignal.timeout(10_000),
       });
       return response.ok;
     } catch {

@@ -6,6 +6,7 @@ import { showCompactWindow } from "../app/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
+import { PROVIDER_DEFAULTS } from "../adapters/modelCatalog";
 import type { CustomModelConfig } from "../adapters/types";
 import type { ChatUsagePreferences } from "../chat/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
@@ -68,15 +69,10 @@ type ModelSectionCard = {
 type ModelSectionCards = Record<ModelConfigSection, ModelSectionCard>;
 type RawRegistry = { configs: Map<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> };
 type ShortcutSettingKey = keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">;
-const DEFAULT_ENDPOINTS = [
-  { id: "openai", name: "OpenAI 官方", baseUrl: "https://api.openai.com/v1" },
-  { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1" },
-  { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
-  { id: "siliconflow", name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1" },
-  { id: "moonshot", name: "Moonshot", baseUrl: "https://api.moonshot.cn/v1" },
-  { id: "dashscope", name: "阿里百炼", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
-  { id: "zhipu", name: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
-];
+/** 内置厂商端点预设（单源来自 modelCatalog） */
+const DEFAULT_ENDPOINTS = Object.entries(PROVIDER_DEFAULTS)
+  .filter(([, value]) => !value.local)
+  .map(([id, value]) => ({ id, name: value.label, baseUrl: value.baseUrl }));
 
 function getRawApiKey(id: string) {
   return (modelRegistry as unknown as RawRegistry).configs.get(id)?.apiKey || "";
@@ -441,13 +437,14 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const validateCurrentEndpoint = async () => {
     const id = modelEndpointId.trim();
     const resolvedApiKey = resolveFormApiKey(id, apiKey);
-    if (!id || !endpointName.trim() || !baseUrl.trim() || !resolvedApiKey) return null;
+    if (!id || !endpointName.trim() || !resolvedApiKey) return null;
 
     const existingModels = modelRegistry.getCustomModels(id);
     modelRegistry.registerProvider(id, {
       apiKey: resolvedApiKey,
       name: endpointName.trim(),
-      baseUrl: baseUrl.trim(),
+      // baseUrl 留空时使用内置默认端点（modelCatalog 或适配器兜底）
+      baseUrl: baseUrl.trim() || undefined,
       customModels: existingModels.length ? existingModels : undefined,
     });
     return modelRegistry.validateProvider(id);
@@ -484,7 +481,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     const id = modelEndpointId.trim();
     const rawId = modelId.trim();
     const resolvedApiKey = resolveFormApiKey(id, apiKey);
-    if (!id || !endpointName.trim() || !baseUrl.trim() || !resolvedApiKey || !rawId) return;
+    if (!id || !endpointName.trim() || !resolvedApiKey || !rawId) return;
 
     setTestingConnection(true);
     setTestResult(null);
@@ -509,7 +506,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     modelRegistry.registerProvider(id, {
       apiKey: resolvedApiKey,
       name: endpointName.trim(),
-      baseUrl: baseUrl.trim(),
+      baseUrl: baseUrl.trim() || undefined,
       customModels: existingModels.length ? existingModels : undefined,
     });
 

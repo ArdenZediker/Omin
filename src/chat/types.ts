@@ -173,6 +173,10 @@ export type ChatExecutionResult = {
   knowledgeContext?: KnowledgeContextResult | null;
   suggestedMemories?: SuggestedProjectMemory[];
   suggestedSummary?: SuggestedSessionSummary | null;
+  /** 推理模型的思考链全文（如 R1 / Gemini 2.5 thinking） */
+  reasoning?: string;
+  /** 工具循环实际执行轮数（无工具时为 0） */
+  toolRounds?: number;
 };
 
 export type ChatSendOptions = {

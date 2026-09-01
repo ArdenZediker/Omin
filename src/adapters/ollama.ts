@@ -1,11 +1,13 @@
 // Omni - Ollama 适配器（本地模型）
-import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, ChatToolCall } from "./types";
 import { toWireRole } from "./types";
 import { toOllamaTools, toOllamaMessage, parseOllamaToolCalls } from "./wireTools";
+import { postJsonWithRetry, postJsonStream } from "./http";
 
 const OLLAMA_MODELS: ModelConfig[] = [
-  { id: "llama3", name: "Llama 3 (Local)", provider: "ollama", maxTokens: 8192, supportsVision: false, supportsStreaming: true },
-  { id: "llava", name: "LLaVA (Local)", provider: "ollama", maxTokens: 4096, supportsVision: true, supportsStreaming: true },
+  { id: "llama3", name: "Llama 3 (Local)", provider: "ollama", maxTokens: 8192, maxOutput: 4096, supportsVision: false, supportsStreaming: true, toolCalling: true },
+  { id: "llava", name: "LLaVA (Local)", provider: "ollama", maxTokens: 4096, maxOutput: 2048, supportsVision: true, supportsStreaming: true },
+  { id: "qwen2.5", name: "Qwen2.5 (Local)", provider: "ollama", maxTokens: 32768, maxOutput: 8192, supportsVision: false, supportsStreaming: true, toolCalling: true },
 ];
 
 export class OllamaAdapter implements ModelAdapter {
@@ -19,6 +21,10 @@ export class OllamaAdapter implements ModelAdapter {
 
   private getBaseUrl(): string {
     return this.config.baseUrl || "http://localhost:11434";
+  }
+
+  private getHeaders(): Record<string, string> {
+    return { "Content-Type": "application/json", ...this.config.customHeaders };
   }
 
   private buildMessages(request: ChatRequest) {
@@ -35,10 +41,9 @@ export class OllamaAdapter implements ModelAdapter {
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await fetch(`${this.getBaseUrl()}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...this.config.customHeaders },
-      body: JSON.stringify({
+    const response = await postJsonWithRetry(
+      `${this.getBaseUrl()}/api/chat`,
+      {
         model: request.model,
         messages: this.buildMessages(request),
         stream: false,
@@ -47,13 +52,11 @@ export class OllamaAdapter implements ModelAdapter {
           num_predict: request.maxTokens,
         },
         ...(request.tools && request.tools.length > 0 ? { tools: toOllamaTools(request.tools) } : {}),
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Ollama API error: ${response.status} - ${err}`);
-    }
+      },
+      this.getHeaders(),
+      request.signal,
+      { retryable: false }
+    );
 
     const data = await response.json();
     return {
@@ -64,33 +67,21 @@ export class OllamaAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const response = await fetch(`${this.getBaseUrl()}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...this.config.customHeaders },
-      body: JSON.stringify({
+    const response = await postJsonStream(
+      `${this.getBaseUrl()}/api/chat`,
+      {
         model: request.model,
-        messages: request.messages.map((msg) => {
-          if (msg.images && msg.images.length > 0) {
-            return {
-              role: toWireRole(msg.role),
-              content: msg.content,
-              images: msg.images.map((img) => (img.startsWith("data:") ? img.split(",")[1] : img)),
-            };
-          }
-          return { role: toWireRole(msg.role), content: msg.content };
-        }),
+        messages: this.buildMessages(request),
         stream: true,
         options: {
           temperature: request.temperature ?? 0.7,
           num_predict: request.maxTokens,
         },
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Ollama API error: ${response.status} - ${err}`);
-    }
+        ...(request.tools && request.tools.length > 0 ? { tools: toOllamaTools(request.tools) } : {}),
+      },
+      this.getHeaders(),
+      request.signal
+    );
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
@@ -98,6 +89,7 @@ export class OllamaAdapter implements ModelAdapter {
     const decoder = new TextDecoder();
     let fullContent = "";
     let model = request.model;
+    let pendingToolCalls: ChatToolCall[] | undefined;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -114,6 +106,10 @@ export class OllamaAdapter implements ModelAdapter {
             model = parsed.model || model;
             onChunk({ content: parsed.message.content, done: false, model });
           }
+          // Ollama 原生流式的 tool_calls 以完整形式出现在 message 上
+          if (parsed.message?.tool_calls?.length) {
+            pendingToolCalls = parseOllamaToolCalls(parsed);
+          }
           if (parsed.done) {
             onChunk({ content: "", done: true, model });
           }
@@ -123,12 +119,12 @@ export class OllamaAdapter implements ModelAdapter {
       }
     }
 
-    return { content: fullContent, model };
+    return { content: fullContent, model, toolCalls: pendingToolCalls };
   }
 
   async validate(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/api/tags`);
+      const response = await fetch(`${this.getBaseUrl()}/api/tags`, { signal: AbortSignal.timeout(10_000) });
       return response.ok;
     } catch {
       return false;

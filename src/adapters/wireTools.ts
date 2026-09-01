@@ -221,3 +221,120 @@ export function parseOllamaToolCalls(data: Record<string, unknown>): ChatToolCal
         : JSON.stringify(tc.function?.arguments ?? {}),
   }));
 }
+
+// ---------------------------------------------------------------------------
+// 流式 tool_calls 增量解析（SSE 逐 chunk 累加）
+// ---------------------------------------------------------------------------
+
+type OpenAIStreamToolDelta = Array<{
+  index?: number;
+  id?: string;
+  function?: { name?: string; arguments?: string };
+}>;
+
+/**
+ * OpenAI 兼容流式 tool_calls 累加器：流式响应里 tool_calls 是增量片段
+ * （同一 index 跨多个 chunk 的 id/name/arguments 拼接），结束时统一取出。
+ */
+export class OpenAIStreamToolAccumulator {
+  private calls: ChatToolCall[] = [];
+  private byIndex = new Map<number, { id?: string; name?: string; args: string }>();
+
+  /** 喂入一个 SSE chunk 的 delta.tool_calls（可为空数组/undefined）。 */
+  add(delta: OpenAIStreamToolDelta | undefined): void {
+    if (!Array.isArray(delta)) return;
+    for (const part of delta) {
+      const index = part.index ?? 0;
+      const entry = this.byIndex.get(index) ?? { args: "" };
+      if (part.id) entry.id = part.id;
+      if (part.function?.name) entry.name = part.function.name;
+      if (part.function?.arguments) entry.args += part.function.arguments;
+      this.byIndex.set(index, entry);
+    }
+  }
+
+  /** 结束流式后取出完整调用；缺 name 的残片丢弃。 */
+  getToolCalls(): ChatToolCall[] | undefined {
+    for (const [index, entry] of this.byIndex) {
+      if (!entry.name) {
+        this.byIndex.delete(index);
+        continue;
+      }
+      this.calls.push({
+        id: entry.id ?? `call_${Math.random().toString(36).slice(2, 10)}`,
+        name: entry.name,
+        arguments: entry.args || "{}",
+      });
+    }
+    this.byIndex.clear();
+    return this.calls.length > 0 ? this.calls : undefined;
+  }
+}
+
+/** Claude SSE：content_block_start(tool_use) + input_json_delta 增量 + content_block_stop。 */
+export class ClaudeStreamToolAccumulator {
+  private pending: Array<{ id?: string; name?: string; args: string; open: boolean }> = [];
+  private calls: ChatToolCall[] = [];
+
+  /** 喂入一个 SSE 事件（已 JSON.parse 的 data 对象）。 */
+  add(event: { type?: string; index?: number; content_block?: { type?: string; id?: string; name?: string; input?: unknown }; delta?: { type?: string; partial_json?: string } }): void {
+    if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+      this.pending[event.index ?? this.pending.length] = {
+        id: event.content_block.id,
+        name: event.content_block.name,
+        args: typeof event.content_block.input === "object" && event.content_block.input ? JSON.stringify(event.content_block.input) : "",
+        open: true,
+      };
+    } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta" && event.delta.partial_json) {
+      const entry = this.pending[event.index ?? 0];
+      if (entry) entry.args += event.delta.partial_json;
+    } else if (event.type === "content_block_stop") {
+      const entry = this.pending[event.index ?? 0];
+      if (entry) entry.open = false;
+    }
+  }
+
+  /** 流结束后取出完整调用（input_json 可能不完整，尽力 JSON 修复）。 */
+  getToolCalls(): ChatToolCall[] | undefined {
+    for (const entry of this.pending) {
+      if (!entry || !entry.name) continue;
+      let args = entry.args.trim();
+      if (!args) {
+        args = "{}";
+      } else {
+        try {
+          JSON.parse(args);
+        } catch {
+          // 增量被截断（如参数里有未闭合引号），包一层补全
+          try {
+            args = JSON.stringify(JSON.parse(`{${args}}`));
+          } catch {
+            args = "{}";
+          }
+        }
+      }
+      this.calls.push({
+        id: entry.id ?? `call_${Math.random().toString(36).slice(2, 10)}`,
+        name: entry.name,
+        arguments: args,
+      });
+    }
+    this.pending = [];
+    return this.calls.length > 0 ? this.calls : undefined;
+  }
+}
+
+/** Gemini SSE：每个 chunk 的 parts 是全量快照，直接取带 functionCall 的。 */
+export function parseGeminiStreamToolCalls(parts: Array<Record<string, unknown>> | undefined): ChatToolCall[] | undefined {
+  if (!Array.isArray(parts)) return undefined;
+  const calls = parts.filter((p) => p.functionCall && typeof p.functionCall === "object");
+  if (calls.length === 0) return undefined;
+  return calls.map((p) => {
+    const fn = p.functionCall as { name?: string; args?: unknown } | undefined;
+    return {
+      id: `gemini_${Math.random().toString(36).slice(2, 10)}`,
+      name: fn?.name ?? "",
+      arguments: JSON.stringify(fn?.args ?? {}),
+    };
+  });
+}

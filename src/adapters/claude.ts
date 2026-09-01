@@ -1,11 +1,14 @@
 // Omni - Claude 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toWireRole } from "./types";
-import { toClaudeTools, toClaudeMessage, parseClaudeToolCalls } from "./wireTools";
+import { toClaudeTools, toClaudeMessage, parseClaudeToolCalls, ClaudeStreamToolAccumulator } from "./wireTools";
+import { postJsonWithRetry, postJsonStream } from "./http";
 
 const CLAUDE_MODELS: ModelConfig[] = [
-  { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, supportsVision: true, supportsStreaming: true },
-  { id: "claude-opus-4-20250514", name: "Claude Opus 4", provider: "claude", maxTokens: 200000, supportsVision: true, supportsStreaming: true },
+  { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
+  { id: "claude-sonnet-4-20250805", name: "Claude Sonnet 4.5", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
+  { id: "claude-opus-4-20250514", name: "Claude Opus 4", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
+  { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "claude", maxTokens: 200000, maxOutput: 8192, supportsVision: true, supportsStreaming: true, toolCalling: true },
 ];
 
 export class ClaudeAdapter implements ModelAdapter {
@@ -21,8 +24,17 @@ export class ClaudeAdapter implements ModelAdapter {
     return this.config.baseUrl || "https://api.anthropic.com";
   }
 
+  private getHeaders(): Record<string, string> {
+    return {
+      "Content-Type": "application/json",
+      "x-api-key": this.config.apiKey,
+      "anthropic-version": "2023-06-01",
+      ...this.config.customHeaders,
+    };
+  }
+
   private buildMessages(request: ChatRequest) {
-    // Claude 需要单独的系统消息
+    // Claude 需要单独的系统消息；system 加 cache_control 开启 prompt 缓存（长 system 每轮省成本）
     const systemMsg = request.messages.find((m) => m.role === "system");
     const chatMsgs = request.messages.filter((m) => m.role !== "system");
 
@@ -48,34 +60,29 @@ export class ClaudeAdapter implements ModelAdapter {
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);
 
-    return { system: systemMsg?.content || "", messages };
+    const system = systemMsg?.content
+      ? [{ type: "text" as const, text: systemMsg.content, cache_control: { type: "ephemeral" } }]
+      : [];
+
+    return { system, messages };
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const { system, messages } = this.buildMessages(request);
 
-    const response = await fetch(`${this.getBaseUrl()}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.config.apiKey,
-        "anthropic-version": "2023-06-01",
-        ...this.config.customHeaders,
-      },
-      body: JSON.stringify({
+    const response = await postJsonWithRetry(
+      `${this.getBaseUrl()}/v1/messages`,
+      {
         model: request.model,
         max_tokens: request.maxTokens || 4096,
         system,
         messages,
         stream: false,
         ...(request.tools && request.tools.length > 0 ? { tools: toClaudeTools(request.tools) } : {}),
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Claude API error: ${response.status} - ${err}`);
-    }
+      },
+      this.getHeaders(),
+      request.signal
+    );
 
     const data = await response.json();
     const textBlock = data.content.find((b: { type: string }) => b.type === "text");
@@ -97,27 +104,19 @@ export class ClaudeAdapter implements ModelAdapter {
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
     const { system, messages } = this.buildMessages(request);
 
-    const response = await fetch(`${this.getBaseUrl()}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.config.apiKey,
-        "anthropic-version": "2023-06-01",
-        ...this.config.customHeaders,
-      },
-      body: JSON.stringify({
+    const response = await postJsonStream(
+      `${this.getBaseUrl()}/v1/messages`,
+      {
         model: request.model,
         max_tokens: request.maxTokens || 4096,
         system,
         messages,
         stream: true,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Claude API error: ${response.status} - ${err}`);
-    }
+        ...(request.tools && request.tools.length > 0 ? { tools: toClaudeTools(request.tools) } : {}),
+      },
+      this.getHeaders(),
+      request.signal
+    );
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
@@ -126,6 +125,7 @@ export class ClaudeAdapter implements ModelAdapter {
     let fullContent = "";
     let model = request.model;
     let buffer = "";
+    const toolAccumulator = new ClaudeStreamToolAccumulator();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -153,6 +153,8 @@ export class ClaudeAdapter implements ModelAdapter {
             model = parsed.message.model;
           } else if (parsed.type === "message_stop") {
             onChunk({ content: "", done: true, model });
+          } else if (parsed.type === "content_block_start" || parsed.type === "content_block_delta" || parsed.type === "content_block_stop") {
+            toolAccumulator.add(parsed);
           }
         } catch {
           // 跳过
@@ -161,7 +163,7 @@ export class ClaudeAdapter implements ModelAdapter {
       if (done) break;
     }
 
-    return { content: fullContent, model };
+    return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls() };
   }
 
   async validate(): Promise<boolean> {
@@ -178,6 +180,7 @@ export class ClaudeAdapter implements ModelAdapter {
           max_tokens: 1,
           messages: [{ role: "user", content: "hi" }],
         }),
+        signal: AbortSignal.timeout(10_000),
       });
       return response.ok;
     } catch {

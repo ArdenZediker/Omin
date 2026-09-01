@@ -7,7 +7,8 @@ import { ClaudeAdapter } from "./claude";
 import { GeminiAdapter } from "./gemini";
 import { OllamaAdapter } from "./ollama";
 import { DeepSeekAdapter } from "./deepseek";
-import { BUILTIN_MODELS } from "./types";
+import { BUILTIN_MODELS } from "./modelCatalog";
+import { PROVIDER_DEFAULTS } from "./modelCatalog";
 import { loadAppKvEntries, saveAppKvEntry } from "../app/sqliteStorage";
 
 type AdapterConstructor = new (config: ProviderConfig) => ModelAdapter;
@@ -43,7 +44,6 @@ class ModelRegistry {
       this.customModels.delete(provider);
     }
   }
-
   // 移除提供方
   unregisterProvider(provider: string): void {
     this.adapters.delete(provider);
@@ -135,8 +135,11 @@ class ModelRegistry {
           name: found.name,
           provider,
           maxTokens: found.maxTokens || 128000,
+          maxOutput: found.maxOutput,
           supportsVision: found.supportsVision ?? false,
           supportsStreaming: found.supportsStreaming ?? true,
+          toolCalling: found.toolCalling,
+          thinking: found.thinking,
           requestModelId: found.requestModelId,
         };
       }
@@ -197,10 +200,19 @@ class ModelRegistry {
   }
 
   // 获取提供方配置（不包含 API Key，避免泄露）
-  getProviderConfig(provider: string): { name?: string; baseUrl?: string; hasApiKey: boolean } | null {
+  getProviderConfig(provider: string): { name?: string; baseUrl?: string; defaultBaseUrl?: string; protocol?: string; label?: string; local?: boolean; hasApiKey: boolean } | null {
     const config = this.configs.get(provider);
     if (!config) return null;
-    return { name: config.name, baseUrl: config.baseUrl, hasApiKey: !!config.apiKey };
+    const defaults = PROVIDER_DEFAULTS[provider];
+    return {
+      name: config.name,
+      baseUrl: config.baseUrl,
+      defaultBaseUrl: defaults?.baseUrl,
+      protocol: defaults?.protocol,
+      label: defaults?.label,
+      local: defaults?.local,
+      hasApiKey: !!config.apiKey,
+    };
   }
 }
 

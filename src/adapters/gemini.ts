@@ -1,10 +1,12 @@
 // Omni - Gemini 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
-import { toGeminiTools, toGeminiContent, parseGeminiToolCalls } from "./wireTools";
+import { toGeminiTools, toGeminiContent, parseGeminiToolCalls, parseGeminiStreamToolCalls } from "./wireTools";
+import { postJsonWithRetry, postJsonStream } from "./http";
 
 const GEMINI_MODELS: ModelConfig[] = [
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "gemini", maxTokens: 1048576, supportsVision: true, supportsStreaming: true },
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "gemini", maxTokens: 1048576, supportsVision: true, supportsStreaming: true },
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "gemini", maxTokens: 1048576, maxOutput: 65536, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "gemini", maxTokens: 1048576, maxOutput: 65536, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
+  { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash-Lite", provider: "gemini", maxTokens: 1048576, maxOutput: 65536, supportsVision: false, supportsStreaming: true, toolCalling: true },
 ];
 
 export class GeminiAdapter implements ModelAdapter {
@@ -18,6 +20,10 @@ export class GeminiAdapter implements ModelAdapter {
 
   private getBaseUrl(): string {
     return this.config.baseUrl || "https://generativelanguage.googleapis.com";
+  }
+
+  private getKeyUrl(): string {
+    return `?key=${this.config.apiKey}`;
   }
 
   private buildContents(request: ChatRequest) {
@@ -43,7 +49,7 @@ export class GeminiAdapter implements ModelAdapter {
       .filter((c): c is { role: "user" | "model"; parts: Array<Record<string, unknown>> } => c !== null);
   }
 
-  async chat(request: ChatRequest): Promise<ChatResponse> {
+  private buildBody(request: ChatRequest): Record<string, unknown> {
     const systemInstruction = request.messages.find((m) => m.role === "system");
     const body: Record<string, unknown> = {
       contents: this.buildContents(request),
@@ -58,23 +64,19 @@ export class GeminiAdapter implements ModelAdapter {
     if (request.tools && request.tools.length > 0) {
       body.tools = toGeminiTools(request.tools);
     }
+    return body;
+  }
 
-    const response = await fetch(
-      `${this.getBaseUrl()}/v1beta/models/${request.model}:generateContent?key=${this.config.apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...this.config.customHeaders },
-        body: JSON.stringify(body),
-      }
+  async chat(request: ChatRequest): Promise<ChatResponse> {
+    const response = await postJsonWithRetry(
+      `${this.getBaseUrl()}/v1beta/models/${request.model}:generateContent${this.getKeyUrl()}`,
+      this.buildBody(request),
+      { "Content-Type": "application/json", ...this.config.customHeaders },
+      request.signal
     );
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${err}`);
-    }
-
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const text = data.candidates?.[0]?.content?.parts?.filter((p: { text?: string }) => p.text).map((p: { text: string }) => p.text).join("") || "";
 
     return {
       content: text,
@@ -91,31 +93,12 @@ export class GeminiAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const systemInstruction = request.messages.find((m) => m.role === "system");
-    const body: Record<string, unknown> = {
-      contents: this.buildContents(request),
-      generationConfig: {
-        temperature: request.temperature ?? 0.7,
-        maxOutputTokens: request.maxTokens,
-      },
-    };
-    if (systemInstruction) {
-      body.systemInstruction = { parts: [{ text: systemInstruction.content }] };
-    }
-
-    const response = await fetch(
+    const response = await postJsonStream(
       `${this.getBaseUrl()}/v1beta/models/${request.model}:streamGenerateContent?alt=sse&key=${this.config.apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...this.config.customHeaders },
-        body: JSON.stringify(body),
-      }
+      this.buildBody(request),
+      { "Content-Type": "application/json", ...this.config.customHeaders },
+      request.signal
     );
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${err}`);
-    }
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
@@ -123,6 +106,7 @@ export class GeminiAdapter implements ModelAdapter {
     const decoder = new TextDecoder();
     let fullContent = "";
     let buffer = "";
+    let toolCalls;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -142,10 +126,20 @@ export class GeminiAdapter implements ModelAdapter {
         }
         try {
           const parsed = JSON.parse(line.slice(6));
-          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            fullContent += text;
-            onChunk({ content: text, done: false, model: request.model });
+          const parts = parsed.candidates?.[0]?.content?.parts;
+          if (Array.isArray(parts)) {
+            for (const part of parts) {
+              if (part.text) {
+                fullContent += part.text;
+                onChunk({ content: part.text, done: false, model: request.model });
+              }
+              if (part.thought) {
+                onChunk({ content: "", done: false, model: request.model, reasoning: part.thought });
+              }
+            }
+            // Gemini SSE 每个 chunk 的 parts 是全量快照，functionCall 直接取
+            const calls = parseGeminiStreamToolCalls(parts);
+            if (calls) toolCalls = calls;
           }
         } catch {
           // 跳过
@@ -155,14 +149,12 @@ export class GeminiAdapter implements ModelAdapter {
     }
 
     onChunk({ content: "", done: true, model: request.model });
-    return { content: fullContent, model: request.model };
+    return { content: fullContent, model: request.model, toolCalls };
   }
 
   async validate(): Promise<boolean> {
     try {
-      const response = await fetch(
-        `${this.getBaseUrl()}/v1beta/models?key=${this.config.apiKey}`
-      );
+      const response = await fetch(`${this.getBaseUrl()}/v1beta/models${this.getKeyUrl()}`, { signal: AbortSignal.timeout(10_000) });
       return response.ok;
     } catch {
       return false;
