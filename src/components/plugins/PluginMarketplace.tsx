@@ -22,6 +22,8 @@ import {
   LayoutGrid,
   LayoutList,
   Eye,
+  Power,
+  PowerOff,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import {
@@ -45,6 +47,7 @@ import CbteamsBrowser from "./CbteamsBrowser";
 import ConnectorhubBrowser from "./ConnectorhubBrowser";
 import { getMcpCommandTemplate } from "../../plugins/connectorhub";
 import { uninstallSkillhubSkill } from "../../plugins/skillhub";
+import OmniSwitch from "../ui/OmniSwitch";
 
 type PluginMarketplaceProps = {
   initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind };
@@ -554,6 +557,30 @@ export default function PluginMarketplace({
   const isInstalled = (id: string) =>
     pluginRegistry.isInstalled(id) || pluginRegistry.isBuiltin(id);
 
+  /** 切换技能启用状态：内置项固定 enabled=true 不允许关闭（保护内置基础栈）。 */
+  const handleToggleEnabled = useCallback(
+    (manifest: PluginManifest, next: boolean) => {
+      if (pluginRegistry.isBuiltin(manifest.id)) return;
+      pluginRegistry.setEnabled(manifest.id, next);
+      setRefreshKey((current) => current + 1);
+    },
+    [],
+  );
+
+  /** 批量启用：跳过内置项（setEnabled 内部也对非 installed 项返回 false，
+   *  但显式 filter 让意图更清晰 + 防止一旦内置能 toggle 时误关）。 */
+  const handleBatchSetEnabled = useCallback(
+    (next: boolean) => {
+      const targets = filteredPlugins.filter(
+        (m) => selectedIds.has(m.id) && !pluginRegistry.isBuiltin(m.id),
+      );
+      for (const m of targets) {
+        pluginRegistry.setEnabled(m.id, next);
+      }
+      if (targets.length > 0) setRefreshKey((current) => current + 1);
+    },
+    [selectedIds, filteredPlugins],
+  );
   // MCP 型连接器：kind=connector 且无 provider（provider 是模型连接器的标志，
   // 模型连接器走 API Key 配置；MCP 型走 command/args/env 启动配置）。
   const isMcpConnector = (manifest: PluginManifest) =>
@@ -1120,11 +1147,12 @@ export default function PluginMarketplace({
               const isBuiltin = pluginRegistry.isBuiltin(manifest.id);
               const inBatch = batchMode && showMySkills && !isBuiltin;
               const isSelected = inBatch && selectedIds.has(manifest.id);
+              const enabled = pluginRegistry.isEnabled(manifest.id);
               const cardClass = inBatch
-                ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""}`
+                ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()
                 : onPick
-                  ? "plugin-card plugin-card--pickable"
-                  : "plugin-card plugin-card--clickable";
+                  ? `plugin-card plugin-card--pickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()
+                  : `plugin-card plugin-card--clickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim();
               const cardRole: "button" | "checkbox" = inBatch
                 ? "checkbox"
                 : "button";
@@ -1200,6 +1228,34 @@ export default function PluginMarketplace({
                               {tag}
                             </span>
                           ))}
+                        </div>
+                      )}
+                      {showMySkills && !onPick && (
+                        <div
+                          className="plugin-card__enable"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <OmniSwitch
+                            checked={enabled}
+                            disabled={isBuiltin}
+                            onChange={(next) =>
+                              void handleToggleEnabled(manifest, next)
+                            }
+                            ariaLabel={
+                              isBuiltin
+                                ? `${manifest.name}（内置项不可关闭）`
+                                : `${enabled ? "关闭" : "开启"} ${manifest.name}`
+                            }
+                          />
+                          <span
+                            className={`plugin-card__enable-label ${enabled ? "" : "plugin-card__enable-label--off"}`}
+                          >
+                            {isBuiltin
+                              ? "内置（始终启用）"
+                              : enabled
+                                ? "已启用"
+                                : "已停用"}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -1496,10 +1552,10 @@ export default function PluginMarketplace({
           role="toolbar"
           aria-label="批量操作"
         >
-          <span className="plugin-marketplace__batch-count">
-            已选择 <strong>{selectedIds.size}</strong> 项
-          </span>
-          <div className="plugin-marketplace__batch-actions">
+          <div className="plugin-marketplace__batch-left">
+            <span className="plugin-marketplace__batch-count">
+              已选 <strong>{selectedIds.size}</strong> 项
+            </span>
             <button
               type="button"
               className="plugin-marketplace__batch-secondary"
@@ -1507,7 +1563,9 @@ export default function PluginMarketplace({
                 const selectable = filteredPlugins.filter(
                   (m) => !pluginRegistry.isBuiltin(m.id),
                 );
-                const allSelected = selectable.every((m) => selectedIds.has(m.id));
+                const allSelected = selectable.every((m) =>
+                  selectedIds.has(m.id),
+                );
                 if (allSelected) setSelectedIds(new Set());
                 else setSelectedIds(new Set(selectable.map((m) => m.id)));
               }}
@@ -1520,13 +1578,43 @@ export default function PluginMarketplace({
             </button>
             <button
               type="button"
+              className="plugin-marketplace__batch-secondary"
+              disabled={selectedIds.size === 0}
+              onClick={() => setSelectedIds(new Set())}
+            >
+              清空
+            </button>
+          </div>
+          <div className="plugin-marketplace__batch-actions">
+            <button
+              type="button"
+              className="plugin-marketplace__batch-secondary"
+              disabled={selectedIds.size === 0}
+              onClick={() => handleBatchSetEnabled(true)}
+              title="批量开启选中的技能"
+            >
+              <Power size={14} strokeWidth={1.8} />
+              <span>开启</span>
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-secondary"
+              disabled={selectedIds.size === 0}
+              onClick={() => handleBatchSetEnabled(false)}
+              title="批量关闭选中的技能"
+            >
+              <PowerOff size={14} strokeWidth={1.8} />
+              <span>关闭</span>
+            </button>
+            <button
+              type="button"
               className="plugin-marketplace__batch-danger"
               disabled={selectedIds.size === 0}
               onClick={() => void handleBatchUninstall()}
               title="卸载并删除选中的技能"
             >
               <Trash2 size={14} strokeWidth={1.8} />
-              <span>删除选中</span>
+              <span>卸载</span>
             </button>
             <button
               type="button"

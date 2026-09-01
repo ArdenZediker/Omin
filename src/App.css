@@ -10164,7 +10164,9 @@ body:has(.pet-thought-window),
   color: #fff;
 }
 
-/* 底部批量工具栏（fixed/sticky，跨卡片），含「选中 N 项 / 全选 / 删除选中 / 取消」 */
+/* 底部批量工具栏（fixed/sticky，跨卡片），含「已选 N 项 / 全选 / 清空 /
+   开启 / 关闭 / 卸载 / 取消」。左右两组布局：左为选择计数 + 全选/清空，
+   右为 4 个批量动作。 */
 .plugin-marketplace__batch-bar {
   position: sticky;
   bottom: 0;
@@ -10178,6 +10180,11 @@ body:has(.pet-thought-window),
   border-top: 1px solid var(--omni-panel-border);
   border-radius: 0 0 12px 12px;
   z-index: 5;
+}
+.plugin-marketplace__batch-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 .plugin-marketplace__batch-count {
   font-size: 12px;
@@ -10227,6 +10234,43 @@ body:has(.pet-thought-window),
 .plugin-marketplace__batch-danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 批量 toolbar 通用：secondary/danger 在 :disabled 时统一灰化（扩展上面 --danger 规则） */
+.plugin-marketplace__batch-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 单卡启用 toggle 行：tags 后同行右对齐（list 模式）或自然宽度（grid 模式）。
+   内置项不可关闭 → switch 设 disabled 即可，CSS 给个 hover-tooltip 样式靠
+   ariaLabel 提示。整体思路：enable 行放 main 末尾、不打断标题 + 描述 + meta
+   的阅读流；同时为了让 list 模式「整张卡贴左」视觉不破坏，把 enable 行也
+   作为 main 子元素而不是绝对定位 → 右列 actions 保持原状。 */
+.plugin-card__enable {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--omni-app-fg, #0f172a);
+  user-select: none;
+}
+.plugin-card__enable-label {
+  font-weight: 500;
+}
+.plugin-card__enable-label--off {
+  color: var(--omni-app-muted);
+  font-weight: 400;
+}
+
+/* 整卡停用态：透明度降低 + 内部描述/meta 降饱和度
+   （仅对 isEnabled=false 的非内置卡生效；内置始终 enabled=true 不会走到这里） */
+.plugin-card--disabled .plugin-card__main {
+  opacity: 0.55;
+}
+.plugin-card--disabled .plugin-card__icon {
+  filter: grayscale(0.6);
 }
 
 /* 抽屉覆盖层 + 主区域 */
