@@ -117,6 +117,15 @@ class PluginRegistry {
     return this.list({ kind: "skill", enabled: true });
   }
 
+  /** 列出所有已安装插件的原始 entry（包含 source、config 等元数据）。
+   *  用于数据迁移 / 升级场景 —— list() 只丢出 manifest，不够。 */
+  listInstalled(): Array<{ id: string; entry: InstalledPlugin }> {
+    return Array.from(this.installed.entries()).map(([id, entry]) => ({
+      id,
+      entry,
+    }));
+  }
+
   listEnabledTools(): PluginManifest[] {
     return this.list({ kind: "tool", enabled: true });
   }

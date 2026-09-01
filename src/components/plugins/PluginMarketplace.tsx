@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   X,
   Search,
@@ -27,6 +27,10 @@ import {
   listConnectedMcpServers,
 } from "../../plugins/mcp";
 import { PLUGIN_CATEGORIES } from "../../plugins/builtins";
+import {
+  listSkillhubSkills,
+  mapSkillhubCategory,
+} from "../../plugins/skillhub";
 import type {
   PluginFilter,
   PluginKind,
@@ -411,6 +415,69 @@ export default function PluginMarketplace({
       1500,
     );
   }, []);
+
+  // 数据迁移（2026-09-01 启动 effect）：为「我的技能」tab 内已安装但缺 icon 的
+  // SkillHub 来源技能按 slug 拉一次 SkillHub summary，补全 iconUrl/author/category。
+  // 老版本 installSkillhubSkill 没合并 summary.iconUrl 字段，已存在的技能
+  // manifest.icon 为 undefined；本次迁移只动 kind === "skill" 且 source 标记
+  // 为 SkillHub 的项，其它来源（本地导入、内置、用户自建）一律跳过。
+  const migratedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!showMySkills) return;
+    const candidates = pluginRegistry
+      .listInstalled()
+      .filter(({ id, entry }) => {
+        if (migratedIdsRef.current.has(id)) return false;
+        const m = entry.manifest;
+        const source = entry.source;
+        return (
+          m.kind === "skill" &&
+          !m.icon &&
+          (m.sourceUrl ?? "").includes("skillhub.cn") &&
+          source.type === "marketplace" &&
+          source.repository.startsWith("skillhub/")
+        );
+      });
+    if (candidates.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const { id, entry } of candidates) {
+        migratedIdsRef.current.add(id); // 先标记，避免 effect 多次触发重复拉
+        const source = entry.source;
+        if (source.type !== "marketplace") continue;
+        const parts = id.split("/");
+        const slug = parts[parts.length - 1] ?? id;
+        try {
+          const list = await listSkillhubSkills({ query: slug, limit: 20 });
+          if (cancelled) return;
+          const summary = list.find((s) => s.slug === slug) ?? list[0];
+          if (!summary) continue;
+          const patched: PluginManifest = {
+            ...entry.manifest,
+            icon: entry.manifest.icon || summary.iconUrl,
+            author: entry.manifest.author || summary.ownerName,
+            category:
+              entry.manifest.category ||
+              (summary.category ? mapSkillhubCategory(summary.category) : undefined),
+          };
+          pluginRegistry.install(patched, source);
+          setRefreshKey((current) => current + 1);
+        } catch (e) {
+          // 拉取失败不抛，保留 Wand2 占位图，下一次启动再试
+          if (!cancelled) {
+            // eslint-disable-next-line no-console
+            console.warn(`SkillHub icon migration failed for ${slug}:`, e);
+          }
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // 只在 showMySkills 首次切到 true 时跑一次（migratedIdsRef 防重）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMySkills]);
 
   const handleInstall = useCallback((manifest: PluginManifest) => {
     pluginRegistry.install(manifest, {
