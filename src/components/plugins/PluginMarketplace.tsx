@@ -1373,13 +1373,6 @@ export default function PluginMarketplace({
                       >
                         {manifest.description}
                       </p>
-                      <div className="plugin-card__meta">
-                        <span>{manifest.author ?? "Omni"}</span>
-                        {manifest.category && (
-                          <span>· {manifest.category}</span>
-                        )}
-                        <span>· v{manifest.version}</span>
-                      </div>
                       {manifest.tags && manifest.tags.length > 0 && (
                         <div className="plugin-card__tags">
                           {manifest.tags.map((tag) => (
@@ -1389,6 +1382,13 @@ export default function PluginMarketplace({
                           ))}
                         </div>
                       )}
+                      <div className="plugin-card__meta">
+                        <span>{manifest.author ?? "Omni"}</span>
+                        {manifest.category && (
+                          <span>· {manifest.category}</span>
+                        )}
+                        <span>· v{manifest.version}</span>
+                      </div>
                     </div>
                   </div>
                   {/* 卡片底部 actions 区：只在「选择模式」（onPick，CreateProjectDialog

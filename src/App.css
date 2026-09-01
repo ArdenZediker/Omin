@@ -9824,6 +9824,8 @@ body:has(.pet-thought-window),
 .plugin-card__main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .plugin-card__title-row {
@@ -9844,6 +9846,10 @@ body:has(.pet-thought-window),
   white-space: nowrap;
   min-width: 0;
   flex: 1 1 auto;
+  /* 技能名固定显示长度（最多约 14 个汉字宽），超出省略——保证 grid 4 列下
+     卡片标题视觉一致（用户 2026-09-01「技能名要固定长度,多的省略」）。
+     list 视图下卡片整体宽度大，14em 仍生效（标题不会变得过长）。 */
+  max-width: 14em;
 }
 
 /* 标签元素不收缩，紧贴名字排列；空间不够时整体换行而非压缩 */
@@ -9865,6 +9871,10 @@ body:has(.pet-thought-window),
   color: var(--omni-app-muted);
 }
 
+/* 描述区：line-clamp 3 截断显示。完整描述从整卡点击打开的 detail drawer
+  查看（用户 2026-09-01「这个功能多余了,已经有看详情的功能」——之前
+  试过 <details>/<summary> CSS-only 展开被回退，因为整卡可点开 drawer，
+  description 区没必要再内嵌展开交互）。 */
 .plugin-card__description {
   margin: 6px 0 0;
   font-size: 12px;
@@ -9877,7 +9887,14 @@ body:has(.pet-thought-window),
 }
 
 .plugin-card__meta {
-  margin-top: 8px;
+  /* margin-top: auto 让 meta 在 flex-column 的 main 中沉到卡片底部，
+     无论描述行数多少，meta 行始终贴底对齐（用户 2026-09-01「这些沉底,
+     保持住」）。原来 margin-top: 8px 只在描述紧贴 meta 时给个间距，
+     改 auto 后整体视觉更整齐：description + tags 占满上半部、meta
+     占据最底一行；meta 内部仍用 space-between 让 author / category /
+     version 三段分布到两端填满整行。 */
+  margin-top: auto;
+  padding-top: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
