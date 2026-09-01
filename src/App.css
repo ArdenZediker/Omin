@@ -10312,25 +10312,17 @@ body:has(.pet-thought-window),
   border-color: #fca5a5;
 }
 
-/* 单卡启用 toggle 行：tags 后同行右对齐（list 模式）或自然宽度（grid 模式）。
-   内置项不可关闭 → switch 设 disabled 即可，CSS 给个 hover-tooltip 样式靠
-   ariaLabel 提示。整体思路：enable 行放 main 末尾、不打断标题 + 描述 + meta
-   的阅读流；同时为了让 list 模式「整张卡贴左」视觉不破坏，把 enable 行也
-   作为 main 子元素而不是绝对定位 → 右列 actions 保持原状。 */
+/* 单卡启用 toggle 行：紧贴技能名右边（h3 flex:1 1 auto 占满剩余空间，
+   enable flex:0 0 auto 紧跟其后）。早期版本放到卡片底部 → 后改到 title-row
+   末尾 margin-left:auto 推右 → 用户 2026-09-01 再调整要求「缩进紧贴技能名」：
+   不再 auto 推右、不再占视觉大块，紧凑附在标题右侧，开/关状态仍一眼可见
+   但不再抢占右上角注意力。文字 label 已删（只剩 switch），ariaLabel + title
+   仍给内置项保留「不可关闭」提示。 */
 .plugin-card__enable {
-  margin-top: 8px;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--omni-app-fg, #0f172a);
   user-select: none;
-}
-/* list 视图（紧凑横向布局）下：main 是 flex column 且 stretch 撑满 header 列
-   高度。给 enable margin-top: auto 让它被推到 main 底部——与右侧 actions 列
-   按钮同一基线对齐（用户 2026-09-01 反馈「启用按钮要统一行位置」）。 */
-.plugin-marketplace__grid--list .plugin-card__enable {
-  margin-top: auto;
 }
 .plugin-card__enable-label {
   font-weight: 500;

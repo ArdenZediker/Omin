@@ -1340,9 +1340,32 @@ export default function PluginMarketplace({
                     <div className="plugin-card__main">
                       <div className="plugin-card__title-row">
                         <h3 title={manifest.name}>{manifest.name}</h3>
-                        <span className="plugin-card__badge">
-                          {manifest.kind}
-                        </span>
+                        {showMySkills && !onPick && (
+                          <div
+                            className="plugin-card__enable"
+                            onClick={(e) => e.stopPropagation()}
+                            title={
+                              isBuiltin
+                                ? "内置项始终启用，不可关闭"
+                                : enabled
+                                  ? "点击关闭"
+                                  : "点击开启"
+                            }
+                          >
+                            <OmniSwitch
+                              checked={enabled}
+                              disabled={isBuiltin}
+                              onChange={(next) =>
+                                void handleToggleEnabled(manifest, next)
+                              }
+                              ariaLabel={
+                                isBuiltin
+                                  ? `${manifest.name}（内置项不可关闭）`
+                                  : `${enabled ? "关闭" : "开启"} ${manifest.name}`
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
                       <p
                         className="plugin-card__description"
@@ -1364,34 +1387,6 @@ export default function PluginMarketplace({
                               {tag}
                             </span>
                           ))}
-                        </div>
-                      )}
-                      {showMySkills && !onPick && (
-                        <div
-                          className="plugin-card__enable"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <OmniSwitch
-                            checked={enabled}
-                            disabled={isBuiltin}
-                            onChange={(next) =>
-                              void handleToggleEnabled(manifest, next)
-                            }
-                            ariaLabel={
-                              isBuiltin
-                                ? `${manifest.name}（内置项不可关闭）`
-                                : `${enabled ? "关闭" : "开启"} ${manifest.name}`
-                            }
-                          />
-                          <span
-                            className={`plugin-card__enable-label ${enabled ? "" : "plugin-card__enable-label--off"}`}
-                          >
-                            {isBuiltin
-                              ? "内置（始终启用）"
-                              : enabled
-                                ? "已启用"
-                                : "已停用"}
-                          </span>
                         </div>
                       )}
                     </div>
