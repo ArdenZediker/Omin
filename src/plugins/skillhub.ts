@@ -31,11 +31,20 @@ export interface SkillhubSkillSummary {
   stars?: number;
   score?: number;
   iconUrl?: string;
-  namespace?: { canonicalName: string; displayName: string };
+  namespace?: { canonicalName: string; displayName: string; handle?: string; publicSlug?: string };
   ownerName?: string;
   source?: string;
   labels?: Record<string, string>;
   homepage?: string;
+  /** 实际仓库地址（区别于 SkillHub 上展示页）。 */
+  upstream_url?: string;
+  /** 服务端时间戳（毫秒）。 */
+  updated_at?: number;
+  created_at?: number;
+  /** 发布版本号，缺省时安装器用 0.0.0 占位。 */
+  version?: string;
+  /** 是否经官方认证发布。 */
+  verified?: boolean;
 }
 
 export interface SkillhubPluginSummary {
@@ -178,26 +187,53 @@ export interface SkillhubInstallOutcome {
   manifest: PluginManifest;
 }
 
-/** 从 SkillHub 实时下载并安装一个技能到 Omni（落地为 skill 插件）。 */
-export async function installSkillhubSkill(slug: string): Promise<SkillhubInstallOutcome> {
+/** 从 SkillHub 实时下载并安装一个技能到 Omni（落地为 skill 插件）。
+ *  id = `${namespace}/${slug}`：与 SkillhubBrowser 的 skillUniqueKey 完全对齐，
+ *  不同 namespace 下同名 slug 也能正确区分；斜杠命令仍用 `/slug` 保持简短。
+ *
+ *  可选 summary 是 SkillHub 列表/详情返回的元数据，用于补全 SKILL.md frontmatter
+ *  里缺失的视觉信息（尤其是 `iconUrl` —— SKILL.md 里通常没有这一行，
+ *  不补的话已安装技能的图标会走 kind 兜底，显示成所有技能同款的占位 Wand2）。 */
+export async function installSkillhubSkill(
+  slug: string,
+  namespace?: string,
+  summary?: SkillhubSkillSummary,
+): Promise<SkillhubInstallOutcome> {
   const res = await invoke<{ slug: string; path: string; skill_md: string }>(
     "install_skillhub_skill",
     { slug },
   );
   const parsed = parseSkillMarkdown(res.skill_md);
   if (!parsed) throw new Error("SKILL.md 解析失败");
-  parsed.id = res.slug;
+  const id = namespace ? `${namespace}/${res.slug}` : res.slug;
+  parsed.id = id;
   parsed.kind = "skill";
+  // 命令保持简短（不带 namespace），便于用户斜杠输入
   parsed.command = parsed.command || `/${res.slug}`;
   parsed.sourceUrl = `https://skillhub.cn/skill/${res.slug}`;
+  // 用 SkillHub summary 补全 SKILL.md 里没有的视觉信息。
+  // SKILL.md frontmatter 通常只有 slug/name/version/description 等元数据，
+  // iconUrl/avatar 等纯展示字段只存在于列表 API，补到 manifest.icon 才能在
+  // 「我的技能」tab 渲染对应图标。
+  if (summary) {
+    if (!parsed.icon && summary.iconUrl) parsed.icon = summary.iconUrl;
+    if (!parsed.author && summary.ownerName) parsed.author = summary.ownerName;
+    if (!parsed.category && summary.category) {
+      parsed.category = mapSkillhubCategory(summary.category);
+    }
+  }
   pluginRegistry.install(parsed, {
     type: "marketplace",
-    repository: `skillhub/${res.slug}`,
+    repository: `skillhub/${id}`,
   });
   return { slug: res.slug, path: res.path, manifest: parsed };
 }
 
-export async function uninstallSkillhubSkill(slug: string): Promise<void> {
+export async function uninstallSkillhubSkill(
+  slug: string,
+  namespace?: string,
+): Promise<void> {
   await invoke("uninstall_skillhub_skill", { slug });
-  pluginRegistry.uninstall(slug);
+  const id = namespace ? `${namespace}/${slug}` : slug;
+  pluginRegistry.uninstall(id);
 }

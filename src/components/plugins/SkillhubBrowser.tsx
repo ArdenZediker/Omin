@@ -630,7 +630,9 @@ export default function SkillhubBrowser() {
       const ns = s.namespace?.canonicalName;
       setInstalling(skillUniqueKey(s));
       try {
-        await installSkillhubSkill(s.slug, ns);
+        // 把 SkillHub 列表返回的元数据（含 iconUrl）传给 install，
+        // 补全 SKILL.md frontmatter 里没有的纯展示字段（图标）。
+        await installSkillhubSkill(s.slug, ns, s);
         // 让 install/uninstall 后 UI 状态与 pluginRegistry 完全同步
         refreshInstalled();
       } catch (e) {
