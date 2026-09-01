@@ -24,7 +24,6 @@ import {
   listSkillhubSkills,
   listSkillhubSkillCategories,
   installSkillhubSkill,
-  uninstallSkillhubSkill,
   mapSkillToManifest,
   mapSkillhubCategory,
   skillUniqueKey,
@@ -108,13 +107,15 @@ type SkillDetailDrawerProps = {
   isInstalled: boolean;
   isInstalling: boolean;
   onInstall: (skill: SkillhubSkillSummary) => void;
-  onUninstall: (skill: SkillhubSkillSummary) => void;
 };
 
 /**
  * 技能详情抽屉。从右侧滑入，展示完整描述、作者、统计、所有标签、版本时间。
  * 复用与卡片同源的安装/来源按钮，状态自动同步卡片显示。
  * Esc 与点击遮罩均可关闭；浏览器侧焦点管理交回原触发元素。
+ *
+ * 已安装时不显示卸载按钮——卸载入口统一在「我的技能」tab（批量管理
+ * / 单卡操作均提供卸载），避免在浏览市场时误触。
  */
 function SkillDetailDrawer({
   skill,
@@ -122,7 +123,6 @@ function SkillDetailDrawer({
   isInstalled,
   isInstalling,
   onInstall,
-  onUninstall,
 }: SkillDetailDrawerProps) {
   // Esc 关闭
   useEffect(() => {
@@ -282,22 +282,13 @@ function SkillDetailDrawer({
 
         <footer className="skillhub-detail__footer">
           {isInstalled ? (
-            <>
-              <button
-                type="button"
-                className="plugin-card__button plugin-card__button--installed"
-                disabled
-              >
-                <Check size={14} /> 已安装
-              </button>
-              <button
-                type="button"
-                className="plugin-card__button plugin-card__button--secondary"
-                onClick={() => onUninstall(skill)}
-              >
-                卸载
-              </button>
-            </>
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--installed"
+              disabled
+            >
+              <Check size={14} /> 已安装
+            </button>
           ) : (
             <button
               type="button"
@@ -342,20 +333,21 @@ type SkillCardProps = {
   isInstalled: boolean;
   isInstalling: boolean;
   onInstall: (skill: SkillhubSkillSummary) => void;
-  onUninstall: (skill: SkillhubSkillSummary) => void;
   onOpenDetail: (skill: SkillhubSkillSummary) => void;
 };
 
 /**
  * 技能卡片。用 memo 包裹，加载下一页时已存在的卡片不会重渲染 —— 这是滚动流畅的关键。
  * 整张卡片可点击打开详情；按钮通过 stopPropagation 阻止冒泡，保持原有行为。
+ *
+ * 已安装时不渲染卸载按钮——见 SkillDetailDrawer 同源注释（卸载入口
+ * 统一在「我的技能」tab）。
  */
 const SkillCard = memo(function SkillCard({
   skill,
   isInstalled,
   isInstalling,
   onInstall,
-  onUninstall,
   onOpenDetail,
 }: SkillCardProps) {
   const meta = mapSkillToManifest(skill);
@@ -428,17 +420,9 @@ const SkillCard = memo(function SkillCard({
       </div>
       <div className="plugin-card__actions" onClick={(e) => e.stopPropagation()}>
         {isInstalled ? (
-          <>
-            <button className="plugin-card__button plugin-card__button--installed" disabled>
-              <Check size={14} /> 已安装
-            </button>
-            <button
-              className="plugin-card__button plugin-card__button--secondary"
-              onClick={() => onUninstall(skill)}
-            >
-              卸载
-            </button>
-          </>
+          <button className="plugin-card__button plugin-card__button--installed" disabled>
+            <Check size={14} /> 已安装
+          </button>
         ) : (
           <button
             className="plugin-card__button plugin-card__button--primary"
@@ -639,19 +623,6 @@ export default function SkillhubBrowser() {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setInstalling(null);
-      }
-    },
-    [refreshInstalled],
-  );
-
-  const handleUninstall = useCallback(
-    async (s: SkillhubSkillSummary) => {
-      const ns = s.namespace?.canonicalName;
-      try {
-        await uninstallSkillhubSkill(s.slug, ns);
-        refreshInstalled();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
       }
     },
     [refreshInstalled],
@@ -923,7 +894,6 @@ export default function SkillhubBrowser() {
               isInstalled={installed.has(key)}
               isInstalling={installing === key}
               onInstall={handleInstall}
-              onUninstall={handleUninstall}
               onOpenDetail={setSelectedSkill}
             />
           );
@@ -947,7 +917,6 @@ export default function SkillhubBrowser() {
         isInstalled={selectedSkill ? installed.has(skillUniqueKey(selectedSkill)) : false}
         isInstalling={selectedSkill ? installing === skillUniqueKey(selectedSkill) : false}
         onInstall={handleInstall}
-        onUninstall={handleUninstall}
       />
     </div>
   );
