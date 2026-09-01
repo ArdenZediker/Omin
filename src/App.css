@@ -9603,7 +9603,7 @@ body:has(.pet-thought-window),
   /* 默认宽屏固定 4 列（用户 2026-09-01「表格展示改为一行四列」）。
    * 窄屏按断点降级为 3 / 2 / 1 列。 */
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 20px;
 }
 
 /* 中等宽度降到 3 列，避免卡片文字截断。 */
