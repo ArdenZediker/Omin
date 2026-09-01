@@ -161,8 +161,13 @@ export function useCompactWindowController({
   const characterDragOriginRef = useRef<{
     screenX: number;
     screenY: number;
+    // windowX/windowY 为**物理像素**（outerPosition 原生返回值，不 toLogical）。
+    // 拖拽全程用物理坐标系：event.screenX 差值本身是物理像素、setPosition 用
+    // PhysicalPosition，跨 DPI 屏时物理坐标全局连续，不随窗口所在屏的 scale
+    // 换算基准变化，避免跨屏瞬间 LogicalPosition 换算抖动造成快速闪烁。
     windowX: number;
     windowY: number;
+    scaleFactor: number;
     petViewportOffsetY: number;
   } | null>(null);
   const characterDragRafRef = useRef<number | null>(null);
@@ -735,6 +740,12 @@ export function useCompactWindowController({
 
   useEffect(() => {
     if (!isCompactWindow) {
+      return;
+    }
+    // 拖拽守卫：跨屏（尤其跨 DPI 屏）瞬间 compactViewportSize / petThoughtPlacement
+    // 等 deps 可能变化触发本 effect，若此时 setPosition 会与拖拽 drain 循环竞争
+    // 写位置，造成窗口在两点间快速横跳（闪烁）。拖拽期间位置只归拖拽循环管。
+    if (isCharacterDraggingRef.current) {
       return;
     }
 
