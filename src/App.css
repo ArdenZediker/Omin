@@ -9264,6 +9264,7 @@ body:has(.pet-thought-window),
   flex-shrink: 0;
 }
 
+/* SkillHub 浏览器：排序 tabs + 右侧筛选下拉；搜索框默认折叠，点 filter-bar 右侧开关展开为全宽单行 */
 .skillhub-browser__search {
   width: 100%;
   max-height: 0;
@@ -9282,7 +9283,7 @@ body:has(.pet-thought-window),
     border-width 0.22s ease;
 }
 
-.plugin-marketplace__search.skillhub-browser__search--expanded,
+/* 展开态：全宽单行搜索框（图二样式） */
 .skillhub-browser__search--expanded {
   width: 100%;
   height: 44px;
@@ -9297,9 +9298,30 @@ body:has(.pet-thought-window),
   overflow: visible;
 }
 
-.plugin-marketplace--main-view .plugin-marketplace__search.skillhub-browser__search--expanded,
 .plugin-marketplace--main-view .skillhub-browser__search--expanded {
   margin-top: 8px;
+}
+
+/* 搜索框右侧清除按钮（仅在有内容时出现） */
+.plugin-marketplace__search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.plugin-marketplace__search-clear:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
 }
 
 .plugin-marketplace__kind-tabs {
@@ -9461,6 +9483,13 @@ body:has(.pet-thought-window),
   border-color: var(--omni-app-text);
 }
 
+/* 视图布局切换：两个互斥 icon-btn 紧密排列成一组（grid/list） */
+.plugin-marketplace__view-toggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
 .plugin-marketplace__sort-tabs {
   display: flex;
   gap: 8px;
@@ -9550,6 +9579,46 @@ body:has(.pet-thought-window),
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px;
+}
+
+.plugin-marketplace__grid--list {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+/* 列表视图下卡片更紧凑（横向信息密度更高） */
+.plugin-marketplace__grid--list .plugin-card {
+  flex-direction: row;
+  align-items: center;
+  padding: 10px 14px;
+  gap: 12px;
+}
+
+.plugin-marketplace__grid--list .plugin-card__icon {
+  flex: 0 0 auto;
+}
+
+.plugin-marketplace__grid--list .plugin-card__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-marketplace__grid--list .plugin-card__actions {
+  flex: 0 0 auto;
+  border-top: none;
+  padding-top: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 列表视图下「安装 / 来源 / 卸载」按钮统一最小宽度，让列右对齐、按钮等宽。
+ * 原因：flex: 1 在 auto 宽度容器内不会真正等分剩余空间，会按内容宽度撑开；
+ * 强行固定 min-width（同时让 flex: 0 0 auto）让内容自适应但受最小宽度兜底。 */
+.plugin-marketplace__grid--list .plugin-card__button {
+  flex: 0 0 auto;
+  min-width: 88px;
+  justify-content: center;
+  height: 34px;
 }
 
 .plugin-card {
@@ -9682,13 +9751,15 @@ body:has(.pet-thought-window),
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 7px 0;
-  border-radius: 8px;
-  font-size: 12px;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
   font-weight: 500;
   border: 1px solid transparent;
   cursor: pointer;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .plugin-card__button--primary {
@@ -9715,6 +9786,17 @@ body:has(.pet-thought-window),
   border-color: var(--omni-panel-border);
   color: var(--omni-app-muted);
   cursor: default;
+}
+
+.plugin-card__button--danger {
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+  border-color: color-mix(in srgb, #ef4444 35%, transparent);
+  color: #ef4444;
+}
+
+.plugin-card__button--danger:hover {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+  border-color: #ef4444;
 }
 
 .plugin-card__connected {
@@ -9852,6 +9934,253 @@ body:has(.pet-thought-window),
 
 .skillhub-browser__loading {
   color: var(--omni-app-text);
+}
+
+/* 让卡片在未点击按钮区域时也能触发详情（hover/聚焦给反馈） */
+.plugin-card--clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.plugin-card--clickable:hover {
+  transform: translateY(-2px);
+  border-color: var(--omni-accent, #64748b);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.plugin-card--clickable:focus-visible {
+  outline: 2px solid var(--omni-accent, #64748b);
+  outline-offset: 2px;
+}
+
+/* 抽屉覆盖层 + 主区域 */
+.skillhub-detail__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(2px);
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  animation: skillhub-detail-fade 0.18s ease;
+}
+
+.skillhub-detail {
+  width: min(440px, 100%);
+  height: 100%;
+  background: var(--omni-panel-bg, rgba(28, 28, 32, 0.98));
+  border-left: 1px solid var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.32);
+  animation: skillhub-detail-slide 0.22s ease;
+  overflow: hidden;
+}
+
+@keyframes skillhub-detail-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes skillhub-detail-slide {
+  from { transform: translateX(40px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+.skillhub-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+}
+
+.skillhub-detail__identity {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.skillhub-detail__icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: var(--omni-card-bg, rgba(255, 255, 255, 0.04));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.skillhub-detail__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.skillhub-detail__title-wrap {
+  min-width: 0;
+}
+
+.skillhub-detail__title-wrap h2 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--omni-app-text);
+  word-break: break-word;
+}
+
+.skillhub-detail__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.skillhub-detail__source {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.18);
+  color: var(--omni-accent, #64748b);
+  font-weight: 500;
+}
+
+.skillhub-detail__close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.skillhub-detail__close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--omni-app-text);
+}
+
+.skillhub-detail__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.skillhub-detail__description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--omni-app-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.skillhub-detail__description-en {
+  margin-top: 6px;
+  border-top: 1px dashed var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+  padding-top: 10px;
+}
+
+.skillhub-detail__description-en summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+  user-select: none;
+}
+
+.skillhub-detail__description-en p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-detail__meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.skillhub-detail__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--omni-card-bg, rgba(255, 255, 255, 0.03));
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.skillhub-detail__meta-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-detail__meta-value {
+  font-size: 13px;
+  color: var(--omni-app-text);
+  word-break: break-all;
+}
+
+.skillhub-detail__tags {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skillhub-detail__tags-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-detail__tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skillhub-detail__tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.18);
+  color: var(--omni-app-text);
+  font-weight: 500;
+}
+
+.skillhub-detail__tag--label {
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 400;
+}
+
+.skillhub-detail__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 18px 20px;
+  border-top: 1px solid var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+  background: var(--omni-card-bg, rgba(0, 0, 0, 0.12));
+}
+
+.skillhub-detail__footer .plugin-card__button {
+  flex: 0 1 auto;
 }
 
 .spin {

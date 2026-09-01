@@ -17,9 +17,9 @@ import {
   Unplug,
   Plus,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
-import { listMarketplacePlugins } from "../../plugins/marketplace";
 import {
   ensureMcpConnector,
   disconnectMcpConnector,
@@ -36,6 +36,7 @@ import SkillhubBrowser from "./SkillhubBrowser";
 import CbteamsBrowser from "./CbteamsBrowser";
 import ConnectorhubBrowser from "./ConnectorhubBrowser";
 import { getMcpCommandTemplate } from "../../plugins/connectorhub";
+import { uninstallSkillhubSkill } from "../../plugins/skillhub";
 
 type PluginMarketplaceProps = {
   initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind };
@@ -76,6 +77,8 @@ export default function PluginMarketplace({
   onCreateExpert,
 }: PluginMarketplaceProps) {
   const [query, setQuery] = useState(initialFilter.query ?? "");
+  // 搜索框以「开关」形式展开/收起：mainView 顶部为折叠图标，点击展开全宽单行搜索框
+  const [searchExpanded, setSearchExpanded] = useState(!mainView);
   // 不设「全部」混合列表：一级分类必须具体，默认落在技能（SkillHub）。
   const [kind, setKind] = useState<PluginKind>(initialFilter.kind ?? "skill");
   const [category, setCategory] = useState(initialFilter.category ?? "全部");
@@ -106,8 +109,6 @@ export default function PluginMarketplace({
           ? "my"
           : "local",
   );
-  const [searchExpanded, setSearchExpanded] = useState(!mainView);
-
   // 一级分类切换时联动来源：技能 → SkillHub，连接器 → 远程连接器，专家 → 我的专家，其他 → 本地。
   useEffect(() => {
     setSource(
@@ -122,20 +123,10 @@ export default function PluginMarketplace({
   }, [kind]);
 
   const allPlugins = useMemo(() => {
-    const builtins = pluginRegistry.list({ kind, query });
-    const marketplace = listMarketplacePlugins({ kind, query });
-    // 去重：marketplace 同名已安装的不重复展示
-    const installedIds = new Set(builtins.map((m) => m.id));
-    return [...builtins, ...marketplace.filter((m) => !installedIds.has(m.id))];
+    // 本地列表 = 已安装/内置；不再混入 MARKETPLACE_PLUGINS 静态示例（2026-09-01 移除）。
+    return pluginRegistry.list({ kind, query });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, query, refreshKey]);
-
-  const filteredPlugins = useMemo(() => {
-    if (category === "全部") return allPlugins;
-    return allPlugins.filter((m) => m.category === category);
-  }, [allPlugins, category]);
-
-  const stats = useMemo(() => pluginRegistry.stats(), [refreshKey]);
 
   // SkillHub / 套件浏览界面只在「技能」一级分类下出现；远程连接器只在「连接器」下出现。
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
@@ -143,6 +134,17 @@ export default function PluginMarketplace({
   const showConnectorhub = !onPick && source === "connectors" && kind === "connector";
   // 「我的专家」：用户自己创建/安装的专家（非内置）。
   const showMyExperts = !onPick && source === "my" && kind === "expert";
+  // 「我的技能」：用户已安装/内置的本地技能（不混入 SkillHub/套件），按用户要求不分类、一栏通览。
+  const showMySkills = !onPick && source === "local" && kind === "skill";
+
+  const filteredPlugins = useMemo(() => {
+    // 「我的技能」按用户要求不分类、一栏通览，跳过 category 过滤。
+    if (showMySkills) return allPlugins;
+    if (category === "全部") return allPlugins;
+    return allPlugins.filter((m) => m.category === category);
+  }, [allPlugins, category, showMySkills]);
+
+  const stats = useMemo(() => pluginRegistry.stats(), [refreshKey]);
   const myExperts = useMemo(
     () =>
       pluginRegistry
@@ -169,6 +171,19 @@ export default function PluginMarketplace({
       repository: `skillhub/${manifest.id}`,
     });
     setRefreshKey((current) => current + 1);
+  }, []);
+
+  /** 卸载非内置插件：先删本地技能目录（~/.dsh/skills/<slug>），再移除注册表。
+   *  Rust 删目录失败（如本地导入无磁盘目录）时兜底仅移除注册表，保证列表即时消失。 */
+  const handleUninstall = useCallback((manifest: PluginManifest) => {
+    const parts = manifest.id.split("/");
+    const slug = parts[parts.length - 1] ?? manifest.id;
+    const namespace = parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
+    uninstallSkillhubSkill(slug, namespace)
+      .catch(() => {
+        pluginRegistry.uninstall(manifest.id);
+      })
+      .finally(() => setRefreshKey((current) => current + 1));
   }, []);
 
   const isInstalled = (id: string) =>
@@ -360,36 +375,36 @@ export default function PluginMarketplace({
             role="tablist"
             aria-label="技能来源"
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "local"}
-              className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
-              onClick={() => setSource("local")}
-            >
-              <LayoutTemplate size={14} strokeWidth={1.8} />
-              <span>本地内置</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "skillhub"}
-              className={`plugin-marketplace__source-tab ${source === "skillhub" ? "plugin-marketplace__source-tab--active" : ""}`}
-              onClick={() => setSource("skillhub")}
-            >
-              <Bot size={14} strokeWidth={1.8} />
-              <span>SkillHub 实时</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "suites"}
-              className={`plugin-marketplace__source-tab ${source === "suites" ? "plugin-marketplace__source-tab--active" : ""}`}
-              onClick={() => setSource("suites")}
-            >
-              <Package size={14} strokeWidth={1.8} />
-              <span>套件</span>
-            </button>
+<button
+            type="button"
+            role="tab"
+            aria-selected={source === "local"}
+            className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
+            onClick={() => setSource("local")}
+          >
+            <LayoutTemplate size={14} strokeWidth={1.8} />
+            <span>我的技能</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={source === "skillhub"}
+            className={`plugin-marketplace__source-tab ${source === "skillhub" ? "plugin-marketplace__source-tab--active" : ""}`}
+            onClick={() => setSource("skillhub")}
+          >
+            <Bot size={14} strokeWidth={1.8} />
+            <span>SkillHub 实时</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={source === "suites"}
+            className={`plugin-marketplace__source-tab ${source === "suites" ? "plugin-marketplace__source-tab--active" : ""}`}
+            onClick={() => setSource("suites")}
+          >
+            <Package size={14} strokeWidth={1.8} />
+            <span>套件</span>
+          </button>
           </div>
         )}
 
@@ -454,60 +469,65 @@ export default function PluginMarketplace({
         {showSkillhub || showSuites || showConnectorhub || showMyExperts ? null : (
           <>
             {mainView ? (
-              <div className="plugin-marketplace__top-bar">
-                <div className="plugin-marketplace__category-tabs">
-                  {PLUGIN_CATEGORIES.filter(
-                    (c) =>
-                      c === "全部" ||
-                      allPlugins.some((m) => m.category === c),
-                  ).map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
-                      onClick={() => setCategory(c)}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
+              <>
+                <div className="plugin-marketplace__top-bar">
+                  {!showMySkills && (
+                    <div className="plugin-marketplace__category-tabs">
+                      {PLUGIN_CATEGORIES.filter(
+                        (c) =>
+                          c === "全部" ||
+                          allPlugins.some((m) => m.category === c),
+                      ).map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
+                          onClick={() => setCategory(c)}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-                <div
-                  className={`plugin-marketplace__search ${searchExpanded ? "plugin-marketplace__search--expanded" : ""}`}
-                >
-                  {searchExpanded ? (
-                    <>
-                      <Search size={16} strokeWidth={1.8} />
-                      <input
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                        placeholder="搜索..."
-                        autoFocus
-                      />
+                  <div
+                    className={`plugin-marketplace__search ${searchExpanded ? "plugin-marketplace__search--expanded" : ""}`}
+                  >
+                    {searchExpanded ? (
+                      <>
+                        <Search size={16} strokeWidth={1.8} />
+                        <input
+                          value={query}
+                          onChange={(event) => setQuery(event.target.value)}
+                          placeholder="搜索插件、技能、专家..."
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          className="plugin-marketplace__search-close"
+                          onClick={() => {
+                            setQuery("");
+                            setSearchExpanded(false);
+                          }}
+                          aria-label="清除搜索"
+                        >
+                          <X size={14} strokeWidth={1.8} />
+                        </button>
+                      </>
+                    ) : (
                       <button
                         type="button"
-                        className="plugin-marketplace__search-close"
-                        onClick={() => {
-                          setQuery("");
-                          setSearchExpanded(false);
-                        }}
-                        aria-label="清除搜索"
+                        className="plugin-marketplace__search-toggle"
+                        onClick={() => setSearchExpanded(true)}
+                        aria-label="展开搜索"
+                        title="搜索"
                       >
-                        <X size={14} strokeWidth={1.8} />
+                        <Search size={18} strokeWidth={1.8} />
                       </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="plugin-marketplace__search-toggle"
-                      onClick={() => setSearchExpanded(true)}
-                      aria-label="展开搜索"
-                    >
-                      <Search size={18} strokeWidth={1.8} />
-                    </button>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
+              </>
             ) : (
               <>
                 <div className="plugin-marketplace__search">
@@ -517,6 +537,16 @@ export default function PluginMarketplace({
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="搜索插件、技能、专家..."
                   />
+                  {query && (
+                    <button
+                      type="button"
+                      className="plugin-marketplace__search-clear"
+                      onClick={() => setQuery("")}
+                      aria-label="清除搜索"
+                    >
+                      <X size={14} strokeWidth={1.8} />
+                    </button>
+                  )}
                 </div>
 
                 <div className="plugin-marketplace__kind-tabs">
@@ -533,22 +563,24 @@ export default function PluginMarketplace({
                   ))}
                 </div>
 
-                <div className="plugin-marketplace__category-tabs">
-                  {PLUGIN_CATEGORIES.filter(
-                    (c) =>
-                      c === "全部" ||
-                      allPlugins.some((m) => m.category === c),
-                  ).map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
-                      onClick={() => setCategory(c)}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
+                {!showMySkills && (
+                  <div className="plugin-marketplace__category-tabs">
+                    {PLUGIN_CATEGORIES.filter(
+                      (c) =>
+                        c === "全部" ||
+                        allPlugins.some((m) => m.category === c),
+                    ).map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
+                        onClick={() => setCategory(c)}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </>
@@ -741,6 +773,16 @@ export default function PluginMarketplace({
                           )
                         ) : null}
                       </>
+                    ) : installed && !pluginRegistry.isBuiltin(manifest.id) ? (
+                      <button
+                        type="button"
+                        className="plugin-card__button plugin-card__button--danger"
+                        onClick={() => handleUninstall(manifest)}
+                        title="卸载并删除此插件"
+                      >
+                        <Trash2 size={14} strokeWidth={1.8} />
+                        <span>删除</span>
+                      </button>
                     ) : installed ? (
                       <button
                         type="button"

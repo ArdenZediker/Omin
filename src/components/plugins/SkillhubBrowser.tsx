@@ -9,6 +9,13 @@ import {
   AlertTriangle,
   Bot,
   ChevronDown,
+  X,
+  Hash,
+  Package,
+  Tag,
+  Calendar,
+  LayoutGrid,
+  LayoutList,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
@@ -61,8 +68,42 @@ function toWebUrl(url: string): string {
   }
 }
 
-type SkillCardProps = {
-  skill: SkillhubSkillSummary;
+/** 把 0/空值渲染成 "—" 的安全格式化器。 */
+function fmt(value: number | string | undefined | null, suffix = ""): string {
+  if (value === undefined || value === null || value === "") return "—";
+  return `${value}${suffix}`;
+}
+
+/** 把毫秒时间戳格式化成易读日期。本地时区、含时分避免「1970 凌晨」的歧义。 */
+function formatDate(ms?: number | null): string {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  return d.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Source 标签 → 中文显示。SkillHub 返回的 source 多为 'clawhub' / 'community' / 'skillhub'。 */
+function formatSource(source?: string): string {
+  switch (source) {
+    case "clawhub":
+      return "ClawHub";
+    case "community":
+      return "SkillHub 社区";
+    case "skillhub":
+      return "SkillHub";
+    default:
+      return source ?? "未知";
+  }
+}
+
+type SkillDetailDrawerProps = {
+  skill: SkillhubSkillSummary | null;
+  onClose: () => void;
   isInstalled: boolean;
   isInstalling: boolean;
   onInstall: (skill: SkillhubSkillSummary) => void;
@@ -70,12 +111,268 @@ type SkillCardProps = {
 };
 
 /**
- * 技能卡片。用 memo 包裹，加载下一页时已存在的卡片不会重渲染 —— 这是滚动流畅的关键。
+ * 技能详情抽屉。从右侧滑入，展示完整描述、作者、统计、所有标签、版本时间。
+ * 复用与卡片同源的安装/来源按钮，状态自动同步卡片显示。
+ * Esc 与点击遮罩均可关闭；浏览器侧焦点管理交回原触发元素。
  */
-const SkillCard = memo(function SkillCard({ skill, isInstalled, isInstalling, onInstall, onUninstall }: SkillCardProps) {
-  const meta = mapSkillToManifest(skill);
+function SkillDetailDrawer({
+  skill,
+  onClose,
+  isInstalled,
+  isInstalling,
+  onInstall,
+  onUninstall,
+}: SkillDetailDrawerProps) {
+  // Esc 关闭
+  useEffect(() => {
+    if (!skill) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [skill, onClose]);
+
+  if (!skill) return null;
+
+  const requiresApiKey = skill.labels?.requires_api_key === "true";
+  const labels = skill.labels
+    ? Object.entries(skill.labels).filter(([k, v]) => k !== "requires_api_key" || v !== "true")
+    : [];
+  const sourceUrl = skill.homepage ? toWebUrl(skill.homepage) : "";
+  const upstreamUrl = skill.upstream_url ?? "";
+
   return (
-    <div className="plugin-card">
+    <div
+      className="skillhub-detail__overlay"
+      onClick={onClose}
+      role="presentation"
+    >
+      <aside
+        className="skillhub-detail"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${skill.name} 详情`}
+      >
+        <header className="skillhub-detail__header">
+          <div className="skillhub-detail__identity">
+            <div className="skillhub-detail__icon">
+              {skill.iconUrl ? (
+                <img src={skill.iconUrl} alt="" loading="lazy" />
+              ) : (
+                <Bot size={28} />
+              )}
+            </div>
+            <div className="skillhub-detail__title-wrap">
+              <h2>{skill.name}</h2>
+              <div className="skillhub-detail__title-row">
+                <span className="plugin-card__badge">
+                  {mapSkillToManifest(skill).category}
+                </span>
+                {skill.source && (
+                  <span className="skillhub-detail__source">{formatSource(skill.source)}</span>
+                )}
+                {requiresApiKey && (
+                  <span className="skillhub-browser__api">需 API Key</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="skillhub-detail__close"
+            onClick={onClose}
+            title="关闭 (Esc)"
+            aria-label="关闭详情"
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="skillhub-detail__body">
+          <p className="skillhub-detail__description">
+            {skill.description_zh || skill.description || "（暂无描述）"}
+          </p>
+          {skill.description_zh && skill.description && skill.description_zh !== skill.description && (
+            <details className="skillhub-detail__description-en">
+              <summary>查看英文原文</summary>
+              <p>{skill.description}</p>
+            </details>
+          )}
+
+          <div className="skillhub-detail__meta-grid">
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">
+                <Hash size={12} /> 作者
+              </span>
+              <span className="skillhub-detail__meta-value">{fmt(skill.namespace?.canonicalName)}</span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">
+                <Package size={12} /> 版本
+              </span>
+              <span className="skillhub-detail__meta-value">{fmt(skill.version)}</span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">
+                <Download size={12} /> 下载量
+              </span>
+              <span className="skillhub-detail__meta-value">{fmt(skill.downloads)}</span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">
+                <Star size={12} /> 收藏
+              </span>
+              <span className="skillhub-detail__meta-value">{fmt(skill.stars)}</span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">安装量</span>
+              <span className="skillhub-detail__meta-value">{fmt(skill.installs)}</span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">评分</span>
+              <span className="skillhub-detail__meta-value">{fmt(skill.score)}</span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">
+                <Calendar size={12} /> 最近更新
+              </span>
+              <span className="skillhub-detail__meta-value">{formatDate(skill.updated_at)}</span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">
+                <Calendar size={12} /> 创建时间
+              </span>
+              <span className="skillhub-detail__meta-value">{formatDate(skill.created_at)}</span>
+            </div>
+          </div>
+
+          {skill.subCategories && skill.subCategories.length > 0 && (
+            <div className="skillhub-detail__tags">
+              <div className="skillhub-detail__tags-label">
+                <Tag size={12} /> 子分类
+              </div>
+              <div className="skillhub-detail__tag-list">
+                {skill.subCategories.map((sub) => (
+                  <span key={sub.key} className="skillhub-detail__tag">
+                    {sub.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {labels.length > 0 && (
+            <div className="skillhub-detail__tags">
+              <div className="skillhub-detail__tags-label">
+                <Tag size={12} /> 标签
+              </div>
+              <div className="skillhub-detail__tag-list">
+                {labels.map(([key, value]) => (
+                  <span key={key} className="skillhub-detail__tag skillhub-detail__tag--label">
+                    {key}: {value}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <footer className="skillhub-detail__footer">
+          {isInstalled ? (
+            <>
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--installed"
+                disabled
+              >
+                <Check size={14} /> 已安装
+              </button>
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--secondary"
+                onClick={() => onUninstall(skill)}
+              >
+                卸载
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--primary"
+              onClick={() => onInstall(skill)}
+              disabled={isInstalling}
+            >
+              {isInstalling ? (
+                <Loader2 size={14} className="spin" />
+              ) : (
+                <Download size={14} />
+              )}
+              {isInstalling ? "安装中…" : "安装"}
+            </button>
+          )}
+          {sourceUrl && (
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--secondary"
+              onClick={() => void open(sourceUrl)}
+            >
+              <ExternalLink size={14} /> SkillHub 详情页
+            </button>
+          )}
+          {upstreamUrl && upstreamUrl !== sourceUrl && (
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--secondary"
+              onClick={() => void open(upstreamUrl)}
+            >
+              <ExternalLink size={14} /> 源仓库
+            </button>
+          )}
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
+type SkillCardProps = {
+  skill: SkillhubSkillSummary;
+  isInstalled: boolean;
+  isInstalling: boolean;
+  onInstall: (skill: SkillhubSkillSummary) => void;
+  onUninstall: (skill: SkillhubSkillSummary) => void;
+  onOpenDetail: (skill: SkillhubSkillSummary) => void;
+};
+
+/**
+ * 技能卡片。用 memo 包裹，加载下一页时已存在的卡片不会重渲染 —— 这是滚动流畅的关键。
+ * 整张卡片可点击打开详情；按钮通过 stopPropagation 阻止冒泡，保持原有行为。
+ */
+const SkillCard = memo(function SkillCard({
+  skill,
+  isInstalled,
+  isInstalling,
+  onInstall,
+  onUninstall,
+  onOpenDetail,
+}: SkillCardProps) {
+  const meta = mapSkillToManifest(skill);
+  const requiresApiKey = skill.labels?.requires_api_key === "true";
+  return (
+    <div
+      className="plugin-card plugin-card--clickable"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenDetail(skill)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenDetail(skill);
+        }
+      }}
+      aria-label={`查看 ${skill.name} 的详情`}
+    >
       <div className="plugin-card__header">
         <div className="plugin-card__icon">
           {skill.iconUrl ? (
@@ -103,14 +400,22 @@ const SkillCard = memo(function SkillCard({ skill, isInstalled, isInstalling, on
         </div>
         <div className="plugin-card__meta-right">
           {skill.namespace?.canonicalName && <span className="plugin-card__author">{skill.namespace.canonicalName}</span>}
-          {skill.labels?.requires_api_key === "true" && <span className="skillhub-browser__api">需 API Key</span>}
+          {requiresApiKey && <span className="skillhub-browser__api">需 API Key</span>}
         </div>
       </div>
-      <div className="plugin-card__actions">
+      <div className="plugin-card__actions" onClick={(e) => e.stopPropagation()}>
         {isInstalled ? (
-          <button className="plugin-card__button plugin-card__button--installed" disabled>
-            <Check size={14} /> 已安装
-          </button>
+          <>
+            <button className="plugin-card__button plugin-card__button--installed" disabled>
+              <Check size={14} /> 已安装
+            </button>
+            <button
+              className="plugin-card__button plugin-card__button--secondary"
+              onClick={() => onUninstall(skill)}
+            >
+              卸载
+            </button>
+          </>
         ) : (
           <button
             className="plugin-card__button plugin-card__button--primary"
@@ -119,11 +424,6 @@ const SkillCard = memo(function SkillCard({ skill, isInstalled, isInstalling, on
           >
             {isInstalling ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
             {isInstalling ? "安装中…" : "安装"}
-          </button>
-        )}
-        {isInstalled && (
-          <button className="plugin-card__button plugin-card__button--secondary" onClick={() => onUninstall(skill)}>
-            卸载
           </button>
         )}
         {skill.homepage && (
@@ -153,6 +453,9 @@ export default function SkillhubBrowser() {
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
   const [sourceFilter, setSourceFilter] = useState("");
   const [sourceOpen, setSourceOpen] = useState(false);
+  // 视图布局切换：grid（多列卡片）/ list（单列紧凑）。默认 grid。
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  // 搜索框以「开关」形式展开/收起：filter-bar 右侧的图标按钮是开关，点击展开全宽单行搜索框
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [skills, setSkills] = useState<SkillhubSkillSummary[]>([]);
   const [skillCategories, setSkillCategories] = useState<CategoryItem[]>([{ key: "", displayName: "全部" }]);
@@ -163,6 +466,7 @@ export default function SkillhubBrowser() {
   const [hasMore, setHasMore] = useState(true);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<SkillhubSkillSummary | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const categoryRef = useRef<HTMLDivElement | null>(null);
@@ -298,33 +602,35 @@ export default function SkillhubBrowser() {
   }, [skills, refreshInstalled]);
 
   // 用 useCallback 稳定引用，配合 SkillCard 的 memo 才能真正避免整列表重渲染
-  const handleInstall = useCallback(async (s: SkillhubSkillSummary) => {
-    const key = skillUniqueKey(s);
-    setInstalling(key);
-    try {
-      await installSkillhubSkill(s.slug);
-      setInstalled((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setInstalling(null);
-    }
-  }, []);
+  const handleInstall = useCallback(
+    async (s: SkillhubSkillSummary) => {
+      const ns = s.namespace?.canonicalName;
+      setInstalling(skillUniqueKey(s));
+      try {
+        await installSkillhubSkill(s.slug, ns);
+        // 让 install/uninstall 后 UI 状态与 pluginRegistry 完全同步
+        refreshInstalled();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setInstalling(null);
+      }
+    },
+    [refreshInstalled],
+  );
 
-  const handleUninstall = useCallback(async (s: SkillhubSkillSummary) => {
-    const key = skillUniqueKey(s);
-    try {
-      await uninstallSkillhubSkill(s.slug);
-      setInstalled((prev) => {
-        if (!prev.has(key)) return prev;
-        const n = new Set(prev);
-        n.delete(key);
-        return n;
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
+  const handleUninstall = useCallback(
+    async (s: SkillhubSkillSummary) => {
+      const ns = s.namespace?.canonicalName;
+      try {
+        await uninstallSkillhubSkill(s.slug, ns);
+        refreshInstalled();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [refreshInstalled],
+  );
 
   // 滚动加载：rAF 节流 + ref 锁。
   // 关键点：loading/loadingMore 是 state，更新是异步的，如果直接依赖它们做 guard，
@@ -496,9 +802,41 @@ export default function SkillhubBrowser() {
             }
             onClick={() => setSearchExpanded((v) => !v)}
             title={searchExpanded ? "收起搜索" : "展开搜索"}
+            aria-label={searchExpanded ? "收起搜索" : "展开搜索"}
           >
             <Search size={16} />
           </button>
+
+          <div className="plugin-marketplace__view-toggle" role="group" aria-label="视图布局">
+            <button
+              type="button"
+              className={
+                viewMode === "grid"
+                  ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
+                  : "plugin-marketplace__icon-btn"
+              }
+              onClick={() => setViewMode("grid")}
+              title="网格视图"
+              aria-label="网格视图"
+              aria-pressed={viewMode === "grid"}
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button
+              type="button"
+              className={
+                viewMode === "list"
+                  ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
+                  : "plugin-marketplace__icon-btn"
+              }
+              onClick={() => setViewMode("list")}
+              title="列表视图"
+              aria-label="列表视图"
+              aria-pressed={viewMode === "list"}
+            >
+              <LayoutList size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -516,6 +854,16 @@ export default function SkillhubBrowser() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索技能名称、描述或关键词…"
         />
+        {query && (
+          <button
+            type="button"
+            className="plugin-marketplace__search-clear"
+            onClick={() => setQuery("")}
+            aria-label="清除搜索"
+          >
+            <X size={14} strokeWidth={1.8} />
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -532,7 +880,15 @@ export default function SkillhubBrowser() {
         <div className="skillhub-browser__empty">未找到技能</div>
       )}
 
-      <div ref={gridRef} className="plugin-marketplace__grid" style={{ marginTop: 14 }}>
+      <div
+        ref={gridRef}
+        className={
+          viewMode === "list"
+            ? "plugin-marketplace__grid plugin-marketplace__grid--list"
+            : "plugin-marketplace__grid"
+        }
+        style={{ marginTop: 14 }}
+      >
         {skills.map((s) => {
           const key = skillUniqueKey(s);
           return (
@@ -543,6 +899,7 @@ export default function SkillhubBrowser() {
               isInstalling={installing === key}
               onInstall={handleInstall}
               onUninstall={handleUninstall}
+              onOpenDetail={setSelectedSkill}
             />
           );
         })}
@@ -559,6 +916,14 @@ export default function SkillhubBrowser() {
           </div>
         )}
       </div>
+      <SkillDetailDrawer
+        skill={selectedSkill}
+        onClose={() => setSelectedSkill(null)}
+        isInstalled={selectedSkill ? installed.has(skillUniqueKey(selectedSkill)) : false}
+        isInstalling={selectedSkill ? installing === skillUniqueKey(selectedSkill) : false}
+        onInstall={handleInstall}
+        onUninstall={handleUninstall}
+      />
     </div>
   );
 }
