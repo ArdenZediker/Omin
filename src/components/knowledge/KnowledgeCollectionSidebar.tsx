@@ -1,4 +1,4 @@
-import { EllipsisVertical, Plus } from "lucide-react";
+import { EllipsisVertical, PanelLeftOpen, Plus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { KnowledgeCollection } from "../../chat/knowledgeTypes";
 
@@ -12,6 +12,8 @@ export type KnowledgeSidebarCategory = {
 
 type KnowledgeCollectionSidebarProps = {
   isCollapsed: boolean;
+  /** 收起态下唯一显示的"展开"按钮会调用此回调。 */
+  onToggleCollapsed?: () => void;
   categories: KnowledgeSidebarCategory[];
   activeCategoryId: string;
   collections: KnowledgeCollection[];
@@ -54,6 +56,7 @@ function KnowledgeCollectionIcon({ className }: { className?: string }) {
 
 export default function KnowledgeCollectionSidebar({
   isCollapsed,
+  onToggleCollapsed,
   categories,
   activeCategoryId,
   collections,
@@ -66,8 +69,25 @@ export default function KnowledgeCollectionSidebar({
   onOpenCollectionSettings,
   onDeleteCollection,
 }: KnowledgeCollectionSidebarProps) {
+  // 收起态：不再 return null，保留一个 64px 宽的图标列占位。这避免 main 区域
+  // 在 sidebar 收起后撑满整个 viewport，导致 KB header 卡片宽度突然比 chat
+  // toolbar 卡片"宽出 ~280px"。chat 视图收起 sidebar 时是用 CSS flex-basis:0 +
+  // width:0 把容器压成 0px（保留 DOM 节点占位），这里也类似但保留固定 64px
+  // 让 KB 顶部栏 ↔ 左侧边缘的视觉距离稳定，不随 sidebar 状态变化。
   if (isCollapsed) {
-    return null;
+    return (
+      <aside className="omni-knowledge-sidebar omni-knowledge-sidebar--collapsed flex min-h-0 shrink-0 flex-col items-center pt-3">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="no-drag flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+          title="展开侧栏"
+          aria-label="展开侧栏"
+        >
+          <PanelLeftOpen size={16} strokeWidth={2} />
+        </button>
+      </aside>
+    );
   }
 
   return (

@@ -1295,6 +1295,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
           collections={library.collections}
           activeCollectionId={activeCollection?.id ?? null}
           openCollectionMenuId={isCollectionMenuOpen}
+          onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
           onSelectCategory={setActiveCategory}
           onCreateCollection={createCollection}
           onSelectCollection={setSelectedCollectionId}

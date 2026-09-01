@@ -3950,6 +3950,21 @@ body:has(.pet-thought-window),
   -webkit-backdrop-filter: blur(14px) saturate(1.03);
 }
 
+/* 收起态：保留外层 aside 节点作占位，宽度从 280px 收到 64px（与 chat 视图
+ * main-chat-nav 68px 接近）。原本 if (isCollapsed) return null 会让 aside
+ * 整个卸载 → main 区域撑满 viewport → KB header 卡片宽度突然比 chat
+ * toolbar 卡片「宽出 ~280px」，造成「KB 顶部栏比 chat 更宽」的对比错觉。
+ * 64px 固定占位让 KB 顶部栏 ↔ 左侧边缘的视觉距离稳定，与 chat 视图收起
+ * sidebar 时的视觉节奏一致。 */
+.omni-knowledge-sidebar--collapsed {
+  flex: 0 0 64px;
+  width: 64px;
+  min-width: 64px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 88%, transparent), color-mix(in srgb, var(--omni-soft-bg) 92%, transparent)),
+    var(--omni-soft-bg) !important;
+}
+
 .omni-knowledge-main {
   border: 0 !important;
   border-radius: 0;
@@ -4016,8 +4031,11 @@ body:has(.pet-thought-window),
 
 .omni-knowledge-main > header {
   /* 与 .main-chat-toolbar 视觉平级：圆角 + 1px border + 阴影 + 半透明渐变背景。
-   * 之前规则只设了 bg/边框/阴影，未设 padding，导致 header 内部 px-4 py-3
-   * 紧贴卡片边缘，圆角「糊在边上」不像独立卡片，看起来与下方内容紧贴。 */
+   * **高度统一到 76px** 与 chat toolbar 完全一致。JSX 里 <header min-h-20>
+   * 之前让 KB header 高度 ≧80px，比 chat toolbar 的 76px 高出 4-8px，用户感觉
+   * "知识库的顶部栏明显比聊天顶部栏高一点"。三条 height/min/max 一起写是
+   * 为了压过 Tailwind .min-h-20 (80px) 的 specificity，让 KB header 严格
+   * 76px（chat toolbar 也是 height:76px + min/max-height:76px）。 */
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
   overflow: hidden;
@@ -4025,8 +4043,10 @@ body:has(.pet-thought-window),
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-panel-bg) 86%, transparent)),
     var(--omni-panel-bg) !important;
-  padding: 10px 14px;
-  min-height: 64px;
+  height: 76px;
+  min-height: 76px;
+  max-height: 76px;
+  padding: 12px 14px;
 }
 
 .omni-knowledge-body-shell {
