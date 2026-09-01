@@ -16,6 +16,7 @@ import {
   Calendar,
   LayoutGrid,
   LayoutList,
+  BadgeCheck,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
@@ -384,11 +385,24 @@ const SkillCard = memo(function SkillCard({
         <div className="plugin-card__main">
           <div className="plugin-card__title-row">
             <h3>{skill.name}</h3>
+            {skill.verified && (
+              <BadgeCheck
+                size={14}
+                className="plugin-card__verified"
+                aria-label="官方认证"
+                strokeWidth={2.4}
+              />
+            )}
             <span className="plugin-card__badge">{meta.category}</span>
+            {requiresApiKey && (
+              <span className="skillhub-browser__api" title="需要 API Key">
+                <Hash size={11} /> 需 API Key
+              </span>
+            )}
           </div>
+          <p className="plugin-card__description">{skill.description_zh || skill.description}</p>
         </div>
       </div>
-      <p className="plugin-card__description">{skill.description_zh || skill.description}</p>
       <div className="plugin-card__meta">
         <div className="plugin-card__meta-left">
           <span>
@@ -399,8 +413,10 @@ const SkillCard = memo(function SkillCard({
           </span>
         </div>
         <div className="plugin-card__meta-right">
-          {skill.namespace?.canonicalName && <span className="plugin-card__author">{skill.namespace.canonicalName}</span>}
-          {requiresApiKey && <span className="skillhub-browser__api">需 API Key</span>}
+          {skill.namespace?.canonicalName && (
+            <span className="plugin-card__author">{skill.namespace.canonicalName}</span>
+          )}
+          <span className="plugin-card__source-tag">SkillHub</span>
         </div>
       </div>
       <div className="plugin-card__actions" onClick={(e) => e.stopPropagation()}>

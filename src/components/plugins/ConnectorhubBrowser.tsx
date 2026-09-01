@@ -68,15 +68,15 @@ const ConnectorCard = memo(function ConnectorCard({
             <h3>{skill.displayName}</h3>
             <span className="plugin-card__badge">连接器</span>
           </div>
+          <p className="plugin-card__description">{description}</p>
+          {isInstalled && (
+            <p className="connectorhub-browser__hint">
+              <Info size={12} strokeWidth={1.8} />
+              已安装 — 请到「本地连接器」中配置启动命令并连接
+            </p>
+          )}
         </div>
       </div>
-      <p className="plugin-card__description">{description}</p>
-      {isInstalled && (
-        <p className="connectorhub-browser__hint">
-          <Info size={12} strokeWidth={1.8} />
-          已安装 — 请到「本地连接器」中配置启动命令并连接
-        </p>
-      )}
       <div className="plugin-card__meta">
         <div className="plugin-card__meta-left">
           <span>{skill.category}</span>
