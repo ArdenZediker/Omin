@@ -18,6 +18,7 @@ import {
   Plus,
   AlertTriangle,
   Trash2,
+  Hash,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import {
@@ -68,6 +69,250 @@ const ICON_MAP: Record<string, typeof Puzzle> = {
   template: LayoutTemplate,
 };
 
+/** 渲染一个 PluginManifest 的图标：
+ * - `manifest.icon` 是 URL（http/https/data/blob/file 或 web 根路径）→ `<img>`
+ * - 单个非 ASCII 字符（emoji） → 原样文本
+ * - 其余（Lucide 名称或缺失）→ 按 `kind` 兜底
+ */
+function renderPluginIcon(manifest: PluginManifest) {
+  const iconValue = manifest.icon?.trim();
+  if (iconValue) {
+    if (/^(https?:|data:|blob:|file:)/i.test(iconValue) || iconValue.startsWith("/")) {
+      return (
+        <img
+          src={iconValue}
+          alt=""
+          className="plugin-card__icon-img"
+          loading="lazy"
+        />
+      );
+    }
+    // 单字符 emoji（不全是 ASCII 字母/数字/下划线/点）
+    if (iconValue.length <= 2 && /[^\x00-\x7F]/.test(iconValue)) {
+      return (
+        <span className="plugin-card__icon-emoji" aria-hidden>
+          {iconValue}
+        </span>
+      );
+    }
+  }
+  const Icon = ICON_MAP[manifest.kind] ?? Puzzle;
+  return <Icon size={22} strokeWidth={1.7} />;
+}
+
+/** 通用插件详情抽屉。复用 .skillhub-detail* 样式（从右滑入、半透明遮罩、Esc 关闭），
+ *  显示基础元数据 + body + 标签，底部按安装状态切换按钮。
+ * skill / tool / connector / expert / template 都可用。 */
+function PluginDetailDrawer({
+  manifest,
+  isInstalled,
+  isBuiltin,
+  onClose,
+  onInstall,
+  onUninstall,
+}: {
+  manifest: PluginManifest | null;
+  isInstalled: boolean;
+  isBuiltin: boolean;
+  onClose: () => void;
+  onInstall: (m: PluginManifest) => void;
+  onUninstall: (m: PluginManifest) => void;
+}) {
+  useEffect(() => {
+    if (!manifest) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [manifest, onClose]);
+
+  if (!manifest) return null;
+
+  const description =
+    manifest.description ||
+    (manifest.body ? manifest.body.split("\n")[0] : "（暂无描述）");
+  const sourceUrl = manifest.sourceUrl ?? "";
+
+  return (
+    <div
+      className="skillhub-detail__overlay"
+      onClick={onClose}
+      role="presentation"
+    >
+      <aside
+        className="skillhub-detail"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${manifest.name} 详情`}
+      >
+        <header className="skillhub-detail__header">
+          <div className="skillhub-detail__identity">
+            <div className="skillhub-detail__icon">
+              {renderPluginIcon(manifest)}
+            </div>
+            <div className="skillhub-detail__title-wrap">
+              <h2>{manifest.name}</h2>
+              <div className="skillhub-detail__title-row">
+                <span className="plugin-card__badge">{manifest.kind}</span>
+                {manifest.category && (
+                  <span className="skillhub-detail__source">
+                    {manifest.category}
+                  </span>
+                )}
+                {isBuiltin && (
+                  <span className="skillhub-detail__source">内置</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="skillhub-detail__close"
+            onClick={onClose}
+            title="关闭 (Esc)"
+            aria-label="关闭详情"
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="skillhub-detail__body">
+          <p className="skillhub-detail__description">{description}</p>
+
+          <div className="skillhub-detail__meta-grid">
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">
+                <Hash size={12} /> 作者
+              </span>
+              <span className="skillhub-detail__meta-value">
+                {manifest.author ?? "Omni"}
+              </span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">
+                <Package size={12} /> 版本
+              </span>
+              <span className="skillhub-detail__meta-value">
+                v{manifest.version}
+              </span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">分类</span>
+              <span className="skillhub-detail__meta-value">
+                {manifest.category ?? "其他"}
+              </span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">ID</span>
+              <span className="skillhub-detail__meta-value">{manifest.id}</span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">命令</span>
+              <span className="skillhub-detail__meta-value">
+                <code>{manifest.command ?? "/"}</code>
+              </span>
+            </div>
+            <div className="skillhub-detail__meta-item">
+              <span className="skillhub-detail__meta-label">来源</span>
+              <span className="skillhub-detail__meta-value">
+                {sourceUrl ? (
+                  <a
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    打开
+                  </a>
+                ) : (
+                  "Omni 本地"
+                )}
+              </span>
+            </div>
+          </div>
+
+          {manifest.tags && manifest.tags.length > 0 && (
+            <div className="skillhub-detail__tags">
+              <div className="skillhub-detail__tags-label">标签</div>
+              <div className="skillhub-detail__tag-list">
+                {manifest.tags.map((tag) => (
+                  <span key={tag} className="skillhub-detail__tag">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {manifest.body && manifest.body !== description && (
+            <details className="skillhub-detail__description-en">
+              <summary>查看正文（systemPrompt）</summary>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  fontFamily: "inherit",
+                  fontSize: "12px",
+                  lineHeight: 1.55,
+                }}
+              >
+                {manifest.body}
+              </pre>
+            </details>
+          )}
+        </div>
+
+        <footer className="skillhub-detail__footer">
+          {isInstalled && !isBuiltin ? (
+            <>
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--installed"
+                disabled
+              >
+                <Check size={14} /> 已安装
+              </button>
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--danger"
+                onClick={() => onUninstall(manifest)}
+              >
+                <Trash2 size={14} strokeWidth={1.8} />
+                卸载
+              </button>
+            </>
+          ) : isInstalled ? (
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--installed"
+              disabled
+            >
+              <Check size={14} /> 已安装（内置）
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--primary"
+              onClick={() => onInstall(manifest)}
+            >
+              <Download size={14} strokeWidth={1.8} />
+              安装
+            </button>
+          )}
+          <button
+            type="button"
+            className="plugin-card__button plugin-card__button--secondary"
+            onClick={onClose}
+          >
+            关闭
+          </button>
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
 export default function PluginMarketplace({
   initialFilter = {},
   onPick,
@@ -86,6 +331,8 @@ export default function PluginMarketplace({
   const [refreshKey, setRefreshKey] = useState(0);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
+  // 详情抽屉选中（点击整卡打开）。onPick 模式下用 onPick 选择，不打开详情。
+  const [detailManifest, setDetailManifest] = useState<PluginManifest | null>(null);
   // MCP 型连接器（无 provider 的 connector）启动配置草稿
   const [mcpDraft, setMcpDraft] = useState({ command: "", args: "", env: "" });
   // 当前已连接的 MCP 服务器（内存态，来自 mcp.ts）
@@ -626,11 +873,10 @@ export default function PluginMarketplace({
             ) : (
               <div className="plugin-marketplace__grid">
                 {myExperts.map((manifest) => {
-                  const Icon = ICON_MAP[manifest.kind] ?? Puzzle;
                   return (
                     <div key={manifest.id} className="plugin-card">
                       <div className="plugin-card__icon">
-                        <Icon size={22} strokeWidth={1.7} />
+                        {renderPluginIcon(manifest)}
                       </div>
                       <div className="plugin-card__main">
                         <div className="plugin-card__title-row">
@@ -678,42 +924,74 @@ export default function PluginMarketplace({
         ) : (
           <div className="plugin-marketplace__grid">
             {filteredPlugins.map((manifest) => {
-              const Icon = ICON_MAP[manifest.kind] ?? Puzzle;
               const installed = isInstalled(manifest.id);
               const mcpConnected = connectedList.find(
                 (s) => s.connectorId === manifest.id,
               );
+              const cardClass = onPick
+                ? "plugin-card plugin-card--pickable"
+                : "plugin-card plugin-card--clickable";
               return (
-                <div key={manifest.id} className="plugin-card">
-                  <div className="plugin-card__icon">
-                    <Icon size={22} strokeWidth={1.7} />
-                  </div>
-                  <div className="plugin-card__main">
-                    <div className="plugin-card__title-row">
-                      <h3>{manifest.name}</h3>
-                      <span className="plugin-card__badge">
-                        {manifest.kind}
-                      </span>
+                <div
+                  key={manifest.id}
+                  className={cardClass}
+                  role={onPick ? "button" : "button"}
+                  tabIndex={0}
+                  onClick={
+                    onPick
+                      ? () => onPick(manifest)
+                      : () => setDetailManifest(manifest)
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (onPick) onPick(manifest);
+                      else setDetailManifest(manifest);
+                    }
+                  }}
+                  aria-label={
+                    onPick ? `选择 ${manifest.name}` : `${manifest.name} 详情`
+                  }
+                >
+                  <div className="plugin-card__header">
+                    <div className="plugin-card__icon">
+                      {renderPluginIcon(manifest)}
                     </div>
-                    <p className="plugin-card__description">
-                      {manifest.description}
-                    </p>
-                    <div className="plugin-card__meta">
-                      <span>{manifest.author ?? "Omni"}</span>
-                      {manifest.category && <span>· {manifest.category}</span>}
-                      <span>· v{manifest.version}</span>
-                    </div>
-                    {manifest.tags && manifest.tags.length > 0 && (
-                      <div className="plugin-card__tags">
-                        {manifest.tags.map((tag) => (
-                          <span key={tag} className="plugin-card__tag">
-                            {tag}
-                          </span>
-                        ))}
+                    <div className="plugin-card__main">
+                      <div className="plugin-card__title-row">
+                        <h3 title={manifest.name}>{manifest.name}</h3>
+                        <span className="plugin-card__badge">
+                          {manifest.kind}
+                        </span>
                       </div>
-                    )}
+                      <p
+                        className="plugin-card__description"
+                        title={manifest.description}
+                      >
+                        {manifest.description}
+                      </p>
+                      <div className="plugin-card__meta">
+                        <span>{manifest.author ?? "Omni"}</span>
+                        {manifest.category && (
+                          <span>· {manifest.category}</span>
+                        )}
+                        <span>· v{manifest.version}</span>
+                      </div>
+                      {manifest.tags && manifest.tags.length > 0 && (
+                        <div className="plugin-card__tags">
+                          {manifest.tags.map((tag) => (
+                            <span key={tag} className="plugin-card__tag">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="plugin-card__actions">
+                  <div
+                    className="plugin-card__actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {onPick ? (
                       <button
                         type="button"
@@ -822,7 +1100,10 @@ export default function PluginMarketplace({
                     </button>
                   </div>
                   {mcpError?.connectorId === manifest.id && (
-                    <div className="plugin-card__mcp-error">
+                    <div
+                    className="plugin-card__mcp-error"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                       <AlertTriangle size={13} strokeWidth={1.8} />
                       <span>{mcpError.message}</span>
                     </div>
@@ -830,7 +1111,10 @@ export default function PluginMarketplace({
                   {configuringId === manifest.id &&
                     ((manifest.configFields?.length ?? 0) > 0 ||
                       isMcpConnector(manifest)) && (
-                      <div className="plugin-card__config">
+                      <div
+                      className="plugin-card__config"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                         {manifest.configFields?.map((field) => (
                           <label
                             key={field.id}
@@ -960,6 +1244,17 @@ export default function PluginMarketplace({
           <span>{stats.template} 模板</span>
         </div>
       </div>
+
+      <PluginDetailDrawer
+        manifest={detailManifest}
+        isInstalled={detailManifest ? isInstalled(detailManifest.id) : false}
+        isBuiltin={
+          detailManifest ? pluginRegistry.isBuiltin(detailManifest.id) : false
+        }
+        onClose={() => setDetailManifest(null)}
+        onInstall={(m) => void handleInstall(m)}
+        onUninstall={(m) => void handleUninstall(m)}
+      />
     </div>
   );
 
