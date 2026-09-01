@@ -69,15 +69,15 @@ const SuiteCard = memo(function SuiteCard({
             <span className="plugin-card__badge">{suite.categoryZh}</span>
           </div>
           <p className="plugin-card__description">{description}</p>
-        </div>
-      </div>
-      <div className="plugin-card__meta">
-        <div className="plugin-card__meta-left">
-          <span>技能 × {suite.skillSlugs.length || suite.skills.length}</span>
-          {suite.version && <span>v{suite.version}</span>}
-        </div>
-        <div className="plugin-card__meta-right">
-          {suite.author && <span className="plugin-card__author">{suite.author}</span>}
+          <div className="plugin-card__meta">
+            <div className="plugin-card__meta-left">
+              <span>技能 × {suite.skillSlugs.length || suite.skills.length}</span>
+              {suite.version && <span>v{suite.version}</span>}
+            </div>
+            <div className="plugin-card__meta-right">
+              {suite.author && <span className="plugin-card__author">{suite.author}</span>}
+            </div>
+          </div>
         </div>
       </div>
       <div className="plugin-card__actions" onClick={(e) => e.stopPropagation()}>

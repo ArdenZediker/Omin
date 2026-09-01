@@ -404,21 +404,21 @@ const SkillCard = memo(function SkillCard({
             </span>
           </div>
           <p className="plugin-card__description">{skill.description_zh || skill.description}</p>
-        </div>
-      </div>
-      <div className="plugin-card__meta">
-        <div className="plugin-card__meta-left">
-          <span>
-            <Star size={12} /> {skill.stars ?? 0}
-          </span>
-          <span>
-            <Download size={12} /> {skill.downloads ?? 0}
-          </span>
-        </div>
-        <div className="plugin-card__meta-right">
-          {skill.namespace?.canonicalName && (
-            <span className="plugin-card__author">{skill.namespace.canonicalName}</span>
-          )}
+          <div className="plugin-card__meta">
+            <div className="plugin-card__meta-left">
+              <span>
+                <Star size={12} /> {skill.stars ?? 0}
+              </span>
+              <span>
+                <Download size={12} /> {skill.downloads ?? 0}
+              </span>
+            </div>
+            <div className="plugin-card__meta-right">
+              {skill.namespace?.canonicalName && (
+                <span className="plugin-card__author">{skill.namespace.canonicalName}</span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
       <div className="plugin-card__actions" onClick={(e) => e.stopPropagation()}>

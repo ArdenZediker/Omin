@@ -75,15 +75,15 @@ const ConnectorCard = memo(function ConnectorCard({
               已安装 — 请到「本地连接器」中配置启动命令并连接
             </p>
           )}
+          <div className="plugin-card__meta">
+            <div className="plugin-card__meta-left">
+              <span>{skill.category}</span>
+              <span>· {skill.source}</span>
+              {skill.version && <span>· v{skill.version}</span>}
+            </div>
+            <div className="plugin-card__meta-right" />
+          </div>
         </div>
-      </div>
-      <div className="plugin-card__meta">
-        <div className="plugin-card__meta-left">
-          <span>{skill.category}</span>
-          <span>· {skill.source}</span>
-          {skill.version && <span>· v{skill.version}</span>}
-        </div>
-        <div className="plugin-card__meta-right" />
       </div>
       <div className="plugin-card__actions" onClick={(e) => e.stopPropagation()}>
         {isInstalled ? (

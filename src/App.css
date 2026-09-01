@@ -9587,21 +9587,19 @@ body:has(.pet-thought-window),
 }
 
 /* 列表视图下卡片更紧凑（横向信息密度更高）
- * 布局参考 SkillHub 网站：左 icon + 中 title+description / 右 meta+actions
- * 用 grid 双列：header 跨两行占左列 (icon + main)，meta 行占右列上、actions 占右列下。 */
+ * 布局参考 SkillHub 网站：左 icon + 中 title/description/meta + 右 actions
+ * grid 单行双列：左列 header（含 icon + main 含 title+description+meta 全堆叠）
+ * 右列 actions。所有标签/元数据都「贴左」紧贴名字，操作按钮单独放右。 */
 .plugin-marketplace__grid--list .plugin-card {
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  grid-template-areas:
-    "header meta"
-    "header actions";
+  grid-template-areas: "header actions";
+  align-items: center;
   column-gap: 14px;
-  row-gap: 6px;
   padding: 12px 16px;
 }
 
-/* header 跨两行：icon 左垂直居中，main 撑开 */
+/* header 占左列整张宽度：icon 左垂直居中，main 撑开 + 纵向堆叠 */
 .plugin-marketplace__grid--list .plugin-card__header {
   grid-area: header;
   display: flex;
@@ -9616,12 +9614,13 @@ body:has(.pet-thought-window),
   align-self: center;
 }
 
+/* list 模式下 main 纵向堆叠 title-row / description / meta，整体贴左 */
 .plugin-marketplace__grid--list .plugin-card__main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .plugin-marketplace__grid--list .plugin-card__title-row {
@@ -9640,17 +9639,19 @@ body:has(.pet-thought-window),
   text-overflow: ellipsis;
 }
 
-/* meta 放右列右上：右对齐紧凑一行 */
+/* meta 行随 main 一起在左列：横向贴左一行（⭐ 下载量 @namespace） */
 .plugin-marketplace__grid--list .plugin-card__meta {
-  grid-area: meta;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 10px;
   margin: 0;
   font-size: 11px;
   color: var(--omni-app-muted);
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .plugin-marketplace__grid--list .plugin-card__meta-left,
@@ -9658,14 +9659,18 @@ body:has(.pet-thought-window),
   display: flex;
   align-items: center;
   gap: 10px;
-  overflow: visible;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.plugin-marketplace__grid--list .plugin-card__meta-right {
-  justify-content: flex-end;
+.plugin-marketplace__grid--list .plugin-card__author {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* actions 放右列右下：右对齐 + 自适应紧凑 */
+/* actions 单独占右列：右对齐紧凑 */
 .plugin-marketplace__grid--list .plugin-card__actions {
   grid-area: actions;
   display: flex;
@@ -9674,6 +9679,7 @@ body:has(.pet-thought-window),
   gap: 8px;
   border-top: none;
   padding-top: 0;
+  margin: 0;
 }
 
 /* 列表视图下「安装 / 来源 / 卸载」按钮统一最小宽度，让列右对齐、按钮等宽。
