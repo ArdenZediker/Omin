@@ -1061,6 +1061,52 @@ export default function PluginMarketplace({
       </div>
 
       <div className="plugin-marketplace__body">
+        {showMySkills && batchMode && (
+          <div
+            className="plugin-marketplace__batch-top-bar"
+            role="toolbar"
+            aria-label="批量操作 · 全局"
+          >
+            <span className="plugin-marketplace__batch-top-label">批量操作</span>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--primary"
+              onClick={() => handleBatchAllSetEnabled(true)}
+              title="开启所有非内置技能"
+            >
+              <Power size={14} strokeWidth={1.8} />
+              <span>开启</span>
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn"
+              onClick={() => handleBatchAllSetEnabled(false)}
+              title="关闭所有非内置技能"
+            >
+              <PowerOff size={14} strokeWidth={1.8} />
+              <span>关闭</span>
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--danger"
+              onClick={() => void handleBatchAllUninstall()}
+              title="卸载所有非内置技能"
+            >
+              <Trash2 size={14} strokeWidth={1.8} />
+              <span>卸载</span>
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn"
+              onClick={() => {
+                setBatchMode(false);
+                setSelectedIds(new Set());
+              }}
+            >
+              取消
+            </button>
+          </div>
+        )}
         {showSkillhub ? (
           <SkillhubBrowser />
         ) : showSuites ? (
@@ -1150,53 +1196,6 @@ export default function PluginMarketplace({
                 })}
               </div>
             )}
-          </div>
-        ) : showMySkills && batchMode ? (
-          <div
-            className="plugin-marketplace__batch-top-bar"
-            role="toolbar"
-            aria-label="批量操作 · 全局"
-          >
-            <span className="plugin-marketplace__batch-top-label">
-              批量操作
-            </span>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--primary"
-              onClick={() => handleBatchAllSetEnabled(true)}
-              title="开启所有非内置技能"
-            >
-              <Power size={14} strokeWidth={1.8} />
-              <span>开启</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn"
-              onClick={() => handleBatchAllSetEnabled(false)}
-              title="关闭所有非内置技能"
-            >
-              <PowerOff size={14} strokeWidth={1.8} />
-              <span>关闭</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--danger"
-              onClick={() => void handleBatchAllUninstall()}
-              title="卸载所有非内置技能"
-            >
-              <Trash2 size={14} strokeWidth={1.8} />
-              <span>卸载</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-marketplace__batch-top-btn"
-              onClick={() => {
-                setBatchMode(false);
-                setSelectedIds(new Set());
-              }}
-            >
-              取消
-            </button>
           </div>
         ) : filteredPlugins.length === 0 ? (
           <div className="plugin-marketplace__empty">
