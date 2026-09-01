@@ -1043,7 +1043,10 @@ body:has(.pet-thought-window),
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-panel-bg) 86%, transparent)),
     var(--omni-panel-bg);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  /* 收紧阴影范围（Y 4 + blur 12 = 16px），避免扩展中心（mainView）模式下
+   * 阴影投射到第一行卡片顶部造成「悬浮线遮挡」视觉。原值 0 12px 30px
+   * 投射 42px 范围，第一行卡片顶部恰好落入阴影区域。 */
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
   min-width: 0;
   backdrop-filter: blur(14px) saturate(1.03);
   -webkit-backdrop-filter: blur(14px) saturate(1.03);
