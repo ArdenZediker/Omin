@@ -9595,8 +9595,13 @@ body:has(.pet-thought-window),
 }
 
 .plugin-marketplace__grid--list {
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+  /* 让整列卡片高度统一等于行内最高卡，所有卡底边缘 Y 坐标对齐，
+     这样卡片底部的「已安装 / 删除 / 复制安装」按钮绝对位置一致
+     （用户 2026-09-01「按钮不在一条线」反馈）。 */
+  align-items: stretch;
 }
 
 /* 列表视图下卡片更紧凑（横向信息密度更高）
@@ -9715,8 +9720,17 @@ body:has(.pet-thought-window),
 .plugin-marketplace__grid--list .plugin-card__button {
   flex: 0 0 auto;
   min-width: 88px;
+  min-height: 38px;
   justify-content: center;
-  height: 34px;
+  height: 38px;
+}
+
+/* list 视图下 actions 列内可能 chip（plugin-card__connected，状态指示器）
+   与 button（安装 / 卸载 / 复制）混排，前者天然 padding/font 较矮；统一
+   min-height 后无论 batchMode 下「内置」chip vs 「选择」button 还是
+   普通模式下「已安装」chip vs 「删除」button，actions 列底部基线一致。 */
+.plugin-marketplace__grid--list .plugin-card__connected {
+  min-height: 38px;
 }
 
 /* SkillHub 来源标识小标签（SkillHub 卡片专属，元数据右侧） */
