@@ -158,7 +158,7 @@ export async function executeTask(options: {
 async function executeLocalCommandTask(options: {
   model: string;
   command: ResolvedLocalSlashCommand;
-  executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown } | void>;
+  executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown; artifact?: import("./artifacts").ArtifactSpec } | void>;
 }): Promise<TaskExecutionResult> {
   const { model, command, executeTool } = options;
   const plan = createTaskPlan({
@@ -228,7 +228,7 @@ export async function executeInputTask(options: {
   onReasoning?: (reasoning: string) => void;
   knowledgeCollectionId?: string | null;
   onPrepareConversation?: (messages: Message[]) => void;
-  executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown } | void>;
+  executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown; artifact?: import("./artifacts").ArtifactSpec } | void>;
   /** function calling：工具声明（透传给 executeTask） */
   tools?: ChatToolParam[];
   /** 执行一次模型发起的工具调用（透传给 executeTask） */

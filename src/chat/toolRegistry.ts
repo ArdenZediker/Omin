@@ -1,5 +1,6 @@
 import type { Message } from "../adapters/types";
 import type { ResolvedLocalSlashCommand } from "./skills";
+import type { ArtifactSpec } from "./artifacts";
 
 export type ToolExecutionCommand = Pick<ResolvedLocalSlashCommand, "command" | "args">;
 
@@ -17,6 +18,8 @@ export type ToolExecutionResult = {
   error?: string;
   outputText?: string;
   data?: unknown;
+  /** 本次执行产出的可交付内容（文件/网页/技能等），UI 渲染产物卡片并入聚合面板 */
+  artifact?: ArtifactSpec;
 };
 
 export type ToolDefinition = {

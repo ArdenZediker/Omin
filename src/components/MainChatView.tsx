@@ -44,6 +44,7 @@ import type { ProjectDraft, ProjectMemoryRecord, ProjectMemorySourceType, Projec
 import type { ProjectMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
+import ArtifactsPanel from "./ArtifactsPanel";
 import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 import { resolveProjectAvatarSeed } from "../config/manifests/avatarHelpers";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, PROJECT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
@@ -332,6 +333,7 @@ export default function MainChatView({
   const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
   const [showPluginMarketplace, setShowPluginMarketplace] = useState(openMarketplace ?? false);
+  const [showArtifactsPanel, setShowArtifactsPanel] = useState(false);
   const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind; category: string }>({ kind: "skill", category: "全部" });
   // Marketplace 二级数据源（local/skillhub/suites/connectors/my）。由本层
   // main-chat-toolbar 顶部的「我的技能 / SkillHub 实时 / 套件…」tabs 控制，
@@ -1245,6 +1247,14 @@ export default function MainChatView({
           </button>
           <button type="button" className="main-chat-nav__item no-drag" title="知识" onClick={onOpenKnowledge}>
             <FolderOpen size={18} strokeWidth={1.9} />
+          </button>
+          <button
+            type="button"
+            className={`main-chat-nav__item no-drag ${showArtifactsPanel ? "main-chat-nav__item--active" : ""}`}
+            title="产物"
+            onClick={() => setShowArtifactsPanel((current) => !current)}
+          >
+            <Package size={18} strokeWidth={1.9} />
           </button>
         </div>
         <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" onClick={onSettingsOpen}>
@@ -2553,6 +2563,14 @@ export default function MainChatView({
 
             </main>
           </section>
+
+          {showArtifactsPanel && !isProjectSettingsMode ? (
+            <ArtifactsPanel
+              projectId={activeProject?.id ?? null}
+              onClose={() => setShowArtifactsPanel(false)}
+              onJumpToSession={onSelectChat}
+            />
+          ) : null}
 
           {!isProjectSettingsMode && (
             <div

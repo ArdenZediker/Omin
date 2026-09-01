@@ -11,6 +11,7 @@ import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSel
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { getChatSessionTitle } from "../chat/storage";
 import { executeLocalTool } from "../chat/localTools";
+import { appendArtifact, notifyArtifactsChanged, type Artifact } from "../chat/artifacts";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { Project, ChatExecutionResult, ChatSendOptions } from "../chat/types";
@@ -103,6 +104,8 @@ export function useChatRuntime({
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const sessionRunIdsRef = useRef<Map<string, number>>(new Map());
   const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
+  /** 本轮任务执行期间产生的产物，最终消息提交时挂到消息上 */
+  const pendingArtifactsRef = useRef<Artifact[]>([]);
   const petThoughtRef = useRef<PetThoughtState | null>(null);
   const petThoughtQueueRef = useRef<PetThoughtState[]>([]);
   const activePetThoughtIdRef = useRef<string | null>(null);
@@ -603,6 +606,8 @@ export function useChatRuntime({
       const conversationMessages = taskResult.conversationMessages ?? fallbackMessages;
 
       if (taskResult.finalResult) {
+        const pendingArtifacts = pendingArtifactsRef.current;
+        pendingArtifactsRef.current = [];
         setConversationMessagesForSession(sessionId, [
           ...conversationMessages,
           {
@@ -610,6 +615,7 @@ export function useChatRuntime({
             content: taskResult.finalResult.content,
             knowledgeContext: taskResult.finalResult.knowledgeContext ?? null,
             reasoning: taskResult.finalResult.reasoning || undefined,
+            artifacts: pendingArtifacts.length ? pendingArtifacts : undefined,
           },
         ]);
         if (sessionId) {
@@ -817,12 +823,28 @@ export function useChatRuntime({
 
   const executeTool = useCallback(
     async (command: { command: string; args: string }) => {
-      return executeLocalTool({
-        activeProject,
-        activeChatId,
-        getChatSessionById,
-        searchChatSessions,
-      }, command);
+      const result = await executeLocalTool(
+        {
+          activeProject,
+          activeChatId,
+          getChatSessionById,
+          searchChatSessions,
+        },
+        command
+      );
+      // 工具执行产出的交付内容 → 落库 + 收集，最终消息提交时挂到消息上。
+      // 放在 executeTool 而非 executeToolCall，可同时覆盖 function calling 与 slash 命令两条路径。
+      const artifact = result?.artifact;
+      if (artifact && activeProject) {
+        const saved = appendArtifact({
+          ...artifact,
+          projectId: activeProject.id,
+          sessionId: activeChatId,
+        });
+        pendingArtifactsRef.current.push(saved);
+        notifyArtifactsChanged();
+      }
+      return result;
     },
     [
       activeProject,

@@ -364,10 +364,12 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         const lines = results.map(
           (r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`,
         );
+        const outputText = [`「${query}」搜索结果（${results.length} 条）：`, ...lines].join("\n");
         return {
           ok: true,
-          outputText: [`「${query}」搜索结果（${results.length} 条）：`, ...lines].join("\n"),
+          outputText,
           data: results,
+          artifact: { type: "web", title: `搜索「${query}」`, content: outputText },
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -391,16 +393,18 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         const linkLines = result.links.length
           ? ["", "页面主要链接：", ...result.links.slice(0, 10).map((l) => `- ${l.text || l.url}：${l.url}`)]
           : [];
+        const outputText = [
+          `标题：${result.title || "（无）"}`,
+          `地址：${result.final_url}`,
+          "",
+          result.text,
+          ...linkLines,
+        ].join("\n");
         return {
           ok: true,
-          outputText: [
-            `标题：${result.title || "（无）"}`,
-            `地址：${result.final_url}`,
-            "",
-            result.text,
-            ...linkLines,
-          ].join("\n"),
+          outputText,
           data: { title: result.title, url: result.final_url, links: result.links },
+          artifact: { type: "web", title: result.title || result.final_url, content: outputText },
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -511,6 +515,12 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             ok: true,
             outputText: `${title}已生成：${outcome.path}（${(outcome.size / 1024).toFixed(1)} KB）`,
             data: outcome,
+            artifact: {
+              type: tauriCommand === "export_docx" ? "docx" : tauriCommand === "export_xlsx" ? "xlsx" : "pptx",
+              title: outcome.path.split(/[\\/]/).pop() || title,
+              path: outcome.path,
+              size: outcome.size,
+            },
           };
         } catch (error) {
           return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -559,6 +569,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           ok: true,
           outputText: `技能「${parsed.name}」（${res.slug}）已${existed ? "更新" : "安装"}：${res.path}`,
           data: { id: res.slug, path: res.path, existed },
+          artifact: { type: "skill", title: `技能：${parsed.name}（${res.slug}）`, path: res.path },
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };

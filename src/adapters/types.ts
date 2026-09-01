@@ -1,4 +1,5 @@
 import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
+import type { Artifact } from "../chat/artifacts";
 
 // Omni - 多模型适配层
 // 为所有 AI 模型提供统一接口
@@ -16,6 +17,8 @@ export interface Message {
   toolCalls?: ChatToolCall[];
   /** 推理模型思考链全文（如 R1 reasoning_content / Gemini thought），用于 UI 折叠展示 */
   reasoning?: string;
+  /** 该消息关联的产物（AI 生成的文件/网页/技能等），UI 渲染产物卡片 */
+  artifacts?: Artifact[];
 }
 
 /**

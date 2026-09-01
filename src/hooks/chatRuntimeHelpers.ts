@@ -146,7 +146,7 @@ export function toolCallNameToCommand(name: string): string {
 
 /** 执行结果统一转成回填给模型的文本。 */
 export function formatToolCallResult(
-  result: { ok: boolean; error?: string; outputText?: string; data?: unknown } | void
+  result: { ok: boolean; error?: string; outputText?: string; data?: unknown; artifact?: import("../chat/artifacts").ArtifactSpec } | void
 ): string {
   if (!result) return "工具执行完成（无输出）";
   if (result.ok === false) return result.error || "工具执行失败";

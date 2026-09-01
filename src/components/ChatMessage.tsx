@@ -3,6 +3,7 @@ import { Brain, ChevronDown, Copy, Pencil, RefreshCw } from "lucide-react";
 import type { Message } from "../adapters/types";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
+import ArtifactCards from "./ArtifactCards";
 
 interface ChatMessageProps {
   message: Message;
@@ -135,6 +136,7 @@ export default function ChatMessage({
               )}
             </div>
           ) : null}
+          {message.artifacts && message.artifacts.length > 0 ? <ArtifactCards artifacts={message.artifacts} /> : null}
           </div>
       )}
       {!isStreaming && !isEditing && (
