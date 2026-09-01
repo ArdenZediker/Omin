@@ -45,6 +45,7 @@ import type { ProjectMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
 import ArtifactsPanel from "./ArtifactsPanel";
+import { ARTIFACTS_CHANGED_EVENT, artifactsForProject } from "../chat/artifacts";
 import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 import { resolveProjectAvatarSeed } from "../config/manifests/avatarHelpers";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, PROJECT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
@@ -334,6 +335,8 @@ export default function MainChatView({
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
   const [showPluginMarketplace, setShowPluginMarketplace] = useState(openMarketplace ?? false);
   const [showArtifactsPanel, setShowArtifactsPanel] = useState(false);
+  const [artifactCount, setArtifactCount] = useState(0);
+  const prevArtifactCountRef = useRef(0);
   const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind; category: string }>({ kind: "skill", category: "全部" });
   // Marketplace 二级数据源（local/skillhub/suites/connectors/my）。由本层
   // main-chat-toolbar 顶部的「我的技能 / SkillHub 实时 / 套件…」tabs 控制，
@@ -356,6 +359,25 @@ export default function MainChatView({
       setShowPluginMarketplace(openMarketplace);
     }
   }, [openMarketplace]);
+
+  // 产物数量角标 + 新产物产出时自动展开面板（让效果即时可见）。
+  // 初始加载只同步数量不弹面板；仅运行时「事件触发且数量增加」才自动打开，
+  // 避免打开应用时历史产物把面板顶出来。
+  useEffect(() => {
+    if (!activeProject) return;
+    const onArtifactsChanged = () => {
+      const count = artifactsForProject(activeProject.id).length;
+      setArtifactCount(count);
+      if (count > prevArtifactCountRef.current && count > 0) {
+        setShowArtifactsPanel(true);
+      }
+      prevArtifactCountRef.current = count;
+    };
+    prevArtifactCountRef.current = artifactsForProject(activeProject.id).length;
+    setArtifactCount(prevArtifactCountRef.current);
+    window.addEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
+    return () => window.removeEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
+  }, [activeProject]);
 
   // 一级 kind 切换时把 source 重置到该 kind 的默认视图（与 Marketplace 内部
   // 受控分支的「不再自动同步 kind→source」配对，保证切回 skill 仍先看到 SkillHub）。
@@ -1255,6 +1277,7 @@ export default function MainChatView({
             onClick={() => setShowArtifactsPanel((current) => !current)}
           >
             <Package size={18} strokeWidth={1.9} />
+            {artifactCount > 0 ? <span className="main-chat-nav__badge">{artifactCount > 99 ? "99+" : artifactCount}</span> : null}
           </button>
         </div>
         <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" onClick={onSettingsOpen}>

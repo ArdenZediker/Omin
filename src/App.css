@@ -641,7 +641,26 @@ body:has(.pet-thought-window),
   background: transparent;
   color: var(--omni-app-muted);
   cursor: pointer;
+  position: relative;
   transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.main-chat-nav__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--omni-danger, #e5484d);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  pointer-events: none;
 }
 
 .main-chat-nav__brand img {
