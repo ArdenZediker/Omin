@@ -10099,6 +10099,136 @@ body:has(.pet-thought-window),
   outline-offset: 2px;
 }
 
+/* 批量管理模式：「我的技能」tab 顶部带「批量管理」按钮，点入批量多选删除模式
+   （2026-09-01）：卡片转为 checkbox role，整卡点击 toggleSelected；icon 区显示
+   圆形 checkbox，选中时填色 + Check 图标。复用 plugin-card__connected-dot
+   的色彩语言保持视觉一致性。 */
+.plugin-marketplace__batch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--omni-panel-border);
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  align-self: center;
+}
+.plugin-marketplace__batch-btn:hover {
+  border-color: var(--omni-accent, #64748b);
+  color: var(--omni-app-fg, #0f172a);
+}
+.plugin-marketplace__batch-btn--active {
+  background: var(--omni-accent-soft, #dbeafe);
+  border-color: var(--omni-accent, #3b82f6);
+  color: var(--omni-accent-strong, #1d4ed8);
+}
+
+.plugin-card--batch {
+  cursor: pointer;
+}
+.plugin-card--batch:hover {
+  border-color: var(--omni-accent, #3b82f6);
+}
+.plugin-card--batch-selected {
+  border-color: var(--omni-accent, #3b82f6);
+  background: var(--omni-accent-soft, #f0f7ff);
+  box-shadow: 0 0 0 1px var(--omni-accent, #3b82f6) inset;
+}
+.plugin-card--batch-selected .plugin-card__batch-checkbox {
+  background: var(--omni-accent, #3b82f6);
+  border-color: var(--omni-accent, #3b82f6);
+  color: #fff;
+}
+.plugin-card__batch-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1.5px solid var(--omni-panel-border);
+  background: var(--omni-bg, #fff);
+  color: var(--omni-app-muted);
+  transition: all 0.12s ease;
+  flex-shrink: 0;
+}
+.plugin-card__batch-checkbox--checked {
+  background: var(--omni-accent, #3b82f6);
+  border-color: var(--omni-accent, #3b82f6);
+  color: #fff;
+}
+
+/* 底部批量工具栏（fixed/sticky，跨卡片），含「选中 N 项 / 全选 / 删除选中 / 取消」 */
+.plugin-marketplace__batch-bar {
+  position: sticky;
+  bottom: 0;
+  margin: 12px -16px -16px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--omni-bg-soft, #f8fafc);
+  border-top: 1px solid var(--omni-panel-border);
+  border-radius: 0 0 12px 12px;
+  z-index: 5;
+}
+.plugin-marketplace__batch-count {
+  font-size: 12px;
+  color: var(--omni-app-muted);
+}
+.plugin-marketplace__batch-count strong {
+  color: var(--omni-accent-strong, #1d4ed8);
+  font-weight: 600;
+  margin: 0 2px;
+}
+.plugin-marketplace__batch-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.plugin-marketplace__batch-secondary,
+.plugin-marketplace__batch-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  border: 1px solid transparent;
+}
+.plugin-marketplace__batch-secondary {
+  background: transparent;
+  border-color: var(--omni-panel-border);
+  color: var(--omni-app-muted);
+}
+.plugin-marketplace__batch-secondary:hover {
+  border-color: var(--omni-accent, #64748b);
+  color: var(--omni-app-fg, #0f172a);
+}
+.plugin-marketplace__batch-danger {
+  background: #fff1f0;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+.plugin-marketplace__batch-danger:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+.plugin-marketplace__batch-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 抽屉覆盖层 + 主区域 */
 .skillhub-detail__overlay {
   position: absolute;

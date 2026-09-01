@@ -21,6 +21,7 @@ import {
   Hash,
   LayoutGrid,
   LayoutList,
+  Eye,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import {
@@ -328,7 +329,8 @@ export default function PluginMarketplace({
   onCreateExpert,
 }: PluginMarketplaceProps) {
   const [query, setQuery] = useState(initialFilter.query ?? "");
-  // 搜索框以「开关」形式展开/收起：mainView 顶部为折叠图标，点击展开全宽单行搜索框
+  // 搜索框以「开关」形式展开/收起：mainView 顶部为折叠图标，点击展开全宽单行搜索框。
+  // 「我的技能」tab 下默认展开（placeholder「搜索已安装的技能」必须可见以引导批量管理）。
   const [searchExpanded, setSearchExpanded] = useState(!mainView);
   // 本地主视图（mainView）下卡片布局：默认 list（按钮在右边，匹配 SkillHub 网站风格），
   // 用户可切到 grid（多列卡片，按钮在底部）。三个浏览器自己管理 viewMode，不受此控制。
@@ -392,6 +394,21 @@ export default function PluginMarketplace({
   const showMyExperts = !onPick && source === "my" && kind === "expert";
   // 「我的技能」：用户已安装/内置的本地技能（不混入 SkillHub/套件），按用户要求不分类、一栏通览。
   const showMySkills = !onPick && source === "local" && kind === "skill";
+
+  // 「我的技能」tab 下的批量管理模式：toggle 切换，多选删除已安装技能（2026-09-01）
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // 离开「我的技能」时清理批量状态，避免回到「我的技能」时残留选择
+  useEffect(() => {
+    if (!showMySkills && (batchMode || selectedIds.size > 0)) {
+      setBatchMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [showMySkills, batchMode, selectedIds.size]);
+  // 「我的技能」tab 自动展开搜索框（让 placeholder「搜索已安装的技能」立即可见）
+  useEffect(() => {
+    if (mainView && showMySkills && !searchExpanded) setSearchExpanded(true);
+  }, [mainView, showMySkills, searchExpanded]);
 
   const filteredPlugins = useMemo(() => {
     // 「我的技能」按用户要求不分类、一栏通览，跳过 category 过滤。
@@ -511,6 +528,27 @@ export default function PluginMarketplace({
       pluginRegistry.uninstall(manifest.id);
       setRefreshKey((current) => current + 1);
     }
+  }, []);
+
+  /** 批量卸载：依次对 selectedIds 命中项调 handleUninstall；内置项跳过以免破坏内置。 */
+  const handleBatchUninstall = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    const targets = filteredPlugins.filter(
+      (m) => selectedIds.has(m.id) && !pluginRegistry.isBuiltin(m.id),
+    );
+    for (const m of targets) handleUninstall(m);
+    setSelectedIds(new Set());
+    setBatchMode(false);
+  }, [selectedIds, filteredPlugins, handleUninstall]);
+
+  /** 切换/设置单张卡的选中状态（在 batchMode 下被整卡 onClick 调用）。 */
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }, []);
 
   const isInstalled = (id: string) =>
@@ -798,6 +836,26 @@ export default function PluginMarketplace({
             {mainView ? (
               <>
                 <div className="plugin-marketplace__top-bar">
+                  {showMySkills && (
+                    <button
+                      type="button"
+                      className={`plugin-marketplace__batch-btn ${batchMode ? "plugin-marketplace__batch-btn--active" : ""}`}
+                      onClick={() => {
+                        setBatchMode((v) => !v);
+                        setSelectedIds(new Set());
+                      }}
+                      aria-pressed={batchMode}
+                      aria-label="批量管理"
+                      title={
+                        batchMode
+                          ? "退出批量管理模式"
+                          : "进入批量管理模式：多选并删除已安装技能"
+                      }
+                    >
+                      <Eye size={14} strokeWidth={1.8} />
+                      <span>批量管理</span>
+                    </button>
+                  )}
                   {!showMySkills && (
                     <div className="plugin-marketplace__category-tabs">
                       {PLUGIN_CATEGORIES.filter(
@@ -826,7 +884,7 @@ export default function PluginMarketplace({
                         <input
                           value={query}
                           onChange={(event) => setQuery(event.target.value)}
-                          placeholder="搜索插件、技能、专家..."
+                          placeholder={showMySkills ? "搜索已安装的技能" : "搜索插件、技能、专家..."}
                           autoFocus
                         />
                         <button
@@ -897,7 +955,7 @@ export default function PluginMarketplace({
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜索插件、技能、专家..."
+                    placeholder={showMySkills ? "搜索已安装的技能" : "搜索插件、技能、专家..."}
                   />
                   {query && (
                     <button
@@ -1059,34 +1117,61 @@ export default function PluginMarketplace({
               const mcpConnected = connectedList.find(
                 (s) => s.connectorId === manifest.id,
               );
-              const cardClass = onPick
-                ? "plugin-card plugin-card--pickable"
-                : "plugin-card plugin-card--clickable";
+              const isBuiltin = pluginRegistry.isBuiltin(manifest.id);
+              const inBatch = batchMode && showMySkills && !isBuiltin;
+              const isSelected = inBatch && selectedIds.has(manifest.id);
+              const cardClass = inBatch
+                ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""}`
+                : onPick
+                  ? "plugin-card plugin-card--pickable"
+                  : "plugin-card plugin-card--clickable";
+              const cardRole: "button" | "checkbox" = inBatch
+                ? "checkbox"
+                : "button";
               return (
                 <div
                   key={manifest.id}
                   className={cardClass}
-                  role={onPick ? "button" : "button"}
+                  role={cardRole}
+                  aria-checked={inBatch ? isSelected : undefined}
                   tabIndex={0}
                   onClick={
-                    onPick
-                      ? () => onPick(manifest)
-                      : () => setDetailManifest(manifest)
+                    inBatch
+                      ? () => toggleSelected(manifest.id)
+                      : onPick
+                        ? () => onPick(manifest)
+                        : () => setDetailManifest(manifest)
                   }
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      if (onPick) onPick(manifest);
+                      if (inBatch) toggleSelected(manifest.id);
+                      else if (onPick) onPick(manifest);
                       else setDetailManifest(manifest);
                     }
                   }}
                   aria-label={
-                    onPick ? `选择 ${manifest.name}` : `${manifest.name} 详情`
+                    inBatch
+                      ? `${isSelected ? "取消选中" : "选中"} ${manifest.name}`
+                      : onPick
+                        ? `选择 ${manifest.name}`
+                        : `${manifest.name} 详情`
                   }
                 >
                   <div className="plugin-card__header">
                     <div className="plugin-card__icon">
-                      {renderPluginIcon(manifest)}
+                      {inBatch ? (
+                        <span
+                          className={`plugin-card__batch-checkbox ${isSelected ? "plugin-card__batch-checkbox--checked" : ""}`}
+                          aria-hidden="true"
+                        >
+                          {isSelected ? (
+                            <Check size={14} strokeWidth={2.2} />
+                          ) : null}
+                        </span>
+                      ) : (
+                        renderPluginIcon(manifest)
+                      )}
                     </div>
                     <div className="plugin-card__main">
                       <div className="plugin-card__title-row">
@@ -1123,7 +1208,34 @@ export default function PluginMarketplace({
                     className="plugin-card__actions"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {onPick ? (
+                    {inBatch ? (
+                      isBuiltin ? (
+                        <span className="plugin-card__connected">
+                          <span className="plugin-card__connected-dot" />
+                          <span>内置</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className={
+                            isSelected
+                              ? "plugin-card__button plugin-card__button--danger"
+                              : "plugin-card__button plugin-card__button--secondary"
+                          }
+                          onClick={() => toggleSelected(manifest.id)}
+                          aria-label={
+                            isSelected
+                              ? `取消选中 ${manifest.name}`
+                              : `选中 ${manifest.name}`
+                          }
+                        >
+                          {isSelected ? (
+                            <Check size={14} strokeWidth={2} />
+                          ) : null}
+                          <span>{isSelected ? "已选中" : "选择"}</span>
+                        </button>
+                      )
+                    ) : onPick ? (
                       <button
                         type="button"
                         className="plugin-card__button plugin-card__button--primary"
@@ -1192,7 +1304,7 @@ export default function PluginMarketplace({
                         <Trash2 size={14} strokeWidth={1.8} />
                         <span>删除</span>
                       </button>
-                    ) : installed ? (
+) : installed ? (
                       <button
                         type="button"
                         className="plugin-card__button plugin-card__button--installed"
@@ -1211,24 +1323,26 @@ export default function PluginMarketplace({
                         <span>安装</span>
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className="plugin-card__button plugin-card__button--secondary"
-                      onClick={() => handleCopyInstallPrompt(manifest)}
-                      title="复制给 AI 安装"
-                    >
-                      {copiedId === manifest.id ? (
-                        <>
-                          <Check size={14} strokeWidth={2} />
-                          <span>已复制</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={14} strokeWidth={1.8} />
-                          <span>复制安装</span>
-                        </>
-                      )}
-                    </button>
+                    {!inBatch && (
+                      <button
+                        type="button"
+                        className="plugin-card__button plugin-card__button--secondary"
+                        onClick={() => handleCopyInstallPrompt(manifest)}
+                        title="复制给 AI 安装"
+                      >
+                        {copiedId === manifest.id ? (
+                          <>
+                            <Check size={14} strokeWidth={2} />
+                            <span>已复制</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={14} strokeWidth={1.8} />
+                            <span>复制安装</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                   {mcpError?.connectorId === manifest.id && (
                     <div
@@ -1375,6 +1489,58 @@ export default function PluginMarketplace({
           <span>{stats.template} 模板</span>
         </div>
       </div>
+
+      {batchMode && showMySkills && (
+        <div
+          className="plugin-marketplace__batch-bar"
+          role="toolbar"
+          aria-label="批量操作"
+        >
+          <span className="plugin-marketplace__batch-count">
+            已选择 <strong>{selectedIds.size}</strong> 项
+          </span>
+          <div className="plugin-marketplace__batch-actions">
+            <button
+              type="button"
+              className="plugin-marketplace__batch-secondary"
+              onClick={() => {
+                const selectable = filteredPlugins.filter(
+                  (m) => !pluginRegistry.isBuiltin(m.id),
+                );
+                const allSelected = selectable.every((m) => selectedIds.has(m.id));
+                if (allSelected) setSelectedIds(new Set());
+                else setSelectedIds(new Set(selectable.map((m) => m.id)));
+              }}
+            >
+              {filteredPlugins.every((m) => selectedIds.has(m.id)) ||
+              filteredPlugins.filter((m) => !pluginRegistry.isBuiltin(m.id))
+                .every((m) => selectedIds.has(m.id))
+                ? "取消全选"
+                : "全选"}
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-danger"
+              disabled={selectedIds.size === 0}
+              onClick={() => void handleBatchUninstall()}
+              title="卸载并删除选中的技能"
+            >
+              <Trash2 size={14} strokeWidth={1.8} />
+              <span>删除选中</span>
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-secondary"
+              onClick={() => {
+                setBatchMode(false);
+                setSelectedIds(new Set());
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
 
       <PluginDetailDrawer
         manifest={detailManifest}
