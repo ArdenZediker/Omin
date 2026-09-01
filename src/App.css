@@ -3650,11 +3650,6 @@ body:has(.pet-thought-window),
   -webkit-app-region: no-drag;
   app-region: no-drag;
   flex: 0 0 auto;
-  position: absolute;
-  left: 22%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 1;
 }
 
 .chat-topic-panel__body {

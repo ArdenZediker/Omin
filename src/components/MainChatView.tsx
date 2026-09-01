@@ -1814,15 +1814,14 @@ export default function MainChatView({
                     </div>
                   </>
                 )}
+                {showPluginMarketplace && !isProjectSettingsMode && (
+                  <MarketplaceSourceTabs
+                    kind={marketplaceFilter.kind}
+                    source={marketplaceSource}
+                    onSourceChange={setMarketplaceSource}
+                  />
+                )}
               </div>
-
-              {showPluginMarketplace && !isProjectSettingsMode && (
-                <MarketplaceSourceTabs
-                  kind={marketplaceFilter.kind}
-                  source={marketplaceSource}
-                  onSourceChange={setMarketplaceSource}
-                />
-              )}
 
               {!showPluginMarketplace && (
                 <div className="no-drag">
