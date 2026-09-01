@@ -10813,16 +10813,23 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace--main-view {
   position: absolute;
-  inset: 76px 0 0 0;
+  /* 与 grid 第二行对齐：76px header + 10px grid gap。
+   * 之前是 inset: 76px（紧贴 toolbar 底边），导致 toolbar 与扩展中心之间
+   * 没有间隙、没有边界，视觉上「糊在一起」，普通聊天视图中
+   * toolbar ↔ workspace 那条分隔（10px gap + toolbar 阴影 + workspace 顶边）
+   * 在扩展中心模式下完全消失。改成 86px 后间隙恢复，分隔感与聊天视图一致。 */
+  inset: 86px 0 0 0;
   z-index: 20;
   transform: none;
   width: 100%;
   max-width: none;
   max-height: none;
   height: auto;
-  border-radius: 0;
-  border: none;
-  box-shadow: none;
+  /* 套用与 .main-chat-workspace 相同的卡片外形，让扩展中心在视觉上与
+   * 聊天工作区平级（此前是 border:none + radius:0 的全幅铺满）。 */
+  border-radius: var(--omni-radius-xl);
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
+  box-shadow: var(--omni-surface-shadow);
   background: var(--omni-app-bg);
 }
 
