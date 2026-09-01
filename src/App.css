@@ -3931,7 +3931,7 @@ body:has(.pet-thought-window),
 }
 
 .omni-knowledge-layout {
-  gap: 12px;
+  gap: 14px;
   padding: 4px;
   background: var(--omni-app-bg) !important;
 }
@@ -3956,6 +3956,10 @@ body:has(.pet-thought-window),
   background: transparent !important;
   overflow: visible;
   box-shadow: none;
+  /* main 内 flex column 的纵向间距。覆盖 JSX 的 gap-3 (12px)，与聊天视图
+   * main-chat-stage 的 grid gap (10px) 接近；header 现在 padding 10px 14px
+   * + 圆角卡片化后 14px gap 让 header ↔ 内容分隔足够清晰。 */
+  gap: 14px;
 }
 
 .omni-knowledge-empty-state {
@@ -3988,11 +3992,18 @@ body:has(.pet-thought-window),
 }
 
 .omni-knowledge-main > header {
+  /* 与 .main-chat-toolbar 视觉平级：圆角 + 1px border + 阴影 + 半透明渐变背景。
+   * 之前规则只设了 bg/边框/阴影，未设 padding，导致 header 内部 px-4 py-3
+   * 紧贴卡片边缘，圆角「糊在边上」不像独立卡片，看起来与下方内容紧贴。 */
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
-  overflow: visible;
+  overflow: hidden;
   box-shadow: var(--omni-surface-shadow);
-  background: var(--omni-panel-bg) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-panel-bg) 86%, transparent)),
+    var(--omni-panel-bg) !important;
+  padding: 10px 14px;
+  min-height: 64px;
 }
 
 .omni-knowledge-body-shell {
