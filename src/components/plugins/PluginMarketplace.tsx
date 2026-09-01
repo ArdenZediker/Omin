@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   Trash2,
   Hash,
+  LayoutGrid,
+  LayoutList,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import {
@@ -328,6 +330,9 @@ export default function PluginMarketplace({
   const [query, setQuery] = useState(initialFilter.query ?? "");
   // 搜索框以「开关」形式展开/收起：mainView 顶部为折叠图标，点击展开全宽单行搜索框
   const [searchExpanded, setSearchExpanded] = useState(!mainView);
+  // 本地主视图（mainView）下卡片布局：默认 list（按钮在右边，匹配 SkillHub 网站风格），
+  // 用户可切到 grid（多列卡片，按钮在底部）。三个浏览器自己管理 viewMode，不受此控制。
+  const [localViewMode, setLocalViewMode] = useState<"grid" | "list">("list");
   // 不设「全部」混合列表：一级分类必须具体，默认落在技能（SkillHub）。
   const [kind, setKind] = useState<PluginKind>(initialFilter.kind ?? "skill");
   const [category, setCategory] = useState(initialFilter.category ?? "全部");
@@ -840,6 +845,41 @@ export default function PluginMarketplace({
                       </button>
                     )}
                   </div>
+
+                  <div
+                    className="plugin-marketplace__view-toggle"
+                    role="group"
+                    aria-label="视图布局"
+                  >
+                    <button
+                      type="button"
+                      className={
+                        localViewMode === "grid"
+                          ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
+                          : "plugin-marketplace__icon-btn"
+                      }
+                      onClick={() => setLocalViewMode("grid")}
+                      title="网格视图"
+                      aria-label="网格视图"
+                      aria-pressed={localViewMode === "grid"}
+                    >
+                      <LayoutGrid size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        localViewMode === "list"
+                          ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
+                          : "plugin-marketplace__icon-btn"
+                      }
+                      onClick={() => setLocalViewMode("list")}
+                      title="列表视图"
+                      aria-label="列表视图"
+                      aria-pressed={localViewMode === "list"}
+                    >
+                      <LayoutList size={16} />
+                    </button>
+                  </div>
                 </div>
               </>
             ) : (
@@ -989,7 +1029,13 @@ export default function PluginMarketplace({
             <span>试试其他关键词，或从本地/远程导入 SKILL.md</span>
           </div>
         ) : (
-          <div className="plugin-marketplace__grid">
+          <div
+            className={
+              mainView && localViewMode === "list"
+                ? "plugin-marketplace__grid plugin-marketplace__grid--list"
+                : "plugin-marketplace__grid"
+            }
+          >
             {filteredPlugins.map((manifest) => {
               const installed = isInstalled(manifest.id);
               const mcpConnected = connectedList.find(
