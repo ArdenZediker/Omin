@@ -222,6 +222,10 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
       setCharacterDragMotionFromPointer(pointerScreenX, pointerScreenY, resolveCharacterDragMotion(deltaX, deltaY));
 
       if (!characterDragOriginRef.current) {
+        // 基准坐标用 window.screenX/screenY 同步占位（按下时拿不到异步的
+        // outerPosition），随后用 Tauri 官方 API 异步校准。透明无边框窗口在
+        // WebView2 里 screenX 可能不准（多 DPI / 副屏负坐标时偏差明显），
+        // 校准后按「校准位置 + 总位移」重算一次，避免第一帧跳到错误位置。
         characterDragOriginRef.current = {
           screenX: pointerDown.screenX,
           screenY: pointerDown.screenY,
@@ -229,6 +233,38 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
           windowY: Number(window.screenY || 0),
           petViewportOffsetY: lastAppliedPetViewportOffsetRef.current.y,
         };
+        void appWindow
+          .outerPosition()
+          .then((position) => {
+            const origin = characterDragOriginRef.current;
+            if (!origin || origin.screenX !== pointerDown.screenX) {
+              return;
+            }
+            return appWindow.scaleFactor().then((scale) => {
+              const logical = position.toLogical(scale);
+              const prevWindowX = origin.windowX;
+              origin.windowX = logical.x;
+              origin.windowY = logical.y;
+              // 校准完成时若已进入拖动（delta 已产生），立即用可靠基准重算
+              // 当前位置，把第一帧基于 screenX 的偏差拉回来。
+              const calibratedDeltaX = pointerScreenX - pointerDown.screenX;
+              const calibratedDeltaY = pointerScreenY - pointerDown.screenY;
+              if (
+                Math.abs(calibratedDeltaX) >= PET_CLICK_DRAG_THRESHOLD_PX ||
+                Math.abs(calibratedDeltaY) >= PET_CLICK_DRAG_THRESHOLD_PX ||
+                prevWindowX !== origin.windowX
+              ) {
+                const calibratedX = Math.round(origin.windowX + calibratedDeltaX);
+                const calibratedY = Math.max(
+                  -PET_WINDOW_TOP_OVERSCROLL - origin.petViewportOffsetY,
+                  toVisualPetWindowY(origin.windowY) + calibratedDeltaY,
+                );
+                characterDragLastTargetRef.current = { x: calibratedX, y: calibratedY };
+                scheduleCharacterDragPosition(calibratedX, calibratedY);
+              }
+            });
+          })
+          .catch(() => undefined);
       }
 
       const origin = characterDragOriginRef.current;
@@ -320,6 +356,10 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     characterDragOriginRef.current = null;
     characterDragLastTargetRef.current = null;
     isCharacterDraggingRef.current = false;
+    // 拖拽放置后刷新交互豁免：松手瞬间若不延长，followCursorScreen（鼠标随航）
+    // 的 monitor sync 会在 900ms 豁免到期后把宠物拉回光标所在屏，表现为
+    // 「拖到副屏一松手就弹回原屏」。
+    markCompactInteraction();
     if (characterDragRafRef.current !== null) {
       window.cancelAnimationFrame(characterDragRafRef.current);
       characterDragRafRef.current = null;
@@ -383,7 +423,7 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     if (!pendingDragPosition && !characterDragMoveDrainRef.current) {
       releaseCharacterDragWindowMove();
     }
-  }, [compactSize.height, compactSize.width, flushCharacterDragPosition, releaseCharacterDragWindowMove, updatePetThoughtWindowForRect]);
+  }, [compactSize.height, compactSize.width, flushCharacterDragPosition, markCompactInteraction, releaseCharacterDragWindowMove, updatePetThoughtWindowForRect]);
 
   // Pet-mode window drag.
   //

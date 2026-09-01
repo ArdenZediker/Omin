@@ -593,6 +593,12 @@ export function useCompactWindowController({
 
         const scaleFactor = await appWindow.scaleFactor();
         const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+        // 二次检查拖拽守卫：syncCompactMonitor 入口检查过守卫，但这里已经
+        // await 过 isVisible/monitor/outerPosition，期间用户可能已开始拖拽。
+        // 若此时仍 setPosition 会把宠物从拖动位置抢回光标屏锚点，造成闪烁。
+        if (isCharacterDraggingRef.current || characterPointerDownRef.current) {
+          return;
+        }
         const currentLogicalPosition = {
           x: Math.round(currentPosition.x),
           y: Math.round(currentPosition.y),
