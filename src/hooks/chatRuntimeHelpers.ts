@@ -44,7 +44,6 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
     "list_files",
     "read_file",
     "search_files",
-    "analyze_files",
   ]);
   const tools: ChatToolParam[] = [];
   for (const toolId of new Set(project.allowedToolIds)) {

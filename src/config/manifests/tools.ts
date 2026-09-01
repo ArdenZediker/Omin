@@ -100,13 +100,6 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     promptContribution: "可调用 /search_files <关键词> 在工区范围内按关键字检索文件内容。",
   },
   {
-    id: "analyze_files",
-    command: "/analyze_files",
-    title: "分析文件",
-    description: "结合搜索和读取完成文件分析",
-    promptContribution: "可调用 /analyze_files <任务> 结合搜索与读取完成文件级分析任务。",
-  },
-  {
     id: "read_persona",
     command: "/read_persona",
     title: "读取个性化档案",
@@ -149,7 +142,7 @@ export const TOOLSET_MANIFESTS: ToolsetManifest[] = [
     id: "code-analysis",
     title: "代码分析",
     description: "适合搜索、阅读和分析工作区文件",
-    toolIds: ["search_sessions", "read_session", "list_files", "read_file", "search_files", "analyze_files"],
+    toolIds: ["search_sessions", "read_session", "list_files", "read_file", "search_files"],
   },
   {
     id: "file-processing",
@@ -160,7 +153,7 @@ export const TOOLSET_MANIFESTS: ToolsetManifest[] = [
 ];
 
 export const PROJECT_TOOL_MANIFESTS = TOOL_MANIFESTS.filter((tool) =>
-  ["search_sessions", "read_session", "list_files", "read_file", "search_files", "analyze_files"].includes(tool.id)
+  ["search_sessions", "read_session", "list_files", "read_file", "search_files"].includes(tool.id)
 );
 
 export const PROJECT_TOOL_OPTIONS = PROJECT_TOOL_MANIFESTS.map((tool) => ({

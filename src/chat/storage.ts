@@ -45,7 +45,6 @@ export const DEFAULT_PROJECT_TOOL_IDS = [
   "list_files",
   "read_file",
   "search_files",
-  "analyze_files",
   "read_persona",
   "update_persona",
 ];

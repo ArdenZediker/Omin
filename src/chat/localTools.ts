@@ -146,7 +146,6 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   const listFilesTool = requireTool("list_files");
   const readFileTool = requireTool("read_file");
   const searchFilesTool = requireTool("search_files");
-  const analyzeFilesTool = requireTool("analyze_files");
   const readPersonaTool = requireTool("read_persona");
   const updatePersonaTool = requireTool("update_persona");
   const installExpertTool = requireTool("install_expert");
@@ -418,13 +417,6 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const lines = matches.slice(0, 20).map((match, index) => `${index + 1}. ${match.path}:${match.line_number} ${match.line_preview}`);
       return { ok: true, outputText: [`找到 ${matches.length} 个相关匹配：`, ...lines].join("\n"), data: matches };
     },
-  });
-
-  registry.register({
-    id: analyzeFilesTool.id,
-    command: analyzeFilesTool.command,
-    title: analyzeFilesTool.title,
-    execute: async () => ({ ok: true }),
   });
 
   const PERSONA_FIELDS = [

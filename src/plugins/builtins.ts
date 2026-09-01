@@ -33,7 +33,7 @@ export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
 - icon：lucide 图标名（如 Code2、PenTool、Bot、BarChart3、Store）
 - tags：擅长领域标签，固定 3 个（中英文均可）
 - templatePrompt：专家系统提示词，写明角色定位 + 工作方式 + 输出偏好，可直接执行、不含占位符
-- defaultToolIds：推荐工具 id 列表（从内置工具中选：list_files、read_file、search_files、analyze_files、search_sessions、read_session）
+- defaultToolIds：推荐工具 id 列表（从内置工具中选：list_files、read_file、search_files、search_sessions、read_session）
 - defaultSkillIds：推荐技能 id 列表，从已安装技能中选；如无可推荐项可留空数组
 
 【类型与分类判定】单角色 = agent 型专家（一条 manifest）；多角色协作团队 Omni 暂不支持单条目表达，应拆分为多个 agent 专家并在 templatePrompt 中注明协作方式。分类判定优先级：①主要输出物属于哪个领域；②服务对象是谁；③跨领域时选最核心的一个。
@@ -208,18 +208,6 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     promptContribution: "可调用 /search_files <关键词> 在工作区范围内按关键字检索文件内容。",
   },
   {
-    id: "analyze_files",
-    name: "分析文件",
-    description: "当用户想结合搜索和读取完成文件分析任务时调用。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "tool",
-    category: "开发编程",
-    icon: "FileBarChart",
-    command: "/analyze_files",
-    promptContribution: "可调用 /analyze_files <任务> 结合搜索与读取完成文件级分析任务。",
-  },
-  {
     id: "read_persona",
     name: "读取个性化档案",
     description: "当用户想读取本地个性化 md 文件的内容（user_name / assistant_name / persona_description / custom_instruction / long_term_memory / agents_md / style）时调用。",
@@ -344,7 +332,7 @@ export const BUILTIN_EXPERT_PLUGINS: PluginManifest[] = [
     tags: ["coding", "review", "architecture"],
     templatePrompt:
       "你是一名资深工程师。优先给出可运行的代码或清晰的排查步骤，不做空泛描述。需要时主动请求查看相关文件。",
-    defaultToolIds: ["list_files", "read_file", "search_files", "analyze_files"],
+    defaultToolIds: ["list_files", "read_file", "search_files"],
     defaultSkillIds: [],
   },
   {
@@ -404,7 +392,7 @@ export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
     icon: "Bug",
     templatePrompt:
       "请帮我定位问题根因。优先查看报错堆栈和相关代码，给出最小复现步骤和修复方案。",
-    defaultToolIds: ["list_files", "read_file", "search_files", "analyze_files"],
+    defaultToolIds: ["list_files", "read_file", "search_files"],
     defaultSkillIds: [],
   },
   {
