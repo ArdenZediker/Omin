@@ -9238,9 +9238,17 @@ body:has(.pet-thought-window),
   min-width: 0;
 }
 
+/* mainView 顶部搜索按钮：贴右。
+ * 背景：mainView 的 view-toggle 不再用 margin-left:auto（见 .plugin-marketplace__view-toggle
+ * 注释），改由 search 容器自己 margin-left:auto 把整组按钮（search + view-toggle）推
+ * 到 top-bar 最右端。「我的技能」tab 隐藏 category-tabs 时尤其明显——只剩 search
+ * 与 view-toggle，两者一组贴右对齐，跟 SkillHub 浏览器 filter-bar 视觉一致。
+ * 其它分类（有 category-tabs 撑满 flex:1）下 margin-left:auto 仍生效，
+ * search + view-toggle 跟在 category-tabs 后面贴右。 */
 .plugin-marketplace__top-bar .plugin-marketplace__search {
   flex-shrink: 0;
   margin-top: 0;
+  margin-left: auto;
 }
 
 /* SkillHub 浏览器：排序 tabs + 右侧筛选下拉 + 搜索框单独一行 */
@@ -9483,11 +9491,16 @@ body:has(.pet-thought-window),
   border-color: var(--omni-app-text);
 }
 
-/* 视图布局切换：两个互斥 icon-btn 紧密排列成一组（grid/list） */
+/* 视图布局切换：两个互斥 icon-btn 紧密排列成一组（grid/list）。
+ * 不设 margin-left:auto——贴右的位置由外层容器控制：
+ *   - skillhub-browser__filters 自身 flex-shrink:0 贴右（三个浏览器）
+ *   - mainView top-bar 路径下，.plugin-marketplace__search 自己加
+ *     margin-left:auto 贴右，view-toggle 紧跟其后
+ * 不再加自己的 margin-left:auto，避免在 mainView 路径下把 search
+ * 留在左边、view-toggle 单独贴右这种错位布局。 */
 .plugin-marketplace__view-toggle {
   display: inline-flex;
   gap: 4px;
-  margin-left: auto;
 }
 
 .plugin-marketplace__sort-tabs {
