@@ -1,33 +1,5 @@
 import type { Project } from "../../chat/types";
 
-const LEGACY_AVATAR_CODE_MAP: Record<string, string> = {
-  "🦉": "1F989",
-  "😊": "1F60A",
-  "😀": "1F600",
-  "😄": "1F604",
-  "😁": "1F601",
-  "😎": "1F60E",
-  "🥳": "1F973",
-  "🤓": "1F913",
-  "😺": "1F63A",
-  "🐶": "1F436",
-  "🦊": "1F98A",
-  "🐼": "1F43C",
-  "🐸": "1F438",
-  "🤖": "1F916",
-  "👾": "1F47E",
-  "🎯": "1F3AF",
-  "⭐": "2B50",
-  "🔥": "1F525",
-  "🌈": "1F308",
-  "🍀": "1F340",
-  "🌸": "1F338",
-  "🍎": "1F34E",
-  "⚽": "26BD",
-  "🎵": "1F3B5",
-  "🚀": "1F680",
-};
-
 const CUSTOM_PROJECT_AVATAR_CODES = ["1F916", "1F9E0", "1F47E", "1F4A1", "1F680", "1F3AF"];
 
 export function getEmojiAssetSrc(code: string) {
@@ -37,7 +9,7 @@ export function getEmojiAssetSrc(code: string) {
 export function resolveEmojiAvatarCode(value?: string | null) {
   if (!value) return null;
   if (value.startsWith("emoji:")) return value.slice(6).trim().toUpperCase();
-  return LEGACY_AVATAR_CODE_MAP[value] ?? null;
+  return null;
 }
 
 export function resolveProjectAvatarSeed(projects: Project[], projectId: string | null) {
