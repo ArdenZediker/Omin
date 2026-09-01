@@ -15,7 +15,8 @@ import { openArtifactPath } from "./ArtifactCards";
 
 interface ArtifactsPanelProps {
   projectId: string | null;
-  onClose: () => void;
+  /** 关闭按钮回调：传入则渲染关闭按钮（如用作独立抽屉），不传则隐藏（嵌入其他面板时） */
+  onClose?: () => void;
   onJumpToSession: (sessionId: string) => void;
 }
 
@@ -78,9 +79,11 @@ export default function ArtifactsPanel({ projectId, onClose, onJumpToSession }: 
               <span>清空</span>
             </button>
           ) : null}
-          <button type="button" className="artifacts-panel__close" title="关闭产物面板" aria-label="关闭产物面板" onClick={onClose}>
-            <X size={15} strokeWidth={2} />
-          </button>
+          {onClose ? (
+            <button type="button" className="artifacts-panel__close" title="关闭产物面板" aria-label="关闭产物面板" onClick={onClose}>
+              <X size={15} strokeWidth={2} />
+            </button>
+          ) : null}
         </div>
       </div>
 

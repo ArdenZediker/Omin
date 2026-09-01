@@ -12,7 +12,6 @@ import {
   Compass,
   FolderOpen,
   History,
-  LayoutDashboard,
   LayoutTemplate,
   MessageSquare,
   MoreHorizontal,
@@ -89,7 +88,7 @@ type SessionGroup = {
 };
 
 type TopicGroupingMode = "time" | "flat";
-type SidePanelTab = "topics" | "tasks";
+type SidePanelTab = "topics" | "tasks" | "artifacts";
 
 type TopicDeleteConfirmState = {
   title: string;
@@ -332,9 +331,15 @@ export default function MainChatView({
   const [topicSearchQuery, setTopicSearchQuery] = useState("");
   const [topicMenuOpen, setTopicMenuOpen] = useState(false);
   const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
-  const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
+  const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>(() => {
+    // 有产物的项目打开后默认展示产物面板，否则展示话题列表
+    if (activeProject) {
+      const initialCount = artifactsForProject(activeProject.id).length;
+      return initialCount > 0 ? "artifacts" : "topics";
+    }
+    return "topics";
+  });
   const [showPluginMarketplace, setShowPluginMarketplace] = useState(openMarketplace ?? false);
-  const [showArtifactsPanel, setShowArtifactsPanel] = useState(false);
   const [artifactCount, setArtifactCount] = useState(0);
   const prevArtifactCountRef = useRef(0);
   const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind; category: string }>({ kind: "skill", category: "全部" });
@@ -360,16 +365,16 @@ export default function MainChatView({
     }
   }, [openMarketplace]);
 
-  // 产物数量角标 + 新产物产出时自动展开面板（让效果即时可见）。
-  // 初始加载只同步数量不弹面板；仅运行时「事件触发且数量增加」才自动打开，
-  // 避免打开应用时历史产物把面板顶出来。
+  // 产物数量角标 + 新产物产出时自动切换到产物 tab（让效果即时可见）。
+  // 初始加载只同步数量与默认 tab，不主动切换；仅运行时「事件触发且数量增加」才切到产物 tab，
+  // 避免打开应用时历史产物把视图抢走。
   useEffect(() => {
     if (!activeProject) return;
     const onArtifactsChanged = () => {
       const count = artifactsForProject(activeProject.id).length;
       setArtifactCount(count);
       if (count > prevArtifactCountRef.current && count > 0) {
-        setShowArtifactsPanel(true);
+        setSidePanelTab("artifacts");
       }
       prevArtifactCountRef.current = count;
     };
@@ -1269,15 +1274,6 @@ export default function MainChatView({
           </button>
           <button type="button" className="main-chat-nav__item no-drag" title="知识" onClick={onOpenKnowledge}>
             <FolderOpen size={18} strokeWidth={1.9} />
-          </button>
-          <button
-            type="button"
-            className={`main-chat-nav__item no-drag ${showArtifactsPanel ? "main-chat-nav__item--active" : ""}`}
-            title="产物"
-            onClick={() => setShowArtifactsPanel((current) => !current)}
-          >
-            <Package size={18} strokeWidth={1.9} />
-            {artifactCount > 0 ? <span className="main-chat-nav__badge">{artifactCount > 99 ? "99+" : artifactCount}</span> : null}
           </button>
         </div>
         <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" onClick={onSettingsOpen}>
@@ -2587,14 +2583,6 @@ export default function MainChatView({
             </main>
           </section>
 
-          {showArtifactsPanel && !isProjectSettingsMode ? (
-            <ArtifactsPanel
-              projectId={activeProject?.id ?? null}
-              onClose={() => setShowArtifactsPanel(false)}
-              onJumpToSession={onSelectChat}
-            />
-          ) : null}
-
           {!isProjectSettingsMode && (
             <div
               className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
@@ -2609,23 +2597,25 @@ export default function MainChatView({
           <div className="chat-topic-panel__body">
             <div className="chat-topic-panel__toolbar">
               <div className="chat-topic-panel__title">
-                <LayoutDashboard size={14} strokeWidth={2} />
-                <span>工作台</span>
+                <Package size={14} strokeWidth={2} />
+                <span>产物</span>
               </div>
               <div className="chat-topic-panel__header-actions">
-                <button
-                  ref={topicMenuButtonRef}
-                  type="button"
-                  className={`chat-topic-panel__icon-button ${topicMenuOpen ? "chat-topic-panel__icon-button--active" : ""}`}
-                  title="更多操作"
-                  onClick={() => {
-                    setTopicSearchOpen(false);
-                    setTopicDeleteConfirm(null);
-                    setTopicMenuOpen((current) => !current);
-                  }}
-                >
-                  <MoreHorizontal size={16} strokeWidth={1.8} />
-                </button>
+                {sidePanelTab === "topics" ? (
+                  <button
+                    ref={topicMenuButtonRef}
+                    type="button"
+                    className={`chat-topic-panel__icon-button ${topicMenuOpen ? "chat-topic-panel__icon-button--active" : ""}`}
+                    title="更多操作"
+                    onClick={() => {
+                      setTopicSearchOpen(false);
+                      setTopicDeleteConfirm(null);
+                      setTopicMenuOpen((current) => !current);
+                    }}
+                  >
+                    <MoreHorizontal size={16} strokeWidth={1.8} />
+                  </button>
+                ) : null}
                 {sidePanelTab === "topics" && topicMenuOpen && (
                   <div ref={topicMenuRef} className="chat-topic-panel__menu">
                     {topicDeleteConfirm ? (
@@ -2698,6 +2688,10 @@ export default function MainChatView({
             </div>
 
             <div className="chat-topic-panel__tabs">
+              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "artifacts" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("artifacts")}>
+                产物
+                {artifactCount > 0 ? <span className="chat-topic-panel__tab-badge">{artifactCount > 99 ? "99+" : artifactCount}</span> : null}
+              </button>
               <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "topics" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("topics")}>话题</button>
               <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "tasks" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("tasks")}>任务</button>
             </div>
@@ -2787,6 +2781,13 @@ export default function MainChatView({
                 </div>
               )}
             </div>}
+
+            {sidePanelTab === "artifacts" ? (
+              <ArtifactsPanel
+                projectId={activeProject?.id ?? null}
+                onJumpToSession={onSelectChat}
+              />
+            ) : null}
 
             {sidePanelTab === "tasks" && (
               <>

@@ -3751,7 +3751,24 @@ body:has(.pet-thought-window),
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
   transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.chat-topic-panel__tab-badge {
+  min-width: 16px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--omni-danger, #e5484d);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
 }
 
 .chat-topic-panel__tab--active {
@@ -11478,6 +11495,15 @@ body:has(.pet-thought-window),
   border-left: 1px solid var(--omni-panel-border);
   background: color-mix(in srgb, var(--omni-panel-bg) 92%, transparent);
   z-index: 2;
+}
+
+/* 嵌入 chat-topic-panel 作为 tab 内容时，宽度继承父容器并去掉独立抽屉样式 */
+.chat-topic-panel .artifacts-panel {
+  width: 100%;
+  min-width: 0;
+  border-left: none;
+  z-index: auto;
+  background: transparent;
 }
 
 .artifacts-panel__header {
