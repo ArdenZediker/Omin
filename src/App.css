@@ -10341,13 +10341,6 @@ body:has(.pet-thought-window),
   align-items: center;
   user-select: none;
 }
-.plugin-card__enable-label {
-  font-weight: 500;
-}
-.plugin-card__enable-label--off {
-  color: var(--omni-app-muted);
-  font-weight: 400;
-}
 
 /* 整卡停用态：透明度降低 + 内部描述/meta 降饱和度
    （仅对 isEnabled=false 的非内置卡生效；内置始终 enabled=true 不会走到这里） */
