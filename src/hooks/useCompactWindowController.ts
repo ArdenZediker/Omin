@@ -161,12 +161,15 @@ export function useCompactWindowController({
   const characterDragOriginRef = useRef<{
     screenX: number;
     screenY: number;
-    // windowX/windowY 为**物理像素**（outerPosition 原生返回值，不 toLogical）。
-    // 拖拽全程用物理坐标系：event.screenX 差值本身是物理像素、setPosition 用
-    // PhysicalPosition，跨 DPI 屏时物理坐标全局连续，不随窗口所在屏的 scale
-    // 换算基准变化，避免跨屏瞬间 LogicalPosition 换算抖动造成快速闪烁。
+    // ⚠️ windowX/windowY/cursorX/cursorY 均为**物理像素**：window 来自
+    // outerPosition() 原生返回值、cursor 来自 cursorPosition()（GetCursorPos
+    // 全局虚拟屏幕坐标）。位置源**禁止**用 event.screenX/screenY——它在
+    // Windows 高 DPI 下是 DIP，且按光标所在显示器的 scale 换算，跨 DPI 屏
+    // 瞬间同一物理光标点的换算值会跳变，导致「跨屏落点与鼠标移入位置错位」。
     windowX: number;
     windowY: number;
+    cursorX: number;
+    cursorY: number;
     scaleFactor: number;
     petViewportOffsetY: number;
   } | null>(null);

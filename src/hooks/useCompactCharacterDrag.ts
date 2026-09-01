@@ -1,6 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import type * as React from "react";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { cursorPosition } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { MAIN_WINDOW_LABEL } from "../app/constants";
 import {
@@ -37,12 +38,16 @@ type UseCompactCharacterDragArgs = {
   characterDragOriginRef: MutableRefObject<{
     screenX: number;
     screenY: number;
-    // windowX/windowY 为**物理像素**（outerPosition 原生返回值，不 toLogical）。
-    // 拖拽全程用物理坐标系：event.screenX 差值本身是物理像素、setPosition 用
-    // PhysicalPosition，跨 DPI 屏时物理坐标全局连续，不随窗口所在屏的 scale
-    // 换算基准变化，避免跨屏瞬间 LogicalPosition 换算抖动造成快速闪烁。
+    // ⚠️ windowX/windowY/cursorX/cursorY 均为**物理像素**：window 来自
+    // outerPosition() 原生返回值、cursor 来自 cursorPosition()（GetCursorPos
+    // 全局虚拟屏幕坐标）。位置源**禁止**用 event.screenX/screenY——它在
+    // Windows 高 DPI 下是 DIP，且按光标所在显示器的 scale 换算，跨 DPI 屏
+    // 瞬间同一物理光标点的换算值会跳变（如主屏 100% 时 x=1920 ↔ 副屏 150%
+    // 同一点 x≈1280），导致「跨屏落点与鼠标移入位置错位」。
     windowX: number;
     windowY: number;
+    cursorX: number;
+    cursorY: number;
     scaleFactor: number;
     petViewportOffsetY: number;
   } | null>;
@@ -62,6 +67,34 @@ type UseCompactCharacterDragArgs = {
   suppressPetClickUntilRef: MutableRefObject<number>;
   lastAppliedPetViewportOffsetRef: MutableRefObject<{ x: number; y: number }>;
 };
+
+/**
+ * 由物理光标位置（cursorPosition，GetCursorPos 全局虚拟屏幕坐标）解出窗口
+ * 目标位置。全程物理像素：窗口物理基准 + 光标物理位移，不经过逻辑/DIP
+ * 换算，跨 DPI 屏连续，落点与鼠标实际位置精确一致。
+ */
+function resolveDragTarget(
+  origin: {
+    windowX: number;
+    windowY: number;
+    cursorX: number;
+    cursorY: number;
+    scaleFactor: number;
+    petViewportOffsetY: number;
+  },
+  cursorX: number,
+  cursorY: number,
+): CharacterDragPosition {
+  const scale = origin.scaleFactor || 1;
+  const nextWindowX = Math.round(origin.windowX + (cursorX - origin.cursorX));
+  // 上边界按「宠物本体的视觉顶边」算：想法气泡/菜单展开时宠物会被
+  // --pet-viewport-offset-y 推离窗口顶边，只限制窗口顶边的话，宠物就再也
+  // 贴不到屏幕最上方。
+  const minWindowVisualPhysicalY = -(PET_WINDOW_TOP_OVERSCROLL + origin.petViewportOffsetY) * scale;
+  const rawVisualY = origin.windowY + PET_WINDOW_DECORATION_MARGIN_TOP * scale + (cursorY - origin.cursorY);
+  const nextWindowY = Math.round(Math.max(minWindowVisualPhysicalY, rawVisualY) - PET_WINDOW_DECORATION_MARGIN_TOP * scale);
+  return { x: nextWindowX, y: nextWindowY };
+}
 
 /**
  * 角色/宠物拖拽子系统：JS 驱动拖拽循环（复用窗口级 mousemove 捕获监听）、
@@ -144,42 +177,12 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     []
   );
 
-  // 消费 pending 位置队列：fire-and-forget 写入，不串行 await setPosition
-  // 的 IPC 返回。上一版每轮 await setPosition（WebView2→Rust IPC 往返，
-  // Windows 上可达 10-30ms）+ await 下一帧，位置更新率被 IPC 延迟钳制在
-  // ~20-40fps，鼠标快速移动时宠物明显跟不上。改为每帧只发一次最新
-  // pending 位置（pointermove 在帧间隙持续覆盖 pendingRef），更新率回到
-  // rAF 频率（对齐显示器刷新），且窗口总是奔向最新目标。
-  const consumePendingDragPositions = async () => {
-    let positionWritesInFlight = 0;
-    while (characterDragPendingRef.current) {
-      if (positionWritesInFlight >= 2) {
-        // 积压保护：上轮 IPC 还没返回就先空转一帧，目标保持 pending，
-        // 下一轮用最新值发送，避免 IPC 队列堆积造成位置追赶跳变。
-        await waitForNextAnimationFrame();
-        continue;
-      }
-      const nextPosition = characterDragPendingRef.current;
-      characterDragPendingRef.current = null;
-      positionWritesInFlight += 1;
-      // 物理像素写入：跨 DPI 屏时 PhysicalPosition 不经过 scale 换算，
-      // 窗口物理位置直接落在目标物理坐标上，避免 LogicalPosition 抖动。
-      appWindow
-        .setPosition(new PhysicalPosition(Math.round(nextPosition.x), Math.round(nextPosition.y)))
-        .catch(() => undefined)
-        .finally(() => {
-          positionWritesInFlight -= 1;
-        });
-      await waitForNextAnimationFrame();
-    }
-  };
-
   const flushCharacterDragPosition = useCallback(() => {
     if (characterDragMoveDrainRef.current) {
       return characterDragMoveDrainRef.current;
     }
 
-    if (!characterDragPendingRef.current) {
+    if (!characterDragPendingRef.current && !isCharacterDraggingRef.current) {
       return Promise.resolve();
     }
 
@@ -187,14 +190,41 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     compactInternalMoveRef.current = true;
     const drain = (async () => {
       try {
-        await consumePendingDragPositions();
+        // 拖拽循环：每帧查询 cursorPosition()（物理像素、全局连续，GetCursorPos
+        // 不经过 DIP 换算），与按下时校准的物理基准做差得目标位置，fire-and-forget
+        // 发送 setPosition。相比「pointermove 里用 event.screenX 算目标」：
+        // ① 位置源是原生物理值，跨 DPI 屏不随光标所在屏的 scale 换算基准变化，
+        //    落点与鼠标实际位置精确一致（修复「跨屏落点错位」）；
+        // ② 每帧取的都是那一刻的最新光标位置，天然跟手——鼠标快速甩动时循环
+        //    每帧都在采样，而不是等下一个 mousemove 事件；
+        // ③ 不 await IPC 返回，更新率 = rAF 频率，不受 IPC 往返延迟钳制。
+        while (isCharacterDraggingRef.current && characterDragOriginRef.current) {
+          const origin = characterDragOriginRef.current;
+          const cursor = await cursorPosition().catch(() => null);
+          if (!cursor) {
+            await waitForNextAnimationFrame();
+            continue;
+          }
+          const target = resolveDragTarget(origin, cursor.x, cursor.y);
+          characterDragLastTargetRef.current = target;
+          // 物理像素写入：跨 DPI 屏时 PhysicalPosition 不经过 scale 换算，
+          // 窗口物理位置直接落在目标物理坐标上，避免 LogicalPosition 抖动。
+          appWindow
+            .setPosition(new PhysicalPosition(target.x, target.y))
+            .catch(() => undefined);
+          await waitForNextAnimationFrame();
+        }
       } finally {
         characterDragMoveDrainRef.current = null;
-        // 竞态兜底：主循环退出与松手写入最终位置之间是同步块（无 await），
-        // 若此刻 pending 又有值（松手目标恰在循环退出瞬间写入），原地补
-        // 消费一轮，保证最终位置一定被应用，避免松手后窗口停在旧位置。
-        if (characterDragPendingRef.current) {
-          await consumePendingDragPositions();
+        // 收尾落位：循环退出（松手）后，把最终目标 await 发送一次，保证窗口
+        // 真正停在最后位置（fire-and-forget 的 in-flight 写入可能未完成，直接
+        // 读 outerPosition 会拿到旧值）。最终目标优先取松手时写回的 pending。
+        const finalTarget = characterDragPendingRef.current ?? characterDragLastTargetRef.current;
+        if (finalTarget) {
+          characterDragPendingRef.current = null;
+          await appWindow
+            .setPosition(new PhysicalPosition(Math.round(finalTarget.x), Math.round(finalTarget.y)))
+            .catch(() => undefined);
         }
         if (!characterPointerDownRef.current && !isCharacterDraggingRef.current && !characterDragPendingRef.current) {
           releaseCharacterDragWindowMove();
@@ -204,23 +234,6 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     characterDragMoveDrainRef.current = drain;
     return drain;
   }, [releaseCharacterDragWindowMove]);
-
-  const scheduleCharacterDragPosition = useCallback((x: number, y: number) => {
-    characterDragWindowMoveActiveRef.current = true;
-    compactInternalMoveRef.current = true;
-    characterDragPendingRef.current = { x, y };
-    if (characterDragMoveDrainRef.current) {
-      return;
-    }
-    if (characterDragRafRef.current !== null) {
-      return;
-    }
-
-    characterDragRafRef.current = window.requestAnimationFrame(() => {
-      characterDragRafRef.current = null;
-      void flushCharacterDragPosition();
-    });
-  }, [flushCharacterDragPosition]);
 
   const continueCharacterDrag = useCallback(
     (pointerScreenX: number, pointerScreenY: number) => {
@@ -253,82 +266,54 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
         void hidePetThoughtWindowForDrag();
       }
       isCharacterDraggingRef.current = true;
+      // event.screenX/screenY 仅用于拖动判定与运动方向（同屏内 DIP 近似物理）；
+      // 窗口目标位置一律由拖拽循环内的 cursorPosition() 物理像素计算。
       setCharacterDragMotionFromPointer(pointerScreenX, pointerScreenY, resolveCharacterDragMotion(deltaX, deltaY));
 
       if (!characterDragOriginRef.current) {
-        // 基准坐标用物理像素：outerPosition() 原生返回 PhysicalPosition，
-        // 与 event.screenX/screenY 的物理像素差值同坐标系。透明无边框窗口在
-        // WebView2 里 window.screenX/screenY（逻辑值）多 DPI / 副屏负坐标下
-        // 不可靠，先占位、随后用 Tauri 官方 API 异步校准。
-        // ⚠️ 拖拽目标与写入全程物理坐标：setPosition(PhysicalPosition) 不经过
-        // 逻辑换算，跨 DPI 屏时不会因窗口所在屏的 scaleFactor 变化而抖动。
+        // 基准坐标用物理像素：outerPosition() 原生物理值 + cursorPosition()
+        // 原生物理光标位置。先占位、随后用 Tauri 官方 API 异步校准。
+        // ⚠️ 不要用 window.screenX / event.screenX 做位置基准——它是逻辑/DIP
+        // 值，多 DPI 下与物理像素有 scale 差，跨屏落点会错位。
         characterDragOriginRef.current = {
           screenX: pointerDown.screenX,
           screenY: pointerDown.screenY,
           windowX: Number(window.screenX || 0),
           windowY: Number(window.screenY || 0),
+          cursorX: pointerScreenX,
+          cursorY: pointerScreenY,
           scaleFactor: 1,
           petViewportOffsetY: lastAppliedPetViewportOffsetRef.current.y,
         };
-        void appWindow
-          .outerPosition()
-          .then((position) => {
+        void Promise.all([appWindow.outerPosition(), cursorPosition(), appWindow.scaleFactor()])
+          .then(([position, cursor, scale]) => {
             const origin = characterDragOriginRef.current;
             if (!origin || origin.screenX !== pointerDown.screenX) {
               return;
             }
-            return appWindow.scaleFactor().then((scale) => {
-              const prevWindowX = origin.windowX;
-              // outerPosition 原生返回物理像素，直接采用（不再 toLogical）。
-              origin.windowX = position.x;
-              origin.windowY = position.y;
-              origin.scaleFactor = scale;
-              // 校准完成时若已进入拖动（delta 已产生），立即用可靠基准重算
-              // 当前位置，把第一帧基于 screenX 的偏差拉回来。
-              const calibratedDeltaX = pointerScreenX - pointerDown.screenX;
-              const calibratedDeltaY = pointerScreenY - pointerDown.screenY;
-              if (
-                Math.abs(calibratedDeltaX) >= PET_CLICK_DRAG_THRESHOLD_PX ||
-                Math.abs(calibratedDeltaY) >= PET_CLICK_DRAG_THRESHOLD_PX ||
-                prevWindowX !== origin.windowX
-              ) {
-                const calibratedX = Math.round(origin.windowX + calibratedDeltaX);
-                const calibratedY = Math.max(
-                  // 物理域上边界：宠物视觉顶边 = nativeY + 装饰边距(物理)，
-                  // 允许再向上超一个 overscroll(物理)。
-                  -(PET_WINDOW_TOP_OVERSCROLL + origin.petViewportOffsetY) * scale -
-                    PET_WINDOW_DECORATION_MARGIN_TOP * scale,
-                  origin.windowY + PET_WINDOW_DECORATION_MARGIN_TOP * scale + calibratedDeltaY -
-                    PET_WINDOW_DECORATION_MARGIN_TOP * scale,
-                );
-                characterDragLastTargetRef.current = { x: calibratedX, y: calibratedY };
-                scheduleCharacterDragPosition(calibratedX, calibratedY);
-              }
-            });
+            origin.windowX = position.x;
+            origin.windowY = position.y;
+            origin.cursorX = cursor.x;
+            origin.cursorY = cursor.y;
+            origin.scaleFactor = scale;
+            // 校准完成：立即用可靠基准算一次当前位置，把第一帧基于占位基准
+            // 的偏差拉回来。
+            const calibratedTarget = resolveDragTarget(origin, cursor.x, cursor.y);
+            characterDragLastTargetRef.current = calibratedTarget;
+            appWindow
+              .setPosition(new PhysicalPosition(calibratedTarget.x, calibratedTarget.y))
+              .catch(() => undefined);
+            void flushCharacterDragPosition();
           })
           .catch(() => undefined);
       }
 
-      const origin = characterDragOriginRef.current;
-      if (!origin) {
-        return false;
-      }
-      // 全程物理像素：origin 物理基准 + screenX 物理差值。
-      const nextWindowX = origin.windowX + deltaX;
-      // origin.windowY 是 Tauri 窗口 native 物理 Y；先转成视觉物理 Y 再叠加拖动偏移。
-      // 上边界按「宠物本体的视觉顶边」算：想法气泡/菜单展开时宠物会被
-      // --pet-viewport-offset-y 推离窗口顶边，只限制窗口顶边的话，宠物就再也贴不到屏幕最上方。
-      const scale = origin.scaleFactor || 1;
-      const minWindowVisualPhysicalY = -(PET_WINDOW_TOP_OVERSCROLL + origin.petViewportOffsetY) * scale;
-      const nextWindowY = Math.max(
-        minWindowVisualPhysicalY,
-        origin.windowY + PET_WINDOW_DECORATION_MARGIN_TOP * scale + deltaY,
-      ) - PET_WINDOW_DECORATION_MARGIN_TOP * scale;
-      characterDragLastTargetRef.current = { x: nextWindowX, y: nextWindowY };
-      scheduleCharacterDragPosition(nextWindowX, nextWindowY);
+      // 确保拖拽循环在跑：目标位置由循环内每帧 cursorPosition() 计算，
+      // pointermove 只负责唤醒/维持循环，位置永远是最新光标物理值。
+      void flushCharacterDragPosition();
       return true;
     },
-    [hidePetThoughtWindowForDrag, markCompactInteraction, scheduleCharacterDragPosition, setCharacterDragMotionFromPointer]
+    [flushCharacterDragPosition, hidePetThoughtWindowForDrag, markCompactInteraction, setCharacterDragMotionFromPointer]
   );
 
   const handleCharacterPointerDown = useCallback(
@@ -399,6 +384,11 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
   const handleCharacterPointerUp = useCallback(async () => {
     const pendingDragPosition = characterDragPendingRef.current ?? characterDragLastTargetRef.current;
     const shouldSuppressPetClick = characterPointerMovedRef.current || isCharacterDraggingRef.current;
+    // 松手：先把最终目标写回 pending（drain 收尾以它为准 await 落位），再清
+    // 拖拽状态让循环退出，最后 await flush 等待最终位置真正写入完成。
+    if (pendingDragPosition) {
+      characterDragPendingRef.current = pendingDragPosition;
+    }
     characterPointerDownRef.current = null;
     characterDragOriginRef.current = null;
     characterDragLastTargetRef.current = null;
@@ -411,14 +401,7 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
       window.cancelAnimationFrame(characterDragRafRef.current);
       characterDragRafRef.current = null;
     }
-    if (pendingDragPosition) {
-      characterDragPendingRef.current = pendingDragPosition;
-      // 等 drain 真正把窗口移到最终目标位置（await 返回的 promise，
-      // 若已有 drain 则等待其完成），避免此时读 outerPosition 拿到旧位置。
-      await flushCharacterDragPosition();
-    } else {
-      characterDragPendingRef.current = null;
-    }
+    await flushCharacterDragPosition();
     // 与 onMoved 一致：持久化「宠物本体」的视觉位置（逻辑坐标 = 窗口逻辑位置
     // + 宠物视口偏移）。拖拽目标虽是物理像素，但写入后窗口实际位置即目标，
     // 读 outerPosition().toLogical 换算回逻辑坐标最准确，跨 DPI 屏松手也正确。
@@ -544,7 +527,6 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
   return {
     setCharacterDragMotionFromPointer,
     flushCharacterDragPosition,
-    scheduleCharacterDragPosition,
     continueCharacterDrag,
     handleCharacterPointerDown,
     handleCharacterPointerMove,
