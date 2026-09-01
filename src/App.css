@@ -3956,10 +3956,33 @@ body:has(.pet-thought-window),
   background: transparent !important;
   overflow: visible;
   box-shadow: none;
-  /* main 内 flex column 的纵向间距。覆盖 JSX 的 gap-3 (12px)，与聊天视图
-   * main-chat-stage 的 grid gap (10px) 接近；header 现在 padding 10px 14px
-   * + 圆角卡片化后 14px gap 让 header ↔ 内容分隔足够清晰。 */
+  /* 改 grid 两行：header auto 占第一行，下方所有非 header 子元素（含 section
+   * / body-shell / detail-view 容器）被推入第二行 minmax(0,1fr) 占满剩余空间。
+   * 14px grid gap 在 header ↔ 内容之间形成「两张卡片中间有缝」结构，与聊天
+   * 视图 toolbar ↔ workspace 同构。这替代了之前 flex column + gap:14px —
+   * flex 列式下第二张卡片失去视觉锚点，跟 header 糊在一起。 */
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
+  min-width: 0;
+}
+
+
+/* KB "workspace" 主内容卡片：接住 empty state / documents list / detail view
+ * 等所有非 header 子元素。与 .main-chat-toolbar 第一张卡片平行，靠 14px grid
+ * gap 分隔。**不画 box-shadow**——上面 header 已有 box-shadow
+ * (--omni-surface-shadow: 0 26px 68px) 且 Y 偏移+模糊=94px，覆盖整张主卡片
+ * 范围，再画阴影会形成双层投影相互打架。改用 1px border + 渐变 bg + overflow
+ * 即可撑出独立卡片的边界，header 的向下阴影自然落在 14px gap 上来证明分隔。*/
+.omni-knowledge-main > :not(header) {
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
+  border-radius: var(--omni-radius-xl);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 96%, transparent), color-mix(in srgb, var(--omni-panel-bg) 90%, transparent)),
+    var(--omni-panel-bg);
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
 }
 
 .omni-knowledge-empty-state {
