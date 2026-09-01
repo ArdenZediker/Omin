@@ -567,8 +567,7 @@ export default function PluginMarketplace({
     [],
   );
 
-  /** 批量启用：跳过内置项（setEnabled 内部也对非 installed 项返回 false，
-   *  但显式 filter 让意图更清晰 + 防止一旦内置能 toggle 时误关）。 */
+  /** 批量启用/关闭选中的项；选中为空时返回（不静默吞操作，避免返回后 0 选状态下按钮看起来啥也没发生）。 */
   const handleBatchSetEnabled = useCallback(
     (next: boolean) => {
       const targets = filteredPlugins.filter(
@@ -581,6 +580,33 @@ export default function PluginMarketplace({
     },
     [selectedIds, filteredPlugins],
   );
+
+  /** 顶部 batch toolbar 用的「全局」actions：对所有可见非内置项生效（不需要先选中）。
+   *  selectedIds 仍清空，因为顶部操作后选中状态无意义了。 */
+  const handleBatchAllSetEnabled = useCallback(
+    (next: boolean) => {
+      const targets = filteredPlugins.filter(
+        (m) => !pluginRegistry.isBuiltin(m.id),
+      );
+      for (const m of targets) {
+        pluginRegistry.setEnabled(m.id, next);
+      }
+      if (targets.length > 0) {
+        setRefreshKey((current) => current + 1);
+        setSelectedIds(new Set());
+      }
+    },
+    [filteredPlugins],
+  );
+  const handleBatchAllUninstall = useCallback(() => {
+    const targets = filteredPlugins.filter(
+      (m) => !pluginRegistry.isBuiltin(m.id),
+    );
+    if (targets.length === 0) return;
+    for (const m of targets) handleUninstall(m);
+    setSelectedIds(new Set());
+    setBatchMode(false);
+  }, [filteredPlugins, handleUninstall]);
   // MCP 型连接器：kind=connector 且无 provider（provider 是模型连接器的标志，
   // 模型连接器走 API Key 配置；MCP 型走 command/args/env 启动配置）。
   const isMcpConnector = (manifest: PluginManifest) =>
@@ -1124,6 +1150,53 @@ export default function PluginMarketplace({
                 })}
               </div>
             )}
+          </div>
+        ) : showMySkills && batchMode ? (
+          <div
+            className="plugin-marketplace__batch-top-bar"
+            role="toolbar"
+            aria-label="批量操作 · 全局"
+          >
+            <span className="plugin-marketplace__batch-top-label">
+              批量操作
+            </span>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--primary"
+              onClick={() => handleBatchAllSetEnabled(true)}
+              title="开启所有非内置技能"
+            >
+              <Power size={14} strokeWidth={1.8} />
+              <span>开启</span>
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn"
+              onClick={() => handleBatchAllSetEnabled(false)}
+              title="关闭所有非内置技能"
+            >
+              <PowerOff size={14} strokeWidth={1.8} />
+              <span>关闭</span>
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--danger"
+              onClick={() => void handleBatchAllUninstall()}
+              title="卸载所有非内置技能"
+            >
+              <Trash2 size={14} strokeWidth={1.8} />
+              <span>卸载</span>
+            </button>
+            <button
+              type="button"
+              className="plugin-marketplace__batch-top-btn"
+              onClick={() => {
+                setBatchMode(false);
+                setSelectedIds(new Set());
+              }}
+            >
+              取消
+            </button>
           </div>
         ) : filteredPlugins.length === 0 ? (
           <div className="plugin-marketplace__empty">

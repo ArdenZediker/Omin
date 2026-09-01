@@ -10242,6 +10242,65 @@ body:has(.pet-thought-window),
   cursor: not-allowed;
 }
 
+/* 顶部批量 toolbar（卡片上方，搜索栏下方，batchMode + showMySkills 下显示）。
+   区别于底部 batch-bar：本 toolbar 不依赖 selectedIds，对**所有**当前可见
+   非内置项生效（不需要先选中）。样式上跟 batch-secondary 共享基础胶囊
+   形态，但宽度更大、间隔更松、左侧带 label，与底部 toolbar 形成视觉层级。 */
+.plugin-marketplace__batch-top-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--omni-panel-bg, #ffffff);
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.plugin-marketplace__batch-top-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--omni-app-fg, #0f172a);
+  margin-right: 4px;
+  letter-spacing: 0.2px;
+}
+.plugin-marketplace__batch-top-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  background: transparent;
+  border: 1px solid var(--omni-panel-border);
+  color: var(--omni-app-fg, #0f172a);
+}
+.plugin-marketplace__batch-top-btn:hover {
+  border-color: var(--omni-accent, #64748b);
+  background: rgba(100, 116, 139, 0.06);
+}
+.plugin-marketplace__batch-top-btn--primary {
+  background: var(--omni-accent-soft, rgba(100, 116, 139, 0.12));
+  border-color: var(--omni-accent, #64748b);
+  color: var(--omni-accent-strong, #1d4ed8);
+}
+.plugin-marketplace__batch-top-btn--primary:hover {
+  background: var(--omni-accent, #64748b);
+  color: #fff;
+}
+.plugin-marketplace__batch-top-btn--danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fff1f0;
+}
+.plugin-marketplace__batch-top-btn--danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
 /* 单卡启用 toggle 行：tags 后同行右对齐（list 模式）或自然宽度（grid 模式）。
    内置项不可关闭 → switch 设 disabled 即可，CSS 给个 hover-tooltip 样式靠
    ariaLabel 提示。整体思路：enable 行放 main 末尾、不打断标题 + 描述 + meta
