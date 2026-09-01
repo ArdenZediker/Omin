@@ -9590,8 +9590,31 @@ body:has(.pet-thought-window),
 
 .plugin-marketplace__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  /* 默认宽屏固定 4 列（用户 2026-09-01「表格展示改为一行四列」）。
+   * 窄屏按断点降级为 3 / 2 / 1 列。 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+/* 中等宽度降到 3 列，避免卡片文字截断。 */
+@media (max-width: 1180px) {
+  .plugin-marketplace__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 再窄降到 2 列，避免图标密集挤在一起。 */
+@media (max-width: 820px) {
+  .plugin-marketplace__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 移动端单列堆叠。 */
+@media (max-width: 540px) {
+  .plugin-marketplace__grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .plugin-marketplace__grid--list {
