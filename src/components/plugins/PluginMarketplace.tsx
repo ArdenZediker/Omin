@@ -57,7 +57,29 @@ type PluginMarketplaceProps = {
   mainView?: boolean;
   /** 「创建专家」入口：点击后由宿主跳转到对话框预填创建指令。 */
   onCreateExpert?: () => void;
+  /** Marketplace 数据源（local/skillhub/...）。传入即受控；省略则用内部默认行为（=未推荐）。
+   *  受控时父组件需同步保存 state，组件内部按 `kind` 自动同步 source 的逻辑也会
+   *  改为通过 `onSourceChange` 回写，避免双 state 不同步。 */
+  source?: MarketplaceSource;
+  onSourceChange?: (next: MarketplaceSource) => void;
+  /** 主视图（mainView）默认会折叠自身的 source-tabs 到顶部 toolbar——重复渲染两份
+   *  即上方蓝框 vs 顶部 chrome 都出现同一组控件。本 prop = true 时 Marketplace
+   *  不渲染自己的 source-tabs 块，由调用方（如 MainChatView）负责顶部渲染。
+   *  第三方用（CreateProjectDialog 等）保持默认 false，自身渲染。 */
+  omitTopTabs?: boolean;
 };
+
+/** Marketplace 二级数据源（在「一级 kind」之下的二级切换）。
+ *  - skill     → local = "我的技能"，skillhub = "SkillHub 实时"，suites = "套件"
+ *  - connector → local = "本地连接器"，connectors = "远程接入"
+ *  - expert    → my = "我的专家"，local = "本地内置"
+ *  - tool/template → 只能 local */
+export type MarketplaceSource =
+  | "local"
+  | "skillhub"
+  | "suites"
+  | "connectors"
+  | "my";
 
 const KIND_TABS: {
   kind: PluginKind;
@@ -354,6 +376,9 @@ export default function PluginMarketplace({
   embedded = false,
   mainView = false,
   onCreateExpert,
+  source: controlledSource,
+  onSourceChange,
+  omitTopTabs = false,
 }: PluginMarketplaceProps) {
   const [query, setQuery] = useState(initialFilter.query ?? "");
   // 搜索框以「开关」形式展开/收起：mainView 顶部为折叠图标，点击展开全宽单行搜索框。
@@ -366,6 +391,32 @@ export default function PluginMarketplace({
   // 不设「全部」混合列表：一级分类必须具体，默认落在技能（SkillHub）。
   const [kind, setKind] = useState<PluginKind>(initialFilter.kind ?? "skill");
   const [category, setCategory] = useState(initialFilter.category ?? "全部");
+  // source 受控 ↔ 非受控：当 parent 传入 `source` 时即走受控模式，所有写入通过
+  // `onSourceChange` 回写父组件；不传则保留未受控默认行为，内部 `useEffect([kind])`
+  // 会自动把 source 重置到该 kind 的默认视图。
+  const isSourceControlled = controlledSource !== undefined;
+  const [internalSource, setInternalSource] = useState<MarketplaceSource>(
+    initialFilter.kind === "skill"
+      ? "skillhub"
+      : initialFilter.kind === "connector"
+        ? "connectors"
+        : initialFilter.kind === "expert"
+          ? "my"
+          : "local",
+  );
+  const source: MarketplaceSource = isSourceControlled
+    ? (controlledSource as MarketplaceSource)
+    : internalSource;
+  const setSource = useCallback(
+    (next: MarketplaceSource) => {
+      if (isSourceControlled) {
+        onSourceChange?.(next);
+      } else {
+        setInternalSource(next);
+      }
+    },
+    [isSourceControlled, onSourceChange],
+  );
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
@@ -383,21 +434,13 @@ export default function PluginMarketplace({
     connectorId: string;
     message: string;
   } | null>(null);
-  // 「本地 / SkillHub / 套件 / 远程连接器 / 我的专家」不再是顶部一级切换：左侧（或类型 tab）的一级分类才是主导航。
-  // 点「技能」直接展示 SkillHub 浏览界面；点「连接器」直接展示外部服务接入型技能浏览；
-  // 专家分类默认落在「我的专家」（用户自建/自装）；其他分类仍是本地列表。页内保留子开关切换回本地。
-  const [source, setSource] = useState<"local" | "skillhub" | "suites" | "connectors" | "my">(
-    initialFilter.kind === "skill"
-      ? "skillhub"
-      : initialFilter.kind === "connector"
-        ? "connectors"
-        : initialFilter.kind === "expert"
-          ? "my"
-          : "local",
-  );
   // 一级分类切换时联动来源：技能 → SkillHub，连接器 → 远程连接器，专家 → 我的专家，其他 → 本地。
+  // 受控模式下 source 由父组件持有，本组件只读不写，kind 变化后的联动也由父组件
+  // （MainChatView）监听 `kind` 调 onSourceChange 完成；这里保留非受控分支保
+  // CreateProjectDialog 等调用方的向后兼容。
   useEffect(() => {
-    setSource(
+    if (isSourceControlled) return;
+    setInternalSource(
       kind === "skill"
         ? "skillhub"
         : kind === "connector"
@@ -406,7 +449,7 @@ export default function PluginMarketplace({
             ? "my"
             : "local",
     );
-  }, [kind]);
+  }, [kind, isSourceControlled]);
 
   const allPlugins = useMemo(() => {
     // 本地列表 = 已安装/内置；不再混入 MARKETPLACE_PLUGINS 静态示例（2026-09-01 移除）。
@@ -806,7 +849,7 @@ export default function PluginMarketplace({
           </>
         )}
 
-        {!onPick && kind === "skill" && (
+        {!omitTopTabs && !onPick && kind === "skill" && (
           <div
             className="plugin-marketplace__source-tabs"
             role="tablist"
@@ -845,7 +888,7 @@ export default function PluginMarketplace({
           </div>
         )}
 
-        {!onPick && kind === "connector" && (
+        {!omitTopTabs && !onPick && kind === "connector" && (
           <div
             className="plugin-marketplace__source-tabs"
             role="tablist"
@@ -874,7 +917,7 @@ export default function PluginMarketplace({
           </div>
         )}
 
-        {!onPick && kind === "expert" && (
+        {!omitTopTabs && !onPick && kind === "expert" && (
           <div
             className="plugin-marketplace__source-tabs"
             role="tablist"

@@ -16,6 +16,7 @@ import {
   LayoutTemplate,
   MessageSquare,
   MoreHorizontal,
+  Package,
   Pencil,
   PanelRightClose,
   PanelRightOpen,
@@ -57,6 +58,7 @@ import ModelSelector from "./ModelSelector";
 import OmniSelect from "./ui/OmniSelect";
 import OmniSwitch from "./ui/OmniSwitch";
 import PluginMarketplace from "./plugins/PluginMarketplace";
+import type { MarketplaceSource } from "./plugins/PluginMarketplace";
 import type { PluginKind } from "../plugins/types";
 import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -108,6 +110,69 @@ type ProjectDisplayGroup = {
   label: string;
   projects: Project[];
 };
+
+/** 顶部 toolbar 的「数据源」tabs：与 <PluginMarketplace> 内部的 source-tabs
+ *  形状一致，但放在 main-chat-toolbar 顶部 chrome（替代 Marketplace 内嵌的版本）。
+ *  仅 skill / connector / expert 三类有二级切换；tool / template 只走 local，
+ *  直接返回 null 即可，避免无意义的「local」单按钮占位。 */
+function MarketplaceSourceTabs({
+  kind,
+  source,
+  onSourceChange,
+}: {
+  kind: PluginKind;
+  source: MarketplaceSource;
+  onSourceChange: (next: MarketplaceSource) => void;
+}) {
+  const items: { value: MarketplaceSource; label: string; Icon: typeof Package }[] =
+    useMemo(() => {
+      if (kind === "skill") {
+        return [
+          { value: "local", label: "我的技能", Icon: LayoutTemplate },
+          { value: "skillhub", label: "SkillHub 实时", Icon: Bot },
+          { value: "suites", label: "套件", Icon: Package },
+        ];
+      }
+      if (kind === "connector") {
+        return [
+          { value: "local", label: "本地连接器", Icon: Settings },
+          { value: "connectors", label: "远程接入", Icon: Cable },
+        ];
+      }
+      if (kind === "expert") {
+        return [
+          { value: "my", label: "我的专家", Icon: Bot },
+          { value: "local", label: "本地内置", Icon: LayoutTemplate },
+        ];
+      }
+      return [];
+    }, [kind]);
+  if (items.length === 0) return null;
+  return (
+    <div
+      className="main-chat-toolbar__marketplace-tabs plugin-marketplace__source-tabs"
+      role="tablist"
+      aria-label="数据源"
+    >
+      {items.map((it) => {
+        const active = source === it.value;
+        return (
+          <button
+            key={it.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            className={`plugin-marketplace__source-tab ${active ? "plugin-marketplace__source-tab--active" : ""}`}
+            onClick={() => onSourceChange(it.value)}
+          >
+            <it.Icon size={14} strokeWidth={1.8} />
+            <span>{it.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 type MainChatViewProps = {
   activeProject: Project | null;
@@ -268,12 +333,41 @@ export default function MainChatView({
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>("topics");
   const [showPluginMarketplace, setShowPluginMarketplace] = useState(openMarketplace ?? false);
   const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind; category: string }>({ kind: "skill", category: "全部" });
+  // Marketplace 二级数据源（local/skillhub/suites/connectors/my）。由本层
+  // main-chat-toolbar 顶部的「我的技能 / SkillHub 实时 / 套件…」tabs 控制，
+  // 受控传给 <PluginMarketplace>，与 Marketplace 内部 useEffect 联动互斥以避免
+  // 双 state 不同步。一级 kind 切换会强制 Marketplace 重挂（key 含 kind），
+  // 同 kind 内用户对 source tabs 的选择持久保留，跨 kind 时自动落到合理默认。
+  const [marketplaceSource, setMarketplaceSource] = useState<MarketplaceSource>(
+    () =>
+      marketplaceFilter.kind === "skill"
+        ? "skillhub"
+        : marketplaceFilter.kind === "connector"
+          ? "connectors"
+          : marketplaceFilter.kind === "expert"
+            ? "my"
+            : "local",
+  );
 
   useEffect(() => {
     if (openMarketplace !== undefined) {
       setShowPluginMarketplace(openMarketplace);
     }
   }, [openMarketplace]);
+
+  // 一级 kind 切换时把 source 重置到该 kind 的默认视图（与 Marketplace 内部
+  // 受控分支的「不再自动同步 kind→source」配对，保证切回 skill 仍先看到 SkillHub）。
+  useEffect(() => {
+    setMarketplaceSource(
+      marketplaceFilter.kind === "skill"
+        ? "skillhub"
+        : marketplaceFilter.kind === "connector"
+          ? "connectors"
+          : marketplaceFilter.kind === "expert"
+            ? "my"
+            : "local",
+    );
+  }, [marketplaceFilter.kind]);
 
   const closeMarketplace = useCallback(() => {
     setShowPluginMarketplace(false);
@@ -1658,6 +1752,9 @@ export default function MainChatView({
             initialFilter={marketplaceFilter}
             onClose={closeMarketplace}
             onCreateExpert={handleCreateExpert}
+            source={marketplaceSource}
+            onSourceChange={setMarketplaceSource}
+            omitTopTabs
           />
         )}
         {projectNotice && (
@@ -1716,6 +1813,13 @@ export default function MainChatView({
                       <strong>{isProjectSettingsMode ? "项目设置" : currentTopicTitle}</strong>
                     </div>
                   </>
+                )}
+                {showPluginMarketplace && !isProjectSettingsMode && (
+                  <MarketplaceSourceTabs
+                    kind={marketplaceFilter.kind}
+                    source={marketplaceSource}
+                    onSourceChange={setMarketplaceSource}
+                  />
                 )}
               </div>
 

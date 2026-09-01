@@ -3643,6 +3643,15 @@ body:has(.pet-thought-window),
   box-shadow: none;
 }
 
+/* 顶部 toolbar 内的 Marketplace 数据源 tabs（My Skills / SkillHub / Suites …）。
+ * 复用 .plugin-marketplace__source-tabs 形状，仅补 no-drag（drag region 内点击
+ * 需 no-drag，否则拖窗吞掉点击）+ flex:0 0 auto（不让它跟随 project 主体拉伸）。 */
+.main-chat-toolbar__marketplace-tabs {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  flex: 0 0 auto;
+}
+
 .chat-topic-panel__body {
   position: relative;
   min-height: 0;
