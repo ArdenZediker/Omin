@@ -65,10 +65,12 @@ const SuiteCard = memo(function SuiteCard({
         </div>
         <div className="plugin-card__main">
           <div className="plugin-card__title-row">
-            <h3>{suite.name}</h3>
+            <h3 title={suite.name}>{suite.name}</h3>
             <span className="plugin-card__badge">{suite.categoryZh}</span>
           </div>
-          <p className="plugin-card__description">{description}</p>
+          <p className="plugin-card__description" title={description}>
+            {description}
+          </p>
           <div className="plugin-card__meta">
             <div className="plugin-card__meta-left">
               <span>技能 × {suite.skillSlugs.length || suite.skills.length}</span>

@@ -384,7 +384,7 @@ const SkillCard = memo(function SkillCard({
         </div>
         <div className="plugin-card__main">
           <div className="plugin-card__title-row">
-            <h3>{skill.name}</h3>
+            <h3 title={skill.name}>{skill.name}</h3>
             {skill.verified && (
               <BadgeCheck
                 size={14}
@@ -403,7 +403,12 @@ const SkillCard = memo(function SkillCard({
               SkillHub
             </span>
           </div>
-          <p className="plugin-card__description">{skill.description_zh || skill.description}</p>
+          <p
+            className="plugin-card__description"
+            title={skill.description_zh || skill.description}
+          >
+            {skill.description_zh || skill.description}
+          </p>
           <div className="plugin-card__meta">
             <div className="plugin-card__meta-left">
               <span>

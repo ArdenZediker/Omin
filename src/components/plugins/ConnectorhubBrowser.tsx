@@ -65,10 +65,12 @@ const ConnectorCard = memo(function ConnectorCard({
         </div>
         <div className="plugin-card__main">
           <div className="plugin-card__title-row">
-            <h3>{skill.displayName}</h3>
+            <h3 title={skill.displayName}>{skill.displayName}</h3>
             <span className="plugin-card__badge">连接器</span>
           </div>
-          <p className="plugin-card__description">{description}</p>
+          <p className="plugin-card__description" title={description}>
+            {description}
+          </p>
           {isInstalled && (
             <p className="connectorhub-browser__hint">
               <Info size={12} strokeWidth={1.8} />

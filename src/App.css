@@ -9627,9 +9627,17 @@ body:has(.pet-thought-window),
   min-width: 0;
 }
 
-/* 列表视图：description 限 1 行，省空间 */
+/* list 模式专属：名字固定最大宽度 + 单行 ellipsis 截断；name-whole-tooltip 由
+ * .jsx h3 title 属性提供（鼠标悬浮展示完整名字）。 */
+.plugin-marketplace__grid--list .plugin-card__title-row h3 {
+  max-width: 260px;
+}
+
+/* list 模式专属：description 固定最大宽度 + 1 行 line-clamp 截断；
+ * 完整描述由 .jsx <p title={...}> 悬浮展示。 */
 .plugin-marketplace__grid--list .plugin-card__description {
   margin: 0;
+  max-width: 260px;
   font-size: 11.5px;
   line-height: 1.4;
   display: -webkit-box;
