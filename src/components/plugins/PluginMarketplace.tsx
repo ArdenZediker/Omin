@@ -359,9 +359,10 @@ export default function PluginMarketplace({
   // 搜索框以「开关」形式展开/收起：mainView 顶部为折叠图标，点击展开全宽单行搜索框。
   // 「我的技能」tab 下默认展开（placeholder「搜索已安装的技能」必须可见以引导批量管理）。
   const [searchExpanded, setSearchExpanded] = useState(!mainView);
-  // 本地主视图（mainView）下卡片布局：默认 list（按钮在右边，匹配 SkillHub 网站风格），
-  // 用户可切到 grid（多列卡片，按钮在底部）。三个浏览器自己管理 viewMode，不受此控制。
-  const [localViewMode, setLocalViewMode] = useState<"grid" | "list">("list");
+  // 本地主视图（mainView）下卡片布局：默认 grid（多列平铺卡片，全应用统一）。
+  // 用户可切到 list（一行一张，按钮在右侧）。三个浏览器自己管理 viewMode，默认值同为 grid。
+  // 约定：任何带视图切换的列表页默认一律走 grid，保证跨页面视觉一致。
+  const [localViewMode, setLocalViewMode] = useState<"grid" | "list">("grid");
   // 不设「全部」混合列表：一级分类必须具体，默认落在技能（SkillHub）。
   const [kind, setKind] = useState<PluginKind>(initialFilter.kind ?? "skill");
   const [category, setCategory] = useState(initialFilter.category ?? "全部");
