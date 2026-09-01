@@ -1043,11 +1043,11 @@ body:has(.pet-thought-window),
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-panel-bg) 86%, transparent)),
     var(--omni-panel-bg);
-  /* 收紧阴影范围：Y -8 + blur 8 = 16px，且向上投射。
-   * mainView（扩展中心）模式下面紧贴 marketplace 容器，市场自身已有 1px
-   * 顶部边框作为分隔线，因此阴影不应再向下投射，避免投影覆盖 marketplace
-   * header 区域。普通聊天模式上方没有遮挡，向上投到 window chrome 内无问题。 */
-  box-shadow: 0 -8px 16px rgba(15, 23, 42, 0.04);
+  /* 收紧阴影范围：Y 4 + blur 12 = 16px，向下投射。
+   * 普通聊天模式下提供 toolbar ↔ chat 内容分隔感。
+   * mainView（扩展中心）模式下 toolbar 自身底部 1px border 承担分隔
+   * 角色，阴影不再单独画。 */
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
   min-width: 0;
   backdrop-filter: blur(14px) saturate(1.03);
   -webkit-backdrop-filter: blur(14px) saturate(1.03);
@@ -10822,16 +10822,8 @@ body:has(.pet-thought-window),
   height: auto;
   border-radius: 0;
   border: none;
-  border-top: 1px solid var(--omni-panel-border);
   box-shadow: none;
   background: var(--omni-app-bg);
-}
-
-/* mainView（扩展中心）模式下 toolbar 不需要自己的 1px 边框，否则 toolbar
- * 底部边框与 marketplace 顶部边框重合形成两条相邻的浅线，视觉割裂。
- * 让 marketplace 顶部的 1px 边框承担唯一 divider 角色。 */
-.main-chat-layout:has(.plugin-marketplace--main-view) .main-chat-toolbar {
-  border: 0;
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__header {
