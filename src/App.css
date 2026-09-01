@@ -11486,6 +11486,31 @@ body:has(.pet-thought-window),
   color: var(--omni-app-muted);
 }
 
+.artifacts-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.artifacts-panel__clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.artifacts-panel__clear:hover {
+  background: color-mix(in srgb, var(--omni-danger, #e5484d) 12%, transparent);
+  color: var(--omni-danger, #e5484d);
+}
+
 .artifacts-panel__close {
   width: 26px;
   height: 26px;
@@ -11606,6 +11631,20 @@ body:has(.pet-thought-window),
 .artifacts-panel__item-action:hover {
   background: color-mix(in srgb, var(--omni-app-muted) 14%, transparent);
   color: var(--omni-app-text);
+}
+
+.artifacts-panel__item-action--danger {
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.artifacts-panel__item:hover .artifacts-panel__item-action--danger {
+  opacity: 1;
+}
+
+.artifacts-panel__item-action--danger:hover {
+  background: color-mix(in srgb, var(--omni-danger, #e5484d) 14%, transparent);
+  color: var(--omni-danger, #e5484d);
 }
 
 .artifacts-panel__item-chevron {

@@ -1,8 +1,15 @@
-// 右侧「产物」聚合抽屉：按项目汇总 AI 产出的交付内容，可打开/预览/定位来源会话
+// 右侧「产物」聚合抽屉：按项目汇总 AI 产出的交付内容，可打开/预览/定位来源会话/删除
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, FolderOpen, Inbox, MessageSquare, X } from "lucide-react";
+import { ChevronRight, FolderOpen, Inbox, MessageSquare, Trash2, X } from "lucide-react";
 import type { Artifact } from "../chat/artifacts";
-import { ARTIFACTS_CHANGED_EVENT, ARTIFACT_TYPE_LABEL, artifactsForProject } from "../chat/artifacts";
+import {
+  ARTIFACTS_CHANGED_EVENT,
+  ARTIFACT_TYPE_LABEL,
+  artifactsForProject,
+  clearProjectArtifacts,
+  notifyArtifactsChanged,
+  removeArtifact,
+} from "../chat/artifacts";
 import { ArtifactTypeIcon } from "./artifacts/ArtifactIcon";
 import { openArtifactPath } from "./ArtifactCards";
 
@@ -39,6 +46,24 @@ export default function ArtifactsPanel({ projectId, onClose, onJumpToSession }: 
     return () => window.removeEventListener(ARTIFACTS_CHANGED_EVENT, refresh);
   }, [refresh]);
 
+  /** 删除单条产物（元数据记录，删除后不可恢复） */
+  const handleDelete = (artifact: Artifact) => {
+    removeArtifact(artifact.id);
+    notifyArtifactsChanged();
+    setArtifacts((prev) => prev.filter((a) => a.id !== artifact.id));
+    if (expandedId === artifact.id) setExpandedId(null);
+  };
+
+  /** 清空当前项目的全部产物 */
+  const handleClearAll = () => {
+    if (!projectId || artifacts.length === 0) return;
+    if (!window.confirm(`确定清空当前项目的全部 ${artifacts.length} 项产物吗？删除后不可恢复。`)) return;
+    clearProjectArtifacts(projectId);
+    notifyArtifactsChanged();
+    setArtifacts([]);
+    setExpandedId(null);
+  };
+
   return (
     <aside className="artifacts-panel">
       <div className="artifacts-panel__header">
@@ -46,9 +71,17 @@ export default function ArtifactsPanel({ projectId, onClose, onJumpToSession }: 
           <strong>产物</strong>
           <span>{artifacts.length} 项</span>
         </div>
-        <button type="button" className="artifacts-panel__close" title="关闭产物面板" aria-label="关闭产物面板" onClick={onClose}>
-          <X size={15} strokeWidth={2} />
-        </button>
+        <div className="artifacts-panel__header-actions">
+          {artifacts.length > 0 ? (
+            <button type="button" className="artifacts-panel__clear" title="清空当前项目全部产物" onClick={handleClearAll}>
+              <Trash2 size={13} strokeWidth={2} />
+              <span>清空</span>
+            </button>
+          ) : null}
+          <button type="button" className="artifacts-panel__close" title="关闭产物面板" aria-label="关闭产物面板" onClick={onClose}>
+            <X size={15} strokeWidth={2} />
+          </button>
+        </div>
       </div>
 
       <div className="artifacts-panel__body">
@@ -113,6 +146,15 @@ export default function ArtifactsPanel({ projectId, onClose, onJumpToSession }: 
                     {canExpand ? (
                       <ChevronRight size={14} strokeWidth={2} className={`artifacts-panel__item-chevron ${expanded ? "artifacts-panel__item-chevron--open" : ""}`} />
                     ) : null}
+                    <button
+                      type="button"
+                      className="artifacts-panel__item-action artifacts-panel__item-action--danger"
+                      title="删除该产物"
+                      aria-label="删除该产物"
+                      onClick={() => handleDelete(artifact)}
+                    >
+                      <Trash2 size={14} strokeWidth={1.9} />
+                    </button>
                   </div>
                   {expanded && canExpand ? (
                     <pre className="artifacts-panel__item-preview">{artifact.content}</pre>
