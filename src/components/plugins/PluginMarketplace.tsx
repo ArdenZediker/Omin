@@ -401,6 +401,15 @@ export default function PluginMarketplace({
   // 「我的技能」tab 下的批量管理模式：toggle 切换，多选删除已安装技能（2026-09-01）
   const [batchMode, setBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // 通用确认对话框：danger 操作（尤其是批量卸载、无撤销的破坏性动作）
+  // 必须二次确认，避免误触。confirm 中点击取消则不执行；点击确认才执行
+  // onConfirm。state 同时承载文案与回调，让调用方写一段配置而非重复模板。
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    danger: boolean;
+    onConfirm: () => void;
+  } | null>(null);
   // 离开「我的技能」时清理批量状态，避免回到「我的技能」时残留选择
   useEffect(() => {
     if (!showMySkills && (batchMode || selectedIds.size > 0)) {
@@ -503,6 +512,16 @@ export default function PluginMarketplace({
     // 只在 showMySkills 首次切到 true 时跑一次（migratedIdsRef 防重）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showMySkills]);
+
+  // Esc 关闭 confirm dialog（仅 confirm 打开时挂监听）。
+  useEffect(() => {
+    if (!confirmDialog) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setConfirmDialog(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirmDialog]);
 
   const handleInstall = useCallback((manifest: PluginManifest) => {
     pluginRegistry.install(manifest, {
@@ -1096,7 +1115,18 @@ export default function PluginMarketplace({
             <button
               type="button"
               className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--danger"
-              onClick={() => void handleBatchAllUninstall()}
+              onClick={() => {
+                const targets = filteredPlugins.filter(
+                  (m) => !pluginRegistry.isBuiltin(m.id),
+                );
+                if (targets.length === 0) return;
+                setConfirmDialog({
+                  title: "确认批量卸载",
+                  message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 套件 / 工具 / 连接器 / 专家 / 模板）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
+                  danger: true,
+                  onConfirm: () => handleBatchAllUninstall(),
+                });
+              }}
               title="卸载所有非内置技能"
             >
               <Trash2 size={14} strokeWidth={1.8} />
@@ -1635,6 +1665,66 @@ export default function PluginMarketplace({
         onInstall={(m) => void handleInstall(m)}
         onUninstall={(m) => void handleUninstall(m)}
       />
+
+      {/* 危险操作二次确认 dialog（参考 .omni-confirm-overlay / .omni-confirm-dialog
+          共享样式）。打开时 Esc 关闭 + 自动聚焦「取消」按钮（不是「确认」——
+          因为危险操作的「确认」红色按钮如果默认 focus，Enter 会直接破坏数据
+          而无取消机会；让 focus 落在「取消」反而要求用户主动选择「确认」
+          才能继续破坏操作，是 UX 安全设计）。 */}
+      {confirmDialog && (
+        <div
+          className="omni-confirm-overlay"
+          role="presentation"
+          onClick={() => setConfirmDialog(null)}
+        >
+          <div
+            className="omni-confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="plugin-marketplace-confirm-title"
+            aria-describedby="plugin-marketplace-confirm-message"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="omni-confirm-dialog__title"
+              id="plugin-marketplace-confirm-title"
+            >
+              {confirmDialog.title}
+            </div>
+            <div
+              className="omni-confirm-dialog__message"
+              id="plugin-marketplace-confirm-message"
+            >
+              {confirmDialog.message}
+            </div>
+            <div className="omni-confirm-dialog__actions">
+              <button
+                type="button"
+                className="omni-confirm-dialog__button"
+                onClick={() => setConfirmDialog(null)}
+                autoFocus
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className={
+                  confirmDialog.danger
+                    ? "omni-confirm-dialog__button omni-confirm-dialog__button--danger"
+                    : "omni-confirm-dialog__button omni-confirm-dialog__button--primary"
+                }
+                onClick={() => {
+                  const cb = confirmDialog.onConfirm;
+                  setConfirmDialog(null);
+                  cb();
+                }}
+              >
+                {confirmDialog.danger ? "确认卸载" : "确认"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
