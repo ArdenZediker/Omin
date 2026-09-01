@@ -9598,13 +9598,31 @@ body:has(.pet-thought-window),
   flex: 0 0 auto;
 }
 
-.plugin-marketplace__grid--list .plugin-card__main {
+/* 列表视图：让 title 区填充中间，把 actions 推到卡片最右端 */
+.plugin-marketplace__grid--list .plugin-card__header {
   flex: 1;
   min-width: 0;
 }
 
+.plugin-marketplace__grid--list .plugin-card__main {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* 列表视图隐藏长描述、缩窄 meta，保持单行紧凑 */
+.plugin-marketplace__grid--list .plugin-card__description {
+  display: none;
+}
+
+.plugin-marketplace__grid--list .plugin-card__meta {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
 .plugin-marketplace__grid--list .plugin-card__actions {
   flex: 0 0 auto;
+  /* 关键：margin-left: auto 把它前面所有兄弟都推到左侧，自己吸到卡片最右端 */
+  margin-left: auto;
   border-top: none;
   padding-top: 0;
   align-items: center;
