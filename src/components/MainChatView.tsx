@@ -130,7 +130,7 @@ function MarketplaceSourceTabs({
         return [
           { value: "local", label: "我的技能", Icon: LayoutTemplate },
           { value: "skillhub", label: "SkillHub 实时", Icon: Bot },
-          { value: "suites", label: "套件", Icon: Package },
+          { value: "suites", label: "专家团", Icon: Package },
         ];
       }
       if (kind === "connector") {

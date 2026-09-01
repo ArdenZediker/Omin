@@ -346,3 +346,149 @@ pub(crate) async fn list_skillhub_plugins(
     .await
     .map_err(|e| format!("SkillHub 任务失败: {e}"))?
 }
+
+// ---- SkillHub 专家团（skillsets）----
+//
+// 专家团是官方编排的 meta-skill 包：content 是一份完整的 SKILL.md 原文，
+// frontmatter 的 orchestration.children 列出它引用的子技能 slug；详情接口
+// 额外给出子技能的精确 {slug, namespace} 映射，用于批量取元数据与按需安装。
+//
+// 关键点：skillsets / skills/batch 接口只在 Origin 为 https://www.skillhub.cn
+// 时下发 Access-Control-Allow-Origin，WebView（tauri://localhost 等）直连 fetch
+// 会被 CORS 拦截，因此这里一律走 Rust 侧转发，与 list_skillhub_skills 一致。
+
+/// 技能清单：GET /api/v1/skillsets。
+/// 接口一次返回全量（实测 59 条，响应里无分页字段），pageSize 给足即可。
+#[tauri::command]
+pub(crate) async fn list_skillhub_skillsets(
+    api_base: Option<String>,
+) -> Result<Vec<serde_json::Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<serde_json::Value>, String> {
+        let base = api_base.unwrap_or_else(|| "https://api.skillhub.cn".to_string());
+        let url = format!("{base}/api/v1/skillsets?page=1&pageSize=200");
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client
+            .get(&url)
+            .send()
+            .map_err(|e| format!("SkillHub 专家团列表请求失败: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("SkillHub 专家团列表接口返回 {}", resp.status()));
+        }
+        let json: serde_json::Value = resp.json().map_err(|e| format!("解析失败: {e}"))?;
+        let sets = json
+            .get("skillSets")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(sets)
+    })
+    .await
+    .map_err(|e| format!("SkillHub 专家团列表任务失败: {e}"))?
+}
+
+/// 专家团详情：GET /api/v1/skillsets/{slug}。
+/// 相比列表多出 content（meta-skill 原文）、contentEn、iconUrl、
+/// 以及 skills: [{slug, namespace}] 子技能精确映射。
+#[tauri::command]
+pub(crate) async fn get_skillhub_skillset(
+    slug: String,
+    api_base: Option<String>,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let safe_slug = sanitize_skillhub_slug(&slug);
+        if safe_slug.is_empty() {
+            return Err("无效的专家团 slug".to_string());
+        }
+        let base = api_base.unwrap_or_else(|| "https://api.skillhub.cn".to_string());
+        let url = format!("{base}/api/v1/skillsets/{safe_slug}");
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client
+            .get(&url)
+            .send()
+            .map_err(|e| format!("SkillHub 专家团详情请求失败: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("SkillHub 专家团详情接口返回 {}", resp.status()));
+        }
+        resp.json().map_err(|e| format!("解析失败: {e}"))
+    })
+    .await
+    .map_err(|e| format!("SkillHub 专家团详情任务失败: {e}"))?
+}
+
+/// 批量取子技能元数据：POST /api/v1/skills/batch。
+/// 入参 skills 是 [{"slug":"x","namespace":"ns"}] 的 JSON 字符串（详情接口的
+/// skills 字段直接透传即可）；返回 {count, items, missing}。
+#[tauri::command]
+pub(crate) async fn batch_skillhub_skills(
+    skills: String,
+    api_base: Option<String>,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let pairs: serde_json::Value =
+            serde_json::from_str(&skills).map_err(|e| format!("批量请求参数解析失败: {e}"))?;
+        let body = serde_json::json!({ "skills": pairs });
+        let base = api_base.unwrap_or_else(|| "https://api.skillhub.cn".to_string());
+        let url = format!("{base}/api/v1/skills/batch");
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client
+            .post(&url)
+            .json(&body)
+            .send()
+            .map_err(|e| format!("SkillHub 批量技能请求失败: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("SkillHub 批量技能接口返回 {}", resp.status()));
+        }
+        resp.json().map_err(|e| format!("解析失败: {e}"))
+    })
+    .await
+    .map_err(|e| format!("SkillHub 批量技能任务失败: {e}"))?
+}
+
+/// 把一个专家团的 content 落地为本地技能：写 skills_dir/<slug>/SKILL.md。
+/// 与 install_skillhub_skill 不同，这里的内容来自详情接口已下发的 SKILL.md
+/// 原文（meta-skill），无需再下载 zip，因此无需解压与 SKILL.md 存在性校验。
+#[tauri::command]
+pub(crate) async fn install_skillhub_meta_skill(
+    slug: String,
+    content: String,
+    skills_dir: Option<String>,
+) -> Result<SkillhubInstallResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<SkillhubInstallResult, String> {
+        let safe_slug = sanitize_skillhub_slug(&slug);
+        if safe_slug.is_empty() {
+            return Err("无效的专家团 slug".to_string());
+        }
+        if content.trim().is_empty() {
+            return Err("专家团内容为空，已拒绝安装".to_string());
+        }
+        let dir = match skills_dir {
+            Some(d) => std::path::PathBuf::from(d),
+            None => default_skillhub_skills_dir()?,
+        };
+        std::fs::create_dir_all(&dir).map_err(|e| format!("创建技能目录失败: {e}"))?;
+        let target = dir.join(&safe_slug);
+        // 与 install_skillhub_skill 一致：先清理旧版本，避免残留文件混入。
+        if target.exists() {
+            std::fs::remove_dir_all(&target).map_err(|e| format!("清理旧技能失败: {e}"))?;
+        }
+        std::fs::create_dir_all(&target).map_err(|e| format!("创建技能目录失败: {e}"))?;
+        let file = target.join("SKILL.md");
+        std::fs::write(&file, &content).map_err(|e| format!("写入 SKILL.md 失败: {e}"))?;
+        Ok(SkillhubInstallResult {
+            slug: safe_slug,
+            path: target.to_string_lossy().to_string(),
+            skill_md: content,
+        })
+    })
+    .await
+    .map_err(|e| format!("专家团安装任务失败: {e}"))?
+}

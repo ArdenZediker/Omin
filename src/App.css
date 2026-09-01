@@ -10658,6 +10658,142 @@ body:has(.pet-thought-window),
   font-weight: 400;
 }
 
+/* 专家团详情：引用技能列表（每行 = 图标 + 名称/简介 + 下载量） */
+.skillset-children {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.skillset-child {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(100, 116, 139, 0.1);
+  border: 1px solid rgba(100, 116, 139, 0.16);
+}
+
+.skillset-child__icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  overflow: hidden;
+  color: var(--omni-app-muted);
+}
+
+.skillset-child__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.skillset-child__title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.skillset-child__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--omni-app-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skillset-child__version {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--omni-app-muted);
+}
+
+.skillset-child__safe {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: #34d399;
+}
+
+.skillset-child__summary {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--omni-app-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.skillset-child__meta {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--omni-app-muted);
+}
+
+.skillset-child__warn {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+}
+
+/* 「我的技能」里已安装专家团的套件卡片（InstalledSkillsetCard） */
+.plugin-card--skillset {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.plugin-card__badge--skillset {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+}
+
+.skillset-owned__chevron {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--omni-app-muted);
+}
+
+.skillset-owned__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  margin: 0 14px 12px;
+  border: 1px solid var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  background: var(--omni-card-bg, rgba(0, 0, 0, 0.12));
+}
+
+.skillset-owned__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.skillset-child__installed {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #4ade80;
+  font-weight: 500;
+}
+
 .skillhub-detail__footer {
   display: flex;
   flex-wrap: wrap;

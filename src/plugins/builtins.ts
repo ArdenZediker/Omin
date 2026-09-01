@@ -144,7 +144,7 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     version: "1.0.0",
     author: "Omni",
     kind: "tool",
-    category: "AI Agent",
+    category: "专家管理",
     icon: "UserPlus",
     command: "/install_expert",
     promptContribution:

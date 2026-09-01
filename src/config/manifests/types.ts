@@ -15,6 +15,16 @@ export type ToolManifest = {
    * 注入到工具协议分片时优先使用此字段，缺省回退到 description。
    */
   promptContribution?: string;
+  /**
+   * function calling 的参数 JSON Schema（buildChatTools 直接透传给适配器）。
+   * 字段名必须与 chatRuntimeHelpers.extractToolCallArgs 的 directKeys 对齐，
+   * 否则模型传的对象参数会被兜底拼接成 "key=value" 破坏 execute 解析。
+   */
+  parameters?: {
+    type: "object";
+    properties: Record<string, { type: string; description: string }>;
+    required?: string[];
+  };
 };
 
 export type SkillManifest = {

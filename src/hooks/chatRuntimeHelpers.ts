@@ -33,8 +33,9 @@ export function resolveEnabledToolNames(project: Project | null) {
 /**
  * function calling 用的工具声明：把项目已允许的工具转为模型可调用的工具定义。
  *
- * 只暴露「只读/分析类」工具给模型（搜索会话、读取文件、搜索文件等），
- * 避免模型擅自执行有 UI 副作用的命令（切模型/清空对话/开关设置等）。
+ * 只暴露「只读/分析类」工具给模型（搜索会话、读取文件、搜索文件、读档案等），
+ * 避免模型擅自执行有副作用的命令（update_persona / 切模型 / 清空对话等）。
+ * 参数 schema 以 config/manifests/tools.ts 的 manifest.parameters 为数据源。
  */
 export function buildChatTools(project: Project | null): ChatToolParam[] {
   if (!project) return [];
@@ -44,6 +45,7 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
     "list_files",
     "read_file",
     "search_files",
+    "read_persona",
   ]);
   const tools: ChatToolParam[] = [];
   for (const toolId of new Set(project.allowedToolIds)) {
@@ -53,7 +55,7 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
     tools.push({
       name: manifest.id,
       description: manifest.promptContribution ?? manifest.description,
-      parameters: { type: "object", properties: {} },
+      parameters: manifest.parameters ?? { type: "object", properties: {} },
     });
   }
   // 专家管理闭环：install_expert 无条件暴露（不依赖项目 allowedToolIds），
@@ -63,17 +65,8 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
     tools.push({
       name: installExpertManifest.id,
       description: installExpertManifest.promptContribution ?? installExpertManifest.description,
-      parameters: {
-        type: "object",
-        properties: {
-          manifest: {
-            type: "object",
-            description:
-              "符合 Omni 规范的专家 PluginManifest 定义：id（kebab-case 唯一标识）、name（展示名）、description（一句话描述）、version、kind（固定 expert）、category（行业分类）、icon（lucide 图标名）、tags（3 个擅长领域标签）、templatePrompt（专家系统提示词，可直接执行、不含占位符）、defaultToolIds（推荐工具 id）、defaultSkillIds（推荐技能 id）",
-          },
-        },
-        required: ["manifest"],
-      },
+      parameters:
+        installExpertManifest.parameters ?? { type: "object", properties: {} },
     });
   }
   return tools;
@@ -81,7 +74,8 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
 
 /**
  * 把模型发起的工具调用 arguments（JSON 字符串）宽容解析为本地命令的 args 文本。
- * 支持 {args}/{query}/{input}/{text}/{content}/{keyword} 字段，或纯字符串/拼接。
+ * directKeys 覆盖各工具 manifest.parameters 的字段名（query/keyword/path/
+ * sessionId/field 等），或纯字符串/拼接。
  */
 export function extractToolCallArgs(raw: string): string {
   if (!raw || raw === "{}") return "";
@@ -90,7 +84,17 @@ export function extractToolCallArgs(raw: string): string {
     if (typeof parsed === "string") return parsed;
     if (parsed && typeof parsed === "object") {
       const record = parsed as Record<string, unknown>;
-      const directKeys = ["args", "query", "input", "text", "content", "keyword"];
+      const directKeys = [
+        "args",
+        "query",
+        "input",
+        "text",
+        "content",
+        "keyword",
+        "path",
+        "sessionId",
+        "field",
+      ];
       for (const key of directKeys) {
         if (typeof record[key] === "string") return record[key];
       }

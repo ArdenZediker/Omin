@@ -19,7 +19,6 @@ mod knowledge_files;
 mod knowledge_pipeline;
 mod knowledge;
 mod backup;
-mod cbteams;
 mod knowledge_schema;
 mod persona;
 mod storage;
@@ -39,7 +38,6 @@ use knowledge_embedding_batch::*;
 use knowledge_embedding_config::*;
 use knowledge_search::*;
 use skillhub::*;
-use cbteams::*;
 use connectorhub::*;
 use mcp::*;
 
@@ -553,8 +551,10 @@ pub fn run() {
             list_skillhub_plugins,
             list_skillhub_skill_categories,
             list_skillhub_plugin_categories,
-            list_cbteams_suites,
-            install_cbteams_suite,
+            list_skillhub_skillsets,
+            get_skillhub_skillset,
+            batch_skillhub_skills,
+            install_skillhub_meta_skill,
             list_connectorhub_skills,
             install_connectorhub_skill,
             start_mcp_server,

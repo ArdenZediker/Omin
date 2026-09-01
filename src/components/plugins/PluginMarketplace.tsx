@@ -43,7 +43,8 @@ import type {
 } from "../../plugins/types";
 import { buildPluginInstallPrompt } from "../../plugins/registry";
 import SkillhubBrowser from "./SkillhubBrowser";
-import CbteamsBrowser from "./CbteamsBrowser";
+import SkillsetsBrowser from "./SkillsetsBrowser";
+import InstalledSkillsetCard, { collectSkillsetSlugs } from "./InstalledSkillsetCard";
 import ConnectorhubBrowser from "./ConnectorhubBrowser";
 import { getMcpCommandTemplate } from "../../plugins/connectorhub";
 import { uninstallSkillhubSkill } from "../../plugins/skillhub";
@@ -70,7 +71,7 @@ type PluginMarketplaceProps = {
 };
 
 /** Marketplace 二级数据源（在「一级 kind」之下的二级切换）。
- *  - skill     → local = "我的技能"，skillhub = "SkillHub 实时"，suites = "套件"
+ *  - skill     → local = "我的技能"，skillhub = "SkillHub 实时"，suites = "专家团"
  *  - connector → local = "本地连接器"，connectors = "远程接入"
  *  - expert    → my = "我的专家"，local = "本地内置"
  *  - tool/template → 只能 local */
@@ -457,13 +458,13 @@ export default function PluginMarketplace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, query, refreshKey]);
 
-  // SkillHub / 套件浏览界面只在「技能」一级分类下出现；远程连接器只在「连接器」下出现。
+  // SkillHub / 专家团浏览界面只在「技能」一级分类下出现；远程连接器只在「连接器」下出现。
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
   const showSuites = !onPick && source === "suites" && kind === "skill";
   const showConnectorhub = !onPick && source === "connectors" && kind === "connector";
   // 「我的专家」：用户自己创建/安装的专家（非内置）。
   const showMyExperts = !onPick && source === "my" && kind === "expert";
-  // 「我的技能」：用户已安装/内置的本地技能（不混入 SkillHub/套件），按用户要求不分类、一栏通览。
+  // 「我的技能」：用户已安装/内置的本地技能（不混入 SkillHub/专家团），按用户要求不分类、一栏通览。
   const showMySkills = !onPick && source === "local" && kind === "skill";
 
   // 「我的技能」tab 下的批量管理模式：toggle 切换，多选删除已安装技能（2026-09-01）
@@ -496,6 +497,9 @@ export default function PluginMarketplace({
     if (category === "全部") return allPlugins;
     return allPlugins.filter((m) => m.category === category);
   }, [allPlugins, category, showMySkills]);
+
+  // 已安装的专家团（id → skillset slug）：「我的技能」里渲染为可展开套件卡片。
+  const skillsetSlugs = useMemo(() => collectSkillsetSlugs(), [refreshKey]);
 
   const stats = useMemo(() => pluginRegistry.stats(), [refreshKey]);
   const myExperts = useMemo(
@@ -883,7 +887,7 @@ export default function PluginMarketplace({
             onClick={() => setSource("suites")}
           >
             <Package size={14} strokeWidth={1.8} />
-            <span>套件</span>
+            <span>专家团</span>
           </button>
           </div>
         )}
@@ -1191,7 +1195,7 @@ export default function PluginMarketplace({
                   if (targets.length === 0) return;
                   setConfirmDialog({
                     title: "确认批量卸载",
-                    message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 套件 / 工具 / 连接器 / 专家 / 模板）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
+                    message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 专家团 / 工具 / 连接器 / 专家 / 模板）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
                     danger: true,
                     onConfirm: () => handleBatchAllUninstall(),
                   });
@@ -1217,7 +1221,7 @@ export default function PluginMarketplace({
         {showSkillhub ? (
           <SkillhubBrowser />
         ) : showSuites ? (
-          <CbteamsBrowser />
+          <SkillsetsBrowser />
         ) : showConnectorhub ? (
           <ConnectorhubBrowser />
         ) : showMyExperts ? (
@@ -1325,6 +1329,25 @@ export default function PluginMarketplace({
               );
               const isBuiltin = pluginRegistry.isBuiltin(manifest.id);
               const inBatch = batchMode && showMySkills && !isBuiltin;
+              // 已安装的专家团在「我的技能」里渲染为可展开的套件卡片
+              // （批量模式与技能选择器仍用普通卡片，避免干扰选择逻辑）。
+              const skillsetSlug =
+                showMySkills && !onPick && !inBatch
+                  ? (skillsetSlugs.get(manifest.id) ?? null)
+                  : null;
+              if (skillsetSlug) {
+                return (
+                  <InstalledSkillsetCard
+                    key={manifest.id}
+                    manifest={manifest}
+                    slug={skillsetSlug}
+                    enabled={pluginRegistry.isEnabled(manifest.id)}
+                    isBuiltin={isBuiltin}
+                    onToggleEnabled={(next) => handleToggleEnabled(manifest, next)}
+                    onChanged={() => setRefreshKey((current) => current + 1)}
+                  />
+                );
+              }
               const isSelected = inBatch && selectedIds.has(manifest.id);
               const enabled = pluginRegistry.isEnabled(manifest.id);
               const cardClass = inBatch
