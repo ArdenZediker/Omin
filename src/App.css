@@ -9737,8 +9737,9 @@ body:has(.pet-thought-window),
 .plugin-card__title-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .plugin-card__title-row h3 {
@@ -9749,6 +9750,16 @@ body:has(.pet-thought-window),
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* 标签元素不收缩，紧贴名字排列；空间不够时整体换行而非压缩 */
+.plugin-card__title-row .plugin-card__badge,
+.plugin-card__title-row .plugin-card__source-tag,
+.plugin-card__title-row .plugin-card__verified,
+.plugin-card__title-row .skillhub-browser__api {
+  flex-shrink: 0;
 }
 
 .plugin-card__badge {

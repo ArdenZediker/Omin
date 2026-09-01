@@ -399,6 +399,9 @@ const SkillCard = memo(function SkillCard({
                 <Hash size={11} /> 需 API Key
               </span>
             )}
+            <span className="plugin-card__source-tag" title="来自 SkillHub">
+              SkillHub
+            </span>
           </div>
           <p className="plugin-card__description">{skill.description_zh || skill.description}</p>
         </div>
@@ -416,7 +419,6 @@ const SkillCard = memo(function SkillCard({
           {skill.namespace?.canonicalName && (
             <span className="plugin-card__author">{skill.namespace.canonicalName}</span>
           )}
-          <span className="plugin-card__source-tag">SkillHub</span>
         </div>
       </div>
       <div className="plugin-card__actions" onClick={(e) => e.stopPropagation()}>
