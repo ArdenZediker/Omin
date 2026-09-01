@@ -144,6 +144,36 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     []
   );
 
+  // 消费 pending 位置队列：fire-and-forget 写入，不串行 await setPosition
+  // 的 IPC 返回。上一版每轮 await setPosition（WebView2→Rust IPC 往返，
+  // Windows 上可达 10-30ms）+ await 下一帧，位置更新率被 IPC 延迟钳制在
+  // ~20-40fps，鼠标快速移动时宠物明显跟不上。改为每帧只发一次最新
+  // pending 位置（pointermove 在帧间隙持续覆盖 pendingRef），更新率回到
+  // rAF 频率（对齐显示器刷新），且窗口总是奔向最新目标。
+  const consumePendingDragPositions = async () => {
+    let positionWritesInFlight = 0;
+    while (characterDragPendingRef.current) {
+      if (positionWritesInFlight >= 2) {
+        // 积压保护：上轮 IPC 还没返回就先空转一帧，目标保持 pending，
+        // 下一轮用最新值发送，避免 IPC 队列堆积造成位置追赶跳变。
+        await waitForNextAnimationFrame();
+        continue;
+      }
+      const nextPosition = characterDragPendingRef.current;
+      characterDragPendingRef.current = null;
+      positionWritesInFlight += 1;
+      // 物理像素写入：跨 DPI 屏时 PhysicalPosition 不经过 scale 换算，
+      // 窗口物理位置直接落在目标物理坐标上，避免 LogicalPosition 抖动。
+      appWindow
+        .setPosition(new PhysicalPosition(Math.round(nextPosition.x), Math.round(nextPosition.y)))
+        .catch(() => undefined)
+        .finally(() => {
+          positionWritesInFlight -= 1;
+        });
+      await waitForNextAnimationFrame();
+    }
+  };
+
   const flushCharacterDragPosition = useCallback(() => {
     if (characterDragMoveDrainRef.current) {
       return characterDragMoveDrainRef.current;
@@ -157,20 +187,15 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     compactInternalMoveRef.current = true;
     const drain = (async () => {
       try {
-        while (characterDragPendingRef.current) {
-          const nextPosition = characterDragPendingRef.current;
-          characterDragPendingRef.current = null;
-          // 物理像素写入：跨 DPI 屏时 PhysicalPosition 不经过 scale 换算，
-          // 窗口物理位置直接落在目标物理坐标上，避免 LogicalPosition 抖动。
-          await appWindow
-            .setPosition(new PhysicalPosition(Math.round(nextPosition.x), Math.round(nextPosition.y)))
-            .catch(() => undefined);
-          if (characterDragPendingRef.current) {
-            await waitForNextAnimationFrame();
-          }
-        }
+        await consumePendingDragPositions();
       } finally {
         characterDragMoveDrainRef.current = null;
+        // 竞态兜底：主循环退出与松手写入最终位置之间是同步块（无 await），
+        // 若此刻 pending 又有值（松手目标恰在循环退出瞬间写入），原地补
+        // 消费一轮，保证最终位置一定被应用，避免松手后窗口停在旧位置。
+        if (characterDragPendingRef.current) {
+          await consumePendingDragPositions();
+        }
         if (!characterPointerDownRef.current && !isCharacterDraggingRef.current && !characterDragPendingRef.current) {
           releaseCharacterDragWindowMove();
         }
