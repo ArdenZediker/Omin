@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { Brain, ChevronDown, Copy, Pencil, RefreshCw } from "lucide-react";
-import type { Message } from "../adapters/types";
+import {
+  Brain,
+  ChevronDown,
+  Copy,
+  Eye,
+  FileDown,
+  FolderTree,
+  GitBranch,
+  PackagePlus,
+  Pencil,
+  RefreshCw,
+  Search,
+  Terminal as TerminalIcon,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 import ArtifactCards from "./ArtifactCards";
@@ -28,6 +42,9 @@ export default function ChatMessage({
   onSubmitEdit,
   onRegenerate,
 }: ChatMessageProps) {
+  // 工具结果消息已合并到对应 assistant 的 toolCallResults，不单独渲染
+  if (message.role === "tool") return null;
+
   const isUser = message.role === "user";
   const [editValue, setEditValue] = useState(message.content);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
@@ -109,7 +126,13 @@ export default function ChatMessage({
         </div>
       ) : (
         <div className="message-project max-w-[95%] text-sm markdown-body">
-          {message.reasoning ? <ReasoningBlock reasoning={message.reasoning} /> : null}
+          {message.reasoning || (message.toolCallResults && message.toolCallResults.length > 0) ? (
+            <ThinkingBlock
+              reasoning={message.reasoning}
+              toolCallResults={message.toolCallResults}
+              isStreaming={isStreaming}
+            />
+          ) : null}
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
             {isStreaming && !message.content.trim() ? <ThinkingIndicator /> : renderMarkdown(message.content)}
           </div>
@@ -137,7 +160,7 @@ export default function ChatMessage({
             </div>
           ) : null}
           {message.artifacts && message.artifacts.length > 0 ? <ArtifactCards artifacts={message.artifacts} /> : null}
-          </div>
+        </div>
       )}
       {!isStreaming && !isEditing && (
         <div className={`mt-1.5 flex items-center gap-1.5 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -182,11 +205,98 @@ function ThinkingIndicator() {
   );
 }
 
-/** 推理模型的思考链折叠块（R1 / Gemini thinking / o 系列）。默认收起，点击展开。 */
-function ReasoningBlock({ reasoning }: { reasoning: string }) {
+/** 工具名 → 图标 / 中文标题的映射（覆盖内置 + Web/Git/Office/Export 等工具） */
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  search_sessions: Search,
+  search_files: Search,
+  web_search: Search,
+  read_session: Eye,
+  read_file: Eye,
+  read_persona: Eye,
+  web_fetch: Eye,
+  list_files: FolderTree,
+  git_info: GitBranch,
+  git_commit: GitBranch,
+  git_pr: GitBranch,
+  export_docx: FileDown,
+  export_xlsx: FileDown,
+  export_pptx: FileDown,
+  install_expert: PackagePlus,
+  install_skill: PackagePlus,
+  update_persona: Pencil,
+};
+
+const TOOL_TITLES: Record<string, string> = {
+  search_sessions: "搜索会话",
+  read_session: "读取会话",
+  list_files: "列出文件",
+  read_file: "读取文件",
+  search_files: "搜索文件",
+  read_persona: "读取个性化",
+  update_persona: "更新个性化",
+  install_expert: "安装专家",
+  web_search: "联网搜索",
+  web_fetch: "网页抓取",
+  git_info: "Git 查看",
+  git_commit: "Git 提交",
+  git_pr: "创建 PR",
+  export_docx: "导出 Word",
+  export_xlsx: "导出 Excel",
+  export_pptx: "导出 PPT",
+  install_skill: "安装技能",
+};
+
+/** 从工具参数 JSON 提取一句简短摘要（取首个关键字段值），截断 60 字 */
+function formatToolArgs(args: string): string {
+  const trimmed = (args ?? "").trim();
+  if (!trimmed) return "";
+  try {
+    const obj = JSON.parse(trimmed);
+    const priorityKeys = ["path", "query", "keyword", "url", "command", "message", "title", "name"];
+    for (const key of priorityKeys) {
+      const value = obj?.[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.length > 60 ? `${value.slice(0, 57)}…` : value;
+      }
+    }
+    const first = Object.values(obj ?? {}).find((v) => typeof v === "string" && (v as string).trim());
+    if (typeof first === "string") {
+      return first.length > 60 ? `${first.slice(0, 57)}…` : first;
+    }
+    return "";
+  } catch {
+    return trimmed.length > 60 ? `${trimmed.slice(0, 57)}…` : trimmed;
+  }
+}
+
+/** 结果首行预览（截断 200 字；空结果不显示） */
+function formatToolResult(result: string): string {
+  const trimmed = (result ?? "").trim();
+  if (!trimmed) return "";
+  const firstLine = trimmed.split(/\r?\n/).find((line) => line.trim()) ?? "";
+  return firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine;
+}
+
+/** 思考过程折叠块：reasoning 推理 + 工具调用步骤（WorkBuddy 风格）。无内容不显示。 */
+function ThinkingBlock({
+  reasoning,
+  toolCallResults,
+  isStreaming,
+}: {
+  reasoning?: string;
+  toolCallResults?: ChatToolCallResult[];
+  isStreaming?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const trimmed = reasoning.trim();
-  const isStreamingTail = /[。！？；…\s]$/.test(trimmed) === false;
+  const trimmedReasoning = reasoning?.trim() ?? "";
+  const tools = toolCallResults ?? [];
+  if (!trimmedReasoning && tools.length === 0) return null;
+
+  const isStreamingTail = isStreaming && trimmedReasoning.length > 0 && /[。！？；…\s]$/.test(trimmedReasoning) === false;
+  const summaryParts: string[] = [];
+  if (trimmedReasoning.length) summaryParts.push(`${trimmedReasoning.length} 字思考`);
+  if (tools.length) summaryParts.push(`${tools.length} 个工具`);
+  const summary = summaryParts.join(" · ");
 
   return (
     <div className={`message-reasoning ${expanded ? "message-reasoning--expanded" : ""}`}>
@@ -198,14 +308,47 @@ function ReasoningBlock({ reasoning }: { reasoning: string }) {
       >
         <Brain size={14} strokeWidth={1.8} className="message-reasoning__icon" />
         <span className="message-reasoning__label">思考过程</span>
-        <span className="message-reasoning__meta">{trimmed.length} 字{isStreamingTail ? "…" : ""}</span>
+        <span className="message-reasoning__meta">{summary}{isStreamingTail ? "…" : ""}</span>
         <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
       </button>
       {expanded && (
         <div className="message-reasoning__body">
-          <pre className="message-reasoning__text">{trimmed}</pre>
+          {trimmedReasoning && (
+            <pre className="message-reasoning__text">{trimmedReasoning}</pre>
+          )}
+          {tools.length > 0 && (
+            <div className="message-reasoning__steps">
+              {tools.map((step, index) => (
+                <ToolCallStep key={`${step.id}-${index}`} step={step} index={index} />
+              ))}
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** 单个工具调用步骤：图标 + 序号 + 工具名 + 参数摘要 + 结果首行预览 */
+function ToolCallStep({ step, index }: { step: ChatToolCallResult; index: number }) {
+  const Icon = TOOL_ICONS[step.name] ?? TerminalIcon;
+  const title = TOOL_TITLES[step.name] ?? step.name;
+  const argsSummary = formatToolArgs(step.arguments);
+  const resultPreview = formatToolResult(step.result);
+
+  return (
+    <div className={`message-reasoning__step ${step.isError ? "message-reasoning__step--error" : ""}`}>
+      <div className="message-reasoning__step-head">
+        <Icon size={12} strokeWidth={2} className="message-reasoning__step-icon" />
+        <span className="message-reasoning__step-num">{index + 1}</span>
+        <span className="message-reasoning__step-title">{title}</span>
+        {argsSummary ? (
+          <span className="message-reasoning__step-args" title={argsSummary}>{argsSummary}</span>
+        ) : null}
+      </div>
+      {resultPreview ? (
+        <div className="message-reasoning__step-result">{resultPreview}</div>
+      ) : null}
     </div>
   );
 }

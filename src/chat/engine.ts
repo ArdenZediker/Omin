@@ -1,5 +1,5 @@
 import { modelRegistry } from "../adapters/registry";
-import type { ChatToolCall, ChatToolParam, Message, ModelConfig } from "../adapters/types";
+import type { ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig } from "../adapters/types";
 import { invoke } from "@tauri-apps/api/core";
 import { getUsagePreferences, loadPersonaConfig } from "./storage";
 import type { ChatExecutionResult } from "./types";
@@ -161,11 +161,19 @@ async function runToolLoop(options: {
   onChunk?: (chunk: string) => void;
   onReasoning?: (reasoning: string) => void;
   executeToolCall: (toolCall: ChatToolCall) => Promise<string>;
-}): Promise<{ content: string; model: string; usage: UsageAccumulator; toolRounds: number; reasoning: string }> {
+}): Promise<{
+  content: string;
+  model: string;
+  usage: UsageAccumulator;
+  toolRounds: number;
+  reasoning: string;
+  toolCallResults: ChatToolCallResult[];
+}> {
   const { model, requestMessages, temperature, maxTokens, tools, signal, modelConfig, onChunk, onReasoning, executeToolCall } = options;
   let workingMessages = [...requestMessages];
   const usage = emptyUsage();
   let reasoning = "";
+  const allToolCallResults: ChatToolCallResult[] = [];
   const canStream = modelConfig?.supportsStreaming !== false;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -217,7 +225,7 @@ async function runToolLoop(options: {
     });
 
     if (!response.toolCalls || response.toolCalls.length === 0) {
-      return { content: response.content ?? "", model: response.model, usage, toolRounds: round + 1, reasoning };
+      return { content: response.content ?? "", model: response.model, usage, toolRounds: round + 1, reasoning, toolCallResults: allToolCallResults };
     }
 
     const assistantMsg: Message = {
@@ -235,6 +243,18 @@ async function runToolLoop(options: {
         }
       })
     );
+    // 记录本轮全部 tool_call 结果（按时间/调用顺序追加），供 UI 思考块渲染步骤
+    response.toolCalls.forEach((toolCall, index) => {
+      const result = results[index];
+      allToolCallResults.push({
+        id: toolCall.id,
+        name: toolCall.name,
+        arguments: toolCall.arguments,
+        result,
+        isError: result.startsWith("工具执行失败"),
+        round,
+      });
+    });
     const toolMessages: Message[] = response.toolCalls.map((toolCall, index) => ({
       role: "tool",
       content: results[index],
@@ -261,7 +281,7 @@ async function runToolLoop(options: {
     promptTokens: estimatePromptTokens(degradeMessages),
     completionTokens: estimateTokens(response.content ?? ""),
   });
-  return { content: response.content ?? "", model: response.model, usage, toolRounds: MAX_TOOL_ROUNDS, reasoning };
+  return { content: response.content ?? "", model: response.model, usage, toolRounds: MAX_TOOL_ROUNDS, reasoning, toolCallResults: allToolCallResults };
 }
 
 export async function executeChatTurn(options: {
@@ -406,6 +426,7 @@ export async function executeChatTurn(options: {
       suggestedSummary: parsed.suggestedSummary,
       reasoning: toolResult.reasoning || undefined,
       toolRounds: toolResult.toolRounds,
+      toolCallResults: toolResult.toolCallResults.length ? toolResult.toolCallResults : undefined,
     };
   }
 

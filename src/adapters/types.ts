@@ -15,6 +15,8 @@ export interface Message {
   toolCallName?: string;
   /** role === "assistant" 时：模型发起的工具调用（function calling 循环用） */
   toolCalls?: ChatToolCall[];
+  /** role === "assistant" 时：本轮所有工具调用的执行记录（参数 + 结果），UI 在思考块里按时间顺序渲染 */
+  toolCallResults?: ChatToolCallResult[];
   /** 推理模型思考链全文（如 R1 reasoning_content / Gemini thought），用于 UI 折叠展示 */
   reasoning?: string;
   /** 该消息关联的产物（AI 生成的文件/网页/技能等），UI 渲染产物卡片 */
@@ -37,6 +39,21 @@ export interface ChatToolCall {
   id: string;
   name: string;
   arguments: string;
+}
+
+/** 一次工具调用的完整执行记录（用于 UI 在「思考过程」块里展示工具步骤和结果）。 */
+export interface ChatToolCallResult {
+  /** 对应 ChatToolCall.id */
+  id: string;
+  name: string;
+  /** 原始参数 JSON 字符串 */
+  arguments: string;
+  /** 执行返回文本（输出文本或错误信息） */
+  result: string;
+  /** 是否异常（默认 false；engine 检测到执行失败置 true） */
+  isError?: boolean;
+  /** 所属工具循环轮次（0 起始）；用于 UI 显示「第 N 步」 */
+  round?: number;
 }
 
 /** 声明式工具定义（OpenAI function calling 风格的跨适配器统一形态）。 */

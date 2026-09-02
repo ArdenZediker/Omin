@@ -608,6 +608,7 @@ export function useChatRuntime({
       if (taskResult.finalResult) {
         const pendingArtifacts = pendingArtifactsRef.current;
         pendingArtifactsRef.current = [];
+        const finalToolResults = taskResult.finalResult.toolCallResults;
         setConversationMessagesForSession(sessionId, [
           ...conversationMessages,
           {
@@ -616,6 +617,7 @@ export function useChatRuntime({
             knowledgeContext: taskResult.finalResult.knowledgeContext ?? null,
             reasoning: taskResult.finalResult.reasoning || undefined,
             artifacts: pendingArtifacts.length ? pendingArtifacts : undefined,
+            toolCallResults: finalToolResults?.length ? finalToolResults : undefined,
           },
         ]);
         if (sessionId) {

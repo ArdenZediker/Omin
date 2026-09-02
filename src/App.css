@@ -8217,6 +8217,89 @@ body:has(.pet-thought-window),
   color: rgba(255, 255, 255, 0.66);
 }
 
+/* 思考块：工具调用步骤列表（WorkBuddy 风格） */
+.message-reasoning__steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.message-reasoning__step {
+  padding: 6px 12px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--omni-message-muted, #646a73) 14%, transparent);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.message-reasoning__step:last-child {
+  border-bottom: none;
+}
+
+.message-reasoning__step-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--omni-message-muted, rgba(100, 106, 115, 0.95));
+}
+
+.message-reasoning__step-icon {
+  flex-shrink: 0;
+  opacity: 0.78;
+}
+
+.message-reasoning__step-num {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
+  min-width: 14px;
+  text-align: right;
+}
+
+.message-reasoning__step-title {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.message-reasoning__step-args {
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+
+.message-reasoning__step-result {
+  margin-top: 2px;
+  margin-left: 26px;
+  opacity: 0.72;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  color: var(--omni-message-muted, rgba(100, 106, 115, 0.82));
+}
+
+.message-reasoning__step--error {
+  color: rgba(220, 80, 80, 0.95);
+}
+
+.message-reasoning__step--error .message-reasoning__step-result {
+  color: rgba(220, 80, 80, 0.88);
+  opacity: 0.92;
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__step {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__step--error {
+  color: rgba(255, 120, 120, 0.95);
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__step--error .message-reasoning__step-result {
+  color: rgba(255, 120, 120, 0.88);
+}
+
 .message-thinking__spinner {
   width: 16px;
   height: 16px;
