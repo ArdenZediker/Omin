@@ -315,7 +315,7 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     icon: "FileText",
     command: "/export_docx",
     promptContribution:
-      "可调用 /export_docx 把报告、方案等内容导出为 .docx 文件；spec.children 支持 h1/h2/h3/p/bullet/number/pagebreak/table，段落支持 **加粗** 内联语法；生成后告知用户文件路径。",
+      "可调用 /export_docx 把报告、方案等内容导出为 .docx 文件；spec.children 支持 h1/h2/h3/p/bullet/number/pagebreak/table，段落支持 **加粗** 内联语法；path 可不传，缺省自动保存到项目目录或系统文档目录/Omni；生成后告知用户文件路径。",
   },
   {
     id: "export_xlsx",
@@ -328,7 +328,7 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     icon: "FileSpreadsheet",
     command: "/export_xlsx",
     promptContribution:
-      "可调用 /export_xlsx 把数据表、清单导出为 .xlsx 文件；spec.sheets 每项含 name 与 rows，单元格可为字符串/数字/{formula:'SUM(B2:B3)'}/{text,style:'bold'|'header'}；生成后告知用户文件路径。",
+      "可调用 /export_xlsx 把数据表、清单导出为 .xlsx 文件；spec.sheets 每项含 name 与 rows，单元格可为字符串/数字/{formula:'SUM(B2:B3)'}/{text,style:'bold'|'header'}；path 可不传，缺省自动保存到项目目录或系统文档目录/Omni；生成后告知用户文件路径。",
   },
   {
     id: "export_pptx",
@@ -341,7 +341,7 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     icon: "Presentation",
     command: "/export_pptx",
     promptContribution:
-      "可调用 /export_pptx 把大纲、汇报内容导出为 .pptx 演示文稿；spec.slides 每页含 title 与 bullets（要点数组，≤20 条）；生成后告知用户文件路径。",
+      "可调用 /export_pptx 把大纲、汇报内容导出为 .pptx 演示文稿；spec.slides 每页含 title 与 bullets（要点数组，≤20 条）；path 可不传，缺省自动保存到项目目录或系统文档目录/Omni；生成后告知用户文件路径。",
   },
   {
     id: "install_skill",

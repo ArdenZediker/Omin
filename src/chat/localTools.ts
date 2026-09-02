@@ -484,6 +484,99 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
   // ---- Office 导出（Rust：office_export.rs） ----
 
+  const EXPORT_FALLBACK_NAMES: Record<string, string> = {
+    docx: "导出文档",
+    xlsx: "导出表格",
+    pptx: "导出演示",
+  };
+
+  /** 判断字符串是否为绝对路径（Windows 盘符、/ 开头或 UNC）。 */
+  const isAbsolutePath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
+
+  /** 拼接目录与文件名（统一 / 分隔符）。 */
+  const joinPath = (dir: string, fileName: string) => `${dir.replace(/[\\/]+$/, "")}/${fileName}`;
+
+  /** 确保文件名带正确扩展名（小写后缀判断，不破坏原大小写）。 */
+  const ensureExtension = (fileName: string, ext: string) =>
+    fileName.toLowerCase().endsWith(`.${ext}`) ? fileName : `${fileName}.${ext}`;
+
+  /** 清洗文件名中的非法字符并截断，空则用兜底名，保证带扩展名。 */
+  const sanitizeFileName = (raw: string, ext: string) =>
+    ensureExtension(
+      raw
+        .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 80) || (EXPORT_FALLBACK_NAMES[ext] ?? "导出"),
+      ext
+    );
+
+  /** 默认产物目录：非项目会话时的落盘根目录（系统文档目录/Omni）。 */
+  const defaultArtifactDir = async (): Promise<string> => {
+    try {
+      const dir = await invoke<string>("default_artifact_dir");
+      return typeof dir === "string" && dir.trim() ? joinPath(dir.trim(), "Omni") : "";
+    } catch {
+      return "";
+    }
+  };
+
+  /** 解析导出输出路径：显式绝对路径直接用；否则自动落到项目目录或默认产物目录，并避免与已有文件冲突。 */
+  const resolveExportPath = async (options: {
+    pathArg?: string;
+    ext: "docx" | "xlsx" | "pptx";
+    specRaw: unknown;
+    overwrite: boolean;
+    workspacePath: string;
+  }): Promise<string> => {
+    const { pathArg, ext, specRaw, overwrite, workspacePath } = options;
+
+    // ① 显式传了绝对路径：原样使用（仅补扩展名）
+    if (pathArg && isAbsolutePath(pathArg)) {
+      return ensureExtension(pathArg, ext);
+    }
+
+    // 目录：项目会话 → 项目目录；否则 → 系统文档目录/Omni
+    const dir = workspacePath || (await defaultArtifactDir());
+
+    // ② 传了相对路径/纯文件名：拼到默认目录
+    if (pathArg) {
+      const file = sanitizeFileName(pathArg, ext);
+      return dir ? joinPath(dir, file) : file;
+    }
+
+    // ③ 未传 path：从 spec 提取标题自动命名
+    const spec = (specRaw && typeof specRaw === "object" ? specRaw : {}) as Record<string, unknown>;
+    let name = "";
+    if (ext === "docx") {
+      name = String(spec.title ?? "");
+    } else if (ext === "xlsx") {
+      const sheets = (spec as { sheets?: Array<{ name?: unknown }> }).sheets;
+      name = String(sheets?.[0]?.name ?? spec.title ?? "");
+    } else {
+      const slides = (spec as { slides?: Array<{ title?: unknown }> }).slides;
+      name = String(spec.title ?? slides?.[0]?.title ?? "");
+    }
+    let file = sanitizeFileName(name, ext);
+    if (!dir) return file;
+
+    // 冲突避免：overwrite=false 且目标已存在时追加 -1、-2……
+    if (!overwrite) {
+      let candidate = joinPath(dir, file);
+      let n = 1;
+      while (await invoke<boolean>("path_exists", { path: candidate })) {
+        const dot = file.lastIndexOf(".");
+        const stem = dot > 0 ? file.slice(0, dot) : file;
+        const suffix = dot > 0 ? file.slice(dot) : "";
+        file = `${stem}-${n}${suffix}`;
+        candidate = joinPath(dir, file);
+        n += 1;
+      }
+      return candidate;
+    }
+    return joinPath(dir, file);
+  };
+
   const registerExportTool = (
     id: string,
     title: string,
@@ -496,20 +589,28 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       title,
       execute: async (resolvedCommand) => {
         const json = parseToolJsonArgs(resolvedCommand.args);
-        const path = strArg(json, "path", "output", "file");
+        const pathArg = strArg(json, "path", "output", "file");
         const specRaw = json?.spec ?? json?.document ?? json?.data;
-        if (!path) return { ok: false, error: `用法：/${id} JSON{path, spec, overwrite?}（path 为输出文件绝对路径）` };
         if (specRaw === undefined || specRaw === null) {
           return { ok: false, error: `缺少 spec：请按 schema 提供${title}的结构化内容对象` };
         }
+        const overwrite =
+          typeof json?.overwrite === "boolean"
+            ? json.overwrite
+            : json?.overwrite === true || json?.overwrite === "true";
         try {
+          const ext = tauriCommand === "export_docx" ? "docx" : tauriCommand === "export_xlsx" ? "xlsx" : "pptx";
+          const path = await resolveExportPath({
+            pathArg,
+            ext,
+            specRaw,
+            overwrite,
+            workspacePath: runtime.activeProject?.workspacePath ?? "",
+          });
           const outcome = await invoke<{ path: string; size: number }>(tauriCommand, {
             path,
             specJson: JSON.stringify(specRaw),
-            overwrite:
-              typeof json?.overwrite === "boolean"
-                ? json.overwrite
-                : json?.overwrite === true || json?.overwrite === "true",
+            overwrite,
           });
           return {
             ok: true,

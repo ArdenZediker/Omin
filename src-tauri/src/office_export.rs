@@ -722,6 +722,32 @@ pub(crate) fn path_exists(path: String) -> bool {
     p.is_absolute() && p.is_file()
 }
 
+/// 默认产物目录：模型未指定输出路径时的落盘位置。
+/// Windows 优先 OneDrive 重定向的 Documents，其次 USERPROFILE\Documents；
+/// 其他平台取 ~/Documents；都拿不到时退回当前目录。
+#[tauri::command]
+pub(crate) fn default_artifact_dir() -> String {
+    if cfg!(windows) {
+        if let Ok(up) = std::env::var("USERPROFILE") {
+            let candidates = [
+                format!("{up}\\OneDrive\\Documents"),
+                format!("{up}\\Documents"),
+            ];
+            for candidate in &candidates {
+                if std::path::Path::new(candidate).is_dir() {
+                    return candidate.clone();
+                }
+            }
+            return candidates[1].clone();
+        }
+    } else if let Ok(home) = std::env::var("HOME") {
+        return format!("{home}/Documents");
+    }
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 // ---------- 单元测试（生成真实文件并校验 zip/XML 结构） ----------
 
 #[cfg(test)]

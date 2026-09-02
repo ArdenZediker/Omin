@@ -571,6 +571,7 @@ pub fn run() {
             export_xlsx,
             export_pptx,
             path_exists,
+            default_artifact_dir,
             list_connectorhub_skills,
             install_connectorhub_skill,
             start_mcp_server,
