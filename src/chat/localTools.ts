@@ -442,6 +442,39 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     id: "git_commit",
     command: "/git_commit",
     title: "Git 提交",
+    // 会改动仓库状态：addAll 时还会把未跟踪文件一并纳入暂存，需用户过目。
+    confirm: (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const message = strArg(json, "message", "msg");
+      if (!message) return null;
+      const addAll =
+        typeof json?.add_all === "boolean"
+          ? json.add_all
+          : typeof json?.addAll === "boolean"
+            ? json.addAll
+            : null;
+      const paths = Array.isArray(json?.paths)
+        ? json.paths.filter((p): p is string => typeof p === "string")
+        : null;
+      return {
+        title: "提交 Git 改动",
+        summary: addAll === true ? "暂存全部改动后创建一次提交" : "按指定范围创建一次提交",
+        riskLevel: "destructive",
+        details: [
+          { label: "提交信息", value: message },
+          {
+            label: "暂存范围",
+            value: paths?.length ? paths.join("、") : addAll === true ? "全部改动（含未跟踪文件）" : "已暂存内容",
+          },
+        ],
+        targets: [resolveGitPath(json) ?? "当前项目工作区"],
+        warning:
+          addAll === true
+            ? "提交会改动本地仓库状态。addAll 会把未跟踪文件一并纳入，可能包含你不打算提交的临时文件。"
+            : "提交会改动本地仓库状态。撤销需 reset/revert，请先确认提交信息与暂存范围。",
+        confirmLabel: "确认提交",
+      };
+    },
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const message = strArg(json, "message", "msg");
@@ -464,6 +497,32 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     id: "git_pr",
     command: "/git_pr",
     title: "Git 创建 PR",
+    // 全项目唯一**不可逆**操作：会 git push 到远端，推上去就撤不回来了。
+    confirm: (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const title = strArg(json, "title");
+      if (!title) return null;
+      const base = strArg(json, "base") ?? "仓库默认分支";
+      return {
+        title: "推送分支并创建 PR",
+        summary: "把当前分支推送到远端仓库，然后创建 Pull Request",
+        riskLevel: "irreversible",
+        details: [
+          { label: "PR 标题", value: title },
+          { label: "目标分支（base）", value: base },
+          {
+            label: "PR 描述",
+            value: strArg(json, "body", "description")
+              ? `${String(strArg(json, "body", "description")).slice(0, 120)}${String(strArg(json, "body", "description")).length > 120 ? "…" : ""}`
+              : "（未填写）",
+          },
+        ],
+        targets: [resolveGitPath(json) ?? "当前项目工作区"],
+        warning:
+          "这一步包含 git push，代码会离开本机到远端仓库——推送后无法从本地撤销。请确认分支、目标 base 与提交内容都已就绪。",
+        confirmLabel: "确认推送并创建",
+      };
+    },
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const title = strArg(json, "title");

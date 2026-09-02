@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Message } from "../adapters/types";
+import { requestConfirmation } from "../chat/confirmationGate";
 import {
   getInitialProjectMemories,
   createChatSession,
@@ -522,6 +523,21 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const deleteChatSession = useCallback(
     async (sessionId: string): Promise<void> => {
+      const session = chatSessions.find((item) => item.id === sessionId);
+      // 破坏性操作：删除后无回收站，必须用户过目确认（与 git 工具共用同一道确认门）。
+      const approved = await requestConfirmation({
+        source: "ui:delete_chat_session",
+        title: "删除对话",
+        summary: "永久删除这条对话记录，删除后无法从本地恢复。",
+        riskLevel: "destructive",
+        details: [{ label: "对话标题", value: session?.title || "(未命名对话)" }],
+        targets: [session?.title || sessionId],
+        warning:
+          "删除后该对话的所有消息将从本地数据库移除，没有撤销入口。请确认你不再需要这条对话。",
+        confirmLabel: "确认删除",
+      });
+      if (!approved) return;
+
       const nextSessions = chatSessions.filter((session) => session.id !== sessionId);
       setChatSessions(nextSessions);
       if (sessionId === activeChatId) {

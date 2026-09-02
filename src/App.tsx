@@ -12,6 +12,7 @@ import MainChatView from "./components/MainChatView";
 import CompactWindow from "./components/CompactWindow";
 import PetThoughtWindow from "./components/PetThoughtWindow";
 import { usePromptDialog } from "./components/PromptDialog";
+import { ConfirmationDialog } from "./components/ConfirmationDialog";
 import { loadCodexPetPackages } from "./app/pets/codexPetStore";
 import { getCodexPetViewportSize } from "./app/pets/codexPetSizing";
 import type { CodexPetPackage } from "./app/pets/codexPetTypes";
@@ -843,6 +844,8 @@ function MainApp() {
           />
         </Suspense>
       )}
+      {/* 全局危险操作确认门：AI 工具与 UI 动作共用，未经批准不执行 */}
+      <ConfirmationDialog />
     </div>
   );
 }
