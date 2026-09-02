@@ -65,14 +65,18 @@ describe("ChatMessage", () => {
     expect(errorStep).not.toBeNull();
   });
 
-  it("assistant 消息无思考内容时不显示思考块", () => {
+  it("assistant 消息无思考内容时也始终显示思考块（空状态有 '未触发深度推理' 提示）", () => {
     render(
       <ChatMessage
         message={{ role: "project", content: "普通回答。" }}
         index={3}
       />,
     );
-    expect(screen.queryByText("思考过程")).toBeNull();
+    // 始终展示 UI 元素，确保用户能看到「思考过程」入口
+    expect(screen.getByText("思考过程")).toBeTruthy();
+    expect(screen.getByText("未触发深度推理")).toBeTruthy();
+    // 默认折叠：body 不在 DOM 中（展开后才出现）
+    expect(screen.queryByText("本次回答未使用推理模型或工具调用")).toBeNull();
   });
 
   it("按 steps 顺序交错渲染（reasoning → tool_call → reasoning），实现 WorkBuddy 式深度思考视图", () => {

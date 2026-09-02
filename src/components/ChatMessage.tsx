@@ -126,14 +126,13 @@ export default function ChatMessage({
         </div>
       ) : (
         <div className="message-project max-w-[95%] text-sm markdown-body">
-          {message.reasoning || (message.toolCallResults && message.toolCallResults.length > 0) || (message.steps && message.steps.length > 0) ? (
-            <ThinkingBlock
-              reasoning={message.reasoning}
-              toolCallResults={message.toolCallResults}
-              steps={message.steps}
-              isStreaming={isStreaming}
-            />
-          ) : null}
+          {/* 思考块：始终展示，确保 UI 元素可见；无内容时显示「未触发深度推理」提示 */}
+          <ThinkingBlock
+            reasoning={message.reasoning}
+            toolCallResults={message.toolCallResults}
+            steps={message.steps}
+            isStreaming={isStreaming}
+          />
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
             {isStreaming && !message.content.trim() ? <ThinkingIndicator /> : renderMarkdown(message.content)}
           </div>
@@ -278,9 +277,9 @@ function formatToolResult(result: string): string {
   return firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine;
 }
 
-/** 思考过程折叠块：reasoning 推理 + 工具调用步骤（WorkBuddy 风格）。无内容不显示。
- * 优先按 `steps` 按轮交错渲染（WorkBuddy 式「推理…调用工具…推理…」）；
- * 缺失时回落到 `reasoning + toolCallResults` 固定顺序（兼容旧消息）。 */
+/** 思考过程折叠块：始终展示（WorkBuddy 风格）。空内容时显示「未触发深度推理」提示，
+ * 让用户在任何回答下都能看到 UI 元素。优先按 `steps` 按轮交错渲染（WorkBuddy 式
+ * 「推理…调用工具…推理…」）；缺失时回落到 `reasoning + toolCallResults` 固定顺序。 */
 function ThinkingBlock({
   reasoning,
   toolCallResults,
@@ -304,16 +303,16 @@ function ThinkingBlock({
   const tools = useSteps
     ? (steps as ChatStep[]).filter((s): s is Extract<ChatStep, { type: "tool_call" }> => s.type === "tool_call")
     : (toolCallResults ?? []);
-  if (!trimmedReasoning && tools.length === 0) return null;
+  const isEmpty = !trimmedReasoning && tools.length === 0 && !isStreaming;
 
   const isStreamingTail = isStreaming && trimmedReasoning.length > 0 && /[。！？；…\s]$/.test(trimmedReasoning) === false;
   const summaryParts: string[] = [];
   if (trimmedReasoning.length) summaryParts.push(`${trimmedReasoning.length} 字思考`);
   if (tools.length) summaryParts.push(`${tools.length} 个工具`);
-  const summary = summaryParts.join(" · ");
+  const summary = summaryParts.join(" · ") || "未触发深度推理";
 
   return (
-    <div className={`message-reasoning ${expanded ? "message-reasoning--expanded" : ""}`}>
+    <div className={`message-reasoning ${expanded ? "message-reasoning--expanded" : ""} ${isEmpty ? "message-reasoning--empty" : ""}`}>
       <button
         type="button"
         className="message-reasoning__toggle"
@@ -327,7 +326,11 @@ function ThinkingBlock({
       </button>
       {expanded && (
         <div className="message-reasoning__body">
-          {useSteps ? (
+          {isEmpty ? (
+            <p className="message-reasoning__empty-hint">
+              本次回答未使用推理模型或工具调用，直接给出最终答复。如需查看思考过程：
+            </p>
+          ) : useSteps ? (
             <ThinkingFlow steps={steps as ChatStep[]} />
           ) : (
             <>
@@ -346,6 +349,12 @@ function ThinkingBlock({
                 </div>
               )}
             </>
+          )}
+          {isEmpty && (
+            <ul className="message-reasoning__empty-tips">
+              <li>在「设置 → 模型」切换到支持 reasoning 的模型（如 DeepSeek-R1、o1、Gemini 2.5 thinking）</li>
+              <li>让 AI 跑实际任务（如搜索文件、读取项目、导出文档），会自动触发工具调用步骤</li>
+            </ul>
           )}
         </div>
       )}

@@ -114,9 +114,17 @@ export class DeepSeekAdapter implements ModelAdapter {
           const delta = parsed.choices?.[0]?.delta;
           if (delta) {
             model = parsed.model || model;
-            // R1 的思考链独立字段，透传而非丢弃
-            if (delta.reasoning_content) {
-              onChunk({ content: "", done: false, model, reasoning: delta.reasoning_content });
+            // 多 provider 兼容：DeepSeek-R1 / 阿里 Qwen3-thinking / OpenAI Responses 中转等
+            // R1 的思考链独立字段，透传而非丢弃；兼容 reasoning / thinking_content / thought 等命名
+            const reasoningText =
+              (typeof delta.reasoning_content === "string" && delta.reasoning_content) ||
+              (typeof delta.reasoning === "string" && delta.reasoning) ||
+              (typeof delta.reasoning_text === "string" && delta.reasoning_text) ||
+              (typeof delta.thinking_content === "string" && delta.thinking_content) ||
+              (typeof delta.thought === "string" && delta.thought) ||
+              "";
+            if (reasoningText) {
+              onChunk({ content: "", done: false, model, reasoning: reasoningText });
             }
             if (delta.content) {
               fullContent += delta.content;

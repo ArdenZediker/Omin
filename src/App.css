@@ -8183,6 +8183,37 @@ body:has(.pet-thought-window),
   transform: rotate(180deg);
 }
 
+/* 空状态：始终渲染的「思考过程」块（无 reasoning / 无 tools），提示用户未触发深度推理 */
+.message-reasoning--empty .message-reasoning__toggle {
+  opacity: 0.78;
+}
+
+.message-reasoning--empty .message-reasoning__meta {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.message-reasoning__empty-hint {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 85%, transparent);
+}
+
+.message-reasoning__empty-tips {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 80%, transparent);
+  list-style: disc;
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__empty-hint,
+:root[data-omni-theme="dark"] .message-reasoning__empty-tips {
+  color: rgba(255, 255, 255, 0.55);
+}
+
 .message-reasoning__body {
   border-top: 1px solid color-mix(in srgb, var(--omni-message-muted, #646a73) 16%, transparent);
   max-height: 320px;

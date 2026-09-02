@@ -145,8 +145,17 @@ export class OpenAIAdapter implements ModelAdapter {
               fullContent += delta.content;
               onChunk({ content: delta.content, done: false, model });
             }
-            if (delta.reasoning_content) {
-              onChunk({ content: "", done: false, model, reasoning: delta.reasoning_content });
+            // 多 provider 兼容：DeepSeek-R1 / 阿里 Qwen3-thinking / OpenAI Responses 中转等
+            // 不同服务方对 reasoning 字段命名不统一，依次回退到常见命名
+            const reasoningText =
+              (typeof delta.reasoning_content === "string" && delta.reasoning_content) ||
+              (typeof delta.reasoning === "string" && delta.reasoning) ||
+              (typeof delta.reasoning_text === "string" && delta.reasoning_text) ||
+              (typeof delta.thinking_content === "string" && delta.thinking_content) ||
+              (typeof delta.thought === "string" && delta.thought) ||
+              "";
+            if (reasoningText) {
+              onChunk({ content: "", done: false, model, reasoning: reasoningText });
             }
             if (delta.tool_calls) {
               toolAccumulator.add(delta.tool_calls);
