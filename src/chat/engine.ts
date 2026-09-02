@@ -1,5 +1,5 @@
 import { modelRegistry } from "../adapters/registry";
-import type { ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig } from "../adapters/types";
+import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig } from "../adapters/types";
 import { invoke } from "@tauri-apps/api/core";
 import { getUsagePreferences, loadPersonaConfig } from "./storage";
 import type { ChatExecutionResult } from "./types";
@@ -168,12 +168,15 @@ async function runToolLoop(options: {
   toolRounds: number;
   reasoning: string;
   toolCallResults: ChatToolCallResult[];
+  steps: ChatStep[];
 }> {
   const { model, requestMessages, temperature, maxTokens, tools, signal, modelConfig, onChunk, onReasoning, executeToolCall } = options;
   let workingMessages = [...requestMessages];
   const usage = emptyUsage();
   let reasoning = "";
+  let roundReasoning = "";
   const allToolCallResults: ChatToolCallResult[] = [];
+  const steps: ChatStep[] = [];
   const canStream = modelConfig?.supportsStreaming !== false;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -197,6 +200,7 @@ async function runToolLoop(options: {
           if (signal?.aborted) return;
           if (chunk.reasoning) {
             reasoning += chunk.reasoning;
+            roundReasoning += chunk.reasoning;
             onReasoning?.(chunk.reasoning);
           }
           if (chunk.content) {
@@ -225,7 +229,17 @@ async function runToolLoop(options: {
     });
 
     if (!response.toolCalls || response.toolCalls.length === 0) {
-      return { content: response.content ?? "", model: response.model, usage, toolRounds: round + 1, reasoning, toolCallResults: allToolCallResults };
+      if (roundReasoning.trim()) {
+        steps.push({ type: "reasoning", text: roundReasoning });
+        roundReasoning = "";
+      }
+      return { content: response.content ?? "", model: response.model, usage, toolRounds: round + 1, reasoning, toolCallResults: allToolCallResults, steps };
+    }
+
+    // 本轮 reasoning 增量 → step（本轮 reasoning 在工具调用之前发生）
+    if (roundReasoning.trim()) {
+      steps.push({ type: "reasoning", text: roundReasoning });
+      roundReasoning = "";
     }
 
     const assistantMsg: Message = {
@@ -254,6 +268,14 @@ async function runToolLoop(options: {
         isError: result.startsWith("工具执行失败"),
         round,
       });
+      // steps 流：本轮工具调用按执行顺序追加
+      steps.push({
+        type: "tool_call",
+        name: toolCall.name,
+        arguments: toolCall.arguments,
+        result,
+        isError: result.startsWith("工具执行失败"),
+      });
     });
     const toolMessages: Message[] = response.toolCalls.map((toolCall, index) => ({
       role: "tool",
@@ -281,7 +303,7 @@ async function runToolLoop(options: {
     promptTokens: estimatePromptTokens(degradeMessages),
     completionTokens: estimateTokens(response.content ?? ""),
   });
-  return { content: response.content ?? "", model: response.model, usage, toolRounds: MAX_TOOL_ROUNDS, reasoning, toolCallResults: allToolCallResults };
+  return { content: response.content ?? "", model: response.model, usage, toolRounds: MAX_TOOL_ROUNDS, reasoning, toolCallResults: allToolCallResults, steps };
 }
 
 export async function executeChatTurn(options: {
@@ -427,6 +449,7 @@ export async function executeChatTurn(options: {
       reasoning: toolResult.reasoning || undefined,
       toolRounds: toolResult.toolRounds,
       toolCallResults: toolResult.toolCallResults.length ? toolResult.toolCallResults : undefined,
+      steps: toolResult.steps.length ? toolResult.steps : undefined,
     };
   }
 

@@ -1,4 +1,4 @@
-import type { ChatToolCallResult, Message } from "../adapters/types";
+import type { ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextResult } from "./knowledgeTypes";
 
 export type ChatUsagePreferences = {
@@ -181,6 +181,8 @@ export type ChatExecutionResult = {
   toolRounds?: number;
   /** 工具循环内全部步骤的结果汇总（按轮次/调用顺序），挂到 assistant 消息用于 UI 思考块 */
   toolCallResults?: ChatToolCallResult[];
+  /** 工具循环内按轮交错的 steps 流（reasoning 段 + 工具步骤）；存在时 UI 优先按 steps 渲染 */
+  steps?: ChatStep[];
 };
 
 export type ChatSendOptions = {

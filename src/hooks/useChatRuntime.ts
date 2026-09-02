@@ -609,6 +609,7 @@ export function useChatRuntime({
         const pendingArtifacts = pendingArtifactsRef.current;
         pendingArtifactsRef.current = [];
         const finalToolResults = taskResult.finalResult.toolCallResults;
+        const finalSteps = taskResult.finalResult.steps;
         setConversationMessagesForSession(sessionId, [
           ...conversationMessages,
           {
@@ -618,6 +619,7 @@ export function useChatRuntime({
             reasoning: taskResult.finalResult.reasoning || undefined,
             artifacts: pendingArtifacts.length ? pendingArtifacts : undefined,
             toolCallResults: finalToolResults?.length ? finalToolResults : undefined,
+            steps: finalSteps?.length ? finalSteps : undefined,
           },
         ]);
         if (sessionId) {

@@ -74,4 +74,52 @@ describe("ChatMessage", () => {
     );
     expect(screen.queryByText("思考过程")).toBeNull();
   });
+
+  it("按 steps 顺序交错渲染（reasoning → tool_call → reasoning），实现 WorkBuddy 式深度思考视图", () => {
+    const message: Message = {
+      role: "project",
+      content: "已完成查询。",
+      steps: [
+        { type: "reasoning", text: "用户想知道项目里有什么类型的组件，我先列文件看看。" },
+        {
+          type: "tool_call",
+          name: "list_files",
+          arguments: JSON.stringify({ path: "src/components" }),
+          result: "找到 8 个组件：\n1. [文件] ChatMessage.tsx",
+        },
+        { type: "reasoning", text: "看到了，现在读一下 ChatMessage 来分析结构。" },
+        {
+          type: "tool_call",
+          name: "read_file",
+          arguments: JSON.stringify({ path: "src/components/ChatMessage.tsx" }),
+          result: "import React ...",
+          isError: false,
+        },
+      ],
+    };
+
+    const { container } = render(<ChatMessage message={message} index={4} />);
+
+    // 摘要包含 reasoning 字数（两段求和）与工具数
+    fireEvent.click(screen.getByRole("button", { name: /思考过程/ }));
+
+    const flow = container.querySelector(".message-reasoning__flow");
+    expect(flow).not.toBeNull();
+
+    const segments = flow!.children;
+    // 4 段：reasoning / tool_call / reasoning / tool_call
+    expect(segments.length).toBe(4);
+
+    // 顺序与类型断言：第一段是 reasoning pre，第二段是 tool step，第三段是 reasoning pre，第四段是 tool step
+    expect(segments[0].classList.contains("message-reasoning__text--segment")).toBe(true);
+    expect(segments[0].textContent).toContain("用户想知道项目里有什么类型的组件");
+    expect(segments[1].classList.contains("message-reasoning__step")).toBe(true);
+    expect(segments[1].textContent).toContain("列出文件");
+    expect(segments[1].textContent).toContain("src/components");
+    expect(segments[2].classList.contains("message-reasoning__text--segment")).toBe(true);
+    expect(segments[2].textContent).toContain("看到了，现在读一下");
+    expect(segments[3].classList.contains("message-reasoning__step")).toBe(true);
+    expect(segments[3].textContent).toContain("读取文件");
+    expect(segments[3].textContent).toContain("ChatMessage.tsx");
+  });
 });

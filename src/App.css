@@ -8300,6 +8300,20 @@ body:has(.pet-thought-window),
   color: rgba(255, 120, 120, 0.88);
 }
 
+/* 思考块：steps 事件流（按轮交错渲染：reasoning 段 + tool_call 段交替） */
+.message-reasoning__flow {
+  display: flex;
+  flex-direction: column;
+}
+
+.message-reasoning__text--segment {
+  border-bottom: 1px dashed color-mix(in srgb, var(--omni-message-muted, #646a73) 14%, transparent);
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__text--segment {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
 .message-thinking__spinner {
   width: 16px;
   height: 16px;

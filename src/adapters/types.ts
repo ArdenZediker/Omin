@@ -17,6 +17,8 @@ export interface Message {
   toolCalls?: ChatToolCall[];
   /** role === "assistant" 时：本轮所有工具调用的执行记录（参数 + 结果），UI 在思考块里按时间顺序渲染 */
   toolCallResults?: ChatToolCallResult[];
+  /** role === "assistant" 时：按轮交错的思考+工具步骤流（用于 WorkBuddy 式深度思考渲染）；存在时优先于 toolCallResults */
+  steps?: ChatStep[];
   /** 推理模型思考链全文（如 R1 reasoning_content / Gemini thought），用于 UI 折叠展示 */
   reasoning?: string;
   /** 该消息关联的产物（AI 生成的文件/网页/技能等），UI 渲染产物卡片 */
@@ -55,6 +57,14 @@ export interface ChatToolCallResult {
   /** 所属工具循环轮次（0 起始）；用于 UI 显示「第 N 步」 */
   round?: number;
 }
+
+/**
+ * 思考/工具事件的按时间顺序步骤流（WorkBuddy 式「推理…调用工具…推理…」交错视图）。
+ * engine 在工具循环中按轮累积：每轮先把该轮思考链增量压入，再把该轮工具调用压入。
+ */
+export type ChatStep =
+  | { type: "reasoning"; text: string }
+  | { type: "tool_call"; name: string; arguments: string; result: string; isError?: boolean };
 
 /** 声明式工具定义（OpenAI function calling 风格的跨适配器统一形态）。 */
 export interface ChatToolParam {

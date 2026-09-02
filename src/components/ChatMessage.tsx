@@ -14,7 +14,7 @@ import {
   Terminal as TerminalIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { ChatToolCallResult, Message } from "../adapters/types";
+import type { ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 import ArtifactCards from "./ArtifactCards";
@@ -126,10 +126,11 @@ export default function ChatMessage({
         </div>
       ) : (
         <div className="message-project max-w-[95%] text-sm markdown-body">
-          {message.reasoning || (message.toolCallResults && message.toolCallResults.length > 0) ? (
+          {message.reasoning || (message.toolCallResults && message.toolCallResults.length > 0) || (message.steps && message.steps.length > 0) ? (
             <ThinkingBlock
               reasoning={message.reasoning}
               toolCallResults={message.toolCallResults}
+              steps={message.steps}
               isStreaming={isStreaming}
             />
           ) : null}
@@ -277,19 +278,32 @@ function formatToolResult(result: string): string {
   return firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine;
 }
 
-/** 思考过程折叠块：reasoning 推理 + 工具调用步骤（WorkBuddy 风格）。无内容不显示。 */
+/** 思考过程折叠块：reasoning 推理 + 工具调用步骤（WorkBuddy 风格）。无内容不显示。
+ * 优先按 `steps` 按轮交错渲染（WorkBuddy 式「推理…调用工具…推理…」）；
+ * 缺失时回落到 `reasoning + toolCallResults` 固定顺序（兼容旧消息）。 */
 function ThinkingBlock({
   reasoning,
   toolCallResults,
+  steps,
   isStreaming,
 }: {
   reasoning?: string;
   toolCallResults?: ChatToolCallResult[];
+  steps?: ChatStep[];
   isStreaming?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const trimmedReasoning = reasoning?.trim() ?? "";
-  const tools = toolCallResults ?? [];
+  const useSteps = Array.isArray(steps) && steps.length > 0;
+  const trimmedReasoning = useSteps
+    ? (steps as ChatStep[])
+        .filter((s): s is Extract<ChatStep, { type: "reasoning" }> => s.type === "reasoning")
+        .map((s) => s.text)
+        .join("\n\n")
+        .trim()
+    : (reasoning?.trim() ?? "");
+  const tools = useSteps
+    ? (steps as ChatStep[]).filter((s): s is Extract<ChatStep, { type: "tool_call" }> => s.type === "tool_call")
+    : (toolCallResults ?? []);
   if (!trimmedReasoning && tools.length === 0) return null;
 
   const isStreamingTail = isStreaming && trimmedReasoning.length > 0 && /[。！？；…\s]$/.test(trimmedReasoning) === false;
@@ -313,15 +327,25 @@ function ThinkingBlock({
       </button>
       {expanded && (
         <div className="message-reasoning__body">
-          {trimmedReasoning && (
-            <pre className="message-reasoning__text">{trimmedReasoning}</pre>
-          )}
-          {tools.length > 0 && (
-            <div className="message-reasoning__steps">
-              {tools.map((step, index) => (
-                <ToolCallStep key={`${step.id}-${index}`} step={step} index={index} />
-              ))}
-            </div>
+          {useSteps ? (
+            <ThinkingFlow steps={steps as ChatStep[]} />
+          ) : (
+            <>
+              {trimmedReasoning && (
+                <pre className="message-reasoning__text">{trimmedReasoning}</pre>
+              )}
+              {tools.length > 0 && (
+                <div className="message-reasoning__steps">
+                  {tools.map((step, index) => (
+                    <ToolCallStep
+                      key={`legacy-${("id" in step && step.id) || index}-${index}`}
+                      step={step}
+                      index={index}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -329,8 +353,40 @@ function ThinkingBlock({
   );
 }
 
+/** 按 steps 流顺序交错渲染（WorkBuddy 式深度思考视图）。
+ * reasoning 段渲染为独立 pre；tool_call 段渲染为 ToolCallStep（独立行）。 */
+function ThinkingFlow({ steps }: { steps: ChatStep[] }) {
+  let toolIndex = 0;
+  return (
+    <div className="message-reasoning__flow">
+      {steps.map((step, index) => {
+        if (step.type === "reasoning") {
+          const text = step.text.trim();
+          if (!text) return null;
+          return (
+            <pre key={`flow-r-${index}`} className="message-reasoning__text message-reasoning__text--segment">
+              {text}
+            </pre>
+          );
+        }
+        const currentIndex = toolIndex;
+        toolIndex += 1;
+        return (
+          <ToolCallStep key={`flow-t-${index}-${step.name}`} step={step} index={currentIndex} />
+        );
+      })}
+    </div>
+  );
+}
+
 /** 单个工具调用步骤：图标 + 序号 + 工具名 + 参数摘要 + 结果首行预览 */
-function ToolCallStep({ step, index }: { step: ChatToolCallResult; index: number }) {
+function ToolCallStep({
+  step,
+  index,
+}: {
+  step: { name: string; arguments: string; result: string; isError?: boolean };
+  index: number;
+}) {
   const Icon = TOOL_ICONS[step.name] ?? TerminalIcon;
   const title = TOOL_TITLES[step.name] ?? step.name;
   const argsSummary = formatToolArgs(step.arguments);
