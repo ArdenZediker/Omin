@@ -160,6 +160,8 @@ async function runToolLoop(options: {
   modelConfig?: ModelConfig;
   onChunk?: (chunk: string) => void;
   onReasoning?: (reasoning: string) => void;
+  /** 每个工具调用执行完成时回调（实时上屏 UI 的「思考过程」步骤） */
+  onToolStep?: (step: ChatStep) => void;
   executeToolCall: (toolCall: ChatToolCall) => Promise<string>;
 }): Promise<{
   content: string;
@@ -170,7 +172,7 @@ async function runToolLoop(options: {
   toolCallResults: ChatToolCallResult[];
   steps: ChatStep[];
 }> {
-  const { model, requestMessages, temperature, maxTokens, tools, signal, modelConfig, onChunk, onReasoning, executeToolCall } = options;
+  const { model, requestMessages, temperature, maxTokens, tools, signal, modelConfig, onChunk, onReasoning, onToolStep, executeToolCall } = options;
   let workingMessages = [...requestMessages];
   const usage = emptyUsage();
   let reasoning = "";
@@ -266,22 +268,27 @@ async function runToolLoop(options: {
     // 记录本轮全部 tool_call 结果（按时间/调用顺序追加），供 UI 思考块渲染步骤
     response.toolCalls.forEach((toolCall, index) => {
       const result = results[index];
-      allToolCallResults.push({
+      const isError = result.startsWith("工具执行失败");
+      const stepRecord: ChatToolCallResult = {
         id: toolCall.id,
         name: toolCall.name,
         arguments: toolCall.arguments,
         result,
-        isError: result.startsWith("工具执行失败"),
+        isError,
         round,
-      });
+      };
+      allToolCallResults.push(stepRecord);
       // steps 流：本轮工具调用按执行顺序追加
-      steps.push({
+      const step: ChatStep = {
         type: "tool_call",
         name: toolCall.name,
         arguments: toolCall.arguments,
         result,
-        isError: result.startsWith("工具执行失败"),
-      });
+        isError,
+      };
+      steps.push(step);
+      // 实时上屏：每完成一个工具调用立刻通知 UI（WorkBuddy 式「边执行边看到步骤」体验）
+      onToolStep?.(step);
     });
     const toolMessages: Message[] = response.toolCalls.map((toolCall, index) => ({
       role: "tool",
@@ -326,6 +333,8 @@ export async function executeChatTurn(options: {
   enabledToolDescriptions?: Record<string, string>;
   onChunk?: (chunk: string) => void;
   onReasoning?: (reasoning: string) => void;
+  /** 每个工具调用执行完成时回调（实时上屏 UI 的「思考过程」步骤） */
+  onToolStep?: (step: ChatStep) => void;
   knowledgeQuery?: string | null;
   knowledgeCollectionId?: string | null;
   enableKnowledgeContext?: boolean;
@@ -348,6 +357,7 @@ export async function executeChatTurn(options: {
     enabledToolDescriptions,
     onChunk,
     onReasoning,
+    onToolStep,
     knowledgeQuery,
     knowledgeCollectionId,
     enableKnowledgeContext = true,
@@ -436,6 +446,7 @@ export async function executeChatTurn(options: {
       modelConfig,
       onChunk,
       onReasoning,
+      onToolStep,
       executeToolCall: executeToolCall!,
     });
 

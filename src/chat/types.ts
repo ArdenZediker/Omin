@@ -1,6 +1,8 @@
 import type { ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextResult } from "./knowledgeTypes";
 
+export type { ChatStep, ChatToolCallResult };
+
 export type ChatUsagePreferences = {
   enableStreaming: boolean;
   enableVisionInput: boolean;

@@ -4,7 +4,7 @@ import { runTaskPlan } from "./taskRunner";
 import type { ResolvedLocalSlashCommand } from "./skills";
 import { resolveLocalSlashCommand } from "./skills";
 import type { TaskExecutionResult, TaskIntent, TaskPlan, TaskStep } from "./taskTypes";
-import type { ProjectMemoryRecord, Project, SessionSummaryRecord } from "./types";
+import type { ProjectMemoryRecord, Project, SessionSummaryRecord, ChatStep } from "./types";
 
 function createTaskId() {
   return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -77,6 +77,8 @@ export async function executeTask(options: {
   onChunk?: (chunk: string) => void;
   /** 推理模型思考链增量回调（透传给 executeChatTurn） */
   onReasoning?: (reasoning: string) => void;
+  /** 每个工具调用执行完成时回调（实时上屏 UI 的「思考过程」步骤） */
+  onToolStep?: (step: ChatStep) => void;
   knowledgeCollectionId?: string | null;
   intent?: TaskIntent;
   plan?: TaskPlan;
@@ -85,7 +87,7 @@ export async function executeTask(options: {
   /** 执行一次模型发起的工具调用（透传给 executeChatTurn） */
   executeToolCall?: (toolCall: ChatToolCall) => Promise<string>;
 }): Promise<TaskExecutionResult> {
-  const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, onReasoning, knowledgeCollectionId } = options;
+  const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, onReasoning, onToolStep, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
   const plan = options.plan ?? createTaskPlan({ intent, model, messages });
 
@@ -118,6 +120,7 @@ export async function executeTask(options: {
           enabledToolNames,
           onChunk,
           onReasoning,
+          onToolStep,
           knowledgeCollectionId,
           enableKnowledgeContext: intent === "chat",
           enableMemoryExtraction: intent === "chat",
@@ -226,6 +229,8 @@ export async function executeInputTask(options: {
   onChunk?: (chunk: string) => void;
   /** 推理模型思考链增量回调（透传给 executeChatTurn） */
   onReasoning?: (reasoning: string) => void;
+  /** 每个工具调用执行完成时回调（实时上屏 UI 的「思考过程」步骤） */
+  onToolStep?: (step: ChatStep) => void;
   knowledgeCollectionId?: string | null;
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown; artifact?: import("./artifacts").ArtifactSpec } | void>;
@@ -270,6 +275,7 @@ export async function executeInputTask(options: {
     enabledToolNames,
     onChunk,
     onReasoning: options.onReasoning,
+    onToolStep: options.onToolStep,
     knowledgeCollectionId,
     intent: "chat",
     tools: options.tools,
@@ -304,6 +310,8 @@ export async function executeInputTask(options: {
     relatedContext,
     enabledToolNames,
     onChunk,
+    onReasoning: options.onReasoning,
+    onToolStep: options.onToolStep,
     knowledgeCollectionId,
     intent: "chat",
     plan,

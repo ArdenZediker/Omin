@@ -14,7 +14,7 @@ import { executeLocalTool } from "../chat/localTools";
 import { appendArtifact, notifyArtifactsChanged, type Artifact } from "../chat/artifacts";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
-import type { Project, ChatExecutionResult, ChatSendOptions } from "../chat/types";
+import type { Project, ChatExecutionResult, ChatSendOptions, ChatStep } from "../chat/types";
 import type { ProjectMemoryRecord, SessionSummaryRecord } from "../chat/types";
 import type { PetThoughtState } from "../app/types";
 import type { ViewMode } from "../app/types";
@@ -227,6 +227,32 @@ export function useChatRuntime({
         return;
       }
 
+      setMessages(updateLastProject);
+    },
+    [setMessages, updateChatSessionMessages]
+  );
+
+  /** 流式追加工具调用步骤到最后一条 project 消息的 steps 字段（实时上屏 UI） */
+  const appendLastProjectStep = useCallback(
+    (sessionId: string | null | undefined, step: ChatStep) => {
+      const updateLastProject = (prev: Message[]) => {
+        if (prev.length === 0) return prev;
+        const lastIdx = prev.length - 1;
+        const lastMessage = prev[lastIdx];
+        if (lastMessage.role !== "project") return prev;
+        const existing = (lastMessage.steps ?? []) as ChatStep[];
+        // 幂等：同一个 step.id + type 不重复追加
+        if (existing.some((s) => s.type === step.type && (("id" in s && "id" in step && s.id === step.id) || s.type === "tool_call" && "id" in step && s.type === step.type))) {
+          return prev;
+        }
+        const updated = [...prev];
+        updated[lastIdx] = { ...lastMessage, steps: [...existing, step] };
+        return updated;
+      };
+      if (sessionId) {
+        updateChatSessionMessages(sessionId, updateLastProject);
+        return;
+      }
       setMessages(updateLastProject);
     },
     [setMessages, updateChatSessionMessages]
@@ -726,6 +752,13 @@ export function useChatRuntime({
             streamedReasoning += reasoning;
             updateReasoningPreview();
           },
+          onToolStep: (step) => {
+            if (!isCurrentSessionRun(sessionId, runId, abortController)) {
+              return;
+            }
+            // 实时上屏：每完成一个工具调用立刻把步骤追加到最后一条消息的思考块
+            appendLastProjectStep(sessionId, step);
+          },
         });
 
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {
@@ -959,6 +992,12 @@ export function useChatRuntime({
             streamedReasoning += reasoning;
             updateReasoningPreview();
           },
+          onToolStep: (step) => {
+            if (!isCurrentSessionRun(session.id, runId, abortController)) {
+              return;
+            }
+            appendLastProjectStep(session.id, step);
+          },
           executeTool,
           tools: [...buildChatTools(targetProject), ...listActiveMcpTools()],
           executeToolCall,
@@ -1148,6 +1187,12 @@ export function useChatRuntime({
             }
             streamedReasoning += reasoning;
             updateReasoningPreview();
+          },
+          onToolStep: (step) => {
+            if (!isCurrentSessionRun(sessionId, runId, abortController)) {
+              return;
+            }
+            appendLastProjectStep(sessionId, step);
           },
           executeTool,
           tools: [...buildChatTools(activeProject), ...listActiveMcpTools()],
