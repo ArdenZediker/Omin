@@ -221,7 +221,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     title: "导出 Word 文档",
     description: "把结构化内容导出为真正的 .docx 文件（标题/段落/加粗/列表/表格/分页）",
     promptContribution:
-      "可调用 /export_docx 把报告、方案等内容导出为 .docx 文件；spec.children 支持 h1/h2/h3/p/bullet/number/pagebreak/table，段落支持 **加粗** 内联语法；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/报告.docx），禁止编造 sandbox:/ 等虚拟路径；生成后告知用户文件路径。",
+      "可调用 /export_docx 把报告、方案等内容导出为 .docx 文件；spec.children 支持 h1/h2/h3/p/bullet/number/pagebreak/table，段落支持 **加粗** 内联语法；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/报告.docx），禁止编造 sandbox:/ 等虚拟路径；项目会话下若传工作区之外的绝对路径，需经用户确认才会执行；生成后告知用户文件路径。",
     parameters: {
       type: "object",
       properties: {
@@ -246,7 +246,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     title: "导出 Excel 表格",
     description: "把表格数据导出为真正的 .xlsx 文件（多工作表/数字/公式/表头样式）",
     promptContribution:
-      "可调用 /export_xlsx 把数据表、清单导出为 .xlsx 文件；spec.sheets 每项含 name 与 rows，单元格可为字符串/数字/{formula:'SUM(B2:B3)'}/{text,style:'bold'|'header'}；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/数据.xlsx），禁止编造 sandbox:/ 等虚拟路径；生成后告知用户文件路径。",
+      "可调用 /export_xlsx 把数据表、清单导出为 .xlsx 文件；spec.sheets 每项含 name 与 rows，单元格可为字符串/数字/{formula:'SUM(B2:B3)'}/{text,style:'bold'|'header'}；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/数据.xlsx），禁止编造 sandbox:/ 等虚拟路径；项目会话下若传工作区之外的绝对路径，需经用户确认才会执行；生成后告知用户文件路径。",
     parameters: {
       type: "object",
       properties: {
@@ -271,7 +271,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     title: "导出 PPT 演示",
     description: "把大纲内容导出为真正的 .pptx 演示文稿（16:9，标题+要点页）",
     promptContribution:
-      "可调用 /export_pptx 把大纲、汇报内容导出为 .pptx 演示文稿；spec.slides 每页含 title 与 bullets（要点数组，≤20 条）；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/汇报.pptx），禁止编造 sandbox:/ 等虚拟路径；生成后告知用户文件路径。",
+      "可调用 /export_pptx 把大纲、汇报内容导出为 .pptx 演示文稿；spec.slides 每页含 title 与 bullets（要点数组，≤20 条）；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/汇报.pptx），禁止编造 sandbox:/ 等虚拟路径；项目会话下若传工作区之外的绝对路径，需经用户确认才会执行；生成后告知用户文件路径。",
     parameters: {
       type: "object",
       properties: {

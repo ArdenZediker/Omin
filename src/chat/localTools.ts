@@ -5,6 +5,7 @@ import type { PluginManifest } from "../plugins/types";
 import { pluginRegistry, parseSkillMarkdown } from "../plugins/registry";
 import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
+import { requestConfirmation } from "./confirmationGate";
 
 export type LocalToolSession = {
   id: string;
@@ -555,6 +556,14 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   /** 拼接目录与文件名（统一 / 分隔符）。 */
   const joinPath = (dir: string, fileName: string) => `${dir.replace(/[\\/]+$/, "")}/${fileName}`;
 
+  /** child 是否落在 parent 之内（大小写不敏感；Windows 路径统一 / 分隔符）。 */
+  const isWithin = (child: string, parent: string): boolean => {
+    const norm = (s: string) => s.replace(/\\/g, "/").toLowerCase().replace(/\/+$/, "");
+    const c = norm(child);
+    const p = norm(parent);
+    return c === p || c.startsWith(`${p}/`);
+  };
+
   /** 确保文件名带正确扩展名（小写后缀判断，不破坏原大小写）。 */
   const ensureExtension = (fileName: string, ext: string) =>
     fileName.toLowerCase().endsWith(`.${ext}`) ? fileName : `${fileName}.${ext}`;
@@ -592,6 +601,27 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
     // ① 显式传了绝对路径：原样使用（仅补扩展名）
     if (pathArg && isAbsolutePath(pathArg)) {
+      // 项目会话下，越界写入需用户确认（对齐 WorkBuddy「写操作围栏 + 提权确认」）。
+      // 工作区内绝对路径或「无项目会话」（workspacePath 为空）直接放行。
+      if (workspacePath && !isWithin(pathArg, workspacePath)) {
+        const approved = await requestConfirmation({
+          source: "export_out_of_workspace",
+          title: "导出到工作区之外？",
+          summary: "模型请求把文件写入项目工作区之外的位置。",
+          riskLevel: "destructive",
+          details: [
+            { label: "目标路径", value: pathArg },
+            { label: "项目工作区", value: workspacePath },
+          ],
+          targets: [pathArg],
+          warning:
+            "越界写入不受工作区围栏保护，文件将保存到项目目录之外。确认后 Omni 才会执行；取消则改用工作区内的自动路径。",
+          confirmLabel: "仍要导出到此处",
+        });
+        if (!approved) {
+          throw new Error("已取消：输出路径位于项目工作区之外且未获确认");
+        }
+      }
       return ensureExtension(pathArg, ext);
     }
 
@@ -659,17 +689,19 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             : json?.overwrite === true || json?.overwrite === "true";
         try {
           const ext = tauriCommand === "export_docx" ? "docx" : tauriCommand === "export_xlsx" ? "xlsx" : "pptx";
+          const ws = runtime.activeProject?.workspacePath ?? "";
           const path = await resolveExportPath({
             pathArg,
             ext,
             specRaw,
             overwrite,
-            workspacePath: runtime.activeProject?.workspacePath ?? "",
+            workspacePath: ws,
           });
           const outcome = await invoke<{ path: string; size: number }>(tauriCommand, {
             path,
             specJson: JSON.stringify(specRaw),
             overwrite,
+            workspacePath: ws || null,
           });
           return {
             ok: true,

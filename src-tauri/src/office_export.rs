@@ -37,7 +37,71 @@ fn col_name(mut idx: usize) -> String {
     String::from_utf8(out).expect("ASCII 列名")
 }
 
-fn check_path(path: &str, expected_exts: &[&str], overwrite: bool) -> Result<std::path::PathBuf, String> {
+/// AI 禁止写入的系统/密钥目录：.ssh、AppData、Windows/System32、Program Files、ProgramData。
+/// 系统临时目录（TEMP/TMP，含单测所在 AppData\Local\Temp）放行，避免误伤中转与测试。
+fn no_go_zone(path: &Path) -> Option<&'static str> {
+    let lower = path.to_string_lossy().replace('\\', "/").to_lowercase();
+    for var in ["TEMP", "TMP", "TMPDIR"] {
+        if let Ok(t) = std::env::var(var) {
+            let t = t.replace('\\', "/").to_lowercase().trim_end_matches('/').to_string();
+            if !t.is_empty() && (lower == t || lower.starts_with(&format!("{t}/"))) {
+                return None;
+            }
+        }
+    }
+    let windir = std::env::var("WINDIR")
+        .unwrap_or_else(|_| "C:\\Windows".into())
+        .replace('\\', "/")
+        .to_lowercase();
+    let systemroot = std::env::var("SYSTEMROOT")
+        .unwrap_or_else(|_| windir.clone())
+        .replace('\\', "/")
+        .to_lowercase();
+    let systemdrive = std::env::var("SYSTEMDRIVE")
+        .unwrap_or_else(|_| "C:".into())
+        .to_lowercase();
+    let mut forbidden: Vec<String> = vec![
+        format!("{windir}/"),
+        format!("{systemroot}/"),
+        format!("{systemdrive}/program files/"),
+        format!("{systemdrive}/program files (x86)/"),
+        format!("{systemdrive}/programdata/"),
+    ];
+    if let Ok(up) = std::env::var("USERPROFILE") {
+        let up = up.replace('\\', "/").to_lowercase();
+        forbidden.push(format!("{up}/.ssh/"));
+        forbidden.push(format!("{up}/appdata/"));
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let home = home.replace('\\', "/").to_lowercase();
+        forbidden.push(format!("{home}/.ssh/"));
+    }
+    for f in &forbidden {
+        if lower.starts_with(f) {
+            return Some("系统目录或密钥目录（.ssh / AppData / Windows / Program Files）");
+        }
+    }
+    None
+}
+
+/// child 是否落在 parent 之内（大小写不敏感，统一 / 分隔符，避免对不存在路径 canonicalize 失败）。
+fn is_within(child: &Path, parent: &Path) -> bool {
+    let c = child.to_string_lossy().replace('\\', "/").to_lowercase();
+    let p = parent
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_lowercase()
+        .trim_end_matches('/')
+        .to_string();
+    c == p || c.starts_with(&format!("{p}/"))
+}
+
+fn check_path(
+    path: &str,
+    expected_exts: &[&str],
+    overwrite: bool,
+    workspace_path: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("输出路径不能为空".to_string());
@@ -47,6 +111,21 @@ fn check_path(path: &str, expected_exts: &[&str], overwrite: bool) -> Result<std
         return Err(format!(
             "输出路径必须是绝对路径（收到「{trimmed}」）。请使用如 C:/Users/<name>/Documents/xxx.docx 的真实本机路径，不要使用 sandbox:/ 等虚拟路径"
         ));
+    }
+    // 兜底 No-Go Zones：AI 绝不应写入系统/密钥目录（即使前端已放行也拒绝）。
+    if let Some(zone) = no_go_zone(p) {
+        return Err(format!(
+            "输出路径位于禁止写入的{zone}，已拒绝。请改用项目工作区或文档目录。"
+        ));
+    }
+    // 兜底工作区围栏：项目会话下越界写入一律拒绝（前端会先走提权确认）。
+    if let Some(ws) = workspace_path {
+        let ws = ws.trim();
+        if !ws.is_empty() && !is_within(p, Path::new(ws)) {
+            return Err(format!(
+                "输出路径必须位于项目工作区内（收到「{trimmed}」）。请使用相对路径或仅提供文件名，文件将保存到项目目录 {ws}。"
+            ));
+        }
     }
     let ext = p
         .extension()
@@ -655,8 +734,9 @@ fn run_export(
     overwrite: Option<bool>,
     exts: &[&str],
     builder: fn(&Value) -> Result<Vec<(String, String)>, String>,
+    workspace_path: Option<&str>,
 ) -> Result<ExportOutcome, String> {
-    let target = check_path(path, exts, overwrite.unwrap_or(false))?;
+    let target = check_path(path, exts, overwrite.unwrap_or(false), workspace_path)?;
     let spec = parse_spec(spec_json)?;
     let entries = builder(&spec)?;
     let size = write_zip(&target, entries)?;
@@ -677,9 +757,10 @@ pub(crate) async fn export_docx(
     path: String,
     spec_json: String,
     overwrite: Option<bool>,
+    workspace_path: Option<String>,
 ) -> Result<ExportOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["docx"], build_docx)
+        run_export(&path, &spec_json, overwrite, &["docx"], build_docx, workspace_path.as_deref())
     })
     .await
     .map_err(|e| format!("export_docx 任务失败: {e}"))?
@@ -690,9 +771,10 @@ pub(crate) async fn export_xlsx(
     path: String,
     spec_json: String,
     overwrite: Option<bool>,
+    workspace_path: Option<String>,
 ) -> Result<ExportOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["xlsx"], build_xlsx)
+        run_export(&path, &spec_json, overwrite, &["xlsx"], build_xlsx, workspace_path.as_deref())
     })
     .await
     .map_err(|e| format!("export_xlsx 任务失败: {e}"))?
@@ -703,9 +785,10 @@ pub(crate) async fn export_pptx(
     path: String,
     spec_json: String,
     overwrite: Option<bool>,
+    workspace_path: Option<String>,
 ) -> Result<ExportOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["pptx"], build_pptx)
+        run_export(&path, &spec_json, overwrite, &["pptx"], build_pptx, workspace_path.as_deref())
     })
     .await
     .map_err(|e| format!("export_pptx 任务失败: {e}"))?
@@ -797,7 +880,7 @@ mod tests {
             {"type":"table","rows":[["名称","数值"],["甲",1]],"header":true},
             {"type":"pagebreak"}
         ]}"#;
-        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["docx"], build_docx).unwrap();
+        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["docx"], build_docx, None).unwrap();
         assert!(outcome.size > 500);
         assert!(read_entry(&path, "word/document.xml").contains("季度报告"));
         assert_well_formed_xml(&path);
@@ -814,7 +897,7 @@ mod tests {
             ["2月",1500],
             ["合计",{"formula":"SUM(B2:B3)"}]
         ]}]}"#;
-        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["xlsx"], build_xlsx).unwrap();
+        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["xlsx"], build_xlsx, None).unwrap();
         assert!(outcome.size > 500);
         let sheet = read_entry(&path, "xl/worksheets/sheet1.xml");
         assert!(sheet.contains("inlineStr"));
@@ -831,7 +914,7 @@ mod tests {
             {"title":"开场","bullets":["第一点","第二点"]},
             {"title":"收尾","bullets":["总结"]}
         ]}"#;
-        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["pptx"], build_pptx).unwrap();
+        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["pptx"], build_pptx, None).unwrap();
         assert!(outcome.size > 1500);
         assert!(read_entry(&path, "ppt/presentation.xml").contains("sldIdLst"));
         assert!(read_entry(&path, "ppt/slides/slide1.xml").contains("开场"));
@@ -850,8 +933,62 @@ mod tests {
             None,
             &["docx"],
             build_docx,
+            None,
         )
         .unwrap_err();
         assert!(err.contains("已存在"));
+    }
+
+    #[test]
+    fn refuses_no_go_zone_write() {
+        // 系统/密钥目录应被兜底拒绝（不依赖前端拦截）。
+        let no_go = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
+        let path = format!("{no_go}\\System32\\omni-evil.docx");
+        let err = run_export(
+            &path,
+            r#"{"children":[{"type":"p","text":"a"}]}"#,
+            Some(true),
+            &["docx"],
+            build_docx,
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("禁止写入"), "实际报错：{err}");
+    }
+
+    #[test]
+    fn refuses_out_of_workspace_write() {
+        // 项目会话下，越界绝对路径应被兜底拒绝。
+        let dir = std::env::temp_dir().join("omni-office-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("outside.docx");
+        let err = run_export(
+            path.to_str().unwrap(),
+            r#"{"children":[{"type":"p","text":"a"}]}"#,
+            Some(true),
+            &["docx"],
+            build_docx,
+            Some("D:/nonexistent-workspace-root"),
+        )
+        .unwrap_err();
+        assert!(err.contains("项目工作区内"), "实际报错：{err}");
+    }
+
+    #[test]
+    fn allows_within_workspace_write() {
+        // 工作区内的绝对路径应放行。
+        let ws = std::env::temp_dir().join("omni-ws-test");
+        std::fs::create_dir_all(&ws).unwrap();
+        let path = ws.join("inside.docx");
+        let outcome = run_export(
+            path.to_str().unwrap(),
+            r#"{"children":[{"type":"p","text":"a"}]}"#,
+            Some(true),
+            &["docx"],
+            build_docx,
+            ws.to_str(),
+        )
+        .unwrap();
+        assert!(outcome.size > 0);
     }
 }
