@@ -6308,17 +6308,6 @@ body:has(.pet-thought-window),
   white-space: nowrap;
 }
 
-.chat-topic-panel__item-order {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--omni-app-muted);
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--omni-panel-bg) 80%, transparent);
-}
-
 .chat-topic-panel__section-title {
   display: flex;
   align-items: center;

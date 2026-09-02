@@ -2440,7 +2440,6 @@ export default function MainChatView({
                             <span className="chat-topic-panel__item-copy">
                               <span className="chat-topic-panel__item-title">{truncateQuestionPreview(message.content)}</span>
                             </span>
-                            <span className="chat-topic-panel__item-order">#{userQuestions.length - order}</span>
                           </button>
                         ))}
                       </div>
