@@ -11487,6 +11487,7 @@ body:has(.pet-thought-window),
 
 .artifact-card {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   max-width: 280px;
@@ -11494,6 +11495,12 @@ body:has(.pet-thought-window),
   border-radius: 10px;
   border: 1px solid var(--omni-panel-border);
   background: color-mix(in srgb, var(--omni-panel-bg) 82%, transparent);
+  transition: border-color 140ms ease, opacity 140ms ease;
+}
+
+.artifact-card--missing {
+  opacity: 0.55;
+  border-style: dashed;
 }
 
 .artifact-card__icon {
@@ -11506,6 +11513,17 @@ body:has(.pet-thought-window),
   flex-direction: column;
   min-width: 0;
   gap: 1px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.artifact-card__copy:disabled {
+  cursor: not-allowed;
 }
 
 .artifact-card__copy strong {
@@ -11523,6 +11541,24 @@ body:has(.pet-thought-window),
   color: var(--omni-message-muted);
 }
 
+.artifact-card__error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #f87171;
+  max-width: 190px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-card__actions {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
 .artifact-card__action {
   display: inline-flex;
   align-items: center;
@@ -11537,9 +11573,14 @@ body:has(.pet-thought-window),
   flex-shrink: 0;
 }
 
-.artifact-card__action:hover {
+.artifact-card__action:hover:not(:disabled) {
   background: color-mix(in srgb, var(--omni-message-muted) 14%, transparent);
   color: var(--omni-message-text);
+}
+
+.artifact-card__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 /* 右侧产物聚合抽屉 */

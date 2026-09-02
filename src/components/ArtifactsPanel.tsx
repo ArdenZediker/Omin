@@ -1,6 +1,6 @@
 // 右侧「产物」聚合抽屉：按项目汇总 AI 产出的交付内容，可打开/预览/定位来源会话/删除
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, FolderOpen, Inbox, MessageSquare, Trash2, X } from "lucide-react";
+import { ChevronRight, FolderOpen, FolderSearch, Inbox, MessageSquare, Trash2, X } from "lucide-react";
 import type { Artifact } from "../chat/artifacts";
 import {
   ARTIFACTS_CHANGED_EVENT,
@@ -11,7 +11,7 @@ import {
   removeArtifact,
 } from "../chat/artifacts";
 import { ArtifactTypeIcon } from "./artifacts/ArtifactIcon";
-import { openArtifactPath } from "./ArtifactCards";
+import { checkArtifactPath, openArtifactPath, revealArtifactPath } from "./ArtifactCards";
 
 interface ArtifactsPanelProps {
   projectId: string | null;
@@ -65,6 +65,35 @@ export default function ArtifactsPanel({ projectId, onClose, onJumpToSession }: 
     setExpandedId(null);
   };
 
+  /** 打开产物文件：先校验路径存在，失败给出明确提示（不静默） */
+  const handleOpenArtifact = useCallback(
+    async (artifact: Artifact) => {
+      const path = artifact.path;
+      if (!path) return;
+      const exists = await checkArtifactPath(path);
+      if (!exists) {
+        window.alert("文件不存在：产物路径可能是虚拟路径，或文件已被移动/删除。");
+        return;
+      }
+      const ok = await openArtifactPath(path);
+      if (!ok) window.alert("打开失败：系统无法用默认应用打开该文件。");
+    },
+    []
+  );
+
+  /** 在系统文件管理器中显示产物所在位置 */
+  const handleRevealArtifact = useCallback(async (artifact: Artifact) => {
+    const path = artifact.path;
+    if (!path) return;
+    const exists = await checkArtifactPath(path);
+    if (!exists) {
+      window.alert("文件不存在：产物路径可能是虚拟路径，或文件已被移动/删除。");
+      return;
+    }
+    const ok = await revealArtifactPath(path);
+    if (!ok) window.alert("定位失败：文件可能已被移动或删除。");
+  }, []);
+
   return (
     <aside className="artifacts-panel">
       <div className="artifacts-panel__header">
@@ -114,7 +143,7 @@ export default function ArtifactsPanel({ projectId, onClose, onJumpToSession }: 
                         if (canExpand) {
                           setExpandedId(expanded ? null : artifact.id);
                         } else if (canOpen) {
-                          openArtifactPath(artifact.path as string);
+                          void handleOpenArtifact(artifact);
                         }
                       }}
                     >
@@ -130,9 +159,20 @@ export default function ArtifactsPanel({ projectId, onClose, onJumpToSession }: 
                         className="artifacts-panel__item-action"
                         title="打开文件"
                         aria-label="打开文件"
-                        onClick={() => openArtifactPath(artifact.path as string)}
+                        onClick={() => void handleOpenArtifact(artifact)}
                       >
                         <FolderOpen size={14} strokeWidth={1.9} />
+                      </button>
+                    ) : null}
+                    {canOpen ? (
+                      <button
+                        type="button"
+                        className="artifacts-panel__item-action"
+                        title="在文件夹中显示"
+                        aria-label="在文件夹中显示"
+                        onClick={() => void handleRevealArtifact(artifact)}
+                      >
+                        <FolderSearch size={14} strokeWidth={1.9} />
                       </button>
                     ) : null}
                     {artifact.sessionId ? (

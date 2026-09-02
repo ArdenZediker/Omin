@@ -43,6 +43,11 @@ fn check_path(path: &str, expected_exts: &[&str], overwrite: bool) -> Result<std
         return Err("输出路径不能为空".to_string());
     }
     let p = Path::new(trimmed);
+    if !p.is_absolute() {
+        return Err(format!(
+            "输出路径必须是绝对路径（收到「{trimmed}」）。请使用如 C:/Users/<name>/Documents/xxx.docx 的真实本机路径，不要使用 sandbox:/ 等虚拟路径"
+        ));
+    }
     let ext = p
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
@@ -704,6 +709,17 @@ pub(crate) async fn export_pptx(
     })
     .await
     .map_err(|e| format!("export_pptx 任务失败: {e}"))?
+}
+
+/// 校验产物路径在本机是否真实存在（供前端打开/下载前检查，杜绝虚拟路径静默失败）。
+#[tauri::command]
+pub(crate) fn path_exists(path: String) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let p = std::path::Path::new(trimmed);
+    p.is_absolute() && p.is_file()
 }
 
 // ---------- 单元测试（生成真实文件并校验 zip/XML 结构） ----------
