@@ -24,12 +24,18 @@ import {
   Eye,
   Power,
   PowerOff,
+  ShieldCheck,
+  ShieldAlert,
+  Terminal,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import {
   ensureMcpConnector,
   disconnectMcpConnector,
   listConnectedMcpServers,
+  isConnectorTrusted,
+  setConnectorTrusted,
+  getMcpTrustInfo,
 } from "../../plugins/mcp";
 import { PLUGIN_CATEGORIES } from "../../plugins/builtins";
 import {
@@ -435,6 +441,8 @@ export default function PluginMarketplace({
     connectorId: string;
     message: string;
   } | null>(null);
+  // 信任门：待用户确认信任的 MCP 连接器（WorkBuddy 式「配置完不自动激活」）
+  const [trustPromptId, setTrustPromptId] = useState<string | null>(null);
   // 一级分类切换时联动来源：技能 → SkillHub，连接器 → 远程连接器，专家 → 我的专家，其他 → 本地。
   // 受控模式下 source 由父组件持有，本组件只读不写，kind 变化后的联动也由父组件
   // （MainChatView）监听 `kind` 调 onSourceChange 完成；这里保留非受控分支保
@@ -771,20 +779,36 @@ export default function PluginMarketplace({
         values.command = mcpDraft.command.trim();
         values.args = parseArgsLine(mcpDraft.args);
         values.env = parseEnvLines(mcpDraft.env);
+        // 启动命令/参数变更 → 重置信任态。新的 command 可能是一个完全不同的
+        // 程序（比如从只读的文件服务器换成能执行 shell 的服务器），必须让用户
+        // 重新确认一次，不能沿用旧信任。
+        const prev = pluginRegistry.getConnectorConfig(manifest.id) ?? {};
+        const commandChanged =
+          String(prev.command ?? "").trim() !== values.command;
+        const argsChanged =
+          JSON.stringify(Array.isArray(prev.args) ? prev.args : []) !==
+          JSON.stringify(values.args);
+        if (commandChanged || argsChanged) {
+          values.trusted = false;
+        }
       }
       pluginRegistry.setConnectorConfig(manifest.id, values);
       setConfiguringId(null);
       setRefreshKey((current) => current + 1);
-      // MCP 型连接器保存后若已配 command，立即拉起服务器
+      // MCP 型连接器：已信任 → 立即拉起；未信任 → 只弹信任确认，不自动激活。
       if (isMcpConnector(manifest) && String(values.command ?? "").trim()) {
-        try {
-          await ensureMcpConnector(manifest);
-        } catch (error) {
-          setMcpError({
-            connectorId: manifest.id,
-            message:
-              error instanceof Error ? error.message : String(error),
-          });
+        if (isConnectorTrusted(manifest)) {
+          try {
+            await ensureMcpConnector(manifest);
+          } catch (error) {
+            setMcpError({
+              connectorId: manifest.id,
+              message:
+                error instanceof Error ? error.message : String(error),
+            });
+          }
+        } else {
+          setTrustPromptId(manifest.id);
         }
       }
       refreshConnected();
@@ -800,6 +824,11 @@ export default function PluginMarketplace({
         return;
       }
       setMcpError(null);
+      // 信任门：未受信任的连接器先弹确认，不直接拉起子进程。
+      if (!isConnectorTrusted(manifest)) {
+        setTrustPromptId(manifest.id);
+        return;
+      }
       try {
         await ensureMcpConnector(manifest);
       } catch (error) {
@@ -812,6 +841,27 @@ export default function PluginMarketplace({
       }
     },
     [openConfig, refreshConnected],
+  );
+
+  /** 信任弹窗里点「信任并连接」：写入信任态后再拉起服务器。 */
+  const confirmTrust = useCallback(
+    async (manifest: PluginManifest) => {
+      setConnectorTrusted(manifest, true);
+      setTrustPromptId(null);
+      setMcpError(null);
+      setRefreshKey((current) => current + 1);
+      try {
+        await ensureMcpConnector(manifest);
+      } catch (error) {
+        setMcpError({
+          connectorId: manifest.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        refreshConnected();
+      }
+    },
+    [refreshConnected],
   );
 
   const handleDisconnect = useCallback(
@@ -1545,11 +1595,28 @@ export default function PluginMarketplace({
                           ) : (
                             <button
                               type="button"
-                              className="plugin-card__button plugin-card__button--primary"
+                              className={
+                                isConnectorTrusted(manifest)
+                                  ? "plugin-card__button plugin-card__button--primary"
+                                  : "plugin-card__button plugin-card__button--trust"
+                              }
                               onClick={() => void handleConnect(manifest)}
+                              title={
+                                isConnectorTrusted(manifest)
+                                  ? "启动该 MCP 服务器，并将其工具注入 AI 对话"
+                                  : "该连接器尚未获得信任，点击后需确认信任才会启动"
+                              }
                             >
-                              <PlugZap size={14} strokeWidth={1.8} />
-                              <span>连接</span>
+                              {isConnectorTrusted(manifest) ? (
+                                <PlugZap size={14} strokeWidth={1.8} />
+                              ) : (
+                                <ShieldAlert size={14} strokeWidth={1.8} />
+                              )}
+                              <span>
+                                {isConnectorTrusted(manifest)
+                                  ? "连接"
+                                  : "信任并连接"}
+                              </span>
                             </button>
                           )
                         ) : null}
@@ -1605,6 +1672,61 @@ export default function PluginMarketplace({
                     )}
                   </div>
                   )}
+                  {trustPromptId === manifest.id &&
+                    (() => {
+                      const info = getMcpTrustInfo(manifest);
+                      return (
+                        <div
+                          className="plugin-card__trust-prompt"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="plugin-card__trust-head">
+                            <ShieldAlert size={15} strokeWidth={1.9} />
+                            <span>信任「{manifest.name}」？</span>
+                          </div>
+                          <p className="plugin-card__trust-warn">
+                            该连接器会作为本机子进程启动，它暴露的工具可被 AI
+                            直接调用，<strong>不受 Omni 内置工具权限（只读 /
+                            写入白名单）约束</strong>。请确认你信任它的来源与
+                            启动命令。
+                          </p>
+                          <div className="plugin-card__trust-cmd">
+                            <Terminal size={12} strokeWidth={1.8} />
+                            <code>
+                              {info.command}
+                              {info.args.length > 0
+                                ? ` ${info.args.join(" ")}`
+                                : ""}
+                            </code>
+                          </div>
+                          {info.envKeys.length > 0 && (
+                            <div className="plugin-card__trust-env">
+                              <span>环境变量</span>
+                              {info.envKeys.map((key) => (
+                                <code key={key}>{key}=••••</code>
+                              ))}
+                            </div>
+                          )}
+                          <div className="plugin-card__trust-actions">
+                            <button
+                              type="button"
+                              className="plugin-card__button plugin-card__button--secondary"
+                              onClick={() => setTrustPromptId(null)}
+                            >
+                              <span>取消</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="plugin-card__button plugin-card__button--primary"
+                              onClick={() => void confirmTrust(manifest)}
+                            >
+                              <ShieldCheck size={14} strokeWidth={1.8} />
+                              <span>信任并连接</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   {mcpError?.connectorId === manifest.id && (
                     <div
                     className="plugin-card__mcp-error"

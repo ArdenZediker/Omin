@@ -84,6 +84,48 @@ export async function readMcpStderr(id: string): Promise<string[]> {
 // 连接器 ↔ MCP 生命周期
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// 信任门（Trust Gate）
+//
+// 对齐 WorkBuddy 的连接器信任模型：MCP 连接器配置完成后**不自动激活**，必须由
+// 用户显式确认信任（点「信任并连接」）才会拉起子进程、并把它的工具注入对话的
+// function calling。
+//
+// 原因（这是 Omni 权限模型最大的一个缺口）：MCP 服务器是本机上的任意子进程，
+// 它 tools/list 暴露的工具不经过 buildChatTools 的 SAFE/OFFERED 白名单，也不看
+// 项目 allowedToolIds——一旦拉起，等于把该服务器的全部能力（可能是文件读写、
+// 命令执行、数据库访问）直接交给模型，Omni 自身的三层权限模型对它完全失效。
+// ---------------------------------------------------------------------------
+
+/** 读取连接器的信任状态（存在连接器 config.trusted）。 */
+export function isConnectorTrusted(manifest: PluginManifest): boolean {
+  return isTrustedById(manifest.id);
+}
+
+function isTrustedById(id: string): boolean {
+  const config = pluginRegistry.getConnectorConfig(id) ?? {};
+  return config.trusted === true;
+}
+
+/** 写入信任状态。setConnectorConfig 是合并语义，不影响 command/args/env。 */
+export function setConnectorTrusted(manifest: PluginManifest, trusted: boolean): void {
+  pluginRegistry.setConnectorConfig(manifest.id, { trusted });
+}
+
+/** 信任确认弹窗要展示的启动信息（env 只给 key，值脱敏防 token 泄露）。 */
+export function getMcpTrustInfo(manifest: PluginManifest): {
+  command: string;
+  args: string[];
+  envKeys: string[];
+} {
+  const launch = getMcpLaunchConfig(manifest);
+  return {
+    command: launch?.command ?? "",
+    args: launch?.args ?? [],
+    envKeys: Object.keys(launch?.env ?? {}),
+  };
+}
+
 /** 从连接器插件的 config 中读取 MCP 启动配置。 */
 function getMcpLaunchConfig(manifest: PluginManifest): { command: string; args: string[]; env?: Record<string, string> } | null {
   const config = pluginRegistry.getConnectorConfig(manifest.id) ?? {};
@@ -98,8 +140,14 @@ function getMcpLaunchConfig(manifest: PluginManifest): { command: string; args: 
  * 启动（或复用）一个连接器对应的 MCP 服务器，并记录其暴露的工具。
  * 连接器插件需 enabled 且已配置 command。
  */
-export async function ensureMcpConnector(manifest: PluginManifest): Promise<McpServerInfo | null> {
+export async function ensureMcpConnector(
+  manifest: PluginManifest,
+  options?: { requireTrust?: boolean },
+): Promise<McpServerInfo | null> {
   if (!pluginRegistry.isEnabled(manifest.id)) return null;
+  // 信任门：未获用户信任的连接器不拉起，其工具自然也不会注入对话。
+  const requireTrust = options?.requireTrust ?? true;
+  if (requireTrust && !isConnectorTrusted(manifest)) return null;
   const launch = getMcpLaunchConfig(manifest);
   if (!launch) return null;
 
@@ -137,7 +185,11 @@ export async function disconnectMcpConnector(connectorId: string): Promise<void>
   }
 }
 
-/** 应用启动时调用：把已启用且已配置的连接器全部拉起。静默失败，不阻塞启动。 */
+/**
+ * 应用启动时调用：把已启用、已配置、且**已获用户信任**的连接器拉起。
+ * 未获信任的会被 ensureMcpConnector 的信任门挡下——配置完成不等于激活，
+ * 这是刻意为之的安全设计。静默失败，不阻塞启动。
+ */
 export async function syncMcpConnectors(): Promise<void> {
   const manifests = pluginRegistry.listEnabledConnectors();
   for (const manifest of manifests) {
@@ -157,6 +209,9 @@ export async function syncMcpConnectors(): Promise<void> {
 export function listActiveMcpTools(): ChatToolParam[] {
   const tools: ChatToolParam[] = [];
   for (const server of connectedServers.values()) {
+    // 纵深防御：即便连接态残留（如信任被撤销后进程未退出），未信任的
+    // 连接器也不向模型暴露任何工具。
+    if (!isTrustedById(server.connectorId)) continue;
     for (const tool of server.info.tools ?? []) {
       tools.push({
         name: `mcp__${server.serverId}__${tool.name}`,
@@ -200,6 +255,12 @@ export async function executeMcpToolCall(
   const server = connectedServers.get(serverId);
   if (!server) {
     return `MCP 服务器未连接：${serverId}。请在扩展中心「连接器」中重新连接后再试。`;
+  }
+  // 独立校验信任状态（不能只依赖 listActiveMcpTools 的过滤）：
+  // 模型可以自行编造 `mcp__{serverId}__{tool}` 名字发起调用，若服务器恰好
+  // 处于连接态而此处不校验，未受信任的连接器就会被间接驱动。
+  if (!isTrustedById(serverId)) {
+    return `连接器「${server.connectorName}」尚未获得信任，已拒绝调用其工具 ${toolName}。请在扩展中心「连接器」中确认信任后再试。`;
   }
   let parsed: Record<string, unknown> = {};
   if (argumentsJson && argumentsJson !== "{}") {
