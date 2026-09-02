@@ -186,7 +186,7 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     category: "开发编程",
     icon: "FileText",
     command: "/read_file",
-    promptContribution: "可调用 /read_file <路径> 读取文件正文，用于分析或问答。",
+    promptContribution: "可调用 /read_file <路径> 读取文件正文，用于分析或问答；项目会话下若传工作区之外的绝对路径需经用户确认才会读取。",
   },
   {
     id: "search_files",

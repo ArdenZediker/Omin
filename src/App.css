@@ -5569,6 +5569,11 @@ body:has(.pet-thought-window),
   color: #2563eb;
 }
 
+.confirm-dialog__badge--read {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
+
 .confirm-dialog__body {
   display: flex;
   flex-direction: column;
@@ -5696,6 +5701,11 @@ body:has(.pet-thought-window),
 :root[data-omni-theme="dark"] .confirm-dialog__badge--write {
   background: rgba(59, 130, 246, 0.2);
   color: #93c5fd;
+}
+
+:root[data-omni-theme="dark"] .confirm-dialog__badge--read {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
 }
 
 :root[data-omni-theme="dark"] .confirm-dialog__warning {

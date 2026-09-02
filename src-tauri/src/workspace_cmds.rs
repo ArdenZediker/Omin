@@ -11,8 +11,13 @@ pub(crate) fn list_workspace_files(
 }
 
 #[tauri::command]
-pub(crate) fn read_workspace_file(project_path: Option<String>, path: String, max_chars: Option<usize>) -> Result<String, String> {
-    workspace_files::read_file(project_path, path, max_chars)
+pub(crate) fn read_workspace_file(
+    project_path: Option<String>,
+    path: String,
+    max_chars: Option<usize>,
+    allow_absolute: Option<bool>,
+) -> Result<String, String> {
+    workspace_files::read_file(project_path, path, max_chars, allow_absolute)
 }
 
 #[tauri::command]

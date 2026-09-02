@@ -41,10 +41,21 @@ pub(crate) fn list_files(
     Ok(results)
 }
 
-pub(crate) fn read_file(project_path: Option<String>, path: String, max_chars: Option<usize>) -> Result<String, String> {
-    let root = resolve_root(&project_path)?;
-    let relative = normalize_relative_path(&path)?;
-    let full_path = root.join(relative);
+pub(crate) fn read_file(
+    project_path: Option<String>,
+    path: String,
+    max_chars: Option<usize>,
+    allow_absolute: Option<bool>,
+) -> Result<String, String> {
+    // 提权读取：仅当用户在前端确认后传入 allow_absolute=true 才放开绝对路径，
+    // 否则一律走工作区围栏（normalize_relative_path 拒绝绝对路径/越界）。
+    let full_path = if allow_absolute.unwrap_or(false) && Path::new(&path).is_absolute() {
+        PathBuf::from(&path)
+    } else {
+        let root = resolve_root(&project_path)?;
+        let relative = normalize_relative_path(&path)?;
+        root.join(relative)
+    };
 
     if !full_path.exists() {
         return Err(format!("File not found: {path}"));
@@ -220,4 +231,29 @@ fn collect_workspace_matches(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_absolute_requires_allow_flag() {
+        let dir = std::env::temp_dir().join("omni-read-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("secret.txt");
+        std::fs::write(&file, b"hello").unwrap();
+        let abs = file.to_string_lossy().into_owned();
+
+        // 未授权：绝对路径被工作区围栏拒绝
+        let err = read_file(None, abs.clone(), None, None).unwrap_err();
+        assert!(
+            err.contains("Only relative workspace paths are allowed"),
+            "actual: {err}"
+        );
+
+        // 授权（前端确认后 allow_absolute=true）：可读到内容
+        let content = read_file(None, abs.clone(), None, Some(true)).unwrap();
+        assert_eq!(content, "hello");
+    }
 }

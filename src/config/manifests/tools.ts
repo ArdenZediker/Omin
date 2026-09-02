@@ -54,7 +54,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/read_file",
     title: "读取文件",
     description: "读取文件正文用于分析或问答",
-    promptContribution: "可调用 /read_file <路径> 读取文件正文，用于分析或问答。",
+    promptContribution: "可调用 /read_file <路径> 读取文件正文，用于分析或问答；路径为工作区内相对路径，项目会话下若传工作区之外的绝对路径需经用户确认才会读取。",
     parameters: {
       type: "object",
       properties: {

@@ -232,10 +232,36 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const relativePath = resolvedCommand.args.trim();
       if (!relativePath) return { ok: false, error: "用法：/read_file 相对路径" };
 
+      // 项目会话下读取工作区之外的绝对路径：走提权确认（对齐 WorkBuddy「授权后可读」）。
+      const ws = runtime.activeProject?.workspacePath ?? "";
+      const outOfWorkspace = Boolean(ws) && isAbsolutePath(relativePath) && !isWithin(relativePath, ws);
+      let allowAbsolute = false;
+      if (outOfWorkspace) {
+        const approved = await requestConfirmation({
+          source: "read_out_of_workspace",
+          title: "读取工作区之外的文件？",
+          summary: "模型请求读取项目工作区之外的文件。",
+          riskLevel: "read",
+          details: [
+            { label: "目标文件", value: relativePath },
+            { label: "项目工作区", value: ws },
+          ],
+          targets: [relativePath],
+          warning:
+            "越界读取不受工作区围栏保护，文件内容将返回给模型。确认后 Omni 才会读取；取消则仅能读取工作区内的文件。",
+          confirmLabel: "仍要读取",
+        });
+        if (!approved) {
+          throw new Error("已取消：目标文件位于项目工作区之外且未获确认");
+        }
+        allowAbsolute = true;
+      }
+
       const content = await invoke<string>("read_workspace_file", {
-        projectPath: runtime.activeProject?.workspacePath || null,
+        projectPath: ws || null,
         path: relativePath,
         maxChars: 6000,
+        allowAbsolute,
       });
 
       return {

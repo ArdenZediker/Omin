@@ -12,6 +12,7 @@ import {
 type PendingEntry = ConfirmationRequest & { id: string };
 
 const RISK_META: Record<RiskLevel, { label: string; tone: string }> = {
+  read: { label: "读取操作", tone: "read" },
   irreversible: { label: "不可逆操作", tone: "irreversible" },
   destructive: { label: "破坏性操作", tone: "destructive" },
   write: { label: "写入操作", tone: "write" },
