@@ -744,6 +744,7 @@ function MainApp() {
         onOpenCompactQuery={compactController.handleOpenCompactQuery}
         onOpenExternalChat={compactController.handleOpenExternalChat}
         onPetPrimaryClick={compactController.handlePetPrimaryClick}
+        onIsPetClickSuppressed={compactController.shouldSuppressPetClick}
         onOpenSettingsFromCompact={desktopActions.openSettings}
         onPointerHitTest={isCharacterPointerInHitArea}
         onSetCompactQuery={setCompactQuery}

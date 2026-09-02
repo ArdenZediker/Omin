@@ -383,7 +383,14 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
 
   const handleCharacterPointerUp = useCallback(async () => {
     const pendingDragPosition = characterDragPendingRef.current ?? characterDragLastTargetRef.current;
-    const shouldSuppressPetClick = characterPointerMovedRef.current || isCharacterDraggingRef.current;
+    const didDrag = characterPointerMovedRef.current || isCharacterDraggingRef.current;
+    // ⚠️ 必须**同步**落闸（在任何 await 之前）：浏览器的 click 事件紧跟 mouseup
+    // 派发，而本函数在第一个 await 之后就被挂起了（等 rAF / IPC 往返，几十到
+    // 几百 ms）。若把落闸放在 await 之后，click 早就先执行完了——表现为
+    //「拖动宠物松手也会切换主界面显隐」，这是本次修复的根因。
+    if (didDrag) {
+      suppressPetClickUntilRef.current = Date.now() + PET_CLICK_SUPPRESS_AFTER_DRAG_MS;
+    }
     // 松手：先把最终目标写回 pending（drain 收尾以它为准 await 落位），再清
     // 拖拽状态让循环退出，最后 await flush 等待最终位置真正写入完成。
     if (pendingDragPosition) {
@@ -423,9 +430,6 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
       width: compactSize.width,
       height: compactSize.height,
     });
-    if (shouldSuppressPetClick) {
-      suppressPetClickUntilRef.current = Date.now() + PET_CLICK_SUPPRESS_AFTER_DRAG_MS;
-    }
     characterPointerMovedRef.current = false;
     setIsCharacterDragging(false);
     lastCharacterDragPointerRef.current = null;
@@ -491,13 +495,27 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
   // This is a no-op kept for wiring compatibility.
   const handlePetPointerUp = useCallback(() => {}, []);
 
-  const handlePetPrimaryClick = useCallback(async () => {
-    suppressCompactBlur();
+  /**
+   * 同步判断「这次 click 其实是拖拽的收尾」。click 一定晚于 mouseup，而
+   * handleCharacterPointerUp 的重置逻辑排在 await 之后，所以此刻这些 ref 还
+   * 保留着刚结束的那次拖拽的信息，可被 click 直接读取。
+   */
+  const shouldSuppressPetClick = useCallback(
+    () =>
+      isCharacterDraggingRef.current ||
+      characterPointerMovedRef.current ||
+      Date.now() <= suppressPetClickUntilRef.current,
+    []
+  );
 
-    if (isCharacterDraggingRef.current || Date.now() <= suppressPetClickUntilRef.current) {
+  const handlePetPrimaryClick = useCallback(async () => {
+    // 拖拽收尾的 click：直接吞掉，不动主界面。
+    if (shouldSuppressPetClick()) {
       isCharacterDraggingRef.current = false;
+      characterPointerMovedRef.current = false;
       return;
     }
+    suppressCompactBlur();
 
     const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
     if (!mainWindow) {
@@ -522,9 +540,10 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     } catch {
       await onRestoreMain(false, { restoreGeometry: false });
     }
-  }, [onRestoreMain, suppressCompactBlur]);
+  }, [onRestoreMain, shouldSuppressPetClick, suppressCompactBlur]);
 
   return {
+    shouldSuppressPetClick,
     setCharacterDragMotionFromPointer,
     flushCharacterDragPosition,
     continueCharacterDrag,

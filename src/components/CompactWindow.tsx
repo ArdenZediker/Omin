@@ -61,6 +61,8 @@ type CompactWindowProps = {
   onOpenCompactQuery: () => void | Promise<void>;
   onOpenExternalChat: (entry: ExternalChatEntry) => void | Promise<void>;
   onPetPrimaryClick: () => void | Promise<void>;
+  /** 同步判断本次 click 是否只是拖拽收尾（用于跳过点击反馈动画）。 */
+  onIsPetClickSuppressed: () => boolean;
   onOpenSettingsFromCompact: () => void | Promise<void>;
   onPointerHitTest: (element: HTMLElement, clientX: number, clientY: number) => boolean;
   onSetCompactQuery: Dispatch<SetStateAction<string>>;
@@ -120,6 +122,7 @@ export default function CompactWindow({
   onOpenCompactQuery,
   onOpenExternalChat,
   onPetPrimaryClick,
+  onIsPetClickSuppressed,
   onOpenSettingsFromCompact,
   onPointerHitTest,
   onSetCompactQuery,
@@ -506,7 +509,11 @@ export default function CompactWindow({
               onClick={(event) => {
                 if (isPetAppearance) {
                   event.stopPropagation();
-                  setPetClickBounce(true);
+                  // 拖拽收尾触发的 click 不做点击反馈（回弹动画），否则看起来
+                  // 像是「拖完还被点了一下」。
+                  if (!onIsPetClickSuppressed()) {
+                    setPetClickBounce(true);
+                  }
                   void onPetPrimaryClick();
                   return;
                 }

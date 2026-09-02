@@ -382,6 +382,7 @@ export function useCompactWindowController({
     handlePetPointerMove,
     handlePetPointerUp,
     handlePetPrimaryClick,
+    shouldSuppressPetClick,
   } = drag;
   const {
     handleOpenSettingsFromCompact,
@@ -1062,6 +1063,7 @@ export function useCompactWindowController({
     handleCompactAppearanceChange,
     handleCompactDrag,
     handlePetPrimaryClick,
+    shouldSuppressPetClick,
     handleCompactQuerySubmit,
     handleCompactScaleReset,
     handleCompactWheel,
