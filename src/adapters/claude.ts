@@ -85,10 +85,19 @@ export class ClaudeAdapter implements ModelAdapter {
     );
 
     const data = await response.json();
+    // 聚合思考块：Anthropic extended thinking 模式下 content 数组里会有 type:"thinking" 块
+    const thinkingText = Array.isArray(data.content)
+      ? data.content
+          .filter((b: { type: string }) => b.type === "thinking" || b.type === "redacted_thinking")
+          .map((b: { thinking?: string; text?: string }) => b.thinking || b.text || "")
+          .filter(Boolean)
+          .join("\n")
+      : "";
     const textBlock = data.content.find((b: { type: string }) => b.type === "text");
 
     return {
       content: textBlock?.text || "",
+      reasoning: thinkingText || undefined,
       model: data.model,
       usage: data.usage
         ? {
@@ -123,6 +132,7 @@ export class ClaudeAdapter implements ModelAdapter {
 
     const decoder = new TextDecoder();
     let fullContent = "";
+    let fullReasoning = "";
     let model = request.model;
     let buffer = "";
     const toolAccumulator = new ClaudeStreamToolAccumulator();
@@ -146,9 +156,15 @@ export class ClaudeAdapter implements ModelAdapter {
         const data = line.slice(6);
         try {
           const parsed = JSON.parse(data);
-          if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-            fullContent += parsed.delta.text;
-            onChunk({ content: parsed.delta.text, done: false, model });
+          if (parsed.type === "content_block_delta") {
+            // Anthropic extended thinking：type:"thinking_delta" 携带 reasoning 增量
+            if (parsed.delta?.type === "thinking_delta" && parsed.delta?.thinking) {
+              fullReasoning += parsed.delta.thinking;
+              onChunk({ content: "", done: false, model, reasoning: parsed.delta.thinking });
+            } else if (parsed.delta?.text) {
+              fullContent += parsed.delta.text;
+              onChunk({ content: parsed.delta.text, done: false, model });
+            }
           } else if (parsed.type === "message_start" && parsed.message?.model) {
             model = parsed.message.model;
           } else if (parsed.type === "message_stop") {
@@ -163,7 +179,7 @@ export class ClaudeAdapter implements ModelAdapter {
       if (done) break;
     }
 
-    return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls() };
+    return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls(), reasoning: fullReasoning || undefined };
   }
 
   async validate(): Promise<boolean> {

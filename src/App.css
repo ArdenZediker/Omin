@@ -8132,51 +8132,64 @@ body:has(.pet-thought-window),
   font-size: 13px;
 }
 
-/* 推理模型思考链折叠块 */
+/* 深度思考块：面板式背景（WorkBuddy 风格：淡紫→淡蓝渐变 + padding 充足 + 步骤间虚线） */
 .message-reasoning {
-  margin-bottom: 8px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--omni-message-muted, #646a73) 22%, transparent);
-  background: color-mix(in srgb, var(--omni-message-muted, #646a73) 5%, transparent);
+  margin-bottom: 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, #8b5cf6 22%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #8b5cf6 6%, transparent) 0%,
+    color-mix(in srgb, #3b82f6 4%, transparent) 100%
+  );
   overflow: hidden;
+  transition: border-color 0.18s ease;
+}
+
+.message-reasoning:hover {
+  border-color: color-mix(in srgb, #8b5cf6 32%, transparent);
 }
 
 .message-reasoning__toggle {
   width: 100%;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
-  font-size: 12.5px;
-  color: var(--omni-message-muted, rgba(100, 106, 115, 0.9));
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+  color: color-mix(in srgb, #6d28d9 92%, transparent);
   background: transparent;
   border: none;
   cursor: pointer;
   text-align: left;
+  font-weight: 500;
 }
 
 .message-reasoning__toggle:hover {
-  background: color-mix(in srgb, var(--omni-message-muted, #646a73) 8%, transparent);
+  background: color-mix(in srgb, #8b5cf6 8%, transparent);
 }
 
 .message-reasoning__icon {
-  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 70%, transparent);
+  color: #7c3aed;
   flex-shrink: 0;
 }
 
 .message-reasoning__label {
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .message-reasoning__meta {
-  opacity: 0.72;
+  opacity: 0.7;
   margin-left: auto;
   font-variant-numeric: tabular-nums;
+  font-weight: 400;
 }
 
 .message-reasoning__chevron {
   flex-shrink: 0;
   transition: transform 0.18s ease;
+  color: color-mix(in srgb, #6d28d9 60%, transparent);
 }
 
 .message-reasoning__chevron--open {
@@ -8215,37 +8228,72 @@ body:has(.pet-thought-window),
 }
 
 .message-reasoning__body {
-  border-top: 1px solid color-mix(in srgb, var(--omni-message-muted, #646a73) 16%, transparent);
-  max-height: 320px;
+  border-top: 1px solid color-mix(in srgb, #8b5cf6 18%, transparent);
+  padding: 10px 14px 12px;
+  max-height: 420px;
   overflow-y: auto;
 }
 
 .message-reasoning__text {
-  margin: 0;
-  padding: 10px 12px;
+  margin: 0 0 8px;
+  padding: 0 4px;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.65;
-  color: var(--omni-message-muted, rgba(100, 106, 115, 0.92));
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: color-mix(in srgb, #4c1d95 80%, transparent);
+}
+
+/* 步骤间虚线分隔（WorkBuddy 风格的「推理…调用…推理」时间线视觉） */
+.message-reasoning__text--segment {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, #8b5cf6 24%, transparent);
+}
+
+.message-reasoning__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
 }
 
 :root[data-omni-theme="dark"] .message-reasoning {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(139, 92, 246, 0.34);
+  background: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.12) 0%,
+    rgba(59, 130, 246, 0.08) 100%
+  );
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__toggle {
+  color: rgba(196, 181, 253, 0.95);
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__icon {
+  color: #a78bfa;
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__chevron {
+  color: rgba(196, 181, 253, 0.7);
 }
 
 :root[data-omni-theme="dark"] .message-reasoning__toggle:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(139, 92, 246, 0.12);
 }
 
 :root[data-omni-theme="dark"] .message-reasoning__body {
-  border-top-color: rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(139, 92, 246, 0.22);
 }
 
 :root[data-omni-theme="dark"] .message-reasoning__text {
-  color: rgba(255, 255, 255, 0.66);
+  color: rgba(196, 181, 253, 0.78);
+}
+
+:root[data-omni-theme="dark"] .message-reasoning__text--segment {
+  border-top-color: rgba(139, 92, 246, 0.3);
 }
 
 /* 思考块：工具调用步骤列表（WorkBuddy 风格） */

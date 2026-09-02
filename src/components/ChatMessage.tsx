@@ -320,7 +320,7 @@ function ThinkingBlock({
         aria-expanded={expanded}
       >
         <Brain size={14} strokeWidth={1.8} className="message-reasoning__icon" />
-        <span className="message-reasoning__label">思考过程</span>
+        <span className="message-reasoning__label">深度思考</span>
         <span className="message-reasoning__meta">{summary}{isStreamingTail ? "…" : ""}</span>
         <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
       </button>

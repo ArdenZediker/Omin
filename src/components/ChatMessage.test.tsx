@@ -45,11 +45,11 @@ describe("ChatMessage", () => {
     render(<ChatMessage message={message} index={2} />);
 
     // 折叠态：默认收起，只显示摘要
-    expect(screen.getByText("思考过程")).toBeTruthy();
+    expect(screen.getByText("深度思考")).toBeTruthy();
     expect(screen.getByText(/字思考.*个工具/)).toBeTruthy();
 
     // 展开后展示推理文本与三个工具步骤
-    fireEvent.click(screen.getByRole("button", { name: /思考过程/ }));
+    fireEvent.click(screen.getByRole("button", { name: /深度思考/ }));
 
     expect(screen.getByText("用户想查文件，我先列目录看看有什么。")).toBeTruthy();
     expect(screen.getByText("列出文件")).toBeTruthy();
@@ -72,8 +72,8 @@ describe("ChatMessage", () => {
         index={3}
       />,
     );
-    // 始终展示 UI 元素，确保用户能看到「思考过程」入口
-    expect(screen.getByText("思考过程")).toBeTruthy();
+    // 始终展示 UI 元素，确保用户能看到「深度思考」入口
+    expect(screen.getByText("深度思考")).toBeTruthy();
     expect(screen.getByText("未触发深度推理")).toBeTruthy();
     // 默认折叠：body 不在 DOM 中（展开后才出现）
     expect(screen.queryByText("本次回答未使用推理模型或工具调用")).toBeNull();
@@ -105,7 +105,7 @@ describe("ChatMessage", () => {
     const { container } = render(<ChatMessage message={message} index={4} />);
 
     // 摘要包含 reasoning 字数（两段求和）与工具数
-    fireEvent.click(screen.getByRole("button", { name: /思考过程/ }));
+    fireEvent.click(screen.getByRole("button", { name: /深度思考/ }));
 
     const flow = container.querySelector(".message-reasoning__flow");
     expect(flow).not.toBeNull();

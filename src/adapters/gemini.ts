@@ -76,11 +76,22 @@ export class GeminiAdapter implements ModelAdapter {
     );
 
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.filter((p: { text?: string }) => p.text).map((p: { text: string }) => p.text).join("") || "";
+    type GeminiPart = { text?: string; thought?: string; functionCall?: unknown };
+    const parts: GeminiPart[] = data.candidates?.[0]?.content?.parts || [];
+    // Aggregate thought blocks (Gemini thinking mode reasoning, mirrors stream branch)
+    const thoughtText = parts
+      .filter((p) => typeof p.thought === "string")
+      .map((p) => p.thought as string)
+      .join("\n");
+    const text = parts
+      .filter((p) => typeof p.text === "string")
+      .map((p) => p.text as string)
+      .join("") || "";
 
     return {
       content: text,
-      model: request.model,
+      reasoning: thoughtText || undefined,
+      model: data.model,
       usage: data.usageMetadata
         ? {
             promptTokens: data.usageMetadata.promptTokenCount,
