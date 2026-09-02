@@ -51,7 +51,7 @@ export default function ChatMessage({
   }, [isEditing, message.content]);
 
   return (
-    <div className={`animate-fade-in flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+    <div data-message-index={index} className={`animate-fade-in flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {isUser && isEditing ? (
         <div className="message-edit-box">
           <textarea

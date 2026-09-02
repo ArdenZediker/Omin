@@ -8,20 +8,19 @@ import {
   ArrowRight,
   Bot,
   Cable,
-  Check,
+  Clock,
   Compass,
   FolderOpen,
   History,
+  LayoutDashboard,
   LayoutTemplate,
   MessageSquare,
   MoreHorizontal,
   Package,
-  Pencil,
   PanelRightClose,
   PanelRightOpen,
   PanelLeftClose,
   PanelLeftOpen,
-  Pin,
   Plus,
   Puzzle,
   ChevronDown,
@@ -31,7 +30,6 @@ import {
   Settings,
   Share2,
   Sparkles,
-  Star,
   Trash2,
   Wand2,
 } from "lucide-react";
@@ -79,7 +77,7 @@ import {
   normalizeSearchText,
   readStoredPanelWidth,
   renderProjectAvatar,
-  renderTopicGroupLabel,
+  truncateQuestionPreview,
 } from "./mainChatViewUtils";
 
 type SessionGroup = {
@@ -87,14 +85,7 @@ type SessionGroup = {
   sessions: ChatSession[];
 };
 
-type TopicGroupingMode = "time" | "flat";
-type SidePanelTab = "topics" | "tasks" | "artifacts";
-
-type TopicDeleteConfirmState = {
-  title: string;
-  message: string;
-  sessions: ChatSession[];
-} | null;
+type SidePanelTab = "history" | "tasks" | "artifacts";
 
 type ProjectDeleteConfirmState = {
   projectId: string;
@@ -293,12 +284,10 @@ export default function MainChatView({
   onDeleteProject,
   onDeleteProjectMemory,
   onUpdateProjectMemory,
-  onDeleteChat,
   onDraftChange,
   onEditUserMessage,
   onModelChange,
   onNewChat,
-  onRenameChat,
   onRegenerateMessage,
   onSelectProject,
   onSelectChat,
@@ -308,8 +297,6 @@ export default function MainChatView({
   onShareChat,
   onStop,
   onSubmitEditedUserMessage,
-  onToggleFavoriteChat,
-  onTogglePinChat,
   onUseEmptyPrompt,
   onOpenKnowledge,
   openMarketplace,
@@ -327,17 +314,13 @@ export default function MainChatView({
   const composerSplitterDraggingRef = useRef(false);
   const composerSplitterStartYRef = useRef(0);
   const composerSplitterStartHeightRef = useRef(0);
-  const [topicSearchOpen, setTopicSearchOpen] = useState(false);
-  const [topicSearchQuery, setTopicSearchQuery] = useState("");
-  const [topicMenuOpen, setTopicMenuOpen] = useState(false);
-  const [topicGroupingMode, setTopicGroupingMode] = useState<TopicGroupingMode>("flat");
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>(() => {
-    // 有产物的项目打开后默认展示产物面板，否则展示话题列表
+    // 有产物的项目打开后默认展示产物面板，否则展示历史提问
     if (activeProject) {
       const initialCount = artifactsForProject(activeProject.id).length;
-      return initialCount > 0 ? "artifacts" : "topics";
+      return initialCount > 0 ? "artifacts" : "history";
     }
-    return "topics";
+    return "history";
   });
   const [showPluginMarketplace, setShowPluginMarketplace] = useState(openMarketplace ?? false);
   const [artifactCount, setArtifactCount] = useState(0);
@@ -409,7 +392,6 @@ export default function MainChatView({
     onMarketplaceChange?.(false);
     onJumpToChat?.("/expert-manager ");
   }, [onMarketplaceChange, onJumpToChat]);
-  const [topicDeleteConfirm, setTopicDeleteConfirm] = useState<TopicDeleteConfirmState>(null);
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -460,19 +442,13 @@ export default function MainChatView({
   const [editingMemoryDraft, setEditingMemoryDraft] = useState("");
   const [customProjectsCollapsed, setCustomProjectsCollapsed] = useState(false);
   const [openProjectCardMenuId, setOpenProjectCardMenuId] = useState<string | null>(null);
-  const [topicItemMenuSessionId, setTopicItemMenuSessionId] = useState<string | null>(null);
   const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
-  const topicSearchInputRef = useRef<HTMLInputElement | null>(null);
-  const topicMenuRef = useRef<HTMLDivElement | null>(null);
-  const topicMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const projectCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const projectMoveGroupMenuRef = useRef<HTMLDivElement | null>(null);
   const projectAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const projectAvatarPanelRef = useRef<HTMLDivElement | null>(null);
   const projectAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const topicItemMenuRef = useRef<HTMLDivElement | null>(null);
-  const topicItemActionRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const layoutDragRef = useRef<{
     startX: number;
     startWidth: number;
@@ -484,19 +460,6 @@ export default function MainChatView({
     setIsEmptyGuideCompact(nextCompact);
     saveSqliteBackedValue(EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY, nextCompact ? "1" : "0");
   }, []);
-  const normalizedTopicSearchQuery = normalizeSearchText(topicSearchQuery);
-  const filteredTopicGroups = useMemo(
-    () =>
-      groupedChatSessions
-        .map((group) => ({
-          ...group,
-          sessions: group.sessions.filter((session) => normalizeSearchText(session.title).includes(normalizedTopicSearchQuery)),
-        }))
-        .filter((group) => group.sessions.length > 0),
-    [groupedChatSessions, normalizedTopicSearchQuery]
-  );
-  const allTopicSessions = useMemo(() => groupedChatSessions.flatMap((group) => group.sessions), [groupedChatSessions]);
-  const filteredTopicSessions = useMemo(() => filteredTopicGroups.flatMap((group) => group.sessions), [filteredTopicGroups]);
   const currentTopicTitle = activeSession?.title || (activeProject?.kind === "basic" ? "Omni" : activeProject?.title) || "Omni";
   const defaultTopicPanelVisible = !isTopicPanelAutoCollapsed;
   const isTopicPanelVisible = topicPanelManualVisible ?? defaultTopicPanelVisible;
@@ -965,29 +928,6 @@ export default function MainChatView({
   }, [workspaceElement]);
 
   useEffect(() => {
-    if (topicSearchOpen) {
-      topicSearchInputRef.current?.focus();
-    } else if (topicSearchQuery) {
-      setTopicSearchQuery("");
-    }
-  }, [topicSearchOpen, topicSearchQuery]);
-
-  useEffect(() => {
-    if (!topicMenuOpen) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (topicMenuRef.current?.contains(target)) return;
-      if (topicMenuButtonRef.current?.contains(target)) return;
-      setTopicMenuOpen(false);
-      setTopicDeleteConfirm(null);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [topicMenuOpen]);
-  useEffect(() => {
     if (!projectMenuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -1022,22 +962,6 @@ export default function MainChatView({
   }, [openProjectCardMenuId]);
 
   useEffect(() => {
-    if (!topicItemMenuSessionId) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (topicItemMenuRef.current?.contains(target)) return;
-      const trigger = topicItemActionRefs.current[topicItemMenuSessionId];
-      if (trigger?.contains(target)) return;
-      setTopicItemMenuSessionId(null);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [topicItemMenuSessionId]);
-
-  useEffect(() => {
     if (!projectAvatarPanelOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -1051,21 +975,6 @@ export default function MainChatView({
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [projectAvatarPanelOpen]);
-
-  const handleDeleteSessions = (sessions: ChatSession[], title: string, message: string) => {
-    if (sessions.length === 0) {
-      setTopicMenuOpen(false);
-      return;
-    }
-    setTopicDeleteConfirm({ title, message, sessions });
-  };
-
-  const handleConfirmDeleteSessions = () => {
-    if (!topicDeleteConfirm) return;
-    topicDeleteConfirm.sessions.forEach((session) => onDeleteChat(session));
-    setTopicDeleteConfirm(null);
-    setTopicMenuOpen(false);
-  };
 
   const handleCreateProjectGroup = () => {
     const nextGroupName = projectGroupDraft.trim();
@@ -1116,132 +1025,6 @@ export default function MainChatView({
     setProjectDeleteConfirm(null);
     setOpenProjectCardMenuId(null);
   };
-
-  const renderTopicItemActionMenu = (session: ChatSession) => (
-    <span
-      ref={(node) => {
-        topicItemActionRefs.current[session.id] = node;
-      }}
-      className={`chat-topic-panel__pin chat-topic-panel__pin--menu ${topicItemMenuSessionId === session.id ? "chat-topic-panel__pin--menu-open" : ""}`}
-      title="更多操作"
-      aria-label="更多操作"
-      role="button"
-      tabIndex={0}
-      onClick={(event) => {
-        event.stopPropagation();
-        setTopicItemMenuSessionId((current) => (current === session.id ? null : session.id));
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          setTopicItemMenuSessionId(null);
-          return;
-        }
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          event.stopPropagation();
-          setTopicItemMenuSessionId((current) => (current === session.id ? null : session.id));
-        }
-      }}
-    >
-      <MoreHorizontal size={12} strokeWidth={2} />
-      {topicItemMenuSessionId === session.id && (
-        <div
-          ref={topicItemMenuRef}
-          className="chat-topic-panel__item-menu"
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <span
-            className="chat-topic-panel__item-menu-action"
-            role="button"
-            tabIndex={0}
-            onClick={(event) => {
-              event.stopPropagation();
-              onTogglePinChat(session);
-              setTopicItemMenuSessionId(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                event.stopPropagation();
-                onTogglePinChat(session);
-                setTopicItemMenuSessionId(null);
-              }
-            }}
-          >
-            <Pin size={12} strokeWidth={2} />
-            <span>{session.pinned ? "取消置顶" : "置顶话题"}</span>
-          </span>
-          <span
-            className="chat-topic-panel__item-menu-action"
-            role="button"
-            tabIndex={0}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleFavoriteChat(session);
-              setTopicItemMenuSessionId(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                event.stopPropagation();
-                onToggleFavoriteChat(session);
-                setTopicItemMenuSessionId(null);
-              }
-            }}
-          >
-            <Star size={12} strokeWidth={2} fill={session.favorite ? "currentColor" : "none"} />
-            <span>{session.favorite ? "取消收藏" : "收藏话题"}</span>
-          </span>
-          <span
-            className="chat-topic-panel__item-menu-action"
-            role="button"
-            tabIndex={0}
-            onClick={(event) => {
-              event.stopPropagation();
-              onRenameChat(session);
-              setTopicItemMenuSessionId(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                event.stopPropagation();
-                onRenameChat(session);
-                setTopicItemMenuSessionId(null);
-              }
-            }}
-          >
-            <Pencil size={12} strokeWidth={2} />
-            <span>重命名话题</span>
-          </span>
-          <span
-            className="chat-topic-panel__item-menu-action chat-topic-panel__item-menu-action--danger"
-            role="button"
-            tabIndex={0}
-            onClick={(event) => {
-              event.stopPropagation();
-              onDeleteChat(session);
-              setTopicItemMenuSessionId(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                event.stopPropagation();
-                onDeleteChat(session);
-                setTopicItemMenuSessionId(null);
-              }
-            }}
-          >
-            <Trash2 size={12} strokeWidth={2} />
-            <span>删除话题</span>
-          </span>
-        </div>
-      )}
-    </span>
-  );
-
 
   return (
     <div className={layoutClassName} style={layoutStyle}>
@@ -2597,93 +2380,14 @@ export default function MainChatView({
           <div className="chat-topic-panel__body">
             <div className="chat-topic-panel__toolbar">
               <div className="chat-topic-panel__title">
-                <Package size={14} strokeWidth={2} />
-                <span>产物</span>
-              </div>
-              <div className="chat-topic-panel__header-actions">
-                {sidePanelTab === "topics" ? (
-                  <button
-                    ref={topicMenuButtonRef}
-                    type="button"
-                    className={`chat-topic-panel__icon-button ${topicMenuOpen ? "chat-topic-panel__icon-button--active" : ""}`}
-                    title="更多操作"
-                    onClick={() => {
-                      setTopicSearchOpen(false);
-                      setTopicDeleteConfirm(null);
-                      setTopicMenuOpen((current) => !current);
-                    }}
-                  >
-                    <MoreHorizontal size={16} strokeWidth={1.8} />
-                  </button>
-                ) : null}
-                {sidePanelTab === "topics" && topicMenuOpen && (
-                  <div ref={topicMenuRef} className="chat-topic-panel__menu">
-                    {topicDeleteConfirm ? (
-                      <div className="chat-topic-panel__menu-confirm">
-                        <div className="chat-topic-panel__menu-confirm-title">{topicDeleteConfirm.title}</div>
-                        <div className="chat-topic-panel__menu-confirm-message">{topicDeleteConfirm.message}</div>
-                        <div className="chat-topic-panel__menu-confirm-actions">
-                          <button
-                            type="button"
-                            className="chat-topic-panel__menu-button"
-                            onClick={() => setTopicDeleteConfirm(null)}
-                          >
-                            取消
-                          </button>
-                          <button
-                            type="button"
-                            className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
-                            onClick={handleConfirmDeleteSessions}
-                          >
-                            确定删除
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="chat-topic-panel__menu-button"
-                          onClick={() => {
-                            setTopicGroupingMode("time");
-                            setTopicMenuOpen(false);
-                          }}
-                        >
-                          <span className="chat-topic-panel__menu-check">{topicGroupingMode === "time" ? <Check size={14} strokeWidth={2.2} /> : null}</span>
-                          <span>按时间分组</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="chat-topic-panel__menu-button"
-                          onClick={() => {
-                            setTopicGroupingMode("flat");
-                            setTopicMenuOpen(false);
-                          }}
-                        >
-                          <span className="chat-topic-panel__menu-check">{topicGroupingMode === "flat" ? <Check size={14} strokeWidth={2.2} /> : null}</span>
-                          <span>不分组</span>
-                        </button>
-                        <div className="chat-topic-panel__menu-divider" />
-                        <button
-                          type="button"
-                          className="chat-topic-panel__menu-button"
-                          onClick={() => handleDeleteSessions(allTopicSessions.filter((session) => !session.favorite), "删除未收藏话题", "确定删除未收藏的话题吗？")}
-                        >
-                          <Trash2 size={14} strokeWidth={1.9} />
-                          <span>删除未收藏话题</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
-                          onClick={() => handleDeleteSessions(allTopicSessions, "删除全部话题", "确定删除当前项目下的全部话题吗？")}
-                        >
-                          <Trash2 size={14} strokeWidth={1.9} />
-                          <span>删除全部话题</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
+                {(() => {
+                  if (sidePanelTab === "history") return <Clock size={14} strokeWidth={2} />;
+                  if (sidePanelTab === "tasks") return <LayoutDashboard size={14} strokeWidth={2} />;
+                  return <Package size={14} strokeWidth={2} />;
+                })()}
+                <span>
+                  {sidePanelTab === "history" ? "历史提问" : sidePanelTab === "tasks" ? "任务" : "产物"}
+                </span>
               </div>
             </div>
 
@@ -2692,95 +2396,59 @@ export default function MainChatView({
                 产物
                 {artifactCount > 0 ? <span className="chat-topic-panel__tab-badge">{artifactCount > 99 ? "99+" : artifactCount}</span> : null}
               </button>
-              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "topics" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("topics")}>话题</button>
+              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "history" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("history")}>
+                <Clock size={11} strokeWidth={2} />
+                <span>历史提问</span>
+              </button>
               <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "tasks" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("tasks")}>任务</button>
             </div>
 
-            {sidePanelTab === "topics" && topicSearchOpen && (
-              <div className="chat-topic-panel__search">
-                <Search size={14} strokeWidth={1.8} />
-                <input
-                  ref={topicSearchInputRef}
-                  value={topicSearchQuery}
-                  onChange={(event) => setTopicSearchQuery(event.target.value)}
-                  placeholder="搜索话题标题"
-                />
-              </div>
-            )}
-
-            {sidePanelTab === "topics" && <div className="chat-topic-panel__section">
-              <div className="chat-topic-panel__section-title">
-                <MessageSquare size={13} strokeWidth={2} />
-                <span>当前话题</span>
-              </div>
-              <div className="chat-topic-panel__active">
-                <span className="chat-topic-panel__active-dot" />
-                <div className="chat-topic-panel__active-copy">
-                  <span>{currentTopicTitle}</span>
-                </div>
-              </div>
-            </div>}
-
-            {sidePanelTab === "topics" && <div className="chat-topic-panel__section">
-              <div className="chat-topic-panel__section-title">
-                <History size={13} strokeWidth={2} />
-                <span>最近话题</span>
-              </div>
-              {filteredTopicSessions.length === 0 ? (
-                <div className="chat-topic-panel__empty">没有匹配的话题</div>
-              ) : topicGroupingMode === "time" ? (
-                <div className="chat-topic-panel__group-list">
-                  {filteredTopicGroups.map((group) => (
-                    <div key={group.label} className="chat-topic-panel__group">
-                      <div className="chat-topic-panel__group-title">{renderTopicGroupLabel(group.label)}</div>
+            {sidePanelTab === "history" && (() => {
+              const userQuestions = messages
+                .map((message, index) => ({ message, index }))
+                .filter(({ message }) => message.role === "user");
+              const handleJumpToQuestion = (messageIndex: number) => {
+                const target = document.querySelector(`[data-message-index="${messageIndex}"]`);
+                if (!(target instanceof HTMLElement)) return;
+                target.scrollIntoView({ behavior: "smooth", block: "center" });
+                target.classList.add("chat-message--pulse-highlight");
+                window.setTimeout(() => {
+                  target.classList.remove("chat-message--pulse-highlight");
+                }, 1600);
+              };
+              return (
+                <>
+                  <div className="chat-topic-panel__section">
+                    <div className="chat-topic-panel__section-title">
+                      <Clock size={13} strokeWidth={2} />
+                      <span>本次会话提问</span>
+                      <span className="chat-topic-panel__section-count">{userQuestions.length}</span>
+                    </div>
+                    {userQuestions.length === 0 ? (
+                      <div className="chat-topic-panel__empty">{activeChatId ? "本次会话还没有提问" : "请先选择或新建会话"}</div>
+                    ) : (
                       <div className="chat-topic-panel__list">
-                        {group.sessions.map((session) => (
+                        {userQuestions.map(({ message, index }, order) => (
                           <button
-                            key={session.id}
+                            key={`${index}-${order}`}
                             type="button"
-                            className={`chat-topic-panel__item ${session.id === activeChatId ? "chat-topic-panel__item--active" : ""}`}
-                            onClick={() => {
-                              setProjectSettingsId(null);
-                              setProjectAvatarPanelOpen(false);
-                              setTopicItemMenuSessionId(null);
-                              onSelectChat(session.id);
-                            }}
+                            className="chat-topic-panel__item chat-topic-panel__item--question"
+                            onClick={() => handleJumpToQuestion(index)}
+                            title={message.content}
                           >
                             <MessageSquare size={13} strokeWidth={1.9} className="chat-topic-panel__item-icon" />
                             <span className="chat-topic-panel__item-copy">
-                              <span className="chat-topic-panel__item-title">{session.title}</span>
+                              <span className="chat-topic-panel__item-title">{truncateQuestionPreview(message.content)}</span>
                             </span>
-                            {renderTopicItemActionMenu(session)}
+                            <span className="chat-topic-panel__item-order">#{userQuestions.length - order}</span>
                           </button>
                         ))}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="chat-topic-panel__list">
-                  {filteredTopicSessions.map((session) => (
-                    <button
-                      key={session.id}
-                      type="button"
-                      className={`chat-topic-panel__item ${session.id === activeChatId ? "chat-topic-panel__item--active" : ""}`}
-                      onClick={() => {
-                        setProjectSettingsId(null);
-                        setProjectAvatarPanelOpen(false);
-                        setTopicItemMenuSessionId(null);
-                        onSelectChat(session.id);
-                      }}
-                    >
-                      <MessageSquare size={13} strokeWidth={1.9} className="chat-topic-panel__item-icon" />
-                      <span className="chat-topic-panel__item-copy">
-                        <span className="chat-topic-panel__item-title">{session.title}</span>
-                      </span>
-                      {renderTopicItemActionMenu(session)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>}
+                    )}
+                  </div>
+                </>
+              );
+            })()}
 
             {sidePanelTab === "artifacts" ? (
               <ArtifactsPanel
