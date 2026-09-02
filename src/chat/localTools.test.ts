@@ -7,6 +7,10 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock("./confirmationGate", () => ({
+  requestConfirmation: vi.fn().mockResolvedValue(true),
+}));
+
 const baseMessages: Message[] = [
   { role: "user", content: "你好" },
   { role: "project", content: "你好，有什么可以帮你？" },

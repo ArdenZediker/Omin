@@ -343,6 +343,22 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       if (!content) {
         return { ok: false, error: "内容不能为空" };
       }
+      const approved = await requestConfirmation({
+        source: "update_persona",
+        title: "更新个性化配置？",
+        summary: "模型请求修改你的个性化字段配置。",
+        riskLevel: "write",
+        details: [
+          { label: "字段", value: key },
+          { label: "内容", value: content },
+        ],
+        targets: [key],
+        warning: "该字段将覆盖你已有的个性化配置，影响 Omni 的回答风格。",
+        confirmLabel: "确认更新",
+      });
+      if (!approved) {
+        return { ok: false, error: "已取消：未确认更新个性化配置" };
+      }
       await invoke("write_persona_file", { key, content });
       return { ok: true, outputText: `已更新个性化字段【${key}】。` };
     },
@@ -356,6 +372,22 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       try {
         const manifest = normalizeExpertManifest(parseExpertManifestFromArgs(resolvedCommand.args));
         const existed = pluginRegistry.isInstalled(manifest.id);
+        const approved = await requestConfirmation({
+          source: "install_expert",
+          title: "安装专家插件？",
+          summary: "模型请求安装一个专家插件（含可执行指令）。",
+          riskLevel: "write",
+          details: [
+            { label: "专家", value: `${manifest.name}（${manifest.id}）` },
+            { label: "操作", value: existed ? "更新已有" : "新安装" },
+          ],
+          targets: [manifest.id],
+          warning: "专家插件含指令，安装后可在对话中被调用执行。确认来源可信后再安装。",
+          confirmLabel: "确认安装",
+        });
+        if (!approved) {
+          return { ok: false, error: "已取消：未确认安装专家插件" };
+        }
         pluginRegistry.install(manifest, { type: "local", path: "expert-created" });
         return {
           ok: true,
@@ -767,6 +799,21 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         return { ok: false, error: `技能 id「${id}」不合法：仅允许字母、数字、连字符、下划线` };
       }
       try {
+        const approved = await requestConfirmation({
+          source: "install_skill",
+          title: "安装技能插件？",
+          summary: "模型请求安装一个技能插件（含可执行指令）。",
+          riskLevel: "write",
+          details: [
+            { label: "技能", value: `${strArg(json, "name", "title") ?? id}（${id}）` },
+          ],
+          targets: [id],
+          warning: "技能插件含指令，安装后会被注册并可能被执行。确认来源可信后再安装。",
+          confirmLabel: "确认安装",
+        });
+        if (!approved) {
+          return { ok: false, error: "已取消：未确认安装技能插件" };
+        }
         const res = await invoke<{ slug: string; path: string; skill_md: string }>("install_local_skill", {
           slug: id,
           name: strArg(json, "name", "title") ?? null,
