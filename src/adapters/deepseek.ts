@@ -50,8 +50,18 @@ export class DeepSeekAdapter implements ModelAdapter {
     );
 
     const data = await response.json();
+    // 多 provider 兼容：非流式响应同样支持 reasoning_content / reasoning / reasoning_text / thinking_content / thought
+    const msg = data.choices?.[0]?.message ?? {};
+    const reasoningText =
+      (typeof msg.reasoning_content === "string" && msg.reasoning_content) ||
+      (typeof msg.reasoning === "string" && msg.reasoning) ||
+      (typeof msg.reasoning_text === "string" && msg.reasoning_text) ||
+      (typeof msg.thinking_content === "string" && msg.thinking_content) ||
+      (typeof msg.thought === "string" && msg.thought) ||
+      undefined;
     return {
-      content: data.choices[0].message.content ?? "",
+      content: msg.content ?? "",
+      reasoning: reasoningText,
       model: data.model,
       usage: data.usage
         ? {

@@ -218,6 +218,12 @@ async function runToolLoop(options: {
         tools,
         signal,
       });
+      // 非流式响应：把模型一次性返回的 reasoning 文本累加到本轮 reasoning（与流式分支语义对齐）
+      if (response.reasoning) {
+        reasoning += response.reasoning;
+        roundReasoning += response.reasoning;
+        onReasoning?.(response.reasoning);
+      }
       if (response.content) {
         onChunk?.(response.content);
       }
@@ -535,5 +541,6 @@ export async function executeChatTurn(options: {
     knowledgeContext: knowledgeContext ?? null,
     suggestedMemories: parsed.suggestedMemories,
     suggestedSummary: parsed.suggestedSummary,
+    reasoning: response.reasoning || undefined,
   };
 }

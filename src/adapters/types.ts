@@ -113,6 +113,8 @@ export interface ChatResponse {
   };
   /** 模型请求调用的工具（非流式 function calling 时返回） */
   toolCalls?: ChatToolCall[];
+  /** 非流式响应里的完整推理文本（如 R1 / GPT-5.6 / Qwen3-thinking 等），与 StreamChunk.reasoning 字段语义对应 */
+  reasoning?: string;
 }
 
 export interface EmbeddingResponse {

@@ -48,6 +48,10 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "o1": { input: 15, output: 60 },
   "o3-mini": { input: 1.1, output: 4.4 },
   "o4-mini": { input: 1.1, output: 4.4 },
+  // GPT-5.6 系列（2026-07 发布，Sol/Terra/Luna 三档）
+  "gpt-5.6-sol": { input: 4, output: 16 },
+  "gpt-5.6-terra": { input: 2, output: 12 },
+  "gpt-5.6-luna": { input: 0.6, output: 3 },
   // Claude
   "claude-sonnet-4-20250514": { input: 3, output: 15 },
   "claude-opus-4-20250514": { input: 15, output: 75 },
@@ -82,6 +86,10 @@ export const BUILTIN_MODELS: ModelConfig[] = [
   { id: "o1", name: "o1", provider: "openai", maxTokens: 200000, maxOutput: 100000, supportsVision: true, supportsStreaming: false, toolCalling: true, thinking: true },
   { id: "o3-mini", name: "o3 Mini", provider: "openai", maxTokens: 200000, maxOutput: 100000, supportsVision: false, supportsStreaming: true, toolCalling: true, thinking: true },
   { id: "o4-mini", name: "o4 Mini", provider: "openai", maxTokens: 200000, maxOutput: 100000, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
+  // GPT-5.6 系列（2026-07 发布，支持 reasoning effort 多档控制）
+  { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", provider: "openai", maxTokens: 1050000, maxOutput: 128000, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
+  { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", provider: "openai", maxTokens: 1050000, maxOutput: 128000, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
+  { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "openai", maxTokens: 1050000, maxOutput: 128000, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
   // Claude
   { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
   { id: "claude-sonnet-4-20250805", name: "Claude Sonnet 4.5", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
@@ -102,6 +110,9 @@ export const BUILTIN_MODELS: ModelConfig[] = [
   { id: "openai/gpt-4o", name: "GPT-4o", provider: "openrouter", maxTokens: 128000, maxOutput: 16384, supportsVision: true, supportsStreaming: true, toolCalling: true },
   { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "openrouter", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
   { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "openrouter", maxTokens: 1048576, maxOutput: 65536, supportsVision: true, supportsStreaming: true, toolCalling: true },
+  { id: "openai/gpt-5.6-sol", name: "GPT-5.6 Sol", provider: "openrouter", maxTokens: 1050000, maxOutput: 128000, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
+  { id: "openai/gpt-5.6-terra", name: "GPT-5.6 Terra", provider: "openrouter", maxTokens: 1050000, maxOutput: 128000, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
+  { id: "openai/gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "openrouter", maxTokens: 1050000, maxOutput: 128000, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
   // Moonshot / Kimi（兼容 OpenAI）
   { id: "moonshot-v1-8k", name: "Moonshot v1 8K", provider: "moonshot", maxTokens: 8192, maxOutput: 4096, supportsVision: false, supportsStreaming: true, toolCalling: true },
   { id: "moonshot-v1-32k", name: "Moonshot v1 32K", provider: "moonshot", maxTokens: 32768, maxOutput: 8192, supportsVision: false, supportsStreaming: true, toolCalling: true },

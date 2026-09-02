@@ -84,8 +84,18 @@ export class OpenAIAdapter implements ModelAdapter {
     );
 
     const data = await response.json();
+    // 多 provider 兼容：非流式响应里 reasoning 字段命名同样不统一（覆盖 GPT-5.6 / Qwen3-thinking / DeepSeek-R1 / Gemini 中转等）
+    const msg = data.choices?.[0]?.message ?? {};
+    const reasoningText =
+      (typeof msg.reasoning_content === "string" && msg.reasoning_content) ||
+      (typeof msg.reasoning === "string" && msg.reasoning) ||
+      (typeof msg.reasoning_text === "string" && msg.reasoning_text) ||
+      (typeof msg.thinking_content === "string" && msg.thinking_content) ||
+      (typeof msg.thought === "string" && msg.thought) ||
+      undefined;
     return {
-      content: data.choices[0].message.content ?? "",
+      content: msg.content ?? "",
+      reasoning: reasoningText,
       model: data.model,
       usage: data.usage
         ? {
