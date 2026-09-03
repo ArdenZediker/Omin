@@ -49,6 +49,7 @@ export const DEFAULT_PROJECT_TOOL_IDS = [
   "export_docx",
   "export_xlsx",
   "export_pptx",
+  "export_md",
 ];
 // 内置技能默认启用（纯提示词技能，无副作用）。
 export const DEFAULT_PROJECT_SKILL_IDS: string[] = ["plan", "code-review", "skill-creator"];
@@ -212,6 +213,20 @@ export function getChatSessionTitle(messages: Message[]) {
   return content.length > 18 ? `${content.slice(0, 18)}...` : content;
 }
 
+/**
+ * 清理会话末尾残留的空 assistant 占位消息。
+ * 当请求在流式阶段异常中断（如进程崩溃、网络挂起）时，`{ role: "project", content: "" }`
+ * 可能未被清理；重启后 UI 会把它当成仍在流式中，导致输入框永久禁用。
+ */
+export function stripPendingPlaceholder(messages: Message[]): Message[] {
+  if (messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  if (last.role === "project" && typeof last.content === "string" && last.content.trim() === "") {
+    return messages.slice(0, -1);
+  }
+  return messages;
+}
+
 export function createChatSession(messages: Message[] = [], projectId = DEFAULT_PROJECT_ID): ChatSession {
   const now = Date.now();
   const id =
@@ -332,7 +347,7 @@ function normalizeSession(
     id: input.id,
     projectId: typeof input.projectId === "string" && input.projectId.trim() ? input.projectId : fallbackProjectId,
     title: typeof input.title === "string" && input.title.trim() ? input.title : getChatSessionTitle(input.messages),
-    messages: input.messages,
+    messages: stripPendingPlaceholder(input.messages),
     pinned: Boolean(input.pinned),
     favorite: Boolean(input.favorite),
     createdAt,

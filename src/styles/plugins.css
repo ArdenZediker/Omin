@@ -1,0 +1,1798 @@
+
+
+/* ================= PluginMarketplace ================= */
+.plugin-marketplace-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+}
+
+.plugin-marketplace {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 131;
+  transform: translate(-50%, -50%);
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 40px));
+  border-radius: var(--omni-radius-lg);
+  background: var(--omni-panel-bg);
+  border: 1px solid var(--omni-panel-border);
+  box-shadow: var(--omni-surface-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--omni-app-text);
+}
+
+.plugin-marketplace__header {
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--omni-panel-border);
+  flex-shrink: 0;
+}
+
+.plugin-marketplace__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.plugin-marketplace__title-row h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.plugin-marketplace__subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--omni-app-muted);
+}
+
+.plugin-marketplace__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+}
+
+.plugin-marketplace__close:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.plugin-marketplace__search {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  padding: 0 12px;
+  background: var(--omni-soft-bg);
+}
+
+.plugin-marketplace__search:not(.plugin-marketplace__search--expanded):not(.skillhub-browser__search) {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+  margin-top: 0;
+  cursor: pointer;
+}
+
+.plugin-marketplace__search-toggle,
+.plugin-marketplace__search-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+}
+
+.plugin-marketplace__search-toggle:hover,
+.plugin-marketplace__search-close:hover {
+  color: var(--omni-app-text);
+  background: var(--omni-soft-bg);
+}
+
+.plugin-marketplace__search input {
+  flex: 1;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--omni-app-text);
+  font-size: 13px;
+  outline: none;
+}
+
+.plugin-marketplace__search input::placeholder {
+  color: var(--omni-app-muted);
+}
+
+.plugin-marketplace__top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.plugin-marketplace__top-bar .plugin-marketplace__category-tabs {
+  flex: 1;
+  margin-top: 0;
+  min-width: 0;
+}
+
+/* mainView 顶部搜索按钮：贴右。
+ * 背景：mainView 的 view-toggle 不再用 margin-left:auto（见 .plugin-marketplace__view-toggle
+ * 注释），改由 search 容器自己 margin-left:auto 把整组按钮（search + view-toggle）推
+ * 到 top-bar 最右端。「我的技能」tab 隐藏 category-tabs 时尤其明显——只剩 search
+ * 与 view-toggle，两者一组贴右对齐，跟 SkillHub 浏览器 filter-bar 视觉一致。
+ * 其它分类（有 category-tabs 撑满 flex:1）下 margin-left:auto 仍生效，
+ * search + view-toggle 跟在 category-tabs 后面贴右。 */
+.plugin-marketplace__top-bar .plugin-marketplace__search {
+  flex-shrink: 0;
+  margin-top: 0;
+  margin-left: auto;
+}
+
+/* SkillHub 浏览器：排序 tabs + 右侧筛选下拉 + 搜索框单独一行 */
+.skillhub-browser__filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.skillhub-browser__filter-bar .plugin-marketplace__sort-tabs {
+  flex: 1;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.skillhub-browser__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* SkillHub 浏览器：排序 tabs + 右侧筛选下拉；搜索框默认折叠，点 filter-bar 右侧开关展开为全宽单行 */
+.skillhub-browser__search {
+  width: 100%;
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height 0.22s ease,
+    opacity 0.18s ease,
+    margin-top 0.22s ease,
+    padding 0.22s ease,
+    border-width 0.22s ease;
+}
+
+/* 展开态：全宽单行搜索框（图二样式） */
+.skillhub-browser__search--expanded {
+  width: 100%;
+  height: 44px;
+  max-height: 44px;
+  margin-top: 10px;
+  padding: 0 12px;
+  justify-content: flex-start;
+  border: 1px solid var(--omni-frame-border);
+  border-radius: 10px;
+  background: var(--omni-panel-bg);
+  opacity: 1;
+  overflow: visible;
+}
+
+.plugin-marketplace--main-view .skillhub-browser__search--expanded {
+  margin-top: 8px;
+}
+
+/* 搜索框右侧清除按钮（仅在有内容时出现） */
+.plugin-marketplace__search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.plugin-marketplace__search-clear:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.plugin-marketplace__kind-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.plugin-marketplace__kind-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.plugin-marketplace__kind-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--omni-panel-border);
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.plugin-marketplace__kind-tab--active {
+  background: var(--omni-app-text);
+  color: var(--omni-panel-bg);
+  border-color: var(--omni-app-text);
+}
+
+/* 来源切换：分段控制器样式，避免中间出现双边框分割线 */
+.plugin-marketplace__source-tabs {
+  display: inline-flex;
+  margin-top: 14px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.plugin-marketplace__source-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-right: 1px solid var(--omni-panel-border);
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.plugin-marketplace__source-tabs button:last-child {
+  border-right: none;
+}
+
+.plugin-marketplace__source-tab--active {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.plugin-marketplace__filter {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.plugin-marketplace__filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.plugin-marketplace__filter-trigger:hover {
+  background: var(--omni-soft-bg);
+}
+
+.plugin-marketplace__filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 110px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.plugin-marketplace__filter-menu::-webkit-scrollbar {
+  display: none;
+}
+
+.plugin-marketplace__filter-item {
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.plugin-marketplace__filter-item:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.plugin-marketplace__filter-item--active {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.plugin-marketplace__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  cursor: pointer;
+}
+
+.plugin-marketplace__icon-btn:hover {
+  background: var(--omni-soft-bg);
+}
+
+.plugin-marketplace__icon-btn--active {
+  background: var(--omni-app-text);
+  color: var(--omni-panel-bg);
+  border-color: var(--omni-app-text);
+}
+
+/* 视图布局切换：两个互斥 icon-btn 紧密排列成一组（grid/list）。
+ * 不设 margin-left:auto——贴右的位置由外层容器控制：
+ *   - skillhub-browser__filters 自身 flex-shrink:0 贴右（三个浏览器）
+ *   - mainView top-bar 路径下，.plugin-marketplace__search 自己加
+ *     margin-left:auto 贴右，view-toggle 紧跟其后
+ * 不再加自己的 margin-left:auto，避免在 mainView 路径下把 search
+ * 留在左边、view-toggle 单独贴右这种错位布局。 */
+.plugin-marketplace__view-toggle {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.plugin-marketplace__sort-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.plugin-marketplace__sort-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.plugin-marketplace__sort-tab {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.plugin-marketplace__sort-tab:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.plugin-marketplace__sort-tab--active {
+  background: var(--omni-app-text);
+  color: var(--omni-panel-bg);
+  border-color: var(--omni-app-text);
+}
+
+.plugin-marketplace__category-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.plugin-marketplace__category-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.plugin-marketplace__category-tab {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.plugin-marketplace__category-tab--active {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+  border-color: var(--omni-panel-border);
+}
+
+.plugin-marketplace__grid {
+  display: grid;
+  /* 默认宽屏固定 4 列（用户 2026-09-01「表格展示改为一行四列」）。
+   * 窄屏按断点降级为 3 / 2 / 1 列。 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+
+/* 中等宽度降到 3 列，避免卡片文字截断。 */
+@media (max-width: 1180px) {
+  .plugin-marketplace__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 再窄降到 2 列，避免图标密集挤在一起。 */
+@media (max-width: 820px) {
+  .plugin-marketplace__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 移动端单列堆叠。 */
+@media (max-width: 540px) {
+  .plugin-marketplace__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.plugin-marketplace__grid--list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* 让整列卡片高度统一等于行内最高卡，所有卡底边缘 Y 坐标对齐，
+     这样卡片底部的「已安装 / 删除 / 复制安装」按钮绝对位置一致
+     （用户 2026-09-01「按钮不在一条线」反馈）。 */
+  align-items: stretch;
+}
+
+/* 列表视图下卡片更紧凑（横向信息密度更高）
+ * 布局参考 SkillHub 网站：左 icon + 中 title/description/meta + 右 actions
+ * grid 单行双列：左列 header（含 icon + main 含 title+description+meta 全堆叠）
+ * 右列 actions。所有标签/元数据都「贴左」紧贴名字，操作按钮单独放右。 */
+.plugin-marketplace__grid--list .plugin-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "header actions";
+  align-items: stretch;
+  column-gap: 14px;
+  padding: 12px 16px;
+}
+
+/* header 占左列整张宽度：icon 左垂直居中，main 撑开 + 纵向堆叠 */
+.plugin-marketplace__grid--list .plugin-card__header {
+  grid-area: header;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.plugin-marketplace__grid--list .plugin-card__icon {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+/* list 模式下 main 纵向堆叠 title-row / description / meta，整体贴左。
+ * 关键：main 撑满 header 列高度，让 enable 行（margin-top: auto）能可靠
+ * 推到 main 底部，与右侧 actions 列的按钮基线对齐。
+ * 不论卡片内容长短（缺 description/无 tags），所有卡的 enable 行 Y 坐标统一。 */
+.plugin-marketplace__grid--list .plugin-card__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+}
+
+.plugin-marketplace__grid--list .plugin-card__title-row {
+  min-width: 0;
+}
+
+/* list 模式专属：名字固定最大宽度 + 单行 ellipsis 截断；name-whole-tooltip 由
+ * .jsx h3 title 属性提供（鼠标悬浮展示完整名字）。 */
+.plugin-marketplace__grid--list .plugin-card__title-row h3 {
+  max-width: 260px;
+}
+
+/* list 模式专属：description 固定最大宽度 + 1 行 line-clamp 截断；
+ * 完整描述由 .jsx <p title={...}> 悬浮展示。 */
+.plugin-marketplace__grid--list .plugin-card__description {
+  margin: 0;
+  max-width: 260px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* meta 行随 main 一起在左列：横向贴左一行（⭐ 下载量 @namespace） */
+.plugin-marketplace__grid--list .plugin-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plugin-marketplace__grid--list .plugin-card__meta-left,
+.plugin-marketplace__grid--list .plugin-card__meta-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plugin-marketplace__grid--list .plugin-card__author {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* actions 单独占右列：右对齐，贴卡底部（与左侧 enable 行同一基线对齐）。
+ * 即使左列 main 内容多寡不一致，右列按钮始终在卡片底部同一 Y 位置。 */
+.plugin-marketplace__grid--list .plugin-card__actions {
+  grid-area: actions;
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: none;
+  padding-top: 0;
+  margin: 0;
+}
+
+/* 列表视图下「安装 / 来源 / 卸载」按钮统一最小宽度，让列右对齐、按钮等宽。
+ * 原因：flex: 1 在 auto 宽度容器内不会真正等分剩余空间，会按内容宽度撑开；
+ * 强行固定 min-width（同时让 flex: 0 0 auto）让内容自适应但受最小宽度兜底。 */
+.plugin-marketplace__grid--list .plugin-card__button {
+  flex: 0 0 auto;
+  min-width: 88px;
+  min-height: 38px;
+  justify-content: center;
+  height: 38px;
+}
+
+/* list 视图下 actions 列内可能 chip（plugin-card__connected，状态指示器）
+   与 button（安装 / 卸载 / 复制）混排，前者天然 padding/font 较矮；统一
+   min-height 后无论 batchMode 下「内置」chip vs 「选择」button 还是
+   普通模式下「已安装」chip vs 「删除」button，actions 列底部基线一致。 */
+.plugin-marketplace__grid--list .plugin-card__connected {
+  min-height: 38px;
+}
+
+/* SkillHub 来源标识小标签（SkillHub 卡片专属，元数据右侧） */
+.plugin-card__source-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--omni-soft-bg);
+  border: 1px solid var(--omni-panel-border);
+  color: var(--omni-app-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* 官方认证图标（SkillHub verified：蓝色） */
+.plugin-card__verified {
+  flex-shrink: 0;
+  color: #3b82f6;
+  fill: #dbeafe;
+}
+
+.plugin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 14px;
+  background: var(--omni-soft-bg);
+}
+
+.plugin-card__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--omni-panel-bg);
+  border: 1px solid var(--omni-panel-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  overflow: hidden;
+}
+
+/* manifest.icon 为 URL 时（SkillHub 远程图、blob、data URI）渲染为图片。
+  22x22 + 圆角 6，与 SkillhubBrowser 远程卡片一致 */
+.plugin-card__icon-img {
+  width: 22px;
+  height: 22px;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  object-fit: contain;
+  display: block;
+}
+
+/* manifest.icon 为单字符 emoji（SKILL.md icon: 🔍） */
+.plugin-card__icon-emoji {
+  font-size: 20px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plugin-card__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.plugin-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plugin-card__title-row h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--omni-app-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+  /* 技能名固定显示长度（最多约 14 个汉字宽），超出省略——保证 grid 4 列下
+     卡片标题视觉一致（用户 2026-09-01「技能名要固定长度,多的省略」）。
+     list 视图下卡片整体宽度大，14em 仍生效（标题不会变得过长）。 */
+  max-width: 14em;
+}
+
+/* 标签元素不收缩，紧贴名字排列；空间不够时整体换行而非压缩 */
+.plugin-card__title-row .plugin-card__badge,
+.plugin-card__title-row .plugin-card__source-tag,
+.plugin-card__title-row .plugin-card__verified,
+.plugin-card__title-row .skillhub-browser__api {
+  flex-shrink: 0;
+}
+
+.plugin-card__badge {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--omni-panel-bg);
+  border: 1px solid var(--omni-panel-border);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--omni-app-muted);
+}
+
+/* 描述区：line-clamp 3 截断显示。完整描述从整卡点击打开的 detail drawer
+  查看（用户 2026-09-01「这个功能多余了,已经有看详情的功能」——之前
+  试过 <details>/<summary> CSS-only 展开被回退，因为整卡可点开 drawer，
+  description 区没必要再内嵌展开交互）。 */
+.plugin-card__description {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--omni-app-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plugin-card__meta {
+  /* margin-top: auto 让 meta 在 flex-column 的 main 中沉到卡片底部，
+     无论描述行数多少，meta 行始终贴底对齐（用户 2026-09-01「这些沉底,
+     保持住」）。原来 margin-top: 8px 只在描述紧贴 meta 时给个间距，
+     改 auto 后整体视觉更整齐：description + tags 占满上半部、meta
+     占据最底一行；meta 内部仍用 space-between 让 author / category /
+     version 三段分布到两端填满整行。 */
+  margin-top: auto;
+  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.plugin-card__meta-left,
+.plugin-card__meta-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.plugin-card__meta-right {
+  justify-content: flex-end;
+}
+
+.plugin-card__meta-left > span,
+.plugin-card__meta-right > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.plugin-card__author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.plugin-card__tag {
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: var(--omni-panel-bg);
+  border: 1px solid var(--omni-panel-border);
+  font-size: 10px;
+  color: var(--omni-app-muted);
+}
+
+.plugin-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.plugin-card__button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.plugin-card__button--primary {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.plugin-card__button--primary:hover {
+  background: #2563eb;
+}
+
+.plugin-card__button--secondary {
+  background: var(--omni-panel-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-button-text);
+}
+
+.plugin-card__button--secondary:hover {
+  background: var(--omni-soft-bg);
+}
+
+.plugin-card__button--installed {
+  background: var(--omni-soft-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-app-muted);
+  cursor: default;
+}
+
+.plugin-card__button--danger {
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+  border-color: color-mix(in srgb, #ef4444 35%, transparent);
+  color: #ef4444;
+}
+
+.plugin-card__button--danger:hover {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+  border-color: #ef4444;
+}
+
+.plugin-card__connected {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 0;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #22c55e;
+  white-space: nowrap;
+}
+
+.plugin-card__connected-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+}
+
+.plugin-card__mcp-error {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.plugin-card__mcp-error svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* MCP 连接器信任门（WorkBuddy 式：配置完不自动激活，需用户显式确认信任） */
+.plugin-card__trust-prompt {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.36);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.plugin-card__trust-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+.plugin-card__trust-warn {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--omni-app-muted);
+}
+
+.plugin-card__trust-warn strong {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.plugin-card__trust-cmd {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--omni-panel-bg);
+  border: 1px solid var(--omni-panel-border);
+}
+
+.plugin-card__trust-cmd svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  opacity: 0.65;
+}
+
+.plugin-card__trust-cmd code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  word-break: break-all;
+  color: var(--omni-button-text);
+}
+
+.plugin-card__trust-env {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.plugin-card__trust-env code {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--omni-soft-bg);
+  border: 1px solid var(--omni-panel-border);
+  font-size: 11px;
+}
+
+.plugin-card__trust-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.plugin-card__trust-actions .plugin-card__button {
+  flex: 0 0 auto;
+}
+
+/* 未信任的连接器：琥珀色描边，与「已信任」的蓝色主按钮明确区分 */
+.plugin-card__button--trust {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.42);
+  color: #f59e0b;
+}
+
+.plugin-card__button--trust:hover {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.6);
+}
+
+.connectorhub-browser__hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-browser {
+  margin-top: 14px;
+}
+
+/* SkillHub 浏览器：统一隐藏所有滚动条 */
+.skillhub-browser * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.skillhub-browser *::-webkit-scrollbar {
+  display: none;
+}
+
+.skillhub-browser *::-webkit-scrollbar-track,
+.skillhub-browser *::-webkit-scrollbar-thumb,
+.skillhub-browser *::-webkit-scrollbar-corner {
+  display: none;
+}
+
+.plugin-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plugin-card__header .plugin-card__icon {
+  flex-shrink: 0;
+}
+
+.skillhub-browser__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-browser__status--error {
+  color: #ef4444;
+}
+
+.skillhub-browser__empty {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-browser__api {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #f59e0b;
+  font-size: 10px;
+}
+
+.skillhub-browser__load-more {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 16px;
+}
+
+.skillhub-browser__load-more button {
+  min-width: 120px;
+}
+
+.skillhub-browser__loading,
+.skillhub-browser__end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+}
+
+.skillhub-browser__loading {
+  color: var(--omni-app-text);
+}
+
+/* 让卡片在未点击按钮区域时也能触发详情（hover/聚焦给反馈） */
+.plugin-card--clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.plugin-card--clickable:hover {
+  transform: translateY(-2px);
+  border-color: var(--omni-accent, #64748b);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.plugin-card--clickable:focus-visible {
+  outline: 2px solid var(--omni-accent, #64748b);
+  outline-offset: 2px;
+}
+
+/* 批量管理模式：「我的技能」tab 顶部带「批量管理」按钮，点入批量多选删除模式
+   （2026-09-01）：卡片转为 checkbox role，整卡点击 toggleSelected；icon 区显示
+   圆形 checkbox，选中时填色 + Check 图标。复用 plugin-card__connected-dot
+   的色彩语言保持视觉一致性。 */
+.plugin-marketplace__batch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--omni-panel-border);
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  align-self: center;
+}
+.plugin-marketplace__batch-btn:hover {
+  border-color: var(--omni-accent, #64748b);
+  color: var(--omni-app-fg, #0f172a);
+}
+.plugin-marketplace__batch-btn--active {
+  background: var(--omni-accent-soft, #dbeafe);
+  border-color: var(--omni-accent, #3b82f6);
+  color: var(--omni-accent-strong, #1d4ed8);
+}
+
+.plugin-card--batch {
+  cursor: pointer;
+}
+.plugin-card--batch:hover {
+  border-color: var(--omni-accent, #3b82f6);
+}
+.plugin-card--batch-selected {
+  border-color: var(--omni-accent, #3b82f6);
+  background: var(--omni-accent-soft, #f0f7ff);
+  box-shadow: 0 0 0 1px var(--omni-accent, #3b82f6) inset;
+}
+.plugin-card--batch-selected .plugin-card__batch-checkbox {
+  background: var(--omni-accent, #3b82f6);
+  border-color: var(--omni-accent, #3b82f6);
+  color: #fff;
+}
+.plugin-card__batch-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1.5px solid var(--omni-panel-border);
+  background: var(--omni-bg, #fff);
+  color: var(--omni-app-muted);
+  transition: all 0.12s ease;
+  flex-shrink: 0;
+}
+.plugin-card__batch-checkbox--checked {
+  background: var(--omni-accent, #3b82f6);
+  border-color: var(--omni-accent, #3b82f6);
+  color: #fff;
+}
+
+/* 底部批量工具栏（fixed/sticky，跨卡片），含「已选 N 项 / 全选 / 清空 /
+   开启 / 关闭 / 卸载 / 取消」。左右两组布局：左为选择计数 + 全选/清空，
+   右为 4 个批量动作。 */
+/* 顶部批量 toolbar（卡片上方，搜索栏下方，batchMode + showMySkills 下显示）。
+   合并原底部 batch-bar：选中统计 + 全选/清空 + 4 动作按钮（开启 / 关闭 /
+   卸载 / 取消）统一在此处。顶部 toolbar 对所有当前可见非内置项生效
+   （不需要先选中），保持与底部 bar 视觉层级：胶囊更宽，左侧带「批量操作」
+   label 与「已选 N 项」计数。 */
+.plugin-marketplace__batch-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--omni-panel-bg, #ffffff);
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  flex-wrap: wrap;
+}
+.plugin-marketplace__batch-top-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.plugin-marketplace__batch-top-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plugin-marketplace__batch-top-count {
+  font-size: 12px;
+  color: var(--omni-app-muted);
+  margin-right: 2px;
+}
+.plugin-marketplace__batch-top-count strong {
+  color: var(--omni-accent-strong, #1d4ed8);
+  font-weight: 600;
+  margin: 0 2px;
+}
+/* 左组辅助链接样式按钮（已选/全选/清空）。比右组 4 动作 pill 更轻——避免与
+   右侧主操作按钮争夺视觉权重。禁用态灰化，hover 加色即可。 */
+.plugin-marketplace__batch-top-mini {
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--omni-accent-strong, #1d4ed8);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.plugin-marketplace__batch-top-mini:hover:not(:disabled) {
+  background: rgba(100, 116, 139, 0.08);
+}
+.plugin-marketplace__batch-top-mini:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--omni-app-muted);
+}
+.plugin-marketplace__batch-top-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  background: transparent;
+  border: 1px solid var(--omni-panel-border);
+  color: var(--omni-app-fg, #0f172a);
+}
+.plugin-marketplace__batch-top-btn:hover {
+  border-color: var(--omni-accent, #64748b);
+  background: rgba(100, 116, 139, 0.06);
+}
+.plugin-marketplace__batch-top-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: transparent;
+}
+.plugin-marketplace__batch-top-btn--primary {
+  background: var(--omni-accent-soft, rgba(100, 116, 139, 0.12));
+  border-color: var(--omni-accent, #64748b);
+  color: var(--omni-accent-strong, #1d4ed8);
+}
+.plugin-marketplace__batch-top-btn--primary:hover {
+  background: var(--omni-accent, #64748b);
+  color: #fff;
+}
+.plugin-marketplace__batch-top-btn--danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fff1f0;
+}
+.plugin-marketplace__batch-top-btn--danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* 单卡启用 toggle 行：紧贴技能名右边（h3 flex:1 1 auto 占满剩余空间，
+   enable flex:0 0 auto 紧跟其后）。早期版本放到卡片底部 → 后改到 title-row
+   末尾 margin-left:auto 推右 → 用户 2026-09-01 再调整要求「缩进紧贴技能名」：
+   不再 auto 推右、不再占视觉大块，紧凑附在标题右侧，开/关状态仍一眼可见
+   但不再抢占右上角注意力。文字 label 已删（只剩 switch），ariaLabel + title
+   仍给内置项保留「不可关闭」提示。 */
+.plugin-card__enable {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+
+/* 整卡停用态：透明度降低 + 内部描述/meta 降饱和度
+   （仅对 isEnabled=false 的非内置卡生效；内置始终 enabled=true 不会走到这里） */
+.plugin-card--disabled .plugin-card__main {
+  opacity: 0.55;
+}
+.plugin-card--disabled .plugin-card__icon {
+  filter: grayscale(0.6);
+}
+
+/* 抽屉覆盖层 + 主区域 */
+.skillhub-detail__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(2px);
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  animation: skillhub-detail-fade 0.18s ease;
+}
+
+.skillhub-detail {
+  width: min(440px, 100%);
+  height: 100%;
+  background: var(--omni-panel-bg, rgba(28, 28, 32, 0.98));
+  border-left: 1px solid var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.32);
+  animation: skillhub-detail-slide 0.22s ease;
+  overflow: hidden;
+}
+
+.skillhub-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+}
+
+.skillhub-detail__identity {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.skillhub-detail__icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: var(--omni-card-bg, rgba(255, 255, 255, 0.04));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.skillhub-detail__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.skillhub-detail__title-wrap {
+  min-width: 0;
+}
+
+.skillhub-detail__title-wrap h2 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--omni-app-text);
+  word-break: break-word;
+}
+
+.skillhub-detail__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.skillhub-detail__source {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.18);
+  color: var(--omni-accent, #64748b);
+  font-weight: 500;
+}
+
+.skillhub-detail__close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.skillhub-detail__close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--omni-app-text);
+}
+
+.skillhub-detail__description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--omni-app-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.skillhub-detail__description-en {
+  margin-top: 6px;
+  border-top: 1px dashed var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+  padding-top: 10px;
+}
+
+.skillhub-detail__description-en summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+  user-select: none;
+}
+
+.skillhub-detail__description-en p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-detail__meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.skillhub-detail__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--omni-card-bg, rgba(255, 255, 255, 0.03));
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.skillhub-detail__meta-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-detail__meta-value {
+  font-size: 13px;
+  color: var(--omni-app-text);
+  word-break: break-all;
+}
+
+.skillhub-detail__tags {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skillhub-detail__tags-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.skillhub-detail__tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skillhub-detail__tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.18);
+  color: var(--omni-app-text);
+  font-weight: 500;
+}
+
+.skillhub-detail__tag--label {
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 400;
+}
+
+/* 「我的技能」里已安装专家团的套件卡片（InstalledSkillsetCard） */
+.plugin-card--skillset {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.plugin-card__badge--skillset {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+}
+
+.skillhub-detail__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 18px 20px;
+  border-top: 1px solid var(--omni-panel-border, rgba(255, 255, 255, 0.08));
+  background: var(--omni-card-bg, rgba(0, 0, 0, 0.12));
+}
+
+.skillhub-detail__footer .plugin-card__button {
+  flex: 0 1 auto;
+}
+
+.spin {
+  animation: skillhub-spin 0.9s linear infinite;
+}
+
+.plugin-card__config {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  background: var(--omni-soft-bg);
+}
+
+.plugin-card__config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--omni-app-muted);
+}
+
+.plugin-card__config-field input,
+.plugin-card__config-field select,
+.plugin-card__config-field textarea {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-input-bg);
+  color: var(--omni-app-text);
+  outline: none;
+}
+
+.plugin-card__config-field textarea {
+  resize: vertical;
+  min-height: 52px;
+  font-family: var(--omni-font-mono, "Cascadia Code", Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.plugin-card__config-field input:focus,
+.plugin-card__config-field select:focus,
+.plugin-card__config-field textarea:focus {
+  border-color: var(--omni-accent, #6366f1);
+}
+
+.plugin-card__config-section {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--omni-app-muted);
+  padding-top: 4px;
+  margin-top: 2px;
+  border-top: 1px dashed var(--omni-panel-border);
+}
+
+.plugin-card__config-field input[type="checkbox"] {
+  width: auto;
+}
+
+.plugin-card__config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.plugin-marketplace__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 50px 20px;
+  color: var(--omni-app-muted);
+  gap: 10px;
+}
+
+.plugin-marketplace__empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.plugin-marketplace__empty span {
+  font-size: 12px;
+}
+
+/* 我的专家：工具栏 + 创建按钮 + 空状态 */
+.plugin-marketplace__my-experts {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.plugin-marketplace__my-experts-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--omni-app-muted);
+}
+
+.plugin-marketplace__create-expert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--omni-accent, #7c3aed) 46%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 14%, var(--omni-panel-bg));
+  color: color-mix(in srgb, var(--omni-accent, #7c3aed) 86%, var(--omni-app-text));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.plugin-marketplace__create-expert:hover {
+  border-color: color-mix(in srgb, var(--omni-accent, #7c3aed) 62%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 20%, var(--omni-panel-bg));
+}
+
+.plugin-marketplace__create-expert:active {
+  transform: scale(0.97);
+}
+
+.plugin-marketplace__empty--my-experts {
+  flex: 1;
+  gap: 12px;
+  text-align: center;
+}
+
+.plugin-marketplace__empty--my-experts .plugin-marketplace__create-expert {
+  margin-top: 6px;
+}
+
+.plugin-marketplace__footer {
+  padding: 12px 22px;
+  border-top: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+}
+
+.plugin-marketplace__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+/* 侧边栏内嵌 marketplace */
+.plugin-marketplace--embedded {
+  position: static;
+  transform: none;
+  width: 100%;
+  max-height: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__header {
+  padding: 0 0 12px;
+  border-bottom-color: var(--omni-panel-border);
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__footer {
+  padding: 10px 0 0;
+  background: transparent;
+  border-top: none;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__grid {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.plugin-marketplace--embedded .plugin-card {
+  padding: 10px;
+  gap: 10px;
+}
+
+.plugin-marketplace--embedded .plugin-card__description {
+  -webkit-line-clamp: 2;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__kind-tabs,
+.plugin-marketplace--embedded .plugin-marketplace__category-tabs {
+  margin-top: 10px;
+}
+
+.plugin-marketplace--embedded .plugin-marketplace__search {
+  margin-top: 10px;
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__header {
+  padding: 8px 20px 0;
+  border-bottom: none;
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__source-tabs {
+  margin-top: 0;
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__search {
+  margin-top: 4px;
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__kind-tabs {
+  margin-top: 4px;
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__category-bar,
+.plugin-marketplace--main-view .plugin-marketplace__category-tabs {
+  margin-top: 4px;
+}
+
+.plugin-marketplace--main-view .plugin-marketplace__footer {
+  padding: 12px 20px;
+  border-top: none;
+  background: transparent;
+}
+
+/* 设置页内嵌 marketplace 不需要 backdrop/居中 */
+.omni-settings-main .plugin-marketplace-backdrop {
+  display: none;
+}
+
+.omni-settings-main .plugin-marketplace {
+  position: static;
+  transform: none;
+  width: 100%;
+  max-height: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  z-index: auto;
+}

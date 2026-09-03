@@ -10,6 +10,12 @@ import {
   type DataRootInfo,
   type DataRootSource,
 } from "../../app/storageApi";
+import {
+  getOutputRootSetting,
+  setOutputRootSetting,
+  isMirrorSessionsEnabled,
+  setMirrorSessionsEnabled,
+} from "../../app/outputStorage";
 
 const SOURCE_LABEL: Record<DataRootSource, string> = {
   custom: "自定义目录",
@@ -54,6 +60,9 @@ export default function StorageSettingsSection() {
   const [importSecret, setImportSecret] = useState("");
   const [importSource, setImportSource] = useState("");
   const [importTarget, setImportTarget] = useState("");
+
+  const [outputRoot, setOutputRoot] = useState(() => getOutputRootSetting());
+  const [mirrorMd, setMirrorMd] = useState(() => isMirrorSessionsEnabled());
 
   const refresh = useCallback(async () => {
     try {
@@ -114,6 +123,29 @@ export default function StorageSettingsSection() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const handlePickOutputRoot = async () => {
+    const selected = await openDialog({
+      directory: true,
+      multiple: false,
+      title: "选择生成文档存放目录",
+    });
+    if (typeof selected === "string" && selected.trim()) {
+      setOutputRootSetting(selected.trim());
+      setOutputRoot(selected.trim());
+    }
+  };
+
+  const handleResetOutputRoot = () => {
+    setOutputRootSetting("");
+    setOutputRoot("");
+  };
+
+  const handleToggleMirror = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.checked;
+    setMirrorSessionsEnabled(next);
+    setMirrorMd(next);
   };
 
   const handleExport = async () => {
@@ -241,6 +273,55 @@ export default function StorageSettingsSection() {
         不要把数据目录放进云同步盘（OneDrive / Dropbox / 百度网盘等）或网络盘——SQLite 的 WAL 模式在这些位置可能静默损坏。
         软件安装在 <code className="rounded bg-slate-100 px-1 text-slate-700">Program Files</code> 等只读位置时，会自动改用应用数据目录。
       </p>
+
+      <div className="space-y-4 border-t border-slate-100 pt-4">
+        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">生成文档与对话归档</h3>
+        <p className="text-xs text-slate-500 omni-settings-muted">
+          各类生成文件（文档/表格/演示/Markdown）会按「产出根目录 / 项目 / 会话」自动分子目录存放；开启镜像后，每场对话还会在同目录写一份 Markdown。
+        </p>
+
+        <div className="grid grid-cols-[120px_1fr] gap-4">
+          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">产出根目录</label>
+          <div className="space-y-2">
+            <span className="block break-all rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-600">
+              {outputRoot || "未设置（默认 ~/Documents/Omni）"}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                onClick={handlePickOutputRoot}
+              >
+                选择目录…
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                onClick={handleResetOutputRoot}
+                disabled={!outputRoot}
+              >
+                恢复默认
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <input
+            id="mirror-sessions-md"
+            type="checkbox"
+            className="mt-1 h-4 w-4 rounded border-slate-300"
+            checked={mirrorMd}
+            onChange={handleToggleMirror}
+          />
+          <label htmlFor="mirror-sessions-md" className="text-sm text-slate-700 omni-settings-label">
+            镜像对话为 Markdown 文件
+            <span className="mt-0.5 block text-xs text-slate-500 omni-settings-muted">
+              开启后，每场对话在其产出目录写入 <code className="rounded bg-slate-100 px-1 text-slate-700">{"<会话ID>.md"}</code>，与生成文件放在一起。SQLite 仍为主存储，此文件仅作可读副本。
+            </span>
+          </label>
+        </div>
+      </div>
 
       <div className="space-y-4 border-t border-slate-100 pt-4">
         <h3 className="text-sm font-medium text-slate-900 omni-settings-title">整库备份</h3>

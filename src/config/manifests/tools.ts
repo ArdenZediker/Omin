@@ -11,13 +11,13 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "search_sessions",
     command: "/search_sessions",
-    title: "搜索会话",
-    description: "按标题或内容搜索本地会话",
-    promptContribution: "可调用 /search_sessions <关键词> 按标题或内容检索本地历史会话。",
+    title: "Search Sessions",
+    description: "Search local sessions by title or content",
+    promptContribution: "Call /search_sessions <keyword> to search local chat history by title or content.",
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string", description: "检索关键词，匹配会话标题或内容" },
+        query: { type: "string", description: "Search keyword; matches session title or content" },
       },
       required: ["query"],
     },
@@ -25,13 +25,16 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "read_session",
     command: "/read_session",
-    title: "读取会话",
-    description: "查看指定会话的上下文内容",
-    promptContribution: "可调用 /read_session <会话 ID> 读取指定历史会话的完整上下文。",
+    title: "Read Session",
+    description: "Read the context of a specified session",
+    promptContribution: "Call /read_session <sessionId> to read the full context of a past session.",
     parameters: {
       type: "object",
       properties: {
-        sessionId: { type: "string", description: "目标会话 ID（可先经 search_sessions 获取）" },
+        sessionId: {
+          type: "string",
+          description: "Target session ID (obtain it via /search_sessions first)",
+        },
       },
       required: ["sessionId"],
     },
@@ -39,26 +42,47 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "list_files",
     command: "/list_files",
-    title: "列出文件",
-    description: "浏览当前工作区的文件和目录",
-    promptContribution: "可调用 /list_files [路径] 浏览工作区文件和目录结构，用于定位资料。",
+    title: "List Files",
+    description: "Browse files and directories in the current workspace",
+    promptContribution:
+      "Call /list_files [path] to browse the workspace file/directory structure and locate materials.",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "可选的文件名过滤关键字，留空列出全部" },
+        path: { type: "string", description: "Optional filename filter; leave empty to list everything" },
       },
     },
   },
   {
     id: "read_file",
     command: "/read_file",
-    title: "读取文件",
-    description: "读取文件正文用于分析或问答",
-    promptContribution: "可调用 /read_file <路径> 读取文件正文，用于分析或问答；路径为工作区内相对路径，项目会话下若传工作区之外的绝对路径需经用户确认才会读取。",
+    title: "Read File",
+    description: "Read file contents with optional windowing (maxChars/offsetChars/limitChars).",
+    promptContribution:
+      "Call /read_file <path> [maxChars=N] [offset=N] [limit=N] to read file contents. " +
+      "When the result ends with a [file-meta total=N offset=A returned=B truncated=Y/N] block, " +
+      "use it as the real character budget: truncated=true means more content remains — either raise " +
+      "maxChars or call /read_file <path> offset=<A+B> to continue. Always tell the user the actual " +
+      "X/Y coverage when the message body depends on partial content. " +
+      "Path is relative to the workspace; an absolute path outside the workspace is only read after user confirmation.",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "文件在工作区内的相对路径" },
+        path: { type: "string", description: "Path of the file to read (relative to the workspace, or absolute)." },
+        maxChars: {
+          type: "integer",
+          description:
+            "Single-call soft limit on returned characters. Default 16000, hard maximum 80000. Pass a larger value to read more in one call.",
+        },
+        offsetChars: {
+          type: "integer",
+          description: "Skip the first N characters before slicing (0-based). Default 0. Use to continue reading after a previous call returned truncated=true.",
+        },
+        limitChars: {
+          type: "integer",
+          description:
+            "Cap the returned window in characters; default = min(maxChars, remaining). Pass a smaller value for a quick peek without changing maxChars.",
+        },
       },
       required: ["path"],
     },
@@ -66,13 +90,13 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "search_files",
     command: "/search_files",
-    title: "搜索文件",
-    description: "按关键字搜索工作区内容",
-    promptContribution: "可调用 /search_files <关键词> 在工作区范围内按关键字检索文件内容。",
+    title: "Search Files",
+    description: "Search workspace contents by keyword",
+    promptContribution: "Call /search_files <keyword> to search file contents across the workspace.",
     parameters: {
       type: "object",
       properties: {
-        keyword: { type: "string", description: "要在文件内容中检索的关键词" },
+        keyword: { type: "string", description: "Keyword to search within file contents" },
       },
       required: ["keyword"],
     },
@@ -80,16 +104,18 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "read_persona",
     command: "/read_persona",
-    title: "读取个性化档案",
-    description: "读取本地个性化 md 文件的内容，字段：user_name / assistant_name / persona_description / custom_instruction / long_term_memory / agents_md / style",
+    title: "Read Persona",
+    description:
+      "Read the local persona markdown file; fields: userName / assistantName / personaDescription / customInstruction / longTermMemory / agentsMd / style",
     promptContribution:
-      "可调用 /read_persona <字段> 读取本地个性化档案（称呼、名字、人设、自定义指令、长期记忆、AGENTS.md、风格），用于贴合用户偏好。",
+      "Call /read_persona <field> to read the local persona profile (user name, assistant name, persona, custom instructions, long-term memory, AGENTS.md, style) so responses fit the user's preferences.",
     parameters: {
       type: "object",
       properties: {
         field: {
           type: "string",
-          description: "档案字段名：style / userName / assistantName / personaDescription / customInstruction / longTermMemory / agentsMd",
+          description:
+            "Profile field name: style / userName / assistantName / personaDescription / customInstruction / longTermMemory / agentsMd",
         },
       },
       required: ["field"],
@@ -98,25 +124,27 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "update_persona",
     command: "/update_persona",
-    title: "更新个性化档案",
-    description: "把一条长期偏好、称呼或人设写入对应的个性化 md 文件，字段同上；用法：/update_persona <字段> <内容>",
+    title: "Update Persona",
+    description:
+      "Write a long-term preference, name, or persona into the corresponding persona markdown file (same fields as above). Usage: /update_persona <field> <content>",
     promptContribution:
-      "可调用 /update_persona <字段> <内容> 把稳定的偏好、称呼或人设写入对应个性化 md 文件（含 AGENTS.md），用法：/update_persona <字段> <内容>。",
+      "Call /update_persona <field> <content> to persist stable preferences, names, or persona into the corresponding persona markdown file (including AGENTS.md). Usage: /update_persona <field> <content>.",
   },
   {
     id: "install_expert",
     command: "/install_expert",
-    title: "安装专家",
-    description: "把一条符合 Omni 规范的专家定义（kind 为 expert 的 PluginManifest）注册进本地插件库，注册后可在「专家分类 → 我的专家」查看使用",
+    title: "Install Expert",
+    description:
+      "Register an Omni-compliant expert definition (a PluginManifest with kind 'expert') into the local plugin library; afterwards it appears under 'Expert Categories → My Experts'.",
     promptContribution:
-      "可调用 /install_expert 把符合 Omni 规范的专家定义（PluginManifest，kind 固定为 expert）注册进本地插件库，注册后立即在「专家分类 → 我的专家」生效；仅在用户要求创建/安装/更新专家时使用，参数为完整专家 manifest JSON。",
+      "Call /install_expert to register an Omni-compliant expert definition (PluginManifest with kind fixed to 'expert') into the local plugin library; it takes effect immediately under 'Expert Categories → My Experts'. Only use when the user asks to create/install/update an expert; pass the full expert manifest as JSON.",
     parameters: {
       type: "object",
       properties: {
         manifest: {
           type: "object",
           description:
-            "符合 Omni 规范的专家 PluginManifest 定义：id（kebab-case 唯一标识）、name（展示名）、description（一句话描述）、version、kind（固定 expert）、category（行业分类）、icon（lucide 图标名）、tags（3 个擅长领域标签）、templatePrompt（专家系统提示词，可直接执行、不含占位符）、defaultToolIds（推荐工具 id）、defaultSkillIds（推荐技能 id）",
+            "Omni-compliant expert PluginManifest: id (kebab-case unique id), name (display name), description (one-line description), version, kind (fixed 'expert'), category (industry), icon (lucide icon name), tags (3 domain tags), templatePrompt (expert system prompt, runnable, no placeholders), defaultToolIds (recommended tool ids), defaultSkillIds (recommended skill ids)",
         },
       },
       required: ["manifest"],
@@ -125,15 +153,15 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "web_search",
     command: "/web_search",
-    title: "联网搜索",
-    description: "用 DuckDuckGo 检索互联网，返回标题、链接与摘要",
+    title: "Web Search",
+    description: "Search the web via DuckDuckGo; returns titles, links, and snippets",
     promptContribution:
-      "可调用 /web_search 检索互联网获取实时信息；当用户询问新闻、价格、版本、天气、赛果等时效性内容时应主动使用。",
+      "Call /web_search to fetch real-time information from the web; proactively use it when the user asks about news, prices, versions, weather, match results, or other time-sensitive topics.",
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string", description: "搜索关键词（支持中英文）" },
-        limit: { type: "number", description: "返回条数 1-15，默认 8" },
+        query: { type: "string", description: "Search query (Chinese or English supported)" },
+        limit: { type: "number", description: "Number of results (1-15, default 8)" },
       },
       required: ["query"],
     },
@@ -141,15 +169,15 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "web_fetch",
     command: "/web_fetch",
-    title: "网页抓取",
-    description: "抓取指定 URL 的网页正文（转为纯文本），附主要链接列表",
+    title: "Web Fetch",
+    description: "Fetch the main text of a URL (converted to plain text) with a list of key links",
     promptContribution:
-      "可调用 /web_fetch 抓取网页正文；拿到 /web_search 的链接或用户提供 URL 后，用它读取页面内容做进一步分析。",
+      "Call /web_fetch to retrieve page content; after getting links from /web_search or from the user, use it to read the page for further analysis.",
     parameters: {
       type: "object",
       properties: {
-        url: { type: "string", description: "完整 http/https 链接" },
-        max_chars: { type: "number", description: "返回正文最大字符数，默认 12000，上限 50000" },
+        url: { type: "string", description: "Full http/https URL" },
+        max_chars: { type: "number", description: "Max characters of returned text (default 12000, max 50000)" },
       },
       required: ["url"],
     },
@@ -157,20 +185,20 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "git_info",
     command: "/git_info",
-    title: "Git 查看",
-    description: "查看 Git 仓库状态 / 提交历史 / 差异 / 分支（只读）",
+    title: "Git Info",
+    description: "Inspect a Git repo's status / commit history / diff / branches (read-only)",
     promptContribution:
-      "可调用 /git_info 查看 Git 仓库的 status、log、diff、diff-staged、branch；分析代码变更或排查问题时使用。",
+      "Call /git_info to view a Git repo's status, log, diff, diff-staged, and branch; use it when analyzing changes or debugging.",
     parameters: {
       type: "object",
       properties: {
         operation: {
           type: "string",
-          description: "操作：status / log / diff / diff-staged / branch",
+          description: "Operation: status / log / diff / diff-staged / branch",
           enum: ["status", "log", "diff", "diff-staged", "branch"],
         },
-        path: { type: "string", description: "仓库路径，缺省用当前项目工作区" },
-        limit: { type: "number", description: "log 的条数上限（1-50，默认 20）" },
+        path: { type: "string", description: "Repo path; defaults to the current project workspace" },
+        limit: { type: "number", description: "Max log entries (1-50, default 20)" },
       },
       required: ["operation"],
     },
@@ -178,19 +206,19 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "git_commit",
     command: "/git_commit",
-    title: "Git 提交",
-    description: "暂存变更并创建 Git 提交",
+    title: "Git Commit",
+    description: "Stage changes and create a Git commit",
     promptContribution:
-      "可调用 /git_commit 暂存并提交变更：传 message（提交信息，必填）；addAll=true 全量暂存，或 paths 指定文件；未指定时要求暂存区已有内容。仅在用户明确要求提交时使用。",
+      "Call /git_commit to stage and commit changes: pass message (commit message, required); addAll=true stages everything, or paths lists specific files; if neither, expect the staging area to already have content. Only use when the user explicitly asks to commit.",
     parameters: {
       type: "object",
       properties: {
-        message: { type: "string", description: "提交信息（必填）" },
-        path: { type: "string", description: "仓库路径，缺省用当前项目工作区" },
-        add_all: { type: "boolean", description: "true 时等价 git add -A" },
+        message: { type: "string", description: "Commit message (required)" },
+        path: { type: "string", description: "Repo path; defaults to the current project workspace" },
+        add_all: { type: "boolean", description: "When true, equivalent to git add -A" },
         paths: {
           type: "array",
-          description: "要暂存的文件路径列表",
+          description: "List of file paths to stage",
           items: { type: "string" },
         },
       },
@@ -200,17 +228,17 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "git_pr",
     command: "/git_pr",
-    title: "Git 创建 PR",
-    description: "推送当前分支并用 GitHub CLI 创建 Pull Request",
+    title: "Git PR",
+    description: "Push the current branch and create a Pull Request via GitHub CLI",
     promptContribution:
-      "可调用 /git_pr 推送当前分支并创建 GitHub PR（需已安装 gh 并登录）；仅在用户明确要求创建 PR 时使用。",
+      "Call /git_pr to push the current branch and open a GitHub PR (requires gh installed and authenticated); only use when the user explicitly asks to create a PR.",
     parameters: {
       type: "object",
       properties: {
-        title: { type: "string", description: "PR 标题（必填）" },
-        body: { type: "string", description: "PR 描述（Markdown）" },
-        base: { type: "string", description: "目标分支，缺省用仓库默认分支" },
-        path: { type: "string", description: "仓库路径，缺省用当前项目工作区" },
+        title: { type: "string", description: "PR title (required)" },
+        body: { type: "string", description: "PR description (Markdown)" },
+        base: { type: "string", description: "Base branch; defaults to the repo's default branch" },
+        path: { type: "string", description: "Repo path; defaults to the current project workspace" },
       },
       required: ["title"],
     },
@@ -218,24 +246,25 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "export_docx",
     command: "/export_docx",
-    title: "导出 Word 文档",
-    description: "把结构化内容导出为真正的 .docx 文件（标题/段落/加粗/列表/表格/分页）",
+    title: "Export Word",
+    description:
+      "Export structured content into a real .docx file (headings / paragraphs / bold / lists / tables / page breaks)",
     promptContribution:
-      "可调用 /export_docx 把报告、方案等内容导出为 .docx 文件；spec.children 支持 h1/h2/h3/p/bullet/number/pagebreak/table，段落支持 **加粗** 内联语法；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/报告.docx），禁止编造 sandbox:/ 等虚拟路径；项目会话下若传工作区之外的绝对路径，需经用户确认才会执行；生成后告知用户文件路径。",
+      "Call /export_docx to export reports, plans, etc. into a .docx file. spec.children supports h1/h2/h3/p/bullet/number/pagebreak/table; paragraphs support **bold** inline syntax. path is optional: when omitted, it auto-saves to the project directory for a project session, otherwise to the Omni folder in the system Documents directory (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/report.docx); never invent virtual paths like sandbox:/. In a project session, an absolute path outside the workspace only executes after user confirmation. Tell the user the file path when done.",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
           description:
-            "输出文件路径（可选）：不传或只传文件名时自动保存到默认目录（当前项目 → 项目目录；否则 → 系统文档目录/Omni），文件名自动取标题；传完整路径必须为本机真实绝对路径（如 C:/Users/<用户名>/Documents/报告.docx），禁止使用 sandbox:/ 等虚拟路径",
+            "Output file path (optional): when omitted or a bare filename, auto-saves to the default directory (project session → project dir; otherwise → system Documents/Omni), filename derived from the title; a full path MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/report.docx); virtual paths like sandbox:/ are forbidden",
         },
         spec: {
           type: "object",
           description:
-            "文档结构：{ title?, children: [{type:'h1'|'h2'|'h3'|'p'|'bullet'|'number'|'pagebreak', text, align?}, {type:'table', rows:[[cell]], header?}] }",
+            "Document structure: { title?, children: [{type:'h1'|'h2'|'h3'|'p'|'bullet'|'number'|'pagebreak', text, align?}, {type:'table', rows:[[cell]], header?}] }",
         },
-        overwrite: { type: "boolean", description: "文件已存在时是否覆盖，默认 false" },
+        overwrite: { type: "boolean", description: "Overwrite if the file exists (default false)" },
       },
       required: ["spec"],
     },
@@ -243,24 +272,25 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "export_xlsx",
     command: "/export_xlsx",
-    title: "导出 Excel 表格",
-    description: "把表格数据导出为真正的 .xlsx 文件（多工作表/数字/公式/表头样式）",
+    title: "Export Excel",
+    description:
+      "Export tabular data into a real .xlsx file (multiple sheets / numbers / formulas / header styling)",
     promptContribution:
-      "可调用 /export_xlsx 把数据表、清单导出为 .xlsx 文件；spec.sheets 每项含 name 与 rows，单元格可为字符串/数字/{formula:'SUM(B2:B3)'}/{text,style:'bold'|'header'}；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/数据.xlsx），禁止编造 sandbox:/ 等虚拟路径；项目会话下若传工作区之外的绝对路径，需经用户确认才会执行；生成后告知用户文件路径。",
+      "Call /export_xlsx to export data tables or lists into an .xlsx file. Each item in spec.sheets has name and rows; a cell can be a string / number / {formula:'SUM(B2:B3)'} / {text,style:'bold'|'header'}. path is optional: when omitted, auto-saves to the project directory for a project session, otherwise to the Omni folder in system Documents (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/data.xlsx); never invent virtual paths like sandbox:/. In a project session, an absolute path outside the workspace only executes after user confirmation. Tell the user the file path when done.",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
           description:
-            "输出文件路径（可选）：不传或只传文件名时自动保存到默认目录（当前项目 → 项目目录；否则 → 系统文档目录/Omni），文件名自动取第一个工作表名或标题；传完整路径必须为本机真实绝对路径（如 C:/Users/<用户名>/Documents/数据.xlsx），禁止使用 sandbox:/ 等虚拟路径",
+            "Output file path (optional): when omitted or a bare filename, auto-saves to the default directory (project session → project dir; otherwise → system Documents/Omni), filename from the first sheet name or title; a full path MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/data.xlsx); virtual paths like sandbox:/ are forbidden",
         },
         spec: {
           type: "object",
           description:
-            "表格结构：{ sheets: [{ name, rows: [[字符串|数字|{formula}|{text,style:'bold'|'header'}]] }] }",
+            "Table structure: { sheets: [{ name, rows: [[string|number|{formula}|{text,style:'bold'|'header'}]] }] }",
         },
-        overwrite: { type: "boolean", description: "文件已存在时是否覆盖，默认 false" },
+        overwrite: { type: "boolean", description: "Overwrite if the file exists (default false)" },
       },
       required: ["spec"],
     },
@@ -268,42 +298,66 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "export_pptx",
     command: "/export_pptx",
-    title: "导出 PPT 演示",
-    description: "把大纲内容导出为真正的 .pptx 演示文稿（16:9，标题+要点页）",
+    title: "Export PPT",
+    description: "Export an outline into a real .pptx presentation (16:9, title + bullet slides)",
     promptContribution:
-      "可调用 /export_pptx 把大纲、汇报内容导出为 .pptx 演示文稿；spec.slides 每页含 title 与 bullets（要点数组，≤20 条）；path 可不传，缺省自动保存：当前项目会话存到项目目录，否则存到系统文档目录的 Omni 文件夹（也可以只传文件名）；若传 path 则必须是本机真实绝对路径（如 C:/Users/<用户名>/Documents/汇报.pptx），禁止编造 sandbox:/ 等虚拟路径；项目会话下若传工作区之外的绝对路径，需经用户确认才会执行；生成后告知用户文件路径。",
+      "Call /export_pptx to export outlines or reports into a .pptx presentation. Each item in spec.slides has title and bullets (array of points, ≤20). path is optional: when omitted, auto-saves to the project directory for a project session, otherwise to the Omni folder in system Documents (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/report.pptx); never invent virtual paths like sandbox:/. In a project session, an absolute path outside the workspace only executes after user confirmation. Tell the user the file path when done.",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
           description:
-            "输出文件路径（可选）：不传或只传文件名时自动保存到默认目录（当前项目 → 项目目录；否则 → 系统文档目录/Omni），文件名自动取标题；传完整路径必须为本机真实绝对路径（如 C:/Users/<用户名>/Documents/汇报.pptx），禁止使用 sandbox:/ 等虚拟路径",
+            "Output file path (optional): when omitted or a bare filename, auto-saves to the default directory (project session → project dir; otherwise → system Documents/Omni), filename from the title; a full path MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/report.pptx); virtual paths like sandbox:/ are forbidden",
         },
         spec: {
           type: "object",
-          description: "演示结构：{ slides: [{ title, bullets: [string] }] }",
+          description: "Presentation structure: { slides: [{ title, bullets: [string] }] }",
         },
-        overwrite: { type: "boolean", description: "文件已存在时是否覆盖，默认 false" },
+        overwrite: { type: "boolean", description: "Overwrite if the file exists (default false)" },
       },
       required: ["spec"],
     },
   },
   {
-    id: "install_skill",
-    command: "/install_skill",
-    title: "安装自造技能",
-    description: "把一份技能定义（Markdown 正文，可选 frontmatter）写入本地技能库并注册启用",
+    id: "export_md",
+    command: "/export_md",
+    title: "Export Markdown",
+    description:
+      "Export Markdown content directly into a .md file (keeps the original text, not rendered to Office formats)",
     promptContribution:
-      "可调用 /install_skill 把产出的技能定义落盘注册为本地技能（id kebab-case、name、description、content 为 Markdown 正文）；仅在用户要求创建/保存技能时使用。",
+      "Call /export_md to export articles, notes, docs, or READMEs as raw Markdown into a .md file. content is the full Markdown text (may include headings/lists/tables/code blocks). path is optional: auto-saves to the project directory or system Documents/Omni, filename from title or the first line of content. Tell the user the file path when done. In a project session, an absolute path outside the workspace only executes after user confirmation.",
     parameters: {
       type: "object",
       properties: {
-        id: { type: "string", description: "技能唯一标识（kebab-case，如 weekly-report）" },
-        name: { type: "string", description: "技能展示名" },
-        description: { type: "string", description: "一句话描述（用于触发匹配）" },
-        content: { type: "string", description: "技能正文（Markdown；可带 --- frontmatter）" },
-        tags: { type: "array", description: "标签", items: { type: "string" } },
+        path: {
+          type: "string",
+          description:
+            "Output file path (optional): when omitted or a bare filename, auto-saves to the default directory (project session → project dir; otherwise → system Documents/Omni), filename from the title or first line of content; a full path MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/doc.md); virtual paths like sandbox:/ are forbidden",
+        },
+        content: { type: "string", description: "Full Markdown content to write to the file" },
+        title: { type: "string", description: "Optional; used as the default filename (without extension)" },
+        overwrite: { type: "boolean", description: "Overwrite if the file exists (default false)" },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    id: "install_skill",
+    command: "/install_skill",
+    title: "Install Skill",
+    description:
+      "Write a skill definition (Markdown body, optional frontmatter) into the local skill library and register it as enabled",
+    promptContribution:
+      "Call /install_skill to persist a produced skill definition as a local skill (id kebab-case, name, description, content as Markdown body). Only use when the user asks to create/save a skill.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Unique skill id (kebab-case, e.g. weekly-report)" },
+        name: { type: "string", description: "Skill display name" },
+        description: { type: "string", description: "One-line description (used for trigger matching)" },
+        content: { type: "string", description: "Skill body (Markdown; may include --- frontmatter)" },
+        tags: { type: "array", description: "Tags", items: { type: "string" } },
       },
       required: ["id", "content"],
     },
@@ -352,6 +406,7 @@ export const PROJECT_TOOL_MANIFESTS = TOOL_MANIFESTS.filter((tool) =>
     "export_docx",
     "export_xlsx",
     "export_pptx",
+    "export_md",
     "install_skill",
   ].includes(tool.id)
 );
@@ -362,12 +417,29 @@ export const PROJECT_TOOL_OPTIONS = PROJECT_TOOL_MANIFESTS.map((tool) => ({
   description: tool.description,
 }));
 
-export const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [
+/** 内置工具：所有模型/会话的公用工具，无条件可用（不受项目 allowedToolIds 限制）。 */
+export const BUILTIN_TOOL_IDS = [
+  "search_sessions",
+  "read_session",
+  "list_files",
+  "read_file",
+  "search_files",
   "read_persona",
   "update_persona",
   "install_expert",
   "install_skill",
+  "web_search",
+  "web_fetch",
+  "git_info",
+  "git_commit",
+  "git_pr",
+  "export_docx",
+  "export_xlsx",
+  "export_pptx",
+  "export_md",
 ];
+
+export const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [...BUILTIN_TOOL_IDS];
 
 export function getToolManifestById(id: string) {
   return TOOL_MANIFESTS.find((tool) => tool.id === id) ?? null;

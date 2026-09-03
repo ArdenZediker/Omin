@@ -47,7 +47,7 @@ describe("promptModules", () => {
         block: "知识库内容",
         sources: [],
       },
-      enabledToolNames: ["搜索文件", "读取文件"],
+      enabledToolNames: ["Search Files", "Read File"],
       includeToolProtocol: true,
     });
 
@@ -56,7 +56,7 @@ describe("promptModules", () => {
     expect(prompt).toContain("用户要求全部使用中文");
     expect(prompt).toContain("会话摘要：");
     expect(prompt).toContain("知识库回答协议");
-    expect(prompt).toContain("当前助手已启用工具：搜索文件、读取文件");
+    expect(prompt).toContain("当前助手已启用工具：Search Files、Read File");
   });
 
   it("可按任务类型关闭记忆与摘要结构块", () => {

@@ -1,8 +1,9 @@
-//! 联网工具：web_search（DuckDuckGo 检索）与 web_fetch（网页抓取转纯文本）。
+//! 联网工具：web_search（聚合 DuckDuckGo + Bing 检索）与 web_fetch（网页抓取转纯文本）。
 //!
-//! 无第三方搜索 API 依赖：web_search 走 DuckDuckGo HTML/Lite 端点解析，
+//! 无第三方搜索 API 依赖：web_search 依次尝试 DuckDuckGo HTML/Lite 与 Bing/Bing-CN 端点解析，
 //! web_fetch 用 reqwest 抓取后做轻量 HTML→文本转换（实体解码、去脚本样式、保留链接）。
 
+use base64::Engine as _;
 use regex::Regex;
 use reqwest::Client;
 use serde::Serialize;
@@ -11,13 +12,17 @@ use std::time::Duration;
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const MAX_FETCH_BYTES: usize = 3 * 1024 * 1024;
 
-fn http_client() -> Result<Client, String> {
+fn http_client_with_timeout(timeout_secs: u64) -> Result<Client, String> {
     Client::builder()
         .user_agent(USER_AGENT)
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(timeout_secs))
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|e| format!("HTTP 客户端构建失败: {e}"))
+}
+
+fn http_client() -> Result<Client, String> {
+    http_client_with_timeout(20)
 }
 
 // ---------- 数据结构 ----------
@@ -140,6 +145,26 @@ fn percent_decode(input: &str) -> String {
 
 // ---------- web_search ----------
 
+/// 搜索后端枚举。按数组顺序依次尝试，首个非空结果即返回。
+#[derive(Clone, Copy, Debug)]
+enum SearchProvider {
+    DuckDuckGoHtml,
+    DuckDuckGoLite,
+    BingGlobal,
+    BingCn,
+}
+
+impl SearchProvider {
+    fn label(self) -> &'static str {
+        match self {
+            SearchProvider::DuckDuckGoHtml => "DuckDuckGo HTML",
+            SearchProvider::DuckDuckGoLite => "DuckDuckGo Lite",
+            SearchProvider::BingGlobal => "Bing",
+            SearchProvider::BingCn => "Bing CN",
+        }
+    }
+}
+
 /// 从 DDG 重定向链接中还原真实 URL（//duckduckgo.com/l/?uddg=<encoded>&rut=...）。
 fn resolve_ddg_href(href: &str) -> String {
     let trimmed = href.trim();
@@ -153,6 +178,29 @@ fn resolve_ddg_href(href: &str) -> String {
     }
     if trimmed.starts_with("//") {
         format!("https:{trimmed}")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// 从 Bing 重定向链接（/ck/a?...&u=a1<base64>）中还原真实 URL。
+fn resolve_bing_url(href: &str) -> String {
+    let trimmed = href.trim();
+    if let Some(u_pos) = trimmed.find("u=a1") {
+        let encoded = &trimmed[u_pos + 4..];
+        let end = encoded.find('&').unwrap_or(encoded.len());
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&encoded[..end]) {
+            if let Ok(url) = String::from_utf8(bytes) {
+                if url.starts_with("http") {
+                    return url;
+                }
+            }
+        }
+    }
+    if trimmed.starts_with("//") {
+        format!("https:{trimmed}")
+    } else if trimmed.starts_with('/') {
+        "https://www.bing.com".to_string() + trimmed
     } else {
         trimmed.to_string()
     }
@@ -206,44 +254,129 @@ fn parse_ddg_lite(html: &str, limit: usize) -> Vec<WebSearchResult> {
         .collect()
 }
 
-/// 依次尝试 DDG HTML 端点（POST）与 Lite 端点（GET），返回合并去重后的结果。
-async fn duckduckgo_search(query: &str, limit: usize) -> Result<Vec<WebSearchResult>, String> {
-    let client = http_client()?;
+fn parse_bing_html(html: &str, limit: usize) -> Vec<WebSearchResult> {
+    let item_re =
+        Regex::new(r#"(?is)<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>(.*?)</li>"#).expect("静态正则");
+    let link_re =
+        Regex::new(r#"(?is)<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).expect("静态正则");
+    let snippet_re =
+        Regex::new(r#"(?is)<div[^>]*class="[^"]*b_caption[^"]*"[^>]*>(.*?)</div>"#)
+            .expect("静态正则");
+    let p_re = Regex::new(r#"(?is)<p[^>]*>(.*?)</p>"#).expect("静态正则");
 
-    // 1) html.duckduckgo.com/html/（POST 表单）
-    let html_resp = client
-        .post("https://html.duckduckgo.com/html/")
-        .form(&[("q", query), ("b", "")])
-        .send()
-        .await;
-    if let Ok(resp) = html_resp {
-        if resp.status().is_success() {
-            if let Ok(body) = resp.text().await {
-                let results = parse_ddg_html(&body, limit);
-                if !results.is_empty() {
-                    return Ok(results);
-                }
+    let mut results = Vec::new();
+    for cap in item_re.captures_iter(html) {
+        let item = &cap[1];
+        // 跳过 Bing 内部搜索链接，取第一个有效结果链接。
+        for link_cap in link_re.captures_iter(item) {
+            let raw_url = link_cap[1].trim();
+            if raw_url.starts_with("/search?q=")
+                || raw_url.starts_with("https://www.bing.com/search?q=")
+            {
+                continue;
+            }
+            let url = resolve_bing_url(raw_url);
+            let title = clean_text(&link_cap[2]);
+            let snippet = snippet_re
+                .captures(item)
+                .and_then(|c| p_re.captures(&c[1]).map(|p| clean_text(&p[1])))
+                .unwrap_or_default();
+            if !title.is_empty() && url.starts_with("http") {
+                results.push(WebSearchResult {
+                    title,
+                    url,
+                    snippet,
+                });
+                break;
             }
         }
+        if results.len() >= limit {
+            break;
+        }
     }
+    results
+}
 
-    // 2) lite.duckduckgo.com/lite/（GET）
-    let lite_resp = client
-        .get("https://lite.duckduckgo.com/lite/")
-        .query(&[("q", query)])
-        .send()
-        .await
-        .map_err(|e| format!("搜索请求失败（两个端点均不可达）: {e}"))?;
-    let status = lite_resp.status();
-    let body = lite_resp
+async fn search_with_provider(
+    provider: SearchProvider,
+    client: &Client,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<WebSearchResult>, String> {
+    let (resp, parser): (reqwest::Response, fn(&str, usize) -> Vec<WebSearchResult>) = match provider {
+        SearchProvider::DuckDuckGoHtml => {
+            let resp = client
+                .post("https://html.duckduckgo.com/html/")
+                .form(&[("q", query), ("b", "")])
+                .send()
+                .await
+                .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
+            (resp, parse_ddg_html)
+        }
+        SearchProvider::DuckDuckGoLite => {
+            let resp = client
+                .get("https://lite.duckduckgo.com/lite/")
+                .query(&[("q", query)])
+                .send()
+                .await
+                .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
+            (resp, parse_ddg_lite)
+        }
+        SearchProvider::BingGlobal => {
+            let resp = client
+                .get("https://www.bing.com/search")
+                .query(&[("q", query), ("setmkt", "en-US"), ("setlang", "en")])
+                .header("Accept-Language", "zh-CN,zh;q=0.9,en-US,en;q=0.8")
+                .send()
+                .await
+                .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
+            (resp, parse_bing_html)
+        }
+        SearchProvider::BingCn => {
+            let resp = client
+                .get("https://cn.bing.com/search")
+                .query(&[("q", query), ("setmkt", "zh-CN"), ("setlang", "zh")])
+                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                .send()
+                .await
+                .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
+            (resp, parse_bing_html)
+        }
+    };
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("{} HTTP {status}", provider.label()));
+    }
+    let body = resp
         .text()
         .await
-        .map_err(|e| format!("读取搜索结果失败: {e}"))?;
-    let results = parse_ddg_lite(&body, limit);
+        .map_err(|e| format!("{} 读取失败: {e}", provider.label()))?;
+    let results = parser(&body, limit);
     if results.is_empty() {
-        return Err(format!("搜索无结果或被限流（HTTP {status}），请稍后重试或换关键词。"));
+        return Err(format!("{} 无结果或被反爬", provider.label()));
     }
     Ok(results)
+}
+
+/// 依次尝试多个搜索后端，首个返回非空结果即成功。
+async fn multi_provider_search(query: &str, limit: usize) -> Result<Vec<WebSearchResult>, String> {
+    // 搜索请求单独使用较短超时：某一后端被墙/不可达时不卡住整体流程。
+    let client = http_client_with_timeout(10)?;
+    let providers = [
+        SearchProvider::DuckDuckGoHtml,
+        SearchProvider::DuckDuckGoLite,
+        SearchProvider::BingGlobal,
+        SearchProvider::BingCn,
+    ];
+    let mut errors: Vec<String> = Vec::new();
+    for provider in providers {
+        match search_with_provider(provider, &client, query, limit).await {
+            Ok(results) => return Ok(results),
+            Err(e) => errors.push(e),
+        }
+    }
+    Err(format!("所有搜索后端均不可用：{}", errors.join("；")))
 }
 
 #[tauri::command]
@@ -256,7 +389,7 @@ pub(crate) async fn web_search(
         return Err("搜索关键词不能为空".to_string());
     }
     let limit = limit.unwrap_or(8).clamp(1, 15);
-    duckduckgo_search(&query, limit).await
+    multi_provider_search(&query, limit).await
 }
 
 // ---------- web_fetch ----------
@@ -415,6 +548,41 @@ mod tests {
           <div class="result__snippet">The <em>programming</em> language</div>
         </div>"#;
         let results = parse_ddg_html(html, 8);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "https://doc.rust-lang.org/");
+        assert_eq!(results[0].title, "Rust Doc");
+        assert_eq!(results[0].snippet, "The programming language");
+    }
+
+    #[test]
+    fn resolve_bing_redirect_decodes_base64() {
+        // "https://example.com/" 的 base64 标准编码。
+        let encoded = base64::engine::general_purpose::STANDARD.encode("https://example.com/");
+        let href = format!("https://www.bing.com/ck/a?!&&p=xyz&u=a1{encoded}");
+        assert_eq!(resolve_bing_url(&href), "https://example.com/");
+
+        // 直接 URL 原样返回。
+        assert_eq!(
+            resolve_bing_url("https://doc.rust-lang.org/"),
+            "https://doc.rust-lang.org/"
+        );
+    }
+
+    #[test]
+    fn parse_bing_html_extracts_results() {
+        let html = r#"
+        <ol id="b_results">
+          <li class="b_algo">
+            <h2><a href="https://doc.rust-lang.org/">Rust <strong>Doc</strong></a></h2>
+            <div class="b_caption">
+              <p>The <em>programming</em> language</p>
+            </div>
+          </li>
+          <li class="b_algo">
+            <h2><a href="/search?q=internal">Related</a></h2>
+          </li>
+        </ol>"#;
+        let results = parse_bing_html(html, 8);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].url, "https://doc.rust-lang.org/");
         assert_eq!(results[0].title, "Rust Doc");

@@ -794,6 +794,27 @@ pub(crate) async fn export_pptx(
     .map_err(|e| format!("export_pptx 任务失败: {e}"))?
 }
 
+/// 把纯文本/Markdown 正文直接落盘为 .md 文件（不走 OOXML 渲染，保留原文）。
+/// 复用 check_path 的围栏：绝对路径、No-Go Zones、项目工作区边界、扩展名、覆盖开关、自动建目录。
+#[tauri::command]
+pub(crate) async fn write_text_file(
+    path: String,
+    content: String,
+    overwrite: Option<bool>,
+    workspace_path: Option<String>,
+) -> Result<ExportOutcome, String> {
+    let overwrite = overwrite.unwrap_or(false);
+    let p = check_path(&path, &["md", "markdown"], overwrite, workspace_path.as_deref())?;
+    std::fs::write(&p, content.as_bytes()).map_err(|e| format!("写入文件失败: {e}"))?;
+    let size = std::fs::metadata(&p)
+        .map_err(|e| format!("读取文件元数据失败: {e}"))?
+        .len();
+    Ok(ExportOutcome {
+        path: p.to_string_lossy().to_string(),
+        size,
+    })
+}
+
 /// 校验产物路径在本机是否真实存在（供前端打开/下载前检查，杜绝虚拟路径静默失败）。
 #[tauri::command]
 pub(crate) fn path_exists(path: String) -> bool {
@@ -990,5 +1011,46 @@ mod tests {
         )
         .unwrap();
         assert!(outcome.size > 0);
+    }
+
+    // ---------- write_text_file（/export_md 落盘）围栏 ----------
+
+    #[test]
+    fn write_text_file_allows_md_and_markdown_ext() {
+        // write_text_file 复用 check_path：.md / .markdown 应通过扩展名校验。
+        let ws = std::env::temp_dir().join("omni-ws-test");
+        std::fs::create_dir_all(&ws).unwrap();
+        let ok_md = check_path(ws.join("a.md").to_str().unwrap(), &["md", "markdown"], true, ws.to_str());
+        assert!(ok_md.is_ok(), "预期 .md 通过：{:?}", ok_md.err());
+        let ok_markdown = check_path(ws.join("b.markdown").to_str().unwrap(), &["md", "markdown"], true, ws.to_str());
+        assert!(ok_markdown.is_ok(), "预期 .markdown 通过：{:?}", ok_markdown.err());
+    }
+
+    #[test]
+    fn write_text_file_rejects_non_md_ext() {
+        let ws = std::env::temp_dir().join("omni-ws-test");
+        std::fs::create_dir_all(&ws).unwrap();
+        let err = check_path(ws.join("c.txt").to_str().unwrap(), &["md", "markdown"], true, ws.to_str()).unwrap_err();
+        assert!(err.contains("扩展名"), "实际报错：{err}");
+    }
+
+    #[test]
+    fn write_text_file_refuses_existing_without_overwrite() {
+        let ws = std::env::temp_dir().join("omni-ws-test");
+        std::fs::create_dir_all(&ws).unwrap();
+        let path = ws.join("dup.md");
+        std::fs::write(&path, b"old").unwrap();
+        let err = check_path(path.to_str().unwrap(), &["md", "markdown"], false, ws.to_str()).unwrap_err();
+        assert!(err.contains("已存在"), "实际报错：{err}");
+        // overwrite=true 应放行
+        assert!(check_path(path.to_str().unwrap(), &["md", "markdown"], true, ws.to_str()).is_ok());
+    }
+
+    #[test]
+    fn write_text_file_refuses_no_go_zone() {
+        let no_go = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
+        let path = format!("{no_go}\\System32\\omni-evil.md");
+        let err = check_path(&path, &["md", "markdown"], true, None).unwrap_err();
+        assert!(err.contains("禁止写入"), "实际报错：{err}");
     }
 }

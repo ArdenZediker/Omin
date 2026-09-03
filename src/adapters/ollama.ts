@@ -2,7 +2,7 @@
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, ChatToolCall } from "./types";
 import { toWireRole } from "./types";
 import { toOllamaTools, toOllamaMessage, parseOllamaToolCalls } from "./wireTools";
-import { postJsonWithRetry, postJsonStream } from "./http";
+import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
 const OLLAMA_MODELS: ModelConfig[] = [
   { id: "llama3", name: "Llama 3 (Local)", provider: "ollama", maxTokens: 8192, maxOutput: 4096, supportsVision: false, supportsStreaming: true, toolCalling: true },
@@ -91,10 +91,7 @@ export class OllamaAdapter implements ModelAdapter {
     let model = request.model;
     let pendingToolCalls: ChatToolCall[] | undefined;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
+    for await (const value of iterateStream(reader, { signal: request.signal })) {
       const chunk = decoder.decode(value, { stream: true });
       const lines = chunk.split("\n").filter((l) => l.trim());
 

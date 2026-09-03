@@ -1,5 +1,5 @@
 import { emit, emitTo } from "@tauri-apps/api/event";
-import { getToolManifestById } from "../config/manifests/tools";
+import { BUILTIN_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
 import type { ChatToolParam, Message } from "../adapters/types";
 import type { Project } from "../chat/types";
 import type { PetThoughtState } from "../app/types";
@@ -11,13 +11,15 @@ export type SessionLite = {
   messages: Message[];
 };
 
+// 内置工具是所有模型/会话的公用工具：无条件纳入系统提示与可用工具集。
 export function resolveEnabledToolNames(project: Project | null) {
-  if (!project) {
-    return { toolNames: [], toolDescriptions: {} };
-  }
+  const sourceToolIds = new Set<string>([
+    ...BUILTIN_TOOL_IDS,
+    ...(project?.allowedToolIds ?? []),
+  ]);
   const toolNames: string[] = [];
   const toolDescriptions: Record<string, string> = {};
-  for (const toolId of new Set(project.allowedToolIds)) {
+  for (const toolId of new Set(sourceToolIds)) {
     const manifest = getToolManifestById(toolId);
     if (!manifest?.title) continue;
     toolNames.push(manifest.title);
@@ -31,37 +33,22 @@ export function resolveEnabledToolNames(project: Project | null) {
 }
 
 /**
- * function calling 用的工具声明：把项目已允许的工具转为模型可调用的工具定义。
+ * function calling 用的工具声明：把模型可调用的工具转为工具定义。
  *
- * 只暴露「只读/分析类」工具给模型（搜索会话、读取文件、搜索文件、读档案等），
- * 避免模型擅自执行有副作用的命令（update_persona / 切模型 / 清空对话等）。
+ * 内置工具为所有模型/会话的公用工具，无条件暴露；项目额外启用的非内置工具与之取并集。
+ * 有副作用的写操作（git 提交/PR、改档案、装插件等）仍受运行时确认门（HITL）保护，
+ * 不会因工具可见就自动执行。
  * 参数 schema 以 config/manifests/tools.ts 的 manifest.parameters 为数据源。
  */
 export function buildChatTools(project: Project | null): ChatToolParam[] {
-  if (!project) return [];
-  // 只读/分析类：搜索、读取、联网检索、git 只读查看。
-  const SAFE_TOOL_IDS = new Set([
-    "search_sessions",
-    "read_session",
-    "list_files",
-    "read_file",
-    "search_files",
-    "read_persona",
-    "web_search",
-    "web_fetch",
-    "git_info",
-  ]);
-  // 写操作类：文件导出与 git 写操作——不放进无条件面，但项目启用后即对模型可见。
-  const OFFERED_TOOL_IDS = new Set([
-    "export_docx",
-    "export_xlsx",
-    "export_pptx",
-    "git_commit",
-    "git_pr",
+  // 内置工具为所有模型/会话的公用工具：无条件暴露，不受项目绑定或只读/写分类限制。
+  // 项目启用的非内置工具（用户安装/自定义）与内置工具取并集，仍按 manifest 存在性过滤。
+  const sourceToolIds = new Set<string>([
+    ...BUILTIN_TOOL_IDS,
+    ...(project?.allowedToolIds ?? []),
   ]);
   const tools: ChatToolParam[] = [];
-  for (const toolId of new Set(project.allowedToolIds)) {
-    if (!SAFE_TOOL_IDS.has(toolId) && !OFFERED_TOOL_IDS.has(toolId)) continue;
+  for (const toolId of new Set(sourceToolIds)) {
     const manifest = getToolManifestById(toolId);
     if (!manifest) continue;
     tools.push({
@@ -69,18 +56,6 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
       description: manifest.promptContribution ?? manifest.description,
       parameters: manifest.parameters ?? { type: "object", properties: {} },
     });
-  }
-  // 管理闭环：install_expert / install_skill 无条件暴露（不依赖项目 allowedToolIds），
-  // 让「创建专家/技能 → 一键注册」在任何项目下都可用。
-  for (const alwaysOnId of ["install_expert", "install_skill"]) {
-    const manifest = getToolManifestById(alwaysOnId);
-    if (manifest) {
-      tools.push({
-        name: manifest.id,
-        description: manifest.promptContribution ?? manifest.description,
-        parameters: manifest.parameters ?? { type: "object", properties: {} },
-      });
-    }
   }
   return tools;
 }
@@ -184,6 +159,36 @@ export function createPreviewThrottler(intervalMs: number, update: () => void) {
     }
     lastUpdateAt = now;
     update();
+  };
+}
+
+/**
+ * 流式正文过滤器：实时剥离模型可能输出的 <omni_memory> / <omni_summary> 结构化标签块。
+ * 这些标签是系统提示要求模型追加的内部结构，不应展示给用户。
+ * 实现策略：检测到 `<omni_` 起始即停止向可见文本追加（标签通常位于回复末尾），
+ * 保证即使标签跨多个 chunk 到达，也不会把标签内容闪现在界面上。
+ */
+export function createStructuredOutputFilter() {
+  let visibleText = "";
+  let hasEnteredStructuredBlock = false;
+  return {
+    append(chunk: string): string {
+      if (hasEnteredStructuredBlock) {
+        return visibleText;
+      }
+      const combined = visibleText + chunk;
+      const structuredStart = combined.search(/<omni_(memory|summary)>/i);
+      if (structuredStart >= 0) {
+        visibleText = combined.slice(0, structuredStart).trimEnd();
+        hasEnteredStructuredBlock = true;
+      } else {
+        visibleText = combined;
+      }
+      return visibleText;
+    },
+    getVisibleText(): string {
+      return visibleText;
+    },
   };
 }
 

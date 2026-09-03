@@ -2,7 +2,7 @@
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toWireRole } from "./types";
 import { toClaudeTools, toClaudeMessage, parseClaudeToolCalls, ClaudeStreamToolAccumulator } from "./wireTools";
-import { postJsonWithRetry, postJsonStream } from "./http";
+import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
 const CLAUDE_MODELS: ModelConfig[] = [
   { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
@@ -137,47 +137,47 @@ export class ClaudeAdapter implements ModelAdapter {
     let buffer = "";
     const toolAccumulator = new ClaudeStreamToolAccumulator();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        buffer += decoder.decode();
-      } else {
-        buffer += decoder.decode(value, { stream: true });
+    const handleLine = (rawLine: string) => {
+      const line = rawLine.trim();
+      if (!line.startsWith("data: ")) {
+        return;
       }
+      const data = line.slice(6);
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.type === "content_block_delta") {
+          // Anthropic extended thinking：type:"thinking_delta" 携带 reasoning 增量
+          if (parsed.delta?.type === "thinking_delta" && parsed.delta?.thinking) {
+            fullReasoning += parsed.delta.thinking;
+            onChunk({ content: "", done: false, model, reasoning: parsed.delta.thinking });
+          } else if (parsed.delta?.text) {
+            fullContent += parsed.delta.text;
+            onChunk({ content: parsed.delta.text, done: false, model });
+          }
+        } else if (parsed.type === "message_start" && parsed.message?.model) {
+          model = parsed.message.model;
+        } else if (parsed.type === "message_stop") {
+          onChunk({ content: "", done: true, model });
+        } else if (parsed.type === "content_block_start" || parsed.type === "content_block_delta" || parsed.type === "content_block_stop") {
+          toolAccumulator.add(parsed);
+        }
+      } catch {
+        // 跳过
+      }
+    };
 
+    for await (const value of iterateStream(reader, { signal: request.signal })) {
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line.startsWith("data: ")) {
-          continue;
-        }
-        const data = line.slice(6);
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.type === "content_block_delta") {
-            // Anthropic extended thinking：type:"thinking_delta" 携带 reasoning 增量
-            if (parsed.delta?.type === "thinking_delta" && parsed.delta?.thinking) {
-              fullReasoning += parsed.delta.thinking;
-              onChunk({ content: "", done: false, model, reasoning: parsed.delta.thinking });
-            } else if (parsed.delta?.text) {
-              fullContent += parsed.delta.text;
-              onChunk({ content: parsed.delta.text, done: false, model });
-            }
-          } else if (parsed.type === "message_start" && parsed.message?.model) {
-            model = parsed.message.model;
-          } else if (parsed.type === "message_stop") {
-            onChunk({ content: "", done: true, model });
-          } else if (parsed.type === "content_block_start" || parsed.type === "content_block_delta" || parsed.type === "content_block_stop") {
-            toolAccumulator.add(parsed);
-          }
-        } catch {
-          // 跳过
-        }
-      }
-      if (done) break;
+      for (const rawLine of lines) handleLine(rawLine);
     }
+
+    // 流结束：冲刷解码器残留与最后一行不完整数据
+    buffer += decoder.decode();
+    const tailLines = buffer.split("\n");
+    buffer = tailLines.pop() ?? "";
+    for (const rawLine of tailLines) handleLine(rawLine);
 
     return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls(), reasoning: fullReasoning || undefined };
   }

@@ -10,6 +10,8 @@
  */
 
 /** 风险等级：决定弹窗配色与措辞强度。 */
+import { isFullAccess } from "./permissionMode";
+
 export type RiskLevel =
   /** 读取越界：工作区外读文件，仅信息泄露风险，副作用可控 */
   | "read"
@@ -115,6 +117,7 @@ export function setConfirmationTimeout(ms: number): void {
  * - 超过 timeoutMs 未响应自动拒绝。
  */
 export function requestConfirmation(request: ConfirmationRequest): Promise<boolean> {
+  if (isFullAccess()) return Promise.resolve(true);
   if (pending) return Promise.resolve(false);
   if (listeners.size === 0) return Promise.resolve(false);
 

@@ -1,16 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
-  ArrowRight,
   BookOpen,
   Bot,
   CirclePlus,
+  FileUp,
   Paperclip,
+  Send,
   Square,
   X,
 } from "lucide-react";
 import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
+import type { ChatAttachment } from "../adapters/types";
 import type { ChatSendOptions } from "../chat/types";
+import PermissionModeSelector from "./PermissionModeSelector";
+import AttachmentChip from "./AttachmentChip";
+
+/** 从绝对路径取文件名（兼容 Windows 的 C:/... 与 POSIX 的 /...） */
+function baseNameOf(path: string): string {
+  const segments = path.split(/[\\/]/);
+  return segments[segments.length - 1] || path;
+}
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;
@@ -29,8 +40,9 @@ interface ChatInputProps {
   draftScopeKey?: string;
   draftValue?: string;
   draftImages?: string[];
+  draftAttachments?: ChatAttachment[];
   draftSignal?: number;
-  onDraftChange?: (text: string, images: string[]) => void;
+  onDraftChange?: (text: string, images: string[], attachments: ChatAttachment[]) => void;
   fixedHeight?: number | null;
   onSubmit?: () => void;
 }
@@ -74,13 +86,10 @@ function SuggestionIcon() {
 }
 
 export default function ChatInput({
-  canStartNewTopic = false,
   allowedToolIds,
   allowedSkillIds,
-  hasConversation = false,
   usageLabel,
   contextPresetText,
-  onStartNewTopic,
   onSend,
   knowledgeCollections = [],
   isLoading,
@@ -90,6 +99,7 @@ export default function ChatInput({
   draftScopeKey,
   draftValue,
   draftImages,
+  draftAttachments,
   draftSignal,
   onDraftChange,
   fixedHeight,
@@ -97,6 +107,9 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [imageNames, setImageNames] = useState<string[]>([]);
+  /** 非图片类本地文件附件（绝对路径引用；不内联内容，发送时注入 prompt 让模型用 /read_file 读取） */
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [dismissedSlashInput, setDismissedSlashInput] = useState("");
   const [selectedKnowledgeCollection, setSelectedKnowledgeCollection] = useState<KnowledgeCollection | null>(null);
@@ -153,7 +166,7 @@ export default function ChatInput({
       return normalizeMentionText(`${collection.name} ${collection.description ?? ""}`).includes(normalizedMentionQuery);
     })
     .slice(0, 8);
-  const hasComposerStatus = Boolean(activeModeLabel || selectedKnowledgeCollection || images.length > 0);
+  const hasComposerStatus = Boolean(activeModeLabel || selectedKnowledgeCollection);
   const canShowKnowledgeSuggestions = Boolean(mentionTrigger && input !== dismissedMentionInput && knowledgeCollections.length > 0);
   const showKnowledgeSuggestions = canShowKnowledgeSuggestions && knowledgeSuggestions.length > 0;
   const showSlashSuggestions =
@@ -188,6 +201,8 @@ export default function ChatInput({
       suppressNextDraftReportRef.current = true;
       setInput(draftValue);
       setImages(draftImages ?? []);
+      setImageNames((draftImages ?? []).map((_, imageIndex) => `image_${imageIndex + 1}.png`));
+      setAttachments(draftAttachments ?? []);
       setCaretIndex(draftValue.length);
 
       if (scopeChanged) {
@@ -208,8 +223,8 @@ export default function ChatInput({
       return;
     }
 
-    onDraftChange?.(input, images);
-  }, [images, input, onDraftChange]);
+    onDraftChange?.(input, images, attachments);
+  }, [attachments, images, input, onDraftChange]);
 
   useEffect(() => {
     suggestionItemRefs.current = suggestionItemRefs.current.slice(0, localSuggestions.length);
@@ -289,19 +304,24 @@ export default function ChatInput({
       return;
     }
 
-    const nextImages = await Promise.all(
+    const nextEntries = await Promise.all(
       imageFiles.map(
         (file) =>
-          new Promise<string>((resolve, reject) => {
+          new Promise<{ src: string; name: string }>((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = (readerEvent) => resolve(readerEvent.target?.result as string);
+            reader.onload = (readerEvent) =>
+              resolve({
+                src: readerEvent.target?.result as string,
+                name: file.name?.trim() || "Clipboard Image.png",
+              });
             reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
             reader.readAsDataURL(file);
           })
       )
     );
 
-    setImages((prev) => [...prev, ...nextImages]);
+    setImages((prev) => [...prev, ...nextEntries.map((entry) => entry.src)]);
+    setImageNames((prev) => [...prev, ...nextEntries.map((entry) => entry.name)]);
   };
 
   const clearSuggestionDismissal = () => {
@@ -333,19 +353,40 @@ export default function ChatInput({
     });
   };
 
+  const handleAddFiles = async () => {
+    try {
+      const selected = await open({ multiple: true, title: "选择要附带的本地文件" });
+      if (!selected) {
+        return;
+      }
+      const paths = Array.isArray(selected) ? selected : [selected];
+      const next = paths
+        .map((path) => ({ path, name: baseNameOf(path), size: null as number | null }))
+        .filter((candidate) => !attachments.some((existing) => existing.path === candidate.path));
+      if (next.length > 0) {
+        setAttachments((prev) => [...prev, ...next]);
+      }
+    } catch (error) {
+      console.error("选择本地文件失败", error);
+    }
+  };
+
   const buildSendOptions = (): ChatSendOptions => ({
     hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
     knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
+    attachments: attachments.length > 0 ? attachments : undefined,
   });
 
   const handleSubmit = () => {
-    if ((!trimmedInput && images.length === 0) || isLoading || isSendBlocked) {
+    if ((!trimmedInput && images.length === 0 && attachments.length === 0) || isLoading || isSendBlocked) {
       return;
     }
 
     void onSend(trimmedInput, images.length > 0 ? images : undefined, buildSendOptions());
     setInput("");
     setImages([]);
+    setImageNames([]);
+    setAttachments([]);
     setSelectedKnowledgeCollection(null);
     setCaretIndex(0);
     clearSuggestionDismissal();
@@ -515,24 +556,6 @@ export default function ChatInput({
 
   return (
     <div className={`chat-composer${fixedHeight ? " chat-composer--fixed-height" : ""}`}>
-      {images.length > 0 && (
-        <div className="chat-composer__attachments">
-          {images.map((img, index) => (
-            <div key={index} className="relative group">
-              <img src={img} alt="图片附件" className="w-12 h-12 rounded-lg object-cover border border-white/10" />
-              <button
-                onClick={() => setImages((prev) => prev.filter((_, imageIndex) => imageIndex !== index))}
-                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                title="移除图片"
-                type="button"
-              >
-                <X size={10} strokeWidth={2.2} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
       {hasComposerStatus && (
         <div className="chat-composer__status">
           {activeModeLabel && activeModeTypeLabel && (
@@ -570,17 +593,6 @@ export default function ChatInput({
             </button>
           )}
 
-          {images.length > 0 && (
-            <button
-              type="button"
-              className="chat-composer__status-chip"
-              onClick={() => fileInputRef.current?.click()}
-              title="继续添加图片"
-            >
-              <Paperclip size={13} strokeWidth={1.9} />
-              <span>附件: {images.length} 张图片</span>
-            </button>
-          )}
         </div>
       )}
 
@@ -597,6 +609,8 @@ export default function ChatInput({
         />
 
         <div className="chat-composer__toolbar">
+          <PermissionModeSelector />
+
           <div className="chat-composer__toolbar-group">
             <button
               type="button"
@@ -606,18 +620,53 @@ export default function ChatInput({
             >
               <Paperclip size={16} strokeWidth={1.8} />
             </button>
+            <button
+              type="button"
+              className="chat-composer__tool-button"
+              title="添加文件（文档 / 表格 / 代码等，随消息让模型读取）"
+              onClick={() => void handleAddFiles()}
+            >
+              <FileUp size={16} strokeWidth={1.8} />
+            </button>
           </div>
 
           <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
 
-          <div className="chat-composer__toolbar-group chat-composer__toolbar-group--right">
-            <button type="button" className="chat-composer__tool-button" title="展开">
-              <ArrowRight size={16} strokeWidth={1.8} className="chat-composer__tool-button-arrow" />
-            </button>
-          </div>
         </div>
 
         <div className="chat-composer__body">
+          {images.length > 0 && (
+            <div className="chat-composer__attachments">
+              {images.map((img, index) => (
+                <AttachmentChip
+                  key={`${img.slice(0, 24)}-${index}`}
+                  src={img}
+                  name={imageNames[index]}
+                  index={index}
+                  removable
+                  onRemove={() => {
+                    setImages((prev) => prev.filter((_, imageIndex) => imageIndex !== index));
+                    setImageNames((prev) => prev.filter((_, imageIndex) => imageIndex !== index));
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {attachments.length > 0 && (
+            <div className="chat-composer__attachments">
+              {attachments.map((attachment, index) => (
+                <AttachmentChip
+                  key={attachment.path}
+                  src={attachment.path}
+                  name={attachment.name}
+                  index={index}
+                  size={attachment.size}
+                  removable
+                  onRemove={() => setAttachments((prev) => prev.filter((_, attachmentIndex) => attachmentIndex !== index))}
+                />
+              ))}
+            </div>
+          )}
           <div className="chat-composer__editor-wrap">
             <div className="chat-composer__editor">
               <textarea
@@ -645,21 +694,9 @@ export default function ChatInput({
           <div className="chat-composer__footer-row">
             <div className="chat-composer__footer-hint">Enter 发送 / Shift + Enter 换行</div>
             <div className="chat-composer__footer-actions">
-              {canStartNewTopic ? (
-                <button
-                  type="button"
-                  className="chat-composer__aux-button chat-composer__aux-button--topic"
-                  title={hasConversation ? "开启新话题" : "创建新话题"}
-                  onClick={onStartNewTopic}
-                >
-                  <CirclePlus size={16} strokeWidth={1.8} />
-                  <span>新话题</span>
-                </button>
-              ) : null}
-
               {isLoading ? (
-                <button onClick={onStop} className="chat-composer__submit chat-composer__submit--stop" title="停止生成" type="button">
-                  <Square className="w-4 h-4" fill="currentColor" strokeWidth={1.8} />
+                <button onClick={onStop} className="chat-composer__submit" title="停止生成" type="button">
+                  <Square className="chat-composer__submit-icon" size={18} strokeWidth={2} fill="currentColor" />
                 </button>
               ) : (
                 <button
@@ -669,8 +706,7 @@ export default function ChatInput({
                   title={sendDisabledTitle}
                   type="button"
                 >
-                  <span>发送</span>
-                  <ArrowRight className="chat-composer__submit-icon" strokeWidth={2} />
+                  <Send className="chat-composer__submit-icon" size={18} strokeWidth={2} />
                 </button>
               )}
             </div>

@@ -17,6 +17,22 @@ pub(crate) struct WorkspaceSearchMatch {
     line_preview: String,
 }
 
+/// 单次读文件返回值——结构化告知前端/模型「共多少字符、本次返回多少字符、是否被截断」，
+/// 避免过去拼一段「 [truncated]」字符串让模型误以为读到全文。
+#[derive(Serialize)]
+pub(crate) struct ReadFileResult {
+    /// 本次读到的文本（已按 offset/limit 切片）。
+    content: String,
+    /// 源文件总字符数。
+    total_chars: usize,
+    /// 本次返回的字符数。
+    returned_chars: usize,
+    /// 本次起始字符偏移（0-based）。
+    offset_chars: usize,
+    /// 是否还有未读部分（true = 还有后续字符可读；false = 本次即读完）。
+    truncated: bool,
+}
+
 /// 解析文件操作的根目录：优先使用项目工作目录，否则回退到全局 workspace_root。
 fn resolve_root(project_path: &Option<String>) -> Result<PathBuf, String> {
     if let Some(raw) = project_path {
@@ -45,11 +61,13 @@ pub(crate) fn read_file(
     project_path: Option<String>,
     path: String,
     max_chars: Option<usize>,
-    allow_absolute: Option<bool>,
-) -> Result<String, String> {
-    // 提权读取：仅当用户在前端确认后传入 allow_absolute=true 才放开绝对路径，
-    // 否则一律走工作区围栏（normalize_relative_path 拒绝绝对路径/越界）。
-    let full_path = if allow_absolute.unwrap_or(false) && Path::new(&path).is_absolute() {
+    offset_chars: Option<usize>,
+    limit_chars: Option<usize>,
+) -> Result<ReadFileResult, String> {
+    // 读取不限制范围：绝对路径直接读（用户的本机文件，无需授权/确认）；
+    // 相对/越界路径落在工作区（无项目时全局 workspace_root）内解析。
+    // 写入才需要围栏与确认门，读取只是查看用户自己的文件。
+    let full_path = if Path::new(&path).is_absolute() {
         PathBuf::from(&path)
     } else {
         let root = resolve_root(&project_path)?;
@@ -66,14 +84,37 @@ pub(crate) fn read_file(
 
     let bytes = fs::read(&full_path).map_err(|err| err.to_string())?;
     let content = String::from_utf8_lossy(&bytes).into_owned();
-    let max_chars = max_chars.unwrap_or(8000).clamp(200, 20000);
+    let total_chars = content.chars().count();
 
-    if content.chars().count() > max_chars {
-        let preview: String = content.chars().take(max_chars).collect();
-        return Ok(format!("{preview}\n\n[truncated]"));
-    }
+    // 软上限：单次返回字符数上限；超过则本次窗口截断（truncated=true），
+    // 模型可调 max_chars 一次性读完，或用 offset_chars 续读。
+    // 下限 1（任意 max_chars 都按用户原值使用，保证「想读 30 字符就只读 30」也成立）；
+    // 上限 80000（防止模型一次拉爆 token）。
+    let max_chars = max_chars.unwrap_or(16000).clamp(1, 80000);
+    let offset_chars = offset_chars.unwrap_or(0).min(total_chars);
+    let remaining = total_chars.saturating_sub(offset_chars);
 
-    Ok(content)
+    // 本次能取的字符数 = min(limit_chars?, max_chars, 剩余字符数)
+    let window = max_chars.min(remaining);
+    let limit_chars = match limit_chars {
+        Some(value) => value.clamp(1, max_chars),
+        None => window,
+    };
+    let take = limit_chars.min(remaining);
+
+    let slice: String = content
+        .chars()
+        .skip(offset_chars)
+        .take(take)
+        .collect();
+
+    Ok(ReadFileResult {
+        truncated: offset_chars + take < total_chars,
+        offset_chars,
+        returned_chars: take,
+        total_chars,
+        content: slice,
+    })
 }
 
 pub(crate) fn search_files(
@@ -237,23 +278,113 @@ fn collect_workspace_matches(
 mod tests {
     use super::*;
 
-    #[test]
-    fn read_absolute_requires_allow_flag() {
+    /// 写一个 utf-8 测试文件，返回绝对路径；测试结束自动清理。
+    fn write_temp_file(name: &str, content: &str) -> String {
         let dir = std::env::temp_dir().join("omni-read-test");
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("secret.txt");
-        std::fs::write(&file, b"hello").unwrap();
-        let abs = file.to_string_lossy().into_owned();
+        let file = dir.join(name);
+        std::fs::write(&file, content).unwrap();
+        file.to_string_lossy().into_owned()
+    }
 
-        // 未授权：绝对路径被工作区围栏拒绝
-        let err = read_file(None, abs.clone(), None, None).unwrap_err();
-        assert!(
-            err.contains("Only relative workspace paths are allowed"),
-            "actual: {err}"
-        );
+    #[test]
+    fn read_absolute_is_allowed_without_confirmation() {
+        let abs = write_temp_file("secret.txt", "hello");
 
-        // 授权（前端确认后 allow_absolute=true）：可读到内容
-        let content = read_file(None, abs.clone(), None, Some(true)).unwrap();
-        assert_eq!(content, "hello");
+        // 读取不限制范围：绝对路径直接读，无需 allow_absolute 授权标志。
+        let result = read_file(None, abs, None, None, None).unwrap();
+        assert_eq!(result.content, "hello");
+        assert_eq!(result.total_chars, 5);
+        assert_eq!(result.returned_chars, 5);
+        assert!(!result.truncated);
+        assert_eq!(result.offset_chars, 0);
+    }
+
+    #[test]
+    fn read_truncated_when_above_max_chars() {
+        // 100 字符数字串，超过默认 16000 不会截断；显式把 max_chars 设小一点触发截断。
+        let body = "a".repeat(100);
+        let abs = write_temp_file("truncate.txt", &body);
+
+        let result = read_file(None, abs, Some(40), None, None).unwrap();
+        assert_eq!(result.total_chars, 100);
+        assert_eq!(result.returned_chars, 40);
+        assert!(result.truncated);
+        assert_eq!(result.content.chars().count(), 40);
+        assert!(result.content.chars().all(|c| c == 'a'));
+    }
+
+    #[test]
+    fn read_offset_chars_skips_leading_content() {
+        let body: String = (1..=50).map(|n| format!("{n:02}")).collect::<Vec<_>>().join("-");
+        // 总字符数 50*3 - 1 = 149；offset=60 应跳过前 60 字符
+        let abs = write_temp_file("offset.txt", &body);
+
+        let result = read_file(None, abs, Some(16000), Some(60), None).unwrap();
+        assert_eq!(result.total_chars, 149);
+        assert_eq!(result.offset_chars, 60);
+        // 跳过 60 字符后还剩 89；limit 默认 = min(max_chars, remaining) = 89
+        assert_eq!(result.returned_chars, 89);
+        assert!(!result.truncated);
+        // 内容正确：取原始 body 的 [60..] 子串
+        let expected: String = body.chars().skip(60).collect();
+        assert_eq!(result.content, expected);
+    }
+
+    #[test]
+    fn read_limit_chars_caps_returned_window() {
+        let body = (0..200).map(|n| n as u8 as char).collect::<String>();
+        let abs = write_temp_file("limit.txt", &body);
+
+        // 让 max_chars 足够大（80000），但显式把 limit_chars 压小到 50
+        let result = read_file(None, abs, Some(80000), None, Some(50)).unwrap();
+        assert_eq!(result.total_chars, 200);
+        assert_eq!(result.returned_chars, 50);
+        assert!(result.truncated);
+        assert_eq!(result.offset_chars, 0);
+
+        let expected: String = body.chars().take(50).collect();
+        assert_eq!(result.content, expected);
+    }
+
+    #[test]
+    fn read_unicode_chars_not_split_mid_codepoint() {
+        // 100 个汉字，每个 1 个 char，但 3 字节。验证按 char 切不会切坏码点。
+        let body: String = "春".repeat(100);
+        let abs = write_temp_file("unicode.txt", &body);
+
+        // max_chars=33 应该精确取前 33 个汉字，不会切坏中间字符
+        let result = read_file(None, abs, Some(33), None, None).unwrap();
+        assert_eq!(result.total_chars, 100);
+        assert_eq!(result.returned_chars, 33);
+        assert!(result.truncated);
+        assert_eq!(result.content.chars().count(), 33);
+        assert!(result.content.chars().all(|c| c == '春'));
+    }
+
+    #[test]
+    fn read_offset_beyond_total_is_clamped() {
+        let body = "hi";
+        let abs = write_temp_file("clamp.txt", body);
+
+        // offset 远超 total，应被 clamp 到 total_chars
+        let result = read_file(None, abs, Some(16000), Some(1000), None).unwrap();
+        assert_eq!(result.total_chars, 2);
+        assert_eq!(result.offset_chars, 2);
+        assert_eq!(result.returned_chars, 0);
+        assert!(!result.truncated); // 已经读完（含 0 字符也视为读完）
+        assert!(result.content.is_empty());
+    }
+
+    #[test]
+    fn read_unicode_filename_and_content() {
+        let body = "# 中文标题\n这是一段中文内容。";
+        let abs = write_temp_file("Spring生态调研报告.md", body);
+
+        let result = read_file(None, abs, None, None, None).unwrap();
+        assert_eq!(result.total_chars, body.chars().count());
+        assert_eq!(result.returned_chars, body.chars().count());
+        assert!(!result.truncated);
+        assert_eq!(result.content, body);
     }
 }

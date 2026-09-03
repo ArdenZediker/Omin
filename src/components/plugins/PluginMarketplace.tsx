@@ -108,6 +108,17 @@ const ICON_MAP: Record<string, typeof Puzzle> = {
   template: LayoutTemplate,
 };
 
+/** 内置工具在 Marketplace 中的功能分组展示顺序。 */
+const TOOL_GROUP_ORDER = [
+  "文件",
+  "会话",
+  "档案",
+  "Git",
+  "导出",
+  "联网",
+  "插件安装",
+];
+
 /** 渲染一个 PluginManifest 的图标：
  * - `manifest.icon` 是 URL（http/https/data/blob/file 或 web 根路径）→ `<img>`
  * - 单个非 ASCII 字符（emoji） → 原样文本
@@ -235,14 +246,16 @@ function PluginDetailDrawer({
                 {manifest.author ?? "Omni"}
               </span>
             </div>
-            <div className="skillhub-detail__meta-item">
-              <span className="skillhub-detail__meta-label">
-                <Package size={12} /> 版本
-              </span>
-              <span className="skillhub-detail__meta-value">
-                v{manifest.version}
-              </span>
-            </div>
+            {!isBuiltin && (
+              <div className="skillhub-detail__meta-item">
+                <span className="skillhub-detail__meta-label">
+                  <Package size={12} /> 版本
+                </span>
+                <span className="skillhub-detail__meta-value">
+                  v{manifest.version}
+                </span>
+              </div>
+            )}
             <div className="skillhub-detail__meta-item">
               <span className="skillhub-detail__meta-label">分类</span>
               <span className="skillhub-detail__meta-value">
@@ -462,9 +475,21 @@ export default function PluginMarketplace({
 
   const allPlugins = useMemo(() => {
     // 本地列表 = 已安装/内置；不再混入 MARKETPLACE_PLUGINS 静态示例（2026-09-01 移除）。
-    return pluginRegistry.list({ kind, query });
+    const list = pluginRegistry.list({ kind, query });
+    // 内置工具是 Omni 自带能力，无需在扩展中心作为插件展示/管理，故从「工具」tab 隐藏。
+    if (kind === "tool") return list.filter((m) => !pluginRegistry.isBuiltin(m.id));
+    return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, query, refreshKey]);
+
+  // 「工具」tab 是否展示：仅当存在非内置（用户安装/导入）工具时才显示该分类。
+  const hasToolTab = useMemo(
+    () =>
+      pluginRegistry
+        .list({ kind: "tool" })
+        .some((m) => !pluginRegistry.isBuiltin(m.id)),
+    [refreshKey],
+  );
 
   // SkillHub / 专家团浏览界面只在「技能」一级分类下出现；远程连接器只在「连接器」下出现。
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
@@ -505,6 +530,27 @@ export default function PluginMarketplace({
     if (category === "全部") return allPlugins;
     return allPlugins.filter((m) => m.category === category);
   }, [allPlugins, category, showMySkills]);
+
+  /** 工具按功能分组（用于「工具」tab 下按会话/文件/Git/导出等分块展示）。 */
+  const groupedTools = useMemo(() => {
+    if (kind !== "tool") return [];
+    const map = new Map<string, PluginManifest[]>();
+    for (const m of filteredPlugins) {
+      const group = m.group || "其他";
+      if (!map.has(group)) map.set(group, []);
+      map.get(group)!.push(m);
+    }
+    const entries = Array.from(map.entries());
+    entries.sort((a, b) => {
+      const idxA = TOOL_GROUP_ORDER.indexOf(a[0]);
+      const idxB = TOOL_GROUP_ORDER.indexOf(b[0]);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a[0].localeCompare(b[0], "zh-CN");
+    });
+    return entries;
+  }, [filteredPlugins, kind]);
 
   // 已安装的专家团（id → skillset slug）：「我的技能」里渲染为可展开套件卡片。
   const skillsetSlugs = useMemo(() => collectSkillsetSlugs(), [refreshKey]);
@@ -872,7 +918,495 @@ export default function PluginMarketplace({
     [refreshConnected],
   );
 
-  const renderMarketplace = () => (
+  const renderMarketplace = () => {
+    /** 单张插件卡片渲染，被平铺列表与工具分组列表共用。 */
+    const renderPluginCard = (manifest: PluginManifest) => {
+      const installed = isInstalled(manifest.id);
+      const mcpConnected = connectedList.find(
+        (s) => s.connectorId === manifest.id,
+      );
+      const isBuiltin = pluginRegistry.isBuiltin(manifest.id);
+      const inBatch = batchMode && showMySkills && !isBuiltin;
+      // 已安装的专家团在「我的技能」里渲染为可展开的套件卡片
+      // （批量模式与技能选择器仍用普通卡片，避免干扰选择逻辑）。
+      const skillsetSlug =
+        showMySkills && !onPick && !inBatch
+          ? (skillsetSlugs.get(manifest.id) ?? null)
+          : null;
+      if (skillsetSlug) {
+        return (
+          <InstalledSkillsetCard
+            key={manifest.id}
+            manifest={manifest}
+            slug={skillsetSlug}
+            enabled={pluginRegistry.isEnabled(manifest.id)}
+            isBuiltin={isBuiltin}
+            onToggleEnabled={(next) => handleToggleEnabled(manifest, next)}
+            onChanged={() => setRefreshKey((current) => current + 1)}
+          />
+        );
+      }
+      const isSelected = inBatch && selectedIds.has(manifest.id);
+      const enabled = pluginRegistry.isEnabled(manifest.id);
+      const cardClass = inBatch
+        ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()
+        : onPick
+          ? `plugin-card plugin-card--pickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()
+          : `plugin-card plugin-card--clickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim();
+      const cardRole: "button" | "checkbox" = inBatch ? "checkbox" : "button";
+      return (
+        <div
+          key={manifest.id}
+          className={cardClass}
+          role={cardRole}
+          aria-checked={inBatch ? isSelected : undefined}
+          tabIndex={0}
+          onClick={
+            inBatch
+              ? () => toggleSelected(manifest.id)
+              : onPick
+                ? () => onPick(manifest)
+                : () => setDetailManifest(manifest)
+          }
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              if (inBatch) toggleSelected(manifest.id);
+              else if (onPick) onPick(manifest);
+              else setDetailManifest(manifest);
+            }
+          }}
+          aria-label={
+            inBatch
+              ? `${isSelected ? "取消选中" : "选中"} ${manifest.name}`
+              : onPick
+                ? `选择 ${manifest.name}`
+                : `${manifest.name} 详情`
+          }
+        >
+          <div className="plugin-card__header">
+            <div className="plugin-card__icon">
+              {inBatch ? (
+                <span
+                  className={`plugin-card__batch-checkbox ${isSelected ? "plugin-card__batch-checkbox--checked" : ""}`}
+                  aria-hidden="true"
+                >
+                  {isSelected ? (
+                    <Check size={14} strokeWidth={2.2} />
+                  ) : null}
+                </span>
+              ) : (
+                renderPluginIcon(manifest)
+              )}
+            </div>
+            <div className="plugin-card__main">
+              <div className="plugin-card__title-row">
+                <h3 title={manifest.name}>{manifest.name}</h3>
+                {showMySkills && !onPick && (
+                  <div
+                    className="plugin-card__enable"
+                    onClick={(e) => e.stopPropagation()}
+                    title={
+                      isBuiltin
+                        ? "内置项始终启用，不可关闭"
+                        : enabled
+                          ? "点击关闭"
+                          : "点击开启"
+                    }
+                  >
+                    <OmniSwitch
+                      checked={enabled}
+                      disabled={isBuiltin}
+                      onChange={(next) =>
+                        void handleToggleEnabled(manifest, next)
+                      }
+                      ariaLabel={
+                        isBuiltin
+                          ? `${manifest.name}（内置项不可关闭）`
+                          : `${enabled ? "关闭" : "开启"} ${manifest.name}`
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+              <p
+                className="plugin-card__description"
+                title={manifest.description}
+              >
+                {manifest.description}
+              </p>
+              {manifest.tags && manifest.tags.length > 0 && (
+                <div className="plugin-card__tags">
+                  {manifest.tags.map((tag) => (
+                    <span key={tag} className="plugin-card__tag">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="plugin-card__meta">
+                <span>{manifest.author ?? "Omni"}</span>
+                {manifest.category && (
+                  <span>· {manifest.category}</span>
+                )}
+                {!isBuiltin && <span>· v{manifest.version}</span>}
+              </div>
+            </div>
+          </div>
+          {/* 卡片底部 actions 区：只在「选择模式」（onPick，CreateProjectDialog
+              弹窗中选插件）和「连接器」（套件管理：连接 / 断开 / 配置）两种
+              场景保留。其余场景（我的技能 / 我的专家 / 批量管理 / 通用浏览）
+              都不再在卡片底部展示按钮行——卡片可整体点击打开详情抽屉，所有
+              安装 / 卸载 / 已安装 / 复制安装 等单卡操作统一入口。避免在 4 列
+              grid 下视觉拥挤 + 防止误触「删除」按钮。 */}
+          {(onPick || manifest.kind === "connector") && (
+          <div
+            className="plugin-card__actions"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {inBatch ? (
+              isBuiltin ? (
+                <span className="plugin-card__connected">
+                  <span className="plugin-card__connected-dot" />
+                  <span>内置</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className={
+                    isSelected
+                      ? "plugin-card__button plugin-card__button--danger"
+                      : "plugin-card__button plugin-card__button--secondary"
+                  }
+                  onClick={() => toggleSelected(manifest.id)}
+                  aria-label={
+                    isSelected
+                      ? `取消选中 ${manifest.name}`
+                      : `选中 ${manifest.name}`
+                  }
+                >
+                  {isSelected ? (
+                    <Check size={14} strokeWidth={2} />
+                  ) : null}
+                  <span>{isSelected ? "已选中" : "选择"}</span>
+                </button>
+              )
+            ) : onPick ? (
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--primary"
+                onClick={() => onPick(manifest)}
+              >
+                <Check size={14} strokeWidth={2} />
+                <span>选择</span>
+              </button>
+            ) : manifest.kind === "connector" ? (
+              <>
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--secondary"
+                  onClick={() => openConfig(manifest)}
+                >
+                  <Settings size={14} strokeWidth={1.8} />
+                  <span>配置</span>
+                </button>
+                {!installed ? (
+                  <button
+                    type="button"
+                    className="plugin-card__button plugin-card__button--primary"
+                    onClick={() => handleInstall(manifest)}
+                  >
+                    <Download size={14} strokeWidth={1.8} />
+                    <span>安装</span>
+                  </button>
+                ) : isMcpConnector(manifest) ? (
+                  mcpConnected ? (
+                    <>
+                      <span
+                        className="plugin-card__connected"
+                        title={`已连接 · 暴露 ${mcpConnected.toolCount} 个工具`}
+                      >
+                        <span className="plugin-card__connected-dot" />
+                        <span>{mcpConnected.toolCount} 工具</span>
+                      </span>
+                      <button
+                        type="button"
+                        className="plugin-card__button plugin-card__button--secondary"
+                        onClick={() => void handleDisconnect(manifest)}
+                      >
+                        <Unplug size={14} strokeWidth={1.8} />
+                        <span>断开</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className={
+                        isConnectorTrusted(manifest)
+                          ? "plugin-card__button plugin-card__button--primary"
+                          : "plugin-card__button plugin-card__button--trust"
+                      }
+                      onClick={() => void handleConnect(manifest)}
+                      title={
+                        isConnectorTrusted(manifest)
+                          ? "启动该 MCP 服务器，并将其工具注入 AI 对话"
+                          : "该连接器尚未获得信任，点击后需确认信任才会启动"
+                      }
+                    >
+                      {isConnectorTrusted(manifest) ? (
+                        <PlugZap size={14} strokeWidth={1.8} />
+                      ) : (
+                        <ShieldAlert size={14} strokeWidth={1.8} />
+                      )}
+                      <span>
+                        {isConnectorTrusted(manifest)
+                          ? "连接"
+                          : "信任并连接"}
+                      </span>
+                    </button>
+                  )
+                ) : null}
+              </>
+            ) : installed && !pluginRegistry.isBuiltin(manifest.id) ? (
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--danger"
+                onClick={() => handleUninstall(manifest)}
+                title="卸载并删除此插件"
+              >
+                <Trash2 size={14} strokeWidth={1.8} />
+                <span>删除</span>
+              </button>
+            ) : installed ? (
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--installed"
+                disabled
+              >
+                <Star size={14} strokeWidth={1.8} />
+                <span>已安装</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--primary"
+                onClick={() => handleInstall(manifest)}
+              >
+                <Download size={14} strokeWidth={1.8} />
+                <span>安装</span>
+              </button>
+            )}
+            {!inBatch && (
+              <button
+                type="button"
+                className="plugin-card__button plugin-card__button--secondary"
+                onClick={() => handleCopyInstallPrompt(manifest)}
+                title="复制给 AI 安装"
+              >
+                {copiedId === manifest.id ? (
+                  <>
+                    <Check size={14} strokeWidth={2} />
+                    <span>已复制</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={14} strokeWidth={1.8} />
+                    <span>复制安装</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+          )}
+          {trustPromptId === manifest.id &&
+            (() => {
+              const info = getMcpTrustInfo(manifest);
+              return (
+                <div
+                  className="plugin-card__trust-prompt"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="plugin-card__trust-head">
+                    <ShieldAlert size={15} strokeWidth={1.9} />
+                    <span>信任「{manifest.name}」？</span>
+                  </div>
+                  <p className="plugin-card__trust-warn">
+                    该连接器会作为本机子进程启动，它暴露的工具可被 AI
+                    直接调用，<strong>不受 Omni 内置工具权限（只读 /
+                    写入白名单）约束</strong>。请确认你信任它的来源与
+                    启动命令。
+                  </p>
+                  <div className="plugin-card__trust-cmd">
+                    <Terminal size={12} strokeWidth={1.8} />
+                    <code>
+                      {info.command}
+                      {info.args.length > 0
+                        ? ` ${info.args.join(" ")}`
+                        : ""}
+                    </code>
+                  </div>
+                  {info.envKeys.length > 0 && (
+                    <div className="plugin-card__trust-env">
+                      <span>环境变量</span>
+                      {info.envKeys.map((key) => (
+                        <code key={key}>{key}=••••</code>
+                      ))}
+                    </div>
+                  )}
+                  <div className="plugin-card__trust-actions">
+                    <button
+                      type="button"
+                      className="plugin-card__button plugin-card__button--secondary"
+                      onClick={() => setTrustPromptId(null)}
+                    >
+                      <span>取消</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="plugin-card__button plugin-card__button--primary"
+                      onClick={() => void confirmTrust(manifest)}
+                    >
+                      <ShieldCheck size={14} strokeWidth={1.8} />
+                      <span>信任并连接</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          {mcpError?.connectorId === manifest.id && (
+            <div
+            className="plugin-card__mcp-error"
+            onClick={(e) => e.stopPropagation()}
+          >
+              <AlertTriangle size={13} strokeWidth={1.8} />
+              <span>{mcpError.message}</span>
+            </div>
+          )}
+          {configuringId === manifest.id &&
+            ((manifest.configFields?.length ?? 0) > 0 ||
+              isMcpConnector(manifest)) && (
+              <div
+              className="plugin-card__config"
+              onClick={(e) => e.stopPropagation()}
+            >
+                {manifest.configFields?.map((field) => (
+                  <label
+                    key={field.id}
+                    className="plugin-card__config-field"
+                  >
+                    <span>
+                      {field.label}
+                      {field.required ? " *" : ""}
+                    </span>
+                    {field.type === "boolean" ? (
+                      <input
+                        type="checkbox"
+                        checked={configDraft[field.id] === "true"}
+                        onChange={(event) =>
+                          updateDraft(
+                            field.id,
+                            event.target.checked ? "true" : "false",
+                          )
+                        }
+                      />
+                    ) : field.type === "select" ? (
+                      <select
+                        value={configDraft[field.id] ?? ""}
+                        onChange={(event) =>
+                          updateDraft(field.id, event.target.value)
+                        }
+                      >
+                        <option value="">
+                          {field.placeholder ?? "请选择"}
+                        </option>
+                        {field.options?.map((option) => (
+                          <option
+                            key={option.value}
+                            value={option.value}
+                          >
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={
+                          field.type === "password"
+                            ? "password"
+                            : field.type === "number"
+                              ? "number"
+                              : "text"
+                        }
+                        value={configDraft[field.id] ?? ""}
+                        placeholder={field.placeholder}
+                        onChange={(event) =>
+                          updateDraft(field.id, event.target.value)
+                        }
+                      />
+                    )}
+                  </label>
+                ))}
+                {isMcpConnector(manifest) && (
+                  <>
+                    <div className="plugin-card__config-section">
+                      MCP 启动配置
+                    </div>
+                    <label className="plugin-card__config-field">
+                      <span>启动命令 *</span>
+                      <input
+                        value={mcpDraft.command}
+                        onChange={(event) =>
+                          updateMcpDraft("command", event.target.value)
+                        }
+                        placeholder="如 npx / node / python"
+                      />
+                    </label>
+                    <label className="plugin-card__config-field">
+                      <span>参数（支持引号包裹的空格）</span>
+                      <input
+                        value={mcpDraft.args}
+                        onChange={(event) =>
+                          updateMcpDraft("args", event.target.value)
+                        }
+                        placeholder='如 -y @modelcontextprotocol/server-github'
+                      />
+                    </label>
+                    <label className="plugin-card__config-field">
+                      <span>环境变量（每行 KEY=VALUE）</span>
+                      <textarea
+                        value={mcpDraft.env}
+                        onChange={(event) =>
+                          updateMcpDraft("env", event.target.value)
+                        }
+                        rows={3}
+                        placeholder="GITHUB_TOKEN=ghp_xxxxxxxx&#10;GITHUB_REPO_OWNER=..."
+                      />
+                    </label>
+                  </>
+                )}
+                <div className="plugin-card__config-actions">
+                  <button
+                    type="button"
+                    className="plugin-card__button plugin-card__button--secondary"
+                    onClick={() => setConfiguringId(null)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    className="plugin-card__button plugin-card__button--primary"
+                    onClick={() => saveConfig(manifest)}
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+            )}
+        </div>
+      );
+    };
+
+    return (
     <div
       className={`plugin-marketplace ${embedded ? "plugin-marketplace--embedded" : ""} ${mainView ? "plugin-marketplace--main-view" : ""}`}
       role={embedded || mainView ? undefined : "dialog"}
@@ -1139,7 +1673,9 @@ export default function PluginMarketplace({
                 </div>
 
                 <div className="plugin-marketplace__kind-tabs">
-                  {KIND_TABS.map((tab) => (
+                  {KIND_TABS.filter(
+                    (tab) => tab.kind !== "tool" || hasToolTab,
+                  ).map((tab) => (
                     <button
                       key={tab.kind}
                       type="button"
@@ -1364,6 +1900,28 @@ export default function PluginMarketplace({
             <p>没有找到匹配的插件</p>
             <span>试试其他关键词，或从本地/远程导入 SKILL.md</span>
           </div>
+        ) : kind === "tool" && groupedTools.length > 0 ? (
+          <div className="plugin-marketplace__groups">
+            {groupedTools.map(([group, items]) => (
+              <section key={group} className="plugin-marketplace__group">
+                <h3 className="plugin-marketplace__group-title">
+                  {group}
+                  <span className="plugin-marketplace__group-count">
+                    {items.length}
+                  </span>
+                </h3>
+                <div
+                  className={
+                    mainView && localViewMode === "list"
+                      ? "plugin-marketplace__grid plugin-marketplace__grid--list"
+                      : "plugin-marketplace__grid"
+                  }
+                >
+                  {items.map((manifest) => renderPluginCard(manifest))}
+                </div>
+              </section>
+            ))}
+          </div>
         ) : (
           <div
             className={
@@ -1372,493 +1930,7 @@ export default function PluginMarketplace({
                 : "plugin-marketplace__grid"
             }
           >
-            {filteredPlugins.map((manifest) => {
-              const installed = isInstalled(manifest.id);
-              const mcpConnected = connectedList.find(
-                (s) => s.connectorId === manifest.id,
-              );
-              const isBuiltin = pluginRegistry.isBuiltin(manifest.id);
-              const inBatch = batchMode && showMySkills && !isBuiltin;
-              // 已安装的专家团在「我的技能」里渲染为可展开的套件卡片
-              // （批量模式与技能选择器仍用普通卡片，避免干扰选择逻辑）。
-              const skillsetSlug =
-                showMySkills && !onPick && !inBatch
-                  ? (skillsetSlugs.get(manifest.id) ?? null)
-                  : null;
-              if (skillsetSlug) {
-                return (
-                  <InstalledSkillsetCard
-                    key={manifest.id}
-                    manifest={manifest}
-                    slug={skillsetSlug}
-                    enabled={pluginRegistry.isEnabled(manifest.id)}
-                    isBuiltin={isBuiltin}
-                    onToggleEnabled={(next) => handleToggleEnabled(manifest, next)}
-                    onChanged={() => setRefreshKey((current) => current + 1)}
-                  />
-                );
-              }
-              const isSelected = inBatch && selectedIds.has(manifest.id);
-              const enabled = pluginRegistry.isEnabled(manifest.id);
-              const cardClass = inBatch
-                ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()
-                : onPick
-                  ? `plugin-card plugin-card--pickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()
-                  : `plugin-card plugin-card--clickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim();
-              const cardRole: "button" | "checkbox" = inBatch
-                ? "checkbox"
-                : "button";
-              return (
-                <div
-                  key={manifest.id}
-                  className={cardClass}
-                  role={cardRole}
-                  aria-checked={inBatch ? isSelected : undefined}
-                  tabIndex={0}
-                  onClick={
-                    inBatch
-                      ? () => toggleSelected(manifest.id)
-                      : onPick
-                        ? () => onPick(manifest)
-                        : () => setDetailManifest(manifest)
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      if (inBatch) toggleSelected(manifest.id);
-                      else if (onPick) onPick(manifest);
-                      else setDetailManifest(manifest);
-                    }
-                  }}
-                  aria-label={
-                    inBatch
-                      ? `${isSelected ? "取消选中" : "选中"} ${manifest.name}`
-                      : onPick
-                        ? `选择 ${manifest.name}`
-                        : `${manifest.name} 详情`
-                  }
-                >
-                  <div className="plugin-card__header">
-                    <div className="plugin-card__icon">
-                      {inBatch ? (
-                        <span
-                          className={`plugin-card__batch-checkbox ${isSelected ? "plugin-card__batch-checkbox--checked" : ""}`}
-                          aria-hidden="true"
-                        >
-                          {isSelected ? (
-                            <Check size={14} strokeWidth={2.2} />
-                          ) : null}
-                        </span>
-                      ) : (
-                        renderPluginIcon(manifest)
-                      )}
-                    </div>
-                    <div className="plugin-card__main">
-                      <div className="plugin-card__title-row">
-                        <h3 title={manifest.name}>{manifest.name}</h3>
-                        {showMySkills && !onPick && (
-                          <div
-                            className="plugin-card__enable"
-                            onClick={(e) => e.stopPropagation()}
-                            title={
-                              isBuiltin
-                                ? "内置项始终启用，不可关闭"
-                                : enabled
-                                  ? "点击关闭"
-                                  : "点击开启"
-                            }
-                          >
-                            <OmniSwitch
-                              checked={enabled}
-                              disabled={isBuiltin}
-                              onChange={(next) =>
-                                void handleToggleEnabled(manifest, next)
-                              }
-                              ariaLabel={
-                                isBuiltin
-                                  ? `${manifest.name}（内置项不可关闭）`
-                                  : `${enabled ? "关闭" : "开启"} ${manifest.name}`
-                              }
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <p
-                        className="plugin-card__description"
-                        title={manifest.description}
-                      >
-                        {manifest.description}
-                      </p>
-                      {manifest.tags && manifest.tags.length > 0 && (
-                        <div className="plugin-card__tags">
-                          {manifest.tags.map((tag) => (
-                            <span key={tag} className="plugin-card__tag">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      <div className="plugin-card__meta">
-                        <span>{manifest.author ?? "Omni"}</span>
-                        {manifest.category && (
-                          <span>· {manifest.category}</span>
-                        )}
-                        <span>· v{manifest.version}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {/* 卡片底部 actions 区：只在「选择模式」（onPick，CreateProjectDialog
-                      弹窗中选插件）和「连接器」（套件管理：连接 / 断开 / 配置）两种
-                      场景保留。其余场景（我的技能 / 我的专家 / 批量管理 / 通用浏览）
-                      都不再在卡片底部展示按钮行——卡片可整体点击打开详情抽屉，所有
-                      安装 / 卸载 / 已安装 / 复制安装 等单卡操作统一入口。避免在 4 列
-                      grid 下视觉拥挤 + 防止误触「删除」按钮。 */}
-                  {(onPick || manifest.kind === "connector") && (
-                  <div
-                    className="plugin-card__actions"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {inBatch ? (
-                      isBuiltin ? (
-                        <span className="plugin-card__connected">
-                          <span className="plugin-card__connected-dot" />
-                          <span>内置</span>
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          className={
-                            isSelected
-                              ? "plugin-card__button plugin-card__button--danger"
-                              : "plugin-card__button plugin-card__button--secondary"
-                          }
-                          onClick={() => toggleSelected(manifest.id)}
-                          aria-label={
-                            isSelected
-                              ? `取消选中 ${manifest.name}`
-                              : `选中 ${manifest.name}`
-                          }
-                        >
-                          {isSelected ? (
-                            <Check size={14} strokeWidth={2} />
-                          ) : null}
-                          <span>{isSelected ? "已选中" : "选择"}</span>
-                        </button>
-                      )
-                    ) : onPick ? (
-                      <button
-                        type="button"
-                        className="plugin-card__button plugin-card__button--primary"
-                        onClick={() => onPick(manifest)}
-                      >
-                        <Check size={14} strokeWidth={2} />
-                        <span>选择</span>
-                      </button>
-                    ) : manifest.kind === "connector" ? (
-                      <>
-                        <button
-                          type="button"
-                          className="plugin-card__button plugin-card__button--secondary"
-                          onClick={() => openConfig(manifest)}
-                        >
-                          <Settings size={14} strokeWidth={1.8} />
-                          <span>配置</span>
-                        </button>
-                        {!installed ? (
-                          <button
-                            type="button"
-                            className="plugin-card__button plugin-card__button--primary"
-                            onClick={() => handleInstall(manifest)}
-                          >
-                            <Download size={14} strokeWidth={1.8} />
-                            <span>安装</span>
-                          </button>
-                        ) : isMcpConnector(manifest) ? (
-                          mcpConnected ? (
-                            <>
-                              <span
-                                className="plugin-card__connected"
-                                title={`已连接 · 暴露 ${mcpConnected.toolCount} 个工具`}
-                              >
-                                <span className="plugin-card__connected-dot" />
-                                <span>{mcpConnected.toolCount} 工具</span>
-                              </span>
-                              <button
-                                type="button"
-                                className="plugin-card__button plugin-card__button--secondary"
-                                onClick={() => void handleDisconnect(manifest)}
-                              >
-                                <Unplug size={14} strokeWidth={1.8} />
-                                <span>断开</span>
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              className={
-                                isConnectorTrusted(manifest)
-                                  ? "plugin-card__button plugin-card__button--primary"
-                                  : "plugin-card__button plugin-card__button--trust"
-                              }
-                              onClick={() => void handleConnect(manifest)}
-                              title={
-                                isConnectorTrusted(manifest)
-                                  ? "启动该 MCP 服务器，并将其工具注入 AI 对话"
-                                  : "该连接器尚未获得信任，点击后需确认信任才会启动"
-                              }
-                            >
-                              {isConnectorTrusted(manifest) ? (
-                                <PlugZap size={14} strokeWidth={1.8} />
-                              ) : (
-                                <ShieldAlert size={14} strokeWidth={1.8} />
-                              )}
-                              <span>
-                                {isConnectorTrusted(manifest)
-                                  ? "连接"
-                                  : "信任并连接"}
-                              </span>
-                            </button>
-                          )
-                        ) : null}
-                      </>
-                    ) : installed && !pluginRegistry.isBuiltin(manifest.id) ? (
-                      <button
-                        type="button"
-                        className="plugin-card__button plugin-card__button--danger"
-                        onClick={() => handleUninstall(manifest)}
-                        title="卸载并删除此插件"
-                      >
-                        <Trash2 size={14} strokeWidth={1.8} />
-                        <span>删除</span>
-                      </button>
-) : installed ? (
-                      <button
-                        type="button"
-                        className="plugin-card__button plugin-card__button--installed"
-                        disabled
-                      >
-                        <Star size={14} strokeWidth={1.8} />
-                        <span>已安装</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="plugin-card__button plugin-card__button--primary"
-                        onClick={() => handleInstall(manifest)}
-                      >
-                        <Download size={14} strokeWidth={1.8} />
-                        <span>安装</span>
-                      </button>
-                    )}
-                    {!inBatch && (
-                      <button
-                        type="button"
-                        className="plugin-card__button plugin-card__button--secondary"
-                        onClick={() => handleCopyInstallPrompt(manifest)}
-                        title="复制给 AI 安装"
-                      >
-                        {copiedId === manifest.id ? (
-                          <>
-                            <Check size={14} strokeWidth={2} />
-                            <span>已复制</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={14} strokeWidth={1.8} />
-                            <span>复制安装</span>
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                  )}
-                  {trustPromptId === manifest.id &&
-                    (() => {
-                      const info = getMcpTrustInfo(manifest);
-                      return (
-                        <div
-                          className="plugin-card__trust-prompt"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="plugin-card__trust-head">
-                            <ShieldAlert size={15} strokeWidth={1.9} />
-                            <span>信任「{manifest.name}」？</span>
-                          </div>
-                          <p className="plugin-card__trust-warn">
-                            该连接器会作为本机子进程启动，它暴露的工具可被 AI
-                            直接调用，<strong>不受 Omni 内置工具权限（只读 /
-                            写入白名单）约束</strong>。请确认你信任它的来源与
-                            启动命令。
-                          </p>
-                          <div className="plugin-card__trust-cmd">
-                            <Terminal size={12} strokeWidth={1.8} />
-                            <code>
-                              {info.command}
-                              {info.args.length > 0
-                                ? ` ${info.args.join(" ")}`
-                                : ""}
-                            </code>
-                          </div>
-                          {info.envKeys.length > 0 && (
-                            <div className="plugin-card__trust-env">
-                              <span>环境变量</span>
-                              {info.envKeys.map((key) => (
-                                <code key={key}>{key}=••••</code>
-                              ))}
-                            </div>
-                          )}
-                          <div className="plugin-card__trust-actions">
-                            <button
-                              type="button"
-                              className="plugin-card__button plugin-card__button--secondary"
-                              onClick={() => setTrustPromptId(null)}
-                            >
-                              <span>取消</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="plugin-card__button plugin-card__button--primary"
-                              onClick={() => void confirmTrust(manifest)}
-                            >
-                              <ShieldCheck size={14} strokeWidth={1.8} />
-                              <span>信任并连接</span>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  {mcpError?.connectorId === manifest.id && (
-                    <div
-                    className="plugin-card__mcp-error"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                      <AlertTriangle size={13} strokeWidth={1.8} />
-                      <span>{mcpError.message}</span>
-                    </div>
-                  )}
-                  {configuringId === manifest.id &&
-                    ((manifest.configFields?.length ?? 0) > 0 ||
-                      isMcpConnector(manifest)) && (
-                      <div
-                      className="plugin-card__config"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                        {manifest.configFields?.map((field) => (
-                          <label
-                            key={field.id}
-                            className="plugin-card__config-field"
-                          >
-                            <span>
-                              {field.label}
-                              {field.required ? " *" : ""}
-                            </span>
-                            {field.type === "boolean" ? (
-                              <input
-                                type="checkbox"
-                                checked={configDraft[field.id] === "true"}
-                                onChange={(event) =>
-                                  updateDraft(
-                                    field.id,
-                                    event.target.checked ? "true" : "false",
-                                  )
-                                }
-                              />
-                            ) : field.type === "select" ? (
-                              <select
-                                value={configDraft[field.id] ?? ""}
-                                onChange={(event) =>
-                                  updateDraft(field.id, event.target.value)
-                                }
-                              >
-                                <option value="">
-                                  {field.placeholder ?? "请选择"}
-                                </option>
-                                {field.options?.map((option) => (
-                                  <option
-                                    key={option.value}
-                                    value={option.value}
-                                  >
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <input
-                                type={
-                                  field.type === "password"
-                                    ? "password"
-                                    : field.type === "number"
-                                      ? "number"
-                                      : "text"
-                                }
-                                value={configDraft[field.id] ?? ""}
-                                placeholder={field.placeholder}
-                                onChange={(event) =>
-                                  updateDraft(field.id, event.target.value)
-                                }
-                              />
-                            )}
-                          </label>
-                        ))}
-                        {isMcpConnector(manifest) && (
-                          <>
-                            <div className="plugin-card__config-section">
-                              MCP 启动配置
-                            </div>
-                            <label className="plugin-card__config-field">
-                              <span>启动命令 *</span>
-                              <input
-                                value={mcpDraft.command}
-                                onChange={(event) =>
-                                  updateMcpDraft("command", event.target.value)
-                                }
-                                placeholder="如 npx / node / python"
-                              />
-                            </label>
-                            <label className="plugin-card__config-field">
-                              <span>参数（支持引号包裹的空格）</span>
-                              <input
-                                value={mcpDraft.args}
-                                onChange={(event) =>
-                                  updateMcpDraft("args", event.target.value)
-                                }
-                                placeholder='如 -y @modelcontextprotocol/server-github'
-                              />
-                            </label>
-                            <label className="plugin-card__config-field">
-                              <span>环境变量（每行 KEY=VALUE）</span>
-                              <textarea
-                                value={mcpDraft.env}
-                                onChange={(event) =>
-                                  updateMcpDraft("env", event.target.value)
-                                }
-                                rows={3}
-                                placeholder="GITHUB_TOKEN=ghp_xxxxxxxx&#10;GITHUB_REPO_OWNER=..."
-                              />
-                            </label>
-                          </>
-                        )}
-                        <div className="plugin-card__config-actions">
-                          <button
-                            type="button"
-                            className="plugin-card__button plugin-card__button--secondary"
-                            onClick={() => setConfiguringId(null)}
-                          >
-                            取消
-                          </button>
-                          <button
-                            type="button"
-                            className="plugin-card__button plugin-card__button--primary"
-                            onClick={() => saveConfig(manifest)}
-                          >
-                            保存
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                </div>
-              );
-            })}
+            {filteredPlugins.map((manifest) => renderPluginCard(manifest))}
           </div>
         )}
       </div>
@@ -1947,6 +2019,7 @@ export default function PluginMarketplace({
       )}
     </div>
   );
+};
 
   if (embedded || mainView) {
     return renderMarketplace();

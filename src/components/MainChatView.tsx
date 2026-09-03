@@ -11,6 +11,7 @@ import {
   Clock,
   Compass,
   FolderOpen,
+  GitBranch,
   History,
   LayoutDashboard,
   LayoutTemplate,
@@ -33,7 +34,7 @@ import {
   Trash2,
   Wand2,
 } from "lucide-react";
-import type { Message } from "../adapters/types";
+import type { Message, ChatAttachment } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
@@ -42,7 +43,15 @@ import type { ProjectMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
 import ArtifactsPanel from "./ArtifactsPanel";
-import { ARTIFACTS_CHANGED_EVENT, artifactsForProject } from "../chat/artifacts";
+import ChangesPanel from "./ChangesPanel";
+import {
+  ARTIFACTS_CHANGED_EVENT,
+  artifactsForProject,
+  appendArtifact,
+  notifyArtifactsChanged,
+  NO_PROJECT_ARTIFACT_KEY,
+  OPEN_ARTIFACT_EVENT,
+} from "../chat/artifacts";
 import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 import { resolveProjectAvatarSeed } from "../config/manifests/avatarHelpers";
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, PROJECT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
@@ -50,6 +59,7 @@ import { pluginRegistry } from "../plugins/registry";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
+import { ExecutionTimeline } from "./ExecutionTimeline";
 import CreateProjectDialog from "./CreateProjectDialog";
 import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
 import ProjectMoveGroupMenu from "./chat/ProjectMoveGroupMenu";
@@ -69,7 +79,10 @@ import {
   EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY,
   MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY,
   MAX_TOPIC_PANEL_WIDTH,
+  MIN_MAIN_CHAT_AREA_WIDTH,
   MIN_TOPIC_PANEL_WIDTH,
+  MIN_COMPOSER_RESIZE_HEIGHT,
+  MIN_MESSAGE_AREA_HEIGHT,
   buildTaskAggregateSummary,
   clampPanelWidth,
   formatMemoryScopeLabel,
@@ -85,7 +98,7 @@ type SessionGroup = {
   sessions: ChatSession[];
 };
 
-type SidePanelTab = "history" | "tasks" | "artifacts";
+type SidePanelTab = "history" | "tasks" | "artifacts" | "changes";
 
 type ProjectDeleteConfirmState = {
   projectId: string;
@@ -181,6 +194,7 @@ type MainChatViewProps = {
   hasModels: boolean;
   inputDraft: string;
   inputDraftImages: string[];
+  inputDraftAttachments: ChatAttachment[];
   inputDraftKey: number;
   inputFocusKey: number;
   inputDraftScopeKey: string;
@@ -220,7 +234,7 @@ type MainChatViewProps = {
   onDeleteProjectMemory: (memoryId: string) => boolean;
   onUpdateProjectMemory: (memoryId: string, content: string) => boolean;
   onDeleteChat: (session: ChatSession) => void;
-  onDraftChange: (text: string, images: string[]) => void;
+  onDraftChange: (text: string, images: string[], attachments: ChatAttachment[]) => void;
   onEditUserMessage: (messageIndex: number) => void;
   onModelChange: (modelId: string) => void;
   onNewChat: () => void;
@@ -260,6 +274,7 @@ export default function MainChatView({
   hasModels,
   inputDraft,
   inputDraftImages,
+  inputDraftAttachments,
   inputDraftKey,
   inputFocusKey,
   inputDraftScopeKey,
@@ -366,6 +381,19 @@ export default function MainChatView({
     window.addEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
     return () => window.removeEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
   }, [activeProject]);
+
+  // 点击消息中的产物卡片时：展开右侧边栏并切换到产物 tab，让产物在面板中打开。
+  // ArtifactsPanel 自己监听同事件；这里同时保证面板可见。
+  useEffect(() => {
+    const onOpenArtifact = (event: Event) => {
+      const detail = (event as CustomEvent<{ artifactId: string }>).detail;
+      if (!detail?.artifactId) return;
+      setTopicPanelManualVisible(true);
+      setSidePanelTab("artifacts");
+    };
+    window.addEventListener(OPEN_ARTIFACT_EVENT, onOpenArtifact);
+    return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, onOpenArtifact);
+  }, []);
 
   // 一级 kind 切换时把 source 重置到该 kind 的默认视图（与 Marketplace 内部
   // 受控分支的「不再自动同步 kind→source」配对，保证切回 skill 仍先看到 SkillHub）。
@@ -495,7 +523,12 @@ export default function MainChatView({
       const state = layoutDragRef.current;
       if (!state) return;
       const delta = event.clientX - state.startX;
-      setTopicPanelWidth(clampPanelWidth(state.startWidth - delta, MIN_TOPIC_PANEL_WIDTH, MAX_TOPIC_PANEL_WIDTH));
+      // 不人为限制宽度：最宽可拖到「窗口宽 - 聊天区保底」，仅防止把聊天区完全盖住。
+      const effectiveMax = Math.max(
+        MIN_TOPIC_PANEL_WIDTH,
+        window.innerWidth - MIN_MAIN_CHAT_AREA_WIDTH,
+      );
+      setTopicPanelWidth(clampPanelWidth(state.startWidth - delta, MIN_TOPIC_PANEL_WIDTH, effectiveMax));
     };
 
     const handlePointerUp = () => {
@@ -515,9 +548,6 @@ export default function MainChatView({
     };
   }, [topicPanelWidth]);
 
-  const MIN_COMPOSER_RESIZE_HEIGHT = 120;
-  const MAX_COMPOSER_RESIZE_HEIGHT = 520;
-
   const handleComposerSplitterPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -531,10 +561,17 @@ export default function MainChatView({
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       if (!composerSplitterDraggingRef.current) return;
-      const delta = event.clientY - composerSplitterStartYRef.current;
-      const nextHeight = Math.min(
-        Math.max(composerSplitterStartHeightRef.current + delta, MIN_COMPOSER_RESIZE_HEIGHT),
-        MAX_COMPOSER_RESIZE_HEIGHT
+      // 向上拖动（clientY 减小）输入框变高，向下拖动变矮，与窗口边缘拖拽直觉一致。
+      const delta = composerSplitterStartYRef.current - event.clientY;
+      // 不人为限制高度：最高可拖到「窗口高 - 消息区保底」，仅防止把消息区完全盖住。
+      const effectiveMax = Math.max(
+        MIN_COMPOSER_RESIZE_HEIGHT,
+        window.innerHeight - MIN_MESSAGE_AREA_HEIGHT,
+      );
+      const nextHeight = clampPanelWidth(
+        composerSplitterStartHeightRef.current + delta,
+        MIN_COMPOSER_RESIZE_HEIGHT,
+        effectiveMax,
       );
       setComposerResizeHeight(nextHeight);
     };
@@ -683,6 +720,56 @@ export default function MainChatView({
       }
     },
     [onCopyMessage, showProjectNotice]
+  );
+  const handleSaveAsMarkdown = useCallback(
+    async (message: Message) => {
+      const content = message.content ?? "";
+      if (!content.trim()) {
+        showProjectNotice("这条消息没有可保存的内容", "error");
+        return;
+      }
+      try {
+        const ws = activeProject?.workspacePath ?? "";
+        const baseDir = ws || (await invoke<string>("default_artifact_dir")).trim();
+        const dir = ws ? ws : baseDir ? `${baseDir}/Omni` : "";
+        if (!dir) {
+          showProjectNotice("无法确定保存目录", "error");
+          return;
+        }
+        // 从首行（去 #/标记）取文件名，清洗非法字符
+        const firstLine = content.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+        const rawName =
+          firstLine.replace(/^#+\s*/, "").replace(/[*_`#]/g, "").trim().slice(0, 60) || "对话导出";
+        const name = rawName.replace(/[\\/:*?"<>|\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "对话导出";
+        // 避免覆盖已有文件：追加 -1、-2……
+        let path = `${dir}/${name}.md`;
+        let n = 1;
+        while (await invoke<boolean>("path_exists", { path })) {
+          path = `${dir}/${name}-${n}.md`;
+          n += 1;
+        }
+        const outcome = await invoke<{ path: string; size: number }>("write_text_file", {
+          path,
+          content,
+          overwrite: false,
+          workspacePath: ws || null,
+        });
+        appendArtifact({
+          type: "file",
+          title: outcome.path.split(/[\\/]/).pop() || "文档.md",
+          path: outcome.path,
+          size: outcome.size,
+          content,
+          projectId: activeProject?.id ?? NO_PROJECT_ARTIFACT_KEY,
+          sessionId: activeChatId,
+        });
+        notifyArtifactsChanged();
+        showProjectNotice(`已存为 Markdown：${outcome.path.split(/[\\/]/).pop()}`);
+      } catch (error) {
+        showProjectNotice(`保存失败：${error instanceof Error ? error.message : String(error)}`, "error");
+      }
+    },
+    [activeProject, activeChatId, showProjectNotice]
   );
   const startEditMemory = useCallback((memory: ProjectMemoryRecord) => {
     setEditingMemoryId(memory.id);
@@ -2113,6 +2200,7 @@ export default function MainChatView({
                   <div className="omni-settings-dialog__toggle-list">
                     {pluginRegistry
                       .listEnabledTools()
+                      .filter((tool) => !pluginRegistry.isBuiltin(tool.id))
                       .filter((tool) => PROJECT_TOOL_OPTIONS.some((option) => option.id === tool.id))
                       .map((tool) => {
                       const checked = activeProject.allowedToolIds.includes(tool.id);
@@ -2135,6 +2223,15 @@ export default function MainChatView({
                         </label>
                       );
                     })}
+                    {pluginRegistry
+                      .listEnabledTools()
+                      .filter((tool) => !pluginRegistry.isBuiltin(tool.id))
+                      .filter((tool) => PROJECT_TOOL_OPTIONS.some((option) => option.id === tool.id))
+                      .length === 0 ? (
+                      <p className="omni-settings-dialog__empty-hint">
+                        暂无可选工具：内置工具对所有模型默认可用，无需在此开启。
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -2305,6 +2402,8 @@ export default function MainChatView({
                       onCancelEdit={onCancelEditUserMessage}
                       onSubmitEdit={onSubmitEditedUserMessage}
                       onRegenerate={onRegenerateMessage}
+                      onSaveAsMarkdown={handleSaveAsMarkdown}
+                      onOpenChangesPanel={() => setSidePanelTab("changes")}
                     />
                   );
                 })}
@@ -2356,6 +2455,7 @@ export default function MainChatView({
                   draftScopeKey={inputDraftScopeKey}
                   draftValue={inputDraft}
                   draftImages={inputDraftImages}
+                  draftAttachments={inputDraftAttachments}
                   draftSignal={inputDraftKey}
                   onDraftChange={onDraftChange}
                 />
@@ -2383,10 +2483,11 @@ export default function MainChatView({
                 {(() => {
                   if (sidePanelTab === "history") return <Clock size={14} strokeWidth={2} />;
                   if (sidePanelTab === "tasks") return <LayoutDashboard size={14} strokeWidth={2} />;
+                  if (sidePanelTab === "changes") return <GitBranch size={14} strokeWidth={2} />;
                   return <Package size={14} strokeWidth={2} />;
                 })()}
                 <span>
-                  {sidePanelTab === "history" ? "历史提问" : sidePanelTab === "tasks" ? "任务" : "产物"}
+                  {sidePanelTab === "history" ? "历史提问" : sidePanelTab === "tasks" ? "任务" : sidePanelTab === "changes" ? "变更" : "产物"}
                 </span>
               </div>
             </div>
@@ -2395,6 +2496,10 @@ export default function MainChatView({
               <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "artifacts" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("artifacts")}>
                 产物
                 {artifactCount > 0 ? <span className="chat-topic-panel__tab-badge">{artifactCount > 99 ? "99+" : artifactCount}</span> : null}
+              </button>
+              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "changes" ? "chat-topic-panel__tab--active" : ""} ${activeProject?.workspacePath ? "" : "chat-topic-panel__tab--disabled"}`} onClick={() => activeProject?.workspacePath && setSidePanelTab("changes")}>
+                <GitBranch size={11} strokeWidth={2} />
+                <span>变更</span>
               </button>
               <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "history" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("history")}>
                 <Clock size={11} strokeWidth={2} />
@@ -2452,8 +2557,13 @@ export default function MainChatView({
             {sidePanelTab === "artifacts" ? (
               <ArtifactsPanel
                 projectId={activeProject?.id ?? null}
+                sessionId={activeProject ? null : activeChatId}
                 onJumpToSession={onSelectChat}
               />
+            ) : null}
+
+            {sidePanelTab === "changes" && activeProject?.workspacePath ? (
+              <ChangesPanel workspacePath={activeProject.workspacePath} />
             ) : null}
 
             {sidePanelTab === "tasks" && (
@@ -2481,7 +2591,7 @@ export default function MainChatView({
                           </span>
                         </div>
                       )}
-                      {latestTaskResult.trace.length > 0 && (
+                      {(latestTaskResult.trace.length > 0 || latestTaskResult.finalResult?.steps?.length) && (
                         <button
                           type="button"
                           className="chat-topic-panel__inline-action"
@@ -2500,6 +2610,12 @@ export default function MainChatView({
                           ))}
                         </div>
                       )}
+                      {isTaskTraceExpanded && latestTaskResult.finalResult?.steps?.length ? (
+                        <div className="chat-topic-panel__task-steps">
+                          <div className="chat-topic-panel__task-steps-title">执行步骤</div>
+                          <ExecutionTimeline steps={latestTaskResult.finalResult.steps} />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 )}

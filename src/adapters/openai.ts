@@ -2,7 +2,7 @@
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, EmbeddingResponse } from "./types";
 import { toWireRole } from "./types";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
-import { postJsonWithRetry, postJsonStream } from "./http";
+import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
 const OPENAI_MODELS: ModelConfig[] = [
   { id: "gpt-4o", name: "GPT-4o", provider: "openai", maxTokens: 128000, maxOutput: 16384, supportsVision: true, supportsStreaming: true, toolCalling: true },
@@ -125,58 +125,58 @@ export class OpenAIAdapter implements ModelAdapter {
     let buffer = "";
     const toolAccumulator = new OpenAIStreamToolAccumulator();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        buffer += decoder.decode();
-      } else {
-        buffer += decoder.decode(value, { stream: true });
+    const handleLine = (rawLine: string) => {
+      const line = rawLine.trim();
+      if (!line.startsWith("data: ")) {
+        return;
       }
+      const data = line.slice(6);
+      if (data === "[DONE]") {
+        onChunk({ content: "", done: true, model });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta;
+        if (delta) {
+          model = parsed.model || model;
+          if (delta.content) {
+            fullContent += delta.content;
+            onChunk({ content: delta.content, done: false, model });
+          }
+          // 多 provider 兼容：DeepSeek-R1 / 阿里 Qwen3-thinking / OpenAI Responses 中转等
+          // 不同服务方对 reasoning 字段命名不统一，依次回退到常见命名
+          const reasoningText =
+            (typeof delta.reasoning_content === "string" && delta.reasoning_content) ||
+            (typeof delta.reasoning === "string" && delta.reasoning) ||
+            (typeof delta.reasoning_text === "string" && delta.reasoning_text) ||
+            (typeof delta.thinking_content === "string" && delta.thinking_content) ||
+            (typeof delta.thought === "string" && delta.thought) ||
+            "";
+          if (reasoningText) {
+            onChunk({ content: "", done: false, model, reasoning: reasoningText });
+          }
+          if (delta.tool_calls) {
+            toolAccumulator.add(delta.tool_calls);
+          }
+        }
+      } catch {
+        // 跳过格式异常的块
+      }
+    };
 
+    for await (const value of iterateStream(reader, { signal: request.signal })) {
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line.startsWith("data: ")) {
-          continue;
-        }
-        const data = line.slice(6);
-        if (data === "[DONE]") {
-          onChunk({ content: "", done: true, model });
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta;
-          if (delta) {
-            model = parsed.model || model;
-            if (delta.content) {
-              fullContent += delta.content;
-              onChunk({ content: delta.content, done: false, model });
-            }
-            // 多 provider 兼容：DeepSeek-R1 / 阿里 Qwen3-thinking / OpenAI Responses 中转等
-            // 不同服务方对 reasoning 字段命名不统一，依次回退到常见命名
-            const reasoningText =
-              (typeof delta.reasoning_content === "string" && delta.reasoning_content) ||
-              (typeof delta.reasoning === "string" && delta.reasoning) ||
-              (typeof delta.reasoning_text === "string" && delta.reasoning_text) ||
-              (typeof delta.thinking_content === "string" && delta.thinking_content) ||
-              (typeof delta.thought === "string" && delta.thought) ||
-              "";
-            if (reasoningText) {
-              onChunk({ content: "", done: false, model, reasoning: reasoningText });
-            }
-            if (delta.tool_calls) {
-              toolAccumulator.add(delta.tool_calls);
-            }
-          }
-        } catch {
-          // 跳过格式异常的块
-        }
-      }
-      if (done) break;
+      for (const rawLine of lines) handleLine(rawLine);
     }
+
+    // 流结束：冲刷解码器残留与最后一行不完整数据
+    buffer += decoder.decode();
+    const tailLines = buffer.split("\n");
+    buffer = tailLines.pop() ?? "";
+    for (const rawLine of tailLines) handleLine(rawLine);
 
     return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls() };
   }

@@ -1,7 +1,7 @@
 // Omni - Gemini 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toGeminiTools, toGeminiContent, parseGeminiToolCalls, parseGeminiStreamToolCalls } from "./wireTools";
-import { postJsonWithRetry, postJsonStream } from "./http";
+import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
 const GEMINI_MODELS: ModelConfig[] = [
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "gemini", maxTokens: 1048576, maxOutput: 65536, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
@@ -119,45 +119,45 @@ export class GeminiAdapter implements ModelAdapter {
     let buffer = "";
     let toolCalls;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        buffer += decoder.decode();
-      } else {
-        buffer += decoder.decode(value, { stream: true });
+    const handleLine = (rawLine: string) => {
+      const line = rawLine.trim();
+      if (!line.startsWith("data: ")) {
+        return;
       }
+      try {
+        const parsed = JSON.parse(line.slice(6));
+        const parts = parsed.candidates?.[0]?.content?.parts;
+        if (Array.isArray(parts)) {
+          for (const part of parts) {
+            if (part.text) {
+              fullContent += part.text;
+              onChunk({ content: part.text, done: false, model: request.model });
+            }
+            if (part.thought) {
+              onChunk({ content: "", done: false, model: request.model, reasoning: part.thought });
+            }
+          }
+          // Gemini SSE 每个 chunk 的 parts 是全量快照，functionCall 直接取
+          const calls = parseGeminiStreamToolCalls(parts);
+          if (calls) toolCalls = calls;
+        }
+      } catch {
+        // 跳过
+      }
+    };
 
+    for await (const value of iterateStream(reader, { signal: request.signal })) {
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line.startsWith("data: ")) {
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(line.slice(6));
-          const parts = parsed.candidates?.[0]?.content?.parts;
-          if (Array.isArray(parts)) {
-            for (const part of parts) {
-              if (part.text) {
-                fullContent += part.text;
-                onChunk({ content: part.text, done: false, model: request.model });
-              }
-              if (part.thought) {
-                onChunk({ content: "", done: false, model: request.model, reasoning: part.thought });
-              }
-            }
-            // Gemini SSE 每个 chunk 的 parts 是全量快照，functionCall 直接取
-            const calls = parseGeminiStreamToolCalls(parts);
-            if (calls) toolCalls = calls;
-          }
-        } catch {
-          // 跳过
-        }
-      }
-      if (done) break;
+      for (const rawLine of lines) handleLine(rawLine);
     }
+
+    // 流结束：冲刷解码器残留与最后一行不完整数据
+    buffer += decoder.decode();
+    const tailLines = buffer.split("\n");
+    buffer = tailLines.pop() ?? "";
+    for (const rawLine of tailLines) handleLine(rawLine);
 
     onChunk({ content: "", done: true, model: request.model });
     return { content: fullContent, model: request.model, toolCalls };

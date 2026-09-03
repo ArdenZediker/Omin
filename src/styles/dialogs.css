@@ -1,0 +1,900 @@
+
+
+.omni-select {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.omni-select__trigger {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  padding: 0 10px 0 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 98%, #ffffff 2%), var(--omni-panel-bg)),
+    var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 62%, transparent),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.omni-select__trigger:hover {
+  border-color: color-mix(in srgb, var(--omni-accent, #64748b) 28%, var(--omni-panel-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 94%, #ffffff 6%), var(--omni-panel-bg)),
+    var(--omni-panel-bg);
+}
+
+.omni-select__trigger:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--omni-accent, #64748b) 46%, var(--omni-panel-border));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--omni-accent, #64748b) 14%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 62%, transparent);
+}
+
+.omni-select[data-open="true"] .omni-select__trigger {
+  border-color: color-mix(in srgb, var(--omni-accent, #64748b) 42%, var(--omni-panel-border));
+}
+
+.omni-select__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  background: color-mix(in srgb, var(--omni-soft-bg) 92%, var(--omni-panel-bg));
+}
+
+.omni-select__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.omni-select__value--placeholder {
+  color: var(--omni-app-muted);
+}
+
+.omni-select__chevron {
+  flex: 0 0 auto;
+  color: var(--omni-app-muted);
+  transition: transform 0.16s ease;
+}
+
+.omni-select[data-open="true"] .omni-select__chevron {
+  transform: rotate(180deg);
+}
+
+.omni-select__menu {
+  position: fixed;
+  z-index: 10000;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 98%, #ffffff 2%);
+  box-shadow:
+    0 18px 42px rgba(15, 23, 42, 0.18),
+    0 2px 8px rgba(15, 23, 42, 0.08);
+  animation: omniSelectIn 0.14s ease-out;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.omni-select__menu::-webkit-scrollbar {
+  display: none;
+}
+
+.omni-select__option {
+  width: 100%;
+  min-height: 32px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: transparent;
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.omni-select__option span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.omni-select__option-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+
+.omni-select__option-label {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.omni-select__option-description {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--omni-app-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.omni-select__option--active {
+  background: color-mix(in srgb, var(--omni-accent, #64748b) 10%, transparent);
+}
+
+.omni-select__option--selected {
+  color: color-mix(in srgb, var(--omni-accent, #475569) 84%, var(--omni-app-text));
+  font-weight: 600;
+}
+
+.omni-select__option:disabled {
+  cursor: not-allowed;
+  color: var(--omni-app-muted);
+  opacity: 0.52;
+}
+
+.omni-select--field .omni-select__trigger {
+  min-height: 47px;
+  border-radius: 14px;
+  padding: 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.omni-select--compact .omni-select__trigger {
+  min-height: 34px;
+  border-radius: 10px;
+  padding: 0 9px;
+}
+
+.omni-select--memory {
+  width: 172px;
+  flex: 0 0 172px;
+}
+
+.omni-confirm-dialog {
+  width: min(380px, calc(100vw - 32px));
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 18px;
+  padding: 18px;
+  background: var(--omni-panel-bg);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.omni-prompt-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.omni-prompt-dialog__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.omni-prompt-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.omni-prompt-dialog__field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--omni-app-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.omni-prompt-dialog__field-label small {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.omni-prompt-dialog__input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 94%, var(--omni-soft-bg));
+  color: var(--omni-app-text);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.omni-prompt-dialog__input:focus {
+  border-color: rgba(96, 165, 250, 0.42);
+  box-shadow:
+    0 0 0 3px rgba(96, 165, 250, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+}
+
+.omni-prompt-dialog__error {
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.omni-prompt-dialog__actions {
+  padding: 0 0 2px;
+}
+
+.omni-confirm-dialog__button--primary {
+  border-color: transparent;
+  background: var(--omni-app-text);
+  color: var(--omni-panel-bg);
+}
+
+.omni-confirm-dialog__button--primary:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 88%, #000000 12%);
+}
+
+.omni-confirm-dialog--project-settings {
+  width: min(920px, calc(100vw - 36px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  overflow: auto;
+  border-radius: 24px;
+}
+
+.omni-confirm-dialog__title {
+  color: var(--omni-app-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.omni-confirm-dialog__message {
+  color: var(--omni-app-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.omni-confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 0;
+  padding: 0 24px 22px;
+}
+
+.omni-confirm-dialog__button {
+  min-width: 88px;
+  height: 36px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  padding: 0 14px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.omni-confirm-dialog__button > span {
+  line-height: 1;
+}
+
+.omni-confirm-dialog__button:hover {
+  background: var(--omni-soft-bg);
+}
+
+.omni-confirm-dialog__button--danger {
+  border-color: transparent;
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.omni-confirm-dialog__button--danger:hover {
+  background: #dc2626;
+}
+
+/* ---- 危险操作确认门（confirmationGate） ---- */
+
+.confirm-dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  overflow: auto;
+  gap: 0;
+}
+
+.confirm-dialog--irreversible {
+  border-color: color-mix(in srgb, #ef4444 45%, var(--omni-panel-border));
+}
+
+.confirm-dialog--destructive {
+  border-color: color-mix(in srgb, #f59e0b 42%, var(--omni-panel-border));
+}
+
+.confirm-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 18px 22px 12px;
+}
+
+.confirm-dialog__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: 9px;
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.confirm-dialog--irreversible .confirm-dialog__icon {
+  background: rgba(239, 68, 68, 0.16);
+  color: #dc2626;
+}
+
+.confirm-dialog--write .confirm-dialog__icon {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+}
+
+.confirm-dialog__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.confirm-dialog__badge {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.confirm-dialog__badge--irreversible {
+  background: rgba(239, 68, 68, 0.14);
+  color: #dc2626;
+}
+
+.confirm-dialog__badge--destructive {
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.confirm-dialog__badge--write {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+}
+
+.confirm-dialog__badge--read {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
+
+.confirm-dialog__summary {
+  margin: 0;
+  color: var(--omni-app-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.confirm-dialog__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.confirm-dialog__section-title {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.confirm-dialog__details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 92%, var(--omni-soft-bg));
+}
+
+.confirm-dialog__detail-row {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.confirm-dialog__detail-row dt {
+  flex-shrink: 0;
+  min-width: 84px;
+  color: var(--omni-app-muted);
+}
+
+.confirm-dialog__detail-row dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--omni-app-text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.confirm-dialog__targets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--omni-app-text);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.confirm-dialog__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.confirm-dialog--irreversible .confirm-dialog__warning {
+  border-color: rgba(239, 68, 68, 0.34);
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+}
+
+.confirm-dialog__warning svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.confirm-dialog__actions {
+  margin-top: 16px;
+}
+
+/* ================= CreateProjectDialog ================= */
+.omni-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.omni-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 121;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 40px));
+  border-radius: var(--omni-radius-lg);
+  background: var(--omni-panel-bg);
+  border: 1px solid var(--omni-panel-border);
+  box-shadow: var(--omni-surface-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--omni-app-text);
+}
+
+.omni-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--omni-panel-border);
+}
+
+.omni-dialog__header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.omni-dialog__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+}
+
+.omni-dialog__close:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.omni-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+.omni-dialog__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--omni-app-text);
+}
+
+.omni-dialog__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.omni-dialog__field input,
+.omni-dialog__field textarea {
+  width: 100%;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+  outline: none;
+  resize: vertical;
+}
+
+.omni-dialog__field input::placeholder,
+.omni-dialog__field textarea::placeholder {
+  color: var(--omni-app-muted);
+}
+
+.omni-dialog__field input:focus,
+.omni-dialog__field textarea:focus {
+  border-color: #3b82f6;
+}
+
+.omni-dialog__counter {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.omni-dialog__template-dropdown {
+  position: relative;
+}
+
+.omni-dialog__template-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--omni-app-muted);
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.omni-dialog__template-trigger:hover {
+  background: var(--omni-soft-bg);
+}
+
+.omni-dialog__template-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  min-width: 140px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  background: var(--omni-panel-bg);
+  box-shadow: var(--omni-surface-shadow);
+  padding: 6px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.omni-dialog__template-dropdown:hover .omni-dialog__template-menu,
+.omni-dialog__template-menu:hover {
+  display: flex;
+}
+
+.omni-dialog__template-item--active {
+  background: var(--omni-soft-bg);
+  color: #3b82f6;
+}
+
+.omni-dialog__template-menu button {
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--omni-app-text);
+  cursor: pointer;
+}
+
+.omni-dialog__template-menu button:hover {
+  background: var(--omni-soft-bg);
+}
+
+.omni-dialog__workspace-row {
+  display: flex;
+  gap: 8px;
+}
+
+.omni-dialog__workspace-row input {
+  flex: 1;
+}
+
+.omni-dialog__workspace-row button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  background: var(--omni-button-bg);
+  color: var(--omni-button-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.omni-dialog__workspace-row button:hover {
+  background: var(--omni-soft-bg);
+}
+
+.omni-dialog__plugin-row {
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--omni-soft-bg);
+}
+
+.omni-dialog__plugin-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.omni-dialog__plugin-row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--omni-app-text);
+}
+
+.omni-dialog__plugin-row-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--omni-app-muted);
+}
+
+.omni-dialog__plugin-add {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #3b82f6;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.omni-dialog__plugin-add:hover {
+  opacity: 0.85;
+}
+
+.omni-dialog__plugin-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.omni-dialog__plugin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: var(--omni-panel-bg);
+  border: 1px solid var(--omni-panel-border);
+  font-size: 12px;
+  color: var(--omni-app-text);
+}
+
+.omni-dialog__plugin-chip button {
+  display: flex;
+  border: none;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.omni-dialog__plugin-chip button:hover {
+  color: #ef4444;
+}
+
+.omni-dialog__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--omni-app-muted);
+}
+
+.omni-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--omni-panel-border);
+}
+
+.omni-dialog__button {
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.omni-dialog__button--secondary {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-button-bg);
+  color: var(--omni-button-text);
+}
+
+.omni-dialog__button--secondary:hover {
+  background: var(--omni-soft-bg);
+}
+
+.omni-dialog__button--primary {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.omni-dialog__button--primary:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.omni-dialog__button--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 全局错误边界降级界面 */
+.omni-error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.omni-error-boundary__card {
+  max-width: 520px;
+  width: 100%;
+  padding: 24px;
+  border-radius: 14px;
+  background: var(--omni-app-surface, rgba(28, 30, 38, 0.92));
+  border: 1px solid var(--omni-app-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  color: var(--omni-app-text, #f2f3f5);
+}
+
+.omni-error-boundary__title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.omni-error-boundary__hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+.omni-error-boundary__detail {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 90, 90, 0.12);
+  color: #ff9b9b;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.omni-error-boundary__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.omni-error-boundary__button {
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: none;
+  background: var(--omni-accent, #6c8cff);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.omni-error-boundary__button:hover {
+  filter: brightness(1.08);
+}

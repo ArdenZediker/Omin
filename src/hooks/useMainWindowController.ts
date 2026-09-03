@@ -15,6 +15,7 @@ import {
 import type { BasicSettings, ViewMode } from "../app/types";
 import { bootstrapSqliteStorage, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
+import { ARTIFACTS_KEY, ARTIFACT_PANEL_STATE_KEY } from "../chat/artifacts";
 import { resolveCurrentModelId } from "../chat/modelSelection";
 import { getPetWindowScale } from "../app/compactPetScale";
 import { COMPACT_PET_HIDDEN_STORAGE_KEY, isCompactPetHidden } from "../app/compactVisibility";
@@ -100,6 +101,10 @@ export function useMainWindowController({
       "omni_basic_settings",
       "omni_compact_position",
       "omni_main_position",
+      ARTIFACTS_KEY,
+      ARTIFACT_PANEL_STATE_KEY,
+      "omni_output_root_v1",
+      "omni_mirror_sessions_md_v1",
     ]).then(() => {
       if (cancelled) return;
       applyThemeFromStorage();

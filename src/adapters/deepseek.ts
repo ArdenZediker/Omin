@@ -1,7 +1,7 @@
 // Omni - DeepSeek 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
-import { postJsonWithRetry, postJsonStream } from "./http";
+import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
 const DEEPSEEK_MODELS: ModelConfig[] = [
   { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, maxOutput: 8192, supportsVision: false, supportsStreaming: true, toolCalling: true },
@@ -98,58 +98,58 @@ export class DeepSeekAdapter implements ModelAdapter {
     let buffer = "";
     const toolAccumulator = new OpenAIStreamToolAccumulator();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        buffer += decoder.decode();
-      } else {
-        buffer += decoder.decode(value, { stream: true });
+    const handleLine = (rawLine: string) => {
+      const line = rawLine.trim();
+      if (!line.startsWith("data: ")) {
+        return;
       }
+      const data = line.slice(6);
+      if (data === "[DONE]") {
+        onChunk({ content: "", done: true, model });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta;
+        if (delta) {
+          model = parsed.model || model;
+          // 多 provider 兼容：DeepSeek-R1 / 阿里 Qwen3-thinking / OpenAI Responses 中转等
+          // R1 的思考链独立字段，透传而非丢弃；兼容 reasoning / thinking_content / thought 等命名
+          const reasoningText =
+            (typeof delta.reasoning_content === "string" && delta.reasoning_content) ||
+            (typeof delta.reasoning === "string" && delta.reasoning) ||
+            (typeof delta.reasoning_text === "string" && delta.reasoning_text) ||
+            (typeof delta.thinking_content === "string" && delta.thinking_content) ||
+            (typeof delta.thought === "string" && delta.thought) ||
+            "";
+          if (reasoningText) {
+            onChunk({ content: "", done: false, model, reasoning: reasoningText });
+          }
+          if (delta.content) {
+            fullContent += delta.content;
+            onChunk({ content: delta.content, done: false, model });
+          }
+          if (delta.tool_calls) {
+            toolAccumulator.add(delta.tool_calls);
+          }
+        }
+      } catch {
+        // 跳过
+      }
+    };
 
+    for await (const value of iterateStream(reader, { signal: request.signal })) {
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line.startsWith("data: ")) {
-          continue;
-        }
-        const data = line.slice(6);
-        if (data === "[DONE]") {
-          onChunk({ content: "", done: true, model });
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta;
-          if (delta) {
-            model = parsed.model || model;
-            // 多 provider 兼容：DeepSeek-R1 / 阿里 Qwen3-thinking / OpenAI Responses 中转等
-            // R1 的思考链独立字段，透传而非丢弃；兼容 reasoning / thinking_content / thought 等命名
-            const reasoningText =
-              (typeof delta.reasoning_content === "string" && delta.reasoning_content) ||
-              (typeof delta.reasoning === "string" && delta.reasoning) ||
-              (typeof delta.reasoning_text === "string" && delta.reasoning_text) ||
-              (typeof delta.thinking_content === "string" && delta.thinking_content) ||
-              (typeof delta.thought === "string" && delta.thought) ||
-              "";
-            if (reasoningText) {
-              onChunk({ content: "", done: false, model, reasoning: reasoningText });
-            }
-            if (delta.content) {
-              fullContent += delta.content;
-              onChunk({ content: delta.content, done: false, model });
-            }
-            if (delta.tool_calls) {
-              toolAccumulator.add(delta.tool_calls);
-            }
-          }
-        } catch {
-          // 跳过
-        }
-      }
-      if (done) break;
+      for (const rawLine of lines) handleLine(rawLine);
     }
+
+    // 流结束：冲刷解码器残留与最后一行不完整数据
+    buffer += decoder.decode();
+    const tailLines = buffer.split("\n");
+    buffer = tailLines.pop() ?? "";
+    for (const rawLine of tailLines) handleLine(rawLine);
 
     return { content: fullContent, model, toolCalls: this.supportsTools(request) ? toolAccumulator.getToolCalls() : undefined };
   }

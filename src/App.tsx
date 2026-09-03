@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Message } from "./adapters/types";
+import type { Message, ChatAttachment } from "./adapters/types";
 import type { ChatSession } from "./chat/types";
 import { createDesktopActions } from "./app/desktopActions";
 import { modelRegistry } from "./adapters/registry";
@@ -43,6 +43,7 @@ import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
 import { useMainWindowController } from "./hooks/useMainWindowController";
 import { useCompactWindowController } from "./hooks/useCompactWindowController";
+import { useWindowRoundedCorners } from "./hooks/useWindowRoundedCorners";
 import ErrorBoundary from "./components/ErrorBoundary";
 import {
   type CompactAppearance,
@@ -57,11 +58,14 @@ const KnowledgeBaseView = lazy(() => import("./components/KnowledgeBaseView"));
 type ComposerDraft = {
   text: string;
   images: string[];
+  /** 非图片类本地文件附件（绝对路径引用）；随草稿一起恢复，发送时清空 */
+  attachments: ChatAttachment[];
 };
 
 const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
   text: "",
   images: [],
+  attachments: [],
 };
 
 function formatShareRole(role: Message["role"]) {
@@ -134,6 +138,7 @@ function App() {
 
 function MainApp() {
   useThemeSync(false);
+  useWindowRoundedCorners(!isCompactWindow);
   const { openPrompt } = usePromptDialog();
   const {
     activeProject,
@@ -291,12 +296,15 @@ function MainApp() {
       const hasSameImages =
         previousDraft.images.length === nextDraft.images.length &&
         previousDraft.images.every((image, index) => image === nextDraft.images[index]);
+      const hasSameAttachments =
+        previousDraft.attachments.length === nextDraft.attachments.length &&
+        previousDraft.attachments.every((attachment, index) => attachment.path === nextDraft.attachments[index].path);
 
-      if (hasSameText && hasSameImages) {
+      if (hasSameText && hasSameImages && hasSameAttachments) {
         return current;
       }
 
-      if (!nextDraft.text && nextDraft.images.length === 0) {
+      if (!nextDraft.text && nextDraft.images.length === 0 && nextDraft.attachments.length === 0) {
         if (!(projectId in current)) {
           return current;
         }
@@ -309,6 +317,7 @@ function MainApp() {
         [projectId]: {
           text: nextDraft.text,
           images: [...nextDraft.images],
+          attachments: [...nextDraft.attachments],
         },
       };
     });
@@ -335,10 +344,11 @@ function MainApp() {
   );
 
   const handleComposerDraftChange = useCallback(
-    (text: string, images: string[]) => {
+    (text: string, images: string[], attachments: ChatAttachment[]) => {
       updateProjectDraft(activeProjectId, () => ({
         text,
         images,
+        attachments,
       }));
     },
     [activeProjectId, updateProjectDraft]
@@ -350,6 +360,7 @@ function MainApp() {
       updateProjectDraft(activeProjectId, () => ({
         text,
         images: [],
+        attachments: [],
       }));
       setInputDraftKey((key) => key + 1);
       setInputFocusKey((key) => key + 1);
@@ -778,6 +789,7 @@ function MainApp() {
           executionModel={activeExecutionModel}
           inputDraft={activeComposerDraft.text}
           inputDraftImages={activeComposerDraft.images}
+          inputDraftAttachments={activeComposerDraft.attachments}
           inputDraftKey={inputDraftKey}
           inputDraftScopeKey={activeProjectId}
           inputFocusKey={inputFocusKey}

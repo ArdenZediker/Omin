@@ -1,23 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Brain,
   ChevronDown,
   Copy,
-  Eye,
   FileDown,
-  FolderTree,
-  GitBranch,
-  PackagePlus,
   Pencil,
   RefreshCw,
-  Search,
-  Terminal as TerminalIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
+import { getToolActionMeta, isFileProducingTool, getFileBadgeLabel, extractToolFilePath } from "../chat/toolActionMap";
+import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettlement";
+import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
+import AttachmentChip from "./AttachmentChip";
 
 interface ChatMessageProps {
   message: Message;
@@ -29,6 +26,22 @@ interface ChatMessageProps {
   onCancelEdit?: () => void;
   onSubmitEdit?: (index: number, content: string) => void;
   onRegenerate?: (index: number) => void;
+  onSaveAsMarkdown?: (message: Message) => void | Promise<void>;
+  /** 打开右侧变更面板（按事件总线通知 MainChatView 切换 tab） */
+  onOpenChangesPanel?: () => void;
+}
+
+/** 「查看所有变更」弹层中一条文件产出/修改记录 */
+interface ChangeEntry {
+  name: string;
+  verb: string;
+  title: string;
+  Icon: LucideIcon;
+  path?: string;
+  badge: string;
+  argsSummary: string;
+  resultPreview: string;
+  isError?: boolean;
 }
 
 export default function ChatMessage({
@@ -41,6 +54,8 @@ export default function ChatMessage({
   onCancelEdit,
   onSubmitEdit,
   onRegenerate,
+  onSaveAsMarkdown,
+  onOpenChangesPanel,
 }: ChatMessageProps) {
   // 工具结果消息已合并到对应 assistant 的 toolCallResults，不单独渲染
   if (message.role === "tool") return null;
@@ -52,6 +67,45 @@ export default function ChatMessage({
   const knowledgeSources = message.knowledgeContext?.sources ?? [];
   const visibleKnowledgeSources = sourcesExpanded ? knowledgeSources : knowledgeSources.slice(0, 3);
   const hiddenKnowledgeSourceCount = Math.max(0, knowledgeSources.length - visibleKnowledgeSources.length);
+  const artifactSectionRef = useRef<HTMLDivElement>(null);
+  const artifactCount = message.artifacts?.length ?? 0;
+  /** 所有「产出/修改文件」的工具步骤，用于「查看所有变更」弹层。
+   *  与 stepSettlement.ts 共享 isResolvedAsSuccess 兜底：流式期间 race 让 step.status
+   *  遗留为 running 但 result 已带回成功信息时，依旧作为「已完成变更」计入，
+   *  避免「摘要显示已完成 · 6 个动作」但 footer 区无「查看所有变更」按钮。 */
+  const changeEntries = useMemo<ChangeEntry[]>(() => {
+    const sourceTools: Array<{ name: string; arguments: string; result: string; isError?: boolean }> = (
+      message.steps && message.steps.length > 0
+        ? (message.steps as ChatStep[]).filter(
+            (s): s is Extract<ChatStep, { type: "tool_call" }> =>
+              s.type === "tool_call" && (isResolvedAsSuccess(s) || !s.status),
+          )
+        : (message.toolCallResults ?? []).map((t) => ({
+            name: t.name,
+            arguments: t.arguments,
+            result: t.result,
+            isError: t.isError,
+          }))
+    );
+    return sourceTools
+      .filter((t) => isFileProducingTool(t.name))
+      .map((t) => {
+        const meta = getToolActionMeta(t.name);
+        const path = extractToolFilePath(t.arguments, t.name);
+        return {
+          name: t.name,
+          verb: meta.verb,
+          title: meta.title,
+          Icon: meta.icon,
+          path,
+          badge: getFileBadgeLabel(t.name),
+          argsSummary: formatToolArgs(t.arguments),
+          resultPreview: formatToolResult(t.result),
+          isError: t.isError,
+        };
+      });
+  }, [message.steps, message.toolCallResults]);
+  const changeCount = changeEntries.length;
 
   useEffect(() => {
     if (!isEditing) return;
@@ -111,13 +165,26 @@ export default function ChatMessage({
       ) : isUser ? (
         <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-gradient-to-br from-violet-500/80 to-indigo-600/80 text-white/95 text-sm">
           {message.images && message.images.length > 0 && (
-            <div className="flex gap-1 mb-1.5">
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
               {message.images.map((img, imageIndex) => (
-                <img
-                  key={imageIndex}
-                  src={img.startsWith("data:") ? img : `data:image/png;base64,${img}`}
-                  alt="图片附件"
-                  className="w-16 h-16 rounded-lg object-cover"
+                <AttachmentChip
+                  key={`${img.slice(0, 24)}-${imageIndex}`}
+                  src={img}
+                  name={`image_${imageIndex + 1}.png`}
+                  index={imageIndex}
+                />
+              ))}
+            </div>
+          )}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {message.attachments.map((attachment, attachmentIndex) => (
+                <AttachmentChip
+                  key={attachment.path}
+                  src={attachment.path}
+                  name={attachment.name}
+                  index={attachmentIndex}
+                  size={attachment.size}
                 />
               ))}
             </div>
@@ -134,7 +201,7 @@ export default function ChatMessage({
             isStreaming={isStreaming}
           />
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
-            {isStreaming && !message.content.trim() ? <ThinkingIndicator /> : renderMarkdown(message.content)}
+            {renderMarkdown(message.content)}
           </div>
           {knowledgeSources.length ? (
             <div className="message-knowledge-sources">
@@ -159,7 +226,29 @@ export default function ChatMessage({
               )}
             </div>
           ) : null}
-          {message.artifacts && message.artifacts.length > 0 ? <ArtifactCards artifacts={message.artifacts} /> : null}
+          {message.artifacts && message.artifacts.length > 0 ? (
+            <div ref={artifactSectionRef}>
+              <ArtifactCards artifacts={message.artifacts} />
+            </div>
+          ) : null}
+          {(artifactCount > 0 || changeCount > 0) && (
+            <div className="message-aggregate">
+              {artifactCount > 0 && (
+                <button
+                  type="button"
+                  className="message-aggregate__link"
+                  onClick={() => artifactSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
+                >
+                  查看所有产物 ({artifactCount})
+                </button>
+              )}
+              {changeCount > 0 && (
+                <button type="button" className="message-aggregate__link" onClick={onOpenChangesPanel}>
+                  查看所有变更 ({changeCount})
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
       {!isStreaming && !isEditing && (
@@ -172,9 +261,14 @@ export default function ChatMessage({
               <Pencil size={16} strokeWidth={1.8} />
             </MessageActionButton>
           ) : (
-            <MessageActionButton label="重新生成" onClick={() => onRegenerate?.(index)}>
-              <RefreshCw size={16} strokeWidth={1.8} />
-            </MessageActionButton>
+            <>
+              <MessageActionButton label="重新生成" onClick={() => onRegenerate?.(index)}>
+                <RefreshCw size={16} strokeWidth={1.8} />
+              </MessageActionButton>
+              <MessageActionButton label="存为 .md" onClick={() => onSaveAsMarkdown?.(message)}>
+                <FileDown size={16} strokeWidth={1.8} />
+              </MessageActionButton>
+            </>
           )}
         </div>
       )}
@@ -205,77 +299,8 @@ function ThinkingIndicator() {
   );
 }
 
-/** 工具名 → 图标 / 中文标题的映射（覆盖内置 + Web/Git/Office/Export 等工具） */
-const TOOL_ICONS: Record<string, LucideIcon> = {
-  search_sessions: Search,
-  search_files: Search,
-  web_search: Search,
-  read_session: Eye,
-  read_file: Eye,
-  read_persona: Eye,
-  web_fetch: Eye,
-  list_files: FolderTree,
-  git_info: GitBranch,
-  git_commit: GitBranch,
-  git_pr: GitBranch,
-  export_docx: FileDown,
-  export_xlsx: FileDown,
-  export_pptx: FileDown,
-  install_expert: PackagePlus,
-  install_skill: PackagePlus,
-  update_persona: Pencil,
-};
-
-const TOOL_TITLES: Record<string, string> = {
-  search_sessions: "搜索会话",
-  read_session: "读取会话",
-  list_files: "列出文件",
-  read_file: "读取文件",
-  search_files: "搜索文件",
-  read_persona: "读取个性化",
-  update_persona: "更新个性化",
-  install_expert: "安装专家",
-  web_search: "联网搜索",
-  web_fetch: "网页抓取",
-  git_info: "Git 查看",
-  git_commit: "Git 提交",
-  git_pr: "创建 PR",
-  export_docx: "导出 Word",
-  export_xlsx: "导出 Excel",
-  export_pptx: "导出 PPT",
-  install_skill: "安装技能",
-};
-
-/** 从工具参数 JSON 提取一句简短摘要（取首个关键字段值），截断 60 字 */
-function formatToolArgs(args: string): string {
-  const trimmed = (args ?? "").trim();
-  if (!trimmed) return "";
-  try {
-    const obj = JSON.parse(trimmed);
-    const priorityKeys = ["path", "query", "keyword", "url", "command", "message", "title", "name"];
-    for (const key of priorityKeys) {
-      const value = obj?.[key];
-      if (typeof value === "string" && value.trim()) {
-        return value.length > 60 ? `${value.slice(0, 57)}…` : value;
-      }
-    }
-    const first = Object.values(obj ?? {}).find((v) => typeof v === "string" && (v as string).trim());
-    if (typeof first === "string") {
-      return first.length > 60 ? `${first.slice(0, 57)}…` : first;
-    }
-    return "";
-  } catch {
-    return trimmed.length > 60 ? `${trimmed.slice(0, 57)}…` : trimmed;
-  }
-}
-
-/** 结果首行预览（截断 200 字；空结果不显示） */
-function formatToolResult(result: string): string {
-  const trimmed = (result ?? "").trim();
-  if (!trimmed) return "";
-  const firstLine = trimmed.split(/\r?\n/).find((line) => line.trim()) ?? "";
-  return firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine;
-}
+// 工具图标 / 动作标签映射已迁移至 src/chat/toolActionMap.ts（getToolActionMeta 等）。
+// 执行时间线组件已抽取至 src/components/ExecutionTimeline.tsx（聊天消息与任务面板共用）。
 
 /** 思考过程折叠块：始终展示（WorkBuddy 风格）。空内容时显示「未触发深度推理」提示，
  * 让用户在任何回答下都能看到 UI 元素。优先按 `steps` 按轮交错渲染（WorkBuddy 式
@@ -285,13 +310,37 @@ function ThinkingBlock({
   toolCallResults,
   steps,
   isStreaming,
+  forceExpandSignal,
 }: {
   reasoning?: string;
   toolCallResults?: ChatToolCallResult[];
   steps?: ChatStep[];
   isStreaming?: boolean;
+  /** 自增信号：变化时强制展开时间线（供「查看所有变更」按钮触发） */
+  forceExpandSignal?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  /** 用户手动点过折叠按钮后置位：新一轮开始前不再强制展开，结束后也不强制收起 */
+  const userToggledRef = useRef(false);
+  const wasStreamingRef = useRef(Boolean(isStreaming));
+
+  // 流式期间自动展开（思考过程实时显示在块内），结束后自动收起为摘要行并保持可再展开。
+  useEffect(() => {
+    const streaming = Boolean(isStreaming);
+    if (streaming && !wasStreamingRef.current) {
+      userToggledRef.current = false;
+      setExpanded(true);
+    } else if (!streaming && wasStreamingRef.current && !userToggledRef.current) {
+      setExpanded(false);
+    }
+    wasStreamingRef.current = streaming;
+  }, [isStreaming]);
+
+  // 外部「查看所有变更」等信号触发时强制展开
+  useEffect(() => {
+    if (forceExpandSignal && forceExpandSignal > 0) setExpanded(true);
+  }, [forceExpandSignal]);
+
   const useSteps = Array.isArray(steps) && steps.length > 0;
   const trimmedReasoning = useSteps
     ? (steps as ChatStep[])
@@ -303,52 +352,58 @@ function ThinkingBlock({
   const tools = useSteps
     ? (steps as ChatStep[]).filter((s): s is Extract<ChatStep, { type: "tool_call" }> => s.type === "tool_call")
     : (toolCallResults ?? []);
-  const isEmpty = !trimmedReasoning && tools.length === 0 && !isStreaming;
+  const hasReasoning = Boolean(trimmedReasoning);
+  /** 引擎级动作（知识检索/历史压缩）与产物步骤也计入「动作」，避免只有这些步骤时被误判为空态 */
+  const actionTotal =
+    tools.length +
+    (useSteps ? (steps as ChatStep[]).filter((s) => s.type === "action" || s.type === "artifact").length : 0);
+  const isEmpty = !hasReasoning && actionTotal === 0 && !isStreaming;
+  const isThinking = Boolean(isStreaming) && !hasReasoning && actionTotal === 0;
+  /** 未完成（running 过渡态或已中断定案）的工具步骤数：>0 说明本轮被中断，收起摘要不谎称「已完成」 */
+  const incompleteToolCount = countIncompleteToolSteps(steps as ChatStep[] | undefined);
 
-  const isStreamingTail = isStreaming && trimmedReasoning.length > 0 && /[。！？；…\s]$/.test(trimmedReasoning) === false;
-  const summaryParts: string[] = [];
-  if (trimmedReasoning.length) summaryParts.push(`${trimmedReasoning.length} 字思考`);
-  if (tools.length) summaryParts.push(`${tools.length} 个工具`);
-  const summary = summaryParts.join(" · ") || "未触发深度推理";
+  // 收起态摘要行（WorkBuddy 式「已完成 · 思考 + N 个动作」；被中断时前缀改为「已中断」）
+  const summaryText = isThinking
+    ? "思考中…"
+    : Boolean(isStreaming) && (hasReasoning || actionTotal > 0)
+      ? "执行中…"
+      : !isStreaming && (hasReasoning || actionTotal > 0)
+        ? `${incompleteToolCount > 0 ? "已中断" : "已完成"} · ${hasReasoning && actionTotal > 0 ? "思考 + " : hasReasoning ? "深度思考" : ""}${actionTotal > 0 ? `${actionTotal} 个动作` : ""}`
+        : "";
 
   return (
     <div className={`message-reasoning ${expanded ? "message-reasoning--expanded" : ""} ${isEmpty ? "message-reasoning--empty" : ""}`}>
       <button
         type="button"
         className="message-reasoning__toggle"
-        onClick={() => setExpanded((current) => !current)}
+        onClick={() => {
+          userToggledRef.current = true;
+          setExpanded((current) => !current);
+        }}
         aria-expanded={expanded}
       >
-        <Brain size={14} strokeWidth={1.8} className="message-reasoning__icon" />
         <span className="message-reasoning__label">深度思考</span>
-        <span className="message-reasoning__meta">{summary}{isStreamingTail ? "…" : ""}</span>
+        {!expanded && summaryText ? <span className="message-reasoning__summary">{summaryText}</span> : null}
         <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
       </button>
       {expanded && (
         <div className="message-reasoning__body">
-          {isEmpty ? (
+          {isThinking ? (
+            <div className="message-reasoning__thinking">
+              <ThinkingIndicator />
+              <p className="message-reasoning__empty-hint">模型正在思考中，推理过程将实时显示在这里。</p>
+            </div>
+          ) : isEmpty ? (
             <p className="message-reasoning__empty-hint">
               本次回答未使用推理模型或工具调用，直接给出最终答复。如需查看思考过程：
             </p>
-          ) : useSteps ? (
-            <ThinkingFlow steps={steps as ChatStep[]} />
           ) : (
-            <>
-              {trimmedReasoning && (
-                <pre className="message-reasoning__text">{trimmedReasoning}</pre>
-              )}
-              {tools.length > 0 && (
-                <div className="message-reasoning__steps">
-                  {tools.map((step, index) => (
-                    <ToolCallStep
-                      key={`legacy-${("id" in step && step.id) || index}-${index}`}
-                      step={step}
-                      index={index}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
+            <ExecutionTimeline
+              steps={useSteps ? (steps as ChatStep[]) : undefined}
+              legacyReasoning={!useSteps ? reasoning : undefined}
+              legacyTools={!useSteps ? toolCallResults : undefined}
+              isStreaming={isStreaming}
+            />
           )}
           {isEmpty && (
             <ul className="message-reasoning__empty-tips">
@@ -358,62 +413,6 @@ function ThinkingBlock({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-/** 按 steps 流顺序交错渲染（WorkBuddy 式深度思考视图）。
- * reasoning 段渲染为独立 pre；tool_call 段渲染为 ToolCallStep（独立行）。 */
-function ThinkingFlow({ steps }: { steps: ChatStep[] }) {
-  let toolIndex = 0;
-  return (
-    <div className="message-reasoning__flow">
-      {steps.map((step, index) => {
-        if (step.type === "reasoning") {
-          const text = step.text.trim();
-          if (!text) return null;
-          return (
-            <pre key={`flow-r-${index}`} className="message-reasoning__text message-reasoning__text--segment">
-              {text}
-            </pre>
-          );
-        }
-        const currentIndex = toolIndex;
-        toolIndex += 1;
-        return (
-          <ToolCallStep key={`flow-t-${index}-${step.name}`} step={step} index={currentIndex} />
-        );
-      })}
-    </div>
-  );
-}
-
-/** 单个工具调用步骤：图标 + 序号 + 工具名 + 参数摘要 + 结果首行预览 */
-function ToolCallStep({
-  step,
-  index,
-}: {
-  step: { name: string; arguments: string; result: string; isError?: boolean };
-  index: number;
-}) {
-  const Icon = TOOL_ICONS[step.name] ?? TerminalIcon;
-  const title = TOOL_TITLES[step.name] ?? step.name;
-  const argsSummary = formatToolArgs(step.arguments);
-  const resultPreview = formatToolResult(step.result);
-
-  return (
-    <div className={`message-reasoning__step ${step.isError ? "message-reasoning__step--error" : ""}`}>
-      <div className="message-reasoning__step-head">
-        <Icon size={12} strokeWidth={2} className="message-reasoning__step-icon" />
-        <span className="message-reasoning__step-num">{index + 1}</span>
-        <span className="message-reasoning__step-title">{title}</span>
-        {argsSummary ? (
-          <span className="message-reasoning__step-args" title={argsSummary}>{argsSummary}</span>
-        ) : null}
-      </div>
-      {resultPreview ? (
-        <div className="message-reasoning__step-result">{resultPreview}</div>
-      ) : null}
     </div>
   );
 }

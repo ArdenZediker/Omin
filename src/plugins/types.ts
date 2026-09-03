@@ -35,6 +35,8 @@ export type PluginManifest = {
   kind: PluginKind;
   /** SkillHub 风格分类：开发编程、内容创作、数据分析、知识管理、商业运营、设计多媒体 */
   category?: string;
+  /** 工具在 Marketplace 中的功能分组（如会话、文件、Git、导出等），仅 kind === "tool" 时使用 */
+  group?: string;
   /** emoji 或 lucide icon name */
   icon?: string;
   /** 来源页（如 SkillHub 技能详情页），用于「在来源查看」 */

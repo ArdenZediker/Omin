@@ -1,0 +1,117 @@
+
+
+.permission-mode-selector {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.permission-mode-selector__panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 80;
+  width: 280px;
+  padding: 14px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 14px;
+  background: var(--omni-panel-bg);
+  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.permission-mode-selector__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.permission-mode-selector__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--omni-app-text);
+}
+
+.permission-mode-selector__badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-accent, #8b5cf6) 12%, var(--omni-soft-bg));
+  color: var(--omni-accent, #8b5cf6);
+}
+
+.permission-mode-selector__desc,
+.permission-mode-selector__hint {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--omni-app-muted);
+  margin: 0;
+}
+
+.permission-mode-selector__hint {
+  color: color-mix(in srgb, var(--omni-app-muted) 75%, var(--omni-app-text));
+}
+
+.permission-mode-selector__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--omni-soft-bg);
+  cursor: pointer;
+}
+
+.permission-mode-selector__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--omni-app-text);
+}
+
+.permission-mode-selector__toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.permission-mode-selector__checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.permission-mode-selector__track {
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--omni-frame-border);
+  position: relative;
+  transition: background 0.2s ease;
+}
+
+.permission-mode-selector__checkbox:checked + .permission-mode-selector__track {
+  background: var(--omni-accent, #8b5cf6);
+}
+
+.permission-mode-selector__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.permission-mode-selector__checkbox:checked + .permission-mode-selector__track .permission-mode-selector__thumb {
+  transform: translateX(16px);
+}

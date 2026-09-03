@@ -12,7 +12,22 @@ export const EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY =
   "main_empty_chat_guide_compact";
 export const DEFAULT_TOPIC_PANEL_WIDTH = 240;
 export const MIN_TOPIC_PANEL_WIDTH = 220;
-export const MAX_TOPIC_PANEL_WIDTH = 360;
+/** 话题/产物面板的理论最大宽度上限（用于初始化读回持久化值时兜底，
+ *  远高于常见屏幕宽度，实际拖动不再受此硬限制，由 MIN_MAIN_CHAT_AREA_WIDTH
+ *  决定可拖到的最宽位置）。 */
+export const MAX_TOPIC_PANEL_WIDTH = 2000;
+/** 中间聊天区域保留的最小宽度；拖动右侧面板时，面板最宽可拖到
+ *  window.innerWidth - MIN_MAIN_CHAT_AREA_WIDTH，避免把聊天区完全盖住。 */
+export const MIN_MAIN_CHAT_AREA_WIDTH = 220;
+
+/** 对话框（输入区）拖动时的最小高度。 */
+export const MIN_COMPOSER_RESIZE_HEIGHT = 120;
+/** 对话框的理论最大高度上限（仅用于持久化读回兜底，远高于屏幕，
+ *  实际拖动由 MIN_MESSAGE_AREA_HEIGHT 动态限制）。 */
+export const MAX_COMPOSER_RESIZE_HEIGHT = 2000;
+/** 消息区保留的最小高度；拖动对话框时，最高可拖到
+ *  window.innerHeight - MIN_MESSAGE_AREA_HEIGHT，避免把消息区完全盖住。 */
+export const MIN_MESSAGE_AREA_HEIGHT = 120;
 export const PROJECT_GROUPS_STORAGE_KEY = "project_groups";
 export const DEFAULT_PROJECT_GROUP_LABEL = "项目空间";
 export const QUESTION_PREVIEW_MAX_LENGTH = 48;

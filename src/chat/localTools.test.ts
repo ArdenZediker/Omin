@@ -3,8 +3,10 @@ import type { Message } from "../adapters/types";
 import type { Project } from "./types";
 import { executeLocalTool, type LocalToolRuntime, type LocalToolSession } from "./localTools";
 
+const mockedInvoke = vi.hoisted(() => vi.fn());
+
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+  invoke: mockedInvoke,
 }));
 
 vi.mock("./confirmationGate", () => ({
@@ -56,14 +58,15 @@ describe("localTools", () => {
     vi.clearAllMocks();
   });
 
-  it("按当前助手权限拦截未启用的工具", async () => {
+  it("内置工具对所有项目默认可用，无需显式启用", async () => {
     const runtime = createRuntime({
-      activeProject: createProject({ allowedToolIds: ["read_session"] }),
+      activeProject: createProject({ allowedToolIds: ["search_sessions"] }),
     });
 
-    const result = await executeLocalTool(runtime, { command: "/search_files", args: "memory" });
+    const result = await executeLocalTool(runtime, { command: "/read_session", args: "session-1" });
 
-    expect(result).toEqual({ ok: false, error: "当前项目未启用工具：搜索文件" });
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("会话：当前会话");
   });
 
   it("搜索会话时标记当前会话并输出中文摘要", async () => {
@@ -213,7 +216,10 @@ describe("localTools", () => {
 
     expect(result?.ok).toBe(true);
     expect(result?.outputText).toContain("D:/proj/周报.docx");
-    expect(invoke).toHaveBeenCalledWith("export_docx", expect.objectContaining({ path: "D:/proj/周报.docx" }));
+    expect(invoke).toHaveBeenCalledWith(
+      "export_docx",
+      expect.objectContaining({ path: "D:/proj/测试助手/当前会话_session-/周报.docx" })
+    );
   });
 
   it("导出工具缺省路径与已有文件冲突时自动追加序号", async () => {
@@ -234,7 +240,38 @@ describe("localTools", () => {
 
     expect(result?.ok).toBe(true);
     expect(result?.outputText).toContain("D:/proj/周报-1.docx");
-    expect(invoke).toHaveBeenCalledWith("export_docx", expect.objectContaining({ path: "D:/proj/周报-1.docx" }));
+    expect(invoke).toHaveBeenCalledWith(
+      "export_docx",
+      expect.objectContaining({ path: "D:/proj/测试助手/当前会话_session-/周报-1.docx" })
+    );
+  });
+
+  it("导出 Markdown 把正文落盘为 .md 文件并以首行命名", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke)
+      .mockResolvedValueOnce(false) // path_exists：目标文件不存在
+      .mockResolvedValueOnce({ path: "D:/proj/我的笔记.md", size: 30 }); // write_text_file 结果
+
+    const runtime = createRuntime({
+      activeProject: createProject({ workspacePath: "D:/proj", allowedToolIds: ["export_md"] }),
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/export_md",
+      args: JSON.stringify({ content: "# 我的笔记\n这是正文内容。" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("D:/proj/我的笔记.md");
+    expect(invoke).toHaveBeenCalledWith(
+      "write_text_file",
+      expect.objectContaining({ path: "D:/proj/测试助手/当前会话_session-/我的笔记.md" })
+    );
+    const callArgs = vi.mocked(invoke).mock.calls.find((c) => c[0] === "write_text_file")?.[1] as { content?: string };
+    expect(callArgs?.content).toContain("这是正文内容。");
+    expect(result?.artifact?.type).toBe("file");
+    expect(result?.artifact?.path).toBe("D:/proj/我的笔记.md");
+    expect(result?.artifact?.content).toContain("我的笔记");
   });
 
   it("导出工具非项目会话时落到文档目录/Omni 兜底目录", async () => {
@@ -255,5 +292,109 @@ describe("localTools", () => {
 
     expect(result?.ok).toBe(true);
     expect(result?.outputText).toContain("C:/Users/Test/Documents/Omni/数据.xlsx");
+  });
+});
+
+describe("localTools /read_file", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeReadFilePayload(overrides: Partial<{ content: string; total_chars: number; returned_chars: number; offset_chars: number; truncated: boolean }> = {}) {
+    return {
+      content: "正文样例",
+      total_chars: 4,
+      returned_chars: 4,
+      offset_chars: 0,
+      truncated: false,
+      ...overrides,
+    };
+  }
+
+  it("兼容旧「仅路径」调用：invoke 透传 path 默认 maxChars/offsetChars/limitChars=null", async () => {
+    const runtime = createRuntime({
+      activeProject: createProject({ workspacePath: "D:/repo" }),
+    });
+    mockedInvoke.mockResolvedValueOnce(makeReadFilePayload());
+
+    const result = await executeLocalTool(runtime, {
+      command: "/read_file",
+      args: "docs/notes.md",
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith("read_workspace_file", {
+      projectPath: "D:/repo",
+      path: "docs/notes.md",
+      maxChars: null,
+      offsetChars: null,
+      limitChars: null,
+    });
+    // 末尾应拼出 file-meta 元信息行
+    expect(result?.outputText).toMatch(/\[file-meta total=4 offset=0 returned=4 truncated=false\]/);
+  });
+
+  it("JSON 入参：maxChars / offsetChars / limitChars 透传给 Rust", async () => {
+    const runtime = createRuntime({
+      activeProject: createProject({ workspacePath: "D:/repo" }),
+    });
+    mockedInvoke.mockResolvedValueOnce(
+      makeReadFilePayload({
+        content: "第二段",
+        total_chars: 5000,
+        returned_chars: 600,
+        offset_chars: 1600,
+        truncated: true,
+      }),
+    );
+
+    const result = await executeLocalTool(runtime, {
+      command: "/read_file",
+      args: JSON.stringify({ path: "C:/Users/PengY/Documents/Omni/Spring生态调研报告.md", maxChars: 20000, offsetChars: 1600, limitChars: 600 }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith("read_workspace_file", {
+      projectPath: "D:/repo",
+      path: "C:/Users/PengY/Documents/Omni/Spring生态调研报告.md",
+      maxChars: 20000,
+      offsetChars: 1600,
+      limitChars: 600,
+    });
+    expect(result?.outputText).toContain("C:/Users/PengY/Documents/Omni/Spring生态调研报告.md");
+    expect(result?.outputText).toMatch(/\[file-meta total=5000 offset=1600 returned=600 truncated=true\]/);
+    expect(result?.data).toMatchObject({
+      path: "C:/Users/PengY/Documents/Omni/Spring生态调研报告.md",
+      totalChars: 5000,
+      returnedChars: 600,
+      offsetChars: 1600,
+      truncated: true,
+    });
+  });
+
+  it("缺失 path 时返回用法错误，invoke 不被调用", async () => {
+    const runtime = createRuntime();
+
+    const result = await executeLocalTool(runtime, {
+      command: "/read_file",
+      args: "",
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("用法：/read_file");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("仅传 JSON 但缺 path 也走用法错误", async () => {
+    const runtime = createRuntime();
+
+    const result = await executeLocalTool(runtime, {
+      command: "/read_file",
+      args: JSON.stringify({ maxChars: 20000 }),
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("用法：/read_file");
+    expect(mockedInvoke).not.toHaveBeenCalled();
   });
 });

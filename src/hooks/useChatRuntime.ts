@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import type { ChatToolCall, Message, ModelConfig } from "../adapters/types";
+import type { ChatToolCall, ChatAttachment, Message, ModelConfig } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { isMainWindowUserVisible } from "../app/window";
 import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
+import type { ToolCallOutcome } from "../chat/engine";
 import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSelection";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
-import { getChatSessionTitle } from "../chat/storage";
+import { getChatSessionTitle, stripPendingPlaceholder } from "../chat/storage";
+import { settleInterruptedSteps } from "../chat/stepSettlement";
 import { executeLocalTool } from "../chat/localTools";
-import { appendArtifact, notifyArtifactsChanged, type Artifact } from "../chat/artifacts";
+import { requestConfirmation } from "../chat/confirmationGate";
+import { appendArtifact, notifyArtifactsChanged, NO_PROJECT_ARTIFACT_KEY, type Artifact } from "../chat/artifacts";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { Project, ChatExecutionResult, ChatSendOptions, ChatStep } from "../chat/types";
@@ -31,10 +34,60 @@ import {
   type PetThoughtSyncRequestPayload,
   type PetThoughtSyncResponsePayload,
   createPreviewThrottler,
+  createStructuredOutputFilter,
   safelyEmitPetThoughtEvent,
   safelyEmitPetThoughtEventTo,
   canUseTauriEvents,
 } from "./chatRuntimeHelpers";
+
+// 工具执行结果的扩展形态：携带本次落库产物的引用（engine 据此追加 artifact step）
+type ToolResultWithArtifact = import("../chat/toolRegistry").ToolExecutionResult & {
+  savedArtifact?: { artifactId: string; title: string };
+};
+
+// 写类本地工具：任务级隔离对这些入口做「按工作区串行 + 并发任务冲突确认」。
+// 与 WorkBuddy「每个 task 是独立沙箱单元」对齐——Omni 用逻辑围栏替代容器沙箱。
+const WRITE_TOOL_IDS = new Set<string>([
+  "export_docx",
+  "export_xlsx",
+  "export_pptx",
+  "export_md",
+  "git_commit",
+  "git_pr",
+  "update_persona",
+  "install_expert",
+  "install_skill",
+]);
+
+function generateTaskId(): string {
+  return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * 整轮任务的硬性看门狗（分钟）。
+ * 流式请求已有空闲/总超时兜底，但工具调用、MCP 子进程等环节仍可能永久挂起，
+ * 导致 UI 一直停在「正在思考」。这里做最后一道保险，超时即中断并给出明确错误。
+ */
+const RUN_WATCHDOG_MINUTES = 20;
+const RUN_WATCHDOG_MS = RUN_WATCHDOG_MINUTES * 60_000;
+
+/** 兜底生成 assistant 最终展示文本：优先用模型正式 content，其次流式累积内容，
+ * 再次工具输出；若全部为空但收集到 reasoning，则用 reasoning 作为内容并附加提示，
+ * 避免模型只思考不答复时 UI 出现空白消息。 */
+function resolveProjectReply(
+  finalContent: string | undefined,
+  streamedReply: string,
+  toolOutput: string | undefined,
+  reasoning: string
+): string {
+  const trimmed = (finalContent ?? "").trim() || streamedReply.trim() || (toolOutput ?? "").trim();
+  if (trimmed) return trimmed;
+  const trimmedReasoning = reasoning.trim();
+  if (trimmedReasoning) {
+    return `模型已完成思考，但未生成最终答复。可展开上方「深度思考」查看完整思考过程。\n\n---\n\n${trimmedReasoning}`;
+  }
+  return "";
+}
 
 type UseChatRuntimeArgs = {
   activeChatId: string | null;
@@ -66,7 +119,25 @@ type UseChatRuntimeArgs = {
 
 // 会话运行时辅助函数（工具解析 / 宠物思考事件同步 / 节流器）已抽到 ./chatRuntimeHelpers。
 
-
+/**
+ * 把用户随消息附带的非图片本地文件，转成注入模型的上下文说明。
+ * 文件内容不内联（避免把几十 MB 的 docx 塞进请求体），只给绝对路径，
+ * 让模型按需在工具循环里调用 /read_file 读取——这正是 WorkBuddy「把文件挂进
+ * 工作上下文、由智能体自行读取」的本地化实现。
+ */
+function buildAttachmentContext(attachments: ChatAttachment[]): string | undefined {
+  if (attachments.length === 0) {
+    return undefined;
+  }
+  const lines = attachments.map((attachment) => {
+    const size = attachment.size != null ? `（${attachment.size} 字节）` : "";
+    return `- ${attachment.path}${size}`;
+  });
+  return [
+    "以下为用户随本条消息附带的本地文件（绝对路径）。如需其内容，请调用 /read_file 传入对应路径读取，不要假设文件内容已在上下文中：",
+    ...lines,
+  ].join("\n");
+}
 
 export function useChatRuntime({
   activeChatId,
@@ -103,6 +174,13 @@ export function useChatRuntime({
   const loadingSessionIdsRef = useRef<Set<string>>(new Set());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const sessionRunIdsRef = useRef<Map<string, number>>(new Map());
+  // 任务级隔离状态：当前 run 的 taskId、按工作区的写串行队列、当前写占用者（taskId）。
+  const currentTaskIdRef = useRef<Map<string, string>>(new Map());
+  const workspaceWriteQueueRef = useRef<Map<string, Promise<unknown>>>(new Map());
+  const workspaceWriteOwnerRef = useRef<Map<string, string>>(new Map());
+  /** 整轮任务看门狗定时器；被看门狗中断的会话（用于区分用户手动停止） */
+  const runWatchdogRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const watchdogAbortedSessionIdsRef = useRef<Set<string>>(new Set());
   const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
   /** 本轮任务执行期间产生的产物，最终消息提交时挂到消息上 */
   const pendingArtifactsRef = useRef<Artifact[]>([]);
@@ -140,6 +218,16 @@ export function useChatRuntime({
       const runId = (sessionRunIdsRef.current.get(sessionId) ?? 0) + 1;
       sessionRunIdsRef.current.set(sessionId, runId);
       abortControllersRef.current.set(sessionId, abortController);
+      // 兜底看门狗：任何环节永久挂起时硬性中断，交由错误处理给出提示
+      const previous = runWatchdogRef.current.get(sessionId);
+      if (previous) clearTimeout(previous);
+      const watchdog = setTimeout(() => {
+        if (sessionRunIdsRef.current.get(sessionId) !== runId) return;
+        if (abortControllersRef.current.get(sessionId) !== abortController) return;
+        watchdogAbortedSessionIdsRef.current.add(sessionId);
+        abortController.abort();
+      }, RUN_WATCHDOG_MS);
+      runWatchdogRef.current.set(sessionId, watchdog);
       setSessionLoading(sessionId, true);
       return runId;
     },
@@ -157,6 +245,11 @@ export function useChatRuntime({
       if (sessionRunIdsRef.current.get(sessionId) !== runId) return;
       if (abortControllersRef.current.get(sessionId) !== abortController) return;
       abortControllersRef.current.delete(sessionId);
+      const watchdog = runWatchdogRef.current.get(sessionId);
+      if (watchdog) {
+        clearTimeout(watchdog);
+        runWatchdogRef.current.delete(sessionId);
+      }
       setSessionLoading(sessionId, false);
     },
     [setSessionLoading]
@@ -232,7 +325,8 @@ export function useChatRuntime({
     [setMessages, updateChatSessionMessages]
   );
 
-  /** 流式追加工具调用步骤到最后一条 project 消息的 steps 字段（实时上屏 UI） */
+  /** 流式追加工具调用步骤到最后一条 project 消息的 steps 字段（实时上屏 UI）。
+   *  running 过渡态步骤在完成后由同工具同参数的最终步骤「原地升级」，保持时间线顺序。 */
   const appendLastProjectStep = useCallback(
     (sessionId: string | null | undefined, step: ChatStep) => {
       const updateLastProject = (prev: Message[]) => {
@@ -241,12 +335,83 @@ export function useChatRuntime({
         const lastMessage = prev[lastIdx];
         if (lastMessage.role !== "project") return prev;
         const existing = (lastMessage.steps ?? []) as ChatStep[];
-        // 幂等：同一个 step.id + type 不重复追加
-        if (existing.some((s) => s.type === step.type && (("id" in s && "id" in step && s.id === step.id) || s.type === "tool_call" && "id" in step && s.type === step.type))) {
-          return prev;
+        /** 两步「同一调用」的匹配：当 arguments 字符串完全一致时按精确匹配升级；
+         *  fallthrough 时允许同名工具完成 step 替换最近一条同名 running step（兜底 streaming 期间
+         *  与完成态 arguments 出现空白/编码/重试参数微差的场景，避免运行步孤立被打成 interrupted）。 */
+        const sameCall = (a: ChatStep, b: ChatStep): a is Extract<ChatStep, { type: "tool_call" }> =>
+          a.type === "tool_call" && b.type === "tool_call" && a.name === b.name && a.arguments === b.arguments;
+        const sameToolName = (a: ChatStep, b: Extract<ChatStep, { type: "tool_call" }>): a is Extract<ChatStep, { type: "tool_call" }> =>
+          a.type === "tool_call" && a.name === b.name;
+
+        let nextSteps: ChatStep[];
+        if (step.type === "tool_call" && step.status === "running") {
+          // running 过渡态：同工具同参数已在跑则跳过，否则追加
+          if (existing.some((s) => sameCall(s, step) && s.status === "running")) return prev;
+          nextSteps = [...existing, step];
+        } else if (step.type === "tool_call") {
+          // 完成态：先尝试精确匹配（同名+同参数）的 running 步骤原地升级；
+          // 失败时回退到「同名最近一条 running 步骤」兜底升级，避免因参数序列化差异导致
+          // 运行步骤孤立被 settlement 误判为 interrupted。
+          const runningIdx = existing.findIndex((s) => sameCall(s, step) && s.status === "running");
+          let replaceIdx = runningIdx;
+          if (replaceIdx < 0) {
+            for (let i = existing.length - 1; i >= 0; i--) {
+              const candidate = existing[i];
+              if (candidate.type === "tool_call" && candidate.status === "running" && sameToolName(candidate, step)) {
+                replaceIdx = i;
+                break;
+              }
+            }
+          }
+          if (replaceIdx >= 0) {
+            nextSteps = existing.slice();
+            nextSteps[replaceIdx] = step;
+          } else if (existing.some((s) => sameCall(s, step) && s.status !== "running")) {
+            return prev;
+          } else {
+            nextSteps = [...existing, step];
+          }
+        } else {
+          // artifact 等其他类型：按 artifactId 幂等去重
+          if (step.type === "artifact" && existing.some((s) => s.type === "artifact" && s.artifactId === step.artifactId)) {
+            return prev;
+          }
+          nextSteps = [...existing, step];
         }
         const updated = [...prev];
-        updated[lastIdx] = { ...lastMessage, steps: [...existing, step] };
+        updated[lastIdx] = { ...lastMessage, steps: nextSteps };
+        return updated;
+      };
+      if (sessionId) {
+        updateChatSessionMessages(sessionId, updateLastProject);
+        return;
+      }
+      setMessages(updateLastProject);
+    },
+    [setMessages, updateChatSessionMessages]
+  );
+
+  /** 流式推理增量合入时间线：最后一段是 reasoning 则追加文本（逐字上屏），否则新开一段 reasoning 步骤。
+   *  与 appendLastProjectStep 配合，保证流式期间「思考 → 工具 → 思考」在时间线里实时可见。 */
+  const appendReasoningStepDelta = useCallback(
+    (sessionId: string | null | undefined, delta: string) => {
+      if (!delta) return;
+      const updateLastProject = (prev: Message[]) => {
+        if (prev.length === 0) return prev;
+        const lastIdx = prev.length - 1;
+        const lastMessage = prev[lastIdx];
+        if (lastMessage.role !== "project") return prev;
+        const existing = (lastMessage.steps ?? []) as ChatStep[];
+        const last = existing[existing.length - 1];
+        let nextSteps: ChatStep[];
+        if (last && last.type === "reasoning") {
+          nextSteps = existing.slice();
+          nextSteps[nextSteps.length - 1] = { type: "reasoning", text: last.text + delta };
+        } else {
+          nextSteps = [...existing, { type: "reasoning", text: delta }];
+        }
+        const updated = [...prev];
+        updated[lastIdx] = { ...lastMessage, steps: nextSteps };
         return updated;
       };
       if (sessionId) {
@@ -699,12 +864,19 @@ export function useChatRuntime({
       const latestUserQuery = [...conversationMessages].reverse().find((message) => message.role === "user")?.content ?? "";
       const relatedContext = getRelatedContextForProject(latestUserQuery);
       let streamedProjectReply = "";
-      let visibleStreamedProjectReply = "";
-      let isStructuredOutputStreaming = false;
+      const streamedFilter = createStructuredOutputFilter();
       let streamedReasoning = "";
-      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(sessionId, visibleStreamedProjectReply));
-      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, sessionId, conversationMessages, visibleStreamedProjectReply));
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(sessionId, streamedFilter.getVisibleText()));
+      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, sessionId, conversationMessages, streamedFilter.getVisibleText()));
       const updateReasoningPreview = createPreviewThrottler(33, () => setLastProjectReasoning(sessionId, streamedReasoning));
+      // 推理增量合入时间线（WorkBuddy 式逐字上屏）：33ms 节流冲刷，避免每个网络分片触发一次 setState
+      let pendingReasoningDelta = "";
+      const flushReasoningDelta = createPreviewThrottler(33, () => {
+        if (!pendingReasoningDelta) return;
+        const delta = pendingReasoningDelta;
+        pendingReasoningDelta = "";
+        appendReasoningStepDelta(sessionId, delta);
+      });
 
       setConversationMessagesForSession(sessionId, [...conversationMessages, { role: "project", content: "" }]);
       setError(null);
@@ -727,29 +899,24 @@ export function useChatRuntime({
           enabledToolNames: resolvedToolNames,
           enabledToolDescriptions: resolvedToolDescriptions,
           knowledgeCollectionId,
+          tools: [...buildChatTools(executionProject), ...listActiveMcpTools()],
+          executeToolCall,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
             }
             streamedProjectReply += chunk;
-            if (!isStructuredOutputStreaming) {
-              const nextVisible = `${visibleStreamedProjectReply}${chunk}`;
-              const structuredStart = nextVisible.search(/<omni_(memory|summary)>/i);
-              if (structuredStart >= 0) {
-                visibleStreamedProjectReply = nextVisible.slice(0, structuredStart).trimEnd();
-                isStructuredOutputStreaming = true;
-              } else {
-                visibleStreamedProjectReply = nextVisible;
-              }
-              updateThoughtPreview();
-              updateStreamPreview();
-            }
+            streamedFilter.append(chunk);
+            updateThoughtPreview();
+            updateStreamPreview();
           },
           onReasoning: (reasoning) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
             }
             streamedReasoning += reasoning;
+            pendingReasoningDelta += reasoning;
+            flushReasoningDelta();
             updateReasoningPreview();
           },
           onToolStep: (step) => {
@@ -789,7 +956,7 @@ export function useChatRuntime({
           return;
         }
 
-        const projectReply = taskResult.finalResult?.content || streamedProjectReply || taskResult.toolResult?.outputText || "";
+        const projectReply = resolveProjectReply(taskResult.finalResult?.content, streamedProjectReply, taskResult.toolResult?.outputText, streamedReasoning);
         updateStreamPreview(true);
         updateThoughtPreview(true);
         completePetThought(
@@ -808,6 +975,9 @@ export function useChatRuntime({
         if (runError instanceof DOMException && runError.name === "AbortError") {
           setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
           clearPetThoughtSession(sessionId);
+          if (sessionId && watchdogAbortedSessionIdsRef.current.delete(sessionId)) {
+            setError(`任务执行超时（${RUN_WATCHDOG_MINUTES} 分钟），已自动停止`);
+          }
           return;
         }
 
@@ -829,6 +999,8 @@ export function useChatRuntime({
         return;
       } finally {
         finishSessionRun(sessionId, runId, abortController);
+        // 中断收尾：把遗留的 running 过渡态步骤定案为 interrupted，随消息持久化（成功路径已替换为完整步骤、无 running，天然空操作）
+        setConversationMessagesForSession(sessionId, (prev) => settleInterruptedSteps(prev));
       }
     },
     [
@@ -859,7 +1031,7 @@ export function useChatRuntime({
   );
 
   const executeTool = useCallback(
-    async (command: { command: string; args: string }) => {
+    async (command: { command: string; args: string }): Promise<ToolResultWithArtifact | void> => {
       const result = await executeLocalTool(
         {
           activeProject,
@@ -872,14 +1044,17 @@ export function useChatRuntime({
       // 工具执行产出的交付内容 → 落库 + 收集，最终消息提交时挂到消息上。
       // 放在 executeTool 而非 executeToolCall，可同时覆盖 function calling 与 slash 命令两条路径。
       const artifact = result?.artifact;
-      if (artifact && activeProject) {
+      if (artifact && result) {
+        // 产物始终保存：有项目则归属项目，无项目则归入全局产物。
         const saved = appendArtifact({
           ...artifact,
-          projectId: activeProject.id,
+          projectId: activeProject?.id ?? NO_PROJECT_ARTIFACT_KEY,
           sessionId: activeChatId,
         });
         pendingArtifactsRef.current.push(saved);
         notifyArtifactsChanged();
+        // 把落库产物引用随结果带回：engine 据此在 tool_call step 后追加 artifact step
+        return { ...result, savedArtifact: { artifactId: saved.id, title: saved.title } };
       }
       return result;
     },
@@ -896,7 +1071,7 @@ export function useChatRuntime({
    * 映射回本地 slash 命令或 MCP 工具执行，结果转成文本回填给模型继续推理。
    */
   const executeToolCall = useCallback(
-    async (toolCall: ChatToolCall) => {
+    async (toolCall: ChatToolCall): Promise<string | ToolCallOutcome> => {
       // MCP 连接器工具：mcp__{serverId}__{toolName}
       if (toolCall.name.startsWith("mcp__")) {
         return executeMcpToolCall(toolCall.name, toolCall.arguments);
@@ -905,9 +1080,61 @@ export function useChatRuntime({
         command: toolCallNameToCommand(toolCall.name),
         args: extractToolCallArgs(toolCall.arguments),
       });
-      return formatToolCallResult(result);
+      return { outputText: formatToolCallResult(result), artifact: result?.savedArtifact };
     },
     [executeTool]
+  );
+
+  const getWorkspacePathForSession = (sid: string | null): string => {
+    const sess = sid ? getChatSessionById(sid) : null;
+    const proj = sess?.projectId ? getProjectById(sess.projectId) : activeProject;
+    return proj?.workspacePath ?? "";
+  };
+
+  // 任务级工具执行器：写类工具按工作区串行化，并在检测到另一并发任务占用同工作区时走确认门。
+  const makeTaskToolExecutor = useCallback(
+    (sessionId: string | null, taskId: string, workspacePath: string) =>
+      async (toolCall: ChatToolCall): Promise<string | ToolCallOutcome> => {
+        const command = toolCallNameToCommand(toolCall.name);
+        if (WRITE_TOOL_IDS.has(command)) {
+          const wsKey = workspacePath || "__no_project__";
+          const liveTaskId = currentTaskIdRef.current.get(sessionId ?? "") ?? taskId ?? wsKey;
+          const owner = workspaceWriteOwnerRef.current.get(wsKey);
+          if (owner && owner !== liveTaskId) {
+            const approved = await requestConfirmation({
+              source: "task_concurrent_write",
+              title: "另一任务正在写入该工作区",
+              summary: "检测到并发任务正在写入同一项目工作区，可能产生文件互相覆盖。",
+              riskLevel: "write",
+              details: [
+                { label: "工作区", value: workspacePath || "(未绑定项目)" },
+                { label: "当前任务", value: liveTaskId },
+                { label: "占用任务", value: owner },
+              ],
+              targets: workspacePath ? [workspacePath] : [],
+              warning:
+                "两个任务同时写同一工作区会互相覆盖文件。确认后本任务仍可写入；取消则本次写操作被跳过。",
+              confirmLabel: "仍要写入",
+            });
+            if (!approved) {
+              throw new Error("已取消：检测到并发任务写入同一工作区");
+            }
+          }
+          workspaceWriteOwnerRef.current.set(wsKey, liveTaskId);
+          const prev = workspaceWriteQueueRef.current.get(wsKey) ?? Promise.resolve();
+          const run = prev
+            .then(() => executeToolCall(toolCall))
+            .finally(() => {
+              if (workspaceWriteOwnerRef.current.get(wsKey) === liveTaskId) {
+                workspaceWriteOwnerRef.current.delete(wsKey);
+              }
+            });
+          workspaceWriteQueueRef.current.set(wsKey, run);
+          return run;
+        }
+        return executeToolCall(toolCall);
+      },
+    [executeToolCall, requestConfirmation]
   );
 
   const handlePetThoughtReply = useCallback(
@@ -953,15 +1180,27 @@ export function useChatRuntime({
 
       const abortController = new AbortController();
       const runId = startSessionRun(session.id, abortController);
+      const taskId = generateTaskId();
+      currentTaskIdRef.current.set(session.id, taskId);
+      const taskWs = getWorkspacePathForSession(session.id);
       setError(null);
 
       let conversationMessagesForTask = session.messages;
       let petThoughtId: string | null = null;
       let streamedProjectReply = "";
+      const streamedFilter = createStructuredOutputFilter();
       let streamedReasoning = "";
-      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(session.id, streamedProjectReply));
-      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, session.id, conversationMessagesForTask, streamedProjectReply));
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(session.id, streamedFilter.getVisibleText()));
+      const updateThoughtPreview = createPreviewThrottler(66, () => updatePetThought(petThoughtId, session.id, conversationMessagesForTask, streamedFilter.getVisibleText()));
       const updateReasoningPreview = createPreviewThrottler(33, () => setLastProjectReasoning(session.id, streamedReasoning));
+      // 推理增量合入时间线：33ms 节流冲刷
+      let pendingReasoningDelta = "";
+      const flushReasoningDelta = createPreviewThrottler(33, () => {
+        if (!pendingReasoningDelta) return;
+        const delta = pendingReasoningDelta;
+        pendingReasoningDelta = "";
+        appendReasoningStepDelta(session.id, delta);
+      });
 
       try {
         const taskResult = await executeInputTask({
@@ -982,6 +1221,7 @@ export function useChatRuntime({
               return;
             }
             streamedProjectReply += chunk;
+            streamedFilter.append(chunk);
             updateThoughtPreview();
             updateStreamPreview();
           },
@@ -990,6 +1230,8 @@ export function useChatRuntime({
               return;
             }
             streamedReasoning += reasoning;
+            pendingReasoningDelta += reasoning;
+            flushReasoningDelta();
             updateReasoningPreview();
           },
           onToolStep: (step) => {
@@ -1000,7 +1242,7 @@ export function useChatRuntime({
           },
           executeTool,
           tools: [...buildChatTools(targetProject), ...listActiveMcpTools()],
-          executeToolCall,
+          executeToolCall: makeTaskToolExecutor(session.id, taskId, taskWs),
         });
 
         if (!isCurrentSessionRun(session.id, runId, abortController)) {
@@ -1032,7 +1274,7 @@ export function useChatRuntime({
           return;
         }
 
-        const projectReply = taskResult.finalResult?.content || streamedProjectReply || taskResult.toolResult?.outputText || "";
+        const projectReply = resolveProjectReply(taskResult.finalResult?.content, streamedProjectReply, taskResult.toolResult?.outputText, streamedReasoning);
         updateStreamPreview(true);
         updateThoughtPreview(true);
         if (isCurrentPetThought(petThoughtId, session.id)) {
@@ -1051,6 +1293,9 @@ export function useChatRuntime({
         }
         if (replyError instanceof DOMException && replyError.name === "AbortError") {
           clearPetThoughtSession(session.id);
+          if (watchdogAbortedSessionIdsRef.current.delete(session.id)) {
+            setError(`任务执行超时（${RUN_WATCHDOG_MINUTES} 分钟），已自动停止`);
+          }
           return;
         }
 
@@ -1071,6 +1316,10 @@ export function useChatRuntime({
         }
       } finally {
         finishSessionRun(session.id, runId, abortController);
+        // 统一清理可能残留的空 assistant 占位消息：流式成功时内容已填充不会被误删；
+        // 失败/中止时删除占位，避免当前会话或重启后 UI 认为仍在流式中而锁死输入框；
+        // 同时把遗留的 running 过渡态步骤定案为 interrupted（中断信息随消息持久化）。
+        setConversationMessagesForSession(session.id, (prev) => settleInterruptedSteps(stripPendingPlaceholder(prev)));
       }
     },
     [
@@ -1134,29 +1383,44 @@ export function useChatRuntime({
       setError(null);
       const hiddenContext = options.hiddenContext;
       const selectedKnowledgeCollectionId = options.knowledgeCollectionId?.trim() || null;
+      const attachments = options.attachments ?? [];
 
       let sessionId = activeChatId;
       let runId = startSessionRun(sessionId, abortController);
+      const taskId = generateTaskId();
+      currentTaskIdRef.current.set(sessionId ?? "", taskId);
+      const taskWs = getWorkspacePathForSession(sessionId);
       const scopedCurrentMessages = getScopedConversationMessages();
       let conversationMessagesForTask = scopedCurrentMessages;
       let hasPetThought = false;
       let petThoughtId: string | null = null;
       let streamedProjectReply = "";
+      const streamedFilter = createStructuredOutputFilter();
       let streamedReasoning = "";
-      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(sessionId, streamedProjectReply));
+      const updateStreamPreview = createPreviewThrottler(16, () => setLastProjectContent(sessionId, streamedFilter.getVisibleText()));
       const updateThoughtPreview = createPreviewThrottler(66, () => {
         if (!hasPetThought) {
           return;
         }
-        updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, streamedProjectReply);
+        updatePetThought(petThoughtId, sessionId, conversationMessagesForTask, streamedFilter.getVisibleText());
       });
       const updateReasoningPreview = createPreviewThrottler(33, () => setLastProjectReasoning(sessionId, streamedReasoning));
+      // 推理增量合入时间线：sessionId 可能在 onPrepareConversation 中才确定，闭包读取当时的值
+      let pendingReasoningDelta = "";
+      const flushReasoningDelta = createPreviewThrottler(33, () => {
+        if (!pendingReasoningDelta) return;
+        const delta = pendingReasoningDelta;
+        pendingReasoningDelta = "";
+        appendReasoningStepDelta(sessionId, delta);
+      });
 
       try {
+        const attachmentContext = buildAttachmentContext(attachments);
         const taskResult = await executeInputTask({
           input: content,
           images,
-          hiddenContext,
+          hiddenContext: [hiddenContext, attachmentContext].filter(Boolean).join("\n\n") || undefined,
+          attachments,
           currentMessages: scopedCurrentMessages,
           model: executionModel,
           onPrepareConversation: (preparedMessages) => {
@@ -1165,6 +1429,7 @@ export function useChatRuntime({
               const nextSession = createSessionFromMessages(preparedMessages, activeProject?.id ?? undefined);
               sessionId = nextSession.id;
               runId = startSessionRun(sessionId, abortController);
+              currentTaskIdRef.current.set(sessionId, taskId);
             }
             setConversationMessagesForSession(sessionId, [...preparedMessages, { role: "project", content: "" }]);
             petThoughtId = startPetThought(sessionId, preparedMessages);
@@ -1178,6 +1443,7 @@ export function useChatRuntime({
               return;
             }
             streamedProjectReply += chunk;
+            streamedFilter.append(chunk);
             updateThoughtPreview();
             updateStreamPreview();
           },
@@ -1186,6 +1452,8 @@ export function useChatRuntime({
               return;
             }
             streamedReasoning += reasoning;
+            pendingReasoningDelta += reasoning;
+            flushReasoningDelta();
             updateReasoningPreview();
           },
           onToolStep: (step) => {
@@ -1196,7 +1464,7 @@ export function useChatRuntime({
           },
           executeTool,
           tools: [...buildChatTools(activeProject), ...listActiveMcpTools()],
-          executeToolCall,
+          executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs),
         });
 
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {
@@ -1246,7 +1514,7 @@ export function useChatRuntime({
           return;
         }
 
-        const projectReply = taskResult.finalResult?.content || streamedProjectReply || taskResult.toolResult?.outputText || "";
+        const projectReply = resolveProjectReply(taskResult.finalResult?.content, streamedProjectReply, taskResult.toolResult?.outputText, streamedReasoning);
         updateStreamPreview(true);
         updateThoughtPreview(true);
         if (hasPetThought && isCurrentPetThought(petThoughtId, sessionId)) {
@@ -1267,6 +1535,9 @@ export function useChatRuntime({
           if (hasPetThought) {
             clearPetThoughtSession(sessionId);
           }
+          if (sessionId && watchdogAbortedSessionIdsRef.current.delete(sessionId)) {
+            setError(`任务执行超时（${RUN_WATCHDOG_MINUTES} 分钟），已自动停止`);
+          }
           return;
         }
         setError(sendError instanceof Error ? sendError.message : "发送消息失败");
@@ -1284,6 +1555,10 @@ export function useChatRuntime({
         }
       } finally {
         finishSessionRun(sessionId, runId, abortController);
+        // 统一清理可能残留的空 assistant 占位消息：流式成功时内容已填充不会被误删；
+        // 失败/中止时删除占位，避免当前会话或重启后 UI 认为仍在流式中而锁死输入框；
+        // 同时把遗留的 running 过渡态步骤定案为 interrupted（中断信息随消息持久化）。
+        setConversationMessagesForSession(sessionId, (prev) => settleInterruptedSteps(stripPendingPlaceholder(prev)));
       }
     },
     [
@@ -1323,8 +1598,20 @@ export function useChatRuntime({
     const abortController = abortControllersRef.current.get(activeChatId);
     abortController?.abort();
     abortControllersRef.current.delete(activeChatId);
+    // 清理看门狗，避免 20 分钟后再次触发 abort 并弹出“任务执行超时”误导提示
+    const watchdog = runWatchdogRef.current.get(activeChatId);
+    if (watchdog) {
+      clearTimeout(watchdog);
+      runWatchdogRef.current.delete(activeChatId);
+    }
+    // 如果流式请求已插入空 assistant 占位但尚未产出内容，手动停止后必须清理它，
+    // 否则 App.tsx 的 hasPendingProjectPlaceholder 会让 UI 一直判定为“正在生成”，
+    // 导致输入框禁用、思考框不收起、停止按钮不消失。
+    // 若部分消息已有内容/步骤，则把遗留的 running 过渡态步骤定案为 interrupted，
+    // 时间线不再无限转圈（渲染为「已中断」），该状态随消息持久化。
+    setConversationMessagesForSession(activeChatId, (prev) => settleInterruptedSteps(stripPendingPlaceholder(prev)));
     setSessionLoading(activeChatId, false);
-  }, [activeChatId, setSessionLoading]);
+  }, [activeChatId, setConversationMessagesForSession, setSessionLoading]);
 
   const handleEditUserMessage = useCallback(
     (messageIndex: number) => {

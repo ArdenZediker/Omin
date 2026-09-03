@@ -19,6 +19,8 @@ import {
 } from "../chat/storage";
 import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
 import { savePersistedAutomationState } from "../chat/persistence";
+import { scheduleSessionMirror, clearSessionMirrorSchedule } from "../chat/sessionMirror";
+import { isMirrorSessionsEnabled } from "../app/outputStorage";
 import type {
   ProjectMemoryRecord,
   Project,
@@ -104,6 +106,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   // 若加载抛异常（catch 分支），保持 false，避免把空回退状态写回数据库、
   // 从而把库里已有的会话清空（这正是「重启后记忆消失」的根因之一）。
   const hydratedWithDataRef = useRef(false);
+  const projectsRef = useRef<Project[]>(projects);
+  const chatSessionsRef = useRef<ChatSession[]>(chatSessions);
 
   useEffect(() => {
     activeProjectIdRef.current = activeProjectId;
@@ -112,6 +116,14 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
   }, [activeChatId]);
+
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+
+  useEffect(() => {
+    chatSessionsRef.current = chatSessions;
+  }, [chatSessions]);
 
   useEffect(() => {
     if (activeMessagesSyncTimerRef.current !== null) {
@@ -141,6 +153,15 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         });
         return changed ? next : sessions;
       });
+
+      // 流式输出期间也防抖镜像活跃会话（开启开关时）。
+      if (isMirrorSessionsEnabled() && activeChatId) {
+        const meta = chatSessionsRef.current.find((session) => session.id === activeChatId);
+        if (meta) {
+          const project = projectsRef.current.find((p) => p.id === meta.projectId) ?? null;
+          scheduleSessionMirror({ ...meta, messages, updatedAt: now }, project);
+        }
+      }
     }, 90);
   }, [activeChatId, messages, persist]);
 
@@ -321,22 +342,34 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     const now = Date.now();
     const isActiveTarget = activeChatIdRef.current === sessionId;
 
-    if (isActiveTarget) {
-      setMessages((current) => (typeof nextMessages === "function" ? nextMessages(current) : nextMessages));
-    }
+    setChatSessions((sessions) => {
+      const current = sessions.find((session) => session.id === sessionId);
+      const currentMessages = current?.messages ?? [];
+      const messagesForSession = typeof nextMessages === "function" ? nextMessages(currentMessages) : nextMessages;
 
-    setChatSessions((sessions) =>
-      sessions.map((session) => {
-        if (session.id !== sessionId) return session;
-        const messagesForSession = typeof nextMessages === "function" ? nextMessages(session.messages) : nextMessages;
-        return {
-          ...session,
-          title: getChatSessionTitle(messagesForSession),
-          messages: messagesForSession,
-          updatedAt: now,
-        };
-      })
-    );
+      const updated: ChatSession = current
+        ? { ...current, title: getChatSessionTitle(messagesForSession), messages: messagesForSession, updatedAt: now }
+        : { ...createChatSession(messagesForSession), id: sessionId };
+
+      const nextSessions = sessions.map((session) => (session.id === sessionId ? updated : session));
+
+      // 在 setChatSessions 的 functional updater 内读取真实最新状态并同步更新 ref，
+      // 保证同一 React 批次内多次调用 updateChatSessionMessages 时，后续调用能读到
+      // 前一次的结果，避免 running 工具步骤被后续 settlement 等 updater 覆盖/误判为已中断。
+      chatSessionsRef.current = nextSessions;
+
+      if (isActiveTarget) {
+        setMessages(messagesForSession);
+      }
+
+      // 开启「镜像对话为 Markdown」时，防抖地把这场对话写入其产出目录。
+      if (isMirrorSessionsEnabled()) {
+        const project = projectsRef.current.find((project) => project.id === updated.projectId) ?? null;
+        scheduleSessionMirror(updated, project);
+      }
+
+      return nextSessions;
+    });
   }, []);
 
   const selectProject = useCallback(
@@ -523,6 +556,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const deleteChatSession = useCallback(
     async (sessionId: string): Promise<void> => {
+      clearSessionMirrorSchedule(sessionId);
       const session = chatSessions.find((item) => item.id === sessionId);
       // 破坏性操作：删除后无回收站，必须用户过目确认（与 git 工具共用同一道确认门）。
       const approved = await requestConfirmation({

@@ -4,7 +4,10 @@
 
 import { readSqliteBackedJson, saveSqliteBackedValue } from "../app/sqliteStorage";
 
-export type ArtifactType = "docx" | "xlsx" | "pptx" | "web" | "skill" | "image" | "code" | "text" | "file";
+export type ArtifactType = "docx" | "xlsx" | "pptx" | "web" | "skill" | "expert" | "image" | "code" | "text" | "file";
+
+/** 未绑定项目会话的产物统一归属 key */
+export const NO_PROJECT_ARTIFACT_KEY = "__no_project__";
 
 export interface Artifact {
   id: string;
@@ -14,6 +17,8 @@ export interface Artifact {
   title: string;
   /** 本地文件路径（可打开）；文本类产物为 null */
   path: string | null;
+  /** 外部 URL（网页/搜索类产物可点击打开） */
+  url: string | null;
   /** 文本类产物的内容（抓取正文 / 搜索结果），截断存储 */
   content: string | null;
   /** 文件大小（字节） */
@@ -26,13 +31,37 @@ export interface ArtifactSpec {
   type: ArtifactType;
   title: string;
   path?: string | null;
+  url?: string | null;
   content?: string | null;
   size?: number | null;
 }
 
-const ARTIFACTS_KEY = "omni_artifacts_v1";
+export const ARTIFACTS_KEY = "omni_artifacts_v1";
+export const ARTIFACT_PANEL_STATE_KEY = "omni_artifact_panel_state_v1";
 const MAX_ARTIFACTS = 500;
 const MAX_ARTIFACT_CONTENT = 20000;
+
+export interface ArtifactPanelState {
+  activeTabId: "overview" | string;
+  openArtifactIds: string[];
+}
+
+const DEFAULT_ARTIFACT_PANEL_STATE: ArtifactPanelState = {
+  activeTabId: "overview",
+  openArtifactIds: [],
+};
+
+export function loadArtifactPanelState(): ArtifactPanelState {
+  const state = readSqliteBackedJson<ArtifactPanelState>(ARTIFACT_PANEL_STATE_KEY, DEFAULT_ARTIFACT_PANEL_STATE);
+  return {
+    activeTabId: typeof state.activeTabId === "string" ? state.activeTabId : "overview",
+    openArtifactIds: Array.isArray(state.openArtifactIds) ? state.openArtifactIds : [],
+  };
+}
+
+export function saveArtifactPanelState(state: ArtifactPanelState): void {
+  saveSqliteBackedValue(ARTIFACT_PANEL_STATE_KEY, JSON.stringify(state));
+}
 
 export const ARTIFACT_TYPE_LABEL: Record<ArtifactType, string> = {
   docx: "文档",
@@ -40,6 +69,7 @@ export const ARTIFACT_TYPE_LABEL: Record<ArtifactType, string> = {
   pptx: "演示",
   web: "网页",
   skill: "技能",
+  expert: "专家",
   image: "图片",
   code: "代码",
   text: "文本",
@@ -73,6 +103,7 @@ export function appendArtifact(spec: ArtifactSpec & { projectId: string; session
     type: spec.type,
     title: spec.title,
     path: spec.path ?? null,
+    url: spec.url ?? null,
     content: typeof spec.content === "string" ? spec.content.slice(0, MAX_ARTIFACT_CONTENT) : null,
     size: spec.size ?? null,
     createdAt: Date.now(),
@@ -104,4 +135,25 @@ export function notifyArtifactsChanged(): void {
   } catch {
     // 非浏览器环境忽略
   }
+}
+
+/** 跨组件请求：在右侧「产物」面板中以标签页打开指定产物 */
+export const OPEN_ARTIFACT_EVENT = "omni:open-artifact";
+
+let pendingOpenArtifactId: string | null = null;
+
+export function requestOpenArtifactInPanel(artifactId: string): void {
+  pendingOpenArtifactId = artifactId;
+  try {
+    window.dispatchEvent(new CustomEvent(OPEN_ARTIFACT_EVENT, { detail: { artifactId } }));
+  } catch {
+    // 非浏览器环境忽略
+  }
+}
+
+/** 在产物面板挂载时消费待打开的产物 id（一次有效） */
+export function consumePendingOpenArtifactId(): string | null {
+  const id = pendingOpenArtifactId;
+  pendingOpenArtifactId = null;
+  return id;
 }

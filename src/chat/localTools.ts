@@ -6,6 +6,7 @@ import { pluginRegistry, parseSkillMarkdown } from "../plugins/registry";
 import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 import { requestConfirmation } from "./confirmationGate";
+import { buildSessionOutputDir, getEffectiveOutputRoot } from "../app/outputStorage";
 
 export type LocalToolSession = {
   id: string;
@@ -134,6 +135,20 @@ function numArg(record: Record<string, unknown> | null, key: string): number | u
   return undefined;
 }
 
+/** Tauri read_workspace_file 返回值（与 src-tauri/src/workspace_files.rs::ReadFileResult 对齐）。 */
+interface ReadFileResult {
+  content: string;
+  total_chars: number;
+  returned_chars: number;
+  offset_chars: number;
+  truncated: boolean;
+}
+
+/** 把 [file-meta ...] 块定长渲染出来，便于模型识别 + 视觉扫读。 */
+function formatFileMetaLine(result: ReadFileResult): string {
+  return `[file-meta total=${result.total_chars} offset=${result.offset_chars} returned=${result.returned_chars} truncated=${result.truncated}]`;
+}
+
 export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   const registry = new ToolRegistry();
 
@@ -229,45 +244,40 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     command: readFileTool.command,
     title: readFileTool.title,
     execute: async (resolvedCommand) => {
-      const relativePath = resolvedCommand.args.trim();
-      if (!relativePath) return { ok: false, error: "用法：/read_file 相对路径" };
-
-      // 项目会话下读取工作区之外的绝对路径：走提权确认（对齐 WorkBuddy「授权后可读」）。
-      const ws = runtime.activeProject?.workspacePath ?? "";
-      const outOfWorkspace = Boolean(ws) && isAbsolutePath(relativePath) && !isWithin(relativePath, ws);
-      let allowAbsolute = false;
-      if (outOfWorkspace) {
-        const approved = await requestConfirmation({
-          source: "read_out_of_workspace",
-          title: "读取工作区之外的文件？",
-          summary: "模型请求读取项目工作区之外的文件。",
-          riskLevel: "read",
-          details: [
-            { label: "目标文件", value: relativePath },
-            { label: "项目工作区", value: ws },
-          ],
-          targets: [relativePath],
-          warning:
-            "越界读取不受工作区围栏保护，文件内容将返回给模型。确认后 Omni 才会读取；取消则仅能读取工作区内的文件。",
-          confirmLabel: "仍要读取",
-        });
-        if (!approved) {
-          throw new Error("已取消：目标文件位于项目工作区之外且未获确认");
-        }
-        allowAbsolute = true;
+      // 支持 JSON 入参（推荐：{"path":"...","maxChars":20000,"offsetChars":0,"limitChars":16000}），
+      // 也兼容旧的「仅路径」用法（如 /read_file C:/Users/...）。
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const rawTextPath = resolvedCommand.args.trim();
+      const path = strArg(json, "path") ?? (rawTextPath.startsWith("{") ? null : rawTextPath) ?? "";
+      if (!path) {
+        return { ok: false, error: "用法：/read_file <path>，或 /read_file {\"path\":\"...\",\"maxChars\":N,\"offsetChars\":N,\"limitChars\":N}" };
       }
+      const maxChars = numArg(json, "maxChars");
+      const offsetChars = numArg(json, "offsetChars");
+      const limitChars = numArg(json, "limitChars");
 
-      const content = await invoke<string>("read_workspace_file", {
+      // 读取不限制范围：绝对路径直接读（用户本机文件，无需确认门）；
+      // 相对路径落在工作区（无项目时全局 workspace_root）内解析。
+      // 只有写入/导出才需要围栏与确认门。
+      const ws = runtime.activeProject?.workspacePath ?? "";
+      const result = await invoke<ReadFileResult>("read_workspace_file", {
         projectPath: ws || null,
-        path: relativePath,
-        maxChars: 6000,
-        allowAbsolute,
+        path,
+        maxChars: maxChars ?? null,
+        offsetChars: offsetChars ?? null,
+        limitChars: limitChars ?? null,
       });
 
       return {
         ok: true,
-        outputText: [`文件：${relativePath}`, "", content].join("\n"),
-        data: { path: relativePath },
+        outputText: [`文件：${path}`, "", result.content, "", formatFileMetaLine(result)].join("\n"),
+        data: {
+          path,
+          totalChars: result.total_chars,
+          returnedChars: result.returned_chars,
+          offsetChars: result.offset_chars,
+          truncated: result.truncated,
+        },
       };
     },
   });
@@ -395,6 +405,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             ? `专家「${manifest.name}」（${manifest.id}）已更新，可在「专家分类 → 我的专家」查看。`
             : `专家「${manifest.name}」（${manifest.id}）已安装，可在「专家分类 → 我的专家」查看。`,
           data: { id: manifest.id, name: manifest.name, existed },
+          artifact: { type: "expert", title: `专家：${manifest.name}（${manifest.id}）`, path: null },
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : "专家定义校验失败" };
@@ -407,7 +418,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   registry.register({
     id: "web_search",
     command: "/web_search",
-    title: "联网搜索",
+    title: "Web Search",
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const query = strArg(json, "query", "keyword", "q") ?? resolvedCommand.args.trim();
@@ -428,7 +439,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           ok: true,
           outputText,
           data: results,
-          artifact: { type: "web", title: `搜索「${query}」`, content: outputText },
+          artifact: { type: "web", title: `搜索「${query}」`, url: results[0]?.url ?? null, content: outputText },
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -439,7 +450,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   registry.register({
     id: "web_fetch",
     command: "/web_fetch",
-    title: "网页抓取",
+    title: "Web Fetch",
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const url = strArg(json, "url", "link") ?? resolvedCommand.args.trim();
@@ -463,7 +474,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           ok: true,
           outputText,
           data: { title: result.title, url: result.final_url, links: result.links },
-          artifact: { type: "web", title: result.title || result.final_url, content: outputText },
+          artifact: { type: "web", title: result.title || result.final_url, url: result.final_url, content: outputText },
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -479,7 +490,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   registry.register({
     id: "git_info",
     command: "/git_info",
-    title: "Git 查看",
+    title: "Git Info",
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const operation = strArg(json, "operation", "op") ?? resolvedCommand.args.trim().split(/\s+/)[0];
@@ -500,7 +511,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   registry.register({
     id: "git_commit",
     command: "/git_commit",
-    title: "Git 提交",
+    title: "Git Commit",
     // 会改动仓库状态：addAll 时还会把未跟踪文件一并纳入暂存，需用户过目。
     confirm: (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
@@ -555,7 +566,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   registry.register({
     id: "git_pr",
     command: "/git_pr",
-    title: "Git 创建 PR",
+    title: "Git PR",
     // 全项目唯一**不可逆**操作：会 git push 到远端，推上去就撤不回来了。
     confirm: (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
@@ -606,6 +617,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     docx: "导出文档",
     xlsx: "导出表格",
     pptx: "导出演示",
+    md: "文档",
   };
 
   /** 判断字符串是否为绝对路径（Windows 盘符、/ 开头或 UNC）。 */
@@ -637,20 +649,16 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       ext
     );
 
-  /** 默认产物目录：非项目会话时的落盘根目录（系统文档目录/Omni）。 */
-  const defaultArtifactDir = async (): Promise<string> => {
-    try {
-      const dir = await invoke<string>("default_artifact_dir");
-      return typeof dir === "string" && dir.trim() ? joinPath(dir.trim(), "Omni") : "";
-    } catch {
-      return "";
-    }
+  /** 解析产出根目录：项目会话优先用项目工作区；否则用「产出根目录」设置（未设则回退系统文档/Omni）。 */
+  const resolveOutputBase = async (workspacePath: string): Promise<string> => {
+    if (workspacePath) return workspacePath;
+    return getEffectiveOutputRoot();
   };
 
   /** 解析导出输出路径：显式绝对路径直接用；否则自动落到项目目录或默认产物目录，并避免与已有文件冲突。 */
   const resolveExportPath = async (options: {
     pathArg?: string;
-    ext: "docx" | "xlsx" | "pptx";
+    ext: "docx" | "xlsx" | "pptx" | "md";
     specRaw: unknown;
     overwrite: boolean;
     workspacePath: string;
@@ -683,8 +691,17 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       return ensureExtension(pathArg, ext);
     }
 
-    // 目录：项目会话 → 项目目录；否则 → 系统文档目录/Omni
-    const dir = workspacePath || (await defaultArtifactDir());
+    // 目录：项目会话优先用项目工作区；否则用「产出根目录」设置（未设则回退系统文档/Omni）。
+    // 再自动按「项目 / 会话」分子目录，避免不同会话产物平铺混在一起。
+    const base = await resolveOutputBase(workspacePath);
+    let dir = base;
+    if (base) {
+      const session =
+        runtime.activeChatId
+          ? runtime.getChatSessionById(runtime.activeChatId)
+          : null;
+      dir = buildSessionOutputDir(base, runtime.activeProject?.title, session?.title ?? "", session?.id ?? "");
+    }
 
     // ② 传了相对路径/纯文件名：拼到默认目录
     if (pathArg) {
@@ -779,16 +796,76 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     });
   };
 
-  registerExportTool("export_docx", "Word 文档", "/export_docx", "export_docx");
-  registerExportTool("export_xlsx", "Excel 表格", "/export_xlsx", "export_xlsx");
-  registerExportTool("export_pptx", "PPT 演示", "/export_pptx", "export_pptx");
+  registerExportTool("export_docx", "Export Word", "/export_docx", "export_docx");
+  registerExportTool("export_xlsx", "Export Excel", "/export_xlsx", "export_xlsx");
+  registerExportTool("export_pptx", "Export PPT", "/export_pptx", "export_pptx");
+
+  // ---- Markdown 导出：把正文直接落盘为 .md 文件（不渲染 OOXML） ----
+  registry.register({
+    id: "export_md",
+    command: "/export_md",
+    title: "Export Markdown",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const pathArg = strArg(json, "path", "output", "file");
+      const content = strArg(json, "content", "markdown", "md", "text");
+      if (!content || !content.trim()) {
+        return { ok: false, error: "缺少 content：请提供要写入文件的 Markdown 正文" };
+      }
+      const overwrite =
+        typeof json?.overwrite === "boolean"
+          ? json.overwrite
+          : json?.overwrite === true || json?.overwrite === "true";
+      try {
+        const ws = runtime.activeProject?.workspacePath ?? "";
+        // 未给 title 时，用正文首行（去掉 #/标记）作为缺省文件名
+        const rawTitle = String(json?.title ?? "");
+        let title = rawTitle.trim();
+        if (!title) {
+          const firstLine =
+            content
+              .split(/\r?\n/)
+              .map((l) => l.trim())
+              .find((l) => l.length > 0) ?? "";
+          title = firstLine.replace(/^#+\s*/, "").replace(/[*_`]/g, "").trim();
+        }
+        const path = await resolveExportPath({
+          pathArg,
+          ext: "md",
+          specRaw: { title },
+          overwrite,
+          workspacePath: ws,
+        });
+        const outcome = await invoke<{ path: string; size: number }>("write_text_file", {
+          path,
+          content,
+          overwrite,
+          workspacePath: ws || null,
+        });
+        return {
+          ok: true,
+          outputText: `Markdown 已生成：${outcome.path}（${(outcome.size / 1024).toFixed(1)} KB）`,
+          data: outcome,
+          artifact: {
+            type: "file",
+            title: outcome.path.split(/[\\/]/).pop() || "文档.md",
+            path: outcome.path,
+            size: outcome.size,
+            content,
+          },
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
 
   // ---- 自造技能安装（Rust：skillhub.rs install_local_skill） ----
 
   registry.register({
     id: "install_skill",
     command: "/install_skill",
-    title: "安装自造技能",
+    title: "Install Skill",
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const id = strArg(json, "id", "slug");

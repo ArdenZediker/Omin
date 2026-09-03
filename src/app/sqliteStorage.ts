@@ -67,7 +67,16 @@ export function readSqliteBackedJson<T>(key: string, fallback: T): T {
   if (!raw) return fallback;
 
   try {
-    return { ...fallback, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    // 数组 fallback 不能按对象 spread 合并，否则会变成 {0:..., 1:...} 并丢失数组结构。
+    if (Array.isArray(fallback)) {
+      return Array.isArray(parsed) ? (parsed as T) : fallback;
+    }
+    // 对象沿用浅合并行为，保证新增字段有默认值。
+    if (fallback && typeof fallback === "object") {
+      return { ...fallback, ...parsed } as T;
+    }
+    return parsed as T;
   } catch {
     return fallback;
   }

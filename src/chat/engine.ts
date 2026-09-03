@@ -15,6 +15,16 @@ const DEFAULT_SYSTEM_PROMPT =
 /** 单轮对话中模型可发起的最大工具调用轮数（防止死循环）。 */
 const MAX_TOOL_ROUNDS = 6;
 
+/**
+ * 工具调用的增强执行结果：除回填给模型的文本外，还可携带本次执行落库产物的引用。
+ * 引擎收到 artifact 时会在对应 tool_call step 之后追加 `artifact` step（实时推送 + 持久化），
+ * 时间线即可渲染可点击跳转产物面板的迷你卡片。
+ */
+export interface ToolCallOutcome {
+  outputText: string;
+  artifact?: { artifactId: string; title: string };
+}
+
 /** 上下文窗口占用超过该比例触发历史压缩 */
 const CONTEXT_BUDGET_RATIO = 0.75;
 
@@ -87,33 +97,34 @@ function accumulateUsage(acc: UsageAccumulator, usage: { promptTokens: number; c
 /**
  * 上下文预算压缩：当请求超窗口预算时，把最旧的对话压缩成一条摘要。
  * 摘要在独立的一次小请求里生成（非流式），失败则丢弃最旧轮次兜底。
+ * 返回实际发生的压缩信息（供时间线渲染「压缩」动作步骤）。
  */
 async function compactHistoryIfNeeded(options: {
   model: string;
   requestMessages: Message[];
   modelConfig?: ModelConfig;
   signal?: AbortSignal;
-}): Promise<Message[]> {
+}): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean } }> {
   const { model, requestMessages, modelConfig, signal } = options;
   const contextWindow = modelConfig?.maxTokens ?? 128000;
   const budget = Math.floor(contextWindow * CONTEXT_BUDGET_RATIO);
   const estimated = estimatePromptTokens(requestMessages);
 
   if (estimated <= budget) {
-    return requestMessages;
+    return { messages: requestMessages };
   }
 
   // 找出可压缩区间：跳过 system/knowledge（前部）与最后一条 user 消息
   const compactableStart = requestMessages.findIndex((m) => m.role !== "system");
-  if (compactableStart < 0) return requestMessages;
+  if (compactableStart < 0) return { messages: requestMessages };
   const latestUserIdx = [...requestMessages].reverse().findIndex((m) => m.role === "user");
-  if (latestUserIdx < 0) return requestMessages;
+  if (latestUserIdx < 0) return { messages: requestMessages };
   const compactableEnd = requestMessages.length - 1 - latestUserIdx;
 
   const slice = requestMessages.slice(compactableStart, compactableEnd);
   if (slice.length < 2) {
     // 没有可压缩的历史，直接返回（由模型侧尽力而为）
-    return requestMessages;
+    return { messages: requestMessages };
   }
 
   // 只压缩最旧的 60%，保留近端细节
@@ -134,7 +145,10 @@ async function compactHistoryIfNeeded(options: {
     if (summary && summary.length > 20) {
       // 保留前部 system/knowledge 消息 + 摘要 + 近端保留消息
       const leading = requestMessages.slice(0, compactableStart);
-      return [...leading, { role: "assistant" as const, content: `【历史对话摘要】${summary}` }, ...retained];
+      return {
+        messages: [...leading, { role: "assistant" as const, content: `【历史对话摘要】${summary}` }, ...retained],
+        compaction: { removedCount: compactSlice.length, fallback: false },
+      };
     }
   } catch {
     // 压缩失败：走丢弃兜底
@@ -142,7 +156,10 @@ async function compactHistoryIfNeeded(options: {
 
   // 兜底：丢掉最旧一轮对话（保留 system/knowledge 与近端）
   const leading = requestMessages.slice(0, compactableStart);
-  return [...leading, ...requestMessages.slice(compactableStart + 2)];
+  return {
+    messages: [...leading, ...requestMessages.slice(compactableStart + 2)],
+    compaction: { removedCount: 2, fallback: true },
+  };
 }
 
 /**
@@ -162,7 +179,7 @@ async function runToolLoop(options: {
   onReasoning?: (reasoning: string) => void;
   /** 每个工具调用执行完成时回调（实时上屏 UI 的「思考过程」步骤） */
   onToolStep?: (step: ChatStep) => void;
-  executeToolCall: (toolCall: ChatToolCall) => Promise<string>;
+  executeToolCall: (toolCall: ChatToolCall) => Promise<string | ToolCallOutcome>;
 }): Promise<{
   content: string;
   model: string;
@@ -187,6 +204,9 @@ async function runToolLoop(options: {
     }
 
     let response;
+    /** 本轮模型 content 缓冲区。当本轮存在 tool_calls 时，先把 content 攒下来，
+     * 等本批工具全部执行完成后再一次性输出，避免用户看到「工具还在转，正文已经出来」的错乱顺序。 */
+    let roundContentBuffer = "";
     if (canStream) {
       response = await modelRegistry.chatStream(
         {
@@ -206,7 +226,7 @@ async function runToolLoop(options: {
             onReasoning?.(chunk.reasoning);
           }
           if (chunk.content) {
-            onChunk?.(chunk.content);
+            roundContentBuffer += chunk.content;
           }
         }
       );
@@ -227,7 +247,7 @@ async function runToolLoop(options: {
         onReasoning?.(response.reasoning);
       }
       if (response.content) {
-        onChunk?.(response.content);
+        roundContentBuffer += response.content;
       }
     }
 
@@ -241,7 +261,10 @@ async function runToolLoop(options: {
         steps.push({ type: "reasoning", text: roundReasoning });
         roundReasoning = "";
       }
-      return { content: response.content ?? "", model: response.model, usage, toolRounds: round + 1, reasoning, toolCallResults: allToolCallResults, steps };
+      if (roundContentBuffer) {
+        onChunk?.(roundContentBuffer);
+      }
+      return { content: roundContentBuffer || response.content || "", model: response.model, usage, toolRounds: round + 1, reasoning, toolCallResults: allToolCallResults, steps };
     }
 
     // 本轮 reasoning 增量 → step（本轮 reasoning 在工具调用之前发生）
@@ -255,19 +278,30 @@ async function runToolLoop(options: {
       content: response.content ?? "",
       toolCalls: response.toolCalls,
     };
+    // 实时上屏：本轮全部工具调用并行开始，先推送 running 过渡态（不进 steps 数组，
+    // 避免瞬时状态被持久化；完成后由运行时把同工具同参数的 running 步骤原地升级为结果行）。
+    for (const toolCall of response.toolCalls) {
+      onToolStep?.({ type: "tool_call", name: toolCall.name, arguments: toolCall.arguments, result: "", status: "running" });
+    }
+
     // 并行执行本轮全部工具调用（保持结果顺序与 tool_calls 一致）
-    const results = await Promise.all(
-      response.toolCalls.map(async (toolCall) => {
+    const outcomes = await Promise.all(
+      response.toolCalls.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"] }> => {
         try {
-          return await executeToolCall(toolCall);
+          const raw = await executeToolCall(toolCall);
+          if (typeof raw === "string") {
+            return { text: raw };
+          }
+          return { text: raw.outputText, artifact: raw.artifact };
         } catch (error) {
-          return `工具执行失败：${error instanceof Error ? error.message : String(error)}`;
+          return { text: `工具执行失败：${error instanceof Error ? error.message : String(error)}` };
         }
       })
     );
     // 记录本轮全部 tool_call 结果（按时间/调用顺序追加），供 UI 思考块渲染步骤
     response.toolCalls.forEach((toolCall, index) => {
-      const result = results[index];
+      const outcome = outcomes[index];
+      const result = outcome.text;
       const isError = result.startsWith("工具执行失败");
       const stepRecord: ChatToolCallResult = {
         id: toolCall.id,
@@ -289,10 +323,24 @@ async function runToolLoop(options: {
       steps.push(step);
       // 实时上屏：每完成一个工具调用立刻通知 UI（WorkBuddy 式「边执行边看到步骤」体验）
       onToolStep?.(step);
+      // 工具执行落库了交付产物 → 紧跟 tool_call 追加 artifact step（时间线渲染可点击的产物迷你卡片）
+      if (outcome.artifact) {
+        const artifactStep: ChatStep = {
+          type: "artifact",
+          artifactId: outcome.artifact.artifactId,
+          title: outcome.artifact.title,
+        };
+        steps.push(artifactStep);
+        onToolStep?.(artifactStep);
+      }
     });
+    // 本批工具全部执行完成，再把本轮正文一次性输出，保证正文出现在工具步骤之后。
+    if (roundContentBuffer) {
+      onChunk?.(roundContentBuffer);
+    }
     const toolMessages: Message[] = response.toolCalls.map((toolCall, index) => ({
       role: "tool",
-      content: results[index],
+      content: outcomes[index].text,
       toolCallId: toolCall.id,
       toolCallName: toolCall.name,
     }));
@@ -343,8 +391,8 @@ export async function executeChatTurn(options: {
   enableToolProtocol?: boolean;
   /** function calling：工具声明；与 executeToolCall 同时提供时启用工具循环 */
   tools?: ChatToolParam[];
-  /** 执行一次模型发起的工具调用，返回结果文本 */
-  executeToolCall?: (toolCall: ChatToolCall) => Promise<string>;
+  /** 执行一次模型发起的工具调用，返回结果文本（或携带落库产物引用的增强结果） */
+  executeToolCall?: (toolCall: ChatToolCall) => Promise<string | ToolCallOutcome>;
 }): Promise<ChatExecutionResult> {
   const {
     model,
@@ -390,6 +438,13 @@ export async function executeChatTurn(options: {
     throw new Error("当前模型或偏好设置不允许图片输入");
   }
 
+  // 引擎级动作（知识检索 / 历史压缩等）：实时推送时间线 + 记入最终 steps
+  const engineActions: ChatStep[] = [];
+  const emitEngineAction = (step: ChatStep) => {
+    engineActions.push(step);
+    onToolStep?.(step);
+  };
+
   const knowledgeContext =
     enableKnowledgeContext &&
     !shouldSkipKnowledgeContext(messages) &&
@@ -402,6 +457,15 @@ export async function executeChatTurn(options: {
           signal,
         })
       : null;
+  if (knowledgeContext && knowledgeContext.sources.length > 0) {
+    emitEngineAction({
+      type: "action",
+      label: "检索",
+      title: "Knowledge Search",
+      icon: "Search",
+      detail: `「${knowledgeContext.query}」命中 ${knowledgeContext.sources.length} 条知识片段`,
+    });
+  }
 
   const projectAgentsMd = project?.workspacePath
     ? await invoke<string>("read_project_agents_md", { projectPath: project.workspacePath }).catch(() => "")
@@ -429,7 +493,19 @@ export async function executeChatTurn(options: {
 
   // 上下文预算：超窗压缩（不重复压缩，一次足够）
   if (requestMessages.length > 4) {
-    requestMessages = await compactHistoryIfNeeded({ model, requestMessages, modelConfig, signal });
+    const compacted = await compactHistoryIfNeeded({ model, requestMessages, modelConfig, signal });
+    requestMessages = compacted.messages;
+    if (compacted.compaction) {
+      emitEngineAction({
+        type: "action",
+        label: "压缩",
+        title: "Context Compaction",
+        icon: "Archive",
+        detail: compacted.compaction.fallback
+          ? "上下文超出预算且摘要压缩失败，已丢弃最旧的历史消息"
+          : `上下文超出预算，已把 ${compacted.compaction.removedCount} 条最旧消息压缩为摘要`,
+      });
+    }
   }
 
   const hasTools = Boolean(tools?.length && executeToolCall && modelConfig?.toolCalling !== false);
@@ -454,6 +530,7 @@ export async function executeChatTurn(options: {
       throw new DOMException("Request aborted", "AbortError");
     }
     const parsed = parseOmniStructuredOutput(toolResult.content);
+    const finalSteps: ChatStep[] = [...engineActions, ...toolResult.steps];
     return {
       content: parsed.content,
       model: toolResult.model,
@@ -466,7 +543,7 @@ export async function executeChatTurn(options: {
       reasoning: toolResult.reasoning || undefined,
       toolRounds: toolResult.toolRounds,
       toolCallResults: toolResult.toolCallResults.length ? toolResult.toolCallResults : undefined,
-      steps: toolResult.steps.length ? toolResult.steps : undefined,
+      steps: finalSteps.length ? finalSteps : undefined,
     };
   }
 
@@ -520,6 +597,7 @@ export async function executeChatTurn(options: {
       suggestedMemories: parsed.suggestedMemories,
       suggestedSummary: parsed.suggestedSummary,
       reasoning: reasoning || undefined,
+      steps: engineActions.length ? engineActions : undefined,
     };
   }
 
@@ -553,5 +631,6 @@ export async function executeChatTurn(options: {
     suggestedMemories: parsed.suggestedMemories,
     suggestedSummary: parsed.suggestedSummary,
     reasoning: response.reasoning || undefined,
+    steps: engineActions.length ? engineActions : undefined,
   };
 }

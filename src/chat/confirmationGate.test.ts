@@ -6,6 +6,7 @@ import {
   subscribeConfirmation,
   type ConfirmationRequest,
 } from "./confirmationGate";
+import { getPermissionMode, setPermissionMode } from "./permissionMode";
 
 const baseRequest: ConfirmationRequest = {
   source: "test",
@@ -18,8 +19,16 @@ const baseRequest: ConfirmationRequest = {
 };
 
 describe("confirmationGate", () => {
-  beforeEach(() => setConfirmationTimeout(1000));
-  afterEach(() => setConfirmationTimeout(5 * 60 * 1000));
+  beforeEach(() => {
+    setConfirmationTimeout(1000);
+    if (getPermissionMode() !== "default") {
+      setPermissionMode("default");
+    }
+  });
+  afterEach(() => {
+    setConfirmationTimeout(5 * 60 * 1000);
+    setPermissionMode("default");
+  });
 
   it("无监听器时直接拒绝（安全优先于可用性）", async () => {
     await expect(requestConfirmation(baseRequest)).resolves.toBe(false);
@@ -66,5 +75,10 @@ describe("confirmationGate", () => {
     subscribeConfirmation(() => {});
     await expect(requestConfirmation(baseRequest)).resolves.toBe(false);
     setConfirmationTimeout(5 * 60 * 1000);
+  });
+
+  it("完全访问模式下跳过确认直接放行", async () => {
+    setPermissionMode("full-access");
+    await expect(requestConfirmation(baseRequest)).resolves.toBe(true);
   });
 });

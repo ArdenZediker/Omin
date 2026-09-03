@@ -1,5 +1,5 @@
 // 产物类型 → 图标/颜色 映射（消息卡片与聚合抽屉共用）
-import { FileText, FileSpreadsheet, Presentation, Globe, Wand2, Image as ImageIcon, Code, File, type LucideIcon } from "lucide-react";
+import { Bot, FileText, FileSpreadsheet, Presentation, Globe, Wand2, Image as ImageIcon, Code, File, type LucideIcon } from "lucide-react";
 import type { ArtifactType } from "../../chat/artifacts";
 
 const ARTIFACT_ICON: Record<ArtifactType, LucideIcon> = {
@@ -8,6 +8,7 @@ const ARTIFACT_ICON: Record<ArtifactType, LucideIcon> = {
   pptx: Presentation,
   web: Globe,
   skill: Wand2,
+  expert: Bot,
   image: ImageIcon,
   code: Code,
   text: FileText,
@@ -20,6 +21,7 @@ const ARTIFACT_COLOR: Record<ArtifactType, string> = {
   pptx: "#f97316",
   web: "#06b6d4",
   skill: "#8b5cf6",
+  expert: "#f59e0b",
   image: "#ec4899",
   code: "#64748b",
   text: "#64748b",

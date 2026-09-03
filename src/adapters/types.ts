@@ -4,6 +4,22 @@ import type { Artifact } from "../chat/artifacts";
 // Omni - 多模型适配层
 // 为所有 AI 模型提供统一接口
 
+/**
+ * 用户在输入框附带的本地文件（非图片类）。
+ *
+ * 图片走的是另一条通道：`Message.images`（base64 DataURL）直接内联进请求体交给
+ * vision 模型。任意文件不能这么做——几十 MB 的 docx 塞进请求体既不现实也没必要，
+ * 所以这里只记绝对路径，由模型按需调用 /read_file 读取。
+ */
+export interface ChatAttachment {
+  /** 本地绝对路径 */
+  path: string;
+  /** 展示用文件名 */
+  name: string;
+  /** 字节数；未知为 null */
+  size: number | null;
+}
+
 export interface Message {
   role: "system" | "user" | "project" | "assistant" | "tool";
   content: string;
@@ -23,6 +39,8 @@ export interface Message {
   reasoning?: string;
   /** 该消息关联的产物（AI 生成的文件/网页/技能等），UI 渲染产物卡片 */
   artifacts?: Artifact[];
+  /** 用户随消息附带的本地文件（仅 user 消息有）；内容不内联，只记路径 */
+  attachments?: ChatAttachment[];
 }
 
 /**
@@ -64,7 +82,36 @@ export interface ChatToolCallResult {
  */
 export type ChatStep =
   | { type: "reasoning"; text: string }
-  | { type: "tool_call"; name: string; arguments: string; result: string; isError?: boolean };
+  /**
+   * 工具调用步骤。status="running" 为执行中的过渡态（engine 仅实时推送、不进持久化 steps，
+   * 完成后由运行时原地升级为带结果的最终步骤）；status="interrupted" 为中断定案态（运行被
+   * 用户停止/超时/出错时，运行时把遗留的 running 步骤标记为已中断并随消息持久化）；
+   * 缺省 status 即正常完成的最终态。
+   */
+  | {
+      type: "tool_call";
+      name: string;
+      arguments: string;
+      result: string;
+      isError?: boolean;
+      status?: "running" | "interrupted";
+    }
+  /** WorkBuddy 式异构时间线条目：由渲染层直接映射为「动作行」（人类可读标签 + 图标 + 迷你文件卡片）。engine 当前不产出，仅作为向前兼容的扩展点。 */
+  | {
+      type: "action";
+      /** 中文动作动词，如「导出」「写入」 */
+      label: string;
+      /** 英文工具/动作标题，如「Export Word」 */
+      title: string;
+      /** 参数/详情摘要（可选） */
+      detail?: string;
+      /** lucide 图标名（可选，缺省回退 Terminal） */
+      icon?: string;
+      /** 若动作产出文件，附路径与状态标签（如「已导出」） */
+      file?: { path: string; badge: string };
+    }
+  /** WorkBuddy 式异构时间线条目：动作产出的可交付物引用（打开右侧产物面板）。 */
+  | { type: "artifact"; artifactId: string; title: string };
 
 /** 声明式工具定义（OpenAI function calling 风格的跨适配器统一形态）。 */
 export interface ChatToolParam {

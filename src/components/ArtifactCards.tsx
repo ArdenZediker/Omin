@@ -3,9 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { open } from "@tauri-apps/plugin-shell";
-import { Check, Copy, FolderOpen, FolderSearch, TriangleAlert } from "lucide-react";
+import { Check, Copy, ExternalLink, FolderOpen, FolderSearch, TriangleAlert } from "lucide-react";
 import type { Artifact } from "../chat/artifacts";
-import { ARTIFACT_TYPE_LABEL } from "../chat/artifacts";
+import { ARTIFACT_TYPE_LABEL, requestOpenArtifactInPanel } from "../chat/artifacts";
 import { ArtifactTypeIcon } from "./artifacts/ArtifactIcon";
 
 /** 校验产物路径在本机是否真实存在（虚拟路径/文件已删除 → false）。 */
@@ -23,6 +23,17 @@ export async function openArtifactPath(path: string): Promise<boolean> {
   if (!path) return false;
   try {
     await open(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 用系统默认浏览器打开 URL；返回是否成功。 */
+export async function openArtifactUrl(url: string): Promise<boolean> {
+  if (!url) return false;
+  try {
+    await open(url);
     return true;
   } catch {
     return false;
@@ -60,6 +71,8 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 
   const path = artifact.path;
   const isFile = Boolean(path);
+  const isWeb = artifact.type === "web";
+  const webUrl = isWeb ? artifact.url : null;
   const canCopy = Boolean(!isFile && artifact.content);
 
   // 挂载时校验产物路径是否真实存在；不存在则禁用打开并给出可见提示
@@ -99,6 +112,13 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
     if (!ok) setActionError("定位失败：文件可能已被移动或删除");
   }, [path, pathState]);
 
+  const handleOpenUrl = useCallback(async () => {
+    setActionError(null);
+    if (!webUrl) return;
+    const ok = await openArtifactUrl(webUrl);
+    if (!ok) setActionError("打开失败：系统无法启动默认浏览器打开该链接");
+  }, [webUrl]);
+
   const handleCopy = () => {
     if (!artifact.content) return;
     void navigator.clipboard.writeText(artifact.content).then(() => {
@@ -118,9 +138,8 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
       <button
         type="button"
         className="artifact-card__copy"
-        title={isFile ? (pathState === "missing" ? "文件不存在" : "打开文件") : "复制内容"}
-        onClick={isFile ? handleOpen : handleCopy}
-        disabled={isFile && pathState === "missing"}
+        title="在产物面板打开"
+        onClick={() => requestOpenArtifactInPanel(artifact.id)}
       >
         <strong>{artifact.title}</strong>
         <span>
@@ -157,6 +176,29 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
           >
             <FolderSearch size={14} strokeWidth={1.9} />
           </button>
+        </span>
+      ) : webUrl ? (
+        <span className="artifact-card__actions">
+          <button
+            type="button"
+            className="artifact-card__action"
+            title="在浏览器打开"
+            aria-label="在浏览器打开"
+            onClick={handleOpenUrl}
+          >
+            <ExternalLink size={14} strokeWidth={1.9} />
+          </button>
+          {canCopy ? (
+            <button
+              type="button"
+              className="artifact-card__action"
+              title={copied ? "已复制" : "复制内容"}
+              aria-label={copied ? "已复制" : "复制内容"}
+              onClick={handleCopy}
+            >
+              {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.9} />}
+            </button>
+          ) : null}
         </span>
       ) : canCopy ? (
         <button

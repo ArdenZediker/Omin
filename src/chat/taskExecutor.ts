@@ -85,7 +85,7 @@ export async function executeTask(options: {
   /** function calling：工具声明（透传给 executeChatTurn） */
   tools?: ChatToolParam[];
   /** 执行一次模型发起的工具调用（透传给 executeChatTurn） */
-  executeToolCall?: (toolCall: ChatToolCall) => Promise<string>;
+  executeToolCall?: (toolCall: ChatToolCall) => Promise<string | import("./engine").ToolCallOutcome>;
 }): Promise<TaskExecutionResult> {
   const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, onReasoning, onToolStep, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
@@ -213,6 +213,8 @@ function buildSkillMessages(command: ResolvedLocalSlashCommand, currentMessages:
 export async function executeInputTask(options: {
   input: string;
   images?: string[];
+  /** 用户随消息附带的本地文件（绝对路径引用）；写入 user 消息，供历史渲染与模型按需读取 */
+  attachments?: import("./types").ChatAttachment[];
   hiddenContext?: string;
   currentMessages: Message[];
   preparedMessages?: Message[];
@@ -237,11 +239,12 @@ export async function executeInputTask(options: {
   /** function calling：工具声明（透传给 executeTask） */
   tools?: ChatToolParam[];
   /** 执行一次模型发起的工具调用（透传给 executeTask） */
-  executeToolCall?: (toolCall: ChatToolCall) => Promise<string>;
+  executeToolCall?: (toolCall: ChatToolCall) => Promise<string | import("./engine").ToolCallOutcome>;
 }): Promise<TaskExecutionResult> {
   const {
     input,
     images,
+    attachments,
     hiddenContext,
     currentMessages,
     preparedMessages: preparedMessagesOverride,
@@ -290,7 +293,7 @@ export async function executeInputTask(options: {
     });
   }
 
-  const preparedMessages: Message[] = preparedMessagesOverride ?? [...currentMessages, { role: "user", content: input, images }];
+  const preparedMessages: Message[] = preparedMessagesOverride ?? [...currentMessages, { role: "user", content: input, images, attachments }];
   if (!preparedMessagesOverride) {
     onPrepareConversation?.(preparedMessages);
   }

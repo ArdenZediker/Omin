@@ -24,8 +24,12 @@ import {
   appendArtifact,
   artifactsForProject,
   clearProjectArtifacts,
+  consumePendingOpenArtifactId,
   loadArtifacts,
+  NO_PROJECT_ARTIFACT_KEY,
+  OPEN_ARTIFACT_EVENT,
   removeArtifact,
+  requestOpenArtifactInPanel,
   saveArtifacts,
 } from "./artifacts";
 
@@ -76,6 +80,7 @@ describe("artifacts 产物模型", () => {
       type: "text" as const,
       title: `t${i}`,
       path: null,
+      url: null,
       content: null,
       size: null,
       createdAt: i,
@@ -86,8 +91,40 @@ describe("artifacts 产物模型", () => {
   });
 
   it("类型标签覆盖全部产物类型", () => {
-    expect(Object.keys(ARTIFACT_TYPE_LABEL)).toHaveLength(9);
+    expect(Object.keys(ARTIFACT_TYPE_LABEL)).toHaveLength(10);
     expect(ARTIFACT_TYPE_LABEL.docx).toBe("文档");
     expect(ARTIFACT_TYPE_LABEL.skill).toBe("技能");
+    expect(ARTIFACT_TYPE_LABEL.expert).toBe("专家");
+  });
+
+  it("未绑项目时产物按会话隔离，不同会话不互相可见", () => {
+    // 两个无项目会话各自产生产物，存储键都是 NO_PROJECT_ARTIFACT_KEY，靠 sessionId 隔离
+    appendArtifact({ type: "docx", title: "会话A的产物", projectId: NO_PROJECT_ARTIFACT_KEY, sessionId: "chat-a" });
+    appendArtifact({ type: "web", title: "会话B的产物", projectId: NO_PROJECT_ARTIFACT_KEY, sessionId: "chat-b" });
+
+    const all = loadArtifacts();
+    expect(all).toHaveLength(2);
+
+    // 模拟 ArtifactsPanel 的过滤：无项目 + 指定会话
+    const scopeA = all.filter((a) => a.projectId === NO_PROJECT_ARTIFACT_KEY && a.sessionId === "chat-a");
+    const scopeB = all.filter((a) => a.projectId === NO_PROJECT_ARTIFACT_KEY && a.sessionId === "chat-b");
+    expect(scopeA).toHaveLength(1);
+    expect(scopeA[0].title).toBe("会话A的产物");
+    expect(scopeB).toHaveLength(1);
+    expect(scopeB[0].title).toBe("会话B的产物");
+  });
+
+  it("requestOpenArtifactInPanel 派发事件并设置待打开 id", () => {
+    const listener = vi.fn();
+    window.addEventListener(OPEN_ARTIFACT_EVENT, listener);
+
+    requestOpenArtifactInPanel("artifact-123");
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect((listener.mock.calls[0][0] as CustomEvent).detail.artifactId).toBe("artifact-123");
+    expect(consumePendingOpenArtifactId()).toBe("artifact-123");
+    expect(consumePendingOpenArtifactId()).toBeNull();
+
+    window.removeEventListener(OPEN_ARTIFACT_EVENT, listener);
   });
 });

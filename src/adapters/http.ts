@@ -124,3 +124,123 @@ export async function postJsonStream(
     timeoutMs
   );
 }
+
+/**
+ * 流式读取的空闲超时（毫秒）：两个 chunk 之间的最长间隔。
+ * 推理模型可能长时间「只思考不吐字」，给足 3 分钟避免误杀。
+ */
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
+
+/** 流式读取的总时长上限（毫秒）：防止无限流长期占用会话。 */
+export const DEFAULT_STREAM_TOTAL_TIMEOUT_MS = 15 * 60_000;
+
+export interface StreamIterateOptions {
+  signal?: AbortSignal;
+  /** 空闲超时（毫秒） */
+  idleTimeoutMs?: number;
+  /** 总时长上限（毫秒） */
+  totalTimeoutMs?: number;
+}
+
+const WAKE = "__wake__";
+
+/**
+ * 带超时与取消的流式 body 读取迭代器。
+ *
+ * 关键背景：`fetch` 在**响应头到达**时就 resolve，此时 `fetchWithTimeout` 的定时器
+ * 已在 finally 中被清理，后续 body 读取完全没有超时保护。一旦服务端连上后不再发数据
+ * （代理挂起、推理模型卡住、连接半开），`reader.read()` 会永久 pending，
+ * 表现为 UI 永远停在「正在思考」且只能手动停止。这里补上空闲超时 + 总超时兜底。
+ *
+ * 超时/取消时主动 `reader.cancel()`，让挂起的 read 立刻落定，避免 Promise 永远悬挂。
+ */
+export async function* iterateStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  opts: StreamIterateOptions = {}
+): AsyncGenerator<Uint8Array, void, void> {
+  const {
+    signal,
+    idleTimeoutMs = DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+    totalTimeoutMs = DEFAULT_STREAM_TOTAL_TIMEOUT_MS,
+  } = opts;
+
+  let stopReason: "idle" | "total" | "aborted" | null = null;
+  let lastReadError: unknown = null;
+  let wake: (() => void) | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let totalTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const clearTimers = () => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    if (totalTimer !== undefined) clearTimeout(totalTimer);
+    idleTimer = undefined;
+    totalTimer = undefined;
+  };
+
+  const stop = (reason: "idle" | "total" | "aborted") => {
+    if (stopReason) return;
+    stopReason = reason;
+    void reader.cancel().catch(() => {});
+    wake?.();
+  };
+
+  const onAbort = () => stop("aborted");
+
+  if (signal) {
+    if (signal.aborted) throw new DOMException("Request aborted", "AbortError");
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+
+  try {
+    totalTimer = setTimeout(() => stop("total"), totalTimeoutMs);
+
+    for (;;) {
+      if (stopReason) break;
+
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => stop("idle"), idleTimeoutMs);
+
+      // 竞态下 pending 可能在唤醒之后才 reject（流已被 cancel），吞掉避免 unhandled rejection
+      const settled = reader.read().catch((error: unknown) => {
+        lastReadError = error;
+        return undefined;
+      });
+
+      let wakeFn: () => void = () => {};
+      const wakePromise = new Promise<typeof WAKE>((resolve) => {
+        wakeFn = () => resolve(WAKE);
+      });
+      wake = wakeFn;
+
+      const result = await Promise.race([settled, wakePromise]);
+
+      if (result === WAKE || result === undefined) {
+        // 被超时/取消唤醒：等真正的 read 落定后退出，由下面的 stopReason 统一抛出语义化错误
+        await settled;
+        break;
+      }
+
+      const { done, value } = result;
+      if (done) break;
+      if (value && value.byteLength > 0) yield value;
+    }
+  } finally {
+    clearTimers();
+    signal?.removeEventListener("abort", onAbort);
+    wake = null;
+  }
+
+  if (stopReason === "aborted") {
+    throw new DOMException("Request aborted", "AbortError");
+  }
+  if (stopReason === "idle") {
+    throw new Error(`响应中断：超过 ${Math.round(idleTimeoutMs / 1000)} 秒没有收到新数据，已停止等待`);
+  }
+  if (stopReason === "total") {
+    throw new Error(`响应超时：单次生成超过 ${Math.round(totalTimeoutMs / 60000)} 分钟，已停止等待`);
+  }
+  // 无超时、无取消：读取本身出错，原样抛出（网络错误等）
+  if (lastReadError) {
+    throw lastReadError;
+  }
+}

@@ -1,7 +1,7 @@
-import type { ChatStep, ChatToolCallResult, Message } from "../adapters/types";
+import type { ChatAttachment, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextResult } from "./knowledgeTypes";
 
-export type { ChatStep, ChatToolCallResult };
+export type { ChatAttachment, ChatStep, ChatToolCallResult };
 
 export type ChatUsagePreferences = {
   enableStreaming: boolean;
@@ -190,6 +190,8 @@ export type ChatExecutionResult = {
 export type ChatSendOptions = {
   hiddenContext?: string;
   knowledgeCollectionId?: string | null;
+  /** 本次发送附带的本地文件（绝对路径引用，不内联内容） */
+  attachments?: ChatAttachment[];
 };
 
 export type SlashSkill = {
