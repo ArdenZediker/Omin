@@ -98,9 +98,9 @@ describe("会话附件快照", () => {
     expect(sanitizeAttachmentFileName("a".repeat(200)).length).toBeLessThanOrEqual(80);
   });
 
-  it("buildAttachmentSnapshotDir 落在会话目录下的 attachments 子目录", () => {
-    const dir = buildAttachmentSnapshotDir("C:/Out", "我的项目", "测试会话", "sess-1234");
-    expect(dir).toBe("C:/Out/我的项目/测试会话_sess-123/attachments");
+  it("buildAttachmentSnapshotDir 纯 sessionId 分桶（不含标题 slug，标题变化不再散落目录）", () => {
+    const dir = buildAttachmentSnapshotDir("C:/Out", "我的项目", "sess-1234");
+    expect(dir).toBe("C:/Out/我的项目/sessions/sess-1234/attachments");
   });
 
   it("snapshotAttachments 复制成功后把路径改写成快照路径并回填真实大小", async () => {
@@ -108,7 +108,7 @@ describe("会话附件快照", () => {
       if (cmd === "default_artifact_dir") return Promise.resolve("C:/Docs");
       if (cmd === "copy_file_to_store") {
         return Promise.resolve({
-          path: "C:/Docs/Omni/我的项目/测试会话_sess-123/attachments/report.md",
+          path: "C:/Docs/Omni/我的项目/sessions/sess-123/attachments/report.md",
           size: 2048,
         });
       }
@@ -117,7 +117,7 @@ describe("会话附件快照", () => {
 
     const result = await snapshotAttachments(
       [{ path: "D:\\用户\\桌面\\report.md", name: "report.md", size: null }],
-      { projectTitle: "我的项目", sessionTitle: "测试会话", sessionId: "sess-123" }
+      { projectTitle: "我的项目", sessionId: "sess-123" }
     );
 
     expect(result).toHaveLength(1);
@@ -142,7 +142,6 @@ describe("会话附件快照", () => {
     const original = { path: "D:\\report.md", name: "report.md", size: null };
     const result = await snapshotAttachments([original], {
       projectTitle: "p",
-      sessionTitle: "s",
       sessionId: "sess-1",
     });
 
@@ -155,7 +154,6 @@ describe("会话附件快照", () => {
     const original = { path: "D:\\report.md", name: "report.md", size: null };
     const result = await snapshotAttachments([original], {
       projectTitle: "p",
-      sessionTitle: "s",
       sessionId: "sess-1",
     });
 
@@ -164,7 +162,7 @@ describe("会话附件快照", () => {
   });
 
   it("没有附件时直接返回空数组且不调用后端", async () => {
-    const result = await snapshotAttachments([], { projectTitle: "p", sessionTitle: "s", sessionId: "sess-1" });
+    const result = await snapshotAttachments([], { projectTitle: "p", sessionId: "sess-1" });
     expect(result).toEqual([]);
     expect(mockedInvoke).not.toHaveBeenCalled();
   });

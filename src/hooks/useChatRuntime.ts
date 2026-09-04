@@ -1424,12 +1424,10 @@ export function useChatRuntime({
         if (attachments.length > 0) {
           // 快照目录按「会话」分桶，因此全新会话要先建会话拿到 id（已有会话不会重复创建）。
           // 注意：getChatSessionById 读的是闭包里的 chatSessions，新建会话的同一次 tick 内读不到
-          // （ref 要等 effect 才同步），所以新会话直接用 createSessionFromMessages 返回的 title。
-          let snapshotTitle = "";
+          // （ref 要等 effect 才同步），所以新会话直接用 createSessionFromMessages 的返回值。
           let snapshotProjectTitle = activeProject?.title;
           if (sessionId) {
             const existingSession = getChatSessionById(sessionId);
-            snapshotTitle = existingSession?.title ?? "";
             if (existingSession?.projectId) {
               snapshotProjectTitle = getProjectById(existingSession.projectId)?.title ?? snapshotProjectTitle;
             }
@@ -1439,13 +1437,11 @@ export function useChatRuntime({
               activeProject?.id ?? undefined
             );
             sessionId = draftSession.id;
-            snapshotTitle = draftSession.title;
             runId = startSessionRun(sessionId, abortController);
             currentTaskIdRef.current.set(sessionId, taskId);
           }
           attachments = await snapshotAttachments(attachments, {
             projectTitle: snapshotProjectTitle,
-            sessionTitle: snapshotTitle,
             sessionId,
           });
           // 上传的附件登记为产物：出现在右侧「产物」面板，点击即可内嵌预览。

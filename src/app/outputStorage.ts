@@ -134,14 +134,19 @@ export function sanitizeAttachmentFileName(raw: string): string {
   return cleaned || "attachment";
 }
 
-/** 会话附件快照目录：产出根 / 项目slug / 会话slug / attachments。 */
+/**
+ * 会话附件快照目录：产出根 / 项目slug / sessions/<sessionId>/attachments。
+ *
+ * 纯 sessionId 分桶：会话标题会随对话推进变化，含标题的目录会让同一会话
+ * 不同时间的附件散落多处；sessionId 稳定不变，附件按绝对路径存取，
+ * 目录名可读性无碍。旧版（标题_slug_id8）目录中的既有快照不受影响。
+ */
 export function buildAttachmentSnapshotDir(
   base: string,
   projectTitle: string | null | undefined,
-  sessionTitle: string,
   sessionId: string
 ): string {
-  return joinPath(buildSessionOutputDir(base, projectTitle, sessionTitle, sessionId), "attachments");
+  return joinPath(base, sanitizeDirName(projectTitle || "no-project"), "sessions", sessionId, "attachments");
 }
 
 /**
@@ -156,14 +161,14 @@ export function buildAttachmentSnapshotDir(
  */
 export async function snapshotAttachments(
   attachments: ChatAttachment[],
-  context: { projectTitle: string | null | undefined; sessionTitle: string; sessionId: string }
+  context: { projectTitle: string | null | undefined; sessionId: string }
 ): Promise<ChatAttachment[]> {
   if (attachments.length === 0) return attachments;
 
   const base = await getEffectiveOutputRoot();
   if (!base) return attachments;
 
-  const dir = buildAttachmentSnapshotDir(base, context.projectTitle, context.sessionTitle, context.sessionId);
+  const dir = buildAttachmentSnapshotDir(base, context.projectTitle, context.sessionId);
   const snapshotted: ChatAttachment[] = [];
 
   for (const attachment of attachments) {

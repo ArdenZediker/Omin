@@ -115,23 +115,25 @@ fn read_blocked(path: &Path) -> Option<String> {
 
 /// 列出工作区文件/目录：基于 ripgrep 的 `ignore` walker（自动尊重 .gitignore / .ignore /
 /// 全局 gitignore，并跳过隐藏文件），用 glob 表达式在相对路径上做文件名过滤。
-///
-/// 与旧实现（std::fs 递归 + 子串 contains）的区别：
-/// - 支持 glob 通配符（`**/*.ts`、`src/**/test_*.rs`），不再只是大小写不敏感子串；
-/// - 自动排除 gitignore 忽略项（含 node_modules / dist / build 产物等），无需硬编码目录名；
-/// - 走 ripgrep 的 walker，大仓库更快、且并行遍历。
+/// 结果按修改时间降序（最近修改优先），帮模型更快定位活跃文件；无法取到 mtime
+/// 的条目排最后（保持 walk 顺序）。为避免超大仓库全量收集，最多暂存
+/// `LIST_COLLECT_CAP` 条后再排序截断——极端大仓下可能漏掉更旧的文件，可接受。
 pub(crate) fn list_files(
     project_path: Option<String>,
     glob: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<WorkspaceFileEntry>, String> {
+    const LIST_COLLECT_CAP: usize = 4000;
     let root = resolve_root(&project_path)?;
     let limit = limit.unwrap_or(100).clamp(1, 500);
     let matcher = build_glob_matcher(glob.as_deref())?;
 
-    let mut results: Vec<WorkspaceFileEntry> = Vec::new();
+    let mut collected: Vec<(String, bool, Option<std::time::SystemTime>)> = Vec::new();
     let walker = WalkBuilder::new(&root).build();
     for entry in walker {
+        if collected.len() >= LIST_COLLECT_CAP {
+            break;
+        }
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
@@ -147,12 +149,17 @@ pub(crate) fn list_files(
             }
         }
         let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
-        results.push(WorkspaceFileEntry { path: relative, is_dir });
-        if results.len() >= limit {
-            break;
-        }
+        let mtime = entry.metadata().ok().and_then(|m| m.modified().ok());
+        collected.push((relative, is_dir, mtime));
     }
-    Ok(results)
+
+    // mtime 降序（None 排最后）；稳定排序保证同 key 项维持 walk 顺序。
+    collected.sort_by(|a, b| b.2.cmp(&a.2));
+    Ok(collected
+        .into_iter()
+        .take(limit)
+        .map(|(path, is_dir, _)| WorkspaceFileEntry { path, is_dir })
+        .collect())
 }
 
 pub(crate) fn read_file(
@@ -789,6 +796,23 @@ mod tests {
         // 至少包含嵌套目录（nested 是目录）。
         assert!(all.iter().any(|e| e.is_dir && e.path == "nested"));
         assert!(all.iter().any(|e| !e.is_dir && e.path == "src_a.ts"));
+    }
+
+    #[test]
+    fn list_files_orders_by_mtime_descending() {
+        let repo = temp_repo("list3");
+        // 先写 old.txt，稍等后写 new.txt：new 的 mtime 更晚，应排在前面。
+        let old_path = std::path::Path::new(&repo).join("old.txt");
+        let new_path = std::path::Path::new(&repo).join("new.txt");
+        fs::write(&old_path, "old").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        fs::write(&new_path, "new").unwrap();
+
+        let entries = list_files(Some(repo), Some("*.txt".to_string()), None).unwrap();
+        let paths: Vec<&str> = entries.iter().map(|e| e.path.as_str()).collect();
+        let new_idx = paths.iter().position(|p| *p == "new.txt").expect("new.txt 应在结果中");
+        let old_idx = paths.iter().position(|p| *p == "old.txt").expect("old.txt 应在结果中");
+        assert!(new_idx < old_idx, "最近修改的 new.txt 应排在 old.txt 之前，实际顺序 {paths:?}");
     }
 
     #[test]
