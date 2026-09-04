@@ -158,11 +158,28 @@ interface ReadFileResult {
   returned_chars: number;
   offset_chars: number;
   truncated: boolean;
+  /** 窗口首/末行号（1-based），与 /search_files 的 line_number 同一坐标系。 */
+  start_line?: number;
+  end_line?: number;
 }
 
 /** 把 [file-meta ...] 块定长渲染出来，便于模型识别 + 视觉扫读。 */
 function formatFileMetaLine(result: ReadFileResult): string {
-  return `[file-meta total=${result.total_chars} offset=${result.offset_chars} returned=${result.returned_chars} truncated=${result.truncated}]`;
+  const lines =
+    typeof result.start_line === "number" && typeof result.end_line === "number"
+      ? ` lines=${result.start_line}-${result.end_line}`
+      : "";
+  return `[file-meta total=${result.total_chars} offset=${result.offset_chars} returned=${result.returned_chars}${lines} truncated=${result.truncated}]`;
+}
+
+/** 给读文件内容加「行号 | 内容」前缀（cat -n 风格），与 /search_files 的行号对齐。 */
+function numberLines(content: string, startLine?: number): string {
+  if (typeof startLine !== "number" || !content) return content;
+  const lines = content.split("\n");
+  const width = String(startLine + lines.length - 1).length;
+  return lines
+    .map((line, index) => `${String(startLine + index).padStart(width, " ")} | ${line.replace(/\r$/, "")}`)
+    .join("\n");
 }
 
 export function createLocalToolRegistry(runtime: LocalToolRuntime) {
@@ -288,7 +305,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
       return {
         ok: true,
-        outputText: [`文件：${path}`, "", result.content, "", formatFileMetaLine(result)].join("\n"),
+        outputText: [`文件：${path}`, "", numberLines(result.content, result.start_line), "", formatFileMetaLine(result)].join("\n"),
         data: {
           path,
           totalChars: result.total_chars,

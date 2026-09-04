@@ -31,7 +31,7 @@ pub(crate) struct WorkspaceSearchMatch {
 /// 避免过去拼一段「 [truncated]」字符串让模型误以为读到全文。
 #[derive(Serialize)]
 pub(crate) struct ReadFileResult {
-    /// 本次读到的文本（已按 offset/limit 切片）。
+    /// 本次读到的文本（已按 offset/limit 切片，原始内容，未加行号前缀）。
     content: String,
     /// 源文件总字符数。
     total_chars: usize,
@@ -41,6 +41,11 @@ pub(crate) struct ReadFileResult {
     offset_chars: usize,
     /// 是否还有未读部分（true = 还有后续字符可读；false = 本次即读完）。
     truncated: bool,
+    /// 窗口首字符所在行（1-based）。offset 落在行中间时也指向该行，
+    /// 与 /search_files 返回的 line_number 保持同一坐标系。
+    start_line: usize,
+    /// 窗口末字符所在行（1-based）。
+    end_line: usize,
 }
 
 /// 解析文件操作的根目录：优先使用项目工作目录，否则回退到全局 workspace_root。
@@ -147,12 +152,20 @@ pub(crate) fn read_file(
         .take(take)
         .collect();
 
+    // 行号坐标系：窗口首字符所在行 = 前 offset_chars 字符里的换行数 + 1。
+    // 即便 offset 落在行中间，start_line 也指向该（部分）行——模型续读时
+    // 行号与 /search_files 的 line_number 连续对齐。
+    let start_line = content.chars().take(offset_chars).filter(|&c| c == '\n').count() + 1;
+    let end_line = start_line + slice.matches('\n').count();
+
     Ok(ReadFileResult {
         truncated: offset_chars + take < total_chars,
         offset_chars,
         returned_chars: take,
         total_chars,
         content: slice,
+        start_line,
+        end_line,
     })
 }
 
@@ -541,6 +554,24 @@ mod tests {
         assert_eq!(result.returned_chars, body.chars().count());
         assert!(!result.truncated);
         assert_eq!(result.content, body);
+    }
+
+    #[test]
+    fn read_start_line_tracks_offset_windows() {
+        let body = "l1\nl2\nl3\nl4\nl5";
+        let abs = write_temp_file("lines.txt", body);
+
+        // 全量读：行号 1..=5
+        let result = read_file(None, abs.clone(), Some(16000), None, None).unwrap();
+        assert_eq!(result.start_line, 1);
+        assert_eq!(result.end_line, 5);
+
+        // offset=6 跳过 "l1\nl2\n"（恰好在行边界）：窗口从第 3 行开始
+        let result = read_file(None, abs, Some(16000), Some(6), None).unwrap();
+        assert_eq!(result.offset_chars, 6);
+        assert_eq!(result.start_line, 3);
+        assert_eq!(result.end_line, 5);
+        assert_eq!(result.content, "l3\nl4\nl5");
     }
 
     // ---------- copy_file_to_store（会话附件快照） ----------

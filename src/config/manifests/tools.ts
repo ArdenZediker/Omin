@@ -62,7 +62,8 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     description: "Read file contents with optional windowing (maxChars/offsetChars/limitChars).",
     promptContribution:
       "Call /read_file <path> [maxChars=N] [offset=N] [limit=N] to read file contents. " +
-      "When the result ends with a [file-meta total=N offset=A returned=B truncated=Y/N] block, " +
+      "Output lines are prefixed as \"N | text\"; N matches /search_files line_number, so you can cite exact lines. " +
+      "When the result ends with a [file-meta total=N offset=A returned=B lines=S-E truncated=Y/N] block, " +
       "use it as the real character budget: truncated=true means more content remains — either raise " +
       "maxChars or call /read_file <path> offset=<A+B> to continue. Always tell the user the actual " +
       "X/Y coverage when the message body depends on partial content. " +

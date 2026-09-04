@@ -300,13 +300,15 @@ describe("localTools /read_file", () => {
     vi.clearAllMocks();
   });
 
-  function makeReadFilePayload(overrides: Partial<{ content: string; total_chars: number; returned_chars: number; offset_chars: number; truncated: boolean }> = {}) {
+  function makeReadFilePayload(overrides: Partial<{ content: string; total_chars: number; returned_chars: number; offset_chars: number; truncated: boolean; start_line: number; end_line: number }> = {}) {
     return {
       content: "正文样例",
       total_chars: 4,
       returned_chars: 4,
       offset_chars: 0,
       truncated: false,
+      start_line: 1,
+      end_line: 1,
       ...overrides,
     };
   }
@@ -330,8 +332,8 @@ describe("localTools /read_file", () => {
       offsetChars: null,
       limitChars: null,
     });
-    // 末尾应拼出 file-meta 元信息行
-    expect(result?.outputText).toMatch(/\[file-meta total=4 offset=0 returned=4 truncated=false\]/);
+    // 末尾应拼出 file-meta 元信息行（含行号区间）
+    expect(result?.outputText).toMatch(/\[file-meta total=4 offset=0 returned=4 lines=1-1 truncated=false\]/);
   });
 
   it("JSON 入参：maxChars / offsetChars / limitChars 透传给 Rust", async () => {
@@ -345,6 +347,8 @@ describe("localTools /read_file", () => {
         returned_chars: 600,
         offset_chars: 1600,
         truncated: true,
+        start_line: 41,
+        end_line: 47,
       }),
     );
 
@@ -362,7 +366,9 @@ describe("localTools /read_file", () => {
       limitChars: 600,
     });
     expect(result?.outputText).toContain("C:/Users/PengY/Documents/Omni/Spring生态调研报告.md");
-    expect(result?.outputText).toMatch(/\[file-meta total=5000 offset=1600 returned=600 truncated=true\]/);
+    expect(result?.outputText).toMatch(/\[file-meta total=5000 offset=1600 returned=600 lines=41-47 truncated=true\]/);
+    // 内容行带「行号 | 内容」前缀，且行号接续 start_line
+    expect(result?.outputText).toContain("41 | 第二段");
     expect(result?.data).toMatchObject({
       path: "C:/Users/PengY/Documents/Omni/Spring生态调研报告.md",
       totalChars: 5000,

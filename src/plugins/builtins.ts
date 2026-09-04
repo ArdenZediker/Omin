@@ -185,7 +185,7 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     id: "read_file",
     name: "Read File",
     description:
-      "Read file contents with optional windowing (maxChars/offsetChars/limitChars). When the result ends with a [file-meta total=N offset=A returned=B truncated=Y/N] block, treat it as the real character budget.",
+      "Read file contents with optional windowing (maxChars/offsetChars/limitChars). Output lines are prefixed with line numbers. When the result ends with a [file-meta total=N offset=A returned=B lines=S-E truncated=Y/N] block, treat it as the real character budget.",
     version: "1.1.0",
     author: "Omni",
     kind: "tool",
@@ -195,7 +195,8 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     command: "/read_file",
     promptContribution:
       "Call /read_file <path> [maxChars=N] [offset=N] [limit=N] to read file contents. " +
-      "When the result ends with a [file-meta total=N offset=A returned=B truncated=Y/N] block, " +
+      "Output lines are prefixed as \"N | text\"; N matches /search_files line_number, so you can cite exact lines. " +
+      "When the result ends with a [file-meta total=N offset=A returned=B lines=S-E truncated=Y/N] block, " +
       "use it as the real character budget: truncated=true means more content remains — either raise " +
       "maxChars or call /read_file <path> offset=<A+B> to continue. Always tell the user the actual " +
       "X/Y coverage when the message body depends on partial content. " +

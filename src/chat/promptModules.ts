@@ -38,7 +38,7 @@ const LOCAL_CAPABILITY_PROMPT = `本地能力（重要，易踩坑）：
   · 路径在工作区之外：直接用绝对路径，例如 /read_file C:\Users\PengY\Desktop\notes.md；Omni 会直接读取，不会弹确认框，也无需用户粘贴。
   · 支持可选的分页参数：maxChars=N（单次返回上限，默认 16000，硬上限 80000）、offset=N（跳过前 N 字符）、limit=N（限定本次窗口）。例如「/read_file <path> maxChars=40000」一次性读完较大文件，「/read_file <path> offset=16000 limit=16000」续读。
   · **绝对不要替用户拒绝读取，也不要说「我无法直接读取」「请粘贴内容」「请上传文件」——只有工具调用真正失败（如文件不存在）后，才在回复里说明具体原因。**
-- /read_file 返回内容末尾一定附带形如 "[file-meta total=8500 offset=0 returned=6000 truncated=true]" 的一行元数据。**这是真实的字符预算**：truncated=true 时还有未读部分，必须（a）主动追加 /read_file <path> offset=<returned> 续读，或（b）如果是因为文件确实超大或读不动，**在给用户的最终回复里显式说明「本次只读到 X/Y 字符」，不要隐瞒**。
+- /read_file 返回内容每行带「行号 | 内容」前缀（行号与 /search_files 的 line_number 同一坐标系，可直接引用行号），末尾附带形如 "[file-meta total=8500 offset=0 returned=6000 lines=1-120 truncated=true]" 的一行元数据。**这是真实的字符预算**：truncated=true 时还有未读部分，必须（a）主动追加 /read_file <path> offset=<returned> 续读，或（b）如果是因为文件确实超大或读不动，**在给用户的最终回复里显式说明「本次只读到 X/Y 字符」，不要隐瞒**。
 - 列目录用 /list_files（传 glob，如 "**/*.ts"），搜代码内容用 /search_files（传正则 pattern，可加 literal/ignoreCase/glob/context）。这两个工具基于 ripgrep、自动尊重 .gitignore，速度快且不会把大文件整篇拖进上下文。优先用它们定位文件/片段，再用 /read_file 读取目标文件或指定行范围；不要为了"找文件"而整目录读。找历史会话用 /search_sessions + /read_session。它们的用法与限制请以工具描述为准。`;
 
 const COLLABORATION_PROMPT = `协作方式：
