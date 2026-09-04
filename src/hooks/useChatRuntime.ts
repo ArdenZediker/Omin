@@ -15,7 +15,7 @@ import { getChatSessionTitle, stripPendingPlaceholder } from "../chat/storage";
 import { settleInterruptedSteps } from "../chat/stepSettlement";
 import { executeLocalTool } from "../chat/localTools";
 import { requestConfirmation } from "../chat/confirmationGate";
-import { appendArtifact, notifyArtifactsChanged, NO_PROJECT_ARTIFACT_KEY, type Artifact } from "../chat/artifacts";
+import { appendArtifact, loadArtifacts, notifyArtifactsChanged, NO_PROJECT_ARTIFACT_KEY, type Artifact } from "../chat/artifacts";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { Project, ChatExecutionResult, ChatSendOptions, ChatStep, ChatSession } from "../chat/types";
@@ -1448,6 +1448,28 @@ export function useChatRuntime({
             sessionTitle: snapshotTitle,
             sessionId,
           });
+          // 上传的附件登记为产物：出现在右侧「产物」面板，点击即可内嵌预览。
+          // 按快照路径去重——同一会话重复发送同一文件不重复建卡。
+          const existingPaths = new Set(
+            loadArtifacts()
+              .filter((a) => a.sessionId === sessionId)
+              .map((a) => a.path)
+          );
+          let artifactsDirty = false;
+          for (const attachment of attachments) {
+            if (!attachment.path || existingPaths.has(attachment.path)) continue;
+            appendArtifact({
+              type: "file",
+              title: attachment.name,
+              path: attachment.path,
+              size: attachment.size,
+              projectId: activeProject?.id ?? NO_PROJECT_ARTIFACT_KEY,
+              sessionId,
+            });
+            existingPaths.add(attachment.path);
+            artifactsDirty = true;
+          }
+          if (artifactsDirty) notifyArtifactsChanged();
         }
         const attachmentContext = buildAttachmentContext(attachments);
         const taskResult = await executeInputTask({

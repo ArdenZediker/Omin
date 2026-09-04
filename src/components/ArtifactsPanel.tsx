@@ -1,7 +1,7 @@
 // 右侧「产物」聚合抽屉：按项目/会话汇总 AI 产出的交付内容，
 // 以「概览 + 可关闭文件标签」呈现。概览展示产物统计与最近列表；
 // 点击产物打开为文件标签，支持关闭；全部关闭后边栏 reopen 默认回概览。
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
@@ -25,6 +25,10 @@ import {
 } from "../chat/artifacts";
 import { ArtifactTypeIcon } from "./artifacts/ArtifactIcon";
 import { checkArtifactPath, openArtifactPath, openArtifactUrl, revealArtifactPath } from "./ArtifactCards";
+import { canPreviewWithViewer } from "./FilePreview";
+
+/** file-viewer 预览组件懒加载：Office 家族文件预览时才拉起对应 chunk */
+const FilePreview = lazy(() => import("./FilePreview"));
 
 /** 可在面板内以文本（<pre>）预览的扩展名 */
 const TEXT_PREVIEW_EXTS = new Set([
@@ -540,6 +544,14 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
                 </div>
               ) : fileContent !== null ? (
                 <pre className="artifacts-panel__source">{fileContent}</pre>
+              ) : activeArtifact.path && canPreviewWithViewer(activeArtifact.title) ? (
+                <Suspense fallback={<p className="artifacts-panel__empty-hint">正在加载预览组件…</p>}>
+                  <FilePreview
+                    path={activeArtifact.path}
+                    title={activeArtifact.title}
+                    size={activeArtifact.size}
+                  />
+                </Suspense>
               ) : (
                 <div className="artifacts-panel__fileinfo">
                   <p>这是二进制文件，面板内无法预览，点击下方按钮用系统应用打开，或在文件管理器中定位。</p>

@@ -156,6 +156,31 @@ pub(crate) fn read_file(
     })
 }
 
+/// 读取文件原始字节，供前端预览器（file-viewer）直接消费。
+/// 路径解析规则与 `read_file` 一致：绝对路径直接读（用户本机文件，无需授权）；
+/// 相对路径落工作区根内解析。读取放开，仅查看用户自己的文件。
+pub(crate) fn read_file_bytes(
+    project_path: Option<String>,
+    path: String,
+) -> Result<Vec<u8>, String> {
+    let full_path = if Path::new(&path).is_absolute() {
+        PathBuf::from(&path)
+    } else {
+        let root = resolve_root(&project_path)?;
+        let relative = normalize_relative_path(&path)?;
+        root.join(relative)
+    };
+
+    if !full_path.exists() {
+        return Err(format!("File not found: {path}"));
+    }
+    if full_path.is_dir() {
+        return Err(format!("Path is a directory: {path}"));
+    }
+
+    fs::read(&full_path).map_err(|err| err.to_string())
+}
+
 /// 附件快照复制结果——前端据此把 Message.attachments 的路径改写成快照路径。
 #[derive(Serialize)]
 pub(crate) struct CopyFileResult {

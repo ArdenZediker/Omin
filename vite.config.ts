@@ -1,19 +1,24 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fileViewerRenderers } from "@file-viewer/vite-plugin";
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const host = loadEnv(mode, process.cwd(), "").TAURI_DEV_HOST;
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), fileViewerRenderers({ copyAssets: true })],
     build: {
       rollupOptions: {
         output: {
           manualChunks(id) {
             if (!id.includes("node_modules")) {
               return undefined;
+            }
+            // 注意：必须放在 react 判断之前 —— "@file-viewer/react" 路径包含 "react"
+            if (id.includes("@file-viewer")) {
+              return "vendor-file-viewer";
             }
             if (id.includes("pdfjs-dist")) {
               return "vendor-pdf";

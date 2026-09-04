@@ -17,6 +17,9 @@
     "pet:v3:compose": "node scripts/pet_v2/compose_pet_v2_atlas.mjs output/pet-v3/omni-pet-v3"
   },
   "dependencies": {
+    "@file-viewer/preset-office": "^3.0.0",
+    "@file-viewer/react": "^3.0.0",
+    "@fontsource-variable/noto-sans-sc": "^5.3.0",
     "@lobehub/icons-static-svg": "^1.88.0",
     "@tanstack/react-virtual": "^3.14.10",
     "@tauri-apps/api": "^2",
@@ -37,6 +40,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@file-viewer/vite-plugin": "^3.0.0",
     "@tailwindcss/vite": "^4.2.4",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",

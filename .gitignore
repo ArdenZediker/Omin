@@ -19,6 +19,10 @@ output
 src-tauri/target
 src-tauri/gen/schemas
 
+# file-viewer vite 插件 dev 模式生成的可再生资源（worker/wasm/字体，~25MB，构建时自动重新拷贝）
+public/vendor/
+public/flyfish-viewer-assets.json
+
 # Local environment and secrets
 *.local
 .env

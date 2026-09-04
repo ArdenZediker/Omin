@@ -21,6 +21,16 @@ pub(crate) fn read_workspace_file(
     workspace_files::read_file(project_path, path, max_chars, offset_chars, limit_chars)
 }
 
+/// 读取文件原始字节（ArrayBuffer），供前端 file-viewer 预览器消费。
+#[tauri::command]
+pub(crate) fn read_file_bytes(
+    project_path: Option<String>,
+    path: String,
+) -> Result<tauri::ipc::Response, String> {
+    let bytes = workspace_files::read_file_bytes(project_path, path)?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[tauri::command]
 pub(crate) fn copy_file_to_store(
     src: String,
