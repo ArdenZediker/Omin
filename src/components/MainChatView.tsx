@@ -51,6 +51,7 @@ import {
   notifyArtifactsChanged,
   NO_PROJECT_ARTIFACT_KEY,
   OPEN_ARTIFACT_EVENT,
+  openWorkspaceFileInArtifacts,
 } from "../chat/artifacts";
 import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 import { resolveProjectAvatarSeed } from "../config/manifests/avatarHelpers";
@@ -394,6 +395,27 @@ export default function MainChatView({
     window.addEventListener(OPEN_ARTIFACT_EVENT, onOpenArtifact);
     return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, onOpenArtifact);
   }, []);
+
+  // 点击 /search_files 命中行：相对路径落工作区根解析为绝对路径，
+  // 登记/复用「文件」产物并在右侧产物面板打开、滚动定位到行号。
+  const handleOpenFileLocation = useCallback(
+    (rawPath: string, line: number) => {
+      const isAbsolute = /^[a-zA-Z]:[\\/]/.test(rawPath) || rawPath.startsWith("/") || rawPath.startsWith("\\\\");
+      const workspace = (activeProject?.workspacePath ?? "").replace(/[\\/]+$/, "");
+      const absolute = isAbsolute
+        ? rawPath
+        : workspace
+          ? `${workspace}/${rawPath.replace(/^[\\/]+/, "")}`
+          : rawPath;
+      openWorkspaceFileInArtifacts({
+        path: absolute,
+        line,
+        projectId: activeProject?.id ?? NO_PROJECT_ARTIFACT_KEY,
+        sessionId: activeChatId,
+      });
+    },
+    [activeProject, activeChatId],
+  );
 
   // 一级 kind 切换时把 source 重置到该 kind 的默认视图（与 Marketplace 内部
   // 受控分支的「不再自动同步 kind→source」配对，保证切回 skill 仍先看到 SkillHub）。
@@ -2404,6 +2426,7 @@ export default function MainChatView({
                       onRegenerate={onRegenerateMessage}
                       onSaveAsMarkdown={handleSaveAsMarkdown}
                       onOpenChangesPanel={() => setSidePanelTab("changes")}
+                      onOpenFileLocation={handleOpenFileLocation}
                     />
                   );
                 })}
@@ -2613,7 +2636,10 @@ export default function MainChatView({
                       {isTaskTraceExpanded && latestTaskResult.finalResult?.steps?.length ? (
                         <div className="chat-topic-panel__task-steps">
                           <div className="chat-topic-panel__task-steps-title">执行步骤</div>
-                          <ExecutionTimeline steps={latestTaskResult.finalResult.steps} />
+                          <ExecutionTimeline
+                            steps={latestTaskResult.finalResult.steps}
+                            onOpenFileLocation={handleOpenFileLocation}
+                          />
                         </div>
                       ) : null}
                     </div>

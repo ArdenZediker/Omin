@@ -141,11 +141,14 @@ export function notifyArtifactsChanged(): void {
 export const OPEN_ARTIFACT_EVENT = "omni:open-artifact";
 
 let pendingOpenArtifactId: string | null = null;
+/** 与 pendingOpenArtifactId 配对的行号定位（可空）；消费 id 时一并消费 */
+let pendingOpenArtifactLine: number | null = null;
 
-export function requestOpenArtifactInPanel(artifactId: string): void {
+export function requestOpenArtifactInPanel(artifactId: string, line?: number): void {
   pendingOpenArtifactId = artifactId;
+  pendingOpenArtifactLine = typeof line === "number" && Number.isFinite(line) && line >= 1 ? line : null;
   try {
-    window.dispatchEvent(new CustomEvent(OPEN_ARTIFACT_EVENT, { detail: { artifactId } }));
+    window.dispatchEvent(new CustomEvent(OPEN_ARTIFACT_EVENT, { detail: { artifactId, line: pendingOpenArtifactLine } }));
   } catch {
     // 非浏览器环境忽略
   }
@@ -156,4 +159,33 @@ export function consumePendingOpenArtifactId(): string | null {
   const id = pendingOpenArtifactId;
   pendingOpenArtifactId = null;
   return id;
+}
+
+/** 与 consumePendingOpenArtifactId 成对调用：取出本次打开请求携带的行号定位（一次有效） */
+export function consumePendingOpenArtifactLine(): number | null {
+  const line = pendingOpenArtifactLine;
+  pendingOpenArtifactLine = null;
+  return line;
+}
+
+/**
+ * 把工作区文件登记为「文件」产物（按绝对路径去重）并在右侧产物面板打开，
+ * 可携带行号定位（配合 /search_files 命中行点击跳转）。
+ */
+export function openWorkspaceFileInArtifacts(opts: {
+  path: string;
+  line?: number;
+  projectId: string;
+  sessionId?: string | null;
+}): Artifact {
+  const existing = loadArtifacts().find((a) => a.type === "file" && a.path === opts.path);
+  const artifact = existing ?? appendArtifact({
+    type: "file",
+    title: opts.path.split(/[\\/]/).pop() || opts.path,
+    path: opts.path,
+    projectId: opts.projectId,
+    sessionId: opts.sessionId ?? null,
+  });
+  requestOpenArtifactInPanel(artifact.id, opts.line);
+  return artifact;
 }

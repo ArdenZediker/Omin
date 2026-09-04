@@ -3915,6 +3915,53 @@
   font-size: 12.5px;
 }
 
+/* /search_files 命中行列表：path:line 可点击 → 产物面板打开并定位行号 */
+.exec-search-matches {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--omni-panel-bg, #f6f7f9) 72%, transparent);
+  border: 1px solid var(--omni-panel-border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.exec-search-match {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  min-width: 0;
+}
+
+.exec-search-match__loc {
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--omni-accent, #2563eb);
+  white-space: nowrap;
+}
+
+.exec-search-match__loc:hover {
+  text-decoration: underline;
+}
+
+.exec-search-match__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--omni-message-text, #1f2329) 82%, transparent);
+}
+
 .exec-action::before {
   content: "";
   position: absolute;

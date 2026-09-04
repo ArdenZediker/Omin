@@ -14,6 +14,7 @@ import {
   artifactsForProject,
   clearProjectArtifacts,
   consumePendingOpenArtifactId,
+  consumePendingOpenArtifactLine,
   loadArtifactPanelState,
   loadArtifacts,
   NO_PROJECT_ARTIFACT_KEY,
@@ -78,6 +79,8 @@ const OVERVIEW_ID = "overview";
 export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpToSession }: ArtifactsPanelProps) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [panelState, setPanelState] = useState<ArtifactPanelState>(loadArtifactPanelState);
+  /** 打开产物请求携带的行号定位（/search_files 命中行跳转）：传给预览组件滚动定位 */
+  const [revealLine, setRevealLine] = useState<{ artifactId: string; line: number } | null>(null);
   const [viewMode, setViewMode] = useState<"preview" | "source">("preview");
   const [copied, setCopied] = useState(false);
   const [pathCopied, setPathCopied] = useState(false);
@@ -158,15 +161,24 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
     [projectId, sessionId, openArtifactTab],
   );
 
-  // 挂载时消费通过 requestOpenArtifactInPanel 积累的待打开产物 id；
+  // 挂载时消费通过 requestOpenArtifactInPanel 积累的待打开产物 id（及配对行号）；
   // 同时监听运行时请求，让消息中的产物卡片点击也能在面板内打开。
   useEffect(() => {
     const pendingId = consumePendingOpenArtifactId();
-    if (pendingId) openArtifactById(pendingId);
+    const pendingLine = consumePendingOpenArtifactLine();
+    if (pendingId) {
+      if (pendingLine) setRevealLine({ artifactId: pendingId, line: pendingLine });
+      openArtifactById(pendingId);
+    }
 
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ artifactId: string }>).detail;
-      if (detail?.artifactId) openArtifactById(detail.artifactId);
+      const detail = (event as CustomEvent<{ artifactId: string; line?: number | null }>).detail;
+      if (detail?.artifactId) {
+        if (typeof detail.line === "number" && detail.line >= 1) {
+          setRevealLine({ artifactId: detail.artifactId, line: detail.line });
+        }
+        openArtifactById(detail.artifactId);
+      }
     };
     window.addEventListener(OPEN_ARTIFACT_EVENT, handler);
     return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, handler);
@@ -547,9 +559,15 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
               ) : activeArtifact.path && canPreviewWithViewer(activeArtifact.title) ? (
                 <Suspense fallback={<p className="artifacts-panel__empty-hint">正在加载预览组件…</p>}>
                   <FilePreview
+                    key={
+                      revealLine?.artifactId === activeArtifact.id
+                        ? `${activeArtifact.id}:L${revealLine.line}`
+                        : activeArtifact.id
+                    }
                     path={activeArtifact.path}
                     title={activeArtifact.title}
                     size={activeArtifact.size}
+                    initialLine={revealLine?.artifactId === activeArtifact.id ? revealLine.line : undefined}
                   />
                 </Suspense>
               ) : (

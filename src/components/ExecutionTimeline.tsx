@@ -19,6 +19,7 @@ import {
   extractToolFilePath,
   iconByName,
 } from "../chat/toolActionMap";
+import { parseSearchMatches, type ParsedSearchMatch } from "../chat/searchResultText";
 import { requestOpenArtifactInPanel } from "../chat/artifacts";
 import { openArtifactPath, revealArtifactPath } from "./ArtifactCards";
 
@@ -62,11 +63,14 @@ export function ExecutionTimeline({
   legacyReasoning,
   legacyTools,
   isStreaming,
+  onOpenFileLocation,
 }: {
   steps?: ChatStep[];
   legacyReasoning?: string;
   legacyTools?: ChatToolCallResult[];
   isStreaming?: boolean;
+  /** 点击 /search_files 命中行回调：参数为匹配路径（相对工作区或绝对路径）与行号 */
+  onOpenFileLocation?: (path: string, line: number) => void;
 }) {
   const items: ChatStep[] =
     steps && steps.length > 0
@@ -109,6 +113,9 @@ export function ExecutionTimeline({
           const isInterrupted =
             (stepStatus === "interrupted" || (stepStatus === "running" && !hasSuccessResult && !isStreaming));
           const filePath = isRunning || isInterrupted ? null : extractToolFilePath(step.arguments, step.name);
+          // /search_files 结果解析为可点击命中行（解析失败/无命中回退普通文本预览）
+          const searchMatches =
+            step.name === "search_files" && hasSuccessResult ? parseSearchMatches(step.result) : [];
           return (
             <ActionStep
               key={`t-${index}-${step.name}`}
@@ -117,6 +124,8 @@ export function ExecutionTimeline({
               title={meta.title}
               argsSummary={formatToolArgs(step.arguments)}
               resultPreview={formatToolResult(step.result)}
+              searchMatches={searchMatches.length > 0 ? searchMatches : undefined}
+              onOpenFileLocation={onOpenFileLocation}
               file={filePath ? { path: filePath, badge: getFileBadgeLabel(step.name) } : undefined}
               isError={step.isError}
               isRunning={isRunning}
@@ -179,6 +188,8 @@ function ActionStep({
   title,
   argsSummary,
   resultPreview,
+  searchMatches,
+  onOpenFileLocation,
   file,
   isError,
   isRunning,
@@ -190,6 +201,9 @@ function ActionStep({
   title: string;
   argsSummary?: string;
   resultPreview?: string;
+  /** /search_files 的结构化命中行：非空时以可点击列表替代纯文本预览 */
+  searchMatches?: ParsedSearchMatch[];
+  onOpenFileLocation?: (path: string, line: number) => void;
   file?: { path: string; badge: string };
   isError?: boolean;
   isRunning?: boolean;
@@ -244,7 +258,25 @@ function ActionStep({
             </button>
           </div>
         ) : null}
-        {resultPreview ? <div className="exec-action__result">{resultPreview}</div> : null}
+        {searchMatches && searchMatches.length > 0 ? (
+          <div className="exec-search-matches">
+            {searchMatches.map((match, matchIndex) => (
+              <div key={`${match.path}:${match.line}:${matchIndex}`} className="exec-search-match">
+                <button
+                  type="button"
+                  className="exec-search-match__loc"
+                  title={`在产物面板打开 ${match.path} 并定位到第 ${match.line} 行`}
+                  onClick={() => onOpenFileLocation?.(match.path, match.line)}
+                >
+                  {match.path}:{match.line}
+                </button>
+                <span className="exec-search-match__text">{match.text}</span>
+              </div>
+            ))}
+          </div>
+        ) : resultPreview ? (
+          <div className="exec-action__result">{resultPreview}</div>
+        ) : null}
       </div>
     </div>
   );

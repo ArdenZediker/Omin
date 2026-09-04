@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ExecutionTimeline } from "./ExecutionTimeline";
 import type { ChatStep } from "../adapters/types";
 
@@ -123,5 +123,50 @@ describe("ExecutionTimeline（共享组件）", () => {
     const { container } = render(<ExecutionTimeline steps={steps} />);
     // isError=true 不会被视为成功，仍按已中断兜底渲染
     expect(container.querySelector(".exec-action--interrupted")).not.toBeNull();
+  });
+
+  it("search_files 结果渲染为可点击命中行，点击回调携带路径与行号", () => {
+    const onOpenFileLocation = vi.fn();
+    const steps: ChatStep[] = [
+      {
+        type: "tool_call",
+        name: "search_files",
+        arguments: JSON.stringify({ pattern: "export" }),
+        result: [
+          "找到 2 个相关匹配：",
+          "1.",
+          "  import { a } from \"./a\";",
+          "src/app.ts:42 export const x = 1;",
+          "  export const y = 2;",
+          "2.",
+          "C:\\repo\\b.ts:7 return z;",
+        ].join("\n"),
+      },
+    ];
+
+    const { container } = render(<ExecutionTimeline steps={steps} onOpenFileLocation={onOpenFileLocation} />);
+
+    // 命中行渲染为可点击定位按钮，缩进上下文行不出现
+    const locs = container.querySelectorAll<HTMLButtonElement>(".exec-search-match__loc");
+    expect(locs.length).toBe(2);
+    expect(locs[0].textContent).toBe("src/app.ts:42");
+    expect(locs[1].textContent).toBe("C:\\repo\\b.ts:7");
+    expect(container.querySelectorAll(".exec-search-match").length).toBe(2);
+
+    fireEvent.click(locs[0]);
+    expect(onOpenFileLocation).toHaveBeenCalledWith("src/app.ts", 42);
+    fireEvent.click(locs[1]);
+    expect(onOpenFileLocation).toHaveBeenCalledWith("C:\\repo\\b.ts", 7);
+  });
+
+  it("未提供 onOpenFileLocation 时命中行仍渲染（按钮无回调），普通工具不受影响", () => {
+    const steps: ChatStep[] = [
+      { type: "tool_call", name: "search_files", arguments: "{}", result: "找到 1 个相关匹配：\n1.\na.ts:3 hi" },
+      { type: "tool_call", name: "read_file", arguments: JSON.stringify({ path: "a.ts" }), result: "文件：a.ts" },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+    expect(container.querySelectorAll(".exec-search-match__loc").length).toBe(1);
+    // read_file 仍是普通文本预览
+    expect(container.querySelector(".exec-action__result")).not.toBeNull();
   });
 });

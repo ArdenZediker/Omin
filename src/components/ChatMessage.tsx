@@ -29,6 +29,8 @@ interface ChatMessageProps {
   onSaveAsMarkdown?: (message: Message) => void | Promise<void>;
   /** 打开右侧变更面板（按事件总线通知 MainChatView 切换 tab） */
   onOpenChangesPanel?: () => void;
+  /** 点击 /search_files 命中行：在右侧产物面板打开该文件并定位行号 */
+  onOpenFileLocation?: (path: string, line: number) => void;
 }
 
 /** 「查看所有变更」弹层中一条文件产出/修改记录 */
@@ -56,6 +58,7 @@ export default function ChatMessage({
   onRegenerate,
   onSaveAsMarkdown,
   onOpenChangesPanel,
+  onOpenFileLocation,
 }: ChatMessageProps) {
   // 工具结果消息已合并到对应 assistant 的 toolCallResults，不单独渲染
   if (message.role === "tool") return null;
@@ -199,6 +202,7 @@ export default function ChatMessage({
             toolCallResults={message.toolCallResults}
             steps={message.steps}
             isStreaming={isStreaming}
+            onOpenFileLocation={onOpenFileLocation}
           />
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
             {renderMarkdown(message.content)}
@@ -311,6 +315,7 @@ function ThinkingBlock({
   steps,
   isStreaming,
   forceExpandSignal,
+  onOpenFileLocation,
 }: {
   reasoning?: string;
   toolCallResults?: ChatToolCallResult[];
@@ -318,6 +323,8 @@ function ThinkingBlock({
   isStreaming?: boolean;
   /** 自增信号：变化时强制展开时间线（供「查看所有变更」按钮触发） */
   forceExpandSignal?: number;
+  /** 点击 /search_files 命中行：在产物面板打开文件并定位行号 */
+  onOpenFileLocation?: (path: string, line: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   /** 用户手动点过折叠按钮后置位：新一轮开始前不再强制展开，结束后也不强制收起 */
@@ -403,6 +410,7 @@ function ThinkingBlock({
               legacyReasoning={!useSteps ? reasoning : undefined}
               legacyTools={!useSteps ? toolCallResults : undefined}
               isStreaming={isStreaming}
+              onOpenFileLocation={onOpenFileLocation}
             />
           )}
           {isEmpty && (
