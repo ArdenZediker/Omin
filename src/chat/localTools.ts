@@ -135,6 +135,22 @@ function numArg(record: Record<string, unknown> | null, key: string): number | u
   return undefined;
 }
 
+function boolArg(record: Record<string, unknown> | null, key: string): boolean | undefined {
+  const value = record?.[key];
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+/** 把列表/搜索的裸字符串参数转成 glob：含通配符则原样，否则当作「包含」子串（*x*）。 */
+function toGlobArg(raw: string | undefined): string | undefined {
+  const text = raw?.trim();
+  if (!text) return undefined;
+  const hasGlobMeta = text.includes("*") || text.includes("?") || text.includes("[");
+  return hasGlobMeta ? text : `*${text}*`;
+}
+
 /** Tauri read_workspace_file 返回值（与 src-tauri/src/workspace_files.rs::ReadFileResult 对齐）。 */
 interface ReadFileResult {
   content: string;
@@ -219,23 +235,25 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     command: listFilesTool.command,
     title: listFilesTool.title,
     execute: async (resolvedCommand) => {
-      const query = resolvedCommand.args.trim();
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      // JSON 优先用 glob；裸字符串兼容旧用法（含通配符当 glob，否则当「包含」子串 *x*）。
+      const glob = strArg(json, "glob") ?? toGlobArg(resolvedCommand.args.trim());
       const entries = await invoke<Array<{ path: string; is_dir: boolean }>>("list_workspace_files", {
         projectPath: runtime.activeProject?.workspacePath || null,
-        query: query || null,
+        glob: glob ?? null,
         limit: 80,
       });
 
       if (entries.length === 0) {
         return {
           ok: true,
-          outputText: query ? `没有文件名包含“${query}”。` : "当前工作区没有文件。",
+          outputText: glob ? `没有匹配「${glob}」的文件。` : "当前工作区没有文件。",
           data: [],
         };
       }
 
       const lines = entries.slice(0, 20).map((entry, index) => `${index + 1}. ${entry.is_dir ? "[目录]" : "[文件]"} ${entry.path}`);
-      return { ok: true, outputText: [`找到 ${entries.length} 个项目：`, ...lines].join("\n"), data: entries };
+      return { ok: true, outputText: [`找到 ${entries.length} 个匹配项（glob=${glob ?? "*"}）：`, ...lines].join("\n"), data: entries };
     },
   });
 
@@ -287,20 +305,41 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     command: searchFilesTool.command,
     title: searchFilesTool.title,
     execute: async (resolvedCommand) => {
-      const query = resolvedCommand.args.trim();
-      if (!query) return { ok: false, error: "用法：/search_files 关键词" };
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const pattern = strArg(json, "pattern") ?? resolvedCommand.args.trim();
+      if (!pattern) {
+        return {
+          ok: false,
+          error:
+            "用法：/search_files <pattern> 或 /search_files {\"pattern\":\"...\",\"glob\":\"**/*.ts\",\"literal\":true,\"ignoreCase\":true,\"context\":2,\"limit\":50}",
+        };
+      }
 
-      const matches = await invoke<Array<{ path: string; line_number: number; line_preview: string }>>("search_workspace_files", {
+      const matches = await invoke<
+        Array<{ path: string; line_number: number; line: string; before: string[]; after: string[] }>
+      >("search_workspace_files", {
         projectPath: runtime.activeProject?.workspacePath || null,
-        query,
-        limit: 50,
+        pattern,
+        path: strArg(json, "path") ?? null,
+        glob: strArg(json, "glob") ?? null,
+        literal: boolArg(json, "literal") ?? null,
+        ignoreCase: boolArg(json, "ignoreCase") ?? null,
+        context: numArg(json, "context") ?? null,
+        limit: numArg(json, "limit") ?? 50,
       });
 
       if (matches.length === 0) {
-        return { ok: true, outputText: `没有文件内容包含“${query}”。`, data: [] };
+        return { ok: true, outputText: `没有文件内容匹配「${pattern}」。`, data: [] };
       }
 
-      const lines = matches.slice(0, 20).map((match, index) => `${index + 1}. ${match.path}:${match.line_number} ${match.line_preview}`);
+      const lines = matches.slice(0, 20).map((m, index) => {
+        const ctx = [
+          ...m.before.map((l) => `  ${l}`),
+          `${m.path}:${m.line_number} ${m.line}`,
+          ...m.after.map((l) => `  ${l}`),
+        ].join("\n");
+        return `${index + 1}.\n${ctx}`;
+      });
       return { ok: true, outputText: [`找到 ${matches.length} 个相关匹配：`, ...lines].join("\n"), data: matches };
     },
   });

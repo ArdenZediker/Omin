@@ -4,10 +4,10 @@ use crate::workspace_files;
 #[tauri::command]
 pub(crate) fn list_workspace_files(
     project_path: Option<String>,
-    query: Option<String>,
+    glob: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<workspace_files::WorkspaceFileEntry>, String> {
-    workspace_files::list_files(project_path, query, limit)
+    workspace_files::list_files(project_path, glob, limit)
 }
 
 #[tauri::command]
@@ -32,10 +32,15 @@ pub(crate) fn copy_file_to_store(
 #[tauri::command]
 pub(crate) fn search_workspace_files(
     project_path: Option<String>,
-    query: String,
+    pattern: String,
+    path: Option<String>,
+    glob: Option<String>,
+    literal: Option<bool>,
+    ignore_case: Option<bool>,
+    context: Option<usize>,
     limit: Option<usize>,
 ) -> Result<Vec<workspace_files::WorkspaceSearchMatch>, String> {
-    workspace_files::search_files(project_path, query, limit)
+    workspace_files::search_files(project_path, pattern, path, glob, literal, ignore_case, context, limit)
 }
 
 #[tauri::command]

@@ -43,13 +43,15 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     id: "list_files",
     command: "/list_files",
     title: "List Files",
-    description: "Browse files and directories in the current workspace",
+    description: "List workspace files/directories by glob (gitignore-aware).",
     promptContribution:
-      "Call /list_files [path] to browse the workspace file/directory structure and locate materials.",
+      "Call /list_files with a glob to list matching files/directories. " +
+      "Supports glob wildcards like **/*.ts and src/**/test_*.rs (leave empty or pass \"*\" to list everything). " +
+      "Automatically respects .gitignore and skips hidden/build artifacts. Prefer this over reading whole trees.",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "Optional filename filter; leave empty to list everything" },
+        glob: { type: "string", description: "Glob pattern to filter filenames, e.g. \"**/*.ts\". Empty/omitted = list everything." },
       },
     },
   },
@@ -91,14 +93,24 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     id: "search_files",
     command: "/search_files",
     title: "Search Files",
-    description: "Search workspace contents by keyword",
-    promptContribution: "Call /search_files <keyword> to search file contents across the workspace.",
+    description: "Search file contents across the workspace with regex (ripgrep-powered, gitignore-aware).",
+    promptContribution:
+      "Call /search_files to find code/text by pattern. " +
+      "pattern is a regex; set literal=true to match a plain string; ignoreCase=true for case-insensitive. " +
+      "Use glob to restrict file types (e.g. \"**/*.ts\"), path to scope a subdir, context for N lines before/after. " +
+      "Results are snippets only — call /read_file to read the full file or a line range.",
     parameters: {
       type: "object",
       properties: {
-        keyword: { type: "string", description: "Keyword to search within file contents" },
+        pattern: { type: "string", description: "Regex pattern to search in file contents (required)." },
+        path: { type: "string", description: "Optional subdir (relative to workspace root) to scope the search." },
+        glob: { type: "string", description: "Optional glob to filter which files are searched, e.g. \"**/*.ts\"." },
+        literal: { type: "boolean", description: "true = treat pattern as a literal string (no regex). Default false." },
+        ignoreCase: { type: "boolean", description: "true = case-insensitive match. Default false." },
+        context: { type: "integer", description: "Number of context lines to include before/after each match. Default 0, max 20." },
+        limit: { type: "integer", description: "Max number of matches to return. Default 50, max 200." },
       },
-      required: ["keyword"],
+      required: ["pattern"],
     },
   },
   {

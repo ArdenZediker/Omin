@@ -169,7 +169,7 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
   {
     id: "list_files",
     name: "List Files",
-    description: "Call this when the user wants to browse the current workspace's file and directory structure.",
+    description: "Call this when the user wants to browse the current workspace's file and directory structure by glob.",
     version: "1.0.0",
     author: "Omni",
     kind: "tool",
@@ -177,7 +177,9 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     group: "文件",
     icon: "FolderTree",
     command: "/list_files",
-    promptContribution: "Call /list_files [path] to browse the workspace file/directory structure and locate materials.",
+    promptContribution:
+      "Call /list_files with a glob to list matching files/directories (e.g. \"**/*.ts\"). " +
+      "Respects .gitignore automatically. Prefer this over reading whole trees.",
   },
   {
     id: "read_file",
@@ -202,7 +204,7 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
   {
     id: "search_files",
     name: "Search Files",
-    description: "Call this when the user wants to search workspace contents by keyword.",
+    description: "Call this when the user wants to search workspace file contents by regex (ripgrep-powered).",
     version: "1.0.0",
     author: "Omni",
     kind: "tool",
@@ -210,7 +212,10 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     group: "文件",
     icon: "FileSearch",
     command: "/search_files",
-    promptContribution: "Call /search_files <keyword> to search file contents across the workspace.",
+    promptContribution:
+      "Call /search_files with a regex pattern to find code/text. literal=true for plain string, " +
+      "ignoreCase=true for case-insensitive, glob to filter file types, context for surrounding lines. " +
+      "Returns snippets only — use /read_file for the full file.",
   },
   {
     id: "read_persona",

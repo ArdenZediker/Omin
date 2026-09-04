@@ -1,3 +1,6 @@
+use globset::{Glob, GlobMatcher};
+use ignore::WalkBuilder;
+use regex::RegexBuilder;
 use serde::Serialize;
 use std::{
     fs,
@@ -12,9 +15,16 @@ pub(crate) struct WorkspaceFileEntry {
 
 #[derive(Serialize)]
 pub(crate) struct WorkspaceSearchMatch {
+    /// 匹配所在文件的相对路径（相对工作区根）。
     path: String,
+    /// 匹配行号（1-based）。
     line_number: usize,
-    line_preview: String,
+    /// 匹配行内容。
+    line: String,
+    /// 匹配行之前的上下文行（最多 `context` 行，按原顺序）。
+    before: Vec<String>,
+    /// 匹配行之后的上下文行（最多 `context` 行，按原顺序）。
+    after: Vec<String>,
 }
 
 /// 单次读文件返回值——结构化告知前端/模型「共多少字符、本次返回多少字符、是否被截断」，
@@ -44,16 +54,45 @@ fn resolve_root(project_path: &Option<String>) -> Result<PathBuf, String> {
     crate::workspace_root()
 }
 
+/// 列出工作区文件/目录：基于 ripgrep 的 `ignore` walker（自动尊重 .gitignore / .ignore /
+/// 全局 gitignore，并跳过隐藏文件），用 glob 表达式在相对路径上做文件名过滤。
+///
+/// 与旧实现（std::fs 递归 + 子串 contains）的区别：
+/// - 支持 glob 通配符（`**/*.ts`、`src/**/test_*.rs`），不再只是大小写不敏感子串；
+/// - 自动排除 gitignore 忽略项（含 node_modules / dist / build 产物等），无需硬编码目录名；
+/// - 走 ripgrep 的 walker，大仓库更快、且并行遍历。
 pub(crate) fn list_files(
     project_path: Option<String>,
-    query: Option<String>,
+    glob: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<WorkspaceFileEntry>, String> {
     let root = resolve_root(&project_path)?;
-    let normalized_query = query.unwrap_or_default().trim().to_lowercase();
     let limit = limit.unwrap_or(100).clamp(1, 500);
-    let mut results = Vec::new();
-    collect_workspace_files(&root, &root, &normalized_query, limit, &mut results)?;
+    let matcher = build_glob_matcher(glob.as_deref())?;
+
+    let mut results: Vec<WorkspaceFileEntry> = Vec::new();
+    let walker = WalkBuilder::new(&root).build();
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        // 跳过根目录自身（relative 为空）。
+        let relative = match relative_posix(entry.path(), &root) {
+            Some(r) if !r.is_empty() => r,
+            _ => continue,
+        };
+        if let Some(m) = &matcher {
+            if !m.is_match(&relative) {
+                continue;
+            }
+        }
+        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        results.push(WorkspaceFileEntry { path: relative, is_dir });
+        if results.len() >= limit {
+            break;
+        }
+    }
     Ok(results)
 }
 
@@ -213,20 +252,110 @@ pub(crate) fn copy_file_to_store(src: &str, dst: &str) -> Result<CopyFileResult,
     })
 }
 
+/// 内容搜索：基于 ripgrep 的 `ignore` walker 遍历（自动尊重 .gitignore）+ `regex` 匹配器
+/// （ripgrep 底层使用的正是 regex crate），支持字面模式、大小写忽略、上下文行、文件类型
+/// 过滤（glob）与搜索目录限定（path）。
+///
+/// 与旧实现（from_utf8_lossy 逐行 contains）的区别：
+/// - 支持正则（pattern），而非大小写不敏感子串；`literal=true` 时按字面量匹配；
+/// - 自动排除 gitignore 忽略项与二进制文件；
+/// - 返回匹配行前后的上下文行（`context`），避免模型为看上下文而整文件拖进上下文。
 pub(crate) fn search_files(
     project_path: Option<String>,
-    query: String,
+    pattern: String,
+    path: Option<String>,
+    glob: Option<String>,
+    literal: Option<bool>,
+    ignore_case: Option<bool>,
+    context: Option<usize>,
     limit: Option<usize>,
 ) -> Result<Vec<WorkspaceSearchMatch>, String> {
-    let normalized_query = query.trim().to_lowercase();
-    if normalized_query.is_empty() {
-        return Err("Query cannot be empty".into());
+    let raw_pattern = pattern.trim();
+    if raw_pattern.is_empty() {
+        return Err("Pattern cannot be empty".into());
     }
+    // literal 模式：对 pattern 做正则转义，使其按字面量匹配（不解析正则元字符）。
+    let effective = if literal.unwrap_or(false) {
+        regex::escape(raw_pattern)
+    } else {
+        raw_pattern.to_string()
+    };
+    let re = RegexBuilder::new(&effective)
+        .case_insensitive(ignore_case.unwrap_or(false))
+        .build()
+        .map_err(|e| format!("Invalid regex pattern 「{raw_pattern}」: {e}"))?;
 
     let root = resolve_root(&project_path)?;
+    // `path` 可选：限定在根目录下的某个子目录内搜索（相对路径，禁止跳出根）。
+    let search_root = if let Some(sub) = path.as_deref().filter(|s| !s.trim().is_empty()) {
+        let normalized = normalize_relative_path(sub)?;
+        let joined = root.join(normalized);
+        if !joined.exists() {
+            return Err(format!("Search path not found: {sub}"));
+        }
+        joined
+    } else {
+        root.clone()
+    };
+
     let limit = limit.unwrap_or(50).clamp(1, 200);
-    let mut results = Vec::new();
-    collect_workspace_matches(&root, &root, &normalized_query, limit, &mut results)?;
+    let context = context.unwrap_or(0).min(20);
+    let glob_matcher = build_glob_matcher(glob.as_deref())?;
+
+    let mut results: Vec<WorkspaceSearchMatch> = Vec::new();
+    let walker = WalkBuilder::new(&search_root).build();
+    'walk: for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let file_type = match entry.file_type() {
+            Some(ft) => ft,
+            None => continue,
+        };
+        if file_type.is_dir() {
+            continue;
+        }
+        let absolute = entry.path();
+        let relative = match relative_posix(absolute, &root) {
+            Some(r) => r,
+            None => continue,
+        };
+        if let Some(m) = &glob_matcher {
+            if !m.is_match(&relative) {
+                continue;
+            }
+        }
+
+        let bytes = match fs::read(absolute) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        // 跳过含 NUL 的二进制文件，避免把非文本字节当字符串匹配（对齐 ripgrep 的二进制检测）。
+        if bytes.contains(&0) {
+            continue;
+        }
+        let content = String::from_utf8_lossy(&bytes);
+        let lines: Vec<&str> = content.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            if re.find(line).is_some() {
+                let start = idx.saturating_sub(context);
+                let before: Vec<String> = lines[start..idx].iter().map(|s| s.to_string()).collect();
+                let end = (idx + 1 + context).min(lines.len());
+                let after: Vec<String> = lines[idx + 1..end].iter().map(|s| s.to_string()).collect();
+                results.push(WorkspaceSearchMatch {
+                    path: relative.clone(),
+                    line_number: idx + 1,
+                    line: line.to_string(),
+                    before,
+                    after,
+                });
+                if results.len() >= limit {
+                    break 'walk;
+                }
+            }
+        }
+    }
     Ok(results)
 }
 
@@ -253,121 +382,26 @@ fn normalize_relative_path(input: &str) -> Result<PathBuf, String> {
     Ok(normalized)
 }
 
-fn should_skip_entry(file_name: &str) -> bool {
-    file_name.starts_with(".git") || file_name == "node_modules" || file_name == "dist"
+/// 计算相对工作区根的路径（POSIX 分隔符），用于结果展示与 glob 匹配。
+/// 路径等于根时返回空串（调用方应跳过）。
+fn relative_posix(path: &Path, root: &Path) -> Option<String> {
+    let stripped = path.strip_prefix(root).ok()?;
+    let s = stripped.to_string_lossy().replace('\\', "/");
+    Some(s)
 }
 
-fn collect_workspace_files(
-    root: &Path,
-    current: &Path,
-    query: &str,
-    limit: usize,
-    acc: &mut Vec<WorkspaceFileEntry>,
-) -> Result<(), String> {
-    if acc.len() >= limit {
-        return Ok(());
+/// 把 glob 表达式编译成 globset 匹配器；空/None 表示不过滤（匹配所有）。
+/// 支持 `**` 跨目录通配，对齐 ripgrep 的 glob 语义。
+fn build_glob_matcher(glob: Option<&str>) -> Result<Option<GlobMatcher>, String> {
+    match glob {
+        Some(g) if !g.trim().is_empty() => {
+            let matcher = Glob::new(g.trim())
+                .map_err(|e| format!("Invalid glob pattern 「{g}」: {e}"))?
+                .compile_matcher();
+            Ok(Some(matcher))
+        }
+        _ => Ok(None),
     }
-
-    let entries = fs::read_dir(current).map_err(|err| err.to_string())?;
-    for entry in entries {
-        if acc.len() >= limit {
-            break;
-        }
-
-        let entry = entry.map_err(|err| err.to_string())?;
-        let path = entry.path();
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        if should_skip_entry(&file_name) {
-            continue;
-        }
-
-        let metadata = entry.metadata().map_err(|err| err.to_string())?;
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|err| err.to_string())?
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        if query.is_empty() || relative.to_lowercase().contains(query) {
-            acc.push(WorkspaceFileEntry {
-                path: relative.clone(),
-                is_dir: metadata.is_dir(),
-            });
-        }
-
-        if metadata.is_dir() {
-            collect_workspace_files(root, &path, query, limit, acc)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn collect_workspace_matches(
-    root: &Path,
-    current: &Path,
-    query: &str,
-    limit: usize,
-    acc: &mut Vec<WorkspaceSearchMatch>,
-) -> Result<(), String> {
-    if acc.len() >= limit {
-        return Ok(());
-    }
-
-    let entries = fs::read_dir(current).map_err(|err| err.to_string())?;
-    for entry in entries {
-        if acc.len() >= limit {
-            break;
-        }
-
-        let entry = entry.map_err(|err| err.to_string())?;
-        let path = entry.path();
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        if should_skip_entry(&file_name) {
-            continue;
-        }
-
-        let metadata = entry.metadata().map_err(|err| err.to_string())?;
-        if metadata.is_dir() {
-            collect_workspace_matches(root, &path, query, limit, acc)?;
-            continue;
-        }
-
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|err| err.to_string())?
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(_) => continue,
-        };
-        let content = String::from_utf8_lossy(&bytes);
-
-        for (index, line) in content.lines().enumerate() {
-            if acc.len() >= limit {
-                break;
-            }
-
-            if line.to_lowercase().contains(query) {
-                let preview = if line.chars().count() > 160 {
-                    let clipped: String = line.chars().take(157).collect();
-                    format!("{clipped}...")
-                } else {
-                    line.to_string()
-                };
-
-                acc.push(WorkspaceSearchMatch {
-                    path: relative.clone(),
-                    line_number: index + 1,
-                    line_preview: preview,
-                });
-            }
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -557,5 +591,137 @@ mod tests {
         assert!(copy_file_to_store(&missing, &format!("{}/out.txt", dir)).is_err());
         // 源是目录：不应被当成文件复制
         assert!(copy_file_to_store(&dir, &format!("{}/out.txt", dir)).is_err());
+    }
+
+    // ---------- list_files / search_files（glob + ripgrep） ----------
+
+    /// 在一个临时仓库里铺一批文件（含 .gitignore 与 node_modules），用于验证
+    /// glob / gitignore 行为。每次先 remove_dir_all，避免残留断言不稳定。
+    fn temp_repo(name: &str) -> String {
+        let dir = std::env::temp_dir().join("omni-search-test").join(name);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        fs::write(dir.join("src_a.ts"), "export const a = 1;").unwrap();
+        fs::write(dir.join("src_b.ts"), "export const b = 2;").unwrap();
+        fs::write(dir.join("readme.md"), "see src_a.ts").unwrap();
+        fs::write(dir.join("secret.log"), "debug log").unwrap();
+        fs::create_dir_all(dir.join("nested")).unwrap();
+        fs::write(dir.join("nested").join("deep.ts"), "export const deep = 3;").unwrap();
+        fs::create_dir_all(dir.join("node_modules").join("pkg")).unwrap();
+        fs::write(
+            dir.join("node_modules").join("pkg").join("index.js"),
+            "ignored by gitignore",
+        )
+        .unwrap();
+        fs::write(dir.join(".gitignore"), "secret.log\nnode_modules/\n").unwrap();
+        dir.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn list_files_respects_gitignore_and_glob() {
+        let repo = temp_repo("list1");
+
+        // glob `**/*.ts` 应只命中 .ts 文件，且排除 node_modules（gitignore）。
+        let ts = list_files(Some(repo.clone()), Some("**/*.ts".to_string()), None).unwrap();
+        let names: Vec<String> = ts.iter().map(|e| e.path.clone()).collect();
+        assert!(names.iter().any(|p| p == "src_a.ts"));
+        assert!(names.iter().any(|p| p == "nested/deep.ts"));
+        assert!(names.iter().all(|p| !p.starts_with("node_modules")));
+        // secret.log 被 gitignore 忽略，不出现。
+        assert!(!names.iter().any(|p| p == "secret.log"));
+    }
+
+    #[test]
+    fn list_files_returns_dirs_and_files() {
+        let repo = temp_repo("list2");
+        let all = list_files(Some(repo), None, None).unwrap();
+        // 至少包含嵌套目录（nested 是目录）。
+        assert!(all.iter().any(|e| e.is_dir && e.path == "nested"));
+        assert!(all.iter().any(|e| !e.is_dir && e.path == "src_a.ts"));
+    }
+
+    #[test]
+    fn search_files_uses_regex_and_context() {
+        let repo = temp_repo("search1");
+        // 正则 `export const \w+ =` 命中 src_a.ts / src_b.ts / nested/deep.ts；
+        // 同时验证 context=1 返回前后各 1 行。
+        let matches = search_files(
+            Some(repo),
+            "export const \\w+ =".to_string(),
+            None,
+            None,
+            Some(false),
+            Some(false),
+            Some(1),
+            None,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 3);
+        for m in &matches {
+            assert!(m.path.ends_with(".ts"));
+            assert!(m.line.contains("export const"));
+            // 每个匹配文件只有一行，context 行应为空。
+            assert!(m.before.is_empty());
+            assert!(m.after.is_empty());
+        }
+    }
+
+    #[test]
+    fn search_files_glob_filters_file_types() {
+        let repo = temp_repo("search2");
+        // 仅搜 .md 文件，正则 `src_a` 只应命中 readme.md。
+        let matches = search_files(
+            Some(repo),
+            "src_a".to_string(),
+            None,
+            Some("**/*.md".to_string()),
+            Some(false),
+            Some(false),
+            Some(0),
+            None,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].path, "readme.md");
+    }
+
+    #[test]
+    fn search_files_literal_mode_escapes_regex() {
+        let repo = temp_repo("search3");
+        // 字面量搜索含正则元字符的内容；literal=true 时应把 `\w` 当字面量。
+        fs::write(
+            std::path::Path::new(&repo).join("lit.txt"),
+            "price \\w widget",
+        )
+        .unwrap();
+        let literal_hit = search_files(
+            Some(repo.clone()),
+            "\\w".to_string(),
+            None,
+            Some("**/*.txt".to_string()),
+            Some(true),
+            Some(false),
+            Some(0),
+            None,
+        )
+        .unwrap();
+        assert_eq!(literal_hit.len(), 1);
+        assert_eq!(literal_hit[0].line, "price \\w widget");
+
+        // 非 literal 模式下，`\w` 是元字符，应匹配 readme.md 里的 `src_a`（\w 匹配字母）。
+        let regex_hit = search_files(
+            Some(repo),
+            "\\w".to_string(),
+            None,
+            Some("**/*.md".to_string()),
+            Some(false),
+            Some(false),
+            Some(0),
+            None,
+        )
+        .unwrap();
+        assert_eq!(regex_hit.len(), 1);
+        assert_eq!(regex_hit[0].path, "readme.md");
     }
 }
