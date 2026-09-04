@@ -1,112 +1,20 @@
+// 知识库文档预览：与产物栏统一走 @file-viewer（preset-office）。
+// - Office 家族（pdf/doc/docx/xls/xlsx/ppt/pptx/ofd/rtf/odt/ods/odp…）→ ViewerFrame（flyfish 渲染）
+// - 图片/音频 → 浏览器原生标签
+// - text/markdown → 数据库里的 content 直显（无需读二进制）
+// 旧方案（docx-preview + <object>/pdfjs 首页兜底）已移除；pdfjs-dist 仍由
+// knowledgeFileConversion.ts 在摄取链路使用，不能卸载。
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Options as DocxPreviewOptions } from "docx-preview";
-import type { RenderParameters } from "pdfjs-dist/types/src/display/api";
 import type { KnowledgeDocumentBinaryPayload, KnowledgeDocumentDetail } from "../../chat/knowledgeTypes";
 import { renderMarkdown } from "../../app/renderMarkdown";
+import { ViewerFrame, canPreviewWithViewer } from "../FilePreview";
 import { getPreviewKindFromDocument } from "./knowledgeViewHelpers";
-
-const DOCX_PREVIEW_OPTIONS = {
-  className: "docx-preview-wrapper",
-  inWrapper: true,
-  ignoreWidth: false,
-  ignoreHeight: false,
-  ignoreFonts: false,
-  breakPages: true,
-  ignoreLastRenderedPageBreak: true,
-  experimental: false,
-  trimXmlDeclaration: true,
-  useBase64URL: true,
-} satisfies Partial<DocxPreviewOptions>;
 
 type KnowledgeDocumentPreviewProps = {
   document: KnowledgeDocumentDetail["document"];
   onOpenExternal: () => Promise<void> | void;
   loadDocumentBinary: (documentId: string) => Promise<KnowledgeDocumentBinaryPayload>;
 };
-
-async function loadPdfJs() {
-  const [{ getDocument, GlobalWorkerOptions }, workerModule] = await Promise.all([
-    import("pdfjs-dist"),
-    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-  ]);
-  GlobalWorkerOptions.workerSrc = workerModule.default;
-  return { getDocument };
-}
-
-async function renderDocxBytesIntoContainer(bytes: Uint8Array, container: HTMLElement) {
-  const { renderAsync } = await import("docx-preview");
-  const blob = new Blob([bytes], {
-    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  });
-
-  container.innerHTML = "";
-  await renderAsync(blob, container, undefined, DOCX_PREVIEW_OPTIONS);
-}
-
-async function renderPdfFirstPage(bytes: Uint8Array, canvas: HTMLCanvasElement) {
-  const { getDocument } = await loadPdfJs();
-  const loadingTask = getDocument({ data: bytes.slice() });
-  const pdf = await loadingTask.promise;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 1.2 });
-  const context = canvas.getContext("2d");
-  if (!context) {
-    throw new Error("无法创建 PDF 画布");
-  }
-
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  const renderParameters: RenderParameters = { canvasContext: context, canvas, viewport };
-  const renderTask = page.render(renderParameters);
-  await renderTask.promise;
-}
-
-function PdfFirstPagePreview({ bytes }: { bytes: Uint8Array }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const canvas = canvasRef.current;
-        if (!canvas) {
-          return;
-        }
-        await renderPdfFirstPage(bytes, canvas);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "PDF 预览失败");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bytes]);
-
-  if (error) {
-    return <div className="text-sm text-rose-600">{error}</div>;
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {isLoading ? <div className="text-sm text-slate-500">正在渲染 PDF 预览...</div> : null}
-      <canvas ref={canvasRef} className="max-w-full rounded-none border border-slate-200 bg-white shadow-none" />
-    </div>
-  );
-}
 
 export default function KnowledgeDocumentPreview({
   document,
@@ -115,17 +23,24 @@ export default function KnowledgeDocumentPreview({
 }: KnowledgeDocumentPreviewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [textPreview, setTextPreview] = useState<string>("");
-  const [docxBytes, setDocxBytes] = useState<Uint8Array | null>(null);
+  const [viewerBlob, setViewerBlob] = useState<Blob | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
-  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
-  const docxContainerRef = useRef<HTMLDivElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
   const previewKind = useMemo(() => getPreviewKindFromDocument(document), [document]);
-  const fallbackText = textPreview || document.contentPreview || document.sourceName;
+  const fallbackText = document.content || document.contentPreview || document.sourceName;
+
+  // sourceName 缺扩展名时用 fileExtension 补上，交给 canPreviewWithViewer 判断
+  const viewerFilename = useMemo(() => {
+    const name = document.sourceName || "document";
+    if (name.includes(".") || !document.fileExtension) {
+      return name;
+    }
+    return `${name}.${document.fileExtension}`;
+  }, [document.sourceName, document.fileExtension]);
+  const useViewer =
+    previewKind === "pdf" || previewKind === "docx" || canPreviewWithViewer(viewerFilename);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,31 +52,16 @@ export default function KnowledgeDocumentPreview({
       }
 
       setError(null);
-      setDocxBytes(null);
+      setViewerBlob(null);
       setImageUrl(null);
       setAudioUrl(null);
-      setPdfObjectUrl(null);
-      setPdfBytes(null);
-      if (docxContainerRef.current) {
-        docxContainerRef.current.innerHTML = "";
-      }
 
-      const sourceText = (document.content ?? document.contentPreview ?? document.sourceName ?? "").trim();
-      if (previewKind === "text" || previewKind === "markdown") {
-        setTextPreview(sourceText);
+      if (previewKind === "text" || previewKind === "markdown" || previewKind === "unsupported") {
         setIsLoading(false);
         return;
       }
 
-      if (previewKind === "unsupported") {
-        setTextPreview(sourceText || "该格式不支持内嵌预览，可以打开原文文件查看。");
-        setIsLoading(false);
-        return;
-      }
-
-      setTextPreview(sourceText);
       setIsLoading(true);
-      let needsDocxRender = false;
       try {
         const payload = await loadDocumentBinary(document.id);
         if (cancelled) {
@@ -169,7 +69,9 @@ export default function KnowledgeDocumentPreview({
         }
 
         const bytes = new Uint8Array(payload.bytes);
-        if (previewKind === "image") {
+        if (useViewer) {
+          setViewerBlob(new Blob([bytes], { type: document.mimeType || undefined }));
+        } else if (previewKind === "image") {
           const url = URL.createObjectURL(new Blob([bytes], { type: document.mimeType ?? "application/octet-stream" }));
           objectUrlRef.current = url;
           setImageUrl(url);
@@ -177,21 +79,16 @@ export default function KnowledgeDocumentPreview({
           const url = URL.createObjectURL(new Blob([bytes], { type: document.mimeType ?? "audio/mpeg" }));
           objectUrlRef.current = url;
           setAudioUrl(url);
-        } else if (previewKind === "docx") {
-          needsDocxRender = true;
-          setDocxBytes(bytes);
-        } else if (previewKind === "pdf") {
-          const url = URL.createObjectURL(new Blob([bytes.slice()], { type: document.mimeType ?? "application/pdf" }));
-          objectUrlRef.current = url;
-          setPdfObjectUrl(url);
-          setPdfBytes(bytes);
+        } else {
+          setIsLoading(false);
+          return;
         }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "预览加载失败");
         }
       } finally {
-        if (!cancelled && !needsDocxRender) {
+        if (!cancelled) {
           setIsLoading(false);
         }
       }
@@ -205,45 +102,8 @@ export default function KnowledgeDocumentPreview({
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
       }
-      if (docxContainerRef.current) {
-        docxContainerRef.current.innerHTML = "";
-      }
     };
-  }, [document.id, document.content, document.contentPreview, document.mimeType, document.sourceName, loadDocumentBinary, previewKind]);
-
-  useEffect(() => {
-    const bytes = docxBytes;
-    if (previewKind !== "docx" || !bytes || !docxContainerRef.current) {
-      return;
-    }
-
-    let cancelled = false;
-    const container = docxContainerRef.current;
-
-    async function run() {
-      setError(null);
-      setIsLoading(true);
-      try {
-        await renderDocxBytesIntoContainer(bytes!, container);
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          container.innerHTML = "";
-          setError(err instanceof Error ? err.message : "预览加载失败");
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void run();
-
-    return () => {
-      cancelled = true;
-      container.innerHTML = "";
-    };
-  }, [docxBytes, previewKind]);
+  }, [document.id, document.mimeType, loadDocumentBinary, previewKind, useViewer]);
 
   if (error) {
     return (
@@ -263,15 +123,14 @@ export default function KnowledgeDocumentPreview({
     );
   }
 
-  if (isLoading && previewKind !== "text" && previewKind !== "markdown" && previewKind !== "docx") {
-    return (
-      <div className="flex min-h-[18rem] items-center justify-center px-4 py-10 text-sm text-slate-500">
-        正在加载文档预览...
-      </div>
-    );
-  }
-
   function renderPreviewContent() {
+    if (useViewer) {
+      if (isLoading || !viewerBlob) {
+        return <div className="flex h-full items-center justify-center text-sm text-slate-500">正在加载文档预览...</div>;
+      }
+      return <ViewerFrame blob={viewerBlob} filename={viewerFilename} />;
+    }
+
     switch (previewKind) {
       case "markdown":
         return (
@@ -285,45 +144,6 @@ export default function KnowledgeDocumentPreview({
             {fallbackText}
           </pre>
         );
-      case "docx":
-        return (
-          <div className="omni-knowledge-preview__docx relative h-full overflow-auto pr-1">
-            {isLoading ? (
-              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center px-4 py-3">
-                <div className="rounded-full border border-slate-200 bg-white/92 px-3 py-1 text-xs text-slate-500 shadow-sm backdrop-blur-sm">
-                  正在加载文档预览...
-                </div>
-              </div>
-            ) : null}
-            <div ref={docxContainerRef} className="omni-knowledge-preview__docx-container min-h-full" />
-            {!isLoading && !docxBytes ? (
-              <pre className="h-full overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-                {fallbackText}
-              </pre>
-            ) : null}
-          </div>
-        );
-      case "pdf":
-        return pdfObjectUrl ? (
-          <div className="flex h-full min-h-0 flex-1 overflow-hidden rounded-none border border-slate-200 bg-white">
-            <object data={pdfObjectUrl} type="application/pdf" className="h-full w-full">
-              {pdfBytes ? (
-                <div className="h-full overflow-auto p-4">
-                  <div className="mb-3 text-sm text-slate-500">
-                    当前环境无法直接预览 PDF，已切换为首页图像预览，也可以点击右上角打开原文文件。
-                  </div>
-                  <PdfFirstPagePreview bytes={pdfBytes} />
-                </div>
-              ) : (
-                <div className="p-4 text-sm text-slate-500">
-                  当前环境无法直接预览 PDF，请点击右上角打开原文文件。
-                </div>
-              )}
-            </object>
-          </div>
-        ) : pdfBytes ? (
-          <PdfFirstPagePreview bytes={pdfBytes} />
-        ) : null;
       case "image":
         return imageUrl ? (
           <div className="flex h-full w-full items-center justify-center overflow-auto">
@@ -348,13 +168,12 @@ export default function KnowledgeDocumentPreview({
           </div>
         );
       case "unsupported":
+      default:
         return (
           <div className="space-y-3 text-sm text-slate-500">
-            <div>{textPreview || "该格式不支持内嵌预览，可以打开原文文件查看。"}</div>
+            <div>{fallbackText || "该格式不支持内嵌预览，可以打开原文文件查看。"}</div>
           </div>
         );
-      default:
-        return null;
     }
   }
 

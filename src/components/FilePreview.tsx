@@ -24,6 +24,15 @@ export function canPreviewWithViewer(title: string): boolean {
   return VIEWER_PREVIEW_EXTS.has(ext);
 }
 
+/** 已有 Blob 时的渲染壳：供本组件与知识库预览等处复用 */
+export function ViewerFrame({ blob, filename, size }: { blob: Blob; filename: string; size?: number | null }) {
+  return (
+    <div className="file-preview__frame">
+      <FileViewer file={blob} filename={filename} size={size ?? undefined} />
+    </div>
+  );
+}
+
 interface FilePreviewProps {
   path: string;
   title: string;
@@ -75,9 +84,5 @@ export default function FilePreview({ path, title, size }: FilePreviewProps) {
       </div>
     );
   }
-  return (
-    <div className="file-preview__frame">
-      <FileViewer file={blob} filename={title} size={size ?? undefined} />
-    </div>
-  );
+  return <ViewerFrame blob={blob} filename={title} size={size} />;
 }
