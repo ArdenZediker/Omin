@@ -22,6 +22,14 @@ pub(crate) fn read_workspace_file(
 }
 
 #[tauri::command]
+pub(crate) fn copy_file_to_store(
+    src: String,
+    dst: String,
+) -> Result<workspace_files::CopyFileResult, String> {
+    workspace_files::copy_file_to_store(&src, &dst)
+}
+
+#[tauri::command]
 pub(crate) fn search_workspace_files(
     project_path: Option<String>,
     query: String,

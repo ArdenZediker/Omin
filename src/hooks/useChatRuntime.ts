@@ -5,6 +5,7 @@ import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { isMainWindowUserVisible } from "../app/window";
 import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
+import { snapshotAttachments } from "../app/outputStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import type { ToolCallOutcome } from "../chat/engine";
@@ -17,7 +18,7 @@ import { requestConfirmation } from "../chat/confirmationGate";
 import { appendArtifact, notifyArtifactsChanged, NO_PROJECT_ARTIFACT_KEY, type Artifact } from "../chat/artifacts";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
-import type { Project, ChatExecutionResult, ChatSendOptions, ChatStep } from "../chat/types";
+import type { Project, ChatExecutionResult, ChatSendOptions, ChatStep, ChatSession } from "../chat/types";
 import type { ProjectMemoryRecord, SessionSummaryRecord } from "../chat/types";
 import type { PetThoughtState } from "../app/types";
 import type { ViewMode } from "../app/types";
@@ -96,7 +97,8 @@ type UseChatRuntimeArgs = {
   messages: Message[];
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
   commitProjectMemory: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
-  createSessionFromMessages: (conversationMessages: Message[], projectId?: string) => { id: string };
+  // 返回完整 ChatSession（含 title）：附件快照需要用 title 生成与镜像一致的会话目录名。
+  createSessionFromMessages: (conversationMessages: Message[], projectId?: string) => ChatSession;
   currentModel: string;
   getProjectById: (projectId: string) => Project | null;
   getChatSessionById: (sessionId: string) => SessionLite | null;
@@ -1383,7 +1385,8 @@ export function useChatRuntime({
       setError(null);
       const hiddenContext = options.hiddenContext;
       const selectedKnowledgeCollectionId = options.knowledgeCollectionId?.trim() || null;
-      const attachments = options.attachments ?? [];
+      // let：发送前会落快照，把路径改写成会话产物目录下的快照路径（见下方 try 内）
+      let attachments = options.attachments ?? [];
 
       let sessionId = activeChatId;
       let runId = startSessionRun(sessionId, abortController);
@@ -1415,6 +1418,37 @@ export function useChatRuntime({
       });
 
       try {
+        // 发送前把附件复制一份到会话产物目录（快照）。
+        // 此前附件只存原始绝对路径，用户移动/重命名/删除原文件后，模型回看历史消息时
+        // /read_file 就读不到了。落快照后路径恒定；图片是 base64 内联进消息体，本就不受此影响。
+        if (attachments.length > 0) {
+          // 快照目录按「会话」分桶，因此全新会话要先建会话拿到 id（已有会话不会重复创建）。
+          // 注意：getChatSessionById 读的是闭包里的 chatSessions，新建会话的同一次 tick 内读不到
+          // （ref 要等 effect 才同步），所以新会话直接用 createSessionFromMessages 返回的 title。
+          let snapshotTitle = "";
+          let snapshotProjectTitle = activeProject?.title;
+          if (sessionId) {
+            const existingSession = getChatSessionById(sessionId);
+            snapshotTitle = existingSession?.title ?? "";
+            if (existingSession?.projectId) {
+              snapshotProjectTitle = getProjectById(existingSession.projectId)?.title ?? snapshotProjectTitle;
+            }
+          } else {
+            const draftSession = createSessionFromMessages(
+              [...scopedCurrentMessages, { role: "user" as const, content, images, attachments }],
+              activeProject?.id ?? undefined
+            );
+            sessionId = draftSession.id;
+            snapshotTitle = draftSession.title;
+            runId = startSessionRun(sessionId, abortController);
+            currentTaskIdRef.current.set(sessionId, taskId);
+          }
+          attachments = await snapshotAttachments(attachments, {
+            projectTitle: snapshotProjectTitle,
+            sessionTitle: snapshotTitle,
+            sessionId,
+          });
+        }
         const attachmentContext = buildAttachmentContext(attachments);
         const taskResult = await executeInputTask({
           input: content,

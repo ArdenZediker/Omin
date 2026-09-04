@@ -497,6 +497,7 @@ pub fn run() {
             import_codex_pet_package,
             list_workspace_files,
             read_workspace_file,
+            copy_file_to_store,
             search_workspace_files,
             read_project_agents_md,
             load_knowledge_library_command,

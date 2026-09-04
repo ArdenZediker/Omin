@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
 import type { ChatSession } from "../chat/types";
+import type { ChatAttachment } from "../adapters/types";
 
 export const OUTPUT_ROOT_KEY = "omni_output_root_v1";
 export const MIRROR_SESSIONS_KEY = "omni_mirror_sessions_md_v1";
@@ -114,4 +115,75 @@ export function renderSessionMarkdown(session: ChatSession, projectTitle?: strin
     lines.push("");
   }
   return lines.join("\n");
+}
+
+// ---------- 会话附件快照 ----------
+
+/** 从绝对路径取文件名（兼容 / 与 \ 两种分隔符）。 */
+function baseNameOfPath(p: string): string {
+  return p.split(/[\\/]/).pop() || "attachment";
+}
+
+/** 清洗附件文件名：去掉路径分隔符与非法字符，保留扩展名，空则兜底。 */
+export function sanitizeAttachmentFileName(raw: string): string {
+  const cleaned = raw
+    .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return cleaned || "attachment";
+}
+
+/** 会话附件快照目录：产出根 / 项目slug / 会话slug / attachments。 */
+export function buildAttachmentSnapshotDir(
+  base: string,
+  projectTitle: string | null | undefined,
+  sessionTitle: string,
+  sessionId: string
+): string {
+  return joinPath(buildSessionOutputDir(base, projectTitle, sessionTitle, sessionId), "attachments");
+}
+
+/**
+ * 把用户随消息附带的本地文件复制一份到会话产物目录，返回改写了路径的附件列表。
+ *
+ * 背景：附件此前只存原始绝对路径，用户移动/重命名/删除原文件后，模型回看历史消息时
+ * /read_file 就读不到了。发送时落一份快照，让非图片附件也像图片（base64 内联进消息体）
+ * 一样自包含——语义对齐 DeepSeek / WorkBuddy 的「摄取副本」而非「记指针」。
+ *
+ * 降级：产出根目录无法确定（非 Tauri 环境）或复制失败时，保留原路径返回，不阻断发送；
+ * 此时退化为旧行为，由 /read_file 报错提示用户重新选择文件。
+ */
+export async function snapshotAttachments(
+  attachments: ChatAttachment[],
+  context: { projectTitle: string | null | undefined; sessionTitle: string; sessionId: string }
+): Promise<ChatAttachment[]> {
+  if (attachments.length === 0) return attachments;
+
+  const base = await getEffectiveOutputRoot();
+  if (!base) return attachments;
+
+  const dir = buildAttachmentSnapshotDir(base, context.projectTitle, context.sessionTitle, context.sessionId);
+  const snapshotted: ChatAttachment[] = [];
+
+  for (const attachment of attachments) {
+    const fileName = sanitizeAttachmentFileName(attachment.name || baseNameOfPath(attachment.path));
+    try {
+      const copied = await invoke<{ path: string; size: number }>("copy_file_to_store", {
+        src: attachment.path,
+        dst: joinPath(dir, fileName),
+      });
+      if (copied?.path) {
+        // name 保留用户看到的原始文件名，path 指向快照，size 用落盘后的真实字节数。
+        snapshotted.push({ path: copied.path, name: attachment.name, size: copied.size ?? null });
+        continue;
+      }
+    } catch (error) {
+      // 落快照失败不应阻断发送：退回原始路径，由 /read_file 报错提示用户重新选择。
+      console.error("附件快照失败，回退原始路径", error);
+    }
+    snapshotted.push(attachment);
+  }
+
+  return snapshotted;
 }

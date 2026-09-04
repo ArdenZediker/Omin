@@ -117,6 +117,102 @@ pub(crate) fn read_file(
     })
 }
 
+/// 附件快照复制结果——前端据此把 Message.attachments 的路径改写成快照路径。
+#[derive(Serialize)]
+pub(crate) struct CopyFileResult {
+    /// 快照落盘后的绝对路径（可能与请求的 dst 不同：同名冲突时自动追加 -1、-2）。
+    path: String,
+    /// 快照文件字节数。
+    size: u64,
+}
+
+/// 把用户选定的本地文件复制一份到 Omni 的产出目录（会话附件快照）。
+///
+/// 背景：对话框附件此前只存原始绝对路径，用户移动/重命名/删除原文件后，模型再调
+/// /read_file 就读不到了。发送时落一份快照，让非图片附件也像图片（base64 内联）
+/// 一样自包含——语义对齐 DeepSeek / WorkBuddy 的「摄取副本」，而非「记指针」。
+///
+/// 安全：读取放开（用户自己的文件）；写入侧仅做绝对路径 + No-Go Zone 兜底，
+/// 具体目录由前端按「产出根 / 项目 / 会话」算出。
+pub(crate) fn copy_file_to_store(src: &str, dst: &str) -> Result<CopyFileResult, String> {
+    let src_trimmed = src.trim();
+    let src_path = Path::new(src_trimmed);
+    if !src_path.is_absolute() {
+        return Err(format!("附件源路径必须是绝对路径（收到「{src_trimmed}」）"));
+    }
+    if !src_path.exists() {
+        return Err(format!("File not found: {src_trimmed}"));
+    }
+    if src_path.is_dir() {
+        return Err(format!("Path is a directory: {src_trimmed}"));
+    }
+
+    let dst_trimmed = dst.trim();
+    if dst_trimmed.is_empty() {
+        return Err("附件快照路径不能为空".to_string());
+    }
+    let dst_path = Path::new(dst_trimmed);
+    if !dst_path.is_absolute() {
+        return Err(format!(
+            "附件快照路径必须是绝对路径（收到「{dst_trimmed}」）"
+        ));
+    }
+    if let Some(zone) = crate::office_export::no_go_zone(dst_path) {
+        return Err(format!("附件快照路径位于禁止写入的{zone}，已拒绝。"));
+    }
+
+    // 冲突避免：同名文件已存在时自动追加 -1、-2……保证同一会话多次上传同名文件不互相覆盖。
+    let mut candidate = dst_path.to_path_buf();
+    if candidate.exists() {
+        let stem = dst_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let ext = dst_path
+            .extension()
+            .map(|e| e.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let parent = dst_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let mut n = 1;
+        loop {
+            let name = if ext.is_empty() {
+                format!("{stem}-{n}")
+            } else {
+                format!("{stem}-{n}.{ext}")
+            };
+            let next = if parent.as_os_str().is_empty() {
+                PathBuf::from(&name)
+            } else {
+                parent.join(&name)
+            };
+            if !next.exists() {
+                candidate = next;
+                break;
+            }
+            n += 1;
+            if n > 999 {
+                return Err("附件快照同名冲突过多，无法生成唯一文件名".to_string());
+            }
+        }
+    }
+
+    if let Some(parent) = candidate.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建附件快照目录失败: {e}"))?;
+        }
+    }
+
+    fs::copy(src_path, &candidate).map_err(|e| format!("复制附件快照失败: {e}"))?;
+    let size = fs::metadata(&candidate)
+        .map_err(|e| format!("读取附件快照元数据失败: {e}"))?
+        .len();
+
+    Ok(CopyFileResult {
+        path: candidate.to_string_lossy().to_string(),
+        size,
+    })
+}
+
 pub(crate) fn search_files(
     project_path: Option<String>,
     query: String,
@@ -386,5 +482,80 @@ mod tests {
         assert_eq!(result.returned_chars, body.chars().count());
         assert!(!result.truncated);
         assert_eq!(result.content, body);
+    }
+
+    // ---------- copy_file_to_store（会话附件快照） ----------
+
+    /// 附件快照的落盘目录：放在系统临时目录下，No-Go Zone 对该目录放行。
+    /// 每次先清空——测试会重复运行，残留文件会触发「同名冲突自动改名」逻辑，
+    /// 让断言变得不稳定。
+    fn temp_store_dir(name: &str) -> String {
+        let dir = std::env::temp_dir().join("omni-attachment-test").join(name);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir.to_string_lossy().into_owned()
+    }
+
+    /// 取路径末段文件名。断言用它而非整串路径——Rust 会把请求里的 `/` 规范化成
+    /// Windows 的 `\`，直接比字符串会假失败。
+    fn file_name_of(p: &str) -> String {
+        Path::new(p)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn copy_to_store_writes_snapshot_and_reports_size() {
+        let body = "hello 附件";
+        let src = write_temp_file("src-note.txt", body);
+        let dir = temp_store_dir("basic");
+
+        let dst = format!("{}/note.txt", dir);
+        let result = copy_file_to_store(&src, &dst).unwrap();
+        // 无冲突时快照文件名与请求的 dst 一致（整串路径分隔符可能被规范化，故只比文件名）。
+        assert_eq!(file_name_of(&result.path), "note.txt");
+        assert_eq!(result.size, body.as_bytes().len() as u64);
+        assert_eq!(std::fs::read_to_string(&result.path).unwrap(), body);
+        // 原文件仍在：快照是复制而非移动。
+        assert!(std::path::Path::new(&src).exists());
+    }
+
+    #[test]
+    fn copy_to_store_avoids_overwriting_existing_snapshot() {
+        let src = write_temp_file("dup.txt", "v1");
+        let dir = temp_store_dir("collision");
+
+        let first = copy_file_to_store(&src, &format!("{}/dup.txt", dir)).unwrap();
+        let second = copy_file_to_store(&src, &format!("{}/dup.txt", dir)).unwrap();
+        let third = copy_file_to_store(&src, &format!("{}/dup.txt", dir)).unwrap();
+
+        assert!(first.path.ends_with("dup.txt"));
+        assert!(second.path.ends_with("dup-1.txt"));
+        assert!(third.path.ends_with("dup-2.txt"));
+        assert_ne!(first.path, second.path);
+    }
+
+    #[test]
+    fn copy_to_store_rejects_non_absolute_paths() {
+        let src = write_temp_file("rel.txt", "x");
+        let dir = temp_store_dir("reject");
+
+        // 相对源路径
+        assert!(copy_file_to_store("rel.txt", &format!("{}/out.txt", dir)).is_err());
+        // 相对目标路径
+        assert!(copy_file_to_store(&src, "out.txt").is_err());
+        // 空目标路径
+        assert!(copy_file_to_store(&src, "   ").is_err());
+    }
+
+    #[test]
+    fn copy_to_store_rejects_missing_source_and_directory() {
+        let dir = temp_store_dir("reject2");
+        let missing = format!("{}/definitely-missing-file.txt", dir);
+
+        assert!(copy_file_to_store(&missing, &format!("{}/out.txt", dir)).is_err());
+        // 源是目录：不应被当成文件复制
+        assert!(copy_file_to_store(&dir, &format!("{}/out.txt", dir)).is_err());
     }
 }

@@ -39,7 +39,7 @@ fn col_name(mut idx: usize) -> String {
 
 /// AI 禁止写入的系统/密钥目录：.ssh、AppData、Windows/System32、Program Files、ProgramData。
 /// 系统临时目录（TEMP/TMP，含单测所在 AppData\Local\Temp）放行，避免误伤中转与测试。
-fn no_go_zone(path: &Path) -> Option<&'static str> {
+pub(crate) fn no_go_zone(path: &Path) -> Option<&'static str> {
     let lower = path.to_string_lossy().replace('\\', "/").to_lowercase();
     for var in ["TEMP", "TMP", "TMPDIR"] {
         if let Ok(t) = std::env::var(var) {
