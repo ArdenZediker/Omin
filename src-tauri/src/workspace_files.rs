@@ -59,6 +59,60 @@ fn resolve_root(project_path: &Option<String>) -> Result<PathBuf, String> {
     crate::workspace_root()
 }
 
+/// 轻量 read 黑名单：默认护栏而非围栏（不破坏「读取放开」的整体语义）。
+/// 只拦凭据类文件——SSH 私钥 / GPG 钥匙串 / 云与集群凭证、Windows 注册表
+/// hive（SAM/SYSTEM/SECURITY）、NTDS 目录库、Unix 口令文件。命中返回简短
+/// 原因供错误信息展示；普通文件一律放行。`home` 由调用方注入以便测试。
+fn sensitive_read_reason(path: &Path, home: Option<&str>) -> Option<String> {
+    let text = path.to_string_lossy().replace('\\', "/").to_lowercase();
+
+    if let Some(home) = home {
+        let home = home
+            .replace('\\', "/")
+            .to_lowercase()
+            .trim_end_matches('/')
+            .to_string();
+        for dir in [".ssh", ".gnupg", ".aws", ".kube"] {
+            let prefix = format!("{home}/{dir}");
+            if text == prefix || text.starts_with(&format!("{prefix}/")) {
+                return Some(format!("~/{dir}（凭据目录）"));
+            }
+        }
+    }
+
+    for sys in ["/etc/shadow", "/etc/sudoers"] {
+        if text == sys || text.starts_with(&format!("{sys}/")) {
+            return Some(sys.to_string());
+        }
+    }
+    if text.starts_with("/etc/sudoers.d/") {
+        return Some("/etc/sudoers.d".to_string());
+    }
+
+    // Windows 注册表 hive（凭据转储的常见目标）。只匹配文件名，
+    // 不拦 System32/config 下的普通子目录内容。
+    if let Some(idx) = text.find("/windows/system32/config/") {
+        let rest = &text[idx + "/windows/system32/config/".len()..];
+        let base = rest.split('/').next().unwrap_or("");
+        if matches!(base, "sam" | "system" | "security") {
+            return Some("Windows 注册表 hive".to_string());
+        }
+    }
+    if text.ends_with("/ntds.dit") || text == "ntds.dit" {
+        return Some("NTDS 目录库".to_string());
+    }
+
+    None
+}
+
+/// 读取路径护栏：结合当前用户家目录判断是否命中黑名单。
+fn read_blocked(path: &Path) -> Option<String> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok();
+    sensitive_read_reason(path, home.as_deref())
+}
+
 /// 列出工作区文件/目录：基于 ripgrep 的 `ignore` walker（自动尊重 .gitignore / .ignore /
 /// 全局 gitignore，并跳过隐藏文件），用 glob 表达式在相对路径上做文件名过滤。
 ///
@@ -125,6 +179,11 @@ pub(crate) fn read_file(
     if full_path.is_dir() {
         return Err(format!("Path is a directory: {path}"));
     }
+    if let Some(reason) = read_blocked(&full_path) {
+        return Err(format!(
+            "已拒绝读取敏感路径（{reason}）：此为模型侧默认护栏；如确需查看该文件，请自行打开后粘贴或调整位置。"
+        ));
+    }
 
     let bytes = fs::read(&full_path).map_err(|err| err.to_string())?;
     let content = String::from_utf8_lossy(&bytes).into_owned();
@@ -189,6 +248,11 @@ pub(crate) fn read_file_bytes(
     }
     if full_path.is_dir() {
         return Err(format!("Path is a directory: {path}"));
+    }
+    if let Some(reason) = read_blocked(&full_path) {
+        return Err(format!(
+            "已拒绝读取敏感路径（{reason}）：此为模型侧默认护栏；如确需查看该文件，请自行打开后粘贴或调整位置。"
+        ));
     }
 
     fs::read(&full_path).map_err(|err| err.to_string())
@@ -572,6 +636,36 @@ mod tests {
         assert_eq!(result.start_line, 3);
         assert_eq!(result.end_line, 5);
         assert_eq!(result.content, "l3\nl4\nl5");
+    }
+
+    // ---------- 敏感路径黑名单（P2 默认护栏） ----------
+
+    #[test]
+    fn sensitive_classifier_blocks_credentials_and_allows_normal_files() {
+        let home = Some("C:\\Users\\tester");
+
+        // 家目录下的凭据目录：整目录拦截
+        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\.ssh\\id_rsa"), home).is_some());
+        assert!(sensitive_read_reason(Path::new("C:/Users/tester/.ssh"), home).is_some());
+        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\.gnupg\\pubring.kbx"), home).is_some());
+        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\.aws\\credentials"), home).is_some());
+
+        // 前缀必须完整匹配：.ssh-utils 这类同名前缀目录不能误伤
+        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\.ssh-utils\\a.txt"), home).is_none());
+        // 家目录普通文件放行
+        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\notes.md"), home).is_none());
+
+        // Windows 注册表 hive：只拦 SAM/SYSTEM/SECURITY 本体
+        assert!(sensitive_read_reason(Path::new("C:\\Windows\\System32\\config\\SAM"), None).is_some());
+        assert!(sensitive_read_reason(Path::new("C:\\WINDOWS\\system32\\config\\SYSTEM"), None).is_some());
+        assert!(sensitive_read_reason(Path::new("C:\\Windows\\System32\\config\\drivers\\ok.txt"), None).is_none());
+
+        // NTDS 目录库 + Unix 口令文件（sudoers.d 整目录拦；shadow.d 并非真实敏感路径，放行）
+        assert!(sensitive_read_reason(Path::new("D:\\data\\ntds.dit"), None).is_some());
+        assert!(sensitive_read_reason(Path::new("/etc/shadow"), None).is_some());
+        assert!(sensitive_read_reason(Path::new("/etc/sudoers.d/extra"), None).is_some());
+        assert!(sensitive_read_reason(Path::new("/etc/shadow.d/extra"), None).is_none());
+        assert!(sensitive_read_reason(Path::new("/etc/passwd"), None).is_none());
     }
 
     // ---------- copy_file_to_store（会话附件快照） ----------
