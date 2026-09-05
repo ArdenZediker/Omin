@@ -417,6 +417,7 @@ function MainApp() {
     handleClearChat,
     handleEditUserMessage,
     handleNewChat,
+    handleNewChatInProject,
     handleRegenerateMessage,
     handleSend,
     handleStop,
@@ -785,6 +786,7 @@ function MainApp() {
           emptyChatPrompts={EMPTY_CHAT_PROMPTS}
           error={error}
           groupedChatSessions={groupedChatSessions}
+          chatSessions={chatSessions}
           hasModels={hasModels}
           executionModel={activeExecutionModel}
           inputDraft={activeComposerDraft.text}
@@ -812,6 +814,7 @@ function MainApp() {
           onEditUserMessage={handleEditUserMessage}
           onModelChange={handleModelChange}
           onNewChat={handleNewChat}
+          onNewChatInProject={handleNewChatInProject}
           onCreateCustomProject={createCustomProjectProfile}
           onAddProjectMemory={addProjectMemory}
           onClearProjectMemories={clearProjectMemories}

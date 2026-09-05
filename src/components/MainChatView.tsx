@@ -112,11 +112,6 @@ type ProjectNoticeState = {
   message: string;
 } | null;
 
-type ProjectDisplayGroup = {
-  label: string;
-  projects: Project[];
-};
-
 /** 顶部 toolbar 的「数据源」tabs：与 <PluginMarketplace> 内部的 source-tabs
  *  形状一致，但放在 main-chat-toolbar 顶部 chrome（替代 Marketplace 内嵌的版本）。
  *  仅 skill / connector / expert 三类有二级切换；tool / template 只走 local，
@@ -192,6 +187,7 @@ type MainChatViewProps = {
   emptyChatPrompts: string[];
   error: string | null;
   groupedChatSessions: SessionGroup[];
+  chatSessions: ChatSession[];
   hasModels: boolean;
   inputDraft: string;
   inputDraftImages: string[];
@@ -239,6 +235,7 @@ type MainChatViewProps = {
   onEditUserMessage: (messageIndex: number) => void;
   onModelChange: (modelId: string) => void;
   onNewChat: () => void;
+  onNewChatInProject: (projectId: string) => void;
   onRegenerateMessage: (messageIndex: number) => void | Promise<void>;
   onRenameChat: (session: ChatSession) => void;
   onSelectProject: (projectId: string) => void;
@@ -272,6 +269,7 @@ export default function MainChatView({
   emptyChatPrompts,
   error,
   groupedChatSessions,
+  chatSessions,
   hasModels,
   inputDraft,
   inputDraftImages,
@@ -293,6 +291,7 @@ export default function MainChatView({
   windowControls,
   onCancelEditUserMessage,
   onClearChat,
+  onDeleteChat,
   onCopyMessage,
   onCreateCustomProject,
   onAddProjectMemory,
@@ -304,6 +303,7 @@ export default function MainChatView({
   onEditUserMessage,
   onModelChange,
   onNewChat,
+  onNewChatInProject,
   onRegenerateMessage,
   onSelectProject,
   onSelectChat,
@@ -457,6 +457,9 @@ export default function MainChatView({
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [taskSectionCollapsed, setTaskSectionCollapsed] = useState(false);
+  const [spaceSectionCollapsed, setSpaceSectionCollapsed] = useState(false);
+  const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set());
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
   const [projectGroupManagerOpen, setProjectGroupManagerOpen] = useState(false);
   const [projectGroupCreateMode, setProjectGroupCreateMode] = useState(false);
@@ -502,7 +505,6 @@ export default function MainChatView({
   const [memoryClearConfirmOpen, setMemoryClearConfirmOpen] = useState(false);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState("");
-  const [customProjectsCollapsed, setCustomProjectsCollapsed] = useState(false);
   const [openProjectCardMenuId, setOpenProjectCardMenuId] = useState<string | null>(null);
   const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
@@ -527,7 +529,6 @@ export default function MainChatView({
   const isTopicPanelVisible = topicPanelManualVisible ?? defaultTopicPanelVisible;
   const defaultProjectPanelVisible = !isProjectPanelAutoCollapsed;
   const isProjectPanelVisible = projectPanelManualVisible ?? defaultProjectPanelVisible;
-  const basicProject = projects.find((project) => project.kind === "basic") ?? null;
   const customProjects = projects.filter((project) => project.kind === "custom");
   const projectGroupNames = useMemo(
     () =>
@@ -639,40 +640,40 @@ export default function MainChatView({
   const showTaskPanel = sidePanelTab === "tasks";
   const composerContextPresetText = useMemo(() => "", []);
   const normalizedProjectSearchQuery = normalizeSearchText(projectSearchQuery);
-  const isBasicProjectVisible = Boolean(
-    basicProject &&
-      (!normalizedProjectSearchQuery ||
-        normalizeSearchText(`${basicProject.title} ${basicProject.description}`).includes(normalizedProjectSearchQuery))
-  );
   const filteredCustomProjects = customProjects.filter((project) => {
     if (!normalizedProjectSearchQuery) return true;
     return normalizeSearchText(`${project.title} ${project.description}`).includes(normalizedProjectSearchQuery);
   });
-  const groupedCustomProjects = useMemo<ProjectDisplayGroup[]>(() => {
-    const grouped = new Map<string, Project[]>();
-    filteredCustomProjects.forEach((project) => {
-      const label = project.groupName?.trim() || DEFAULT_PROJECT_GROUP_LABEL;
-      const list = grouped.get(label) ?? [];
-      list.push(project);
-      grouped.set(label, list);
-    });
-
-    return Array.from(grouped.entries())
-      .sort(([labelA], [labelB]) => {
-        if (labelA === DEFAULT_PROJECT_GROUP_LABEL) return -1;
-        if (labelB === DEFAULT_PROJECT_GROUP_LABEL) return 1;
-        return labelA.localeCompare(labelB, "zh-CN");
-      })
-      .map(([label, nextProjects]) => ({ label, projects: nextProjects }));
-  }, [filteredCustomProjects]);
-  const defaultProjectGroup = useMemo(
-    () => groupedCustomProjects.find((group) => group.label === DEFAULT_PROJECT_GROUP_LABEL) ?? { label: DEFAULT_PROJECT_GROUP_LABEL, projects: [] },
-    [groupedCustomProjects]
+  const standaloneSessions = useMemo(
+    () => [...chatSessions].filter((session) => session.projectId === DEFAULT_PROJECT_ID).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt),
+    [chatSessions]
   );
-  const namedProjectGroups = useMemo(
-    () => groupedCustomProjects.filter((group) => group.label !== DEFAULT_PROJECT_GROUP_LABEL),
-    [groupedCustomProjects]
-  );
+  const sessionsByProject = useMemo(() => {
+    const map = new Map<string, ChatSession[]>();
+    for (const session of chatSessions) {
+      if (session.projectId === DEFAULT_PROJECT_ID) continue;
+      const list = map.get(session.projectId) ?? [];
+      list.push(session);
+      map.set(session.projectId, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt);
+    }
+    return map;
+  }, [chatSessions]);
+  const formatSessionTime = (updatedAt: number): string => {
+    const diff = Date.now() - updatedAt;
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    if (diff < minute) return "刚刚";
+    if (diff < hour) return `${Math.floor(diff / minute)}分钟前`;
+    if (diff < day) return `${Math.floor(diff / hour)}小时前`;
+    if (diff < 2 * day) return "昨天";
+    if (diff < 7 * day) return `${Math.floor(diff / day)}天前`;
+    const date = new Date(updatedAt);
+    return `${date.getMonth() + 1}/${date.getDate()}`;
+  };
   const topicTitleById = useMemo(() => {
     const entries = groupedChatSessions.flatMap((group) => group.sessions.map((session) => [session.id, session.title] as const));
     return new Map(entries);
@@ -1233,421 +1234,151 @@ export default function MainChatView({
             </div>
 
         <div className="chat-history-panel__projects">
-          {isBasicProjectVisible && basicProject && (
-            <div className="chat-history-panel__project-section">
-              <div
-                role="button"
-                tabIndex={0}
-                className={`chat-history-panel__project ${activeProjectId === basicProject.id ? "chat-history-panel__project--active" : ""}`}
-                onClick={() => {
-                  setProjectSettingsId(null);
-                  setProjectAvatarPanelOpen(false);
-                  onSelectProject(basicProject.id);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setProjectSettingsId(null);
-                    setProjectAvatarPanelOpen(false);
-                    onSelectProject(basicProject.id);
-                  }
-                }}
-              >
-                <span className="chat-history-panel__project-icon">
-                  {renderProjectAvatar(basicProject)}
-                </span>
-                <span className="chat-history-panel__project-copy">
-                  <strong>{basicProject.title}</strong>
-                </span>
-                <span
-                  className="chat-history-panel__project-menu"
-                  onClick={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => event.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    className="chat-history-panel__project-action"
-                    title="记忆管理"
-                    aria-label="打开 Omni 记忆管理"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelectProject(basicProject.id);
-                      setProjectSettingsId(basicProject.id);
-                    }}
-                  >
-                    <Settings size={13} strokeWidth={1.9} />
-                  </button>
-                </span>
-              </div>
+                    <div className="chat-history-panel__section task-section">
+            <div className="chat-history-panel__section-head">
+              <button type="button" className="chat-history-panel__section-toggle" onClick={() => setTaskSectionCollapsed((current) => !current)} aria-label={taskSectionCollapsed ? "展开任务" : "收起任务"}>
+                {taskSectionCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
+              </button>
+              <span className="chat-history-panel__section-label">任务</span>
+              <span className="chat-history-panel__section-count">{standaloneSessions.length}</span>
+              <button type="button" className="chat-history-panel__section-add" onClick={() => onNewChatInProject(DEFAULT_PROJECT_ID)} title="新建任务" aria-label="新建任务">
+                <Plus size={14} strokeWidth={1.9} />
+              </button>
             </div>
-          )}
-
-            <div className="chat-history-panel__project-section">
-              <div className="chat-history-panel__project-group-header">
-                <div className="chat-history-panel__project-group-label">{DEFAULT_PROJECT_GROUP_LABEL}</div>
-                <div className="chat-history-panel__section-actions">
-                  <button
-                    type="button"
-                    className="chat-history-panel__section-action"
-                    onClick={() => void handleCreateProject()}
-                    title="新建项目"
-                    aria-label="新建项目"
-                  >
-                    <Plus size={14} strokeWidth={1.9} />
-                  </button>
-                  <div ref={projectMenuRef} className="chat-history-panel__section-menu">
-                    <button
-                      type="button"
-                      className={`chat-history-panel__section-action ${projectMenuOpen ? "chat-history-panel__section-action--active" : ""}`}
-                      onClick={() => setProjectMenuOpen((current) => !current)}
-                      title="项目菜单"
-                    >
-                      <MoreHorizontal size={14} strokeWidth={1.8} />
-                    </button>
-                    {projectMenuOpen && (
-                      <div className="chat-history-panel__section-dropdown">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProjectMenuOpen(false);
-                            void handleCreateProject();
-                          }}
-                        >
-                          <Plus size={14} strokeWidth={1.9} />
-                          <span>新建项目</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProjectMenuOpen(false);
-                            setProjectGroupManagerOpen(true);
-                          }}
-                        >
-                          <FolderOpen size={14} strokeWidth={1.9} />
-                          <span>分组管理</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    className={`chat-history-panel__section-action ${customProjectsCollapsed ? "" : "chat-history-panel__section-action--active"}`}
-                    onClick={() => setCustomProjectsCollapsed((current) => !current)}
-                    title={customProjectsCollapsed ? "展开列表" : "收起列表"}
-                  >
-                    {customProjectsCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
-                  </button>
-                </div>
+            {!taskSectionCollapsed && (
+              <div className="chat-history-panel__session-list">
+                {standaloneSessions.length === 0 ? (
+                  <div className="chat-history-panel__empty">暂无任务，点击 + 新建</div>
+                ) : (
+                  standaloneSessions.map((session) => (
+                    <div key={session.id} role="button" tabIndex={0} className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`} onClick={() => onSelectChat(session.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectChat(session.id); } }}>
+                      <span className="chat-history-panel__session-title">{session.title || "未命名会话"}</span>
+                      <span className="chat-history-panel__session-time">{formatSessionTime(session.updatedAt)}</span>
+                      <button type="button" className="chat-history-panel__session-delete" title="删除任务" aria-label="删除任务" onClick={(event) => { event.stopPropagation(); onDeleteChat(session); }}>
+                        <Trash2 size={12} strokeWidth={1.9} />
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
-              {!customProjectsCollapsed && <div className="chat-history-panel__project-list">
-                <div className="chat-history-panel__project-group">
-                  {defaultProjectGroup.projects.length === 0 ? (
-                    <button
-                      type="button"
-                      className="chat-history-panel__project-create"
-                      onClick={() => void handleCreateProject()}
-                    >
-                      <Plus size={14} strokeWidth={1.9} />
-                      <span>新建项目</span>
-                    </button>
-                  ) : (
-                    defaultProjectGroup.projects.map((project, index) => (
-                      <div
-                        key={project.id}
-                        role="button"
-                        tabIndex={0}
-                        className={`chat-history-panel__project ${activeProjectId === project.id ? "chat-history-panel__project--active" : ""} ${openProjectCardMenuId === project.id ? "chat-history-panel__project--menu-open" : ""}`}
-                        onClick={() => {
-                          setProjectSettingsId(null);
-                          setProjectAvatarPanelOpen(false);
-                          onSelectProject(project.id);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setProjectSettingsId(null);
-                            setProjectAvatarPanelOpen(false);
-                            onSelectProject(project.id);
-                          }
-                        }}
-                      >
-                        <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">
-                          {renderProjectAvatar(project, index)}
-                        </span>
-                        <span className="chat-history-panel__project-copy">
-                          <strong>{project.title}</strong>
-                        </span>
-                        <span
-                          ref={(node) => {
-                            projectCardMenuRefs.current[project.id] = node;
-                          }}
-                          className="chat-history-panel__project-menu"
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => event.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`}
-                            title="更多操作"
-                            aria-label="更多操作"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id));
-                            }}
-                          >
-                            <MoreHorizontal size={13} strokeWidth={1.9} />
-                          </button>
-                          {openProjectCardMenuId === project.id && (
-                            <div className="chat-history-panel__project-dropdown">
-                              {projectDeleteConfirm?.projectId === project.id ? (
-                                <div className="chat-topic-panel__menu-confirm chat-history-panel__project-dropdown-confirm">
-                                  <div className="chat-topic-panel__menu-confirm-title">{projectDeleteConfirm.title}</div>
-                                  <div className="chat-topic-panel__menu-confirm-message">{projectDeleteConfirm.message}</div>
-                                  <div className="chat-topic-panel__menu-confirm-actions">
-                                    <button
-                                      type="button"
-                                      className="chat-topic-panel__menu-button"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        setProjectDeleteConfirm(null);
-                                      }}
-                                    >
-                                      取消
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        handleConfirmDeleteProject();
-                                      }}
-                                    >
-                                      确认删除
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      setOpenProjectCardMenuId(null);
-                                      onSelectProject(project.id);
-                                      setProjectSettingsId(project.id);
-                                    }}
-                                  >
-                                    <Settings size={13} strokeWidth={1.9} />
-                                    <span>项目设置</span>
-                                  </button>
-                                  <div className="chat-history-panel__project-dropdown-divider" />
-                                  <button
-                                    type="button"
-                                    className="chat-history-panel__project-dropdown-branch"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      const triggerRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                      const estimatedSubmenuWidth = 172;
-                                      const estimatedSubmenuHeight = Math.min(window.innerHeight - 24, 220);
-                                      const rightSpace = window.innerWidth - triggerRect.right;
-                                      const nextLeft =
-                                        rightSpace >= estimatedSubmenuWidth
-                                          ? triggerRect.right + 8
-                                          : Math.max(12, triggerRect.left - estimatedSubmenuWidth - 8);
-                                      const nextTop = Math.min(
-                                        Math.max(12, triggerRect.top - 8),
-                                        Math.max(12, window.innerHeight - estimatedSubmenuHeight - 12)
-                                      );
-                                      setProjectMoveGroupMenuPosition({ top: nextTop, left: nextLeft });
-                                      setProjectMoveGroupMenuId((current) => (current === project.id ? null : project.id));
-                                    }}
-                                  >
-                                    <span className="chat-history-panel__project-dropdown-main">
-                                      <FolderOpen size={13} strokeWidth={1.9} />
-                                      <span>移动到分组</span>
-                                    </span>
-                                    <ChevronRight size={13} strokeWidth={1.9} />
-                                  </button>
-                                  {project.id !== DEFAULT_PROJECT_ID && (
-                                    <>
-                                      <div className="chat-history-panel__project-dropdown-divider" />
-                                      <button
-                                        type="button"
-                                        className="chat-history-panel__project-dropdown-danger"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          setProjectDeleteConfirm({
-                                            projectId: project.id,
-                                            title: "删除项目",
-                                            message: `确认删除“${project.title}”吗？相关话题和记忆会一并删除。`,
-                                          });
-                                        }}
-                                      >
-                                        <Trash2 size={13} strokeWidth={1.9} />
-                                        <span>删除项目</span>
-                                      </button>
-                                    </>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </span>
-                      </div>
-                    ))
+            )}
+          </div>
+
+          <div className="chat-history-panel__section space-section">
+            <div className="chat-history-panel__section-head">
+              <button type="button" className="chat-history-panel__section-toggle" onClick={() => setSpaceSectionCollapsed((current) => !current)} aria-label={spaceSectionCollapsed ? "展开空间" : "收起空间"}>
+                {spaceSectionCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
+              </button>
+              <span className="chat-history-panel__section-label">空间</span>
+              <span className="chat-history-panel__section-count">{filteredCustomProjects.length}</span>
+              <div className="chat-history-panel__section-actions">
+                <div ref={projectMenuRef} className="chat-history-panel__section-menu">
+                  <button type="button" className={`chat-history-panel__section-action ${projectMenuOpen ? "chat-history-panel__section-action--active" : ""}`} onClick={() => setProjectMenuOpen((current) => !current)} title="空间菜单">
+                    <MoreHorizontal size={14} strokeWidth={1.8} />
+                  </button>
+                  {projectMenuOpen && (
+                    <div className="chat-history-panel__section-dropdown">
+                      <button type="button" onClick={() => { setProjectMenuOpen(false); void handleCreateProject(); }}>
+                        <Plus size={14} strokeWidth={1.9} />
+                        <span>新建空间</span>
+                      </button>
+                      <button type="button" onClick={() => { setProjectMenuOpen(false); setProjectGroupManagerOpen(true); }}>
+                        <FolderOpen size={14} strokeWidth={1.9} />
+                        <span>分组管理</span>
+                      </button>
+                    </div>
                   )}
                 </div>
-                {namedProjectGroups.length === 0 ? null : namedProjectGroups.map((group) => (
-                  <div key={group.label} className="chat-history-panel__project-group">
-                    <div className="chat-history-panel__project-group-label">{group.label}</div>
-                    {group.projects.map((project, index) => (
-                      <div
-                        key={project.id}
-                        role="button"
-                        tabIndex={0}
-                        className={`chat-history-panel__project ${activeProjectId === project.id ? "chat-history-panel__project--active" : ""} ${openProjectCardMenuId === project.id ? "chat-history-panel__project--menu-open" : ""}`}
-                        onClick={() => {
-                          setProjectSettingsId(null);
-                          setProjectAvatarPanelOpen(false);
-                          onSelectProject(project.id);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setProjectSettingsId(null);
-                            setProjectAvatarPanelOpen(false);
-                            onSelectProject(project.id);
-                          }
-                        }}
-                      >
-                        <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">
-                          {renderProjectAvatar(project, index)}
-                        </span>
-                        <span className="chat-history-panel__project-copy">
-                          <strong>{project.title}</strong>
-                        </span>
-                        <span
-                          ref={(node) => {
-                            projectCardMenuRefs.current[project.id] = node;
-                          }}
-                          className="chat-history-panel__project-menu"
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => event.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`}
-                            title="更多操作"
-                            aria-label="更多操作"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id));
-                            }}
-                          >
-                            <MoreHorizontal size={13} strokeWidth={1.9} />
-                          </button>
-                          {openProjectCardMenuId === project.id && (
-                            <div className="chat-history-panel__project-dropdown">
-                              {projectDeleteConfirm?.projectId === project.id ? (
-                                <div className="chat-topic-panel__menu-confirm chat-history-panel__project-dropdown-confirm">
-                                  <div className="chat-topic-panel__menu-confirm-title">{projectDeleteConfirm.title}</div>
-                                  <div className="chat-topic-panel__menu-confirm-message">{projectDeleteConfirm.message}</div>
-                                  <div className="chat-topic-panel__menu-confirm-actions">
-                                    <button
-                                      type="button"
-                                      className="chat-topic-panel__menu-button"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        setProjectDeleteConfirm(null);
-                                      }}
-                                    >
-                                      取消
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        handleConfirmDeleteProject();
-                                      }}
-                                    >
-                                      确认删除
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      setOpenProjectCardMenuId(null);
-                                      onSelectProject(project.id);
-                                      setProjectSettingsId(project.id);
-                                    }}
-                                  >
-                                    <Settings size={13} strokeWidth={1.9} />
-                                    <span>项目设置</span>
-                                  </button>
-                                  <div className="chat-history-panel__project-dropdown-divider" />
-                                  <button
-                                    type="button"
-                                    className="chat-history-panel__project-dropdown-branch"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      const triggerRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                      const estimatedSubmenuWidth = 172;
-                                      const estimatedSubmenuHeight = Math.min(window.innerHeight - 24, 220);
-                                      const rightSpace = window.innerWidth - triggerRect.right;
-                                      const nextLeft =
-                                        rightSpace >= estimatedSubmenuWidth
-                                          ? triggerRect.right + 8
-                                          : Math.max(12, triggerRect.left - estimatedSubmenuWidth - 8);
-                                      const nextTop = Math.min(
-                                        Math.max(12, triggerRect.top - 8),
-                                        Math.max(12, window.innerHeight - estimatedSubmenuHeight - 12)
-                                      );
-                                      setProjectMoveGroupMenuPosition({ top: nextTop, left: nextLeft });
-                                      setProjectMoveGroupMenuId((current) => (current === project.id ? null : project.id));
-                                    }}
-                                  >
-                                    <span className="chat-history-panel__project-dropdown-main">
-                                      <FolderOpen size={13} strokeWidth={1.9} />
-                                      <span>移动到分组</span>
-                                    </span>
-                                    <ChevronRight size={13} strokeWidth={1.9} />
-                                  </button>
-                                  {project.id !== DEFAULT_PROJECT_ID && (
-                                    <>
-                                      <div className="chat-history-panel__project-dropdown-divider" />
-                                      <button
-                                        type="button"
-                                        className="chat-history-panel__project-dropdown-danger"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          setProjectDeleteConfirm({
-                                            projectId: project.id,
-                                            title: "删除项目",
-                                            message: `确认删除“${project.title}”吗？相关话题和记忆会一并删除。`,
-                                          });
-                                        }}
-                                      >
-                                        <Trash2 size={13} strokeWidth={1.9} />
-                                        <span>删除项目</span>
-                                      </button>
-                                    </>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>}
+                <button type="button" className="chat-history-panel__section-add" onClick={() => void handleCreateProject()} title="新建空间" aria-label="新建空间">
+                  <Plus size={14} strokeWidth={1.9} />
+                </button>
+              </div>
             </div>
+            {!spaceSectionCollapsed && (
+              <div className="chat-history-panel__space-list">
+                {filteredCustomProjects.length === 0 ? (
+                  <div className="chat-history-panel__empty">暂无空间，点击 + 新建</div>
+                ) : (
+                  filteredCustomProjects.map((project) => {
+                    const isExpanded = expandedSpaces.has(project.id);
+                    const projectSessions = sessionsByProject.get(project.id) ?? [];
+                    const isActiveSpace = activeProjectId === project.id;
+                    return (
+                      <div key={project.id} className={`chat-history-panel__space ${isActiveSpace ? "chat-history-panel__space--active" : ""}`}>
+                        <div role="button" tabIndex={0} className="chat-history-panel__space-head" onClick={() => { onSelectProject(project.id); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectProject(project.id); setExpandedSpaces((current) => { const next = new Set(current); next.add(project.id); return next; }); } }}>
+                          <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">{renderProjectAvatar(project, 0)}</span>
+                          <span className="chat-history-panel__space-title">{project.title}</span>
+                          <span className="chat-history-panel__project-menu" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                            <button type="button" className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`} title="更多操作" aria-label="更多操作" onClick={(event) => { event.stopPropagation(); setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id)); }}>
+                              <MoreHorizontal size={13} strokeWidth={1.9} />
+                            </button>
+                            {openProjectCardMenuId === project.id && (
+                              <div className="chat-history-panel__project-dropdown">
+                                {projectDeleteConfirm?.projectId === project.id ? (
+                                  <div className="chat-topic-panel__menu-confirm chat-history-panel__project-dropdown-confirm">
+                                    <div className="chat-topic-panel__menu-confirm-title">{projectDeleteConfirm.title}</div>
+                                    <div className="chat-topic-panel__menu-confirm-message">{projectDeleteConfirm.message}</div>
+                                    <div className="chat-topic-panel__menu-confirm-actions">
+                                      <button type="button" className="chat-topic-panel__menu-button" onClick={(event) => { event.stopPropagation(); setProjectDeleteConfirm(null); }}>取消</button>
+                                      <button type="button" className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger" onClick={(event) => { event.stopPropagation(); handleConfirmDeleteProject(); }}>确认删除</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); setOpenProjectCardMenuId(null); onSelectProject(project.id); setProjectSettingsId(project.id); }}>
+                                      <Settings size={13} strokeWidth={1.9} />
+                                      <span>空间设置</span>
+                                    </button>
+                                    <div className="chat-history-panel__project-dropdown-divider" />
+                                    <button type="button" className="chat-history-panel__project-dropdown-branch" onClick={(event) => { event.stopPropagation(); const triggerRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect(); const estimatedSubmenuWidth = 172; const estimatedSubmenuHeight = Math.min(window.innerHeight - 24, 220); const rightSpace = window.innerWidth - triggerRect.right; const nextLeft = rightSpace >= estimatedSubmenuWidth ? triggerRect.right + 8 : Math.max(12, triggerRect.left - estimatedSubmenuWidth - 8); const nextTop = Math.min(Math.max(12, triggerRect.top - 8), Math.max(12, window.innerHeight - estimatedSubmenuHeight - 12)); setProjectMoveGroupMenuPosition({ top: nextTop, left: nextLeft }); setProjectMoveGroupMenuId((current) => (current === project.id ? null : project.id)); }}>
+                                      <span className="chat-history-panel__project-dropdown-main"><FolderOpen size={13} strokeWidth={1.9} /><span>移动到分组</span></span>
+                                      <ChevronRight size={13} strokeWidth={1.9} />
+                                    </button>
+                                    {project.id !== DEFAULT_PROJECT_ID && (
+                                      <>
+                                        <div className="chat-history-panel__project-dropdown-divider" />
+                                        <button type="button" className="chat-history-panel__project-dropdown-danger" onClick={(event) => { event.stopPropagation(); setProjectDeleteConfirm({ projectId: project.id, title: "删除空间", message: `确认删除“${project.title}”吗？相关会话和记忆会一并删除。` }); }}>
+                                          <Trash2 size={13} strokeWidth={1.9} />
+                                          <span>删除空间</span>
+                                        </button>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </span>
+                          <button type="button" className="chat-history-panel__space-add" title="在空间内新建会话" aria-label="在空间内新建会话" onClick={(event) => { event.stopPropagation(); onNewChatInProject(project.id); }}>
+                            <Plus size={13} strokeWidth={1.9} />
+                          </button>
+                          <span className="chat-history-panel__space-chevron" onClick={(event) => { event.stopPropagation(); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }}>
+                            {isExpanded ? <ChevronDown size={13} strokeWidth={1.8} /> : <ChevronRight size={13} strokeWidth={1.8} />}
+                          </span>
+                        </div>
+                        {isExpanded && (
+                          <div className="chat-history-panel__session-list chat-history-panel__session-list--nested">
+                            {projectSessions.length === 0 ? (
+                              <div className="chat-history-panel__empty">该空间暂无会话</div>
+                            ) : (
+                              projectSessions.map((session) => (
+                                <div key={session.id} role="button" tabIndex={0} className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`} onClick={() => onSelectChat(session.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectChat(session.id); } }}>
+                                  <span className="chat-history-panel__session-title">{session.title || "未命名会话"}</span>
+                                  <span className="chat-history-panel__session-time">{formatSessionTime(session.updatedAt)}</span>
+                                  <button type="button" className="chat-history-panel__session-delete" title="删除会话" aria-label="删除会话" onClick={(event) => { event.stopPropagation(); onDeleteChat(session); }}>
+                                    <Trash2 size={12} strokeWidth={1.9} />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
 
         </div>
           </>

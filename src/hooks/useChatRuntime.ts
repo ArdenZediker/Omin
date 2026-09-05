@@ -1758,6 +1758,21 @@ export function useChatRuntime({
     setEditingMessageIndex(null);
   }, [activeProject?.id, createSessionFromMessages, setEditingMessageIndex, setError, setInputDraft, setInputDraftImages, setInputDraftKey, setMessages, setOpenChatMenu]);
 
+  const handleNewChatInProject = useCallback(
+    (projectId: string) => {
+      createSessionFromMessages([], projectId);
+      setActiveProjectId(projectId);
+      setMessages([]);
+      setInputDraft("");
+      setInputDraftImages([]);
+      setInputDraftKey((value) => value + 1);
+      setError(null);
+      setOpenChatMenu(null);
+      setEditingMessageIndex(null);
+    },
+    [createSessionFromMessages, setActiveProjectId, setEditingMessageIndex, setError, setInputDraft, setInputDraftImages, setInputDraftKey, setMessages, setOpenChatMenu]
+  );
+
   return {
     editingMessageIndex,
     error,
@@ -1765,6 +1780,7 @@ export function useChatRuntime({
     handleClearChat,
     handleEditUserMessage,
     handleNewChat,
+    handleNewChatInProject,
     handleRegenerateMessage,
     handleSend,
     handleStop,
