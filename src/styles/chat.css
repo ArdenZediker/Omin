@@ -1381,9 +1381,22 @@
   display: block;
 }
 
+.chat-history-panel__project-folder-icon-wrapper {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
 .chat-history-panel__project-folder-icon {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   color: var(--omni-app-muted);
   flex: 0 0 auto;
 }

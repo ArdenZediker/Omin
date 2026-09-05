@@ -111,7 +111,7 @@ export function renderProjectAvatar(project: Project | null) {
   if (project?.kind === "custom") {
     return (
       <FolderOpen
-        size={20}
+        size={24}
         strokeWidth={1.9}
         className="chat-history-panel__project-folder-icon"
       />

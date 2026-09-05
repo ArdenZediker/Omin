@@ -1305,7 +1305,11 @@ export default function MainChatView({
                     return (
                       <div key={project.id} className={`chat-history-panel__space ${isActiveSpace ? "chat-history-panel__space--active" : ""}`}>
                         <div role="button" tabIndex={0} className="chat-history-panel__space-head" onClick={() => { onSelectProject(project.id); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectProject(project.id); setExpandedSpaces((current) => { const next = new Set(current); next.add(project.id); return next; }); } }}>
-                          <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">{renderProjectAvatar(project)}</span>
+                          {project.avatarType === "image" && project.avatarValue ? (
+                            <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">{renderProjectAvatar(project)}</span>
+                          ) : (
+                            <span className="chat-history-panel__project-folder-icon-wrapper">{renderProjectAvatar(project)}</span>
+                          )}
                           <span className="chat-history-panel__space-title">{project.title}</span>
                           <span className="chat-history-panel__project-menu" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                             <button type="button" className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`} title="更多操作" aria-label="更多操作" onClick={(event) => { event.stopPropagation(); setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id)); }}>
