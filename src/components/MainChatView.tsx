@@ -18,8 +18,6 @@ import {
   Compass,
   FolderOpen,
   GitBranch,
-  History,
-  LayoutDashboard,
   LayoutTemplate,
   MessageSquare,
   MoreHorizontal,
@@ -52,8 +50,6 @@ import type {
   ChatSendOptions,
   ChatSession,
 } from "../chat/types";
-import type { TaskExecutionResult } from "../chat/taskTypes";
-import type { TaskRuntimeState } from "../chat/taskTypes";
 import ArtifactsPanel from "./ArtifactsPanel";
 import ChangesPanel from "./ChangesPanel";
 import {
@@ -76,7 +72,6 @@ import {
 } from "../app/sqliteStorage";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
-import { ExecutionTimeline } from "./ExecutionTimeline";
 import CreateProjectDialog from "./CreateProjectDialog";
 import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
 import ModelSelector from "./ModelSelector";
@@ -96,7 +91,6 @@ import {
   MIN_TOPIC_PANEL_WIDTH,
   MIN_COMPOSER_RESIZE_HEIGHT,
   MIN_MESSAGE_AREA_HEIGHT,
-  buildTaskAggregateSummary,
   clampPanelWidth,
   getSessionAvatarStyle,
   NewSessionInSpaceIcon,
@@ -112,7 +106,7 @@ type SessionGroup = {
   sessions: ChatSession[];
 };
 
-type SidePanelTab = "history" | "tasks" | "artifacts" | "changes";
+type SidePanelTab = "history" | "artifacts" | "changes";
 
 type ProjectDeleteConfirmState = {
   projectId: string;
@@ -224,8 +218,6 @@ type MainChatViewProps = {
     }>;
   };
   projectMemories: ProjectMemoryRecord[];
-  latestTaskResult: TaskExecutionResult | null;
-  taskRuntimeState: TaskRuntimeState;
   messages: Message[];
   messagesScrollRef: RefObject<HTMLDivElement | null>;
   omniIconSrc: string;
@@ -322,8 +314,6 @@ export default function MainChatView({
   isSendBlocked = false,
   isStreaming,
   relatedContext,
-  latestTaskResult,
-  taskRuntimeState,
   messages,
   messagesScrollRef,
   omniIconSrc,
@@ -560,7 +550,6 @@ export default function MainChatView({
   >(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectTitle, setEditingProjectTitle] = useState("");
-  const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const projectCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>(
     {},
@@ -721,10 +710,6 @@ export default function MainChatView({
     showContextRecallBanner && !isContextRecallBannerDismissed;
   const useCompactEmptyGuideLayout =
     isEmptyGuideCompact && !hasVisibleContextRecallBanner;
-  const taskAggregateSummary = latestTaskResult
-    ? buildTaskAggregateSummary(latestTaskResult)
-    : null;
-  const showTaskPanel = sidePanelTab === "tasks";
   const composerContextPresetText = useMemo(() => "", []);
   const normalizedProjectSearchQuery = normalizeSearchText(projectSearchQuery);
   const filteredCustomProjects = customProjects.filter((project) => {
@@ -2260,8 +2245,6 @@ export default function MainChatView({
                     {(() => {
                       if (sidePanelTab === "history")
                         return <Clock size={14} strokeWidth={2} />;
-                      if (sidePanelTab === "tasks")
-                        return <LayoutDashboard size={14} strokeWidth={2} />;
                       if (sidePanelTab === "changes")
                         return <GitBranch size={14} strokeWidth={2} />;
                       return <Package size={14} strokeWidth={2} />;
@@ -2269,11 +2252,9 @@ export default function MainChatView({
                     <span>
                       {sidePanelTab === "history"
                         ? "历史提问"
-                        : sidePanelTab === "tasks"
-                          ? "任务"
-                          : sidePanelTab === "changes"
-                            ? "变更"
-                            : "产物"}
+                        : sidePanelTab === "changes"
+                          ? "变更"
+                          : "产物"}
                     </span>
                   </div>
                 </div>
@@ -2308,13 +2289,6 @@ export default function MainChatView({
                   >
                     <Clock size={11} strokeWidth={2} />
                     <span>历史提问</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`chat-topic-panel__tab ${sidePanelTab === "tasks" ? "chat-topic-panel__tab--active" : ""}`}
-                    onClick={() => setSidePanelTab("tasks")}
-                  >
-                    任务
                   </button>
                 </div>
 
@@ -2400,124 +2374,6 @@ export default function MainChatView({
                   <ChangesPanel workspacePath={activeProject.workspacePath} />
                 ) : null}
 
-                {sidePanelTab === "tasks" && (
-                  <>
-                    {latestTaskResult && (
-                      <div className="chat-topic-panel__section chat-topic-panel__section--task">
-                        <div className="chat-topic-panel__section-title">
-                          当前任务
-                        </div>
-                        <div className="chat-topic-panel__task">
-                          <div className="chat-topic-panel__task-head">
-                            <strong>{latestTaskResult.plan.goal}</strong>
-                            <span
-                              className={`chat-topic-panel__task-status chat-topic-panel__task-status--${latestTaskResult.status}`}
-                            >
-                              {latestTaskResult.status}
-                            </span>
-                          </div>
-                          <div className="chat-topic-panel__task-meta">
-                            <span>{latestTaskResult.intent}</span>
-                            <span>{latestTaskResult.plan.model}</span>
-                          </div>
-                          {taskAggregateSummary && (
-                            <div className="chat-topic-panel__task-aggregate">
-                              <strong>链路摘要</strong>
-                              <span>
-                                {taskAggregateSummary.childCount > 0
-                                  ? `共 ${taskAggregateSummary.childCount} 个子任务 · `
-                                  : ""}
-                                {taskAggregateSummary.text}
-                              </span>
-                            </div>
-                          )}
-                          {(latestTaskResult.trace.length > 0 ||
-                            latestTaskResult.finalResult?.steps?.length) && (
-                            <button
-                              type="button"
-                              className="chat-topic-panel__inline-action"
-                              onClick={() =>
-                                setIsTaskTraceExpanded((current) => !current)
-                              }
-                            >
-                              {isTaskTraceExpanded
-                                ? "收起链路"
-                                : "查看回答链路"}
-                            </button>
-                          )}
-                          {latestTaskResult.trace.length > 0 &&
-                            isTaskTraceExpanded && (
-                              <div className="chat-topic-panel__task-trace">
-                                {latestTaskResult.trace.map((entry, index) => (
-                                  <div
-                                    key={`${entry.at}-${index}`}
-                                    className="chat-topic-panel__task-trace-item"
-                                  >
-                                    <span className="chat-topic-panel__task-trace-stage">
-                                      {entry.stage}
-                                    </span>
-                                    <span className="chat-topic-panel__task-trace-message">
-                                      {entry.message}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          {isTaskTraceExpanded &&
-                          latestTaskResult.finalResult?.steps?.length ? (
-                            <div className="chat-topic-panel__task-steps">
-                              <div className="chat-topic-panel__task-steps-title">
-                                执行步骤
-                              </div>
-                              <ExecutionTimeline
-                                steps={latestTaskResult.finalResult.steps}
-                                onOpenFileLocation={handleOpenFileLocation}
-                              />
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    )}
-
-                    {showTaskPanel && (
-                      <div className="chat-topic-panel__section">
-                        <div className="chat-topic-panel__section-title">
-                          <History size={13} strokeWidth={2} />
-                          <span>任务历史</span>
-                        </div>
-                        {taskRuntimeState.history.length > 1 ? (
-                          <div className="chat-topic-panel__group-list">
-                            {taskRuntimeState.history
-                              .slice(1, 6)
-                              .map((task) => (
-                                <div
-                                  key={task.taskId}
-                                  className="chat-topic-panel__task"
-                                >
-                                  <div className="chat-topic-panel__task-head">
-                                    <strong>{task.plan.goal}</strong>
-                                    <span
-                                      className={`chat-topic-panel__task-status chat-topic-panel__task-status--${task.status}`}
-                                    >
-                                      {task.status}
-                                    </span>
-                                  </div>
-                                  <div className="chat-topic-panel__task-meta">
-                                    <span>{task.intent}</span>
-                                    <span>{task.plan.model}</span>
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        ) : (
-                          <div className="chat-topic-panel__empty">
-                            暂无任务记录
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             </aside>
         </div>

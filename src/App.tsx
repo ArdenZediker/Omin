@@ -424,8 +424,6 @@ function MainApp() {
     handleSubmitEditedUserMessage,
     handleUseEmptyPrompt,
     loadingSessionIds,
-    latestTaskResult,
-    taskRuntimeState,
     setEditingMessageIndex,
     setError,
   } = useChatRuntime({
@@ -800,8 +798,6 @@ function MainApp() {
           isStreaming={isStreaming}
           relatedContext={relatedContext}
           projectMemories={activeProject ? getProjectMemories(activeProject.id) : []}
-          latestTaskResult={latestTaskResult}
-          taskRuntimeState={taskRuntimeState}
           messages={visibleMessages}
           messagesScrollRef={messagesScrollRef}
           omniIconSrc={omniIconSrc}
