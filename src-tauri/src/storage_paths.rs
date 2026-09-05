@@ -13,6 +13,7 @@ const DATA_ROOT_CONFIG_FILE: &str = "data-root.json";
 const PORTABLE_DIR_NAME: &str = "data";
 const DB_FILE_NAME: &str = "omni.sqlite3";
 const KNOWLEDGE_DIR_NAME: &str = "knowledge_files";
+const PASTED_ATTACHMENTS_DIR_NAME: &str = "pasted-attachments";
 const WRITE_PROBE_NAME: &str = ".omni-write-probe";
 
 /// 已知云同步目录标记（小写比对）。SQLite 的 WAL 模式在这些目录下会静默损坏。
@@ -183,6 +184,15 @@ pub(crate) fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 pub(crate) fn knowledge_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let root = resolve_data_root(app)?;
     let dir = root.join(KNOWLEDGE_DIR_NAME);
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    Ok(dir)
+}
+
+/// 粘贴附件的临时根目录：用户从剪贴板直接粘贴文件时，前端拿不到本地绝对路径，
+/// 只能得到二进制内容；Rust 侧把它写到应用数据目录下，返回绝对路径供 /read_file 使用。
+pub(crate) fn pasted_attachments_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let root = resolve_data_root(app)?;
+    let dir = root.join(PASTED_ATTACHMENTS_DIR_NAME);
     fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     Ok(dir)
 }

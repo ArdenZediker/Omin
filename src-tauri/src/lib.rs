@@ -499,6 +499,7 @@ pub fn run() {
             read_workspace_file,
             read_file_bytes,
             copy_file_to_store,
+            write_pasted_attachment,
             search_workspace_files,
             read_project_agents_md,
             load_knowledge_library_command,

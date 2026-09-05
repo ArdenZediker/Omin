@@ -105,3 +105,29 @@ export async function pickLocalAttachments(): Promise<PickedAttachmentsResult | 
   );
   return { images, attachments };
 }
+
+/**
+ * 把从剪贴板粘贴得到的 File 对象（非图片）写到 Omni 应用数据目录，
+ * 返回可用于 /read_file 的绝对路径。图片文件不需要走这里，直接 FileReader 转 base64 即可。
+ * 落盘失败时返回 null，调用方按未粘贴处理，不阻断用户。
+ */
+export async function savePastedFileAttachment(file: File): Promise<ChatAttachment | null> {
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = await invoke<{ path: string; size: number }>("write_pasted_attachment", {
+      name: file.name || "pasted-file",
+      bytes,
+    });
+    if (!result?.path) {
+      return null;
+    }
+    return {
+      path: result.path,
+      name: file.name || "pasted-file",
+      size: result.size ?? null,
+    };
+  } catch (error) {
+    console.error("保存粘贴文件附件失败", error);
+    return null;
+  }
+}

@@ -15,7 +15,7 @@ import type { ChatAttachment } from "../adapters/types";
 import type { ChatSendOptions } from "../chat/types";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
-import { baseNameOf, isImageFile, readLocalImageAsDataURL } from "./attachmentUtils";
+import { baseNameOf, isImageFile, readLocalImageAsDataURL, savePastedFileAttachment } from "./attachmentUtils";
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;
@@ -550,6 +550,38 @@ export default function ChatInput({
   };
 
   const handlePaste = (event: React.ClipboardEvent) => {
+    const clipboardFiles = event.clipboardData.files;
+    if (clipboardFiles && clipboardFiles.length > 0) {
+      event.preventDefault();
+      const fileList = Array.from(clipboardFiles);
+      const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
+      const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
+
+      if (imageFiles.length > 0) {
+        void appendImageFiles(imageFiles);
+      }
+
+      if (docFiles.length > 0) {
+        void (async () => {
+          const nextAttachments: ChatAttachment[] = [];
+          for (const file of docFiles) {
+            const attachment = await savePastedFileAttachment(file);
+            if (attachment) {
+              nextAttachments.push(attachment);
+            }
+          }
+          if (nextAttachments.length === 0) return;
+          setAttachments((prev) => {
+            const existingPaths = new Set(prev.map((a) => a.path));
+            const unique = nextAttachments.filter((a) => !existingPaths.has(a.path));
+            return unique.length > 0 ? [...prev, ...unique] : prev;
+          });
+        })();
+      }
+      return;
+    }
+
+    // 兜底：部分环境只暴露 items（如某些截图工具的剪贴板）。
     const items = event.clipboardData.items;
     for (const item of items) {
       if (item.type.startsWith("image/")) {

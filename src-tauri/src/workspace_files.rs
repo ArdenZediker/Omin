@@ -6,6 +6,7 @@ use std::{
     fs,
     path::{Component, Path, PathBuf},
 };
+use uuid::Uuid;
 
 #[derive(Serialize)]
 pub(crate) struct WorkspaceFileEntry {
@@ -353,6 +354,52 @@ pub(crate) fn copy_file_to_store(src: &str, dst: &str) -> Result<CopyFileResult,
     fs::copy(src_path, &candidate).map_err(|e| format!("复制附件快照失败: {e}"))?;
     let size = fs::metadata(&candidate)
         .map_err(|e| format!("读取附件快照元数据失败: {e}"))?
+        .len();
+
+    Ok(CopyFileResult {
+        path: candidate.to_string_lossy().to_string(),
+        size,
+    })
+}
+
+/// 清洗从剪贴板传入的文件名：去掉路径分量、控制字符与 Windows 非法字符，
+/// 限制长度，防止目录遍历与换名攻击。
+fn sanitize_pasted_file_name(name: &str) -> String {
+    let base = name
+        .replace('\\', "/")
+        .split('/')
+        .last()
+        .unwrap_or("")
+        .replace(|c: char| c.is_control(), "_")
+        .replace([':', '*', '?', '"', '<', '>', '|'], "_")
+        .trim()
+        .to_string();
+    if base.is_empty() {
+        return "pasted-file".to_string();
+    }
+    // 限制长度，避免 Windows 长路径问题。
+    base.chars().take(120).collect()
+}
+
+/// 把前端从剪贴板读取到的非图片文件落盘到应用数据目录，返回绝对路径与字节数。
+/// 图片文件不需要走这里：前端直接用 FileReader 转 base64 内联即可。
+pub(crate) fn write_pasted_attachment(
+    app: &tauri::AppHandle,
+    name: &str,
+    bytes: &[u8],
+) -> Result<CopyFileResult, String> {
+    let sanitized = sanitize_pasted_file_name(name);
+    if sanitized.is_empty() {
+        return Err("粘贴文件名无效".to_string());
+    }
+
+    let dir = crate::storage_paths::pasted_attachments_root(app)?.join(Uuid::new_v4().to_string());
+    fs::create_dir_all(&dir).map_err(|err| format!("创建粘贴附件目录失败: {err}"))?;
+
+    let candidate = dir.join(&sanitized);
+    fs::write(&candidate, bytes).map_err(|err| format!("写入粘贴附件失败: {err}"))?;
+    let size = fs::metadata(&candidate)
+        .map_err(|err| format!("读取粘贴附件元数据失败: {err}"))?
         .len();
 
     Ok(CopyFileResult {
@@ -748,6 +795,16 @@ mod tests {
         assert!(copy_file_to_store(&missing, &format!("{}/out.txt", dir)).is_err());
         // 源是目录：不应被当成文件复制
         assert!(copy_file_to_store(&dir, &format!("{}/out.txt", dir)).is_err());
+    }
+
+    #[test]
+    fn sanitize_pasted_file_name_strips_path_and_illegal_chars() {
+        assert_eq!(sanitize_pasted_file_name("report.md"), "report.md");
+        assert_eq!(sanitize_pasted_file_name("../secret.txt"), "secret.txt");
+        assert_eq!(sanitize_pasted_file_name("C:\\\\bad:file?.docx"), "bad_file_.docx");
+        assert_eq!(sanitize_pasted_file_name("  spaces  "), "spaces");
+        assert_eq!(sanitize_pasted_file_name(""), "pasted-file");
+        assert_eq!(sanitize_pasted_file_name("\nname\r"), "_name_");
     }
 
     // ---------- list_files / search_files（glob + ripgrep） ----------

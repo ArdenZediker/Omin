@@ -16,7 +16,7 @@ import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettl
 import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
-import { pickLocalAttachments } from "./attachmentUtils";
+import { pickLocalAttachments, savePastedFileAttachment } from "./attachmentUtils";
 
 interface ChatMessageProps {
   message: Message;
@@ -154,6 +154,67 @@ export default function ChatMessage({
     }
   };
 
+  const appendEditImageFiles = (files: File[]) => {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+
+    void Promise.all(
+      imageFiles.map(
+        (file) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (event) => resolve((event.target?.result as string) ?? "");
+            reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
+            reader.readAsDataURL(file);
+          }),
+      ),
+    ).then((nextImages) => {
+      setEditImages((prev) => [...prev, ...nextImages.filter((src) => src.length > 0)]);
+    });
+  };
+
+  const handleEditPaste = (event: React.ClipboardEvent) => {
+    const clipboardFiles = event.clipboardData.files;
+    if (clipboardFiles && clipboardFiles.length > 0) {
+      event.preventDefault();
+      const fileList = Array.from(clipboardFiles);
+      const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
+      const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
+
+      if (imageFiles.length > 0) {
+        appendEditImageFiles(imageFiles);
+      }
+
+      if (docFiles.length > 0) {
+        void (async () => {
+          const nextAttachments: ChatAttachment[] = [];
+          for (const file of docFiles) {
+            const attachment = await savePastedFileAttachment(file);
+            if (attachment) {
+              nextAttachments.push(attachment);
+            }
+          }
+          if (nextAttachments.length === 0) return;
+          setEditAttachments((prev) => {
+            const existingPaths = new Set(prev.map((attachment) => attachment.path));
+            return [...prev, ...nextAttachments.filter((attachment) => !existingPaths.has(attachment.path))];
+          });
+        })();
+      }
+      return;
+    }
+
+    const items = event.clipboardData.items;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        event.preventDefault();
+        const blob = item.getAsFile();
+        if (blob) appendEditImageFiles([blob]);
+        break;
+      }
+    }
+  };
+
   return (
     <div data-message-index={index} className={`animate-fade-in flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {isUser && isEditing ? (
@@ -203,6 +264,7 @@ export default function ChatMessage({
                 event.currentTarget.style.height = "auto";
                 event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 220)}px`;
               }}
+              onPaste={handleEditPaste}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.preventDefault();

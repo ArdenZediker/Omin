@@ -39,6 +39,16 @@ pub(crate) fn copy_file_to_store(
     workspace_files::copy_file_to_store(&src, &dst)
 }
 
+/// 前端从剪贴板粘贴非图片文件时，把二进制内容写到应用数据目录并返回绝对路径。
+#[tauri::command]
+pub(crate) fn write_pasted_attachment(
+    app: tauri::AppHandle,
+    name: String,
+    bytes: Vec<u8>,
+) -> Result<workspace_files::CopyFileResult, String> {
+    workspace_files::write_pasted_attachment(&app, &name, &bytes)
+}
+
 #[tauri::command]
 pub(crate) fn search_workspace_files(
     project_path: Option<String>,
