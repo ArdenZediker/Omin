@@ -113,7 +113,14 @@ export function getStoredCompactPosition() {
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       return null;
     }
-    return { x: Math.round(x as number), y: Math.round(y as number) };
+    const position = { x: Math.round(x as number), y: Math.round(y as number) };
+    // 透明无边框窗口在创建瞬间常在 (0,0) 闪现并触发一次 moved 事件，
+    // 这类退化坐标一律当作「无记录」处理，回落到确定性兜底位置，
+    // 避免每次启动都贴左上角（main 窗口已有同样保护，这里补齐）。
+    if (position.x <= 0 && position.y <= 0) {
+      return null;
+    }
+    return position;
   } catch {
     return null;
   }
@@ -599,8 +606,22 @@ export async function ensureCompactWindow(appearance: CompactAppearance, scale: 
   await compactWindow.setSize(new LogicalSize(size.width, size.height));
   if (!safeStoredPosition) {
     // Windows/WebView2 对 visible:false 的隐藏窗口，创建参数里的 center:true
-    // 经常不生效，窗口会落到系统默认位置（≈屏幕左上角）。创建后显式居中兜底。
-    await compactWindow.center().catch(() => undefined);
+    // 经常不生效，窗口会落到系统默认位置（≈屏幕左上角）。改用主显示器的确定性
+    // 锚点位置显式定位，避免启动即贴左上角。
+    try {
+      const fallbackMonitors = await availableMonitors().catch(() => [] as Monitor[]);
+      const primaryMonitor = fallbackMonitors[0];
+      if (primaryMonitor) {
+        const fallback = getCompactAnchorPositionForMonitor(primaryMonitor, size);
+        await compactWindow
+          .setPosition(new LogicalPosition(fallback.x, fallback.y))
+          .catch(() => undefined);
+      } else {
+        await compactWindow.center().catch(() => undefined);
+      }
+    } catch {
+      await compactWindow.center().catch(() => undefined);
+    }
   }
   return compactWindow;
 }

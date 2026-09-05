@@ -893,8 +893,13 @@ export function useCompactWindowController({
           y: isPetAppearance ? toVisualPetWindowY(pos.y) + petOffset.y : Math.round(pos.y),
         };
         if (!compactInternalMoveRef.current) {
-          persistCompactPosition(visualPos);
-          characterDragLastPersistedRef.current = visualPos;
+          // 透明无边框窗口创建瞬间常在 (0,0) 闪现并触发 moved，
+          // 过滤这类退化坐标，避免覆盖用户拖动后的真实位置。
+          const isDegenerate = visualPos.x <= 0 && visualPos.y <= 0;
+          if (!isDegenerate) {
+            persistCompactPosition(visualPos);
+            characterDragLastPersistedRef.current = visualPos;
+          }
         }
         await updatePetThoughtWindowForRect({
           left: visualPos.x,
