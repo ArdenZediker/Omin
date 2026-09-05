@@ -179,12 +179,12 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
           </label>
 
           <div className="omni-dialog__field omni-dialog__field--workspace">
-            <span className="omni-dialog__label">工作目录（可选）</span>
+            <span className="omni-dialog__label">工作目录</span>
             <div className="omni-dialog__workspace-row">
               <input
                 value={workspacePath}
                 readOnly
-                placeholder="未选择工作目录"
+                placeholder="请选择项目工作目录"
               />
               <button
                 type="button"
@@ -243,7 +243,7 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
             type="button"
             className="omni-dialog__button omni-dialog__button--primary"
             onClick={handleConfirm}
-            disabled={!title.trim()}
+            disabled={!title.trim() || !workspacePath.trim()}
           >
             确定
           </button>

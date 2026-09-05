@@ -777,13 +777,20 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: var(--omni-app-muted);
+  color: var(--omni-app-text);
   cursor: pointer;
+  opacity: 0;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+.chat-history-panel__section-head:hover .chat-history-panel__section-action,
+.chat-history-panel__section-head:focus-within .chat-history-panel__section-action,
+.chat-history-panel__section-action--active {
+  opacity: 1;
 }
 
 .chat-history-panel__section-action:hover {
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
-  color: var(--omni-app-text);
 }
 
 .chat-history-panel__section-action--active {
@@ -899,14 +906,20 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: var(--omni-app-muted);
+  color: var(--omni-app-text);
   cursor: pointer;
   flex-shrink: 0;
+  opacity: 0;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+.chat-history-panel__section-head:hover .chat-history-panel__section-add,
+.chat-history-panel__section-head:focus-within .chat-history-panel__section-add {
+  opacity: 1;
 }
 
 .chat-history-panel__section-add:hover {
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
-  color: var(--omni-app-text);
 }
 
 .chat-history-panel__section-actions {
@@ -1079,14 +1092,20 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: var(--omni-app-muted);
+  color: var(--omni-app-text);
   cursor: pointer;
   flex-shrink: 0;
+  opacity: 0;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+.chat-history-panel__space-head:hover .chat-history-panel__space-add,
+.chat-history-panel__space-head:focus-within .chat-history-panel__space-add {
+  opacity: 1;
 }
 
 .chat-history-panel__space-add:hover {
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
-  color: var(--omni-app-text);
 }
 
 .chat-history-panel__space-chevron {
@@ -1599,14 +1618,20 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--omni-app-muted);
+  color: var(--omni-app-text);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  opacity: 0;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+.chat-history-panel__space-head:hover .chat-history-panel__project-action,
+.chat-history-panel__space-head:focus-within .chat-history-panel__project-action,
+.chat-history-panel__project-action--active {
+  opacity: 1;
 }
 
 .chat-history-panel__project-action:hover {
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
-  color: var(--omni-app-text);
 }
 
 .chat-history-panel__project-action--active {
