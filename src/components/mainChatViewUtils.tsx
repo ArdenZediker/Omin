@@ -4,7 +4,12 @@ import type {
 } from "../chat/types";
 import type { Project } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
-import { resolveProjectAvatarImageSrc } from "../config/manifests/avatarHelpers";
+import { FolderOpen } from "lucide-react";
+import {
+  getEmojiAssetSrc,
+  resolveEmojiAvatarCode,
+  resolveProjectAvatarImageSrc,
+} from "../config/manifests/avatarHelpers";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 
 export const MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY = "main_layout_topic_width";
@@ -98,6 +103,50 @@ export function formatMemoryScopeLabel(scope: ProjectMemoryScope) {
 }
 
 export function renderProjectAvatar(project: Project | null, seed = 0) {
+  if (!project) {
+    return (
+      <img
+        src={resolveProjectAvatarImageSrc(null, seed)}
+        alt=""
+        className="chat-history-panel__project-image"
+      />
+    );
+  }
+
+  // Explicit image avatar
+  if (project.avatarType === "image" && project.avatarValue) {
+    return (
+      <img
+        src={project.avatarValue}
+        alt=""
+        className="chat-history-panel__project-image"
+      />
+    );
+  }
+
+  // Explicit emoji avatar
+  const emojiCode = resolveEmojiAvatarCode(project.avatarValue);
+  if (emojiCode) {
+    return (
+      <img
+        src={getEmojiAssetSrc(emojiCode)}
+        alt=""
+        className="chat-history-panel__project-image"
+      />
+    );
+  }
+
+  // Default: folder icon for custom projects, original fallback for basic
+  if (project.kind === "custom") {
+    return (
+      <FolderOpen
+        size={20}
+        strokeWidth={1.9}
+        className="chat-history-panel__project-folder-icon"
+      />
+    );
+  }
+
   return (
     <img
       src={resolveProjectAvatarImageSrc(project, seed)}
