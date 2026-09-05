@@ -168,7 +168,6 @@ export function useChatRuntime({
   const [error, setError] = useState<string | null>(null);
   const [loadingSessionIds, setLoadingSessionIds] = useState<string[]>([]);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
-  const [latestTaskResult, setLatestTaskResult] = useState<TaskExecutionResult | null>(null);
   const [taskRuntimeState, setTaskRuntimeState] = useState<TaskRuntimeState>({
     activeTask: null,
     history: [],
@@ -183,7 +182,6 @@ export function useChatRuntime({
   /** 整轮任务看门狗定时器；被看门狗中断的会话（用于区分用户手动停止） */
   const runWatchdogRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const watchdogAbortedSessionIdsRef = useRef<Set<string>>(new Set());
-  const lastTaskResultRef = useRef<TaskExecutionResult | null>(null);
   /** 本轮任务执行期间产生的产物，最终消息提交时挂到消息上 */
   const pendingArtifactsRef = useRef<Artifact[]>([]);
   const petThoughtRef = useRef<PetThoughtState | null>(null);
@@ -789,8 +787,6 @@ export function useChatRuntime({
 
   const finishTaskResult = useCallback(
     (taskResult: TaskExecutionResult, sessionId: string | null | undefined, fallbackMessages: Message[]) => {
-      lastTaskResultRef.current = taskResult;
-      setLatestTaskResult(taskResult);
       setTaskRuntimeState((current) => ({
         activeTask: taskResult,
         history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
@@ -1524,8 +1520,6 @@ export function useChatRuntime({
         }
 
         if (taskResult.intent === "local_command") {
-          lastTaskResultRef.current = taskResult;
-          setLatestTaskResult(taskResult);
           setTaskRuntimeState((current) => ({
             activeTask: taskResult,
             history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
@@ -1788,9 +1782,7 @@ export function useChatRuntime({
     handleUseEmptyPrompt,
     isLoading,
     loadingSessionIds,
-    latestTaskResult,
     taskRuntimeState,
-    lastTaskResultRef,
     runConversationTurn,
     setEditingMessageIndex,
     setError,

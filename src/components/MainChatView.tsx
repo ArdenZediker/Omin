@@ -92,12 +92,10 @@ import {
   MIN_COMPOSER_RESIZE_HEIGHT,
   MIN_MESSAGE_AREA_HEIGHT,
   clampPanelWidth,
-  getSessionAvatarStyle,
   NewSessionInSpaceIcon,
   normalizeSearchText,
   readStoredPanelWidth,
   renderProjectAvatar,
-  SessionAvatarIcon,
   truncateQuestionPreview,
 } from "./mainChatViewUtils";
 
@@ -508,7 +506,6 @@ export default function MainChatView({
     useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [taskSectionCollapsed, setTaskSectionCollapsed] = useState(false);
   const [spaceSectionCollapsed, setSpaceSectionCollapsed] = useState(false);
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set());
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
@@ -718,19 +715,6 @@ export default function MainChatView({
       `${project.title} ${project.description}`,
     ).includes(normalizedProjectSearchQuery);
   });
-  const basicProject =
-    projects.find((project) => project.kind === "basic") ?? null;
-  const standaloneSessions = useMemo(
-    () =>
-      [...chatSessions]
-        .filter((session) => session.projectId === DEFAULT_PROJECT_ID)
-        .sort(
-          (a, b) =>
-            Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
-            b.updatedAt - a.updatedAt,
-        ),
-    [chatSessions],
-  );
   const sessionsByProject = useMemo(() => {
     const map = new Map<string, ChatSession[]>();
     for (const session of chatSessions) {
@@ -1297,118 +1281,6 @@ export default function MainChatView({
             </div>
 
             <div className="chat-history-panel__projects">
-              <div className="chat-history-panel__section task-section">
-                <div className="chat-history-panel__section-head">
-                  <span className="chat-history-panel__section-label">
-                    任务
-                  </span>
-                  <button
-                    type="button"
-                    className="chat-history-panel__section-toggle"
-                    onClick={() =>
-                      setTaskSectionCollapsed((current) => !current)
-                    }
-                    aria-label={taskSectionCollapsed ? "展开任务" : "收起任务"}
-                  >
-                    {taskSectionCollapsed ? (
-                      <ChevronRight size={14} strokeWidth={1.8} />
-                    ) : (
-                      <ChevronDown size={14} strokeWidth={1.8} />
-                    )}
-                  </button>
-                  <span className="chat-history-panel__section-count">
-                    {standaloneSessions.length}
-                  </span>
-                  <button
-                    type="button"
-                    className="chat-history-panel__section-add"
-                    onClick={() => onNewChatInProject(DEFAULT_PROJECT_ID)}
-                    title="新建任务"
-                    aria-label="新建任务"
-                  >
-                    <Plus size={14} strokeWidth={1.9} />
-                  </button>
-                </div>
-                {!taskSectionCollapsed && (
-                  <div className="chat-history-panel__session-list">
-                    {basicProject && (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        className={`chat-history-panel__session chat-history-panel__session--main ${activeProjectId === basicProject.id ? "chat-history-panel__session--active" : ""}`}
-                        onClick={() => {
-                          onSelectProject(basicProject.id);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            onSelectProject(basicProject.id);
-                          }
-                        }}
-                      >
-                        <span
-                          className="chat-history-panel__session-avatar"
-                          style={{
-                            backgroundColor: "#e0f2fe",
-                            color: "#0ea5e9",
-                          }}
-                        >
-                          <Bot size={14} strokeWidth={1.9} />
-                        </span>
-                        <span className="chat-history-panel__session-title">
-                          {basicProject.title}
-                        </span>
-                      </div>
-                    )}
-                    {standaloneSessions.length === 0 ? (
-                      <div className="chat-history-panel__empty">
-                        暂无任务，点击 + 新建
-                      </div>
-                    ) : (
-                      standaloneSessions.map((session) => (
-                        <div
-                          key={session.id}
-                          role="button"
-                          tabIndex={0}
-                          className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`}
-                          onClick={() => onSelectChat(session.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              onSelectChat(session.id);
-                            }
-                          }}
-                        >
-                          <span
-                            className="chat-history-panel__session-avatar"
-                            style={getSessionAvatarStyle(session.id)}
-                          >
-                            <SessionAvatarIcon size={12} />
-                          </span>
-                          <span className="chat-history-panel__session-title">
-                            {session.title || "未命名会话"}
-                          </span>
-                          <span className="chat-history-panel__session-time">
-                            {formatSessionTime(session.updatedAt)}
-                          </span>
-                          <button
-                            type="button"
-                            className="chat-history-panel__session-delete"
-                            title="删除任务"
-                            aria-label="删除任务"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onDeleteChat(session);
-                            }}
-                          >
-                            <Trash2 size={12} strokeWidth={1.9} />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
 
               <div className="chat-history-panel__section space-section">
                 <div className="chat-history-panel__section-head">

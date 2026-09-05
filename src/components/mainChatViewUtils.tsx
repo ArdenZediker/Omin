@@ -7,33 +7,6 @@ import type { TaskExecutionResult } from "../chat/taskTypes";
 import { Bot, FolderOpen } from "lucide-react";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 
-/** 会话头像中的气泡图标：圆润消息气泡 + 三个点。 */
-export function SessionAvatarIcon(props: { size?: number; color?: string }) {
-  const { size = 12, color = "currentColor" } = props;
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={color}
-      strokeWidth={1.9}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path
-        d="M6 5h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-9l-3.5 3v-3H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
-        fill="currentColor"
-        fillOpacity="0.18"
-      />
-      <circle cx="9.5" cy="11.5" r="1.1" fill={color} stroke="none" />
-      <circle cx="12" cy="11.5" r="1.1" fill={color} stroke="none" />
-      <circle cx="14.5" cy="11.5" r="1.1" fill={color} stroke="none" />
-    </svg>
-  );
-}
-
 export const MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY = "main_layout_topic_width";
 export const EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY =
   "main_empty_chat_guide_compact";
@@ -152,28 +125,6 @@ export function renderProjectAvatar(project: Project | null) {
       className="chat-history-panel__project-folder-icon"
     />
   );
-}
-
-export function getSessionAvatarStyle(
-  id: string
-): { backgroundColor: string; color: string } {
-  const colors = [
-    { bg: "#fff4e1", fg: "#e68a00" },
-    { bg: "#f3e8ff", fg: "#a855f7" },
-    { bg: "#fff9c4", fg: "#d4a017" },
-    { bg: "#ffe4e6", fg: "#f472b6" },
-    { bg: "#e0f2fe", fg: "#38bdf8" },
-    { bg: "#dcfce7", fg: "#4ade80" },
-    { bg: "#ffedd5", fg: "#fb923c" },
-    { bg: "#fce7f3", fg: "#f9a8d4" },
-  ];
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = id.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % colors.length;
-  const { bg, fg } = colors[index];
-  return { backgroundColor: bg, color: fg };
 }
 
 /** 空间头部「在内部新建会话」按钮图标：圆角消息气泡 + 加号。 */
