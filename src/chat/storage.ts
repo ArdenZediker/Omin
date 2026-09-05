@@ -141,8 +141,6 @@ export function createDefaultProject(): Project {
     allowedToolIds: [...DEFAULT_PROJECT_TOOL_IDS],
     allowedSkillIds: [...DEFAULT_PROJECT_SKILL_IDS],
     memoryScope: DEFAULT_PROJECT_MEMORY_SCOPE,
-    autoSaveMemories: true,
-    autoSaveSummaries: true,
     createdAt: now,
     updatedAt: now,
   };
@@ -170,8 +168,6 @@ export function createCustomProject(input?: ProjectDraft): Project {
     allowedToolIds: input?.allowedToolIds?.length ? [...input.allowedToolIds] : [...DEFAULT_PROJECT_TOOL_IDS],
     allowedSkillIds: input?.allowedSkillIds?.length ? [...input.allowedSkillIds] : [...DEFAULT_PROJECT_SKILL_IDS],
     memoryScope: input?.memoryScope ?? DEFAULT_PROJECT_MEMORY_SCOPE,
-    autoSaveMemories: input?.autoSaveMemories ?? true,
-    autoSaveSummaries: input?.autoSaveSummaries ?? true,
     createdAt: now,
     updatedAt: now,
   };
@@ -329,8 +325,6 @@ function normalizeProject(input: Partial<Project> & Pick<Project, "id" | "title"
       input.memoryScope === "off" || input.memoryScope === "session" || input.memoryScope === "project"
         ? input.memoryScope
         : DEFAULT_PROJECT_MEMORY_SCOPE,
-    autoSaveMemories: typeof input.autoSaveMemories === "boolean" ? input.autoSaveMemories : true,
-    autoSaveSummaries: typeof input.autoSaveSummaries === "boolean" ? input.autoSaveSummaries : true,
     createdAt,
     updatedAt,
   };

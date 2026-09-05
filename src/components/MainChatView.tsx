@@ -2054,37 +2054,6 @@ export default function MainChatView({
                       />
                     </label>
 
-                    <label className="omni-settings-dialog__toggle-row">
-                      <div className="omni-settings-dialog__toggle-copy">
-                        <strong>自动沉淀记忆</strong>
-                        <span>将稳定偏好、约束或长期信息保存到该项目的记忆库。</span>
-                      </div>
-                      <OmniSwitch
-                        checked={activeProject.autoSaveMemories}
-                        onChange={(checked) =>
-                          saveProjectPatch({
-                            autoSaveMemories: checked,
-                          }, checked ? "自动沉淀记忆已开启" : "自动沉淀记忆已关闭")
-                        }
-                        ariaLabel="自动沉淀记忆"
-                      />
-                    </label>
-
-                    <label className="omni-settings-dialog__toggle-row">
-                      <div className="omni-settings-dialog__toggle-copy">
-                        <strong>自动沉淀摘要</strong>
-                        <span>把当前话题的阶段结论保存为摘要，供后续继续接力。</span>
-                      </div>
-                      <OmniSwitch
-                        checked={activeProject.autoSaveSummaries}
-                        onChange={(checked) =>
-                          saveProjectPatch({
-                            autoSaveSummaries: checked,
-                          }, checked ? "自动沉淀摘要已开启" : "自动沉淀摘要已关闭")
-                        }
-                        ariaLabel="自动沉淀摘要"
-                      />
-                    </label>
                   </div>
                 </div>
 
@@ -2092,8 +2061,7 @@ export default function MainChatView({
                   <div className="omni-settings-dialog__section-title">记忆库</div>
                   <div className="omni-settings-dialog__project-copy">
                     <div className="omni-settings-dialog__setting-hint">
-                      当前项目已沉淀 {projectMemories.length} 条长期记忆。记忆范围：{activeMemoryScopeLabel}，自动记忆
-                      {activeProject.autoSaveMemories ? "已开启" : "已关闭"}，自动摘要{activeProject.autoSaveSummaries ? "已开启" : "已关闭"}。
+                      当前项目已沉淀 {projectMemories.length} 条长期记忆。记忆范围：{activeMemoryScopeLabel}，自动沉淀记忆与摘要已内置开启。
                     </div>
                   </div>
                   <div className="omni-settings-dialog__memory-add">

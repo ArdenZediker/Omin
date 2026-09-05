@@ -15,8 +15,6 @@ function createProject(patch: Partial<Project> = {}): Project {
     allowedToolIds: [],
     allowedSkillIds: [],
     memoryScope: "project",
-    autoSaveMemories: true,
-    autoSaveSummaries: true,
     createdAt: 1,
     updatedAt: 1,
     ...patch,

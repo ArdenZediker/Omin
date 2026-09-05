@@ -61,8 +61,6 @@ export type ProjectDraft = {
   allowedToolIds?: string[];
   allowedSkillIds?: string[];
   memoryScope?: ProjectMemoryScope;
-  autoSaveMemories?: boolean;
-  autoSaveSummaries?: boolean;
 };
 
 export type Project = {
@@ -80,8 +78,6 @@ export type Project = {
   allowedToolIds: string[];
   allowedSkillIds: string[];
   memoryScope: ProjectMemoryScope;
-  autoSaveMemories: boolean;
-  autoSaveSummaries: boolean;
   createdAt: number;
   updatedAt: number;
 };

@@ -772,63 +772,59 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
       const now = Date.now();
 
-      if (project.autoSaveSummaries) {
-        const summary = result.suggestedSummary?.summary ?? buildSessionSummary(conversationMessages, result.content);
-        if (summary) {
-          setSessionSummaries((current) => {
-            const nextTitle = result.suggestedSummary?.title?.trim() || getChatSessionTitle(conversationMessages);
-            const existingIndex = current.findIndex((item) => item.sessionId === sessionId);
-            if (existingIndex >= 0) {
-              const next = [...current];
-              next[existingIndex] = {
-                ...next[existingIndex],
-                projectId: project.id,
-                title: nextTitle,
-                summary,
-                updatedAt: now,
-              };
-              return next;
-            }
+      const summary = result.suggestedSummary?.summary ?? buildSessionSummary(conversationMessages, result.content);
+      if (summary) {
+        setSessionSummaries((current) => {
+          const nextTitle = result.suggestedSummary?.title?.trim() || getChatSessionTitle(conversationMessages);
+          const existingIndex = current.findIndex((item) => item.sessionId === sessionId);
+          if (existingIndex >= 0) {
+            const next = [...current];
+            next[existingIndex] = {
+              ...next[existingIndex],
+              projectId: project.id,
+              title: nextTitle,
+              summary,
+              updatedAt: now,
+            };
+            return next;
+          }
 
-            return [
-              {
-                sessionId,
-                projectId: project.id,
-                title: nextTitle,
-                summary,
-                updatedAt: now,
-              },
-              ...current,
-            ].slice(0, 200);
-          });
-        }
+          return [
+            {
+              sessionId,
+              projectId: project.id,
+              title: nextTitle,
+              summary,
+              updatedAt: now,
+            },
+            ...current,
+          ].slice(0, 200);
+        });
       }
 
-      if (project.autoSaveMemories) {
-        const modelMemoryItems = (result.suggestedMemories ?? []).map((memory) => memory.content);
-        const memoryItems = modelMemoryItems.length > 0 ? modelMemoryItems : extractProjectMemories(conversationMessages);
-        if (memoryItems.length > 0) {
-          setProjectMemories((current) => {
-            const existingKeys = new Set(current.filter((item) => item.projectId === project.id).map((item) => item.content));
-            const additions = memoryItems
-              .filter((content) => !existingKeys.has(content))
-              .map((content) => ({
-                id: createMemoryId(),
-                projectId: project.id,
-                content,
-                sourceSessionId: sessionId,
-                sourceType: "auto" as const,
-                createdAt: now,
-                updatedAt: now,
-              }));
+      const modelMemoryItems = (result.suggestedMemories ?? []).map((memory) => memory.content);
+      const memoryItems = modelMemoryItems.length > 0 ? modelMemoryItems : extractProjectMemories(conversationMessages);
+      if (memoryItems.length > 0) {
+        setProjectMemories((current) => {
+          const existingKeys = new Set(current.filter((item) => item.projectId === project.id).map((item) => item.content));
+          const additions = memoryItems
+            .filter((content) => !existingKeys.has(content))
+            .map((content) => ({
+              id: createMemoryId(),
+              projectId: project.id,
+              content,
+              sourceSessionId: sessionId,
+              sourceType: "auto" as const,
+              createdAt: now,
+              updatedAt: now,
+            }));
 
-            if (additions.length === 0) {
-              return current;
-            }
+          if (additions.length === 0) {
+            return current;
+          }
 
-            return [...additions, ...current].slice(0, 300);
-          });
-        }
+          return [...additions, ...current].slice(0, 300);
+        });
       }
     },
     [activeProject, activeProjectId, projects]
