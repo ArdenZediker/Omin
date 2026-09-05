@@ -1686,7 +1686,7 @@ export function useChatRuntime({
   }, []);
 
   const handleSubmitEditedUserMessage = useCallback(
-    async (messageIndex: number, content: string) => {
+    async (messageIndex: number, content: string, images?: string[], attachments?: ChatAttachment[]) => {
       if (isSessionLoading(activeChatId)) {
         return;
       }
@@ -1695,7 +1695,18 @@ export function useChatRuntime({
       if (!targetMessage || targetMessage.role !== "user" || !content.trim()) {
         return;
       }
-      const conversationMessages = [...scopedMessages.slice(0, messageIndex), { ...targetMessage, content: content.trim() }];
+      // 编辑态可能删除/新增附件：用回传的 images/attachments 覆盖（空则清掉字段）。
+      // 不传则沿用原消息自带的附件，保持旧行为不变。
+      const nextMessage: Message = { ...targetMessage, content: content.trim() };
+      if (images !== undefined) {
+        if (images.length > 0) nextMessage.images = images;
+        else delete nextMessage.images;
+      }
+      if (attachments !== undefined) {
+        if (attachments.length > 0) nextMessage.attachments = attachments;
+        else delete nextMessage.attachments;
+      }
+      const conversationMessages = [...scopedMessages.slice(0, messageIndex), nextMessage];
       setEditingMessageIndex(null);
       await runConversationTurn(conversationMessages, { sessionId: activeChatId });
     },

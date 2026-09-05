@@ -3,11 +3,12 @@ import {
   ChevronDown,
   Copy,
   FileDown,
+  Paperclip,
   Pencil,
   RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { ChatStep, ChatToolCallResult, Message } from "../adapters/types";
+import type { ChatAttachment, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { getToolActionMeta, isFileProducingTool, getFileBadgeLabel, extractToolFilePath } from "../chat/toolActionMap";
@@ -15,6 +16,7 @@ import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettl
 import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
+import { pickLocalAttachments } from "./attachmentUtils";
 
 interface ChatMessageProps {
   message: Message;
@@ -24,7 +26,7 @@ interface ChatMessageProps {
   onCopy?: (message: Message) => void;
   onEdit?: (index: number) => void;
   onCancelEdit?: () => void;
-  onSubmitEdit?: (index: number, content: string) => void;
+  onSubmitEdit?: (index: number, content: string, images?: string[], attachments?: ChatAttachment[]) => void;
   onRegenerate?: (index: number) => void;
   onSaveAsMarkdown?: (message: Message) => void | Promise<void>;
   /** 打开右侧变更面板（按事件总线通知 MainChatView 切换 tab） */
@@ -68,6 +70,10 @@ export default function ChatMessage({
 
   const isUser = message.role === "user";
   const [editValue, setEditValue] = useState(message.content);
+  // 编辑态下附件的可变副本：用户可删除旧附件、也可重新添加文件/图片，
+  // 提交时随 onSubmitEdit 回传，覆盖原消息的 images / attachments。
+  const [editImages, setEditImages] = useState<string[]>(message.images ?? []);
+  const [editAttachments, setEditAttachments] = useState<ChatAttachment[]>(message.attachments ?? []);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const knowledgeSources = message.knowledgeContext?.sources ?? [];
@@ -116,6 +122,8 @@ export default function ChatMessage({
   useEffect(() => {
     if (!isEditing) return;
     setEditValue(message.content);
+    setEditImages(message.images ?? []);
+    setEditAttachments(message.attachments ?? []);
     window.requestAnimationFrame(() => {
       const textarea = textareaRef.current;
       if (!textarea) return;
@@ -127,36 +135,65 @@ export default function ChatMessage({
     });
   }, [isEditing, message.content]);
 
+  // 编辑态：通过 Tauri 文件对话框补充图片/文件附件（与输入框上传同一套逻辑）
+  const handleEditAddFiles = async () => {
+    try {
+      const picked = await pickLocalAttachments();
+      if (!picked) return;
+      if (picked.images.length > 0) {
+        setEditImages((prev) => [...prev, ...picked.images]);
+      }
+      if (picked.attachments.length > 0) {
+        setEditAttachments((prev) => {
+          const existingPaths = new Set(prev.map((attachment) => attachment.path));
+          return [...prev, ...picked.attachments.filter((attachment) => !existingPaths.has(attachment.path))];
+        });
+      }
+    } catch (error) {
+      console.error("编辑态选择附件失败", error);
+    }
+  };
+
   return (
     <div data-message-index={index} className={`animate-fade-in flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {isUser && isEditing ? (
         <div className="message-edit-box">
-          {(message.images && message.images.length > 0) || (message.attachments && message.attachments.length > 0) ? (
-            <div className="message-edit-box__attachments">
-              {message.images?.map((img, imageIndex) => (
-                <AttachmentChip
-                  key={`edit-${img.slice(0, 24)}-${imageIndex}`}
-                  src={img}
-                  name={`image_${imageIndex + 1}.png`}
-                  index={imageIndex}
-                />
-              ))}
-              {message.attachments?.map((attachment, attachmentIndex) => (
-                <AttachmentChip
-                  key={`edit-${attachment.path}-${attachmentIndex}`}
-                  src={attachment.path}
-                  name={attachment.name}
-                  index={attachmentIndex}
-                  size={attachment.size}
-                  onClick={
-                    !attachment.path.startsWith("data:")
-                      ? () => onOpenAttachment?.(attachment.path)
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
-          ) : null}
+          <div className="message-edit-box__attachments">
+            {editImages.map((img, imageIndex) => (
+              <AttachmentChip
+                key={`edit-${img.slice(0, 24)}-${imageIndex}`}
+                src={img}
+                name={`image_${imageIndex + 1}.png`}
+                index={imageIndex}
+                removable
+                onRemove={() => setEditImages((prev) => prev.filter((_, i) => i !== imageIndex))}
+              />
+            ))}
+            {editAttachments.map((attachment, attachmentIndex) => (
+              <AttachmentChip
+                key={`edit-${attachment.path}-${attachmentIndex}`}
+                src={attachment.path}
+                name={attachment.name}
+                index={attachmentIndex}
+                size={attachment.size}
+                removable
+                onRemove={() => setEditAttachments((prev) => prev.filter((_, i) => i !== attachmentIndex))}
+                onClick={
+                  !attachment.path.startsWith("data:")
+                    ? () => onOpenAttachment?.(attachment.path)
+                    : undefined
+                }
+              />
+            ))}
+            <button
+              type="button"
+              className="message-edit-box__add"
+              title="添加文件或图片"
+              onClick={() => void handleEditAddFiles()}
+            >
+              <Paperclip size={15} strokeWidth={1.9} />
+            </button>
+          </div>
           <div className="message-edit-box__body">
             <textarea
               ref={textareaRef}
@@ -174,7 +211,7 @@ export default function ChatMessage({
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   if (editValue.trim()) {
-                    onSubmitEdit?.(index, editValue.trim());
+                    onSubmitEdit?.(index, editValue.trim(), editImages, editAttachments);
                   }
                 }
               }}
@@ -189,7 +226,7 @@ export default function ChatMessage({
                 type="button"
                 className="message-edit-box__button message-edit-box__button--primary"
                 disabled={!editValue.trim()}
-                onClick={() => onSubmitEdit?.(index, editValue.trim())}
+                onClick={() => onSubmitEdit?.(index, editValue.trim(), editImages, editAttachments)}
               >
                 发送
               </button>

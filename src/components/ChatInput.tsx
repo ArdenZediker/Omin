@@ -1,6 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   BookOpen,
   Bot,
@@ -10,84 +8,14 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ChatAttachment } from "../adapters/types";
 import type { ChatSendOptions } from "../chat/types";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
-
-/** 从绝对路径取文件名（兼容 Windows 的 C:/... 与 POSIX 的 /...） */
-function baseNameOf(path: string): string {
-  const segments = path.split(/[\\/]/);
-  return segments[segments.length - 1] || path;
-}
-
-/** 从路径取扩展名（不含点，小写） */
-function getExtension(path: string): string {
-  const lastDot = path.lastIndexOf(".");
-  return lastDot >= 0 ? path.slice(lastDot + 1).toLowerCase() : "";
-}
-
-const IMAGE_EXTENSIONS = new Set([
-  "jpg",
-  "jpeg",
-  "png",
-  "gif",
-  "webp",
-  "bmp",
-  "svg",
-  "ico",
-  "tif",
-  "tiff",
-  "avif",
-]);
-
-/** 判断路径是否为常见图片文件 */
-function isImageFile(path: string): boolean {
-  return IMAGE_EXTENSIONS.has(getExtension(path));
-}
-
-/** 根据扩展名推断图片 MIME 类型 */
-function mimeTypeForImage(ext: string): string {
-  switch (ext) {
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "png":
-      return "image/png";
-    case "gif":
-      return "image/gif";
-    case "webp":
-      return "image/webp";
-    case "bmp":
-      return "image/bmp";
-    case "svg":
-      return "image/svg+xml";
-    case "ico":
-      return "image/x-icon";
-    case "tif":
-    case "tiff":
-      return "image/tiff";
-    case "avif":
-      return "image/avif";
-    default:
-      return "image/png";
-  }
-}
-
-/** 通过 Rust 读取本地图片字节并转为 base64 Data URL（供模型 vision 使用） */
-async function readLocalImageAsDataURL(path: string): Promise<string> {
-  const buffer = await invoke<ArrayBuffer>("read_file_bytes", { path, projectPath: null });
-  const mimeType = mimeTypeForImage(getExtension(path));
-  const blob = new Blob([buffer], { type: mimeType });
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => resolve(event.target?.result as string);
-    reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
-    reader.readAsDataURL(blob);
-  });
-}
+import { baseNameOf, isImageFile, readLocalImageAsDataURL } from "./attachmentUtils";
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;

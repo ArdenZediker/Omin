@@ -3724,6 +3724,28 @@
   gap: 6px;
 }
 
+.message-edit-box__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px dashed var(--omni-panel-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--omni-app-text);
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+
+.message-edit-box__add:hover {
+  opacity: 1;
+  border-color: #3f63ff;
+  color: #3f63ff;
+}
+
 .message-edit-box__body {
   display: flex;
   align-items: flex-end;
