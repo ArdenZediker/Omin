@@ -1681,12 +1681,21 @@ export default function MainChatView({
                                         <button
                                           type="button"
                                           disabled={!project.workspacePath}
-                                          onClick={(event) => {
+                                          onClick={async (event) => {
                                             event.stopPropagation();
                                             setOpenProjectCardMenuId(null);
-                                            if (project.workspacePath) {
-                                              void openPath(
+                                            if (!project.workspacePath) return;
+                                            try {
+                                              await openPath(
                                                 project.workspacePath,
+                                              );
+                                            } catch (error) {
+                                              showProjectNotice(
+                                                `无法打开文件夹：${
+                                                  (error as Error)?.message ??
+                                                  String(error)
+                                                }`,
+                                                "error",
                                               );
                                             }
                                           }}
