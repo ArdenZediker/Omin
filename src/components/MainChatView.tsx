@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openFolder } from "../app/storageApi";
 import type {
   CSSProperties,
   Dispatch,
@@ -1686,7 +1686,7 @@ export default function MainChatView({
                                             setOpenProjectCardMenuId(null);
                                             if (!project.workspacePath) return;
                                             try {
-                                              await openPath(
+                                              await openFolder(
                                                 project.workspacePath,
                                               );
                                             } catch (error) {

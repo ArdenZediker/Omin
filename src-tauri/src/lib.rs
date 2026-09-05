@@ -550,6 +550,7 @@ pub fn run() {
             set_data_root,
             reset_data_root,
             open_data_dir,
+            open_folder,
             export_data_backup,
             import_data_backup,
             read_persona_files,

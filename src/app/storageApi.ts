@@ -47,6 +47,11 @@ export async function openDataDir(): Promise<void> {
   await invoke("open_data_dir");
 }
 
+export async function openFolder(path: string): Promise<void> {
+  if (!canUseTauriInvoke()) return;
+  await invoke("open_folder", { path });
+}
+
 export async function exportDataBackup(targetPath: string, secret?: string | null): Promise<BackupManifest> {
   if (!canUseTauriInvoke()) {
     throw new Error("当前环境不支持导出备份");
