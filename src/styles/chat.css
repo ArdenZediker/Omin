@@ -1353,6 +1353,10 @@
   z-index: 20;
 }
 
+.chat-history-panel__project--in-task {
+  margin-bottom: 6px;
+}
+
 
 .chat-history-panel__project-icon {
   width: 38px;

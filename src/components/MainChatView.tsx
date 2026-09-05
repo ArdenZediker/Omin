@@ -643,6 +643,7 @@ export default function MainChatView({
     if (!normalizedProjectSearchQuery) return true;
     return normalizeSearchText(`${project.title} ${project.description}`).includes(normalizedProjectSearchQuery);
   });
+  const basicProject = projects.find((project) => project.kind === "basic") ?? null;
   const standaloneSessions = useMemo(
     () => [...chatSessions].filter((session) => session.projectId === DEFAULT_PROJECT_ID).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt),
     [chatSessions]
@@ -1246,6 +1247,46 @@ export default function MainChatView({
             </div>
             {!taskSectionCollapsed && (
               <div className="chat-history-panel__session-list">
+                {basicProject && (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={`chat-history-panel__project chat-history-panel__project--in-task ${activeProjectId === basicProject.id ? "chat-history-panel__project--active" : ""}`}
+                    onClick={() => {
+                      setProjectSettingsId(null);
+                      setProjectAvatarPanelOpen(false);
+                      onSelectProject(basicProject.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setProjectSettingsId(null);
+                        setProjectAvatarPanelOpen(false);
+                        onSelectProject(basicProject.id);
+                      }
+                    }}
+                  >
+                    <span className="chat-history-panel__project-icon">{renderProjectAvatar(basicProject)}</span>
+                    <span className="chat-history-panel__project-copy">
+                      <strong>{basicProject.title}</strong>
+                    </span>
+                    <span className="chat-history-panel__project-menu" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="chat-history-panel__project-action"
+                        title="记忆管理"
+                        aria-label="打开 Omni 记忆管理"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelectProject(basicProject.id);
+                          setProjectSettingsId(basicProject.id);
+                        }}
+                      >
+                        <Settings size={13} strokeWidth={1.9} />
+                      </button>
+                    </span>
+                  </div>
+                )}
                 {standaloneSessions.length === 0 ? (
                   <div className="chat-history-panel__empty">暂无任务，点击 + 新建</div>
                 ) : (
