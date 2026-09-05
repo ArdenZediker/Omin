@@ -89,6 +89,7 @@ import {
   formatMemoryScopeLabel,
   getMemorySourceTypeLabel,
   getSessionAvatarStyle,
+  NewSessionInSpaceIcon,
   normalizeSearchText,
   readStoredPanelWidth,
   renderProjectAvatar,
@@ -1383,7 +1384,7 @@ export default function MainChatView({
                             )}
                           </span>
                           <button type="button" className="chat-history-panel__space-add" title="在空间内新建会话" aria-label="在空间内新建会话" onClick={(event) => { event.stopPropagation(); onNewChatInProject(project.id); }}>
-                            <Plus size={13} strokeWidth={1.9} />
+                            <NewSessionInSpaceIcon size={16} />
                           </button>
                           <span className="chat-history-panel__space-chevron" onClick={(event) => { event.stopPropagation(); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }}>
                             {isExpanded ? <ChevronDown size={13} strokeWidth={1.8} /> : <ChevronRight size={13} strokeWidth={1.8} />}

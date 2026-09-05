@@ -1023,7 +1023,7 @@
 .chat-history-panel__space-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   padding: 7px 8px;
   border-radius: 10px;
   background: transparent;
@@ -1070,10 +1070,12 @@
 }
 
 .chat-history-panel__space-chevron {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px;
   border-radius: 6px;
   color: var(--omni-app-muted);
   cursor: pointer;
@@ -1574,6 +1576,22 @@
   justify-content: center;
   align-self: center;
   margin-top: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.chat-history-panel__project-action:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+}
+
+.chat-history-panel__project-action--active {
+  background: color-mix(in srgb, var(--omni-app-text) 10%, transparent);
+  color: var(--omni-app-text);
 }
 
 .chat-history-panel__project-dropdown {
