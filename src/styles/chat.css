@@ -933,7 +933,7 @@
 .chat-history-panel__session-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   margin-top: 2px;
 }
 
