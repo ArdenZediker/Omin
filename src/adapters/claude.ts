@@ -1,5 +1,6 @@
 // Omni - Claude 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import { mimeTypeFromDataUrl } from "./types";
 import { toWireRole } from "./types";
 import { toClaudeTools, toClaudeMessage, parseClaudeToolCalls, ClaudeStreamToolAccumulator } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
@@ -48,7 +49,11 @@ export class ClaudeAdapter implements ModelAdapter {
                 type: "image" as const,
                 source: {
                   type: "base64" as const,
-                  media_type: "image/png",
+                  media_type: mimeTypeFromDataUrl(img) as
+                    | "image/jpeg"
+                    | "image/png"
+                    | "image/gif"
+                    | "image/webp",
                   data: img.startsWith("data:") ? img.split(",")[1] : img,
                 },
               })),

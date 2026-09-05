@@ -15,7 +15,7 @@ import type { ChatAttachment } from "../adapters/types";
 import type { ChatSendOptions } from "../chat/types";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
-import { baseNameOf, isImageFile, readLocalImageAsDataURL, savePastedFileAttachment } from "./attachmentUtils";
+import { baseNameOf, isImageFile, readLocalImageAsDataURL, savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;
@@ -298,19 +298,12 @@ export default function ChatInput({
     }
 
     const nextEntries = await Promise.all(
-      imageFiles.map(
-        (file) =>
-          new Promise<{ src: string; name: string }>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (readerEvent) =>
-              resolve({
-                src: readerEvent.target?.result as string,
-                name: file.name?.trim() || "Clipboard Image.png",
-              });
-            reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
-            reader.readAsDataURL(file);
-          })
-      )
+      imageFiles.map((file) =>
+        compressImageBlob(file).then((src) => ({
+          src,
+          name: file.name?.trim() || "Clipboard Image.png",
+        })),
+      ),
     );
 
     setImages((prev) => [...prev, ...nextEntries.map((entry) => entry.src)]);

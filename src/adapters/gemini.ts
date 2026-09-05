@@ -1,5 +1,6 @@
 // Omni - Gemini 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import { mimeTypeFromDataUrl } from "./types";
 import { toGeminiTools, toGeminiContent, parseGeminiToolCalls, parseGeminiStreamToolCalls } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
@@ -35,7 +36,7 @@ export class GeminiAdapter implements ModelAdapter {
           if (msg.images && msg.images.length > 0) {
             for (const img of msg.images) {
               const base64 = img.startsWith("data:") ? img.split(",")[1] : img;
-              parts.push({ inline_data: { mime_type: "image/png", data: base64 } });
+              parts.push({ inline_data: { mime_type: mimeTypeFromDataUrl(img), data: base64 } });
             }
           }
           parts.push({ text: msg.content });

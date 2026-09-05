@@ -20,6 +20,16 @@ export interface ChatAttachment {
   size: number | null;
 }
 
+/**
+ * 从 base64 Data URL 中解析真实的 MIME 类型（如 `data:image/jpeg;base64,...` → `image/jpeg`）。
+ * 图片附件在转 base64 前会被缩放/重压缩（可能变成 JPEG），适配器发送 vision 内容时必须用真实类型，
+ * 不能写死 image/png，否则模型会按错误格式解码。非 data URL（裸 base64）回退 image/png。
+ */
+export function mimeTypeFromDataUrl(dataUrl: string): string {
+  const match = /^data:([^;]+);base64,/.exec(dataUrl);
+  return match ? match[1] : "image/png";
+}
+
 export interface Message {
   role: "system" | "user" | "project" | "assistant" | "tool";
   content: string;

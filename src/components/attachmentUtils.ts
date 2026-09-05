@@ -63,17 +63,98 @@ export function mimeTypeForImage(ext: string): string {
   }
 }
 
-/** 通过 Rust 读取本地图片字节并转为 base64 Data URL（供模型 vision 使用） */
-export async function readLocalImageAsDataURL(path: string): Promise<string> {
-  const buffer = await invoke<ArrayBuffer>("read_file_bytes", { path, projectPath: null });
-  const mimeType = mimeTypeForImage(getExtension(path));
-  const blob = new Blob([buffer], { type: mimeType });
+// ---------- 图片压缩（转 base64 前缩放/重编码，砍 vision token） ----------
+
+/** 缩放上限：长边超过该值则等比缩放到该值以内（像素） */
+export const COMPRESS_MAX_EDGE = 1280;
+/** 不透明图片重编码为 JPEG 的质量（0~1），透明图片保持 PNG */
+export const COMPRESS_JPEG_QUALITY = 0.82;
+
+function blobToImageElement(blob: Blob): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(blob);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片解码失败"));
+    };
+    img.src = url;
+  });
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (event) => resolve(event.target?.result as string);
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
     reader.readAsDataURL(blob);
   });
+}
+
+/**
+ * 把图片 Blob 缩放 + 重编码为体积更小的 base64 Data URL。
+ * - SVG 保持矢量，不重采样（栅格化会丢失无限缩放特性且通常无压缩收益）。
+ * - 含透明通道 → 输出 PNG（保留透明度，仅享缩放带来的体积收益）。
+ * - 不透明 → 输出 JPEG（质量 COMPRESS_JPEG_QUALITY），体积显著下降。
+ * 解码/画布不可用时回退到原始 base64，绝不阻断用户添加图片。
+ */
+export async function compressImageBlob(blob: Blob): Promise<string> {
+  if (blob.type === "image/svg+xml") {
+    return readBlobAsDataUrl(blob);
+  }
+
+  let img: HTMLImageElement;
+  try {
+    img = await blobToImageElement(blob);
+  } catch {
+    return readBlobAsDataUrl(blob);
+  }
+
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const scale = Math.min(1, COMPRESS_MAX_EDGE / Math.max(w, h));
+  const tw = Math.max(1, Math.round(w * scale));
+  const th = Math.max(1, Math.round(h * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = tw;
+  canvas.height = th;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return readBlobAsDataUrl(blob);
+  }
+  ctx.drawImage(img, 0, 0, tw, th);
+
+  // 透明检测在小画布上做，开销可控（未填充背景，alpha 随缩放保留）
+  let hasAlpha = false;
+  try {
+    const { data } = ctx.getImageData(0, 0, tw, th);
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] < 255) {
+        hasAlpha = true;
+        break;
+      }
+    }
+  } catch {
+    hasAlpha = false;
+  }
+
+  try {
+    return hasAlpha ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", COMPRESS_JPEG_QUALITY);
+  } catch {
+    return readBlobAsDataUrl(blob);
+  }
+}
+
+/** 通过 Rust 读取本地图片字节，缩放/重压缩后转为 base64 Data URL（供模型 vision 使用） */
+export async function readLocalImageAsDataURL(path: string): Promise<string> {
+  const buffer = await invoke<ArrayBuffer>("read_file_bytes", { path, projectPath: null });
+  const blob = new Blob([buffer], { type: mimeTypeForImage(getExtension(path)) });
+  return compressImageBlob(blob);
 }
 
 export interface PickedAttachmentsResult {

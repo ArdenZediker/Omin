@@ -15,7 +15,7 @@ import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettl
 import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
-import { savePastedFileAttachment } from "./attachmentUtils";
+import { savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
 interface ChatMessageProps {
   message: Message;
@@ -139,17 +139,7 @@ export default function ChatMessage({
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
 
-    void Promise.all(
-      imageFiles.map(
-        (file) =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (event) => resolve((event.target?.result as string) ?? "");
-            reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
-            reader.readAsDataURL(file);
-          }),
-      ),
-    ).then((nextImages) => {
+    void Promise.all(imageFiles.map((file) => compressImageBlob(file))).then((nextImages) => {
       setEditImages((prev) => [...prev, ...nextImages.filter((src) => src.length > 0)]);
     });
   };
