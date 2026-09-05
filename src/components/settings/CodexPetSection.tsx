@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "../../app/storageApi";
 import { fitCodexPetToBounds } from "../../app/pets/codexPetSizing";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
 import DesktopPet from "../DesktopPet";

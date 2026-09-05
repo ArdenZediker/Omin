@@ -211,6 +211,14 @@ pub(crate) fn open_path(app: tauri::AppHandle, path: String) -> Result<(), Strin
 }
 
 #[tauri::command]
+pub(crate) fn reveal_item_in_dir(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .reveal_item_in_dir(path.clone())
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub(crate) fn export_data_backup(
     app: tauri::AppHandle,
     target_path: String,

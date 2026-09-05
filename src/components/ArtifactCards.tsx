@@ -1,7 +1,7 @@
 // 会话内产物卡片：AI 执行产出的文件/网页/技能以卡片行展示在消息下方
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "../app/storageApi";
 import { open } from "@tauri-apps/plugin-shell";
 import { Check, Copy, ExternalLink, FolderOpen, FolderSearch, TriangleAlert } from "lucide-react";
 import type { Artifact } from "../chat/artifacts";

@@ -551,6 +551,7 @@ pub fn run() {
             reset_data_root,
             open_data_dir,
             open_path,
+            reveal_item_in_dir,
             export_data_backup,
             import_data_backup,
             read_persona_files,
