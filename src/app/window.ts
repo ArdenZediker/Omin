@@ -680,7 +680,10 @@ export async function showCompactWindow(
     // Keep showing the compact window even if the platform cannot report geometry.
   }
 
-  if (mainWindow && options.avoidMainWindowOverlap !== false) {
+  // 仅当用户此前没有手动放置过宠物（无持久化位置）时，才在显示时避让主窗口。
+  // 一旦用户已经拖动过（safeStoredPosition 存在），就尊重用户位置，不再自动推开，
+  // 也不再把「推走后的位置」写回存储——否则每次重启/重开主窗口都会把宠物拽离用户位置。
+  if (mainWindow && options.avoidMainWindowOverlap !== false && !safeStoredPosition) {
     try {
       const mainVisible = await mainWindow.isVisible();
       if (mainVisible) {
