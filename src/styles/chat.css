@@ -970,11 +970,6 @@
   white-space: nowrap;
 }
 
-.chat-history-panel__session-main-icon {
-  flex: 0 0 auto;
-  color: var(--omni-app-muted);
-}
-
 .chat-history-panel__session-time {
   flex-shrink: 0;
   font-size: 11px;

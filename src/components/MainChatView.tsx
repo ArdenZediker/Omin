@@ -1268,7 +1268,9 @@ export default function MainChatView({
                       }
                     }}
                   >
-                    <Bot size={16} strokeWidth={1.9} className="chat-history-panel__session-main-icon" />
+                    <span className="chat-history-panel__session-avatar" style={{ backgroundColor: "#e0f2fe", color: "#0ea5e9" }}>
+                      <Bot size={14} strokeWidth={1.9} />
+                    </span>
                     <span className="chat-history-panel__session-title">{basicProject.title}</span>
                   </div>
                 )}
