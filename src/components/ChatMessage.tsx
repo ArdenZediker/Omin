@@ -3,7 +3,6 @@ import {
   ChevronDown,
   Copy,
   FileDown,
-  Paperclip,
   Pencil,
   RefreshCw,
 } from "lucide-react";
@@ -16,7 +15,7 @@ import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettl
 import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
-import { pickLocalAttachments, savePastedFileAttachment } from "./attachmentUtils";
+import { savePastedFileAttachment } from "./attachmentUtils";
 
 interface ChatMessageProps {
   message: Message;
@@ -70,7 +69,7 @@ export default function ChatMessage({
 
   const isUser = message.role === "user";
   const [editValue, setEditValue] = useState(message.content);
-  // 编辑态下附件的可变副本：用户可删除旧附件、也可重新添加文件/图片，
+  // 编辑态下附件的可变副本：用户可删除旧附件，也可在文本框粘贴新文件/图片，
   // 提交时随 onSubmitEdit 回传，覆盖原消息的 images / attachments。
   const [editImages, setEditImages] = useState<string[]>(message.images ?? []);
   const [editAttachments, setEditAttachments] = useState<ChatAttachment[]>(message.attachments ?? []);
@@ -136,24 +135,6 @@ export default function ChatMessage({
   }, [isEditing, message.content]);
 
   // 编辑态：通过 Tauri 文件对话框补充图片/文件附件（与输入框上传同一套逻辑）
-  const handleEditAddFiles = async () => {
-    try {
-      const picked = await pickLocalAttachments();
-      if (!picked) return;
-      if (picked.images.length > 0) {
-        setEditImages((prev) => [...prev, ...picked.images]);
-      }
-      if (picked.attachments.length > 0) {
-        setEditAttachments((prev) => {
-          const existingPaths = new Set(prev.map((attachment) => attachment.path));
-          return [...prev, ...picked.attachments.filter((attachment) => !existingPaths.has(attachment.path))];
-        });
-      }
-    } catch (error) {
-      console.error("编辑态选择附件失败", error);
-    }
-  };
-
   const appendEditImageFiles = (files: File[]) => {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
@@ -246,14 +227,6 @@ export default function ChatMessage({
                 }
               />
             ))}
-            <button
-              type="button"
-              className="message-edit-box__add"
-              title="添加文件或图片"
-              onClick={() => void handleEditAddFiles()}
-            >
-              <Paperclip size={15} strokeWidth={1.9} />
-            </button>
           </div>
           <div className="message-edit-box__body">
             <textarea
