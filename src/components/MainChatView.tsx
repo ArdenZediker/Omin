@@ -1239,10 +1239,10 @@ export default function MainChatView({
         <div className="chat-history-panel__projects">
                     <div className="chat-history-panel__section task-section">
             <div className="chat-history-panel__section-head">
+              <span className="chat-history-panel__section-label">任务</span>
               <button type="button" className="chat-history-panel__section-toggle" onClick={() => setTaskSectionCollapsed((current) => !current)} aria-label={taskSectionCollapsed ? "展开任务" : "收起任务"}>
                 {taskSectionCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
               </button>
-              <span className="chat-history-panel__section-label">任务</span>
               <span className="chat-history-panel__section-count">{standaloneSessions.length}</span>
               <button type="button" className="chat-history-panel__section-add" onClick={() => onNewChatInProject(DEFAULT_PROJECT_ID)} title="新建任务" aria-label="新建任务">
                 <Plus size={14} strokeWidth={1.9} />
@@ -1297,10 +1297,10 @@ export default function MainChatView({
 
           <div className="chat-history-panel__section space-section">
             <div className="chat-history-panel__section-head">
+              <span className="chat-history-panel__section-label">空间</span>
               <button type="button" className="chat-history-panel__section-toggle" onClick={() => setSpaceSectionCollapsed((current) => !current)} aria-label={spaceSectionCollapsed ? "展开空间" : "收起空间"}>
                 {spaceSectionCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
               </button>
-              <span className="chat-history-panel__section-label">空间</span>
               <span className="chat-history-panel__section-count">{filteredCustomProjects.length}</span>
               <div className="chat-history-panel__section-actions">
                 <div ref={projectMenuRef} className="chat-history-panel__section-menu">
@@ -1343,6 +1343,10 @@ export default function MainChatView({
                             <span className="chat-history-panel__project-folder-icon-wrapper">{renderProjectAvatar(project)}</span>
                           )}
                           <span className="chat-history-panel__space-title">{project.title}</span>
+                          <span className="chat-history-panel__space-chevron" onClick={(event) => { event.stopPropagation(); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }}>
+                            {isExpanded ? <ChevronDown size={13} strokeWidth={1.8} /> : <ChevronRight size={13} strokeWidth={1.8} />}
+                          </span>
+                          <span className="chat-history-panel__space-spacer" aria-hidden="true" />
                           <span className="chat-history-panel__project-menu" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                             <button type="button" className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`} title="更多操作" aria-label="更多操作" onClick={(event) => { event.stopPropagation(); setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id)); }}>
                               <MoreHorizontal size={13} strokeWidth={1.9} />
@@ -1386,9 +1390,6 @@ export default function MainChatView({
                           <button type="button" className="chat-history-panel__space-add" title="在空间内新建会话" aria-label="在空间内新建会话" onClick={(event) => { event.stopPropagation(); onNewChatInProject(project.id); }}>
                             <NewSessionInSpaceIcon size={16} />
                           </button>
-                          <span className="chat-history-panel__space-chevron" onClick={(event) => { event.stopPropagation(); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }}>
-                            {isExpanded ? <ChevronDown size={13} strokeWidth={1.8} /> : <ChevronRight size={13} strokeWidth={1.8} />}
-                          </span>
                         </div>
                         {isExpanded && (
                           <div className="chat-history-panel__session-list chat-history-panel__session-list--nested">

@@ -1040,7 +1040,7 @@
 }
 
 .chat-history-panel__space-title {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   font-size: 13px;
   font-weight: 600;
@@ -1048,6 +1048,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-history-panel__space-spacer {
+  flex: 1 0 auto;
+  min-width: 4px;
 }
 
 .chat-history-panel__space-add {
