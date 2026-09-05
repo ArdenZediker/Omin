@@ -926,6 +926,10 @@
   margin-left: auto;
 }
 
+.task-section .chat-history-panel__section-add {
+  margin-left: auto;
+}
+
 .chat-history-panel__session-list {
   display: flex;
   flex-direction: column;
