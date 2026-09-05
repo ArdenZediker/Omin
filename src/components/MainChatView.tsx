@@ -1358,9 +1358,6 @@ export default function MainChatView({
                         <span className="chat-history-panel__session-title">
                           {basicProject.title}
                         </span>
-                        <span className="chat-history-panel__session-time">
-                          {formatSessionTime(basicProject.updatedAt)}
-                        </span>
                       </div>
                     )}
                     {standaloneSessions.length === 0 ? (
