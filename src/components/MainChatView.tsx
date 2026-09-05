@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import type {
   CSSProperties,
@@ -33,7 +32,6 @@ import {
   Plus,
   Puzzle,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Search,
   Settings,
@@ -54,7 +52,6 @@ import type {
   ChatSendOptions,
   ChatSession,
 } from "../chat/types";
-import type { ProjectMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
 import ArtifactsPanel from "./ArtifactsPanel";
@@ -72,10 +69,7 @@ import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 
 import {
   ALWAYS_ALLOWED_LOCAL_TOOL_IDS,
-  PROJECT_TOOL_OPTIONS,
-  TOOLSET_MANIFESTS,
 } from "../config/manifests/tools";
-import { pluginRegistry } from "../plugins/registry";
 import {
   readSqliteBackedValue,
   saveSqliteBackedValue,
@@ -86,8 +80,6 @@ import { ExecutionTimeline } from "./ExecutionTimeline";
 import CreateProjectDialog from "./CreateProjectDialog";
 import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
 import ModelSelector from "./ModelSelector";
-import OmniSelect from "./ui/OmniSelect";
-import OmniSwitch from "./ui/OmniSwitch";
 import PluginMarketplace from "./plugins/PluginMarketplace";
 import type { MarketplaceSource } from "./plugins/PluginMarketplace";
 import type { PluginKind } from "../plugins/types";
@@ -96,7 +88,6 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   PROJECT_GROUPS_STORAGE_KEY,
   readProjectGroupsStorageValue,
-  DEFAULT_PROJECT_GROUP_LABEL,
   DEFAULT_TOPIC_PANEL_WIDTH,
   EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY,
   MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY,
@@ -107,8 +98,6 @@ import {
   MIN_MESSAGE_AREA_HEIGHT,
   buildTaskAggregateSummary,
   clampPanelWidth,
-  formatMemoryScopeLabel,
-  getMemorySourceTypeLabel,
   getSessionAvatarStyle,
   NewSessionInSpaceIcon,
   normalizeSearchText,
@@ -320,7 +309,6 @@ export default function MainChatView({
   editingMessageIndex,
   emptyChatPrompts,
   error,
-  groupedChatSessions,
   chatSessions,
   hasModels,
   inputDraft,
@@ -334,7 +322,6 @@ export default function MainChatView({
   isSendBlocked = false,
   isStreaming,
   relatedContext,
-  projectMemories,
   latestTaskResult,
   taskRuntimeState,
   messages,
@@ -346,11 +333,7 @@ export default function MainChatView({
   onDeleteChat,
   onCopyMessage,
   onCreateCustomProject,
-  onAddProjectMemory,
-  onClearProjectMemories,
   onDeleteProject,
-  onDeleteProjectMemory,
-  onUpdateProjectMemory,
   onDraftChange,
   onEditUserMessage,
   onModelChange,
@@ -567,36 +550,11 @@ export default function MainChatView({
       return [];
     }
   });
-  const [projectSettingsId, setProjectSettingsId] = useState<string | null>(
-    null,
-  );
   const [editingProjectGroupName, setEditingProjectGroupName] = useState<
     string | null
   >(null);
   const [editingProjectGroupDraft, setEditingProjectGroupDraft] = useState("");
-  const [projectAvatarPanelOpen, setProjectAvatarPanelOpen] = useState(false);
   const [projectNotice, setProjectNotice] = useState<ProjectNoticeState>(null);
-  const [projectAgentsMd, setProjectAgentsMd] = useState("");
-  const refreshProjectAgentsMd = useCallback(async () => {
-    if (!activeProject?.workspacePath) {
-      setProjectAgentsMd("");
-      return;
-    }
-    try {
-      const md = await invoke<string>("read_project_agents_md", {
-        projectPath: activeProject.workspacePath,
-      });
-      setProjectAgentsMd(md ?? "");
-    } catch {
-      setProjectAgentsMd("");
-    }
-  }, [activeProject?.workspacePath]);
-  const [newMemoryDraft, setNewMemoryDraft] = useState("");
-  const [memorySearchQuery, setMemorySearchQuery] = useState("");
-  const [showAllMemories, setShowAllMemories] = useState(false);
-  const [memoryClearConfirmOpen, setMemoryClearConfirmOpen] = useState(false);
-  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
-  const [editingMemoryDraft, setEditingMemoryDraft] = useState("");
   const [openProjectCardMenuId, setOpenProjectCardMenuId] = useState<
     string | null
   >(null);
@@ -607,9 +565,6 @@ export default function MainChatView({
   const projectCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>(
     {},
   );
-  const projectAvatarInputRef = useRef<HTMLInputElement | null>(null);
-  const projectAvatarPanelRef = useRef<HTMLDivElement | null>(null);
-  const projectAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
   const layoutDragRef = useRef<{
     startX: number;
     startWidth: number;
@@ -757,9 +712,6 @@ export default function MainChatView({
     [activeProject?.allowedToolIds],
   );
   const allowedComposerSkillIds = activeProject?.allowedSkillIds ?? [];
-  const activeMemoryScopeLabel = formatMemoryScopeLabel(
-    activeProject?.memoryScope ?? "project",
-  );
   const showContextRecallBanner =
     messages.length === 0 &&
     (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
@@ -824,49 +776,6 @@ export default function MainChatView({
     const date = new Date(updatedAt);
     return `${date.getMonth() + 1}/${date.getDate()}`;
   };
-  const topicTitleById = useMemo(() => {
-    const entries = groupedChatSessions.flatMap((group) =>
-      group.sessions.map((session) => [session.id, session.title] as const),
-    );
-    return new Map(entries);
-  }, [groupedChatSessions]);
-  const normalizedMemorySearchQuery = normalizeSearchText(memorySearchQuery);
-  const filteredProjectMemories = useMemo(() => {
-    if (!normalizedMemorySearchQuery) {
-      return projectMemories;
-    }
-
-    return projectMemories.filter((memory) => {
-      const sourceTitle = memory.sourceSessionId
-        ? (topicTitleById.get(memory.sourceSessionId) ?? "")
-        : "";
-      return normalizeSearchText(
-        `${memory.content} ${sourceTitle} ${getMemorySourceTypeLabel(memory.sourceType)}`,
-      ).includes(normalizedMemorySearchQuery);
-    });
-  }, [projectMemories, normalizedMemorySearchQuery, topicTitleById]);
-  const visibleProjectMemories = showAllMemories
-    ? filteredProjectMemories
-    : filteredProjectMemories.slice(0, 12);
-  const isProjectSettingsMode = Boolean(projectSettingsId && activeProject);
-  const isCustomProjectSettingsMode = Boolean(
-    isProjectSettingsMode && activeProject?.kind === "custom",
-  );
-  useEffect(() => {
-    if (isProjectSettingsMode) void refreshProjectAgentsMd();
-  }, [isProjectSettingsMode, refreshProjectAgentsMd]);
-  const [projectTitleDraft, setProjectTitleDraft] = useState(
-    activeProject?.title ?? "",
-  );
-  const [projectDescriptionDraft, setProjectDescriptionDraft] = useState(
-    activeProject?.description ?? "",
-  );
-  const [projectPromptDraft, setProjectPromptDraft] = useState(
-    activeProject?.systemPrompt ?? "",
-  );
-  const [projectModelDraft, setProjectModelDraft] = useState(
-    activeProject?.defaultModelId ?? "",
-  );
   const [knowledgeCollections, setKnowledgeCollections] = useState<
     KnowledgeCollection[]
   >([]);
@@ -875,29 +784,11 @@ export default function MainChatView({
   const lastAutoScrolledSessionRef = useRef<string | null>(null);
   const selectedExecutionModel =
     availableModels.find((model) => model.id === executionModel) ?? null;
-  const selectedProjectModel =
-    availableModels.find((model) => model.id === projectModelDraft) ?? null;
-  const selectedProjectKnowledgeCollection =
-    knowledgeCollections.find(
-      (collection) => collection.id === activeProject?.knowledgeCollectionId,
-    ) ?? null;
   const showProjectNotice = useCallback(
     (message: string, tone: "success" | "error" = "success") => {
       setProjectNotice({ tone, message });
     },
     [],
-  );
-  const saveProjectPatch = useCallback(
-    (patch: Partial<Project>, message: string) => {
-      if (!activeProject) return null;
-      const updated = onUpdateProject(activeProject.id, patch);
-      showProjectNotice(
-        updated ? message : "保存失败，请稍后重试",
-        updated ? "success" : "error",
-      );
-      return updated;
-    },
-    [activeProject, onUpdateProject, showProjectNotice],
   );
   const handleCreateProject = useCallback(() => {
     setCreateProjectDialogOpen(true);
@@ -907,8 +798,7 @@ export default function MainChatView({
     (draft: ProjectDraft) => {
       const created = onCreateCustomProject(draft);
       if (created && created.id) {
-        showProjectNotice("项目已创建，可在项目设置中完善信息");
-        setProjectSettingsId(created.id);
+        showProjectNotice("项目已创建");
       }
     },
     [onCreateCustomProject, showProjectNotice],
@@ -1009,81 +899,6 @@ export default function MainChatView({
     },
     [activeProject, activeChatId, showProjectNotice],
   );
-  const startEditMemory = useCallback((memory: ProjectMemoryRecord) => {
-    setEditingMemoryId(memory.id);
-    setEditingMemoryDraft(memory.content);
-  }, []);
-  const cancelEditMemory = useCallback(() => {
-    setEditingMemoryId(null);
-    setEditingMemoryDraft("");
-  }, []);
-  const saveEditingMemory = useCallback(() => {
-    if (!editingMemoryId) return;
-    const updated = onUpdateProjectMemory(editingMemoryId, editingMemoryDraft);
-    showProjectNotice(
-      updated ? "记忆已更新" : "记忆更新失败",
-      updated ? "success" : "error",
-    );
-    if (updated) {
-      cancelEditMemory();
-    }
-  }, [
-    cancelEditMemory,
-    editingMemoryDraft,
-    editingMemoryId,
-    onUpdateProjectMemory,
-    showProjectNotice,
-  ]);
-  const addManualMemory = useCallback(() => {
-    if (!activeProject) return;
-    const added = onAddProjectMemory(
-      activeProject.id,
-      newMemoryDraft,
-      activeChatId,
-      "manual",
-    );
-    showProjectNotice(
-      added ? "记忆已添加" : "记忆已存在或内容太短",
-      added ? "success" : "error",
-    );
-    if (added) {
-      setNewMemoryDraft("");
-    }
-  }, [
-    activeProject,
-    activeChatId,
-    newMemoryDraft,
-    onAddProjectMemory,
-    showProjectNotice,
-  ]);
-  const openMemorySourceSession = useCallback(
-    (sessionId: string | null | undefined) => {
-      if (!sessionId || !topicTitleById.has(sessionId)) {
-        showProjectNotice("来源会话已删除或不可用", "error");
-        return;
-      }
-
-      onSelectChat(sessionId);
-      setProjectSettingsId(null);
-      setMemorySearchQuery("");
-      setShowAllMemories(false);
-      showProjectNotice("已打开记忆来源会话");
-    },
-    [onSelectChat, showProjectNotice, topicTitleById],
-  );
-  const clearCurrentProjectMemories = useCallback(() => {
-    if (!activeProject) return;
-    const removedCount = onClearProjectMemories(activeProject.id);
-    setMemoryClearConfirmOpen(false);
-    setEditingMemoryId(null);
-    setEditingMemoryDraft("");
-    showProjectNotice(
-      removedCount > 0
-        ? `已清空 ${removedCount} 条记忆`
-        : "当前没有可清空的记忆",
-      removedCount > 0 ? "success" : "error",
-    );
-  }, [activeProject, onClearProjectMemories, showProjectNotice]);
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
     if (projectPanelManualVisible === true)
@@ -1094,13 +909,10 @@ export default function MainChatView({
       classNames.push("main-chat-layout--topic-forced-open");
     if (!isTopicPanelVisible || showPluginMarketplace)
       classNames.push("main-chat-layout--topic-collapsed");
-    if (isProjectSettingsMode)
-      classNames.push("main-chat-layout--project-settings");
     return classNames.join(" ");
   }, [
     projectPanelManualVisible,
     isProjectPanelVisible,
-    isProjectSettingsMode,
     isTopicPanelVisible,
     topicPanelManualVisible,
     showPluginMarketplace,
@@ -1257,18 +1069,6 @@ export default function MainChatView({
   }, [messagesScrollRef]);
 
   useEffect(() => {
-    setProjectTitleDraft(activeProject?.title ?? "");
-    setProjectDescriptionDraft(activeProject?.description ?? "");
-    setProjectPromptDraft(activeProject?.systemPrompt ?? "");
-    setProjectModelDraft(activeProject?.defaultModelId ?? "");
-    setMemorySearchQuery("");
-    setShowAllMemories(false);
-    setMemoryClearConfirmOpen(false);
-    setEditingMemoryId(null);
-    setEditingMemoryDraft("");
-  }, [activeProject]);
-
-  useEffect(() => {
     saveSqliteBackedValue(
       PROJECT_GROUPS_STORAGE_KEY,
       JSON.stringify(projectGroups),
@@ -1352,21 +1152,6 @@ export default function MainChatView({
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [openProjectCardMenuId]);
 
-  useEffect(() => {
-    if (!projectAvatarPanelOpen) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (projectAvatarPanelRef.current?.contains(target)) return;
-      if (projectAvatarTriggerRef.current?.contains(target)) return;
-      setProjectAvatarPanelOpen(false);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [projectAvatarPanelOpen]);
-
   const handleCreateProjectGroup = () => {
     const nextGroupName = projectGroupDraft.trim();
     if (!nextGroupName) {
@@ -1413,10 +1198,6 @@ export default function MainChatView({
     if (!projectDeleteConfirm) return;
     const deleted = await onDeleteProject(projectDeleteConfirm.projectId);
     if (!deleted) return;
-    if (projectSettingsId === projectDeleteConfirm.projectId) {
-      setProjectSettingsId(null);
-      setProjectAvatarPanelOpen(false);
-    }
     setProjectDeleteConfirm(null);
     setOpenProjectCardMenuId(null);
   };
@@ -1571,15 +1352,11 @@ export default function MainChatView({
                         tabIndex={0}
                         className={`chat-history-panel__session chat-history-panel__session--main ${activeProjectId === basicProject.id ? "chat-history-panel__session--active" : ""}`}
                         onClick={() => {
-                          setProjectSettingsId(null);
-                          setProjectAvatarPanelOpen(false);
                           onSelectProject(basicProject.id);
                         }}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setProjectSettingsId(null);
-                            setProjectAvatarPanelOpen(false);
                             onSelectProject(basicProject.id);
                           }
                         }}
@@ -2084,54 +1861,36 @@ export default function MainChatView({
           <div className="main-chat-toolbar">
             <div className="main-chat-toolbar__session main-chat-toolbar__session--hero">
               <div className="main-chat-toolbar__project main-chat-toolbar__project--single-line">
-                {!isProjectSettingsMode && (
-                  <button
-                    type="button"
-                    className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
-                    aria-label={
-                      isProjectPanelVisible ? "收起项目栏" : "展开项目栏"
-                    }
-                    title={isProjectPanelVisible ? "收起项目栏" : "展开项目栏"}
-                    onClick={() =>
-                      setProjectPanelManualVisible((currentValue) => {
-                        const currentVisible =
-                          currentValue ?? defaultProjectPanelVisible;
-                        const nextVisible = !currentVisible;
-                        return nextVisible === defaultProjectPanelVisible
-                          ? null
-                          : nextVisible;
-                      })
-                    }
-                  >
-                    {isProjectPanelVisible ? (
-                      <PanelLeftClose
-                        className="main-chat-toolbar__icon"
-                        strokeWidth={1.7}
-                      />
-                    ) : (
-                      <PanelLeftOpen
-                        className="main-chat-toolbar__icon"
-                        strokeWidth={1.7}
-                      />
-                    )}
-                  </button>
-                )}
-                {isProjectSettingsMode && !showPluginMarketplace && (
-                  <button
-                    type="button"
-                    className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
-                    title="返回聊天"
-                    onClick={() => {
-                      setProjectSettingsId(null);
-                      setProjectAvatarPanelOpen(false);
-                    }}
-                  >
-                    <ChevronLeft
+                <button
+                  type="button"
+                  className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
+                  aria-label={
+                    isProjectPanelVisible ? "收起项目栏" : "展开项目栏"
+                  }
+                  title={isProjectPanelVisible ? "收起项目栏" : "展开项目栏"}
+                  onClick={() =>
+                    setProjectPanelManualVisible((currentValue) => {
+                      const currentVisible =
+                        currentValue ?? defaultProjectPanelVisible;
+                      const nextVisible = !currentVisible;
+                      return nextVisible === defaultProjectPanelVisible
+                        ? null
+                        : nextVisible;
+                    })
+                  }
+                >
+                  {isProjectPanelVisible ? (
+                    <PanelLeftClose
                       className="main-chat-toolbar__icon"
-                      strokeWidth={1.8}
+                      strokeWidth={1.7}
                     />
-                  </button>
-                )}
+                  ) : (
+                    <PanelLeftOpen
+                      className="main-chat-toolbar__icon"
+                      strokeWidth={1.7}
+                    />
+                  )}
+                </button>
                 {!showPluginMarketplace && (
                   <>
                     <div className="main-chat-toolbar__project-mark">
@@ -2139,12 +1898,12 @@ export default function MainChatView({
                     </div>
                     <div className="main-chat-toolbar__project-copy main-chat-toolbar__project-copy--single-line">
                       <strong>
-                        {isProjectSettingsMode ? "项目设置" : currentTopicTitle}
+                        {currentTopicTitle}
                       </strong>
                     </div>
                   </>
                 )}
-                {showPluginMarketplace && !isProjectSettingsMode && (
+                {showPluginMarketplace && (
                   <MarketplaceSourceTabs
                     kind={marketplaceFilter.kind}
                     source={marketplaceSource}
@@ -2244,722 +2003,6 @@ export default function MainChatView({
             }
           >
             <main className="main-chat-pane">
-              {isProjectSettingsMode && activeProject ? (
-                <div className="main-chat-scroll hide-scrollbar">
-                  <div className="omni-settings-dialog__sections omni-settings-dialog__sections--page">
-                    {isCustomProjectSettingsMode && (
-                      <>
-                        <div className="omni-settings-dialog__section">
-                          <div className="omni-settings-dialog__section-title">
-                            项目信息
-                          </div>
-                          <div className="omni-settings-dialog__project-overview">
-                            <div className="omni-settings-dialog__project-form">
-                              <div className="omni-settings-dialog__project-copy">
-                                <div className="omni-settings-dialog__setting-label">
-                                  基础信息
-                                </div>
-                                <div className="omni-settings-dialog__setting-hint">
-                                  名称、描述和角色设定会决定这个项目在聊天中的定位与表现。
-                                </div>
-                              </div>
-                              <div className="omni-settings-dialog__project-side">
-                                <div className="omni-settings-dialog__project-copy">
-                                  <div className="omni-settings-dialog__setting-label">
-                                    项目头像
-                                  </div>
-                                  <div className="omni-settings-dialog__setting-hint">
-                                    头像会同步影响项目列表、当前项目头部和相关卡片展示。
-                                  </div>
-                                </div>
-                                <div className="omni-settings-dialog__setting-control omni-settings-dialog__setting-control--avatar">
-                                  <button
-                                    ref={projectAvatarTriggerRef}
-                                    type="button"
-                                    className="omni-settings-dialog__avatar-hero"
-                                    onClick={() =>
-                                      setProjectAvatarPanelOpen(
-                                        (current) => !current,
-                                      )
-                                    }
-                                    title="选择头像"
-                                  >
-                                    <span className="omni-settings-dialog__avatar-hero-preview">
-                                      {renderProjectAvatar(activeProject)}
-                                    </span>
-                                    <span className="omni-settings-dialog__avatar-hero-copy">
-                                      <strong>点击更换头像</strong>
-                                      <span>
-                                        {activeProject.avatarType === "image"
-                                          ? "当前使用自定义图片"
-                                          : "当前使用头像包图标"}
-                                      </span>
-                                    </span>
-                                  </button>
-                                  {projectAvatarPanelOpen && (
-                                    <div
-                                      ref={projectAvatarPanelRef}
-                                      className="omni-settings-dialog__avatar-panel"
-                                    >
-                                      <div className="omni-settings-dialog__avatar-panel-hint">
-                                        仅支持上传图片作为项目头像。
-                                      </div>
-                                      <button
-                                        type="button"
-                                        className="chat-history-panel__avatar-upload"
-                                        onClick={() =>
-                                          projectAvatarInputRef.current?.click()
-                                        }
-                                      >
-                                        上传图片
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="omni-settings-dialog__form-grid">
-                                <label className="chat-topic-panel__field">
-                                  <span>名称</span>
-                                  <input
-                                    value={projectTitleDraft}
-                                    onChange={(event) =>
-                                      setProjectTitleDraft(event.target.value)
-                                    }
-                                    onBlur={() =>
-                                      saveProjectPatch(
-                                        { title: projectTitleDraft },
-                                        "项目名称已保存",
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label className="chat-topic-panel__field">
-                                  <span>默认模型</span>
-                                  <div className="omni-settings-dialog__model-select">
-                                    <OmniSelect
-                                      value={projectModelDraft}
-                                      onChange={(nextValue) => {
-                                        const nextModelId =
-                                          projectModelDraft === nextValue
-                                            ? ""
-                                            : nextValue;
-                                        setProjectModelDraft(nextModelId);
-                                        saveProjectPatch(
-                                          {
-                                            defaultModelId: nextModelId || null,
-                                          },
-                                          "默认模型已更新",
-                                        );
-                                      }}
-                                      ariaLabel="项目默认模型"
-                                      className="omni-select--field"
-                                      placeholder="跟随主模型"
-                                      options={availableModels.map((model) => ({
-                                        value: model.id,
-                                        label: model.name,
-                                      }))}
-                                    />
-                                    {selectedProjectModel && (
-                                      <div className="omni-settings-dialog__model-select-meta">
-                                        {selectedProjectModel.provider} /{" "}
-                                        {selectedProjectModel.id} ·
-                                        会覆盖主模型，仅当前项目生效
-                                      </div>
-                                    )}
-                                    {!selectedProjectModel && (
-                                      <div className="omni-settings-dialog__model-select-meta">
-                                        未单独指定时使用顶部选择的主模型
-                                      </div>
-                                    )}
-                                  </div>
-                                </label>
-                                <label className="chat-topic-panel__field">
-                                  <span>绑定知识库</span>
-                                  <div className="omni-settings-dialog__model-select">
-                                    <OmniSelect
-                                      value={
-                                        activeProject.knowledgeCollectionId ??
-                                        ""
-                                      }
-                                      onChange={(nextValue) => {
-                                        saveProjectPatch(
-                                          {
-                                            knowledgeCollectionId:
-                                              nextValue || null,
-                                          },
-                                          "知识库绑定已更新",
-                                        );
-                                      }}
-                                      ariaLabel="项目绑定知识库"
-                                      className="omni-select--field"
-                                      options={[
-                                        { value: "", label: "全部知识库" },
-                                        ...knowledgeCollections.map(
-                                          (collection) => ({
-                                            value: collection.id,
-                                            label: collection.name,
-                                          }),
-                                        ),
-                                      ]}
-                                    />
-                                    <div className="omni-settings-dialog__model-select-meta">
-                                      {selectedProjectKnowledgeCollection
-                                        ? `仅检索：${selectedProjectKnowledgeCollection.name}`
-                                        : knowledgeCollections.length > 0
-                                          ? "未绑定时会从全部知识库召回"
-                                          : "还没有可绑定的知识库"}
-                                    </div>
-                                  </div>
-                                </label>
-                                <label className="chat-topic-panel__field">
-                                  <span>所属分组</span>
-                                  <OmniSelect
-                                    value={activeProject.groupName ?? ""}
-                                    onChange={(nextValue) => {
-                                      saveProjectPatch(
-                                        { groupName: nextValue || null },
-                                        "项目分组已更新",
-                                      );
-                                    }}
-                                    ariaLabel="项目所属分组"
-                                    className="omni-select--field"
-                                    options={[
-                                      {
-                                        value: "",
-                                        label: DEFAULT_PROJECT_GROUP_LABEL,
-                                      },
-                                      ...projectGroupNames.map((groupName) => ({
-                                        value: groupName,
-                                        label: groupName,
-                                      })),
-                                    ]}
-                                  />
-                                </label>
-                                <label className="chat-topic-panel__field omni-settings-dialog__field--full">
-                                  <span>描述</span>
-                                  <input
-                                    value={projectDescriptionDraft}
-                                    onChange={(event) =>
-                                      setProjectDescriptionDraft(
-                                        event.target.value,
-                                      )
-                                    }
-                                    onBlur={() =>
-                                      saveProjectPatch(
-                                        {
-                                          description: projectDescriptionDraft,
-                                        },
-                                        "项目描述已保存",
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <label className="chat-topic-panel__field omni-settings-dialog__field--full">
-                                  <span>角色设定</span>
-                                  <textarea
-                                    value={projectPromptDraft}
-                                    onChange={(event) =>
-                                      setProjectPromptDraft(event.target.value)
-                                    }
-                                    onBlur={() =>
-                                      saveProjectPatch(
-                                        { systemPrompt: projectPromptDraft },
-                                        "角色设定已保存",
-                                      )
-                                    }
-                                    rows={5}
-                                  />
-                                </label>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="omni-settings-dialog__section">
-                          <div className="omni-settings-dialog__section-title">
-                            项目工作目录
-                          </div>
-                          <div className="omni-settings-dialog__setting-hint">
-                            绑定本地目录后，对话可读取该目录下的文件，并自动加载目录中的
-                            AGENTS.md 作为本项目的额外指令。
-                          </div>
-                          <div className="omni-settings-dialog__workspace-row">
-                            <input
-                              className="omni-settings-dialog__workspace-path"
-                              value={activeProject.workspacePath}
-                              readOnly
-                              placeholder="未绑定工作目录"
-                            />
-                            <button
-                              type="button"
-                              className="omni-settings-dialog__workspace-pick"
-                              onClick={async () => {
-                                try {
-                                  const selected = await open({
-                                    directory: true,
-                                    title: "选择项目工作目录（可取消以跳过）",
-                                  });
-                                  if (
-                                    typeof selected === "string" &&
-                                    selected.trim()
-                                  ) {
-                                    saveProjectPatch(
-                                      { workspacePath: selected.trim() },
-                                      "工作目录已更新",
-                                    );
-                                    await refreshProjectAgentsMd();
-                                  }
-                                } catch {
-                                  showProjectNotice(
-                                    "无法打开目录选择器",
-                                    "error",
-                                  );
-                                }
-                              }}
-                            >
-                              选择目录
-                            </button>
-                          </div>
-                          {activeProject.workspacePath ? (
-                            <div className="omni-settings-dialog__agents-md">
-                              <div className="omni-settings-dialog__setting-label">
-                                AGENTS.md（自动读取，只读）
-                              </div>
-                              <textarea
-                                className="omni-settings-dialog__agents-md-text"
-                                value={projectAgentsMd}
-                                readOnly
-                                rows={6}
-                                placeholder="该目录没有 AGENTS.md 文件"
-                              />
-                            </div>
-                          ) : null}
-                        </div>
-
-                        <div className="omni-settings-dialog__section">
-                          <div className="omni-settings-dialog__section-title">
-                            工具集模板
-                          </div>
-                          <div className="omni-settings-dialog__toggle-list">
-                            {TOOLSET_MANIFESTS.map((toolset) => (
-                              <button
-                                key={toolset.id}
-                                type="button"
-                                className="omni-settings-dialog__preset-card"
-                                onClick={() => {
-                                  saveProjectPatch(
-                                    { allowedToolIds: toolset.toolIds },
-                                    "工具集模板已应用",
-                                  );
-                                }}
-                              >
-                                <div className="omni-settings-dialog__toggle-copy">
-                                  <strong>{toolset.title}</strong>
-                                  <span>{toolset.description}</span>
-                                </div>
-                                <span className="omni-settings-dialog__preset-card-meta">
-                                  {toolset.toolIds.length} 项工具
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    <div className="omni-settings-dialog__section">
-                      <div className="omni-settings-dialog__section-title">
-                        记忆策略
-                      </div>
-                      <div className="omni-settings-dialog__toggle-list">
-                        <label className="omni-settings-dialog__toggle-row">
-                          <div className="omni-settings-dialog__toggle-copy">
-                            <strong>记忆范围</strong>
-                            <span>
-                              控制这个项目能否读取历史记忆，以及召回的边界。
-                            </span>
-                          </div>
-                          <OmniSelect
-                            value={activeProject.memoryScope}
-                            onChange={(value) =>
-                              saveProjectPatch(
-                                {
-                                  memoryScope: value as ProjectMemoryScope,
-                                },
-                                "记忆范围已更新",
-                              )
-                            }
-                            ariaLabel="项目记忆范围"
-                            className="omni-select--memory"
-                            options={[
-                              { value: "off", label: "关闭记忆" },
-                              { value: "session", label: "仅当前话题" },
-                              { value: "project", label: "当前项目全局" },
-                            ]}
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="omni-settings-dialog__section">
-                      <div className="omni-settings-dialog__section-title">
-                        记忆库
-                      </div>
-                      <div className="omni-settings-dialog__project-copy">
-                        <div className="omni-settings-dialog__setting-hint">
-                          当前项目已沉淀 {projectMemories.length}{" "}
-                          条长期记忆。记忆范围：{activeMemoryScopeLabel}
-                          ，自动沉淀记忆与摘要已内置开启。
-                        </div>
-                      </div>
-                      <div className="omni-settings-dialog__memory-add">
-                        <input
-                          value={newMemoryDraft}
-                          onChange={(event) =>
-                            setNewMemoryDraft(event.target.value)
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              addManualMemory();
-                            }
-                          }}
-                          placeholder="手动添加一条长期记忆，例如：以后回答都用中文"
-                        />
-                        <button
-                          type="button"
-                          onClick={addManualMemory}
-                          disabled={!newMemoryDraft.trim()}
-                        >
-                          添加记忆
-                        </button>
-                      </div>
-                      <div className="omni-settings-dialog__memory-toolbar">
-                        <div className="omni-settings-dialog__memory-search">
-                          <Search size={14} strokeWidth={1.8} />
-                          <input
-                            value={memorySearchQuery}
-                            onChange={(event) =>
-                              setMemorySearchQuery(event.target.value)
-                            }
-                            placeholder="搜索记忆、来源会话或来源类型"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          className="omni-settings-dialog__memory-clear"
-                          onClick={() => setMemoryClearConfirmOpen(true)}
-                          disabled={projectMemories.length === 0}
-                        >
-                          清空记忆
-                        </button>
-                      </div>
-                      {projectMemories.length > 0 ? (
-                        <div className="omni-settings-dialog__memory-list">
-                          {visibleProjectMemories.map((memory) => (
-                            <div
-                              key={memory.id}
-                              className="omni-settings-dialog__memory-item"
-                            >
-                              {editingMemoryId === memory.id ? (
-                                <div className="omni-settings-dialog__memory-editor">
-                                  <textarea
-                                    value={editingMemoryDraft}
-                                    onChange={(event) =>
-                                      setEditingMemoryDraft(event.target.value)
-                                    }
-                                    rows={3}
-                                  />
-                                  <div className="omni-settings-dialog__memory-actions">
-                                    <button
-                                      type="button"
-                                      onClick={cancelEditMemory}
-                                    >
-                                      取消
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="omni-settings-dialog__memory-save"
-                                      onClick={saveEditingMemory}
-                                    >
-                                      保存
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="omni-settings-dialog__memory-copy">
-                                    <strong>{memory.content}</strong>
-                                    <div className="omni-settings-dialog__memory-meta">
-                                      <span className="omni-settings-dialog__memory-source-type">
-                                        {getMemorySourceTypeLabel(
-                                          memory.sourceType,
-                                        )}
-                                      </span>
-                                      <span>
-                                        {memory.sourceSessionId
-                                          ? `来源会话：${topicTitleById.get(memory.sourceSessionId) ?? "来源会话已删除或不可用"}`
-                                          : "未记录来源会话"}
-                                      </span>
-                                      <span>
-                                        {new Date(
-                                          memory.updatedAt,
-                                        ).toLocaleString("zh-CN")}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div className="omni-settings-dialog__memory-actions">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openMemorySourceSession(
-                                          memory.sourceSessionId,
-                                        )
-                                      }
-                                      disabled={
-                                        !memory.sourceSessionId ||
-                                        !topicTitleById.has(
-                                          memory.sourceSessionId,
-                                        )
-                                      }
-                                    >
-                                      来源
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => startEditMemory(memory)}
-                                    >
-                                      编辑
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="omni-settings-dialog__memory-delete"
-                                      onClick={() => {
-                                        const deleted = onDeleteProjectMemory(
-                                          memory.id,
-                                        );
-                                        showProjectNotice(
-                                          deleted
-                                            ? "记忆已删除"
-                                            : "记忆删除失败",
-                                          deleted ? "success" : "error",
-                                        );
-                                      }}
-                                    >
-                                      删除
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          ))}
-                          {filteredProjectMemories.length === 0 && (
-                            <div className="omni-settings-dialog__memory-empty">
-                              没有匹配的记忆
-                            </div>
-                          )}
-                          {filteredProjectMemories.length > 12 && (
-                            <button
-                              type="button"
-                              className="omni-settings-dialog__memory-more"
-                              onClick={() =>
-                                setShowAllMemories((current) => !current)
-                              }
-                            >
-                              {showAllMemories
-                                ? "收起部分记忆"
-                                : `显示全部 ${filteredProjectMemories.length} 条记忆`}
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="omni-settings-dialog__memory-empty">
-                          暂无已沉淀记忆
-                        </div>
-                      )}
-                      {memoryClearConfirmOpen && (
-                        <div className="chat-topic-panel__menu-confirm omni-settings-dialog__memory-confirm">
-                          <div className="chat-topic-panel__menu-confirm-title">
-                            清空当前项目记忆
-                          </div>
-                          <div className="chat-topic-panel__menu-confirm-message">
-                            将删除当前项目的 {projectMemories.length}{" "}
-                            条长期记忆。此操作不会删除会话记录。
-                          </div>
-                          <div className="chat-topic-panel__menu-confirm-actions">
-                            <button
-                              type="button"
-                              className="chat-topic-panel__menu-button"
-                              onClick={() => setMemoryClearConfirmOpen(false)}
-                            >
-                              取消
-                            </button>
-                            <button
-                              type="button"
-                              className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
-                              onClick={clearCurrentProjectMemories}
-                            >
-                              确认清空
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {isCustomProjectSettingsMode && (
-                      <>
-                        <div className="omni-settings-dialog__section">
-                          <div className="omni-settings-dialog__section-title">
-                            工具权限
-                            <span className="omni-settings-dialog__section-subtitle">
-                              来自扩展中心已启用的工具
-                            </span>
-                          </div>
-                          <div className="omni-settings-dialog__toggle-list">
-                            {pluginRegistry
-                              .listEnabledTools()
-                              .filter(
-                                (tool) => !pluginRegistry.isBuiltin(tool.id),
-                              )
-                              .filter((tool) =>
-                                PROJECT_TOOL_OPTIONS.some(
-                                  (option) => option.id === tool.id,
-                                ),
-                              )
-                              .map((tool) => {
-                                const checked =
-                                  activeProject.allowedToolIds.includes(
-                                    tool.id,
-                                  );
-                                return (
-                                  <label
-                                    key={tool.id}
-                                    className="omni-settings-dialog__toggle-row"
-                                  >
-                                    <div className="omni-settings-dialog__toggle-copy">
-                                      <strong>{tool.name}</strong>
-                                      <span>{tool.description}</span>
-                                    </div>
-                                    <OmniSwitch
-                                      checked={checked}
-                                      onChange={(nextChecked) => {
-                                        const nextAllowedToolIds = nextChecked
-                                          ? [
-                                              ...activeProject.allowedToolIds,
-                                              tool.id,
-                                            ]
-                                          : activeProject.allowedToolIds.filter(
-                                              (item) => item !== tool.id,
-                                            );
-                                        saveProjectPatch(
-                                          {
-                                            allowedToolIds: nextAllowedToolIds,
-                                          },
-                                          "工具权限已更新",
-                                        );
-                                      }}
-                                      ariaLabel={tool.name}
-                                    />
-                                  </label>
-                                );
-                              })}
-                            {pluginRegistry
-                              .listEnabledTools()
-                              .filter(
-                                (tool) => !pluginRegistry.isBuiltin(tool.id),
-                              )
-                              .filter((tool) =>
-                                PROJECT_TOOL_OPTIONS.some(
-                                  (option) => option.id === tool.id,
-                                ),
-                              ).length === 0 ? (
-                              <p className="omni-settings-dialog__empty-hint">
-                                暂无可选工具：内置工具对所有模型默认可用，无需在此开启。
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        <div className="omni-settings-dialog__section">
-                          <div className="omni-settings-dialog__section-title">
-                            技能权限
-                            <span className="omni-settings-dialog__section-subtitle">
-                              来自扩展中心已启用的技能
-                            </span>
-                          </div>
-                          <div className="omni-settings-dialog__toggle-list">
-                            {pluginRegistry.listEnabledSkills().map((skill) => {
-                              const checked =
-                                activeProject.allowedSkillIds.includes(
-                                  skill.id,
-                                );
-                              return (
-                                <label
-                                  key={skill.id}
-                                  className="omni-settings-dialog__toggle-row"
-                                >
-                                  <div className="omni-settings-dialog__toggle-copy">
-                                    <strong>{skill.name}</strong>
-                                    <span>
-                                      {skill.description} ·{" "}
-                                      {skill.command ?? `/${skill.id}`}
-                                    </span>
-                                  </div>
-                                  <OmniSwitch
-                                    checked={checked}
-                                    onChange={(nextChecked) => {
-                                      const nextAllowedSkillIds = nextChecked
-                                        ? [
-                                            ...activeProject.allowedSkillIds,
-                                            skill.id,
-                                          ]
-                                        : activeProject.allowedSkillIds.filter(
-                                            (item) => item !== skill.id,
-                                          );
-                                      saveProjectPatch(
-                                        {
-                                          allowedSkillIds: nextAllowedSkillIds,
-                                        },
-                                        "技能权限已更新",
-                                      );
-                                    }}
-                                    ariaLabel={skill.name}
-                                  />
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  {isCustomProjectSettingsMode && (
-                    <input
-                      ref={projectAvatarInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="chat-history-panel__avatar-file"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          const result = reader.result;
-                          if (typeof result === "string") {
-                            saveProjectPatch(
-                              { avatarType: "image", avatarValue: result },
-                              "自定义头像已更新",
-                            );
-                            setProjectAvatarPanelOpen(false);
-                          }
-                        };
-                        reader.readAsDataURL(file);
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                  )}
-                </div>
-              ) : (
                 <>
                   <div
                     ref={messagesScrollRef}
@@ -3188,23 +2231,19 @@ export default function MainChatView({
                     />
                   </div>
                 </>
-              )}
             </main>
           </section>
 
-          {!isProjectSettingsMode && (
-            <div
-              className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="调整工作台宽度"
-              onPointerDown={handleLayoutDragPointerDown}
-            />
-          )}
+          <div
+            className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整工作台宽度"
+            onPointerDown={handleLayoutDragPointerDown}
+          />
 
-          {!isProjectSettingsMode && (
-            <aside className="chat-topic-panel">
-              <div className="chat-topic-panel__body">
+          <aside className="chat-topic-panel">
+            <div className="chat-topic-panel__body">
                 <div className="chat-topic-panel__toolbar">
                   <div className="chat-topic-panel__title">
                     {(() => {
@@ -3470,7 +2509,6 @@ export default function MainChatView({
                 )}
               </div>
             </aside>
-          )}
         </div>
       </section>
 
