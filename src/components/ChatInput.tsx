@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   BookOpen,
   Bot,
   CirclePlus,
-  FileUp,
   Paperclip,
   Send,
   Square,
@@ -21,6 +21,72 @@ import AttachmentChip from "./AttachmentChip";
 function baseNameOf(path: string): string {
   const segments = path.split(/[\\/]/);
   return segments[segments.length - 1] || path;
+}
+
+/** 从路径取扩展名（不含点，小写） */
+function getExtension(path: string): string {
+  const lastDot = path.lastIndexOf(".");
+  return lastDot >= 0 ? path.slice(lastDot + 1).toLowerCase() : "";
+}
+
+const IMAGE_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "bmp",
+  "svg",
+  "ico",
+  "tif",
+  "tiff",
+  "avif",
+]);
+
+/** 判断路径是否为常见图片文件 */
+function isImageFile(path: string): boolean {
+  return IMAGE_EXTENSIONS.has(getExtension(path));
+}
+
+/** 根据扩展名推断图片 MIME 类型 */
+function mimeTypeForImage(ext: string): string {
+  switch (ext) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "bmp":
+      return "image/bmp";
+    case "svg":
+      return "image/svg+xml";
+    case "ico":
+      return "image/x-icon";
+    case "tif":
+    case "tiff":
+      return "image/tiff";
+    case "avif":
+      return "image/avif";
+    default:
+      return "image/png";
+  }
+}
+
+/** 通过 Rust 读取本地图片字节并转为 base64 Data URL（供模型 vision 使用） */
+async function readLocalImageAsDataURL(path: string): Promise<string> {
+  const buffer = await invoke<ArrayBuffer>("read_file_bytes", { path, projectPath: null });
+  const mimeType = mimeTypeForImage(getExtension(path));
+  const blob = new Blob([buffer], { type: mimeType });
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve(event.target?.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
+    reader.readAsDataURL(blob);
+  });
 }
 
 interface ChatInputProps {
@@ -117,7 +183,6 @@ export default function ChatInput({
   const [dismissedMentionInput, setDismissedMentionInput] = useState("");
   const [caretIndex, setCaretIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const knowledgeSuggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const lastDraftScopeRef = useRef<string | undefined>(undefined);
@@ -355,17 +420,41 @@ export default function ChatInput({
 
   const handleAddFiles = async () => {
     try {
-      const selected = await open({ multiple: true, title: "选择要附带的本地文件" });
+      const selected = await open({ multiple: true, title: "选择要上传的图片或文件" });
       if (!selected) {
         return;
       }
+
       const paths = Array.isArray(selected) ? selected : [selected];
-      const next = paths
-        .map((path) => ({ path, name: baseNameOf(path), size: null as number | null }))
-        .filter((candidate) => !attachments.some((existing) => existing.path === candidate.path));
-      if (next.length > 0) {
-        setAttachments((prev) => [...prev, ...next]);
+      const imageEntries = await Promise.all(
+        paths
+          .filter((path) => isImageFile(path))
+          .map(async (path) => {
+            try {
+              const src = await readLocalImageAsDataURL(path);
+              return { src, name: baseNameOf(path) };
+            } catch (error) {
+              console.error("读取图片失败", path, error);
+              return null;
+            }
+          })
+      );
+      const validImages = imageEntries.filter((entry): entry is { src: string; name: string } => entry !== null);
+
+      const nextAttachments: ChatAttachment[] = paths
+        .filter((path) => !isImageFile(path))
+        .map((path) => ({ path, name: baseNameOf(path), size: null as number | null }));
+
+      if (validImages.length > 0) {
+        setImages((prev) => [...prev, ...validImages.map((entry) => entry.src)]);
+        setImageNames((prev) => [...prev, ...validImages.map((entry) => entry.name)]);
       }
+
+      setAttachments((prev) => {
+        const existingPaths = new Set(prev.map((attachment) => attachment.path));
+        const unique = nextAttachments.filter((attachment) => !existingPaths.has(attachment.path));
+        return unique.length > 0 ? [...prev, ...unique] : prev;
+      });
     } catch (error) {
       console.error("选择本地文件失败", error);
     }
@@ -546,14 +635,6 @@ export default function ChatInput({
     }
   };
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    if (files.length > 0) {
-      await appendImageFiles(files);
-    }
-    event.target.value = "";
-  };
-
   return (
     <div className={`chat-composer${fixedHeight ? " chat-composer--fixed-height" : ""}`}>
       {hasComposerStatus && (
@@ -597,17 +678,6 @@ export default function ChatInput({
       )}
 
       <div className="chat-composer__panel">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(event) => {
-            void handleFileSelect(event);
-          }}
-        />
-
         <div className="chat-composer__toolbar">
           <PermissionModeSelector />
 
@@ -615,18 +685,10 @@ export default function ChatInput({
             <button
               type="button"
               className="chat-composer__tool-button"
-              title="上传图片"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Paperclip size={16} strokeWidth={1.8} />
-            </button>
-            <button
-              type="button"
-              className="chat-composer__tool-button"
-              title="添加文件（文档 / 表格 / 代码等，随消息让模型读取）"
+              title="上传图片或文件（随消息让模型读取）"
               onClick={() => void handleAddFiles()}
             >
-              <FileUp size={16} strokeWidth={1.8} />
+              <Paperclip size={16} strokeWidth={1.8} />
             </button>
           </div>
 
