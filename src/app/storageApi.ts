@@ -47,9 +47,9 @@ export async function openDataDir(): Promise<void> {
   await invoke("open_data_dir");
 }
 
-export async function openFolder(path: string): Promise<void> {
+export async function openPath(path: string): Promise<void> {
   if (!canUseTauriInvoke()) return;
-  await invoke("open_folder", { path });
+  await invoke("open_path", { path });
 }
 
 export async function exportDataBackup(targetPath: string, secret?: string | null): Promise<BackupManifest> {

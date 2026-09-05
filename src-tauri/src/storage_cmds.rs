@@ -203,7 +203,7 @@ pub(crate) fn open_data_dir(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub(crate) fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+pub(crate) fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     app.opener()
         .open_path(path.clone(), None::<&str>)
