@@ -1050,6 +1050,21 @@
   white-space: nowrap;
 }
 
+.chat-history-panel__space-title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--omni-accent);
+  border-radius: 6px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}
+
 .chat-history-panel__space-spacer {
   flex: 1 0 auto;
   min-width: 4px;

@@ -600,6 +600,8 @@ export default function MainChatView({
   const [openProjectCardMenuId, setOpenProjectCardMenuId] = useState<
     string | null
   >(null);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingProjectTitle, setEditingProjectTitle] = useState("");
   const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const projectCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>(
@@ -1776,9 +1778,46 @@ export default function MainChatView({
                                   {renderProjectAvatar(project)}
                                 </span>
                               )}
-                              <span className="chat-history-panel__space-title">
-                                {project.title}
-                              </span>
+                              {editingProjectId === project.id ? (
+                                <input
+                                  type="text"
+                                  className="chat-history-panel__space-title-input"
+                                  value={editingProjectTitle}
+                                  onChange={(event) =>
+                                    setEditingProjectTitle(event.target.value)
+                                  }
+                                  onClick={(event) => event.stopPropagation()}
+                                  onBlur={() => {
+                                    const trimmed = editingProjectTitle.trim();
+                                    if (trimmed && trimmed !== project.title) {
+                                      onUpdateProject(project.id, {
+                                        title: trimmed,
+                                      });
+                                    }
+                                    setEditingProjectId(null);
+                                    setEditingProjectTitle("");
+                                  }}
+                                  onKeyDown={(event) => {
+                                    event.stopPropagation();
+                                    if (event.key === "Enter") {
+                                      event.currentTarget.blur();
+                                    } else if (event.key === "Escape") {
+                                      setEditingProjectId(null);
+                                      setEditingProjectTitle("");
+                                    }
+                                  }}
+                                  ref={(el) => {
+                                    if (el) {
+                                      el.focus();
+                                      el.select();
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <span className="chat-history-panel__space-title">
+                                  {project.title}
+                                </span>
+                              )}
                               <span
                                 className="chat-history-panel__space-chevron"
                                 onClick={(event) => {
@@ -1884,8 +1923,15 @@ export default function MainChatView({
                                           onClick={(event) => {
                                             event.stopPropagation();
                                             setOpenProjectCardMenuId(null);
-                                            onSelectProject(project.id);
-                                            setProjectSettingsId(project.id);
+                                            setExpandedSpaces((current) => {
+                                              const next = new Set(current);
+                                              next.add(project.id);
+                                              return next;
+                                            });
+                                            setEditingProjectId(project.id);
+                                            setEditingProjectTitle(
+                                              project.title,
+                                            );
                                           }}
                                         >
                                           <Pencil size={13} strokeWidth={1.9} />
