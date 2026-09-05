@@ -1638,6 +1638,11 @@
   background: var(--omni-soft-bg);
 }
 
+.chat-history-panel__project-dropdown button:active {
+  background: color-mix(in srgb, var(--omni-app-text) 10%, var(--omni-soft-bg));
+  transform: scale(0.98);
+}
+
 .chat-history-panel__project-dropdown-main {
   display: inline-flex;
   align-items: center;
@@ -1661,6 +1666,11 @@
 
 .chat-history-panel__project-dropdown-danger:hover {
   background: rgba(254, 242, 242, 0.7) !important;
+}
+
+.chat-history-panel__project-dropdown-danger:active {
+  background: rgba(254, 226, 226, 0.95) !important;
+  transform: scale(0.98);
 }
 
 .chat-history-panel__project-dropdown-confirm {
