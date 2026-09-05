@@ -1804,6 +1804,9 @@ export default function MainChatView({
                               />
                               <span
                                 className="chat-history-panel__project-menu"
+                                ref={(el) => {
+                                  projectCardMenuRefs.current[project.id] = el;
+                                }}
                                 onClick={(event) => event.stopPropagation()}
                                 onKeyDown={(event) => event.stopPropagation()}
                               >
