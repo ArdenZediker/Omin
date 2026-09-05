@@ -94,8 +94,6 @@ export function createDefaultProject(): Project {
     title: "Omni",
     description: "默认桌面助手，负责快速问答与工作台协助。",
     workspacePath: "",
-    avatarType: "emoji",
-    avatarValue: "emoji:1F4AC",
     defaultModelId: null,
     knowledgeCollectionId: null,
     systemPrompt: `## 角色定位
@@ -160,8 +158,8 @@ export function createCustomProject(input?: ProjectDraft): Project {
     description: input?.description?.trim() || "可配置角色设定、模型和工具权限",
     workspacePath: input?.workspacePath?.trim() || "",
     groupName: typeof input?.groupName === "string" && input.groupName.trim() ? input.groupName.trim() : null,
-    avatarType: input?.avatarType ?? "emoji",
-    avatarValue: input?.avatarValue ?? "emoji:1F916",
+    avatarType: input?.avatarType === "image" ? "image" : undefined,
+    avatarValue: input?.avatarType === "image" ? input.avatarValue ?? undefined : undefined,
     systemPrompt: input?.systemPrompt ?? "",
     defaultModelId: input?.defaultModelId ?? null,
     knowledgeCollectionId: input?.knowledgeCollectionId?.trim() || null,
@@ -299,13 +297,11 @@ function normalizeProject(input: Partial<Project> & Pick<Project, "id" | "title"
         : typeof input.groupName === "string" && input.groupName.trim()
         ? input.groupName.trim()
         : null,
-    avatarType: input.avatarType === "image" ? "image" : "emoji",
+    avatarType: input.avatarType === "image" ? "image" : undefined,
     avatarValue:
-      input.kind === "basic"
-        ? defaultProject.avatarValue
-        : typeof input.avatarValue === "string" && input.avatarValue.trim()
+      input.avatarType === "image" && typeof input.avatarValue === "string" && input.avatarValue.trim()
         ? input.avatarValue
-        : "emoji:1F916",
+        : undefined,
     systemPrompt:
       input.kind === "basic"
         ? defaultProject.systemPrompt

@@ -54,7 +54,7 @@ import {
   openWorkspaceFileInArtifacts,
 } from "../chat/artifacts";
 import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
-import { resolveProjectAvatarSeed } from "../config/manifests/avatarHelpers";
+
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, PROJECT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
 import { pluginRegistry } from "../plugins/registry";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
@@ -542,7 +542,6 @@ export default function MainChatView({
       ).sort((a, b) => a.localeCompare(b, "zh-CN")),
     [projectGroups, customProjects]
   );
-  const activeProjectAvatarSeed = resolveProjectAvatarSeed(projects, activeProject?.id ?? null);
   const handleLayoutDragPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -1306,7 +1305,7 @@ export default function MainChatView({
                     return (
                       <div key={project.id} className={`chat-history-panel__space ${isActiveSpace ? "chat-history-panel__space--active" : ""}`}>
                         <div role="button" tabIndex={0} className="chat-history-panel__space-head" onClick={() => { onSelectProject(project.id); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectProject(project.id); setExpandedSpaces((current) => { const next = new Set(current); next.add(project.id); return next; }); } }}>
-                          <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">{renderProjectAvatar(project, 0)}</span>
+                          <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">{renderProjectAvatar(project)}</span>
                           <span className="chat-history-panel__space-title">{project.title}</span>
                           <span className="chat-history-panel__project-menu" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                             <button type="button" className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`} title="更多操作" aria-label="更多操作" onClick={(event) => { event.stopPropagation(); setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id)); }}>
@@ -1488,7 +1487,7 @@ export default function MainChatView({
                 {!showPluginMarketplace && (
                   <>
                     <div className="main-chat-toolbar__project-mark">
-                      {renderProjectAvatar(activeProject, activeProjectAvatarSeed)}
+                      {renderProjectAvatar(activeProject)}
                     </div>
                     <div className="main-chat-toolbar__project-copy main-chat-toolbar__project-copy--single-line">
                       <strong>{isProjectSettingsMode ? "项目设置" : currentTopicTitle}</strong>
@@ -1591,7 +1590,7 @@ export default function MainChatView({
                             title="选择头像"
                           >
                             <span className="omni-settings-dialog__avatar-hero-preview">
-                              {renderProjectAvatar(activeProject, activeProjectAvatarSeed)}
+                              {renderProjectAvatar(activeProject)}
                             </span>
                             <span className="omni-settings-dialog__avatar-hero-copy">
                               <strong>点击更换头像</strong>
