@@ -1335,7 +1335,7 @@ export default function MainChatView({
                       <div
                         role="button"
                         tabIndex={0}
-                        className={`chat-history-panel__session chat-history-panel__session--main ${activeProjectId === basicProject.id ? "chat-history-panel__session--active" : ""}`}
+                        className={`chat-history-panel__session ${activeProjectId === basicProject.id ? "chat-history-panel__session--active" : ""}`}
                         onClick={() => {
                           onSelectProject(basicProject.id);
                         }}
@@ -1348,15 +1348,15 @@ export default function MainChatView({
                       >
                         <span
                           className="chat-history-panel__session-avatar"
-                          style={{
-                            backgroundColor: "#e0f2fe",
-                            color: "#0ea5e9",
-                          }}
+                          style={getSessionAvatarStyle(basicProject.id)}
                         >
-                          <Bot size={14} strokeWidth={1.9} />
+                          <SessionAvatarIcon size={12} />
                         </span>
                         <span className="chat-history-panel__session-title">
                           {basicProject.title}
+                        </span>
+                        <span className="chat-history-panel__session-time">
+                          {formatSessionTime(basicProject.updatedAt)}
                         </span>
                       </div>
                     )}
