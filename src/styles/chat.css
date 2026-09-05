@@ -2236,6 +2236,21 @@
   user-select: none;
 }
 
+.attachment-chip--clickable {
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.attachment-chip--clickable:hover {
+  background: color-mix(in srgb, var(--omni-primary, #4f46e5) 10%, var(--omni-panel-bg));
+  border-color: color-mix(in srgb, var(--omni-primary, #4f46e5) 40%, var(--omni-panel-border));
+}
+
+.attachment-chip--clickable:focus-visible {
+  outline: 2px solid var(--omni-primary, #4f46e5);
+  outline-offset: 1px;
+}
+
 .attachment-chip__icon {
   flex: 0 0 auto;
   color: var(--omni-app-muted);

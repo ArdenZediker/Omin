@@ -12,6 +12,8 @@ export interface AttachmentChipProps {
   onRemove?: () => void;
   /** 字节数；文件类附件展示体积，未知可省略 */
   size?: number | null;
+  /** 点击整个 chip 时的回调（例如在历史消息中点击附件，在产物面板打开） */
+  onClick?: () => void;
 }
 
 const KIND_ICON: Record<AttachmentKind, typeof File> = {
@@ -49,7 +51,15 @@ function resolveImageUrl(src: string): string {
   return `data:image/png;base64,${src}`;
 }
 
-export default function AttachmentChip({ src, name, index = 0, removable = false, onRemove, size }: AttachmentChipProps) {
+export default function AttachmentChip({
+  src,
+  name,
+  index = 0,
+  removable = false,
+  onRemove,
+  size,
+  onClick,
+}: AttachmentChipProps) {
   const chipRef = useRef<HTMLSpanElement>(null);
   const [hovered, setHovered] = useState(false);
   const [previewStyle, setPreviewStyle] = useState<React.CSSProperties>({});
@@ -60,6 +70,7 @@ export default function AttachmentChip({ src, name, index = 0, removable = false
   const kind: AttachmentKind = canPreview ? "image" : attachmentKindOf(name ?? fileName);
   const Icon = KIND_ICON[kind];
   const sizeLabel = formatFileSize(size);
+  const clickable = Boolean(onClick);
 
   useLayoutEffect(() => {
     if (!hovered || !chipRef.current) {
@@ -76,11 +87,23 @@ export default function AttachmentChip({ src, name, index = 0, removable = false
     });
   }, [hovered]);
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLSpanElement>) => {
+    if (!clickable) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onClick?.();
+    }
+  };
+
   return (
     <span
       ref={chipRef}
-      className="attachment-chip"
-      title={sizeLabel ? `${fileName} · ${sizeLabel}` : fileName}
+      className={`attachment-chip ${clickable ? "attachment-chip--clickable" : ""}`}
+      title={sizeLabel ? `点击在产物栏打开 · ${fileName} · ${sizeLabel}` : `点击在产物栏打开 · ${fileName}`}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
       onMouseEnter={() => canPreview && setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >

@@ -417,6 +417,18 @@ export default function MainChatView({
     [activeProject, activeChatId],
   );
 
+  // 点击消息中的文件附件：登记/复用「文件」产物并在右侧产物面板打开。
+  const handleOpenAttachment = useCallback(
+    (path: string) => {
+      openWorkspaceFileInArtifacts({
+        path,
+        projectId: activeProject?.id ?? NO_PROJECT_ARTIFACT_KEY,
+        sessionId: activeChatId,
+      });
+    },
+    [activeProject, activeChatId],
+  );
+
   // 一级 kind 切换时把 source 重置到该 kind 的默认视图（与 Marketplace 内部
   // 受控分支的「不再自动同步 kind→source」配对，保证切回 skill 仍先看到 SkillHub）。
   useEffect(() => {
@@ -2427,6 +2439,7 @@ export default function MainChatView({
                       onSaveAsMarkdown={handleSaveAsMarkdown}
                       onOpenChangesPanel={() => setSidePanelTab("changes")}
                       onOpenFileLocation={handleOpenFileLocation}
+                      onOpenAttachment={handleOpenAttachment}
                     />
                   );
                 })}

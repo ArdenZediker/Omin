@@ -31,6 +31,8 @@ interface ChatMessageProps {
   onOpenChangesPanel?: () => void;
   /** 点击 /search_files 命中行：在右侧产物面板打开该文件并定位行号 */
   onOpenFileLocation?: (path: string, line: number) => void;
+  /** 点击消息中的文件附件：在右侧产物面板打开该文件 */
+  onOpenAttachment?: (path: string) => void;
 }
 
 /** 「查看所有变更」弹层中一条文件产出/修改记录 */
@@ -59,6 +61,7 @@ export default function ChatMessage({
   onSaveAsMarkdown,
   onOpenChangesPanel,
   onOpenFileLocation,
+  onOpenAttachment,
 }: ChatMessageProps) {
   // 工具结果消息已合并到对应 assistant 的 toolCallResults，不单独渲染
   if (message.role === "tool") return null;
@@ -188,6 +191,11 @@ export default function ChatMessage({
                   name={attachment.name}
                   index={attachmentIndex}
                   size={attachment.size}
+                  onClick={
+                    onOpenAttachment && !attachment.path.startsWith("data:")
+                      ? () => onOpenAttachment(attachment.path)
+                      : undefined
+                  }
                 />
               ))}
             </div>
