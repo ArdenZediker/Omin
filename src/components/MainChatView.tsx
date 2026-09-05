@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 import type { Message, ChatAttachment } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
-import { formatUsageLabel } from "../chat/storage";
+import { formatUsageLabel, DEFAULT_PROJECT_ID } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ProjectDraft, ProjectMemoryRecord, ProjectMemorySourceType, Project, ChatSendOptions, ChatSession } from "../chat/types";
 import type { ProjectMemoryScope } from "../chat/types";
@@ -1286,6 +1286,15 @@ export default function MainChatView({
               <div className="chat-history-panel__project-group-header">
                 <div className="chat-history-panel__project-group-label">{DEFAULT_PROJECT_GROUP_LABEL}</div>
                 <div className="chat-history-panel__section-actions">
+                  <button
+                    type="button"
+                    className="chat-history-panel__section-action"
+                    onClick={() => void handleCreateProject()}
+                    title="新建项目"
+                    aria-label="新建项目"
+                  >
+                    <Plus size={14} strokeWidth={1.9} />
+                  </button>
                   <div ref={projectMenuRef} className="chat-history-panel__section-menu">
                     <button
                       type="button"
@@ -1459,22 +1468,26 @@ export default function MainChatView({
                                     </span>
                                     <ChevronRight size={13} strokeWidth={1.9} />
                                   </button>
-                                  <div className="chat-history-panel__project-dropdown-divider" />
-                                  <button
-                                    type="button"
-                                    className="chat-history-panel__project-dropdown-danger"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      setProjectDeleteConfirm({
-                                        projectId: project.id,
-                                        title: "删除项目",
-                                        message: `确认删除“${project.title}”吗？相关话题和记忆会一并删除。`,
-                                      });
-                                    }}
-                                  >
-                                    <Trash2 size={13} strokeWidth={1.9} />
-                                    <span>删除项目</span>
-                                  </button>
+                                  {project.id !== DEFAULT_PROJECT_ID && (
+                                    <>
+                                      <div className="chat-history-panel__project-dropdown-divider" />
+                                      <button
+                                        type="button"
+                                        className="chat-history-panel__project-dropdown-danger"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setProjectDeleteConfirm({
+                                            projectId: project.id,
+                                            title: "删除项目",
+                                            message: `确认删除“${project.title}”吗？相关话题和记忆会一并删除。`,
+                                          });
+                                        }}
+                                      >
+                                        <Trash2 size={13} strokeWidth={1.9} />
+                                        <span>删除项目</span>
+                                      </button>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -1604,22 +1617,26 @@ export default function MainChatView({
                                     </span>
                                     <ChevronRight size={13} strokeWidth={1.9} />
                                   </button>
-                                  <div className="chat-history-panel__project-dropdown-divider" />
-                                  <button
-                                    type="button"
-                                    className="chat-history-panel__project-dropdown-danger"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      setProjectDeleteConfirm({
-                                        projectId: project.id,
-                                        title: "删除项目",
-                                        message: `确认删除“${project.title}”吗？相关话题和记忆会一并删除。`,
-                                      });
-                                    }}
-                                  >
-                                    <Trash2 size={13} strokeWidth={1.9} />
-                                    <span>删除项目</span>
-                                  </button>
+                                  {project.id !== DEFAULT_PROJECT_ID && (
+                                    <>
+                                      <div className="chat-history-panel__project-dropdown-divider" />
+                                      <button
+                                        type="button"
+                                        className="chat-history-panel__project-dropdown-danger"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setProjectDeleteConfirm({
+                                            projectId: project.id,
+                                            title: "删除项目",
+                                            message: `确认删除“${project.title}”吗？相关话题和记忆会一并删除。`,
+                                          });
+                                        }}
+                                      >
+                                        <Trash2 size={13} strokeWidth={1.9} />
+                                        <span>删除项目</span>
+                                      </button>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </div>
