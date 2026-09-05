@@ -1251,7 +1251,7 @@ export default function MainChatView({
                   <div
                     role="button"
                     tabIndex={0}
-                    className={`chat-history-panel__project chat-history-panel__project--in-task ${activeProjectId === basicProject.id ? "chat-history-panel__project--active" : ""}`}
+                    className={`chat-history-panel__session chat-history-panel__session--main ${activeProjectId === basicProject.id ? "chat-history-panel__session--active" : ""}`}
                     onClick={() => {
                       setProjectSettingsId(null);
                       setProjectAvatarPanelOpen(false);
@@ -1266,25 +1266,8 @@ export default function MainChatView({
                       }
                     }}
                   >
-                    <span className="chat-history-panel__project-icon">{renderProjectAvatar(basicProject)}</span>
-                    <span className="chat-history-panel__project-copy">
-                      <strong>{basicProject.title}</strong>
-                    </span>
-                    <span className="chat-history-panel__project-menu" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="chat-history-panel__project-action"
-                        title="记忆管理"
-                        aria-label="打开 Omni 记忆管理"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onSelectProject(basicProject.id);
-                          setProjectSettingsId(basicProject.id);
-                        }}
-                      >
-                        <Settings size={13} strokeWidth={1.9} />
-                      </button>
-                    </span>
+                    <Bot size={16} strokeWidth={1.9} className="chat-history-panel__session-main-icon" />
+                    <span className="chat-history-panel__session-title">{basicProject.title}</span>
                   </div>
                 )}
                 {standaloneSessions.length === 0 ? (
