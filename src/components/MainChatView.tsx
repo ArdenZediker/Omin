@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open as openUrl } from "@tauri-apps/plugin-shell";
+import { openPath } from "@tauri-apps/plugin-opener";
 import type {
   CSSProperties,
   Dispatch,
@@ -1685,7 +1685,9 @@ export default function MainChatView({
                                             event.stopPropagation();
                                             setOpenProjectCardMenuId(null);
                                             if (project.workspacePath) {
-                                              void openUrl(project.workspacePath);
+                                              void openPath(
+                                                project.workspacePath,
+                                              );
                                             }
                                           }}
                                         >
