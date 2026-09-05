@@ -126,3 +126,23 @@ export function renderProjectAvatar(project: Project | null) {
     />
   );
 }
+
+export function getSessionAvatarStyle(
+  id: string
+): { backgroundColor: string; color: string } {
+  const colors = [
+    { bg: "#fde68a", fg: "#92400e" },
+    { bg: "#e9d5ff", fg: "#6b21a8" },
+    { bg: "#fecdd3", fg: "#9f1239" },
+    { bg: "#bae6fd", fg: "#075985" },
+    { bg: "#bbf7d0", fg: "#166534" },
+    { bg: "#fed7aa", fg: "#9a3412" },
+  ];
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % colors.length;
+  const { bg, fg } = colors[index];
+  return { backgroundColor: bg, color: fg };
+}

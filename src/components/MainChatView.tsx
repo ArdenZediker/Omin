@@ -88,6 +88,7 @@ import {
   clampPanelWidth,
   formatMemoryScopeLabel,
   getMemorySourceTypeLabel,
+  getSessionAvatarStyle,
   normalizeSearchText,
   readStoredPanelWidth,
   renderProjectAvatar,
@@ -1275,6 +1276,9 @@ export default function MainChatView({
                 ) : (
                   standaloneSessions.map((session) => (
                     <div key={session.id} role="button" tabIndex={0} className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`} onClick={() => onSelectChat(session.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectChat(session.id); } }}>
+                      <span className="chat-history-panel__session-avatar" style={getSessionAvatarStyle(session.id)}>
+                        <MessageSquare size={12} strokeWidth={2.2} />
+                      </span>
                       <span className="chat-history-panel__session-title">{session.title || "未命名会话"}</span>
                       <span className="chat-history-panel__session-time">{formatSessionTime(session.updatedAt)}</span>
                       <button type="button" className="chat-history-panel__session-delete" title="删除任务" aria-label="删除任务" onClick={(event) => { event.stopPropagation(); onDeleteChat(session); }}>
@@ -1389,6 +1393,9 @@ export default function MainChatView({
                             ) : (
                               projectSessions.map((session) => (
                                 <div key={session.id} role="button" tabIndex={0} className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`} onClick={() => onSelectChat(session.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectChat(session.id); } }}>
+                                  <span className="chat-history-panel__session-avatar" style={getSessionAvatarStyle(session.id)}>
+                                    <MessageSquare size={12} strokeWidth={2.2} />
+                                  </span>
                                   <span className="chat-history-panel__session-title">{session.title || "未命名会话"}</span>
                                   <span className="chat-history-panel__session-time">{formatSessionTime(session.updatedAt)}</span>
                                   <button type="button" className="chat-history-panel__session-delete" title="删除会话" aria-label="删除会话" onClick={(event) => { event.stopPropagation(); onDeleteChat(session); }}>

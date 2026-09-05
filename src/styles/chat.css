@@ -952,6 +952,16 @@
   box-shadow: inset 2px 0 0 0 var(--omni-accent);
 }
 
+.chat-history-panel__session-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
 .chat-history-panel__session-title {
   flex: 1 1 auto;
   min-width: 0;
