@@ -6,7 +6,9 @@ import {
   getInitialProjectMemories,
   createChatSession,
   createCustomProject,
+  createMainSession,
   DEFAULT_PROJECT_ID,
+  MAIN_SESSION_ID,
   getChatSessionGroupLabel,
   getChatSessionTitle,
   getInitialProjects,
@@ -171,10 +173,16 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     let cancelled = false;
 
     void loadPersistedChatState()
-      .then(({ projects: nextProjects, sessions: nextSessions, projectMemories: nextMemories, sessionSummaries: nextSummaries, userPreferences: nextPreferences, scheduledTasks: nextScheduledTasks }) => {
+      .then(({ projects: nextProjects, sessions: loadedSessions, projectMemories: nextMemories, sessionSummaries: nextSummaries, userPreferences: nextPreferences, scheduledTasks: nextScheduledTasks }) => {
         if (cancelled) return;
 
         hydratedWithDataRef.current = true;
+
+        // 确保主会话（Omni）专属会话存在：旧数据可能没有它，补建并置顶。
+        let nextSessions = loadedSessions;
+        if (!nextSessions.some((session) => session.id === MAIN_SESSION_ID)) {
+          nextSessions = [createMainSession(), ...nextSessions];
+        }
 
         const nextActiveProjectId =
           nextProjects.find((project) => project.id === activeProjectId)?.id ?? nextProjects[0]?.id ?? DEFAULT_PROJECT_ID;
@@ -556,6 +564,7 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const deleteChatSession = useCallback(
     async (sessionId: string): Promise<void> => {
+      if (sessionId === MAIN_SESSION_ID) return; // 主会话（Omni）不可删除
       clearSessionMirrorSchedule(sessionId);
       const session = chatSessions.find((item) => item.id === sessionId);
       // 破坏性操作：删除后无回收站，必须用户过目确认（与 git 工具共用同一道确认门）。

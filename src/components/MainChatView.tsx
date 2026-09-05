@@ -40,7 +40,7 @@ import {
 } from "lucide-react";
 import type { Message, ChatAttachment } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
-import { formatUsageLabel, DEFAULT_PROJECT_ID } from "../chat/storage";
+import { formatUsageLabel, DEFAULT_PROJECT_ID, MAIN_SESSION_ID } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type {
   ProjectDraft,
@@ -723,7 +723,11 @@ export default function MainChatView({
   const standaloneSessions = useMemo(
     () =>
       [...chatSessions]
-        .filter((session) => session.projectId === DEFAULT_PROJECT_ID)
+        .filter(
+          (session) =>
+            session.projectId === DEFAULT_PROJECT_ID &&
+            session.id !== MAIN_SESSION_ID,
+        )
         .sort(
           (a, b) =>
             Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
@@ -1335,14 +1339,14 @@ export default function MainChatView({
                       <div
                         role="button"
                         tabIndex={0}
-                        className={`chat-history-panel__session chat-history-panel__session--main ${activeProjectId === basicProject.id ? "chat-history-panel__session--active" : ""}`}
+                        className={`chat-history-panel__session chat-history-panel__session--main ${activeChatId === MAIN_SESSION_ID ? "chat-history-panel__session--active" : ""}`}
                         onClick={() => {
-                          onSelectProject(basicProject.id);
+                          onSelectChat(MAIN_SESSION_ID);
                         }}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            onSelectProject(basicProject.id);
+                            onSelectChat(MAIN_SESSION_ID);
                           }
                         }}
                       >
