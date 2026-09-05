@@ -131,41 +131,69 @@ export default function ChatMessage({
     <div data-message-index={index} className={`animate-fade-in flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {isUser && isEditing ? (
         <div className="message-edit-box">
-          <textarea
-            ref={textareaRef}
-            value={editValue}
-            onChange={(event) => {
-              setEditValue(event.target.value);
-              event.currentTarget.style.height = "auto";
-              event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 220)}px`;
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onCancelEdit?.();
-              }
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (editValue.trim()) {
-                  onSubmitEdit?.(index, editValue.trim());
+          {(message.images && message.images.length > 0) || (message.attachments && message.attachments.length > 0) ? (
+            <div className="message-edit-box__attachments">
+              {message.images?.map((img, imageIndex) => (
+                <AttachmentChip
+                  key={`edit-${img.slice(0, 24)}-${imageIndex}`}
+                  src={img}
+                  name={`image_${imageIndex + 1}.png`}
+                  index={imageIndex}
+                />
+              ))}
+              {message.attachments?.map((attachment, attachmentIndex) => (
+                <AttachmentChip
+                  key={`edit-${attachment.path}-${attachmentIndex}`}
+                  src={attachment.path}
+                  name={attachment.name}
+                  index={attachmentIndex}
+                  size={attachment.size}
+                  onClick={
+                    !attachment.path.startsWith("data:")
+                      ? () => onOpenAttachment?.(attachment.path)
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          ) : null}
+          <div className="message-edit-box__body">
+            <textarea
+              ref={textareaRef}
+              value={editValue}
+              onChange={(event) => {
+                setEditValue(event.target.value);
+                event.currentTarget.style.height = "auto";
+                event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 220)}px`;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  onCancelEdit?.();
                 }
-              }
-            }}
-            className="message-edit-box__textarea"
-            rows={1}
-          />
-          <div className="message-edit-box__actions">
-            <button type="button" className="message-edit-box__button" onClick={onCancelEdit}>
-              取消
-            </button>
-            <button
-              type="button"
-              className="message-edit-box__button message-edit-box__button--primary"
-              disabled={!editValue.trim()}
-              onClick={() => onSubmitEdit?.(index, editValue.trim())}
-            >
-              发送
-            </button>
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (editValue.trim()) {
+                    onSubmitEdit?.(index, editValue.trim());
+                  }
+                }
+              }}
+              className="message-edit-box__textarea"
+              rows={1}
+            />
+            <div className="message-edit-box__actions">
+              <button type="button" className="message-edit-box__button" onClick={onCancelEdit}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="message-edit-box__button message-edit-box__button--primary"
+                disabled={!editValue.trim()}
+                onClick={() => onSubmitEdit?.(index, editValue.trim())}
+              >
+                发送
+              </button>
+            </div>
           </div>
         </div>
       ) : isUser ? (
