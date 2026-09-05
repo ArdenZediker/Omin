@@ -43,7 +43,7 @@ describe("ArtifactsPanel 产物面板", () => {
   });
 
   it("无产物时概览显示空状态", () => {
-    render(<ArtifactsPanel projectId="p1" onJumpToSession={vi.fn()} />);
+    render(<ArtifactsPanel projectId="p1" sessionId="s1" onJumpToSession={vi.fn()} />);
 
     expect(screen.getByRole("tab", { name: /概览/ })).toHaveClass("artifacts-panel__tab--active");
     expect(screen.getByText("暂无产物")).toBeTruthy();
@@ -53,7 +53,7 @@ describe("ArtifactsPanel 产物面板", () => {
     appendArtifact({ type: "docx", title: "周报.docx", size: 2048, projectId: "p1", sessionId: "s1" });
     appendArtifact({ type: "code", title: "main.tsx", size: 1024, projectId: "p1", sessionId: "s1" });
 
-    render(<ArtifactsPanel projectId="p1" onJumpToSession={vi.fn()} />);
+    render(<ArtifactsPanel projectId="p1" sessionId="s1" onJumpToSession={vi.fn()} />);
 
     // 统计卡片：总览
     const totalStat = screen.getByText("全部产物").closest(".artifacts-panel__overview-stat");
@@ -69,7 +69,7 @@ describe("ArtifactsPanel 产物面板", () => {
   it("点击产物打开为文件标签", () => {
     const artifact = appendArtifact({ type: "text", title: "笔记.md", content: "# Hello", projectId: "p1", sessionId: "s1" });
 
-    render(<ArtifactsPanel projectId="p1" onJumpToSession={vi.fn()} />);
+    render(<ArtifactsPanel projectId="p1" sessionId="s1" onJumpToSession={vi.fn()} />);
 
     fireEvent.click(screen.getByText("笔记.md"));
 
@@ -87,7 +87,7 @@ describe("ArtifactsPanel 产物面板", () => {
     appendArtifact({ type: "text", title: "A.md", content: "A", projectId: "p1", sessionId: "s1" });
     appendArtifact({ type: "text", title: "B.md", content: "B", projectId: "p1", sessionId: "s1" });
 
-    render(<ArtifactsPanel projectId="p1" onJumpToSession={vi.fn()} />);
+    render(<ArtifactsPanel projectId="p1" sessionId="s1" onJumpToSession={vi.fn()} />);
 
     fireEvent.click(screen.getByText("A.md"));
     fireEvent.click(screen.getByRole("tab", { name: /概览/ }));
@@ -117,7 +117,7 @@ describe("ArtifactsPanel 产物面板", () => {
   it("持久化：全部关闭后 reopen 默认展示概览", () => {
     appendArtifact({ type: "text", title: "C.md", content: "C", projectId: "p1", sessionId: "s1" });
 
-    const { unmount } = render(<ArtifactsPanel projectId="p1" onJumpToSession={vi.fn()} />);
+    const { unmount } = render(<ArtifactsPanel projectId="p1" sessionId="s1" onJumpToSession={vi.fn()} />);
     fireEvent.click(screen.getByText("C.md"));
     expect(screen.getByRole("tab", { name: /C\.md/ })).toBeTruthy();
 
@@ -127,7 +127,7 @@ describe("ArtifactsPanel 产物面板", () => {
     unmount();
 
     // 模拟重新挂载（边栏重新展开）
-    render(<ArtifactsPanel projectId="p1" onJumpToSession={vi.fn()} />);
+    render(<ArtifactsPanel projectId="p1" sessionId="s1" onJumpToSession={vi.fn()} />);
     expect(screen.getByRole("tab", { name: /概览/ })).toHaveClass("artifacts-panel__tab--active");
     expect(screen.queryByRole("tab", { name: /C\.md/ })).toBeNull();
   });
@@ -136,7 +136,7 @@ describe("ArtifactsPanel 产物面板", () => {
     const a = appendArtifact({ type: "text", title: "A.md", content: "A", projectId: "p1", sessionId: "s1" });
     const b = appendArtifact({ type: "text", title: "B.md", content: "B", projectId: "p1", sessionId: "s1" });
 
-    render(<ArtifactsPanel projectId="p1" onJumpToSession={vi.fn()} />);
+    render(<ArtifactsPanel projectId="p1" sessionId="s1" onJumpToSession={vi.fn()} />);
     fireEvent.click(screen.getByText("A.md"));
     fireEvent.click(screen.getByRole("tab", { name: /概览/ }));
     fireEvent.click(screen.getByText("B.md"));

@@ -11,18 +11,15 @@ import type { Artifact, ArtifactPanelState, ArtifactType } from "../chat/artifac
 import {
   ARTIFACTS_CHANGED_EVENT,
   ARTIFACT_TYPE_LABEL,
-  artifactsForProject,
-  clearProjectArtifacts,
+  artifactsForSession,
+  clearSessionArtifacts,
   consumePendingOpenArtifactId,
   consumePendingOpenArtifactLine,
   loadArtifactPanelState,
-  loadArtifacts,
-  NO_PROJECT_ARTIFACT_KEY,
   notifyArtifactsChanged,
   OPEN_ARTIFACT_EVENT,
   removeArtifact,
   saveArtifactPanelState,
-  saveArtifacts,
 } from "../chat/artifacts";
 import { ArtifactTypeIcon } from "./artifacts/ArtifactIcon";
 import { checkArtifactPath, openArtifactPath, openArtifactUrl, revealArtifactPath } from "./ArtifactCards";
@@ -54,8 +51,8 @@ function extOf(path: string): string {
 
 interface ArtifactsPanelProps {
   projectId: string | null;
-  /** 未绑定项目时的会话（对话）隔离键：仅展示该会话自己的产物，避免与其他无项目会话混在一起 */
-  sessionId?: string | null;
+  /** 当前会话 id：产物严格按 projectId + sessionId 双重维度隔离 */
+  sessionId: string | null;
   /** 关闭按钮回调：传入则渲染关闭按钮（如用作独立抽屉），不传则隐藏（嵌入其他面板时） */
   onClose?: () => void;
   onJumpToSession: (sessionId: string) => void;
@@ -94,17 +91,8 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
   const { activeTabId, openArtifactIds } = panelState;
 
   const refresh = useCallback(() => {
-    if (projectId) {
-      // 绑定项目：聚合该项目下全部会话的产物（项目级交付物）
-      setArtifacts(artifactsForProject(projectId));
-    } else if (sessionId) {
-      // 未绑定项目但存在会话：仅展示「本会话」自己的产物
-      setArtifacts(
-        loadArtifacts().filter((a) => a.projectId === NO_PROJECT_ARTIFACT_KEY && a.sessionId === sessionId)
-      );
-    } else {
-      setArtifacts([]);
-    }
+    // 产物按「项目 + 会话」严格隔离：当前会话只显示本会话的产物
+    setArtifacts(artifactsForSession(projectId, sessionId));
   }, [projectId, sessionId]);
 
   useEffect(() => {
@@ -150,12 +138,7 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
 
   const openArtifactById = useCallback(
     (artifactId: string) => {
-      const allArtifacts = projectId
-        ? artifactsForProject(projectId)
-        : loadArtifacts().filter(
-            (a) => a.projectId === NO_PROJECT_ARTIFACT_KEY && (sessionId ? a.sessionId === sessionId : true),
-          );
-      const target = allArtifacts.find((a) => a.id === artifactId);
+      const target = artifactsForSession(projectId, sessionId).find((a) => a.id === artifactId);
       if (target) openArtifactTab(target);
     },
     [projectId, sessionId, openArtifactTab],
@@ -266,21 +249,11 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
     setArtifacts((prev) => prev.filter((a) => a.id !== artifact.id));
   };
 
-  /** 清空当前项目/会话的全部产物 */
+  /** 清空当前会话的全部产物 */
   const handleClearAll = () => {
-    if (!artifacts.length) return;
-    const scopeLabel = projectId ? "当前项目" : "本会话";
-    if (!window.confirm(`确定清空${scopeLabel}的全部 ${artifacts.length} 项产物吗？删除后不可恢复。`)) return;
-    if (projectId) {
-      clearProjectArtifacts(projectId);
-    } else if (sessionId) {
-      // 未绑定项目：仅删除「本会话」的 NO_PROJECT_ARTIFACT_KEY 产物，不动其它会话
-      saveArtifacts(
-        loadArtifacts().filter((a) => !(a.projectId === NO_PROJECT_ARTIFACT_KEY && a.sessionId === sessionId))
-      );
-    } else {
-      return;
-    }
+    if (!artifacts.length || !sessionId) return;
+    if (!window.confirm(`确定清空当前会话的全部 ${artifacts.length} 项产物吗？删除后不可恢复。`)) return;
+    clearSessionArtifacts(projectId, sessionId);
     notifyArtifactsChanged();
     setArtifacts([]);
   };

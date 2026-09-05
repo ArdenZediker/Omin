@@ -118,12 +118,41 @@ export function artifactsForProject(projectId: string): Artifact[] {
   return loadArtifacts().filter((a) => a.projectId === projectId);
 }
 
+/**
+ * 按「项目 + 会话」双重维度过滤产物。
+ * 项目为空时回退到 NO_PROJECT_ARTIFACT_KEY；sessionId 为空时返回空数组（避免全量泄露）。
+ */
+export function artifactsForSession(
+  projectId: string | null | undefined,
+  sessionId: string | null | undefined
+): Artifact[] {
+  if (!sessionId) return [];
+  const effectiveProjectId = projectId || NO_PROJECT_ARTIFACT_KEY;
+  return loadArtifacts().filter(
+    (a) => a.projectId === effectiveProjectId && a.sessionId === sessionId
+  );
+}
+
 export function removeArtifact(id: string): void {
   saveArtifacts(loadArtifacts().filter((a) => a.id !== id));
 }
 
 export function clearProjectArtifacts(projectId: string): void {
   saveArtifacts(loadArtifacts().filter((a) => a.projectId !== projectId));
+}
+
+/** 清空指定项目/会话下的全部产物 */
+export function clearSessionArtifacts(
+  projectId: string | null | undefined,
+  sessionId: string | null | undefined
+): void {
+  if (!sessionId) return;
+  const effectiveProjectId = projectId || NO_PROJECT_ARTIFACT_KEY;
+  saveArtifacts(
+    loadArtifacts().filter(
+      (a) => !(a.projectId === effectiveProjectId && a.sessionId === sessionId)
+    )
+  );
 }
 
 /** 产物变更事件：工具执行落库后派发，聚合抽屉监听刷新 */

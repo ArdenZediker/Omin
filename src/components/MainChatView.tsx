@@ -54,8 +54,8 @@ import ArtifactsPanel from "./ArtifactsPanel";
 import ChangesPanel from "./ChangesPanel";
 import {
   ARTIFACTS_CHANGED_EVENT,
-  artifactsForProject,
   appendArtifact,
+  artifactsForSession,
   notifyArtifactsChanged,
   NO_PROJECT_ARTIFACT_KEY,
   OPEN_ARTIFACT_EVENT,
@@ -368,9 +368,9 @@ export default function MainChatView({
   const composerSplitterStartYRef = useRef(0);
   const composerSplitterStartHeightRef = useRef(0);
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>(() => {
-    // 有产物的项目打开后默认展示产物面板，否则展示历史提问
-    if (activeProject) {
-      const initialCount = artifactsForProject(activeProject.id).length;
+    // 当前会话有产物时默认展示产物面板，否则展示历史提问
+    if (activeChatId) {
+      const initialCount = artifactsForSession(activeProject?.id ?? null, activeChatId).length;
       return initialCount > 0 ? "artifacts" : "history";
     }
     return "history";
@@ -410,21 +410,21 @@ export default function MainChatView({
   // 初始加载只同步数量与默认 tab，不主动切换；仅运行时「事件触发且数量增加」才切到产物 tab，
   // 避免打开应用时历史产物把视图抢走。
   useEffect(() => {
-    if (!activeProject) return;
+    if (!activeChatId) return;
     const onArtifactsChanged = () => {
-      const count = artifactsForProject(activeProject.id).length;
+      const count = artifactsForSession(activeProject?.id ?? null, activeChatId).length;
       setArtifactCount(count);
       if (count > prevArtifactCountRef.current && count > 0) {
         setSidePanelTab("artifacts");
       }
       prevArtifactCountRef.current = count;
     };
-    prevArtifactCountRef.current = artifactsForProject(activeProject.id).length;
+    prevArtifactCountRef.current = artifactsForSession(activeProject?.id ?? null, activeChatId).length;
     setArtifactCount(prevArtifactCountRef.current);
     window.addEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
     return () =>
       window.removeEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
-  }, [activeProject]);
+  }, [activeProject, activeChatId]);
 
   // 点击消息中的产物卡片时：展开右侧边栏并切换到产物 tab，让产物在面板中打开。
   // ArtifactsPanel 自己监听同事件；这里同时保证面板可见。
@@ -2369,7 +2369,7 @@ export default function MainChatView({
                 {sidePanelTab === "artifacts" ? (
                   <ArtifactsPanel
                     projectId={activeProject?.id ?? null}
-                    sessionId={activeProject ? null : activeChatId}
+                    sessionId={activeChatId}
                     onJumpToSession={onSelectChat}
                   />
                 ) : null}
