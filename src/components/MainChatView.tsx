@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { CSSProperties, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import { open as openUrl } from "@tauri-apps/plugin-shell";
+import type {
+  CSSProperties,
+  Dispatch,
+  ReactNode,
+  RefObject,
+  SetStateAction,
+} from "react";
 import { useLayoutEffect } from "react";
 import {
   ArrowDown,
@@ -19,6 +26,7 @@ import {
   MoreHorizontal,
   Package,
   PanelRightClose,
+  Pencil,
   PanelRightOpen,
   PanelLeftClose,
   PanelLeftOpen,
@@ -38,7 +46,14 @@ import type { Message, ChatAttachment } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel, DEFAULT_PROJECT_ID } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
-import type { ProjectDraft, ProjectMemoryRecord, ProjectMemorySourceType, Project, ChatSendOptions, ChatSession } from "../chat/types";
+import type {
+  ProjectDraft,
+  ProjectMemoryRecord,
+  ProjectMemorySourceType,
+  Project,
+  ChatSendOptions,
+  ChatSession,
+} from "../chat/types";
 import type { ProjectMemoryScope } from "../chat/types";
 import type { TaskExecutionResult } from "../chat/taskTypes";
 import type { TaskRuntimeState } from "../chat/taskTypes";
@@ -55,15 +70,21 @@ import {
 } from "../chat/artifacts";
 import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 
-import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, PROJECT_TOOL_OPTIONS, TOOLSET_MANIFESTS } from "../config/manifests/tools";
+import {
+  ALWAYS_ALLOWED_LOCAL_TOOL_IDS,
+  PROJECT_TOOL_OPTIONS,
+  TOOLSET_MANIFESTS,
+} from "../config/manifests/tools";
 import { pluginRegistry } from "../plugins/registry";
-import { readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import {
+  readSqliteBackedValue,
+  saveSqliteBackedValue,
+} from "../app/sqliteStorage";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import { ExecutionTimeline } from "./ExecutionTimeline";
 import CreateProjectDialog from "./CreateProjectDialog";
 import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
-import ProjectMoveGroupMenu from "./chat/ProjectMoveGroupMenu";
 import ModelSelector from "./ModelSelector";
 import OmniSelect from "./ui/OmniSelect";
 import OmniSwitch from "./ui/OmniSwitch";
@@ -128,29 +149,32 @@ function MarketplaceSourceTabs({
   source: MarketplaceSource;
   onSourceChange: (next: MarketplaceSource) => void;
 }) {
-  const items: { value: MarketplaceSource; label: string; Icon: typeof Package }[] =
-    useMemo(() => {
-      if (kind === "skill") {
-        return [
-          { value: "local", label: "我的技能", Icon: LayoutTemplate },
-          { value: "skillhub", label: "SkillHub 实时", Icon: Bot },
-          { value: "suites", label: "专家团", Icon: Package },
-        ];
-      }
-      if (kind === "connector") {
-        return [
-          { value: "local", label: "本地连接器", Icon: Settings },
-          { value: "connectors", label: "远程接入", Icon: Cable },
-        ];
-      }
-      if (kind === "expert") {
-        return [
-          { value: "my", label: "我的专家", Icon: Bot },
-          { value: "local", label: "本地内置", Icon: LayoutTemplate },
-        ];
-      }
-      return [];
-    }, [kind]);
+  const items: {
+    value: MarketplaceSource;
+    label: string;
+    Icon: typeof Package;
+  }[] = useMemo(() => {
+    if (kind === "skill") {
+      return [
+        { value: "local", label: "我的技能", Icon: LayoutTemplate },
+        { value: "skillhub", label: "SkillHub 实时", Icon: Bot },
+        { value: "suites", label: "专家团", Icon: Package },
+      ];
+    }
+    if (kind === "connector") {
+      return [
+        { value: "local", label: "本地连接器", Icon: Settings },
+        { value: "connectors", label: "远程接入", Icon: Cable },
+      ];
+    }
+    if (kind === "expert") {
+      return [
+        { value: "my", label: "我的专家", Icon: Bot },
+        { value: "local", label: "本地内置", Icon: LayoutTemplate },
+      ];
+    }
+    return [];
+  }, [kind]);
   if (items.length === 0) return null;
   return (
     <div
@@ -204,7 +228,11 @@ type MainChatViewProps = {
   isStreaming: boolean;
   relatedContext: {
     summaries: Array<{ sessionId: string; title: string; summary: string }>;
-    memories: Array<{ id: string; content: string; sourceSessionId?: string | null }>;
+    memories: Array<{
+      id: string;
+      content: string;
+      sourceSessionId?: string | null;
+    }>;
   };
   projectMemories: ProjectMemoryRecord[];
   latestTaskResult: TaskExecutionResult | null;
@@ -228,13 +256,22 @@ type MainChatViewProps = {
     allowedSkillIds?: string[];
     workspacePath?: string;
   }) => Project | null;
-  onAddProjectMemory: (projectId: string, content: string, sourceSessionId?: string | null, sourceType?: ProjectMemorySourceType) => boolean;
+  onAddProjectMemory: (
+    projectId: string,
+    content: string,
+    sourceSessionId?: string | null,
+    sourceType?: ProjectMemorySourceType,
+  ) => boolean;
   onClearProjectMemories: (projectId: string) => number;
   onDeleteProject: (projectId: string) => boolean | Promise<boolean>;
   onDeleteProjectMemory: (memoryId: string) => boolean;
   onUpdateProjectMemory: (memoryId: string, content: string) => boolean;
   onDeleteChat: (session: ChatSession) => void;
-  onDraftChange: (text: string, images: string[], attachments: ChatAttachment[]) => void;
+  onDraftChange: (
+    text: string,
+    images: string[],
+    attachments: ChatAttachment[],
+  ) => void;
   onEditUserMessage: (messageIndex: number) => void;
   onModelChange: (modelId: string) => void;
   onNewChat: () => void;
@@ -243,13 +280,25 @@ type MainChatViewProps = {
   onRenameChat: (session: ChatSession) => void;
   onSelectProject: (projectId: string) => void;
   onSelectChat: (sessionId: string) => void;
-  onUpdateProject: (projectId: string, patch: Partial<Project>) => Project | null;
-  onSend: (content: string, images?: string[], options?: ChatSendOptions) => void | Promise<void>;
-  onSetOpenChatMenu: Dispatch<SetStateAction<{ id: string; x: number; y: number } | null>>;
+  onUpdateProject: (
+    projectId: string,
+    patch: Partial<Project>,
+  ) => Project | null;
+  onSend: (
+    content: string,
+    images?: string[],
+    options?: ChatSendOptions,
+  ) => void | Promise<void>;
+  onSetOpenChatMenu: Dispatch<
+    SetStateAction<{ id: string; x: number; y: number } | null>
+  >;
   onSettingsOpen: () => void;
   onShareChat: (session: ChatSession) => void | Promise<void>;
   onStop: () => void;
-  onSubmitEditedUserMessage: (messageIndex: number, content: string) => void | Promise<void>;
+  onSubmitEditedUserMessage: (
+    messageIndex: number,
+    content: string,
+  ) => void | Promise<void>;
   onToggleFavoriteChat: (session: ChatSession) => void;
   onTogglePinChat: (session: ChatSession) => void;
   onUseEmptyPrompt: (prompt: string) => void;
@@ -322,14 +371,26 @@ export default function MainChatView({
   onMarketplaceChange,
   onJumpToChat,
 }: MainChatViewProps) {
-  const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
-  const [composerElement, setComposerElement] = useState<HTMLDivElement | null>(null);
-  const [isTopicPanelAutoCollapsed, setIsTopicPanelAutoCollapsed] = useState(false);
-  const [topicPanelManualVisible, setTopicPanelManualVisible] = useState<boolean | null>(null);
-  const [isProjectPanelAutoCollapsed, setIsProjectPanelAutoCollapsed] = useState(false);
-  const [projectPanelManualVisible, setProjectPanelManualVisible] = useState<boolean | null>(null);
+  const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(
+    null,
+  );
+  const [composerElement, setComposerElement] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [isTopicPanelAutoCollapsed, setIsTopicPanelAutoCollapsed] =
+    useState(false);
+  const [topicPanelManualVisible, setTopicPanelManualVisible] = useState<
+    boolean | null
+  >(null);
+  const [isProjectPanelAutoCollapsed, setIsProjectPanelAutoCollapsed] =
+    useState(false);
+  const [projectPanelManualVisible, setProjectPanelManualVisible] = useState<
+    boolean | null
+  >(null);
   const [composerHeight, setComposerHeight] = useState(0);
-  const [composerResizeHeight, setComposerResizeHeight] = useState<number | null>(null);
+  const [composerResizeHeight, setComposerResizeHeight] = useState<
+    number | null
+  >(null);
   const composerSplitterDraggingRef = useRef(false);
   const composerSplitterStartYRef = useRef(0);
   const composerSplitterStartHeightRef = useRef(0);
@@ -341,10 +402,15 @@ export default function MainChatView({
     }
     return "history";
   });
-  const [showPluginMarketplace, setShowPluginMarketplace] = useState(openMarketplace ?? false);
+  const [showPluginMarketplace, setShowPluginMarketplace] = useState(
+    openMarketplace ?? false,
+  );
   const [artifactCount, setArtifactCount] = useState(0);
   const prevArtifactCountRef = useRef(0);
-  const [marketplaceFilter, setMarketplaceFilter] = useState<{ kind: PluginKind; category: string }>({ kind: "skill", category: "全部" });
+  const [marketplaceFilter, setMarketplaceFilter] = useState<{
+    kind: PluginKind;
+    category: string;
+  }>({ kind: "skill", category: "全部" });
   // Marketplace 二级数据源（local/skillhub/suites/connectors/my）。由本层
   // main-chat-toolbar 顶部的「我的技能 / SkillHub 实时 / 套件…」tabs 控制，
   // 受控传给 <PluginMarketplace>，与 Marketplace 内部 useEffect 联动互斥以避免
@@ -383,7 +449,8 @@ export default function MainChatView({
     prevArtifactCountRef.current = artifactsForProject(activeProject.id).length;
     setArtifactCount(prevArtifactCountRef.current);
     window.addEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
-    return () => window.removeEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
+    return () =>
+      window.removeEventListener(ARTIFACTS_CHANGED_EVENT, onArtifactsChanged);
   }, [activeProject]);
 
   // 点击消息中的产物卡片时：展开右侧边栏并切换到产物 tab，让产物在面板中打开。
@@ -396,15 +463,22 @@ export default function MainChatView({
       setSidePanelTab("artifacts");
     };
     window.addEventListener(OPEN_ARTIFACT_EVENT, onOpenArtifact);
-    return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, onOpenArtifact);
+    return () =>
+      window.removeEventListener(OPEN_ARTIFACT_EVENT, onOpenArtifact);
   }, []);
 
   // 点击 /search_files 命中行：相对路径落工作区根解析为绝对路径，
   // 登记/复用「文件」产物并在右侧产物面板打开、滚动定位到行号。
   const handleOpenFileLocation = useCallback(
     (rawPath: string, line: number) => {
-      const isAbsolute = /^[a-zA-Z]:[\\/]/.test(rawPath) || rawPath.startsWith("/") || rawPath.startsWith("\\\\");
-      const workspace = (activeProject?.workspacePath ?? "").replace(/[\\/]+$/, "");
+      const isAbsolute =
+        /^[a-zA-Z]:[\\/]/.test(rawPath) ||
+        rawPath.startsWith("/") ||
+        rawPath.startsWith("\\\\");
+      const workspace = (activeProject?.workspacePath ?? "").replace(
+        /[\\/]+$/,
+        "",
+      );
       const absolute = isAbsolute
         ? rawPath
         : workspace
@@ -457,7 +531,8 @@ export default function MainChatView({
     onMarketplaceChange?.(false);
     onJumpToChat?.("/expert-manager ");
   }, [onMarketplaceChange, onJumpToChat]);
-  const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<ProjectDeleteConfirmState>(null);
+  const [projectDeleteConfirm, setProjectDeleteConfirm] =
+    useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [taskSectionCollapsed, setTaskSectionCollapsed] = useState(false);
@@ -467,10 +542,13 @@ export default function MainChatView({
   const [projectGroupManagerOpen, setProjectGroupManagerOpen] = useState(false);
   const [projectGroupCreateMode, setProjectGroupCreateMode] = useState(false);
   const [projectGroupDraft, setProjectGroupDraft] = useState("");
-  const [projectMoveGroupMenuId, setProjectMoveGroupMenuId] = useState<string | null>(null);
-  const [projectMoveGroupMenuPosition, setProjectMoveGroupMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [topicPanelWidth, setTopicPanelWidth] = useState(() =>
-    readStoredPanelWidth(MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY, DEFAULT_TOPIC_PANEL_WIDTH, MIN_TOPIC_PANEL_WIDTH, MAX_TOPIC_PANEL_WIDTH)
+    readStoredPanelWidth(
+      MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY,
+      DEFAULT_TOPIC_PANEL_WIDTH,
+      MIN_TOPIC_PANEL_WIDTH,
+      MAX_TOPIC_PANEL_WIDTH,
+    ),
   );
   const [projectGroups, setProjectGroups] = useState<string[]>(() => {
     const saved = readProjectGroupsStorageValue();
@@ -478,14 +556,23 @@ export default function MainChatView({
     try {
       const parsed = JSON.parse(saved);
       return Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
+        ? parsed
+            .filter(
+              (item): item is string =>
+                typeof item === "string" && item.trim().length > 0,
+            )
+            .map((item) => item.trim())
         : [];
     } catch {
       return [];
     }
   });
-  const [projectSettingsId, setProjectSettingsId] = useState<string | null>(null);
-  const [editingProjectGroupName, setEditingProjectGroupName] = useState<string | null>(null);
+  const [projectSettingsId, setProjectSettingsId] = useState<string | null>(
+    null,
+  );
+  const [editingProjectGroupName, setEditingProjectGroupName] = useState<
+    string | null
+  >(null);
   const [editingProjectGroupDraft, setEditingProjectGroupDraft] = useState("");
   const [projectAvatarPanelOpen, setProjectAvatarPanelOpen] = useState(false);
   const [projectNotice, setProjectNotice] = useState<ProjectNoticeState>(null);
@@ -496,7 +583,9 @@ export default function MainChatView({
       return;
     }
     try {
-      const md = await invoke<string>("read_project_agents_md", { projectPath: activeProject.workspacePath });
+      const md = await invoke<string>("read_project_agents_md", {
+        projectPath: activeProject.workspacePath,
+      });
       setProjectAgentsMd(md ?? "");
     } catch {
       setProjectAgentsMd("");
@@ -508,11 +597,14 @@ export default function MainChatView({
   const [memoryClearConfirmOpen, setMemoryClearConfirmOpen] = useState(false);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState("");
-  const [openProjectCardMenuId, setOpenProjectCardMenuId] = useState<string | null>(null);
+  const [openProjectCardMenuId, setOpenProjectCardMenuId] = useState<
+    string | null
+  >(null);
   const [isTaskTraceExpanded, setIsTaskTraceExpanded] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
-  const projectCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>({});
-  const projectMoveGroupMenuRef = useRef<HTMLDivElement | null>(null);
+  const projectCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>(
+    {},
+  );
   const projectAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const projectAvatarPanelRef = useRef<HTMLDivElement | null>(null);
   const projectAvatarTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -522,17 +614,29 @@ export default function MainChatView({
   } | null>(null);
 
   const recommendedPrompts = emptyChatPrompts.slice(0, 4);
-  const [isEmptyGuideCompact, setIsEmptyGuideCompact] = useState(() => readSqliteBackedValue(EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY) === "1");
+  const [isEmptyGuideCompact, setIsEmptyGuideCompact] = useState(
+    () => readSqliteBackedValue(EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY) === "1",
+  );
   const updateEmptyGuideCompact = useCallback((nextCompact: boolean) => {
     setIsEmptyGuideCompact(nextCompact);
-    saveSqliteBackedValue(EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY, nextCompact ? "1" : "0");
+    saveSqliteBackedValue(
+      EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY,
+      nextCompact ? "1" : "0",
+    );
   }, []);
-  const currentTopicTitle = activeSession?.title || (activeProject?.kind === "basic" ? "Omni" : activeProject?.title) || "Omni";
+  const currentTopicTitle =
+    activeSession?.title ||
+    (activeProject?.kind === "basic" ? "Omni" : activeProject?.title) ||
+    "Omni";
   const defaultTopicPanelVisible = !isTopicPanelAutoCollapsed;
-  const isTopicPanelVisible = topicPanelManualVisible ?? defaultTopicPanelVisible;
+  const isTopicPanelVisible =
+    topicPanelManualVisible ?? defaultTopicPanelVisible;
   const defaultProjectPanelVisible = !isProjectPanelAutoCollapsed;
-  const isProjectPanelVisible = projectPanelManualVisible ?? defaultProjectPanelVisible;
-  const customProjects = projects.filter((project) => project.kind === "custom");
+  const isProjectPanelVisible =
+    projectPanelManualVisible ?? defaultProjectPanelVisible;
+  const customProjects = projects.filter(
+    (project) => project.kind === "custom",
+  );
   const projectGroupNames = useMemo(
     () =>
       Array.from(
@@ -541,19 +645,22 @@ export default function MainChatView({
           ...customProjects
             .map((project) => project.groupName?.trim())
             .filter((groupName): groupName is string => Boolean(groupName)),
-        ])
+        ]),
       ).sort((a, b) => a.localeCompare(b, "zh-CN")),
-    [projectGroups, customProjects]
+    [projectGroups, customProjects],
   );
-  const handleLayoutDragPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    layoutDragRef.current = {
-      startX: event.clientX,
-      startWidth: topicPanelWidth,
-    };
-  }, [topicPanelWidth]);
+  const handleLayoutDragPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      layoutDragRef.current = {
+        startX: event.clientX,
+        startWidth: topicPanelWidth,
+      };
+    },
+    [topicPanelWidth],
+  );
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -565,14 +672,23 @@ export default function MainChatView({
         MIN_TOPIC_PANEL_WIDTH,
         window.innerWidth - MIN_MAIN_CHAT_AREA_WIDTH,
       );
-      setTopicPanelWidth(clampPanelWidth(state.startWidth - delta, MIN_TOPIC_PANEL_WIDTH, effectiveMax));
+      setTopicPanelWidth(
+        clampPanelWidth(
+          state.startWidth - delta,
+          MIN_TOPIC_PANEL_WIDTH,
+          effectiveMax,
+        ),
+      );
     };
 
     const handlePointerUp = () => {
       const state = layoutDragRef.current;
       if (!state) return;
       layoutDragRef.current = null;
-      saveSqliteBackedValue(MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY, String(topicPanelWidth));
+      saveSqliteBackedValue(
+        MAIN_LAYOUT_TOPIC_WIDTH_STORAGE_KEY,
+        String(topicPanelWidth),
+      );
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -585,15 +701,18 @@ export default function MainChatView({
     };
   }, [topicPanelWidth]);
 
-  const handleComposerSplitterPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const rect = composerElement?.getBoundingClientRect();
-    composerSplitterDraggingRef.current = true;
-    composerSplitterStartYRef.current = event.clientY;
-    composerSplitterStartHeightRef.current = rect?.height ?? composerHeight;
-  }, [composerElement, composerHeight]);
+  const handleComposerSplitterPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = composerElement?.getBoundingClientRect();
+      composerSplitterDraggingRef.current = true;
+      composerSplitterStartYRef.current = event.clientY;
+      composerSplitterStartHeightRef.current = rect?.height ?? composerHeight;
+    },
+    [composerElement, composerHeight],
+  );
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -629,27 +748,49 @@ export default function MainChatView({
   }, []);
 
   const allowedComposerToolIds = useMemo(
-    () => [...ALWAYS_ALLOWED_LOCAL_TOOL_IDS, ...(activeProject?.allowedToolIds ?? [])],
-    [activeProject?.allowedToolIds]
+    () => [
+      ...ALWAYS_ALLOWED_LOCAL_TOOL_IDS,
+      ...(activeProject?.allowedToolIds ?? []),
+    ],
+    [activeProject?.allowedToolIds],
   );
   const allowedComposerSkillIds = activeProject?.allowedSkillIds ?? [];
-  const activeMemoryScopeLabel = formatMemoryScopeLabel(activeProject?.memoryScope ?? "project");
-  const showContextRecallBanner = messages.length === 0 && (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
-  const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] = useState(false);
-  const hasVisibleContextRecallBanner = showContextRecallBanner && !isContextRecallBannerDismissed;
-  const useCompactEmptyGuideLayout = isEmptyGuideCompact && !hasVisibleContextRecallBanner;
-  const taskAggregateSummary = latestTaskResult ? buildTaskAggregateSummary(latestTaskResult) : null;
+  const activeMemoryScopeLabel = formatMemoryScopeLabel(
+    activeProject?.memoryScope ?? "project",
+  );
+  const showContextRecallBanner =
+    messages.length === 0 &&
+    (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
+  const [isContextRecallBannerDismissed, setIsContextRecallBannerDismissed] =
+    useState(false);
+  const hasVisibleContextRecallBanner =
+    showContextRecallBanner && !isContextRecallBannerDismissed;
+  const useCompactEmptyGuideLayout =
+    isEmptyGuideCompact && !hasVisibleContextRecallBanner;
+  const taskAggregateSummary = latestTaskResult
+    ? buildTaskAggregateSummary(latestTaskResult)
+    : null;
   const showTaskPanel = sidePanelTab === "tasks";
   const composerContextPresetText = useMemo(() => "", []);
   const normalizedProjectSearchQuery = normalizeSearchText(projectSearchQuery);
   const filteredCustomProjects = customProjects.filter((project) => {
     if (!normalizedProjectSearchQuery) return true;
-    return normalizeSearchText(`${project.title} ${project.description}`).includes(normalizedProjectSearchQuery);
+    return normalizeSearchText(
+      `${project.title} ${project.description}`,
+    ).includes(normalizedProjectSearchQuery);
   });
-  const basicProject = projects.find((project) => project.kind === "basic") ?? null;
+  const basicProject =
+    projects.find((project) => project.kind === "basic") ?? null;
   const standaloneSessions = useMemo(
-    () => [...chatSessions].filter((session) => session.projectId === DEFAULT_PROJECT_ID).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt),
-    [chatSessions]
+    () =>
+      [...chatSessions]
+        .filter((session) => session.projectId === DEFAULT_PROJECT_ID)
+        .sort(
+          (a, b) =>
+            Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+            b.updatedAt - a.updatedAt,
+        ),
+    [chatSessions],
   );
   const sessionsByProject = useMemo(() => {
     const map = new Map<string, ChatSession[]>();
@@ -660,7 +801,11 @@ export default function MainChatView({
       map.set(session.projectId, list);
     }
     for (const list of map.values()) {
-      list.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt);
+      list.sort(
+        (a, b) =>
+          Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+          b.updatedAt - a.updatedAt,
+      );
     }
     return map;
   }, [chatSessions]);
@@ -678,7 +823,9 @@ export default function MainChatView({
     return `${date.getMonth() + 1}/${date.getDate()}`;
   };
   const topicTitleById = useMemo(() => {
-    const entries = groupedChatSessions.flatMap((group) => group.sessions.map((session) => [session.id, session.title] as const));
+    const entries = groupedChatSessions.flatMap((group) =>
+      group.sessions.map((session) => [session.id, session.title] as const),
+    );
     return new Map(entries);
   }, [groupedChatSessions]);
   const normalizedMemorySearchQuery = normalizeSearchText(memorySearchQuery);
@@ -688,38 +835,67 @@ export default function MainChatView({
     }
 
     return projectMemories.filter((memory) => {
-      const sourceTitle = memory.sourceSessionId ? topicTitleById.get(memory.sourceSessionId) ?? "" : "";
-      return normalizeSearchText(`${memory.content} ${sourceTitle} ${getMemorySourceTypeLabel(memory.sourceType)}`).includes(normalizedMemorySearchQuery);
+      const sourceTitle = memory.sourceSessionId
+        ? (topicTitleById.get(memory.sourceSessionId) ?? "")
+        : "";
+      return normalizeSearchText(
+        `${memory.content} ${sourceTitle} ${getMemorySourceTypeLabel(memory.sourceType)}`,
+      ).includes(normalizedMemorySearchQuery);
     });
   }, [projectMemories, normalizedMemorySearchQuery, topicTitleById]);
-  const visibleProjectMemories = showAllMemories ? filteredProjectMemories : filteredProjectMemories.slice(0, 12);
+  const visibleProjectMemories = showAllMemories
+    ? filteredProjectMemories
+    : filteredProjectMemories.slice(0, 12);
   const isProjectSettingsMode = Boolean(projectSettingsId && activeProject);
-  const isCustomProjectSettingsMode = Boolean(isProjectSettingsMode && activeProject?.kind === "custom");
+  const isCustomProjectSettingsMode = Boolean(
+    isProjectSettingsMode && activeProject?.kind === "custom",
+  );
   useEffect(() => {
     if (isProjectSettingsMode) void refreshProjectAgentsMd();
   }, [isProjectSettingsMode, refreshProjectAgentsMd]);
-  const [projectTitleDraft, setProjectTitleDraft] = useState(activeProject?.title ?? "");
-  const [projectDescriptionDraft, setProjectDescriptionDraft] = useState(activeProject?.description ?? "");
-  const [projectPromptDraft, setProjectPromptDraft] = useState(activeProject?.systemPrompt ?? "");
-  const [projectModelDraft, setProjectModelDraft] = useState(activeProject?.defaultModelId ?? "");
-  const [knowledgeCollections, setKnowledgeCollections] = useState<KnowledgeCollection[]>([]);
+  const [projectTitleDraft, setProjectTitleDraft] = useState(
+    activeProject?.title ?? "",
+  );
+  const [projectDescriptionDraft, setProjectDescriptionDraft] = useState(
+    activeProject?.description ?? "",
+  );
+  const [projectPromptDraft, setProjectPromptDraft] = useState(
+    activeProject?.systemPrompt ?? "",
+  );
+  const [projectModelDraft, setProjectModelDraft] = useState(
+    activeProject?.defaultModelId ?? "",
+  );
+  const [knowledgeCollections, setKnowledgeCollections] = useState<
+    KnowledgeCollection[]
+  >([]);
   const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
   const isMessagesAtBottomRef = useRef(true);
   const lastAutoScrolledSessionRef = useRef<string | null>(null);
-  const selectedExecutionModel = availableModels.find((model) => model.id === executionModel) ?? null;
-  const selectedProjectModel = availableModels.find((model) => model.id === projectModelDraft) ?? null;
-  const selectedProjectKnowledgeCollection = knowledgeCollections.find((collection) => collection.id === activeProject?.knowledgeCollectionId) ?? null;
-  const showProjectNotice = useCallback((message: string, tone: "success" | "error" = "success") => {
-    setProjectNotice({ tone, message });
-  }, []);
+  const selectedExecutionModel =
+    availableModels.find((model) => model.id === executionModel) ?? null;
+  const selectedProjectModel =
+    availableModels.find((model) => model.id === projectModelDraft) ?? null;
+  const selectedProjectKnowledgeCollection =
+    knowledgeCollections.find(
+      (collection) => collection.id === activeProject?.knowledgeCollectionId,
+    ) ?? null;
+  const showProjectNotice = useCallback(
+    (message: string, tone: "success" | "error" = "success") => {
+      setProjectNotice({ tone, message });
+    },
+    [],
+  );
   const saveProjectPatch = useCallback(
     (patch: Partial<Project>, message: string) => {
       if (!activeProject) return null;
       const updated = onUpdateProject(activeProject.id, patch);
-      showProjectNotice(updated ? message : "保存失败，请稍后重试", updated ? "success" : "error");
+      showProjectNotice(
+        updated ? message : "保存失败，请稍后重试",
+        updated ? "success" : "error",
+      );
       return updated;
     },
-    [activeProject, onUpdateProject, showProjectNotice]
+    [activeProject, onUpdateProject, showProjectNotice],
   );
   const handleCreateProject = useCallback(() => {
     setCreateProjectDialogOpen(true);
@@ -733,7 +909,7 @@ export default function MainChatView({
         setProjectSettingsId(created.id);
       }
     },
-    [onCreateCustomProject, showProjectNotice]
+    [onCreateCustomProject, showProjectNotice],
   );
   const handleShareActiveSession = useCallback(async () => {
     if (!activeSession) {
@@ -757,7 +933,7 @@ export default function MainChatView({
         showProjectNotice("复制失败，请检查剪贴板权限", "error");
       }
     },
-    [onCopyMessage, showProjectNotice]
+    [onCopyMessage, showProjectNotice],
   );
   const handleSaveAsMarkdown = useCallback(
     async (message: Message) => {
@@ -768,17 +944,31 @@ export default function MainChatView({
       }
       try {
         const ws = activeProject?.workspacePath ?? "";
-        const baseDir = ws || (await invoke<string>("default_artifact_dir")).trim();
+        const baseDir =
+          ws || (await invoke<string>("default_artifact_dir")).trim();
         const dir = ws ? ws : baseDir ? `${baseDir}/Omni` : "";
         if (!dir) {
           showProjectNotice("无法确定保存目录", "error");
           return;
         }
         // 从首行（去 #/标记）取文件名，清洗非法字符
-        const firstLine = content.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+        const firstLine =
+          content
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .find((l) => l.length > 0) ?? "";
         const rawName =
-          firstLine.replace(/^#+\s*/, "").replace(/[*_`#]/g, "").trim().slice(0, 60) || "对话导出";
-        const name = rawName.replace(/[\\/:*?"<>|\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "对话导出";
+          firstLine
+            .replace(/^#+\s*/, "")
+            .replace(/[*_`#]/g, "")
+            .trim()
+            .slice(0, 60) || "对话导出";
+        const name =
+          rawName
+            .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 80) || "对话导出";
         // 避免覆盖已有文件：追加 -1、-2……
         let path = `${dir}/${name}.md`;
         let n = 1;
@@ -786,12 +976,15 @@ export default function MainChatView({
           path = `${dir}/${name}-${n}.md`;
           n += 1;
         }
-        const outcome = await invoke<{ path: string; size: number }>("write_text_file", {
-          path,
-          content,
-          overwrite: false,
-          workspacePath: ws || null,
-        });
+        const outcome = await invoke<{ path: string; size: number }>(
+          "write_text_file",
+          {
+            path,
+            content,
+            overwrite: false,
+            workspacePath: ws || null,
+          },
+        );
         appendArtifact({
           type: "file",
           title: outcome.path.split(/[\\/]/).pop() || "文档.md",
@@ -802,12 +995,17 @@ export default function MainChatView({
           sessionId: activeChatId,
         });
         notifyArtifactsChanged();
-        showProjectNotice(`已存为 Markdown：${outcome.path.split(/[\\/]/).pop()}`);
+        showProjectNotice(
+          `已存为 Markdown：${outcome.path.split(/[\\/]/).pop()}`,
+        );
       } catch (error) {
-        showProjectNotice(`保存失败：${error instanceof Error ? error.message : String(error)}`, "error");
+        showProjectNotice(
+          `保存失败：${error instanceof Error ? error.message : String(error)}`,
+          "error",
+        );
       }
     },
-    [activeProject, activeChatId, showProjectNotice]
+    [activeProject, activeChatId, showProjectNotice],
   );
   const startEditMemory = useCallback((memory: ProjectMemoryRecord) => {
     setEditingMemoryId(memory.id);
@@ -820,19 +1018,42 @@ export default function MainChatView({
   const saveEditingMemory = useCallback(() => {
     if (!editingMemoryId) return;
     const updated = onUpdateProjectMemory(editingMemoryId, editingMemoryDraft);
-    showProjectNotice(updated ? "记忆已更新" : "记忆更新失败", updated ? "success" : "error");
+    showProjectNotice(
+      updated ? "记忆已更新" : "记忆更新失败",
+      updated ? "success" : "error",
+    );
     if (updated) {
       cancelEditMemory();
     }
-  }, [cancelEditMemory, editingMemoryDraft, editingMemoryId, onUpdateProjectMemory, showProjectNotice]);
+  }, [
+    cancelEditMemory,
+    editingMemoryDraft,
+    editingMemoryId,
+    onUpdateProjectMemory,
+    showProjectNotice,
+  ]);
   const addManualMemory = useCallback(() => {
     if (!activeProject) return;
-    const added = onAddProjectMemory(activeProject.id, newMemoryDraft, activeChatId, "manual");
-    showProjectNotice(added ? "记忆已添加" : "记忆已存在或内容太短", added ? "success" : "error");
+    const added = onAddProjectMemory(
+      activeProject.id,
+      newMemoryDraft,
+      activeChatId,
+      "manual",
+    );
+    showProjectNotice(
+      added ? "记忆已添加" : "记忆已存在或内容太短",
+      added ? "success" : "error",
+    );
     if (added) {
       setNewMemoryDraft("");
     }
-  }, [activeProject, activeChatId, newMemoryDraft, onAddProjectMemory, showProjectNotice]);
+  }, [
+    activeProject,
+    activeChatId,
+    newMemoryDraft,
+    onAddProjectMemory,
+    showProjectNotice,
+  ]);
   const openMemorySourceSession = useCallback(
     (sessionId: string | null | undefined) => {
       if (!sessionId || !topicTitleById.has(sessionId)) {
@@ -846,7 +1067,7 @@ export default function MainChatView({
       setShowAllMemories(false);
       showProjectNotice("已打开记忆来源会话");
     },
-    [onSelectChat, showProjectNotice, topicTitleById]
+    [onSelectChat, showProjectNotice, topicTitleById],
   );
   const clearCurrentProjectMemories = useCallback(() => {
     if (!activeProject) return;
@@ -854,23 +1075,40 @@ export default function MainChatView({
     setMemoryClearConfirmOpen(false);
     setEditingMemoryId(null);
     setEditingMemoryDraft("");
-    showProjectNotice(removedCount > 0 ? `已清空 ${removedCount} 条记忆` : "当前没有可清空的记忆", removedCount > 0 ? "success" : "error");
+    showProjectNotice(
+      removedCount > 0
+        ? `已清空 ${removedCount} 条记忆`
+        : "当前没有可清空的记忆",
+      removedCount > 0 ? "success" : "error",
+    );
   }, [activeProject, onClearProjectMemories, showProjectNotice]);
   const layoutClassName = useMemo(() => {
     const classNames = ["main-chat-layout"];
-    if (projectPanelManualVisible === true) classNames.push("main-chat-layout--project-forced-open");
-    if (!isProjectPanelVisible) classNames.push("main-chat-layout--project-collapsed");
-    if (topicPanelManualVisible === true) classNames.push("main-chat-layout--topic-forced-open");
-    if (!isTopicPanelVisible || showPluginMarketplace) classNames.push("main-chat-layout--topic-collapsed");
-    if (isProjectSettingsMode) classNames.push("main-chat-layout--project-settings");
+    if (projectPanelManualVisible === true)
+      classNames.push("main-chat-layout--project-forced-open");
+    if (!isProjectPanelVisible)
+      classNames.push("main-chat-layout--project-collapsed");
+    if (topicPanelManualVisible === true)
+      classNames.push("main-chat-layout--topic-forced-open");
+    if (!isTopicPanelVisible || showPluginMarketplace)
+      classNames.push("main-chat-layout--topic-collapsed");
+    if (isProjectSettingsMode)
+      classNames.push("main-chat-layout--project-settings");
     return classNames.join(" ");
-  }, [projectPanelManualVisible, isProjectPanelVisible, isProjectSettingsMode, isTopicPanelVisible, topicPanelManualVisible, showPluginMarketplace]);
+  }, [
+    projectPanelManualVisible,
+    isProjectPanelVisible,
+    isProjectSettingsMode,
+    isTopicPanelVisible,
+    topicPanelManualVisible,
+    showPluginMarketplace,
+  ]);
   const layoutStyle = useMemo<CSSProperties>(
     () =>
       ({
         "--topic-panel-width": `${topicPanelWidth}px`,
       }) as CSSProperties,
-    [topicPanelWidth]
+    [topicPanelWidth],
   );
 
   useEffect(() => {
@@ -895,10 +1133,14 @@ export default function MainChatView({
   useEffect(() => {
     let cancelled = false;
 
-    void invoke<{ collections: KnowledgeCollection[] }>("load_knowledge_library_command")
+    void invoke<{ collections: KnowledgeCollection[] }>(
+      "load_knowledge_library_command",
+    )
       .then((payload) => {
         if (!cancelled) {
-          setKnowledgeCollections(Array.isArray(payload.collections) ? payload.collections : []);
+          setKnowledgeCollections(
+            Array.isArray(payload.collections) ? payload.collections : [],
+          );
         }
       })
       .catch(() => {
@@ -916,8 +1158,13 @@ export default function MainChatView({
     if (!composerElement) return;
     let frameId = 0;
     const updateComposerHeight = () => {
-      const nextHeight = Math.max(0, Math.round(composerElement.getBoundingClientRect().height || 0));
-      setComposerHeight((current) => (current === nextHeight ? current : nextHeight));
+      const nextHeight = Math.max(
+        0,
+        Math.round(composerElement.getBoundingClientRect().height || 0),
+      );
+      setComposerHeight((current) =>
+        current === nextHeight ? current : nextHeight,
+      );
 
       const scrollElement = messagesScrollRef.current;
       if (scrollElement && isMessagesAtBottomRef.current) {
@@ -971,7 +1218,10 @@ export default function MainChatView({
     if (!scrollElement) return;
 
     const updateAtBottom = () => {
-      const distanceToBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
+      const distanceToBottom =
+        scrollElement.scrollHeight -
+        scrollElement.scrollTop -
+        scrollElement.clientHeight;
       setIsMessagesAtBottom(distanceToBottom < 36);
     };
 
@@ -990,12 +1240,18 @@ export default function MainChatView({
     if (!scrollElement || !isStreaming || !isMessagesAtBottom) {
       return;
     }
-    scrollElement.scrollTo({ top: scrollElement.scrollHeight, behavior: "smooth" });
+    scrollElement.scrollTo({
+      top: scrollElement.scrollHeight,
+      behavior: "smooth",
+    });
   }, [isMessagesAtBottom, isStreaming, messages, messagesScrollRef]);
 
   const scrollMessagesToBottom = useCallback(() => {
     const scrollElement = messagesScrollRef.current;
-    scrollElement?.scrollTo({ top: scrollElement.scrollHeight, behavior: "smooth" });
+    scrollElement?.scrollTo({
+      top: scrollElement.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messagesScrollRef]);
 
   useEffect(() => {
@@ -1011,7 +1267,10 @@ export default function MainChatView({
   }, [activeProject]);
 
   useEffect(() => {
-    saveSqliteBackedValue(PROJECT_GROUPS_STORAGE_KEY, JSON.stringify(projectGroups));
+    saveSqliteBackedValue(
+      PROJECT_GROUPS_STORAGE_KEY,
+      JSON.stringify(projectGroups),
+    );
   }, [projectGroups]);
 
   useEffect(() => {
@@ -1023,15 +1282,23 @@ export default function MainChatView({
     const projectExpandThreshold = 1040;
 
     const updateAutoCollapsed = () => {
-      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || workspaceElement.getBoundingClientRect().width || 0;
+      const viewportWidth =
+        window.innerWidth ||
+        document.documentElement.clientWidth ||
+        workspaceElement.getBoundingClientRect().width ||
+        0;
 
       setIsTopicPanelAutoCollapsed((current) => {
-        const next = current ? viewportWidth < topicExpandThreshold : viewportWidth < topicCollapseThreshold;
+        const next = current
+          ? viewportWidth < topicExpandThreshold
+          : viewportWidth < topicCollapseThreshold;
         return next;
       });
 
       setIsProjectPanelAutoCollapsed((current) => {
-        const next = current ? viewportWidth < projectExpandThreshold : viewportWidth < projectCollapseThreshold;
+        const next = current
+          ? viewportWidth < projectExpandThreshold
+          : viewportWidth < projectCollapseThreshold;
         return next;
       });
     };
@@ -1075,11 +1342,8 @@ export default function MainChatView({
       if (!target) return;
       const activeMenu = projectCardMenuRefs.current[openProjectCardMenuId];
       if (activeMenu?.contains(target)) return;
-      if (projectMoveGroupMenuRef.current?.contains(target)) return;
       setOpenProjectCardMenuId(null);
       setProjectDeleteConfirm(null);
-      setProjectMoveGroupMenuId(null);
-      setProjectMoveGroupMenuPosition(null);
     };
 
     window.addEventListener("pointerdown", handlePointerDown);
@@ -1106,7 +1370,9 @@ export default function MainChatView({
     if (!nextGroupName) {
       return;
     }
-    const exists = projectGroupNames.some((groupName) => groupName === nextGroupName);
+    const exists = projectGroupNames.some(
+      (groupName) => groupName === nextGroupName,
+    );
     if (!exists) {
       setProjectGroups((current) => [...current, nextGroupName]);
     }
@@ -1129,7 +1395,9 @@ export default function MainChatView({
       setEditingProjectGroupDraft("");
       return;
     }
-    setProjectGroups((current) => current.map((item) => (item === groupName ? nextGroupName : item)));
+    setProjectGroups((current) =>
+      current.map((item) => (item === groupName ? nextGroupName : item)),
+    );
     customProjects
       .filter((project) => (project.groupName?.trim() || "") === groupName)
       .forEach((project) => {
@@ -1154,7 +1422,11 @@ export default function MainChatView({
   return (
     <div className={layoutClassName} style={layoutStyle}>
       <aside className="main-chat-nav">
-        <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
+        <button
+          type="button"
+          className="main-chat-nav__brand no-drag"
+          title="Omni"
+        >
           <Bot size={20} strokeWidth={1.9} />
         </button>
         <div className="main-chat-nav__items">
@@ -1180,11 +1452,21 @@ export default function MainChatView({
           >
             <Sparkles size={18} strokeWidth={1.9} />
           </button>
-          <button type="button" className="main-chat-nav__item no-drag" title="知识" onClick={onOpenKnowledge}>
+          <button
+            type="button"
+            className="main-chat-nav__item no-drag"
+            title="知识"
+            onClick={onOpenKnowledge}
+          >
             <FolderOpen size={18} strokeWidth={1.9} />
           </button>
         </div>
-        <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" onClick={onSettingsOpen}>
+        <button
+          type="button"
+          className="main-chat-nav__item main-chat-nav__item--bottom no-drag"
+          title="设置"
+          onClick={onSettingsOpen}
+        >
           <Settings size={18} strokeWidth={1.9} />
         </button>
       </aside>
@@ -1211,13 +1493,23 @@ export default function MainChatView({
                 { kind: "tool" as const, label: "工具", icon: Puzzle },
                 { kind: "connector" as const, label: "连接器", icon: Cable },
                 { kind: "expert" as const, label: "专家", icon: Bot },
-                { kind: "template" as const, label: "模板", icon: LayoutTemplate },
+                {
+                  kind: "template" as const,
+                  label: "模板",
+                  icon: LayoutTemplate,
+                },
               ].map((item) => (
                 <button
                   key={item.kind}
                   type="button"
                   className={`chat-history-panel__marketplace-kind ${marketplaceFilter.kind === item.kind ? "chat-history-panel__marketplace-kind--active" : ""}`}
-                  onClick={() => setMarketplaceFilter((current) => ({ ...current, kind: item.kind, category: "全部" }))}
+                  onClick={() =>
+                    setMarketplaceFilter((current) => ({
+                      ...current,
+                      kind: item.kind,
+                      category: "全部",
+                    }))
+                  }
                 >
                   <item.icon size={16} strokeWidth={1.8} />
                   <span>{item.label}</span>
@@ -1236,187 +1528,462 @@ export default function MainChatView({
               />
             </div>
 
-        <div className="chat-history-panel__projects">
-                    <div className="chat-history-panel__section task-section">
-            <div className="chat-history-panel__section-head">
-              <span className="chat-history-panel__section-label">任务</span>
-              <button type="button" className="chat-history-panel__section-toggle" onClick={() => setTaskSectionCollapsed((current) => !current)} aria-label={taskSectionCollapsed ? "展开任务" : "收起任务"}>
-                {taskSectionCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
-              </button>
-              <span className="chat-history-panel__section-count">{standaloneSessions.length}</span>
-              <button type="button" className="chat-history-panel__section-add" onClick={() => onNewChatInProject(DEFAULT_PROJECT_ID)} title="新建任务" aria-label="新建任务">
-                <Plus size={14} strokeWidth={1.9} />
-              </button>
-            </div>
-            {!taskSectionCollapsed && (
-              <div className="chat-history-panel__session-list">
-                {basicProject && (
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    className={`chat-history-panel__session chat-history-panel__session--main ${activeProjectId === basicProject.id ? "chat-history-panel__session--active" : ""}`}
-                    onClick={() => {
-                      setProjectSettingsId(null);
-                      setProjectAvatarPanelOpen(false);
-                      onSelectProject(basicProject.id);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setProjectSettingsId(null);
-                        setProjectAvatarPanelOpen(false);
-                        onSelectProject(basicProject.id);
-                      }
-                    }}
+            <div className="chat-history-panel__projects">
+              <div className="chat-history-panel__section task-section">
+                <div className="chat-history-panel__section-head">
+                  <span className="chat-history-panel__section-label">
+                    任务
+                  </span>
+                  <button
+                    type="button"
+                    className="chat-history-panel__section-toggle"
+                    onClick={() =>
+                      setTaskSectionCollapsed((current) => !current)
+                    }
+                    aria-label={taskSectionCollapsed ? "展开任务" : "收起任务"}
                   >
-                    <span className="chat-history-panel__session-avatar" style={{ backgroundColor: "#e0f2fe", color: "#0ea5e9" }}>
-                      <Bot size={14} strokeWidth={1.9} />
-                    </span>
-                    <span className="chat-history-panel__session-title">{basicProject.title}</span>
+                    {taskSectionCollapsed ? (
+                      <ChevronRight size={14} strokeWidth={1.8} />
+                    ) : (
+                      <ChevronDown size={14} strokeWidth={1.8} />
+                    )}
+                  </button>
+                  <span className="chat-history-panel__section-count">
+                    {standaloneSessions.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="chat-history-panel__section-add"
+                    onClick={() => onNewChatInProject(DEFAULT_PROJECT_ID)}
+                    title="新建任务"
+                    aria-label="新建任务"
+                  >
+                    <Plus size={14} strokeWidth={1.9} />
+                  </button>
+                </div>
+                {!taskSectionCollapsed && (
+                  <div className="chat-history-panel__session-list">
+                    {basicProject && (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className={`chat-history-panel__session chat-history-panel__session--main ${activeProjectId === basicProject.id ? "chat-history-panel__session--active" : ""}`}
+                        onClick={() => {
+                          setProjectSettingsId(null);
+                          setProjectAvatarPanelOpen(false);
+                          onSelectProject(basicProject.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setProjectSettingsId(null);
+                            setProjectAvatarPanelOpen(false);
+                            onSelectProject(basicProject.id);
+                          }
+                        }}
+                      >
+                        <span
+                          className="chat-history-panel__session-avatar"
+                          style={{
+                            backgroundColor: "#e0f2fe",
+                            color: "#0ea5e9",
+                          }}
+                        >
+                          <Bot size={14} strokeWidth={1.9} />
+                        </span>
+                        <span className="chat-history-panel__session-title">
+                          {basicProject.title}
+                        </span>
+                      </div>
+                    )}
+                    {standaloneSessions.length === 0 ? (
+                      <div className="chat-history-panel__empty">
+                        暂无任务，点击 + 新建
+                      </div>
+                    ) : (
+                      standaloneSessions.map((session) => (
+                        <div
+                          key={session.id}
+                          role="button"
+                          tabIndex={0}
+                          className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`}
+                          onClick={() => onSelectChat(session.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              onSelectChat(session.id);
+                            }
+                          }}
+                        >
+                          <span
+                            className="chat-history-panel__session-avatar"
+                            style={getSessionAvatarStyle(session.id)}
+                          >
+                            <SessionAvatarIcon size={12} />
+                          </span>
+                          <span className="chat-history-panel__session-title">
+                            {session.title || "未命名会话"}
+                          </span>
+                          <span className="chat-history-panel__session-time">
+                            {formatSessionTime(session.updatedAt)}
+                          </span>
+                          <button
+                            type="button"
+                            className="chat-history-panel__session-delete"
+                            title="删除任务"
+                            aria-label="删除任务"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDeleteChat(session);
+                            }}
+                          >
+                            <Trash2 size={12} strokeWidth={1.9} />
+                          </button>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
-                {standaloneSessions.length === 0 ? (
-                  <div className="chat-history-panel__empty">暂无任务，点击 + 新建</div>
-                ) : (
-                  standaloneSessions.map((session) => (
-                    <div key={session.id} role="button" tabIndex={0} className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`} onClick={() => onSelectChat(session.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectChat(session.id); } }}>
-                                  <span className="chat-history-panel__session-avatar" style={getSessionAvatarStyle(session.id)}>
-                                    <SessionAvatarIcon size={12} />
-                                  </span>
-                                  <span className="chat-history-panel__session-title">{session.title || "未命名会话"}</span>
-                      <span className="chat-history-panel__session-time">{formatSessionTime(session.updatedAt)}</span>
-                      <button type="button" className="chat-history-panel__session-delete" title="删除任务" aria-label="删除任务" onClick={(event) => { event.stopPropagation(); onDeleteChat(session); }}>
-                        <Trash2 size={12} strokeWidth={1.9} />
-                      </button>
-                    </div>
-                  ))
-                )}
               </div>
-            )}
-          </div>
 
-          <div className="chat-history-panel__section space-section">
-            <div className="chat-history-panel__section-head">
-              <span className="chat-history-panel__section-label">空间</span>
-              <button type="button" className="chat-history-panel__section-toggle" onClick={() => setSpaceSectionCollapsed((current) => !current)} aria-label={spaceSectionCollapsed ? "展开空间" : "收起空间"}>
-                {spaceSectionCollapsed ? <ChevronRight size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
-              </button>
-              <span className="chat-history-panel__section-count">{filteredCustomProjects.length}</span>
-              <div className="chat-history-panel__section-actions">
-                <div ref={projectMenuRef} className="chat-history-panel__section-menu">
-                  <button type="button" className={`chat-history-panel__section-action ${projectMenuOpen ? "chat-history-panel__section-action--active" : ""}`} onClick={() => setProjectMenuOpen((current) => !current)} title="空间菜单">
-                    <MoreHorizontal size={14} strokeWidth={1.8} />
+              <div className="chat-history-panel__section space-section">
+                <div className="chat-history-panel__section-head">
+                  <span className="chat-history-panel__section-label">
+                    空间
+                  </span>
+                  <span className="chat-history-panel__section-count">
+                    {filteredCustomProjects.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="chat-history-panel__section-toggle"
+                    onClick={() =>
+                      setSpaceSectionCollapsed((current) => !current)
+                    }
+                    aria-label={spaceSectionCollapsed ? "展开空间" : "收起空间"}
+                  >
+                    {spaceSectionCollapsed ? (
+                      <ChevronRight size={14} strokeWidth={1.8} />
+                    ) : (
+                      <ChevronDown size={14} strokeWidth={1.8} />
+                    )}
                   </button>
-                  {projectMenuOpen && (
-                    <div className="chat-history-panel__section-dropdown">
-                      <button type="button" onClick={() => { setProjectMenuOpen(false); void handleCreateProject(); }}>
-                        <Plus size={14} strokeWidth={1.9} />
-                        <span>新建空间</span>
+
+                  <div className="chat-history-panel__section-actions">
+                    <div
+                      ref={projectMenuRef}
+                      className="chat-history-panel__section-menu"
+                    >
+                      <button
+                        type="button"
+                        className={`chat-history-panel__section-action ${projectMenuOpen ? "chat-history-panel__section-action--active" : ""}`}
+                        onClick={() =>
+                          setProjectMenuOpen((current) => !current)
+                        }
+                        title="空间菜单"
+                      >
+                        <MoreHorizontal size={14} strokeWidth={1.8} />
                       </button>
-                      <button type="button" onClick={() => { setProjectMenuOpen(false); setProjectGroupManagerOpen(true); }}>
-                        <FolderOpen size={14} strokeWidth={1.9} />
-                        <span>分组管理</span>
-                      </button>
+                      {projectMenuOpen && (
+                        <div className="chat-history-panel__section-dropdown">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProjectMenuOpen(false);
+                              void handleCreateProject();
+                            }}
+                          >
+                            <Plus size={14} strokeWidth={1.9} />
+                            <span>新建空间</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProjectMenuOpen(false);
+                              setProjectGroupManagerOpen(true);
+                            }}
+                          >
+                            <FolderOpen size={14} strokeWidth={1.9} />
+                            <span>分组管理</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
+                    <button
+                      type="button"
+                      className="chat-history-panel__section-add"
+                      onClick={() => void handleCreateProject()}
+                      title="新建空间"
+                      aria-label="新建空间"
+                    >
+                      <Plus size={14} strokeWidth={1.9} />
+                    </button>
+                  </div>
                 </div>
-                <button type="button" className="chat-history-panel__section-add" onClick={() => void handleCreateProject()} title="新建空间" aria-label="新建空间">
-                  <Plus size={14} strokeWidth={1.9} />
-                </button>
-              </div>
-            </div>
-            {!spaceSectionCollapsed && (
-              <div className="chat-history-panel__space-list">
-                {filteredCustomProjects.length === 0 ? (
-                  <div className="chat-history-panel__empty">暂无空间，点击 + 新建</div>
-                ) : (
-                  filteredCustomProjects.map((project) => {
-                    const isExpanded = expandedSpaces.has(project.id);
-                    const projectSessions = sessionsByProject.get(project.id) ?? [];
-                    const isActiveSpace = activeProjectId === project.id;
-                    return (
-                      <div key={project.id} className={`chat-history-panel__space ${isActiveSpace ? "chat-history-panel__space--active" : ""}`}>
-                        <div role="button" tabIndex={0} className="chat-history-panel__space-head" onClick={() => { onSelectProject(project.id); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectProject(project.id); setExpandedSpaces((current) => { const next = new Set(current); next.add(project.id); return next; }); } }}>
-                          {project.avatarType === "image" && project.avatarValue ? (
-                            <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">{renderProjectAvatar(project)}</span>
-                          ) : (
-                            <span className="chat-history-panel__project-folder-icon-wrapper">{renderProjectAvatar(project)}</span>
-                          )}
-                          <span className="chat-history-panel__space-title">{project.title}</span>
-                          <span className="chat-history-panel__space-chevron" onClick={(event) => { event.stopPropagation(); setExpandedSpaces((current) => { const next = new Set(current); if (next.has(project.id)) next.delete(project.id); else next.add(project.id); return next; }); }}>
-                            {isExpanded ? <ChevronDown size={13} strokeWidth={1.8} /> : <ChevronRight size={13} strokeWidth={1.8} />}
-                          </span>
-                          <span className="chat-history-panel__space-spacer" aria-hidden="true" />
-                          <span className="chat-history-panel__project-menu" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-                            <button type="button" className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`} title="更多操作" aria-label="更多操作" onClick={(event) => { event.stopPropagation(); setOpenProjectCardMenuId((current) => (current === project.id ? null : project.id)); }}>
-                              <MoreHorizontal size={13} strokeWidth={1.9} />
-                            </button>
-                            {openProjectCardMenuId === project.id && (
-                              <div className="chat-history-panel__project-dropdown">
-                                {projectDeleteConfirm?.projectId === project.id ? (
-                                  <div className="chat-topic-panel__menu-confirm chat-history-panel__project-dropdown-confirm">
-                                    <div className="chat-topic-panel__menu-confirm-title">{projectDeleteConfirm.title}</div>
-                                    <div className="chat-topic-panel__menu-confirm-message">{projectDeleteConfirm.message}</div>
-                                    <div className="chat-topic-panel__menu-confirm-actions">
-                                      <button type="button" className="chat-topic-panel__menu-button" onClick={(event) => { event.stopPropagation(); setProjectDeleteConfirm(null); }}>取消</button>
-                                      <button type="button" className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger" onClick={(event) => { event.stopPropagation(); handleConfirmDeleteProject(); }}>确认删除</button>
-                                    </div>
-                                  </div>
+                {!spaceSectionCollapsed && (
+                  <div className="chat-history-panel__space-list">
+                    {filteredCustomProjects.length === 0 ? (
+                      <div className="chat-history-panel__empty">
+                        暂无空间，点击 + 新建
+                      </div>
+                    ) : (
+                      filteredCustomProjects.map((project) => {
+                        const isExpanded = expandedSpaces.has(project.id);
+                        const projectSessions =
+                          sessionsByProject.get(project.id) ?? [];
+                        const isActiveSpace = activeProjectId === project.id;
+                        return (
+                          <div
+                            key={project.id}
+                            className={`chat-history-panel__space ${isActiveSpace ? "chat-history-panel__space--active" : ""}`}
+                          >
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              className="chat-history-panel__space-head"
+                              onClick={() => {
+                                onSelectProject(project.id);
+                                setExpandedSpaces((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(project.id))
+                                    next.delete(project.id);
+                                  else next.add(project.id);
+                                  return next;
+                                });
+                              }}
+                              onKeyDown={(event) => {
+                                if (
+                                  event.key === "Enter" ||
+                                  event.key === " "
+                                ) {
+                                  event.preventDefault();
+                                  onSelectProject(project.id);
+                                  setExpandedSpaces((current) => {
+                                    const next = new Set(current);
+                                    next.add(project.id);
+                                    return next;
+                                  });
+                                }
+                              }}
+                            >
+                              {project.avatarType === "image" &&
+                              project.avatarValue ? (
+                                <span className="chat-history-panel__project-icon chat-history-panel__project-icon--custom">
+                                  {renderProjectAvatar(project)}
+                                </span>
+                              ) : (
+                                <span className="chat-history-panel__project-folder-icon-wrapper">
+                                  {renderProjectAvatar(project)}
+                                </span>
+                              )}
+                              <span className="chat-history-panel__space-title">
+                                {project.title}
+                              </span>
+                              <span
+                                className="chat-history-panel__space-chevron"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setExpandedSpaces((current) => {
+                                    const next = new Set(current);
+                                    if (next.has(project.id))
+                                      next.delete(project.id);
+                                    else next.add(project.id);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown size={13} strokeWidth={1.8} />
                                 ) : (
-                                  <>
-                                    <button type="button" onClick={(event) => { event.stopPropagation(); setOpenProjectCardMenuId(null); onSelectProject(project.id); setProjectSettingsId(project.id); }}>
-                                      <Settings size={13} strokeWidth={1.9} />
-                                      <span>空间设置</span>
-                                    </button>
-                                    <div className="chat-history-panel__project-dropdown-divider" />
-                                    <button type="button" className="chat-history-panel__project-dropdown-branch" onClick={(event) => { event.stopPropagation(); const triggerRect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect(); const estimatedSubmenuWidth = 172; const estimatedSubmenuHeight = Math.min(window.innerHeight - 24, 220); const rightSpace = window.innerWidth - triggerRect.right; const nextLeft = rightSpace >= estimatedSubmenuWidth ? triggerRect.right + 8 : Math.max(12, triggerRect.left - estimatedSubmenuWidth - 8); const nextTop = Math.min(Math.max(12, triggerRect.top - 8), Math.max(12, window.innerHeight - estimatedSubmenuHeight - 12)); setProjectMoveGroupMenuPosition({ top: nextTop, left: nextLeft }); setProjectMoveGroupMenuId((current) => (current === project.id ? null : project.id)); }}>
-                                      <span className="chat-history-panel__project-dropdown-main"><FolderOpen size={13} strokeWidth={1.9} /><span>移动到分组</span></span>
-                                      <ChevronRight size={13} strokeWidth={1.9} />
-                                    </button>
-                                    {project.id !== DEFAULT_PROJECT_ID && (
+                                  <ChevronRight size={13} strokeWidth={1.8} />
+                                )}
+                              </span>
+                              <span
+                                className="chat-history-panel__space-spacer"
+                                aria-hidden="true"
+                              />
+                              <span
+                                className="chat-history-panel__project-menu"
+                                onClick={(event) => event.stopPropagation()}
+                                onKeyDown={(event) => event.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  className={`chat-history-panel__project-action ${openProjectCardMenuId === project.id ? "chat-history-panel__project-action--active" : ""}`}
+                                  title="更多操作"
+                                  aria-label="更多操作"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setOpenProjectCardMenuId((current) =>
+                                      current === project.id
+                                        ? null
+                                        : project.id,
+                                    );
+                                  }}
+                                >
+                                  <MoreHorizontal size={13} strokeWidth={1.9} />
+                                </button>
+                                {openProjectCardMenuId === project.id && (
+                                  <div className="chat-history-panel__project-dropdown">
+                                    {projectDeleteConfirm?.projectId ===
+                                    project.id ? (
+                                      <div className="chat-topic-panel__menu-confirm chat-history-panel__project-dropdown-confirm">
+                                        <div className="chat-topic-panel__menu-confirm-title">
+                                          {projectDeleteConfirm.title}
+                                        </div>
+                                        <div className="chat-topic-panel__menu-confirm-message">
+                                          {projectDeleteConfirm.message}
+                                        </div>
+                                        <div className="chat-topic-panel__menu-confirm-actions">
+                                          <button
+                                            type="button"
+                                            className="chat-topic-panel__menu-button"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              setProjectDeleteConfirm(null);
+                                            }}
+                                          >
+                                            取消
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              handleConfirmDeleteProject();
+                                            }}
+                                          >
+                                            确认删除
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
                                       <>
-                                        <div className="chat-history-panel__project-dropdown-divider" />
-                                        <button type="button" className="chat-history-panel__project-dropdown-danger" onClick={(event) => { event.stopPropagation(); setProjectDeleteConfirm({ projectId: project.id, title: "删除空间", message: `确认删除“${project.title}”吗？相关会话和记忆会一并删除。` }); }}>
-                                          <Trash2 size={13} strokeWidth={1.9} />
-                                          <span>删除空间</span>
+                                        <button
+                                          type="button"
+                                          disabled={!project.workspacePath}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            setOpenProjectCardMenuId(null);
+                                            if (project.workspacePath) {
+                                              void openUrl(project.workspacePath);
+                                            }
+                                          }}
+                                        >
+                                          <FolderOpen
+                                            size={13}
+                                            strokeWidth={1.9}
+                                          />
+                                          <span>打开文件夹</span>
                                         </button>
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            setOpenProjectCardMenuId(null);
+                                            onSelectProject(project.id);
+                                            setProjectSettingsId(project.id);
+                                          }}
+                                        >
+                                          <Pencil size={13} strokeWidth={1.9} />
+                                          <span>重命名</span>
+                                        </button>
+                                        {project.id !== DEFAULT_PROJECT_ID && (
+                                          <>
+                                            <div className="chat-history-panel__project-dropdown-divider" />
+                                            <button
+                                              type="button"
+                                              className="chat-history-panel__project-dropdown-danger"
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                setProjectDeleteConfirm({
+                                                  projectId: project.id,
+                                                  title: "从列表中移除",
+                                                  message: `确认将“${project.title}”从列表中移除吗？相关会话和记忆会一并删除。`,
+                                                });
+                                              }}
+                                            >
+                                              <Trash2
+                                                size={13}
+                                                strokeWidth={1.9}
+                                              />
+                                              <span>从列表中移除</span>
+                                            </button>
+                                          </>
+                                        )}
                                       </>
                                     )}
-                                  </>
+                                  </div>
+                                )}
+                              </span>
+                              <button
+                                type="button"
+                                className="chat-history-panel__space-add"
+                                title="在空间内新建会话"
+                                aria-label="在空间内新建会话"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onNewChatInProject(project.id);
+                                }}
+                              >
+                                <NewSessionInSpaceIcon size={16} />
+                              </button>
+                            </div>
+                            {isExpanded && (
+                              <div className="chat-history-panel__session-list chat-history-panel__session-list--nested">
+                                {projectSessions.length === 0 ? (
+                                  <div className="chat-history-panel__empty">
+                                    该空间暂无会话
+                                  </div>
+                                ) : (
+                                  projectSessions.map((session) => (
+                                    <div
+                                      key={session.id}
+                                      role="button"
+                                      tabIndex={0}
+                                      className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`}
+                                      onClick={() => onSelectChat(session.id)}
+                                      onKeyDown={(event) => {
+                                        if (
+                                          event.key === "Enter" ||
+                                          event.key === " "
+                                        ) {
+                                          event.preventDefault();
+                                          onSelectChat(session.id);
+                                        }
+                                      }}
+                                    >
+                                      <span className="chat-history-panel__session-title">
+                                        {session.title || "未命名会话"}
+                                      </span>
+                                      <span className="chat-history-panel__session-time">
+                                        {formatSessionTime(session.updatedAt)}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="chat-history-panel__session-delete"
+                                        title="删除会话"
+                                        aria-label="删除会话"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          onDeleteChat(session);
+                                        }}
+                                      >
+                                        <Trash2 size={12} strokeWidth={1.9} />
+                                      </button>
+                                    </div>
+                                  ))
                                 )}
                               </div>
                             )}
-                          </span>
-                          <button type="button" className="chat-history-panel__space-add" title="在空间内新建会话" aria-label="在空间内新建会话" onClick={(event) => { event.stopPropagation(); onNewChatInProject(project.id); }}>
-                            <NewSessionInSpaceIcon size={16} />
-                          </button>
-                        </div>
-                        {isExpanded && (
-                          <div className="chat-history-panel__session-list chat-history-panel__session-list--nested">
-                            {projectSessions.length === 0 ? (
-                              <div className="chat-history-panel__empty">该空间暂无会话</div>
-                            ) : (
-                              projectSessions.map((session) => (
-                                <div key={session.id} role="button" tabIndex={0} className={`chat-history-panel__session ${activeChatId === session.id ? "chat-history-panel__session--active" : ""}`} onClick={() => onSelectChat(session.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectChat(session.id); } }}>
-                                  <span className="chat-history-panel__session-title">{session.title || "未命名会话"}</span>
-                                  <span className="chat-history-panel__session-time">{formatSessionTime(session.updatedAt)}</span>
-                                  <button type="button" className="chat-history-panel__session-delete" title="删除会话" aria-label="删除会话" onClick={(event) => { event.stopPropagation(); onDeleteChat(session); }}>
-                                    <Trash2 size={12} strokeWidth={1.9} />
-                                  </button>
-                                </div>
-                              ))
-                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })
+                        );
+                      })
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-
-        </div>
+            </div>
           </>
         )}
       </aside>
@@ -1439,25 +2006,6 @@ export default function MainChatView({
             setProjectGroupManagerOpen(false);
             setProjectGroupDraft("");
           }}
-        />
-      )}
-
-      {projectMoveGroupMenuId && projectMoveGroupMenuPosition && (
-        <ProjectMoveGroupMenu
-          projectId={projectMoveGroupMenuId}
-          position={projectMoveGroupMenuPosition}
-          containerRef={projectMoveGroupMenuRef}
-          projects={customProjects}
-          groupNames={projectGroupNames}
-          onSelectGroup={(projectId, groupName) => {
-            onUpdateProject(projectId, { groupName });
-          }}
-          onDismiss={() => {
-            setProjectMoveGroupMenuId(null);
-            setProjectMoveGroupMenuPosition(null);
-            setOpenProjectCardMenuId(null);
-          }}
-          onOpenGroupManager={() => setProjectGroupManagerOpen(true)}
         />
       )}
 
@@ -1491,20 +2039,31 @@ export default function MainChatView({
                   <button
                     type="button"
                     className="main-chat-toolbar__icon-button main-chat-toolbar__back-button no-drag"
-                    aria-label={isProjectPanelVisible ? "收起项目栏" : "展开项目栏"}
+                    aria-label={
+                      isProjectPanelVisible ? "收起项目栏" : "展开项目栏"
+                    }
                     title={isProjectPanelVisible ? "收起项目栏" : "展开项目栏"}
                     onClick={() =>
                       setProjectPanelManualVisible((currentValue) => {
-                        const currentVisible = currentValue ?? defaultProjectPanelVisible;
+                        const currentVisible =
+                          currentValue ?? defaultProjectPanelVisible;
                         const nextVisible = !currentVisible;
-                        return nextVisible === defaultProjectPanelVisible ? null : nextVisible;
+                        return nextVisible === defaultProjectPanelVisible
+                          ? null
+                          : nextVisible;
                       })
                     }
                   >
                     {isProjectPanelVisible ? (
-                      <PanelLeftClose className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                      <PanelLeftClose
+                        className="main-chat-toolbar__icon"
+                        strokeWidth={1.7}
+                      />
                     ) : (
-                      <PanelLeftOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                      <PanelLeftOpen
+                        className="main-chat-toolbar__icon"
+                        strokeWidth={1.7}
+                      />
                     )}
                   </button>
                 )}
@@ -1518,7 +2077,10 @@ export default function MainChatView({
                       setProjectAvatarPanelOpen(false);
                     }}
                   >
-                    <ChevronLeft className="main-chat-toolbar__icon" strokeWidth={1.8} />
+                    <ChevronLeft
+                      className="main-chat-toolbar__icon"
+                      strokeWidth={1.8}
+                    />
                   </button>
                 )}
                 {!showPluginMarketplace && (
@@ -1527,7 +2089,9 @@ export default function MainChatView({
                       {renderProjectAvatar(activeProject)}
                     </div>
                     <div className="main-chat-toolbar__project-copy main-chat-toolbar__project-copy--single-line">
-                      <strong>{isProjectSettingsMode ? "项目设置" : currentTopicTitle}</strong>
+                      <strong>
+                        {isProjectSettingsMode ? "项目设置" : currentTopicTitle}
+                      </strong>
                     </div>
                   </>
                 )}
@@ -1548,7 +2112,8 @@ export default function MainChatView({
                       onModelChange={onModelChange}
                       label="主模型"
                       title={
-                        selectedExecutionModel && executionModel !== currentModel
+                        selectedExecutionModel &&
+                        executionModel !== currentModel
                           ? `当前项目会优先使用：${selectedExecutionModel.name}`
                           : undefined
                       }
@@ -1560,8 +2125,16 @@ export default function MainChatView({
 
             <div className="main-chat-toolbar__actions no-drag">
               {!showPluginMarketplace && messages.length > 0 && (
-                <button onClick={onClearChat} className="main-chat-toolbar__icon-button" title="清空对话" type="button">
-                  <Trash2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                <button
+                  onClick={onClearChat}
+                  className="main-chat-toolbar__icon-button"
+                  title="清空对话"
+                  type="button"
+                >
+                  <Trash2
+                    className="main-chat-toolbar__icon"
+                    strokeWidth={1.7}
+                  />
                 </button>
               )}
               {!showPluginMarketplace && (
@@ -1572,7 +2145,10 @@ export default function MainChatView({
                   onClick={() => void handleShareActiveSession()}
                   disabled={!activeSession}
                 >
-                  <Share2 className="main-chat-toolbar__icon" strokeWidth={1.7} />
+                  <Share2
+                    className="main-chat-toolbar__icon"
+                    strokeWidth={1.7}
+                  />
                 </button>
               )}
               {!showPluginMarketplace && (
@@ -1583,13 +2159,26 @@ export default function MainChatView({
                   title={isTopicPanelVisible ? "收起话题栏" : "展开话题栏"}
                   onClick={() =>
                     setTopicPanelManualVisible((currentValue) => {
-                      const currentVisible = currentValue ?? defaultTopicPanelVisible;
+                      const currentVisible =
+                        currentValue ?? defaultTopicPanelVisible;
                       const nextVisible = !currentVisible;
-                      return nextVisible === defaultTopicPanelVisible ? null : nextVisible;
+                      return nextVisible === defaultTopicPanelVisible
+                        ? null
+                        : nextVisible;
                     })
                   }
                 >
-                  {isTopicPanelVisible ? <PanelRightClose className="main-chat-toolbar__icon" strokeWidth={1.7} /> : <PanelRightOpen className="main-chat-toolbar__icon" strokeWidth={1.7} />}
+                  {isTopicPanelVisible ? (
+                    <PanelRightClose
+                      className="main-chat-toolbar__icon"
+                      strokeWidth={1.7}
+                    />
+                  ) : (
+                    <PanelRightOpen
+                      className="main-chat-toolbar__icon"
+                      strokeWidth={1.7}
+                    />
+                  )}
                 </button>
               )}
               <div className="omni-window-control-slot">{windowControls}</div>
@@ -1598,659 +2187,959 @@ export default function MainChatView({
         </header>
 
         <div className="main-chat-body">
-          <section ref={setWorkspaceElement} className="main-chat-workspace" style={{ "--composer-height": `${composerHeight}px` } as CSSProperties}>
+          <section
+            ref={setWorkspaceElement}
+            className="main-chat-workspace"
+            style={
+              { "--composer-height": `${composerHeight}px` } as CSSProperties
+            }
+          >
             <main className="main-chat-pane">
-          {isProjectSettingsMode && activeProject ? (
-            <div className="main-chat-scroll hide-scrollbar">
-              <div className="omni-settings-dialog__sections omni-settings-dialog__sections--page">
-                {isCustomProjectSettingsMode && (
-                <>
-                <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">项目信息</div>
-                  <div className="omni-settings-dialog__project-overview">
-                    <div className="omni-settings-dialog__project-form">
-                      <div className="omni-settings-dialog__project-copy">
-                        <div className="omni-settings-dialog__setting-label">基础信息</div>
-                        <div className="omni-settings-dialog__setting-hint">名称、描述和角色设定会决定这个项目在聊天中的定位与表现。</div>
-                      </div>
-                      <div className="omni-settings-dialog__project-side">
-                        <div className="omni-settings-dialog__project-copy">
-                          <div className="omni-settings-dialog__setting-label">项目头像</div>
-                          <div className="omni-settings-dialog__setting-hint">头像会同步影响项目列表、当前项目头部和相关卡片展示。</div>
+              {isProjectSettingsMode && activeProject ? (
+                <div className="main-chat-scroll hide-scrollbar">
+                  <div className="omni-settings-dialog__sections omni-settings-dialog__sections--page">
+                    {isCustomProjectSettingsMode && (
+                      <>
+                        <div className="omni-settings-dialog__section">
+                          <div className="omni-settings-dialog__section-title">
+                            项目信息
+                          </div>
+                          <div className="omni-settings-dialog__project-overview">
+                            <div className="omni-settings-dialog__project-form">
+                              <div className="omni-settings-dialog__project-copy">
+                                <div className="omni-settings-dialog__setting-label">
+                                  基础信息
+                                </div>
+                                <div className="omni-settings-dialog__setting-hint">
+                                  名称、描述和角色设定会决定这个项目在聊天中的定位与表现。
+                                </div>
+                              </div>
+                              <div className="omni-settings-dialog__project-side">
+                                <div className="omni-settings-dialog__project-copy">
+                                  <div className="omni-settings-dialog__setting-label">
+                                    项目头像
+                                  </div>
+                                  <div className="omni-settings-dialog__setting-hint">
+                                    头像会同步影响项目列表、当前项目头部和相关卡片展示。
+                                  </div>
+                                </div>
+                                <div className="omni-settings-dialog__setting-control omni-settings-dialog__setting-control--avatar">
+                                  <button
+                                    ref={projectAvatarTriggerRef}
+                                    type="button"
+                                    className="omni-settings-dialog__avatar-hero"
+                                    onClick={() =>
+                                      setProjectAvatarPanelOpen(
+                                        (current) => !current,
+                                      )
+                                    }
+                                    title="选择头像"
+                                  >
+                                    <span className="omni-settings-dialog__avatar-hero-preview">
+                                      {renderProjectAvatar(activeProject)}
+                                    </span>
+                                    <span className="omni-settings-dialog__avatar-hero-copy">
+                                      <strong>点击更换头像</strong>
+                                      <span>
+                                        {activeProject.avatarType === "image"
+                                          ? "当前使用自定义图片"
+                                          : "当前使用头像包图标"}
+                                      </span>
+                                    </span>
+                                  </button>
+                                  {projectAvatarPanelOpen && (
+                                    <div
+                                      ref={projectAvatarPanelRef}
+                                      className="omni-settings-dialog__avatar-panel"
+                                    >
+                                      <div className="omni-settings-dialog__avatar-panel-hint">
+                                        仅支持上传图片作为项目头像。
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="chat-history-panel__avatar-upload"
+                                        onClick={() =>
+                                          projectAvatarInputRef.current?.click()
+                                        }
+                                      >
+                                        上传图片
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="omni-settings-dialog__form-grid">
+                                <label className="chat-topic-panel__field">
+                                  <span>名称</span>
+                                  <input
+                                    value={projectTitleDraft}
+                                    onChange={(event) =>
+                                      setProjectTitleDraft(event.target.value)
+                                    }
+                                    onBlur={() =>
+                                      saveProjectPatch(
+                                        { title: projectTitleDraft },
+                                        "项目名称已保存",
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label className="chat-topic-panel__field">
+                                  <span>默认模型</span>
+                                  <div className="omni-settings-dialog__model-select">
+                                    <OmniSelect
+                                      value={projectModelDraft}
+                                      onChange={(nextValue) => {
+                                        const nextModelId =
+                                          projectModelDraft === nextValue
+                                            ? ""
+                                            : nextValue;
+                                        setProjectModelDraft(nextModelId);
+                                        saveProjectPatch(
+                                          {
+                                            defaultModelId: nextModelId || null,
+                                          },
+                                          "默认模型已更新",
+                                        );
+                                      }}
+                                      ariaLabel="项目默认模型"
+                                      className="omni-select--field"
+                                      placeholder="跟随主模型"
+                                      options={availableModels.map((model) => ({
+                                        value: model.id,
+                                        label: model.name,
+                                      }))}
+                                    />
+                                    {selectedProjectModel && (
+                                      <div className="omni-settings-dialog__model-select-meta">
+                                        {selectedProjectModel.provider} /{" "}
+                                        {selectedProjectModel.id} ·
+                                        会覆盖主模型，仅当前项目生效
+                                      </div>
+                                    )}
+                                    {!selectedProjectModel && (
+                                      <div className="omni-settings-dialog__model-select-meta">
+                                        未单独指定时使用顶部选择的主模型
+                                      </div>
+                                    )}
+                                  </div>
+                                </label>
+                                <label className="chat-topic-panel__field">
+                                  <span>绑定知识库</span>
+                                  <div className="omni-settings-dialog__model-select">
+                                    <OmniSelect
+                                      value={
+                                        activeProject.knowledgeCollectionId ??
+                                        ""
+                                      }
+                                      onChange={(nextValue) => {
+                                        saveProjectPatch(
+                                          {
+                                            knowledgeCollectionId:
+                                              nextValue || null,
+                                          },
+                                          "知识库绑定已更新",
+                                        );
+                                      }}
+                                      ariaLabel="项目绑定知识库"
+                                      className="omni-select--field"
+                                      options={[
+                                        { value: "", label: "全部知识库" },
+                                        ...knowledgeCollections.map(
+                                          (collection) => ({
+                                            value: collection.id,
+                                            label: collection.name,
+                                          }),
+                                        ),
+                                      ]}
+                                    />
+                                    <div className="omni-settings-dialog__model-select-meta">
+                                      {selectedProjectKnowledgeCollection
+                                        ? `仅检索：${selectedProjectKnowledgeCollection.name}`
+                                        : knowledgeCollections.length > 0
+                                          ? "未绑定时会从全部知识库召回"
+                                          : "还没有可绑定的知识库"}
+                                    </div>
+                                  </div>
+                                </label>
+                                <label className="chat-topic-panel__field">
+                                  <span>所属分组</span>
+                                  <OmniSelect
+                                    value={activeProject.groupName ?? ""}
+                                    onChange={(nextValue) => {
+                                      saveProjectPatch(
+                                        { groupName: nextValue || null },
+                                        "项目分组已更新",
+                                      );
+                                    }}
+                                    ariaLabel="项目所属分组"
+                                    className="omni-select--field"
+                                    options={[
+                                      {
+                                        value: "",
+                                        label: DEFAULT_PROJECT_GROUP_LABEL,
+                                      },
+                                      ...projectGroupNames.map((groupName) => ({
+                                        value: groupName,
+                                        label: groupName,
+                                      })),
+                                    ]}
+                                  />
+                                </label>
+                                <label className="chat-topic-panel__field omni-settings-dialog__field--full">
+                                  <span>描述</span>
+                                  <input
+                                    value={projectDescriptionDraft}
+                                    onChange={(event) =>
+                                      setProjectDescriptionDraft(
+                                        event.target.value,
+                                      )
+                                    }
+                                    onBlur={() =>
+                                      saveProjectPatch(
+                                        {
+                                          description: projectDescriptionDraft,
+                                        },
+                                        "项目描述已保存",
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label className="chat-topic-panel__field omni-settings-dialog__field--full">
+                                  <span>角色设定</span>
+                                  <textarea
+                                    value={projectPromptDraft}
+                                    onChange={(event) =>
+                                      setProjectPromptDraft(event.target.value)
+                                    }
+                                    onBlur={() =>
+                                      saveProjectPatch(
+                                        { systemPrompt: projectPromptDraft },
+                                        "角色设定已保存",
+                                      )
+                                    }
+                                    rows={5}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <div className="omni-settings-dialog__setting-control omni-settings-dialog__setting-control--avatar">
-                          <button
-                            ref={projectAvatarTriggerRef}
-                            type="button"
-                            className="omni-settings-dialog__avatar-hero"
-                            onClick={() => setProjectAvatarPanelOpen((current) => !current)}
-                            title="选择头像"
-                          >
-                            <span className="omni-settings-dialog__avatar-hero-preview">
-                              {renderProjectAvatar(activeProject)}
-                            </span>
-                            <span className="omni-settings-dialog__avatar-hero-copy">
-                              <strong>点击更换头像</strong>
-                              <span>{activeProject.avatarType === "image" ? "当前使用自定义图片" : "当前使用头像包图标"}</span>
-                            </span>
-                          </button>
-                          {projectAvatarPanelOpen && (
-                            <div ref={projectAvatarPanelRef} className="omni-settings-dialog__avatar-panel">
-                              <div className="omni-settings-dialog__avatar-panel-hint">仅支持上传图片作为项目头像。</div>
+
+                        <div className="omni-settings-dialog__section">
+                          <div className="omni-settings-dialog__section-title">
+                            项目工作目录
+                          </div>
+                          <div className="omni-settings-dialog__setting-hint">
+                            绑定本地目录后，对话可读取该目录下的文件，并自动加载目录中的
+                            AGENTS.md 作为本项目的额外指令。
+                          </div>
+                          <div className="omni-settings-dialog__workspace-row">
+                            <input
+                              className="omni-settings-dialog__workspace-path"
+                              value={activeProject.workspacePath}
+                              readOnly
+                              placeholder="未绑定工作目录"
+                            />
+                            <button
+                              type="button"
+                              className="omni-settings-dialog__workspace-pick"
+                              onClick={async () => {
+                                try {
+                                  const selected = await open({
+                                    directory: true,
+                                    title: "选择项目工作目录（可取消以跳过）",
+                                  });
+                                  if (
+                                    typeof selected === "string" &&
+                                    selected.trim()
+                                  ) {
+                                    saveProjectPatch(
+                                      { workspacePath: selected.trim() },
+                                      "工作目录已更新",
+                                    );
+                                    await refreshProjectAgentsMd();
+                                  }
+                                } catch {
+                                  showProjectNotice(
+                                    "无法打开目录选择器",
+                                    "error",
+                                  );
+                                }
+                              }}
+                            >
+                              选择目录
+                            </button>
+                          </div>
+                          {activeProject.workspacePath ? (
+                            <div className="omni-settings-dialog__agents-md">
+                              <div className="omni-settings-dialog__setting-label">
+                                AGENTS.md（自动读取，只读）
+                              </div>
+                              <textarea
+                                className="omni-settings-dialog__agents-md-text"
+                                value={projectAgentsMd}
+                                readOnly
+                                rows={6}
+                                placeholder="该目录没有 AGENTS.md 文件"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="omni-settings-dialog__section">
+                          <div className="omni-settings-dialog__section-title">
+                            工具集模板
+                          </div>
+                          <div className="omni-settings-dialog__toggle-list">
+                            {TOOLSET_MANIFESTS.map((toolset) => (
                               <button
+                                key={toolset.id}
                                 type="button"
-                                className="chat-history-panel__avatar-upload"
-                                onClick={() => projectAvatarInputRef.current?.click()}
+                                className="omni-settings-dialog__preset-card"
+                                onClick={() => {
+                                  saveProjectPatch(
+                                    { allowedToolIds: toolset.toolIds },
+                                    "工具集模板已应用",
+                                  );
+                                }}
                               >
-                                上传图片
+                                <div className="omni-settings-dialog__toggle-copy">
+                                  <strong>{toolset.title}</strong>
+                                  <span>{toolset.description}</span>
+                                </div>
+                                <span className="omni-settings-dialog__preset-card-meta">
+                                  {toolset.toolIds.length} 项工具
+                                </span>
                               </button>
-                            </div>
-                          )}
+                            ))}
+                          </div>
                         </div>
+                      </>
+                    )}
+
+                    <div className="omni-settings-dialog__section">
+                      <div className="omni-settings-dialog__section-title">
+                        记忆策略
                       </div>
-                      <div className="omni-settings-dialog__form-grid">
-                        <label className="chat-topic-panel__field">
-                          <span>名称</span>
-                          <input
-                            value={projectTitleDraft}
-                            onChange={(event) => setProjectTitleDraft(event.target.value)}
-                            onBlur={() => saveProjectPatch({ title: projectTitleDraft }, "项目名称已保存")}
-                          />
-                        </label>
-                        <label className="chat-topic-panel__field">
-                          <span>默认模型</span>
-                          <div className="omni-settings-dialog__model-select">
-                            <OmniSelect
-                              value={projectModelDraft}
-                              onChange={(nextValue) => {
-                                const nextModelId = projectModelDraft === nextValue ? "" : nextValue;
-                                setProjectModelDraft(nextModelId);
-                                saveProjectPatch({ defaultModelId: nextModelId || null }, "默认模型已更新");
-                              }}
-                              ariaLabel="项目默认模型"
-                              className="omni-select--field"
-                              placeholder="跟随主模型"
-                              options={availableModels.map((model) => ({ value: model.id, label: model.name }))}
-                            />
-                            {selectedProjectModel && (
-                              <div className="omni-settings-dialog__model-select-meta">
-                                {selectedProjectModel.provider} / {selectedProjectModel.id} · 会覆盖主模型，仅当前项目生效
-                              </div>
-                            )}
-                            {!selectedProjectModel && (
-                              <div className="omni-settings-dialog__model-select-meta">
-                                未单独指定时使用顶部选择的主模型
-                              </div>
-                            )}
+                      <div className="omni-settings-dialog__toggle-list">
+                        <label className="omni-settings-dialog__toggle-row">
+                          <div className="omni-settings-dialog__toggle-copy">
+                            <strong>记忆范围</strong>
+                            <span>
+                              控制这个项目能否读取历史记忆，以及召回的边界。
+                            </span>
                           </div>
-                        </label>
-                        <label className="chat-topic-panel__field">
-                          <span>绑定知识库</span>
-                          <div className="omni-settings-dialog__model-select">
-                            <OmniSelect
-                              value={activeProject.knowledgeCollectionId ?? ""}
-                              onChange={(nextValue) => {
-                                saveProjectPatch({ knowledgeCollectionId: nextValue || null }, "知识库绑定已更新");
-                              }}
-                              ariaLabel="项目绑定知识库"
-                              className="omni-select--field"
-                              options={[
-                                { value: "", label: "全部知识库" },
-                                ...knowledgeCollections.map((collection) => ({ value: collection.id, label: collection.name })),
-                              ]}
-                            />
-                            <div className="omni-settings-dialog__model-select-meta">
-                              {selectedProjectKnowledgeCollection
-                                ? `仅检索：${selectedProjectKnowledgeCollection.name}`
-                                : knowledgeCollections.length > 0
-                                  ? "未绑定时会从全部知识库召回"
-                                  : "还没有可绑定的知识库"}
-                            </div>
-                          </div>
-                        </label>
-                        <label className="chat-topic-panel__field">
-                          <span>所属分组</span>
                           <OmniSelect
-                            value={activeProject.groupName ?? ""}
-                            onChange={(nextValue) => {
-                              saveProjectPatch({ groupName: nextValue || null }, "项目分组已更新");
-                            }}
-                            ariaLabel="项目所属分组"
-                            className="omni-select--field"
+                            value={activeProject.memoryScope}
+                            onChange={(value) =>
+                              saveProjectPatch(
+                                {
+                                  memoryScope: value as ProjectMemoryScope,
+                                },
+                                "记忆范围已更新",
+                              )
+                            }
+                            ariaLabel="项目记忆范围"
+                            className="omni-select--memory"
                             options={[
-                              { value: "", label: DEFAULT_PROJECT_GROUP_LABEL },
-                              ...projectGroupNames.map((groupName) => ({ value: groupName, label: groupName })),
+                              { value: "off", label: "关闭记忆" },
+                              { value: "session", label: "仅当前话题" },
+                              { value: "project", label: "当前项目全局" },
                             ]}
                           />
                         </label>
-                        <label className="chat-topic-panel__field omni-settings-dialog__field--full">
-                          <span>描述</span>
-                          <input
-                            value={projectDescriptionDraft}
-                            onChange={(event) => setProjectDescriptionDraft(event.target.value)}
-                            onBlur={() => saveProjectPatch({ description: projectDescriptionDraft }, "项目描述已保存")}
-                          />
-                        </label>
-                        <label className="chat-topic-panel__field omni-settings-dialog__field--full">
-                          <span>角色设定</span>
-                          <textarea
-                            value={projectPromptDraft}
-                            onChange={(event) => setProjectPromptDraft(event.target.value)}
-                            onBlur={() => saveProjectPatch({ systemPrompt: projectPromptDraft }, "角色设定已保存")}
-                            rows={5}
-                          />
-                        </label>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">项目工作目录</div>
-                  <div className="omni-settings-dialog__setting-hint">
-                    绑定本地目录后，对话可读取该目录下的文件，并自动加载目录中的 AGENTS.md 作为本项目的额外指令。
-                  </div>
-                  <div className="omni-settings-dialog__workspace-row">
-                    <input
-                      className="omni-settings-dialog__workspace-path"
-                      value={activeProject.workspacePath}
-                      readOnly
-                      placeholder="未绑定工作目录"
-                    />
-                    <button
-                      type="button"
-                      className="omni-settings-dialog__workspace-pick"
-                      onClick={async () => {
-                        try {
-                          const selected = await open({ directory: true, title: "选择项目工作目录（可取消以跳过）" });
-                          if (typeof selected === "string" && selected.trim()) {
-                            saveProjectPatch({ workspacePath: selected.trim() }, "工作目录已更新");
-                            await refreshProjectAgentsMd();
-                          }
-                        } catch {
-                          showProjectNotice("无法打开目录选择器", "error");
-                        }
-                      }}
-                    >
-                      选择目录
-                    </button>
-                  </div>
-                  {activeProject.workspacePath ? (
-                    <div className="omni-settings-dialog__agents-md">
-                      <div className="omni-settings-dialog__setting-label">AGENTS.md（自动读取，只读）</div>
-                      <textarea
-                        className="omni-settings-dialog__agents-md-text"
-                        value={projectAgentsMd}
-                        readOnly
-                        rows={6}
-                        placeholder="该目录没有 AGENTS.md 文件"
-                      />
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">工具集模板</div>
-                  <div className="omni-settings-dialog__toggle-list">
-                    {TOOLSET_MANIFESTS.map((toolset) => (
-                      <button
-                        key={toolset.id}
-                        type="button"
-                        className="omni-settings-dialog__preset-card"
-                        onClick={() => {
-                          saveProjectPatch({ allowedToolIds: toolset.toolIds }, "工具集模板已应用");
-                        }}
-                      >
-                        <div className="omni-settings-dialog__toggle-copy">
-                          <strong>{toolset.title}</strong>
-                          <span>{toolset.description}</span>
+                    <div className="omni-settings-dialog__section">
+                      <div className="omni-settings-dialog__section-title">
+                        记忆库
+                      </div>
+                      <div className="omni-settings-dialog__project-copy">
+                        <div className="omni-settings-dialog__setting-hint">
+                          当前项目已沉淀 {projectMemories.length}{" "}
+                          条长期记忆。记忆范围：{activeMemoryScopeLabel}
+                          ，自动沉淀记忆与摘要已内置开启。
                         </div>
-                        <span className="omni-settings-dialog__preset-card-meta">{toolset.toolIds.length} 项工具</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                </>
-                )}
-
-                <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">记忆策略</div>
-                  <div className="omni-settings-dialog__toggle-list">
-                    <label className="omni-settings-dialog__toggle-row">
-                      <div className="omni-settings-dialog__toggle-copy">
-                        <strong>记忆范围</strong>
-                        <span>控制这个项目能否读取历史记忆，以及召回的边界。</span>
                       </div>
-                      <OmniSelect
-                        value={activeProject.memoryScope}
-                        onChange={(value) =>
-                          saveProjectPatch({
-                            memoryScope: value as ProjectMemoryScope,
-                          }, "记忆范围已更新")
-                        }
-                        ariaLabel="项目记忆范围"
-                        className="omni-select--memory"
-                        options={[
-                          { value: "off", label: "关闭记忆" },
-                          { value: "session", label: "仅当前话题" },
-                          { value: "project", label: "当前项目全局" },
-                        ]}
-                      />
-                    </label>
-
-                  </div>
-                </div>
-
-                <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">记忆库</div>
-                  <div className="omni-settings-dialog__project-copy">
-                    <div className="omni-settings-dialog__setting-hint">
-                      当前项目已沉淀 {projectMemories.length} 条长期记忆。记忆范围：{activeMemoryScopeLabel}，自动沉淀记忆与摘要已内置开启。
-                    </div>
-                  </div>
-                  <div className="omni-settings-dialog__memory-add">
-                    <input
-                      value={newMemoryDraft}
-                      onChange={(event) => setNewMemoryDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          addManualMemory();
-                        }
-                      }}
-                      placeholder="手动添加一条长期记忆，例如：以后回答都用中文"
-                    />
-                    <button type="button" onClick={addManualMemory} disabled={!newMemoryDraft.trim()}>
-                      添加记忆
-                    </button>
-                  </div>
-                  <div className="omni-settings-dialog__memory-toolbar">
-                    <div className="omni-settings-dialog__memory-search">
-                      <Search size={14} strokeWidth={1.8} />
-                      <input
-                        value={memorySearchQuery}
-                        onChange={(event) => setMemorySearchQuery(event.target.value)}
-                        placeholder="搜索记忆、来源会话或来源类型"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      className="omni-settings-dialog__memory-clear"
-                      onClick={() => setMemoryClearConfirmOpen(true)}
-                      disabled={projectMemories.length === 0}
-                    >
-                      清空记忆
-                    </button>
-                  </div>
-                  {projectMemories.length > 0 ? (
-                    <div className="omni-settings-dialog__memory-list">
-                      {visibleProjectMemories.map((memory) => (
-                        <div key={memory.id} className="omni-settings-dialog__memory-item">
-                          {editingMemoryId === memory.id ? (
-                            <div className="omni-settings-dialog__memory-editor">
-                              <textarea
-                                value={editingMemoryDraft}
-                                onChange={(event) => setEditingMemoryDraft(event.target.value)}
-                                rows={3}
-                              />
-                              <div className="omni-settings-dialog__memory-actions">
-                                <button type="button" onClick={cancelEditMemory}>
-                                  取消
-                                </button>
-                                <button type="button" className="omni-settings-dialog__memory-save" onClick={saveEditingMemory}>
-                                  保存
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="omni-settings-dialog__memory-copy">
-                                <strong>{memory.content}</strong>
-                                <div className="omni-settings-dialog__memory-meta">
-                                  <span className="omni-settings-dialog__memory-source-type">{getMemorySourceTypeLabel(memory.sourceType)}</span>
-                                  <span>
-                                    {memory.sourceSessionId
-                                      ? `来源会话：${topicTitleById.get(memory.sourceSessionId) ?? "来源会话已删除或不可用"}`
-                                      : "未记录来源会话"}
-                                  </span>
-                                  <span>{new Date(memory.updatedAt).toLocaleString("zh-CN")}</span>
+                      <div className="omni-settings-dialog__memory-add">
+                        <input
+                          value={newMemoryDraft}
+                          onChange={(event) =>
+                            setNewMemoryDraft(event.target.value)
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              addManualMemory();
+                            }
+                          }}
+                          placeholder="手动添加一条长期记忆，例如：以后回答都用中文"
+                        />
+                        <button
+                          type="button"
+                          onClick={addManualMemory}
+                          disabled={!newMemoryDraft.trim()}
+                        >
+                          添加记忆
+                        </button>
+                      </div>
+                      <div className="omni-settings-dialog__memory-toolbar">
+                        <div className="omni-settings-dialog__memory-search">
+                          <Search size={14} strokeWidth={1.8} />
+                          <input
+                            value={memorySearchQuery}
+                            onChange={(event) =>
+                              setMemorySearchQuery(event.target.value)
+                            }
+                            placeholder="搜索记忆、来源会话或来源类型"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="omni-settings-dialog__memory-clear"
+                          onClick={() => setMemoryClearConfirmOpen(true)}
+                          disabled={projectMemories.length === 0}
+                        >
+                          清空记忆
+                        </button>
+                      </div>
+                      {projectMemories.length > 0 ? (
+                        <div className="omni-settings-dialog__memory-list">
+                          {visibleProjectMemories.map((memory) => (
+                            <div
+                              key={memory.id}
+                              className="omni-settings-dialog__memory-item"
+                            >
+                              {editingMemoryId === memory.id ? (
+                                <div className="omni-settings-dialog__memory-editor">
+                                  <textarea
+                                    value={editingMemoryDraft}
+                                    onChange={(event) =>
+                                      setEditingMemoryDraft(event.target.value)
+                                    }
+                                    rows={3}
+                                  />
+                                  <div className="omni-settings-dialog__memory-actions">
+                                    <button
+                                      type="button"
+                                      onClick={cancelEditMemory}
+                                    >
+                                      取消
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="omni-settings-dialog__memory-save"
+                                      onClick={saveEditingMemory}
+                                    >
+                                      保存
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="omni-settings-dialog__memory-actions">
-                                <button
-                                  type="button"
-                                  onClick={() => openMemorySourceSession(memory.sourceSessionId)}
-                                  disabled={!memory.sourceSessionId || !topicTitleById.has(memory.sourceSessionId)}
-                                >
-                                  来源
-                                </button>
-                                <button type="button" onClick={() => startEditMemory(memory)}>
-                                  编辑
-                                </button>
-                                <button
-                                  type="button"
-                                  className="omni-settings-dialog__memory-delete"
-                                  onClick={() => {
-                                    const deleted = onDeleteProjectMemory(memory.id);
-                                    showProjectNotice(deleted ? "记忆已删除" : "记忆删除失败", deleted ? "success" : "error");
-                                  }}
-                                >
-                                  删除
-                                </button>
-                              </div>
-                            </>
+                              ) : (
+                                <>
+                                  <div className="omni-settings-dialog__memory-copy">
+                                    <strong>{memory.content}</strong>
+                                    <div className="omni-settings-dialog__memory-meta">
+                                      <span className="omni-settings-dialog__memory-source-type">
+                                        {getMemorySourceTypeLabel(
+                                          memory.sourceType,
+                                        )}
+                                      </span>
+                                      <span>
+                                        {memory.sourceSessionId
+                                          ? `来源会话：${topicTitleById.get(memory.sourceSessionId) ?? "来源会话已删除或不可用"}`
+                                          : "未记录来源会话"}
+                                      </span>
+                                      <span>
+                                        {new Date(
+                                          memory.updatedAt,
+                                        ).toLocaleString("zh-CN")}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="omni-settings-dialog__memory-actions">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openMemorySourceSession(
+                                          memory.sourceSessionId,
+                                        )
+                                      }
+                                      disabled={
+                                        !memory.sourceSessionId ||
+                                        !topicTitleById.has(
+                                          memory.sourceSessionId,
+                                        )
+                                      }
+                                    >
+                                      来源
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditMemory(memory)}
+                                    >
+                                      编辑
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="omni-settings-dialog__memory-delete"
+                                      onClick={() => {
+                                        const deleted = onDeleteProjectMemory(
+                                          memory.id,
+                                        );
+                                        showProjectNotice(
+                                          deleted
+                                            ? "记忆已删除"
+                                            : "记忆删除失败",
+                                          deleted ? "success" : "error",
+                                        );
+                                      }}
+                                    >
+                                      删除
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                          {filteredProjectMemories.length === 0 && (
+                            <div className="omni-settings-dialog__memory-empty">
+                              没有匹配的记忆
+                            </div>
+                          )}
+                          {filteredProjectMemories.length > 12 && (
+                            <button
+                              type="button"
+                              className="omni-settings-dialog__memory-more"
+                              onClick={() =>
+                                setShowAllMemories((current) => !current)
+                              }
+                            >
+                              {showAllMemories
+                                ? "收起部分记忆"
+                                : `显示全部 ${filteredProjectMemories.length} 条记忆`}
+                            </button>
                           )}
                         </div>
-                      ))}
-                      {filteredProjectMemories.length === 0 && (
-                        <div className="omni-settings-dialog__memory-empty">没有匹配的记忆</div>
-                      )}
-                      {filteredProjectMemories.length > 12 && (
-                        <button
-                          type="button"
-                          className="omni-settings-dialog__memory-more"
-                          onClick={() => setShowAllMemories((current) => !current)}
-                        >
-                          {showAllMemories ? "收起部分记忆" : `显示全部 ${filteredProjectMemories.length} 条记忆`}
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="omni-settings-dialog__memory-empty">暂无已沉淀记忆</div>
-                  )}
-                  {memoryClearConfirmOpen && (
-                    <div className="chat-topic-panel__menu-confirm omni-settings-dialog__memory-confirm">
-                      <div className="chat-topic-panel__menu-confirm-title">清空当前项目记忆</div>
-                      <div className="chat-topic-panel__menu-confirm-message">
-                        将删除当前项目的 {projectMemories.length} 条长期记忆。此操作不会删除会话记录。
-                      </div>
-                      <div className="chat-topic-panel__menu-confirm-actions">
-                        <button type="button" className="chat-topic-panel__menu-button" onClick={() => setMemoryClearConfirmOpen(false)}>
-                          取消
-                        </button>
-                        <button type="button" className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger" onClick={clearCurrentProjectMemories}>
-                          确认清空
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {isCustomProjectSettingsMode && (
-                <>
-                <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">
-                    工具权限
-                    <span className="omni-settings-dialog__section-subtitle">来自扩展中心已启用的工具</span>
-                  </div>
-                  <div className="omni-settings-dialog__toggle-list">
-                    {pluginRegistry
-                      .listEnabledTools()
-                      .filter((tool) => !pluginRegistry.isBuiltin(tool.id))
-                      .filter((tool) => PROJECT_TOOL_OPTIONS.some((option) => option.id === tool.id))
-                      .map((tool) => {
-                      const checked = activeProject.allowedToolIds.includes(tool.id);
-                      return (
-                        <label key={tool.id} className="omni-settings-dialog__toggle-row">
-                          <div className="omni-settings-dialog__toggle-copy">
-                            <strong>{tool.name}</strong>
-                            <span>{tool.description}</span>
-                          </div>
-                          <OmniSwitch
-                            checked={checked}
-                            onChange={(nextChecked) => {
-                              const nextAllowedToolIds = nextChecked
-                                ? [...activeProject.allowedToolIds, tool.id]
-                                : activeProject.allowedToolIds.filter((item) => item !== tool.id);
-                              saveProjectPatch({ allowedToolIds: nextAllowedToolIds }, "工具权限已更新");
-                            }}
-                            ariaLabel={tool.name}
-                          />
-                        </label>
-                      );
-                    })}
-                    {pluginRegistry
-                      .listEnabledTools()
-                      .filter((tool) => !pluginRegistry.isBuiltin(tool.id))
-                      .filter((tool) => PROJECT_TOOL_OPTIONS.some((option) => option.id === tool.id))
-                      .length === 0 ? (
-                      <p className="omni-settings-dialog__empty-hint">
-                        暂无可选工具：内置工具对所有模型默认可用，无需在此开启。
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="omni-settings-dialog__section">
-                  <div className="omni-settings-dialog__section-title">
-                    技能权限
-                    <span className="omni-settings-dialog__section-subtitle">来自扩展中心已启用的技能</span>
-                  </div>
-                  <div className="omni-settings-dialog__toggle-list">
-                    {pluginRegistry.listEnabledSkills().map((skill) => {
-                      const checked = activeProject.allowedSkillIds.includes(skill.id);
-                      return (
-                        <label key={skill.id} className="omni-settings-dialog__toggle-row">
-                          <div className="omni-settings-dialog__toggle-copy">
-                            <strong>{skill.name}</strong>
-                            <span>{skill.description} · {skill.command ?? `/${skill.id}`}</span>
-                          </div>
-                          <OmniSwitch
-                            checked={checked}
-                            onChange={(nextChecked) => {
-                              const nextAllowedSkillIds = nextChecked
-                                ? [...activeProject.allowedSkillIds, skill.id]
-                                : activeProject.allowedSkillIds.filter((item) => item !== skill.id);
-                              saveProjectPatch({ allowedSkillIds: nextAllowedSkillIds }, "技能权限已更新");
-                            }}
-                            ariaLabel={skill.name}
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-                </>
-                )}
-
-              </div>
-              {isCustomProjectSettingsMode && (
-              <input
-                ref={projectAvatarInputRef}
-                type="file"
-                accept="image/*"
-                className="chat-history-panel__avatar-file"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const result = reader.result;
-                    if (typeof result === "string") {
-                      saveProjectPatch({ avatarType: "image", avatarValue: result }, "自定义头像已更新");
-                      setProjectAvatarPanelOpen(false);
-                    }
-                  };
-                  reader.readAsDataURL(file);
-                  event.currentTarget.value = "";
-                }}
-              />
-              )}
-            </div>
-          ) : (
-            <>
-              <div ref={messagesScrollRef} className="main-chat-scroll hide-scrollbar">
-                {!hasModels && messages.length === 0 && (
-                  <div className="empty-chat-state">
-                    <div className="empty-chat-state__hero">
-                      <div className="empty-chat-state__icon">
-                        <img src={omniIconSrc} alt="Omni" />
-                      </div>
-                      <h2>欢迎使用 Omni</h2>
-                      <p>请先配置一个可用模型，再开始对话、搜索或执行工作流。</p>
-                    </div>
-                    <button onClick={onSettingsOpen} className="empty-chat-state__primary" type="button">
-                      打开设置
-                    </button>
-                  </div>
-                )}
-
-                {hasModels && messages.length === 0 && (
-                  <div className={`empty-chat-state${useCompactEmptyGuideLayout ? " empty-chat-state--compact" : ""}`}>
-                    {showContextRecallBanner && !isContextRecallBannerDismissed && (
-                      <div className="chat-recall-banner">
-                        <div className="chat-recall-banner__copy">
-                          <strong>已为当前会话准备相关上下文</strong>
-                          <span>
-                            {relatedContext.memories.length > 0 ? `召回 ${relatedContext.memories.length} 条记忆` : ""}
-                            {relatedContext.memories.length > 0 && relatedContext.summaries.length > 0 ? " · " : ""}
-                            {relatedContext.summaries.length > 0 ? `关联 ${relatedContext.summaries.length} 条摘要` : ""}
-                          </span>
+                      ) : (
+                        <div className="omni-settings-dialog__memory-empty">
+                          暂无已沉淀记忆
                         </div>
-                        <button
-                          type="button"
-                          className="chat-recall-banner__action"
-                          onClick={() => {
-                            setTopicPanelManualVisible(true);
-                          }}
-                        >
-                          查看内容
-                        </button>
-                        <button
-                          type="button"
-                          className="chat-recall-banner__action"
-                          onClick={() => setIsContextRecallBannerDismissed(true)}
-                        >
-                          关闭
-                        </button>
-                      </div>
-                    )}
-                    <div className="empty-chat-state__hero">
-                      <div className="empty-chat-state__icon">
-                        <img src={omniIconSrc} alt="Omni" />
-                      </div>
-                      <h2>从当前项目开始</h2>
-                      <p>
-                        {isEmptyGuideCompact
-                          ? "直接输入问题开始对话。需要推荐模板时可展开引导。"
-                          : "你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前项目。"}
-                      </p>
-                    </div>
-                    <div className="empty-chat-state__actions">
-                      <button
-                        type="button"
-                        className="empty-chat-state__secondary"
-                        onClick={() => updateEmptyGuideCompact(!isEmptyGuideCompact)}
-                      >
-                        {isEmptyGuideCompact ? "展开推荐" : "收起推荐"}
-                      </button>
-                    </div>
-                    {!isEmptyGuideCompact && (
-                      <>
-                        <div className="empty-chat-state__subhead">
-                          <Sparkles size={14} strokeWidth={1.9} />
-                          <span>推荐起步方式</span>
-                        </div>
-                        <div className="empty-chat-state__cards">
-                          {recommendedPrompts.map((prompt, index) => (
-                            <button key={prompt} type="button" className="empty-chat-state__card" onClick={() => onUseEmptyPrompt(prompt)}>
-                              <div className="empty-chat-state__card-icon">
-                                {index % 2 === 0 ? <Compass size={18} strokeWidth={1.8} /> : <Sparkles size={18} strokeWidth={1.8} />}
-                              </div>
-                              <div className="empty-chat-state__card-copy">
-                                <strong>{RECOMMENDED_PROJECT_PRESETS[index]?.title || "快速开始"}</strong>
-                                <span>{RECOMMENDED_PROJECT_PRESETS[index]?.description || prompt}</span>
-                              </div>
-                              <ArrowRight size={16} strokeWidth={1.8} />
+                      )}
+                      {memoryClearConfirmOpen && (
+                        <div className="chat-topic-panel__menu-confirm omni-settings-dialog__memory-confirm">
+                          <div className="chat-topic-panel__menu-confirm-title">
+                            清空当前项目记忆
+                          </div>
+                          <div className="chat-topic-panel__menu-confirm-message">
+                            将删除当前项目的 {projectMemories.length}{" "}
+                            条长期记忆。此操作不会删除会话记录。
+                          </div>
+                          <div className="chat-topic-panel__menu-confirm-actions">
+                            <button
+                              type="button"
+                              className="chat-topic-panel__menu-button"
+                              onClick={() => setMemoryClearConfirmOpen(false)}
+                            >
+                              取消
                             </button>
-                          ))}
+                            <button
+                              type="button"
+                              className="chat-topic-panel__menu-button chat-topic-panel__menu-button--danger"
+                              onClick={clearCurrentProjectMemories}
+                            >
+                              确认清空
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {isCustomProjectSettingsMode && (
+                      <>
+                        <div className="omni-settings-dialog__section">
+                          <div className="omni-settings-dialog__section-title">
+                            工具权限
+                            <span className="omni-settings-dialog__section-subtitle">
+                              来自扩展中心已启用的工具
+                            </span>
+                          </div>
+                          <div className="omni-settings-dialog__toggle-list">
+                            {pluginRegistry
+                              .listEnabledTools()
+                              .filter(
+                                (tool) => !pluginRegistry.isBuiltin(tool.id),
+                              )
+                              .filter((tool) =>
+                                PROJECT_TOOL_OPTIONS.some(
+                                  (option) => option.id === tool.id,
+                                ),
+                              )
+                              .map((tool) => {
+                                const checked =
+                                  activeProject.allowedToolIds.includes(
+                                    tool.id,
+                                  );
+                                return (
+                                  <label
+                                    key={tool.id}
+                                    className="omni-settings-dialog__toggle-row"
+                                  >
+                                    <div className="omni-settings-dialog__toggle-copy">
+                                      <strong>{tool.name}</strong>
+                                      <span>{tool.description}</span>
+                                    </div>
+                                    <OmniSwitch
+                                      checked={checked}
+                                      onChange={(nextChecked) => {
+                                        const nextAllowedToolIds = nextChecked
+                                          ? [
+                                              ...activeProject.allowedToolIds,
+                                              tool.id,
+                                            ]
+                                          : activeProject.allowedToolIds.filter(
+                                              (item) => item !== tool.id,
+                                            );
+                                        saveProjectPatch(
+                                          {
+                                            allowedToolIds: nextAllowedToolIds,
+                                          },
+                                          "工具权限已更新",
+                                        );
+                                      }}
+                                      ariaLabel={tool.name}
+                                    />
+                                  </label>
+                                );
+                              })}
+                            {pluginRegistry
+                              .listEnabledTools()
+                              .filter(
+                                (tool) => !pluginRegistry.isBuiltin(tool.id),
+                              )
+                              .filter((tool) =>
+                                PROJECT_TOOL_OPTIONS.some(
+                                  (option) => option.id === tool.id,
+                                ),
+                              ).length === 0 ? (
+                              <p className="omni-settings-dialog__empty-hint">
+                                暂无可选工具：内置工具对所有模型默认可用，无需在此开启。
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="omni-settings-dialog__section">
+                          <div className="omni-settings-dialog__section-title">
+                            技能权限
+                            <span className="omni-settings-dialog__section-subtitle">
+                              来自扩展中心已启用的技能
+                            </span>
+                          </div>
+                          <div className="omni-settings-dialog__toggle-list">
+                            {pluginRegistry.listEnabledSkills().map((skill) => {
+                              const checked =
+                                activeProject.allowedSkillIds.includes(
+                                  skill.id,
+                                );
+                              return (
+                                <label
+                                  key={skill.id}
+                                  className="omni-settings-dialog__toggle-row"
+                                >
+                                  <div className="omni-settings-dialog__toggle-copy">
+                                    <strong>{skill.name}</strong>
+                                    <span>
+                                      {skill.description} ·{" "}
+                                      {skill.command ?? `/${skill.id}`}
+                                    </span>
+                                  </div>
+                                  <OmniSwitch
+                                    checked={checked}
+                                    onChange={(nextChecked) => {
+                                      const nextAllowedSkillIds = nextChecked
+                                        ? [
+                                            ...activeProject.allowedSkillIds,
+                                            skill.id,
+                                          ]
+                                        : activeProject.allowedSkillIds.filter(
+                                            (item) => item !== skill.id,
+                                          );
+                                      saveProjectPatch(
+                                        {
+                                          allowedSkillIds: nextAllowedSkillIds,
+                                        },
+                                        "技能权限已更新",
+                                      );
+                                    }}
+                                    ariaLabel={skill.name}
+                                  />
+                                </label>
+                              );
+                            })}
+                          </div>
                         </div>
                       </>
                     )}
                   </div>
-                )}
-
-                {messages.map((msg, index) => {
-                  const isCurrentStreamingMessage = isStreaming && index === messages.length - 1;
-                  if (msg.role === "project" && !msg.content.trim() && !isCurrentStreamingMessage) {
-                    return null;
-                  }
-
-                  return (
-                    <ChatMessage
-                      key={index}
-                      message={msg}
-                      index={index}
-                      isStreaming={isCurrentStreamingMessage}
-                      isEditing={editingMessageIndex === index}
-                      onCopy={handleCopyMessageWithNotice}
-                      onEdit={onEditUserMessage}
-                      onCancelEdit={onCancelEditUserMessage}
-                      onSubmitEdit={onSubmitEditedUserMessage}
-                      onRegenerate={onRegenerateMessage}
-                      onSaveAsMarkdown={handleSaveAsMarkdown}
-                      onOpenChangesPanel={() => setSidePanelTab("changes")}
-                      onOpenFileLocation={handleOpenFileLocation}
-                      onOpenAttachment={handleOpenAttachment}
+                  {isCustomProjectSettingsMode && (
+                    <input
+                      ref={projectAvatarInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="chat-history-panel__avatar-file"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const result = reader.result;
+                          if (typeof result === "string") {
+                            saveProjectPatch(
+                              { avatarType: "image", avatarValue: result },
+                              "自定义头像已更新",
+                            );
+                            setProjectAvatarPanelOpen(false);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                        event.currentTarget.value = "";
+                      }}
                     />
-                  );
-                })}
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div
+                    ref={messagesScrollRef}
+                    className="main-chat-scroll hide-scrollbar"
+                  >
+                    {!hasModels && messages.length === 0 && (
+                      <div className="empty-chat-state">
+                        <div className="empty-chat-state__hero">
+                          <div className="empty-chat-state__icon">
+                            <img src={omniIconSrc} alt="Omni" />
+                          </div>
+                          <h2>欢迎使用 Omni</h2>
+                          <p>
+                            请先配置一个可用模型，再开始对话、搜索或执行工作流。
+                          </p>
+                        </div>
+                        <button
+                          onClick={onSettingsOpen}
+                          className="empty-chat-state__primary"
+                          type="button"
+                        >
+                          打开设置
+                        </button>
+                      </div>
+                    )}
 
-                {error && <div className="main-chat-error animate-fade-in">{error}</div>}
-              </div>
+                    {hasModels && messages.length === 0 && (
+                      <div
+                        className={`empty-chat-state${useCompactEmptyGuideLayout ? " empty-chat-state--compact" : ""}`}
+                      >
+                        {showContextRecallBanner &&
+                          !isContextRecallBannerDismissed && (
+                            <div className="chat-recall-banner">
+                              <div className="chat-recall-banner__copy">
+                                <strong>已为当前会话准备相关上下文</strong>
+                                <span>
+                                  {relatedContext.memories.length > 0
+                                    ? `召回 ${relatedContext.memories.length} 条记忆`
+                                    : ""}
+                                  {relatedContext.memories.length > 0 &&
+                                  relatedContext.summaries.length > 0
+                                    ? " · "
+                                    : ""}
+                                  {relatedContext.summaries.length > 0
+                                    ? `关联 ${relatedContext.summaries.length} 条摘要`
+                                    : ""}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="chat-recall-banner__action"
+                                onClick={() => {
+                                  setTopicPanelManualVisible(true);
+                                }}
+                              >
+                                查看内容
+                              </button>
+                              <button
+                                type="button"
+                                className="chat-recall-banner__action"
+                                onClick={() =>
+                                  setIsContextRecallBannerDismissed(true)
+                                }
+                              >
+                                关闭
+                              </button>
+                            </div>
+                          )}
+                        <div className="empty-chat-state__hero">
+                          <div className="empty-chat-state__icon">
+                            <img src={omniIconSrc} alt="Omni" />
+                          </div>
+                          <h2>从当前项目开始</h2>
+                          <p>
+                            {isEmptyGuideCompact
+                              ? "直接输入问题开始对话。需要推荐模板时可展开引导。"
+                              : "你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前项目。"}
+                          </p>
+                        </div>
+                        <div className="empty-chat-state__actions">
+                          <button
+                            type="button"
+                            className="empty-chat-state__secondary"
+                            onClick={() =>
+                              updateEmptyGuideCompact(!isEmptyGuideCompact)
+                            }
+                          >
+                            {isEmptyGuideCompact ? "展开推荐" : "收起推荐"}
+                          </button>
+                        </div>
+                        {!isEmptyGuideCompact && (
+                          <>
+                            <div className="empty-chat-state__subhead">
+                              <Sparkles size={14} strokeWidth={1.9} />
+                              <span>推荐起步方式</span>
+                            </div>
+                            <div className="empty-chat-state__cards">
+                              {recommendedPrompts.map((prompt, index) => (
+                                <button
+                                  key={prompt}
+                                  type="button"
+                                  className="empty-chat-state__card"
+                                  onClick={() => onUseEmptyPrompt(prompt)}
+                                >
+                                  <div className="empty-chat-state__card-icon">
+                                    {index % 2 === 0 ? (
+                                      <Compass size={18} strokeWidth={1.8} />
+                                    ) : (
+                                      <Sparkles size={18} strokeWidth={1.8} />
+                                    )}
+                                  </div>
+                                  <div className="empty-chat-state__card-copy">
+                                    <strong>
+                                      {RECOMMENDED_PROJECT_PRESETS[index]
+                                        ?.title || "快速开始"}
+                                    </strong>
+                                    <span>
+                                      {RECOMMENDED_PROJECT_PRESETS[index]
+                                        ?.description || prompt}
+                                    </span>
+                                  </div>
+                                  <ArrowRight size={16} strokeWidth={1.8} />
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
 
-              {messages.length > 0 && !isMessagesAtBottom && (
-                <button
-                  type="button"
-                  className="main-chat-scroll-bottom no-drag"
-                  aria-label="滚动到底部"
-                  title="滚动到底部"
-                  onClick={scrollMessagesToBottom}
-                >
-                  <ArrowDown size={17} strokeWidth={2.2} />
-                </button>
+                    {messages.map((msg, index) => {
+                      const isCurrentStreamingMessage =
+                        isStreaming && index === messages.length - 1;
+                      if (
+                        msg.role === "project" &&
+                        !msg.content.trim() &&
+                        !isCurrentStreamingMessage
+                      ) {
+                        return null;
+                      }
+
+                      return (
+                        <ChatMessage
+                          key={index}
+                          message={msg}
+                          index={index}
+                          isStreaming={isCurrentStreamingMessage}
+                          isEditing={editingMessageIndex === index}
+                          onCopy={handleCopyMessageWithNotice}
+                          onEdit={onEditUserMessage}
+                          onCancelEdit={onCancelEditUserMessage}
+                          onSubmitEdit={onSubmitEditedUserMessage}
+                          onRegenerate={onRegenerateMessage}
+                          onSaveAsMarkdown={handleSaveAsMarkdown}
+                          onOpenChangesPanel={() => setSidePanelTab("changes")}
+                          onOpenFileLocation={handleOpenFileLocation}
+                          onOpenAttachment={handleOpenAttachment}
+                        />
+                      );
+                    })}
+
+                    {error && (
+                      <div className="main-chat-error animate-fade-in">
+                        {error}
+                      </div>
+                    )}
+                  </div>
+
+                  {messages.length > 0 && !isMessagesAtBottom && (
+                    <button
+                      type="button"
+                      className="main-chat-scroll-bottom no-drag"
+                      aria-label="滚动到底部"
+                      title="滚动到底部"
+                      onClick={scrollMessagesToBottom}
+                    >
+                      <ArrowDown size={17} strokeWidth={2.2} />
+                    </button>
+                  )}
+
+                  <div
+                    className="main-chat-composer-splitter"
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="调整对话台高度"
+                    onPointerDown={handleComposerSplitterPointerDown}
+                  />
+
+                  <div
+                    ref={setComposerElement}
+                    className="main-chat-composer-outer"
+                    style={
+                      composerResizeHeight
+                        ? { height: `${composerResizeHeight}px` }
+                        : undefined
+                    }
+                  >
+                    <ChatInput
+                      allowedToolIds={allowedComposerToolIds}
+                      allowedSkillIds={allowedComposerSkillIds}
+                      canStartNewTopic={Boolean(activeProject)}
+                      contextPresetText={composerContextPresetText}
+                      knowledgeCollections={knowledgeCollections}
+                      onSend={onSend}
+                      hasConversation={messages.some(
+                        (message) => message.role === "user",
+                      )}
+                      usageLabel={
+                        activeSession
+                          ? formatUsageLabel(activeSession.usage)
+                          : null
+                      }
+                      isLoading={isLoading}
+                      isSendBlocked={isSendBlocked}
+                      onStop={onStop}
+                      onStartNewTopic={onNewChat}
+                      focusSignal={inputFocusKey}
+                      fixedHeight={composerResizeHeight}
+                      onSubmit={() => setComposerResizeHeight(null)}
+                      draftScopeKey={inputDraftScopeKey}
+                      draftValue={inputDraft}
+                      draftImages={inputDraftImages}
+                      draftAttachments={inputDraftAttachments}
+                      draftSignal={inputDraftKey}
+                      onDraftChange={onDraftChange}
+                    />
+                  </div>
+                </>
               )}
-
-              <div
-                className="main-chat-composer-splitter"
-                role="separator"
-                aria-orientation="horizontal"
-                aria-label="调整对话台高度"
-                onPointerDown={handleComposerSplitterPointerDown}
-              />
-
-              <div
-                ref={setComposerElement}
-                className="main-chat-composer-outer"
-                style={composerResizeHeight ? { height: `${composerResizeHeight}px` } : undefined}
-              >
-                <ChatInput
-                  allowedToolIds={allowedComposerToolIds}
-                  allowedSkillIds={allowedComposerSkillIds}
-                  canStartNewTopic={Boolean(activeProject)}
-                  contextPresetText={composerContextPresetText}
-                  knowledgeCollections={knowledgeCollections}
-                  onSend={onSend}
-                  hasConversation={messages.some((message) => message.role === "user")}
-                  usageLabel={activeSession ? formatUsageLabel(activeSession.usage) : null}
-                  isLoading={isLoading}
-                  isSendBlocked={isSendBlocked}
-                  onStop={onStop}
-                  onStartNewTopic={onNewChat}
-                  focusSignal={inputFocusKey}
-                  fixedHeight={composerResizeHeight}
-                  onSubmit={() => setComposerResizeHeight(null)}
-                  draftScopeKey={inputDraftScopeKey}
-                  draftValue={inputDraft}
-                  draftImages={inputDraftImages}
-                  draftAttachments={inputDraftAttachments}
-                  draftSignal={inputDraftKey}
-                  onDraftChange={onDraftChange}
-                />
-              </div>
-            </>
-          )}
-
             </main>
           </section>
 
@@ -2264,183 +3153,275 @@ export default function MainChatView({
             />
           )}
 
-          {!isProjectSettingsMode && <aside className="chat-topic-panel">
-          <div className="chat-topic-panel__body">
-            <div className="chat-topic-panel__toolbar">
-              <div className="chat-topic-panel__title">
-                {(() => {
-                  if (sidePanelTab === "history") return <Clock size={14} strokeWidth={2} />;
-                  if (sidePanelTab === "tasks") return <LayoutDashboard size={14} strokeWidth={2} />;
-                  if (sidePanelTab === "changes") return <GitBranch size={14} strokeWidth={2} />;
-                  return <Package size={14} strokeWidth={2} />;
-                })()}
-                <span>
-                  {sidePanelTab === "history" ? "历史提问" : sidePanelTab === "tasks" ? "任务" : sidePanelTab === "changes" ? "变更" : "产物"}
-                </span>
-              </div>
-            </div>
+          {!isProjectSettingsMode && (
+            <aside className="chat-topic-panel">
+              <div className="chat-topic-panel__body">
+                <div className="chat-topic-panel__toolbar">
+                  <div className="chat-topic-panel__title">
+                    {(() => {
+                      if (sidePanelTab === "history")
+                        return <Clock size={14} strokeWidth={2} />;
+                      if (sidePanelTab === "tasks")
+                        return <LayoutDashboard size={14} strokeWidth={2} />;
+                      if (sidePanelTab === "changes")
+                        return <GitBranch size={14} strokeWidth={2} />;
+                      return <Package size={14} strokeWidth={2} />;
+                    })()}
+                    <span>
+                      {sidePanelTab === "history"
+                        ? "历史提问"
+                        : sidePanelTab === "tasks"
+                          ? "任务"
+                          : sidePanelTab === "changes"
+                            ? "变更"
+                            : "产物"}
+                    </span>
+                  </div>
+                </div>
 
-            <div className="chat-topic-panel__tabs">
-              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "artifacts" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("artifacts")}>
-                产物
-                {artifactCount > 0 ? <span className="chat-topic-panel__tab-badge">{artifactCount > 99 ? "99+" : artifactCount}</span> : null}
-              </button>
-              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "changes" ? "chat-topic-panel__tab--active" : ""} ${activeProject?.workspacePath ? "" : "chat-topic-panel__tab--disabled"}`} onClick={() => activeProject?.workspacePath && setSidePanelTab("changes")}>
-                <GitBranch size={11} strokeWidth={2} />
-                <span>变更</span>
-              </button>
-              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "history" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("history")}>
-                <Clock size={11} strokeWidth={2} />
-                <span>历史提问</span>
-              </button>
-              <button type="button" className={`chat-topic-panel__tab ${sidePanelTab === "tasks" ? "chat-topic-panel__tab--active" : ""}`} onClick={() => setSidePanelTab("tasks")}>任务</button>
-            </div>
+                <div className="chat-topic-panel__tabs">
+                  <button
+                    type="button"
+                    className={`chat-topic-panel__tab ${sidePanelTab === "artifacts" ? "chat-topic-panel__tab--active" : ""}`}
+                    onClick={() => setSidePanelTab("artifacts")}
+                  >
+                    产物
+                    {artifactCount > 0 ? (
+                      <span className="chat-topic-panel__tab-badge">
+                        {artifactCount > 99 ? "99+" : artifactCount}
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    className={`chat-topic-panel__tab ${sidePanelTab === "changes" ? "chat-topic-panel__tab--active" : ""} ${activeProject?.workspacePath ? "" : "chat-topic-panel__tab--disabled"}`}
+                    onClick={() =>
+                      activeProject?.workspacePath && setSidePanelTab("changes")
+                    }
+                  >
+                    <GitBranch size={11} strokeWidth={2} />
+                    <span>变更</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`chat-topic-panel__tab ${sidePanelTab === "history" ? "chat-topic-panel__tab--active" : ""}`}
+                    onClick={() => setSidePanelTab("history")}
+                  >
+                    <Clock size={11} strokeWidth={2} />
+                    <span>历史提问</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`chat-topic-panel__tab ${sidePanelTab === "tasks" ? "chat-topic-panel__tab--active" : ""}`}
+                    onClick={() => setSidePanelTab("tasks")}
+                  >
+                    任务
+                  </button>
+                </div>
 
-            {sidePanelTab === "history" && (() => {
-              const userQuestions = messages
-                .map((message, index) => ({ message, index }))
-                .filter(({ message }) => message.role === "user");
-              const handleJumpToQuestion = (messageIndex: number) => {
-                const target = document.querySelector(`[data-message-index="${messageIndex}"]`);
-                if (!(target instanceof HTMLElement)) return;
-                target.scrollIntoView({ behavior: "smooth", block: "center" });
-                target.classList.add("chat-message--pulse-highlight");
-                window.setTimeout(() => {
-                  target.classList.remove("chat-message--pulse-highlight");
-                }, 1600);
-              };
-              return (
-                <>
-                  <div className="chat-topic-panel__section">
-                    <div className="chat-topic-panel__section-title">
-                      <Clock size={13} strokeWidth={2} />
-                      <span>本次会话提问</span>
-                      <span className="chat-topic-panel__section-count">{userQuestions.length}</span>
-                    </div>
-                    {userQuestions.length === 0 ? (
-                      <div className="chat-topic-panel__empty">{activeChatId ? "本次会话还没有提问" : "请先选择或新建会话"}</div>
-                    ) : (
-                      <div className="chat-topic-panel__list">
-                        {userQuestions.map(({ message, index }, order) => (
-                          <button
-                            key={`${index}-${order}`}
-                            type="button"
-                            className="chat-topic-panel__item chat-topic-panel__item--question"
-                            onClick={() => handleJumpToQuestion(index)}
-                            title={message.content}
-                          >
-                            <MessageSquare size={13} strokeWidth={1.9} className="chat-topic-panel__item-icon" />
-                            <span className="chat-topic-panel__item-copy">
-                              <span className="chat-topic-panel__item-title">{truncateQuestionPreview(message.content)}</span>
+                {sidePanelTab === "history" &&
+                  (() => {
+                    const userQuestions = messages
+                      .map((message, index) => ({ message, index }))
+                      .filter(({ message }) => message.role === "user");
+                    const handleJumpToQuestion = (messageIndex: number) => {
+                      const target = document.querySelector(
+                        `[data-message-index="${messageIndex}"]`,
+                      );
+                      if (!(target instanceof HTMLElement)) return;
+                      target.scrollIntoView({
+                        behavior: "smooth",
+                        block: "center",
+                      });
+                      target.classList.add("chat-message--pulse-highlight");
+                      window.setTimeout(() => {
+                        target.classList.remove(
+                          "chat-message--pulse-highlight",
+                        );
+                      }, 1600);
+                    };
+                    return (
+                      <>
+                        <div className="chat-topic-panel__section">
+                          <div className="chat-topic-panel__section-title">
+                            <Clock size={13} strokeWidth={2} />
+                            <span>本次会话提问</span>
+                            <span className="chat-topic-panel__section-count">
+                              {userQuestions.length}
                             </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
-              );
-            })()}
-
-            {sidePanelTab === "artifacts" ? (
-              <ArtifactsPanel
-                projectId={activeProject?.id ?? null}
-                sessionId={activeProject ? null : activeChatId}
-                onJumpToSession={onSelectChat}
-              />
-            ) : null}
-
-            {sidePanelTab === "changes" && activeProject?.workspacePath ? (
-              <ChangesPanel workspacePath={activeProject.workspacePath} />
-            ) : null}
-
-            {sidePanelTab === "tasks" && (
-              <>
-                {latestTaskResult && (
-                  <div className="chat-topic-panel__section chat-topic-panel__section--task">
-                    <div className="chat-topic-panel__section-title">当前任务</div>
-                    <div className="chat-topic-panel__task">
-                      <div className="chat-topic-panel__task-head">
-                        <strong>{latestTaskResult.plan.goal}</strong>
-                        <span className={`chat-topic-panel__task-status chat-topic-panel__task-status--${latestTaskResult.status}`}>
-                          {latestTaskResult.status}
-                        </span>
-                      </div>
-                      <div className="chat-topic-panel__task-meta">
-                        <span>{latestTaskResult.intent}</span>
-                        <span>{latestTaskResult.plan.model}</span>
-                      </div>
-                      {taskAggregateSummary && (
-                        <div className="chat-topic-panel__task-aggregate">
-                          <strong>链路摘要</strong>
-                          <span>
-                            {taskAggregateSummary.childCount > 0 ? `共 ${taskAggregateSummary.childCount} 个子任务 · ` : ""}
-                            {taskAggregateSummary.text}
-                          </span>
-                        </div>
-                      )}
-                      {(latestTaskResult.trace.length > 0 || latestTaskResult.finalResult?.steps?.length) && (
-                        <button
-                          type="button"
-                          className="chat-topic-panel__inline-action"
-                          onClick={() => setIsTaskTraceExpanded((current) => !current)}
-                        >
-                          {isTaskTraceExpanded ? "收起链路" : "查看回答链路"}
-                        </button>
-                      )}
-                      {latestTaskResult.trace.length > 0 && isTaskTraceExpanded && (
-                        <div className="chat-topic-panel__task-trace">
-                          {latestTaskResult.trace.map((entry, index) => (
-                            <div key={`${entry.at}-${index}`} className="chat-topic-panel__task-trace-item">
-                              <span className="chat-topic-panel__task-trace-stage">{entry.stage}</span>
-                              <span className="chat-topic-panel__task-trace-message">{entry.message}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {isTaskTraceExpanded && latestTaskResult.finalResult?.steps?.length ? (
-                        <div className="chat-topic-panel__task-steps">
-                          <div className="chat-topic-panel__task-steps-title">执行步骤</div>
-                          <ExecutionTimeline
-                            steps={latestTaskResult.finalResult.steps}
-                            onOpenFileLocation={handleOpenFileLocation}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                )}
-
-                {showTaskPanel && (
-                  <div className="chat-topic-panel__section">
-                    <div className="chat-topic-panel__section-title">
-                      <History size={13} strokeWidth={2} />
-                      <span>任务历史</span>
-                    </div>
-                    {taskRuntimeState.history.length > 1 ? (
-                      <div className="chat-topic-panel__group-list">
-                        {taskRuntimeState.history.slice(1, 6).map((task) => (
-                          <div key={task.taskId} className="chat-topic-panel__task">
-                            <div className="chat-topic-panel__task-head">
-                              <strong>{task.plan.goal}</strong>
-                              <span className={`chat-topic-panel__task-status chat-topic-panel__task-status--${task.status}`}>{task.status}</span>
-                            </div>
-                            <div className="chat-topic-panel__task-meta">
-                              <span>{task.intent}</span>
-                              <span>{task.plan.model}</span>
-                            </div>
                           </div>
-                        ))}
+                          {userQuestions.length === 0 ? (
+                            <div className="chat-topic-panel__empty">
+                              {activeChatId
+                                ? "本次会话还没有提问"
+                                : "请先选择或新建会话"}
+                            </div>
+                          ) : (
+                            <div className="chat-topic-panel__list">
+                              {userQuestions.map(
+                                ({ message, index }, order) => (
+                                  <button
+                                    key={`${index}-${order}`}
+                                    type="button"
+                                    className="chat-topic-panel__item chat-topic-panel__item--question"
+                                    onClick={() => handleJumpToQuestion(index)}
+                                    title={message.content}
+                                  >
+                                    <MessageSquare
+                                      size={13}
+                                      strokeWidth={1.9}
+                                      className="chat-topic-panel__item-icon"
+                                    />
+                                    <span className="chat-topic-panel__item-copy">
+                                      <span className="chat-topic-panel__item-title">
+                                        {truncateQuestionPreview(
+                                          message.content,
+                                        )}
+                                      </span>
+                                    </span>
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                {sidePanelTab === "artifacts" ? (
+                  <ArtifactsPanel
+                    projectId={activeProject?.id ?? null}
+                    sessionId={activeProject ? null : activeChatId}
+                    onJumpToSession={onSelectChat}
+                  />
+                ) : null}
+
+                {sidePanelTab === "changes" && activeProject?.workspacePath ? (
+                  <ChangesPanel workspacePath={activeProject.workspacePath} />
+                ) : null}
+
+                {sidePanelTab === "tasks" && (
+                  <>
+                    {latestTaskResult && (
+                      <div className="chat-topic-panel__section chat-topic-panel__section--task">
+                        <div className="chat-topic-panel__section-title">
+                          当前任务
+                        </div>
+                        <div className="chat-topic-panel__task">
+                          <div className="chat-topic-panel__task-head">
+                            <strong>{latestTaskResult.plan.goal}</strong>
+                            <span
+                              className={`chat-topic-panel__task-status chat-topic-panel__task-status--${latestTaskResult.status}`}
+                            >
+                              {latestTaskResult.status}
+                            </span>
+                          </div>
+                          <div className="chat-topic-panel__task-meta">
+                            <span>{latestTaskResult.intent}</span>
+                            <span>{latestTaskResult.plan.model}</span>
+                          </div>
+                          {taskAggregateSummary && (
+                            <div className="chat-topic-panel__task-aggregate">
+                              <strong>链路摘要</strong>
+                              <span>
+                                {taskAggregateSummary.childCount > 0
+                                  ? `共 ${taskAggregateSummary.childCount} 个子任务 · `
+                                  : ""}
+                                {taskAggregateSummary.text}
+                              </span>
+                            </div>
+                          )}
+                          {(latestTaskResult.trace.length > 0 ||
+                            latestTaskResult.finalResult?.steps?.length) && (
+                            <button
+                              type="button"
+                              className="chat-topic-panel__inline-action"
+                              onClick={() =>
+                                setIsTaskTraceExpanded((current) => !current)
+                              }
+                            >
+                              {isTaskTraceExpanded
+                                ? "收起链路"
+                                : "查看回答链路"}
+                            </button>
+                          )}
+                          {latestTaskResult.trace.length > 0 &&
+                            isTaskTraceExpanded && (
+                              <div className="chat-topic-panel__task-trace">
+                                {latestTaskResult.trace.map((entry, index) => (
+                                  <div
+                                    key={`${entry.at}-${index}`}
+                                    className="chat-topic-panel__task-trace-item"
+                                  >
+                                    <span className="chat-topic-panel__task-trace-stage">
+                                      {entry.stage}
+                                    </span>
+                                    <span className="chat-topic-panel__task-trace-message">
+                                      {entry.message}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          {isTaskTraceExpanded &&
+                          latestTaskResult.finalResult?.steps?.length ? (
+                            <div className="chat-topic-panel__task-steps">
+                              <div className="chat-topic-panel__task-steps-title">
+                                执行步骤
+                              </div>
+                              <ExecutionTimeline
+                                steps={latestTaskResult.finalResult.steps}
+                                onOpenFileLocation={handleOpenFileLocation}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                    ) : (
-                      <div className="chat-topic-panel__empty">暂无任务记录</div>
                     )}
-                  </div>
+
+                    {showTaskPanel && (
+                      <div className="chat-topic-panel__section">
+                        <div className="chat-topic-panel__section-title">
+                          <History size={13} strokeWidth={2} />
+                          <span>任务历史</span>
+                        </div>
+                        {taskRuntimeState.history.length > 1 ? (
+                          <div className="chat-topic-panel__group-list">
+                            {taskRuntimeState.history
+                              .slice(1, 6)
+                              .map((task) => (
+                                <div
+                                  key={task.taskId}
+                                  className="chat-topic-panel__task"
+                                >
+                                  <div className="chat-topic-panel__task-head">
+                                    <strong>{task.plan.goal}</strong>
+                                    <span
+                                      className={`chat-topic-panel__task-status chat-topic-panel__task-status--${task.status}`}
+                                    >
+                                      {task.status}
+                                    </span>
+                                  </div>
+                                  <div className="chat-topic-panel__task-meta">
+                                    <span>{task.intent}</span>
+                                    <span>{task.plan.model}</span>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        ) : (
+                          <div className="chat-topic-panel__empty">
+                            暂无任务记录
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </div>
-          </aside>}
+              </div>
+            </aside>
+          )}
         </div>
       </section>
 
