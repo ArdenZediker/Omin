@@ -4069,13 +4069,20 @@
   border: 2px solid #3f63ff;
   border-radius: 20px;
   display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
   padding: 12px 12px 10px 14px;
   background: var(--omni-panel-bg);
   color: var(--omni-app-text);
+}
+
+.message-edit-box__row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 
 .message-edit-box__attachments {
@@ -4112,8 +4119,8 @@
 }
 
 .message-edit-box__textarea {
-  flex: 1 1 220px;
-  min-width: 160px;
+  flex: 1 1 auto;
+  min-width: 120px;
   max-height: 220px;
   border: 0;
   outline: 0;
@@ -4124,6 +4131,30 @@
   font: inherit;
   font-size: 14px;
   line-height: 1.55;
+}
+
+.message-edit-box__footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.message-edit-box__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.message-edit-box__hint svg {
+  flex: 0 0 auto;
 }
 
 .message-edit-box__actions {

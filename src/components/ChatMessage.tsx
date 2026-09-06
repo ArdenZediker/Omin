@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertCircle,
   ChevronDown,
   Copy,
   FileDown,
@@ -190,72 +191,80 @@ export default function ChatMessage({
     <div data-message-index={index} className={`animate-fade-in flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {isUser && isEditing ? (
         <div className="message-edit-box">
-          {(editImages.length > 0 || editAttachments.length > 0) && (
-            <div className="message-edit-box__attachments">
-              {editImages.map((img, imageIndex) => (
-                <AttachmentChip
-                  key={`edit-${img.slice(0, 24)}-${imageIndex}`}
-                  src={img}
-                  name={`image_${imageIndex + 1}.png`}
-                  index={imageIndex}
-                  removable
-                  onRemove={() => setEditImages((prev) => prev.filter((_, i) => i !== imageIndex))}
-                />
-              ))}
-              {editAttachments.map((attachment, attachmentIndex) => (
-                <AttachmentChip
-                  key={`edit-${attachment.path}-${attachmentIndex}`}
-                  src={attachment.path}
-                  name={attachment.name}
-                  index={attachmentIndex}
-                  size={attachment.size}
-                  removable
-                  onRemove={() => setEditAttachments((prev) => prev.filter((_, i) => i !== attachmentIndex))}
-                  onClick={
-                    !attachment.path.startsWith("data:")
-                      ? () => onOpenAttachment?.(attachment.path)
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
-          )}
-          <textarea
-            ref={textareaRef}
-            value={editValue}
-            onChange={(event) => {
-              setEditValue(event.target.value);
-              event.currentTarget.style.height = "auto";
-              event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 220)}px`;
-            }}
-            onPaste={handleEditPaste}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onCancelEdit?.();
-              }
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (editValue.trim()) {
-                  onSubmitEdit?.(index, editValue.trim(), editImages, editAttachments);
+          <div className="message-edit-box__row">
+            {(editImages.length > 0 || editAttachments.length > 0) && (
+              <div className="message-edit-box__attachments">
+                {editImages.map((img, imageIndex) => (
+                  <AttachmentChip
+                    key={`edit-${img.slice(0, 24)}-${imageIndex}`}
+                    src={img}
+                    name={`image_${imageIndex + 1}.png`}
+                    index={imageIndex}
+                    removable
+                    onRemove={() => setEditImages((prev) => prev.filter((_, i) => i !== imageIndex))}
+                  />
+                ))}
+                {editAttachments.map((attachment, attachmentIndex) => (
+                  <AttachmentChip
+                    key={`edit-${attachment.path}-${attachmentIndex}`}
+                    src={attachment.path}
+                    name={attachment.name}
+                    index={attachmentIndex}
+                    size={attachment.size}
+                    removable
+                    onRemove={() => setEditAttachments((prev) => prev.filter((_, i) => i !== attachmentIndex))}
+                    onClick={
+                      !attachment.path.startsWith("data:")
+                        ? () => onOpenAttachment?.(attachment.path)
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+            )}
+            <textarea
+              ref={textareaRef}
+              value={editValue}
+              onChange={(event) => {
+                setEditValue(event.target.value);
+                event.currentTarget.style.height = "auto";
+                event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 220)}px`;
+              }}
+              onPaste={handleEditPaste}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  onCancelEdit?.();
                 }
-              }
-            }}
-            className="message-edit-box__textarea"
-            rows={1}
-          />
-          <div className="message-edit-box__actions">
-            <button type="button" className="message-edit-box__button" onClick={onCancelEdit}>
-              取消
-            </button>
-            <button
-              type="button"
-              className="message-edit-box__button message-edit-box__button--primary"
-              disabled={!editValue.trim()}
-              onClick={() => onSubmitEdit?.(index, editValue.trim(), editImages, editAttachments)}
-            >
-              发送
-            </button>
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (editValue.trim()) {
+                    onSubmitEdit?.(index, editValue.trim(), editImages, editAttachments);
+                  }
+                }
+              }}
+              className="message-edit-box__textarea"
+              rows={1}
+            />
+          </div>
+          <div className="message-edit-box__footer">
+            <div className="message-edit-box__hint" title="提交后从此条往下所有消息与产物都会保留，仅删除其后的对话回合">
+              <AlertCircle size={13} strokeWidth={1.9} />
+              <span>编辑后将从此处重新开始对话，已有产物不会被删除</span>
+            </div>
+            <div className="message-edit-box__actions">
+              <button type="button" className="message-edit-box__button" onClick={onCancelEdit}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="message-edit-box__button message-edit-box__button--primary"
+                disabled={!editValue.trim()}
+                onClick={() => onSubmitEdit?.(index, editValue.trim(), editImages, editAttachments)}
+              >
+                发送
+              </button>
+            </div>
           </div>
         </div>
       ) : isUser ? (
