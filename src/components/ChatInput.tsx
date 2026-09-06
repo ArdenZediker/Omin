@@ -611,14 +611,18 @@ export default function ChatInput({
       }
     }
 
-    // Ctrl+A：第一次默认全选文字；若文字已经全选且仍有文件 chip，第二次 Ctrl+A 选中所有 chip。
+    // Ctrl+A：有文件 chip 时，第一次按下就直接全选「文字 + 所有 chip」（无需按两次）。
+    // 当没有文件时则放行浏览器默认行为，只全选文字。
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && composedMedia.length > 0) {
+      event.preventDefault();
+      event.stopPropagation();
       const textarea = textareaRef.current;
-      if (textarea && textarea.selectionStart === 0 && textarea.selectionEnd === input.length && !allMediaSelected) {
-        event.preventDefault();
-        setAllMediaSelected(true);
-        return;
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(0, input.length);
       }
+      setAllMediaSelected(true);
+      return;
     }
 
     // Delete / Backspace：若文字已全选且 chip 也处于全选态，一并清空。
