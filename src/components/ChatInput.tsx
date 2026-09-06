@@ -437,6 +437,13 @@ export default function ChatInput({
     return items;
   }, [images, attachments]);
 
+  /**
+   * 输入框预览分前后两段：offset=0（光标在文字最前面/无文字）的 chip 放在 textarea 上方，
+   * offset>0 的放在 textarea 下方，让「光标在前→文件在前」在 composer 里也有对应视觉。
+   */
+  const beforeMedia = composedMedia.filter((media) => media.offset === 0);
+  const afterMedia = composedMedia.filter((media) => media.offset > 0);
+
   const buildSendOptions = (): ChatSendOptions => ({
     hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
     knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
@@ -645,6 +652,34 @@ export default function ChatInput({
     }
   };
 
+  const renderMediaChip = (media: (typeof composedMedia)[number], index: number) => {
+    if (media.kind === "image") {
+      return (
+        <AttachmentChip
+          key={media.key}
+          src={media.image!.src}
+          name={media.image!.name ?? `image_${index + 1}.png`}
+          index={index}
+          removable
+          onRemove={() => {
+            setImages((prev) => prev.filter((item) => item.src !== media.image!.src));
+          }}
+        />
+      );
+    }
+    return (
+      <AttachmentChip
+        key={media.key}
+        src={media.attachment!.path}
+        name={media.attachment!.name}
+        index={index}
+        size={media.attachment!.size}
+        removable
+        onRemove={() => setAttachments((prev) => prev.filter((item) => item.path !== media.attachment!.path))}
+      />
+    );
+  };
+
   return (
     <div className={`chat-composer${fixedHeight ? " chat-composer--fixed-height" : ""}`}>
       {hasComposerStatus && (
@@ -707,6 +742,11 @@ export default function ChatInput({
         </div>
 
         <div className="chat-composer__body">
+          {beforeMedia.length > 0 && (
+            <div className="chat-composer__attachments chat-composer__attachments--before">
+              {beforeMedia.map(renderMediaChip)}
+            </div>
+          )}
           <div className="chat-composer__editor-wrap">
             <div className="chat-composer__editor">
               <textarea
@@ -728,32 +768,9 @@ export default function ChatInput({
               />
             </div>
           </div>
-          {composedMedia.length > 0 && (
-            <div className="chat-composer__attachments">
-              {composedMedia.map((media, index) =>
-                media.kind === "image" ? (
-                  <AttachmentChip
-                    key={media.key}
-                    src={media.image!.src}
-                    name={media.image!.name ?? `image_${index + 1}.png`}
-                    index={index}
-                    removable
-                    onRemove={() => {
-                      setImages((prev) => prev.filter((item) => item.src !== media.image!.src));
-                    }}
-                  />
-                ) : (
-                  <AttachmentChip
-                    key={media.key}
-                    src={media.attachment!.path}
-                    name={media.attachment!.name}
-                    index={index}
-                    size={media.attachment!.size}
-                    removable
-                    onRemove={() => setAttachments((prev) => prev.filter((item) => item.path !== media.attachment!.path))}
-                  />
-                ),
-              )}
+          {afterMedia.length > 0 && (
+            <div className="chat-composer__attachments chat-composer__attachments--after">
+              {afterMedia.map(renderMediaChip)}
             </div>
           )}
         </div>
