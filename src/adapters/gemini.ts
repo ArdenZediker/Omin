@@ -35,8 +35,8 @@ export class GeminiAdapter implements ModelAdapter {
           const parts: Array<Record<string, unknown>> = [];
           if (msg.images && msg.images.length > 0) {
             for (const img of msg.images) {
-              const base64 = img.startsWith("data:") ? img.split(",")[1] : img;
-              parts.push({ inline_data: { mime_type: mimeTypeFromDataUrl(img), data: base64 } });
+              const base64 = img.src.startsWith("data:") ? img.src.split(",")[1] : img.src;
+              parts.push({ inline_data: { mime_type: mimeTypeFromDataUrl(img.src), data: base64 } });
             }
           }
           parts.push({ text: msg.content });

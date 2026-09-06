@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import type { ChatToolCall, ChatAttachment, Message, ModelConfig } from "../adapters/types";
+import type { ChatToolCall, ChatAttachment, ChatImage, Message, ModelConfig } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { isMainWindowUserVisible } from "../app/window";
 import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
@@ -110,7 +110,7 @@ type UseChatRuntimeArgs = {
   setActiveProjectId: React.Dispatch<React.SetStateAction<string>>;
   setActiveChatId: React.Dispatch<React.SetStateAction<string | null>>;
   setInputDraft: React.Dispatch<React.SetStateAction<string>>;
-  setInputDraftImages: React.Dispatch<React.SetStateAction<string[]>>;
+  setInputDraftImages: React.Dispatch<React.SetStateAction<ChatImage[]>>;
   setInputDraftKey: React.Dispatch<React.SetStateAction<number>>;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setOpenChatMenu: React.Dispatch<React.SetStateAction<{ id: string; x: number; y: number } | null>>;
@@ -1372,7 +1372,7 @@ export function useChatRuntime({
   }, [handlePetThoughtReply, isCompactWindow]);
 
   const handleSend = useCallback(
-    async (content: string, images?: string[], options: ChatSendOptions = {}) => {
+    async (content: string, images?: ChatImage[], options: ChatSendOptions = {}) => {
       if (isSessionLoading(activeChatId)) {
         return;
       }
@@ -1680,7 +1680,7 @@ export function useChatRuntime({
   }, []);
 
   const handleSubmitEditedUserMessage = useCallback(
-    async (messageIndex: number, content: string, images?: string[], attachments?: ChatAttachment[]) => {
+    async (messageIndex: number, content: string, images?: ChatImage[], attachments?: ChatAttachment[]) => {
       if (isSessionLoading(activeChatId)) {
         return;
       }

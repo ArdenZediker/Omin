@@ -33,7 +33,7 @@ import {
   restoreMainWindow,
   showCompactWindow,
 } from "../app/window";
-import type { Message } from "../adapters/types";
+import type { Message, ChatImage } from "../adapters/types";
 
 function getSafeCurrentWindow() {
   try {
@@ -55,7 +55,7 @@ type UseMainWindowControllerArgs = {
   setBasicSettings: Dispatch<SetStateAction<BasicSettings>>;
   setCurrentModel: Dispatch<SetStateAction<string>>;
   setInputDraft: Dispatch<SetStateAction<string>>;
-  setInputDraftImages: Dispatch<SetStateAction<string[]>>;
+  setInputDraftImages: Dispatch<SetStateAction<ChatImage[]>>;
   setInputDraftKey: Dispatch<SetStateAction<number>>;
   setInputFocusKey: Dispatch<SetStateAction<number>>;
   setView: Dispatch<SetStateAction<ViewMode>>;
@@ -264,7 +264,7 @@ export function useMainWindowController({
 
     void win
       .listen("omni-set-draft", (event) => {
-        const payload = event.payload as { draft?: string; images?: string[] } | null;
+        const payload = event.payload as { draft?: string; images?: ChatImage[] } | null;
         setInputDraft(payload?.draft ?? "");
         setInputDraftImages(payload?.images ?? []);
         setInputDraftKey((value) => value + 1);

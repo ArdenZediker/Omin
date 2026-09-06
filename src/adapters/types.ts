@@ -11,6 +11,24 @@ import type { Artifact } from "../chat/artifacts";
  * vision 模型。任意文件不能这么做——几十 MB 的 docx 塞进请求体既不现实也没必要，
  * 所以这里只记绝对路径，由模型按需调用 /read_file 读取。
  */
+/**
+ * 用户随消息附带的内联图片（base64 DataURL）。
+ *
+ * 与 ChatAttachment（非图片文件，只记绝对路径）不同，图片直接内联进请求体交给
+ * vision 模型。任意文件不能这么做——几十 MB 的 docx 塞进请求体既不现实也没必要。
+ *
+ * offset 语义与 ChatAttachment.offset 完全一致：上传/粘贴瞬间按光标位置记录，
+ * 渲染时把图片插到正文对应位置。缺省（undefined）视为 0，即排在正文最前面（兼容旧数据）。
+ */
+export interface ChatImage {
+  /** base64 DataURL */
+  src: string;
+  /** 展示用文件名（可选，缺省时 UI 合成 image_N.png） */
+  name?: string;
+  /** 插入位置：该图片在消息正文（content）中的字符偏移量 */
+  offset?: number;
+}
+
 export interface ChatAttachment {
   /** 本地绝对路径 */
   path: string;
@@ -41,7 +59,7 @@ export function mimeTypeFromDataUrl(dataUrl: string): string {
 export interface Message {
   role: "system" | "user" | "project" | "assistant" | "tool";
   content: string;
-  images?: string[]; // base64 编码图片
+  images?: ChatImage[]; // base64 编码图片（带插入位置 offset）
   knowledgeContext?: KnowledgeContextResult | null;
   /** role === "tool" 时：对应当前轮次 assistant.toolCalls 里某次调用的 id */
   toolCallId?: string;

@@ -1,4 +1,5 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import type { ChatImage } from "../adapters/types";
 import { MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL } from "./constants";
 import { showSettingsWindow } from "./window";
 import { saveSqliteBackedValue } from "./sqliteStorage";
@@ -27,7 +28,7 @@ export function createDesktopActions(handlers: DesktopActionHandlers) {
       await onRestoreMain(true);
     },
 
-    async setDraft(draft: string, images: string[] = []) {
+    async setDraft(draft: string, images: ChatImage[] = []) {
       await onRestoreMain(true);
       const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
       await mainWindow?.emit("omni-set-draft", { draft, images });

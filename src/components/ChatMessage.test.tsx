@@ -32,14 +32,11 @@ describe("buildUserMessageSegments（按光标位置排布附件）", () => {
 
   it("多个附件按 offset 升序排列，同 offset 保持原始顺序", () => {
     const segments = buildUserMessageSegments("abcdef", [att("b.png", 4), att("a.png", 2), att("c.png", 2)]);
-    expect(segments.map((s) => (s.kind === "attachment" ? s.attachment.name : s.text))).toEqual([
-      "ab",
-      "a.png",
-      "c.png",
-      "cd",
-      "b.png",
-      "ef",
-    ]);
+    expect(
+      segments.map((s) =>
+        s.kind === "attachment" ? s.attachment.name : s.kind === "image" ? (s.image.name ?? "") : s.text,
+      ),
+    ).toEqual(["ab", "a.png", "c.png", "cd", "b.png", "ef"]);
   });
 
   it("offset 缺省（旧数据）视为 0，且超出正文长度时被夹紧到末尾", () => {
@@ -47,6 +44,25 @@ describe("buildUserMessageSegments（按光标位置排布附件）", () => {
     const clamped = buildUserMessageSegments("abc", [att("far.png", 999)]);
     expect(clamped[0]).toEqual({ kind: "text", text: "abc" });
     expect(clamped[1]).toMatchObject({ kind: "attachment" });
+  });
+
+  it("图片按光标 offset 交错，光标在文字后时图片排在正文之后", () => {
+    const segments = buildUserMessageSegments("abc", [], [{ src: "data:img1", offset: 3 }]);
+    expect(segments[0]).toEqual({ kind: "text", text: "abc" });
+    expect(segments[1]).toMatchObject({ kind: "image", image: { src: "data:img1" } });
+  });
+
+  it("图片与附件按各自 offset 合并排序，offset 相同则附件先于图片（稳定）", () => {
+    const segments = buildUserMessageSegments(
+      "abcdef",
+      [att("a.png", 2)],
+      [{ src: "data:img1", offset: 2 }, { src: "data:img2", offset: 4 }],
+    );
+    expect(
+      segments.map((s) =>
+        s.kind === "attachment" ? `att:${s.attachment.name}` : s.kind === "image" ? `img:${s.image.src}` : `txt:${s.text}`,
+      ),
+    ).toEqual(["txt:ab", "att:a.png", "img:data:img1", "txt:cd", "img:data:img2", "txt:ef"]);
   });
 });
 

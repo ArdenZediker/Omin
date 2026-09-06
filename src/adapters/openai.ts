@@ -46,7 +46,7 @@ export class OpenAIAdapter implements ModelAdapter {
             { type: "text", text: msg.content },
             ...msg.images.map((img) => ({
               type: "image_url" as const,
-              image_url: { url: img.startsWith("data:") ? img : `data:image/png;base64,${img}` },
+              image_url: { url: img.src.startsWith("data:") ? img.src : `data:image/png;base64,${img.src}` },
             })),
           ],
         };

@@ -1,4 +1,4 @@
-import type { ChatToolCall, ChatToolParam, Message } from "../adapters/types";
+import type { ChatToolCall, ChatToolParam, ChatImage, Message } from "../adapters/types";
 import { executeChatTurn } from "./engine";
 import { runTaskPlan } from "./taskRunner";
 import type { ResolvedLocalSlashCommand } from "./skills";
@@ -212,7 +212,7 @@ function buildSkillMessages(command: ResolvedLocalSlashCommand, currentMessages:
 
 export async function executeInputTask(options: {
   input: string;
-  images?: string[];
+  images?: ChatImage[];
   /** 用户随消息附带的本地文件（绝对路径引用）；写入 user 消息，供历史渲染与模型按需读取 */
   attachments?: import("./types").ChatAttachment[];
   hiddenContext?: string;

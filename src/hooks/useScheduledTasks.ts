@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { ScheduledTaskRecord } from "../chat/types";
+import type { ChatImage } from "../adapters/types";
 
 type UseScheduledTasksArgs = {
   scheduledTasks: ScheduledTaskRecord[];
@@ -7,7 +8,7 @@ type UseScheduledTasksArgs = {
   desktopActions: {
     openChat: (focusInput?: boolean) => Promise<void>;
     notify: (title: string, body: string) => void | Promise<void>;
-    setDraft: (draft: string, images?: string[]) => Promise<void>;
+    setDraft: (draft: string, images?: ChatImage[]) => Promise<void>;
   };
 };
 

@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Message, ChatAttachment } from "./adapters/types";
+import type { Message, ChatAttachment, ChatImage } from "./adapters/types";
 import type { ChatSession } from "./chat/types";
 import { createDesktopActions } from "./app/desktopActions";
 import { modelRegistry } from "./adapters/registry";
@@ -57,7 +57,7 @@ const KnowledgeBaseView = lazy(() => import("./components/KnowledgeBaseView"));
 
 type ComposerDraft = {
   text: string;
-  images: string[];
+  images: ChatImage[];
   /** 非图片类本地文件附件（绝对路径引用）；随草稿一起恢复，发送时清空 */
   attachments: ChatAttachment[];
 };
@@ -295,7 +295,7 @@ function MainApp() {
       const hasSameText = previousDraft.text === nextDraft.text;
       const hasSameImages =
         previousDraft.images.length === nextDraft.images.length &&
-        previousDraft.images.every((image, index) => image === nextDraft.images[index]);
+        previousDraft.images.every((image, index) => image.src === nextDraft.images[index].src);
       const hasSameAttachments =
         previousDraft.attachments.length === nextDraft.attachments.length &&
         previousDraft.attachments.every((attachment, index) => attachment.path === nextDraft.attachments[index].path);
@@ -333,7 +333,7 @@ function MainApp() {
     [activeProjectId, updateProjectDraft]
   );
 
-  const setInputDraftImages = useCallback<Dispatch<SetStateAction<string[]>>>(
+  const setInputDraftImages = useCallback<Dispatch<SetStateAction<ChatImage[]>>>(
     (value) => {
       updateProjectDraft(activeProjectId, (draft) => ({
         ...draft,
@@ -344,7 +344,7 @@ function MainApp() {
   );
 
   const handleComposerDraftChange = useCallback(
-    (text: string, images: string[], attachments: ChatAttachment[]) => {
+    (text: string, images: ChatImage[], attachments: ChatAttachment[]) => {
       updateProjectDraft(activeProjectId, () => ({
         text,
         images,

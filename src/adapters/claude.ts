@@ -45,18 +45,18 @@ export class ClaudeAdapter implements ModelAdapter {
           return {
             role: toWireRole(msg.role),
             content: [
-              ...msg.images.map((img) => ({
-                type: "image" as const,
-                source: {
-                  type: "base64" as const,
-                  media_type: mimeTypeFromDataUrl(img) as
-                    | "image/jpeg"
-                    | "image/png"
-                    | "image/gif"
-                    | "image/webp",
-                  data: img.startsWith("data:") ? img.split(",")[1] : img,
-                },
-              })),
+            ...msg.images.map((img) => ({
+              type: "image" as const,
+              source: {
+                type: "base64" as const,
+                media_type: mimeTypeFromDataUrl(img.src) as
+                  | "image/jpeg"
+                  | "image/png"
+                  | "image/gif"
+                  | "image/webp",
+                data: img.src.startsWith("data:") ? img.src.split(",")[1] : img.src,
+              },
+            })),
               { type: "text" as const, text: msg.content },
             ],
           };

@@ -33,7 +33,7 @@ export class OllamaAdapter implements ModelAdapter {
         return {
           role: toWireRole(msg.role),
           content: msg.content,
-          images: msg.images.map((img) => (img.startsWith("data:") ? img.split(",")[1] : img)),
+          images: msg.images.map((img) => (img.src.startsWith("data:") ? img.src.split(",")[1] : img.src)),
         };
       }
       return toOllamaMessage(msg);

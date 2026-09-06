@@ -8,7 +8,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { ChatAttachment, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
+import type { ChatAttachment, ChatImage, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { getToolActionMeta, isFileProducingTool, getFileBadgeLabel, extractToolFilePath } from "../chat/toolActionMap";
@@ -18,37 +18,54 @@ import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
 import { savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
-/** 用户消息正文 + 附件的混合片段：文本段与附件段交错，按附件 offset 决定先后顺序 */
+/** 用户消息正文 + 附件 + 图片的混合片段：文本段与附件/图片段交错，按 offset 决定先后顺序 */
 type UserMessageSegment =
   | { kind: "text"; text: string }
-  | { kind: "attachment"; attachment: ChatAttachment };
+  | { kind: "attachment"; attachment: ChatAttachment }
+  | { kind: "image"; image: ChatImage };
 
 /**
- * 按附件的 offset（上传时的光标位置）把正文切成若干段，附件 chip 插到对应位置。
+ * 按附件与图片的 offset（上传/粘贴时的光标位置）把正文切成若干段，chip 插到对应位置。
  * 光标在文字前 → chip 在前；光标在文字后 → chip 在后；光标在文字中间 → 从中间插入。
- * offset 缺省（旧数据）视为 0。
+ * 附件与图片按各自的 offset 合并排序，offset 缺省（旧数据）视为 0。
  */
-export function buildUserMessageSegments(content: string, attachments: ChatAttachment[]): UserMessageSegment[] {
-  if (attachments.length === 0) {
+export function buildUserMessageSegments(
+  content: string,
+  attachments: ChatAttachment[],
+  images: ChatImage[] = [],
+): UserMessageSegment[] {
+  if (attachments.length === 0 && images.length === 0) {
     return content ? [{ kind: "text", text: content }] : [];
   }
 
-  const ordered = attachments
-    .map((attachment, index) => ({
-      attachment,
-      index,
+  type Placed = { offset: number; index: number; kind: "attachment" | "image"; ref: ChatAttachment | ChatImage };
+  const placed: Placed[] = [
+    ...attachments.map((attachment, index) => ({
       offset: Math.max(0, Math.min(attachment.offset ?? 0, content.length)),
-    }))
-    .sort((a, b) => a.offset - b.offset || a.index - b.index);
+      index,
+      kind: "attachment" as const,
+      ref: attachment,
+    })),
+    ...images.map((image, index) => ({
+      offset: Math.max(0, Math.min(image.offset ?? 0, content.length)),
+      index,
+      kind: "image" as const,
+      ref: image,
+    })),
+  ].sort((a, b) => a.offset - b.offset || a.index - b.index);
 
   const segments: UserMessageSegment[] = [];
   let cursor = 0;
 
-  for (const item of ordered) {
+  for (const item of placed) {
     if (item.offset > cursor) {
       segments.push({ kind: "text", text: content.slice(cursor, item.offset) });
     }
-    segments.push({ kind: "attachment", attachment: item.attachment });
+    if (item.kind === "attachment") {
+      segments.push({ kind: "attachment", attachment: item.ref as ChatAttachment });
+    } else {
+      segments.push({ kind: "image", image: item.ref as ChatImage });
+    }
     cursor = item.offset;
   }
 
@@ -67,7 +84,7 @@ interface ChatMessageProps {
   onCopy?: (message: Message) => void;
   onEdit?: (index: number) => void;
   onCancelEdit?: () => void;
-  onSubmitEdit?: (index: number, content: string, images?: string[], attachments?: ChatAttachment[]) => void;
+  onSubmitEdit?: (index: number, content: string, images?: ChatImage[], attachments?: ChatAttachment[]) => void;
   onRegenerate?: (index: number) => void;
   onSaveAsMarkdown?: (message: Message) => void | Promise<void>;
   /** 打开右侧变更面板（按事件总线通知 MainChatView 切换 tab） */
@@ -113,7 +130,7 @@ export default function ChatMessage({
   const [editValue, setEditValue] = useState(message.content);
   // 编辑态下附件的可变副本：用户可删除旧附件，也可在文本框粘贴新文件/图片，
   // 提交时随 onSubmitEdit 回传，覆盖原消息的 images / attachments。
-  const [editImages, setEditImages] = useState<string[]>(message.images ?? []);
+  const [editImages, setEditImages] = useState<ChatImage[]>(message.images ?? []);
   const [editAttachments, setEditAttachments] = useState<ChatAttachment[]>(message.attachments ?? []);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -159,10 +176,10 @@ export default function ChatMessage({
       });
   }, [message.steps, message.toolCallResults]);
   const changeCount = changeEntries.length;
-  /** 用户消息：正文与附件按上传时的光标位置（offset）交错排列 */
+  /** 用户消息：正文与附件/图片按上传时的光标位置（offset）交错排列 */
   const userSegments = useMemo(
-    () => buildUserMessageSegments(message.content, message.attachments ?? []),
-    [message.content, message.attachments],
+    () => buildUserMessageSegments(message.content, message.attachments ?? [], message.images ?? []),
+    [message.content, message.attachments, message.images],
   );
 
   useEffect(() => {
@@ -182,12 +199,20 @@ export default function ChatMessage({
   }, [isEditing, message.content]);
 
   // 编辑态：通过 Tauri 文件对话框补充图片/文件附件（与输入框上传同一套逻辑）
-  const appendEditImageFiles = (files: File[]) => {
+  const appendEditImageFiles = (files: File[], insertOffset = 0) => {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
 
-    void Promise.all(imageFiles.map((file) => compressImageBlob(file))).then((nextImages) => {
-      setEditImages((prev) => [...prev, ...nextImages.filter((src) => src.length > 0)]);
+    void Promise.all(
+      imageFiles.map((file) =>
+        compressImageBlob(file).then((src) => ({
+          src,
+          name: file.name?.trim() || "Clipboard Image.png",
+          offset: insertOffset,
+        })),
+      ),
+    ).then((nextImages) => {
+      setEditImages((prev) => [...prev, ...nextImages.filter((entry) => entry.src.length > 0)]);
     });
   };
 
@@ -195,12 +220,14 @@ export default function ChatMessage({
     const clipboardFiles = event.clipboardData.files;
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
+      // 同步采样编辑框光标位置：下面的 savePastedFileAttachment 是异步的，届时 event 已不可用。
+      const pasteOffset = textareaRef.current?.selectionStart ?? editValue.length;
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
       const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
 
       if (imageFiles.length > 0) {
-        appendEditImageFiles(imageFiles);
+        appendEditImageFiles(imageFiles, pasteOffset);
       }
 
       if (docFiles.length > 0) {
@@ -209,7 +236,7 @@ export default function ChatMessage({
           for (const file of docFiles) {
             const attachment = await savePastedFileAttachment(file);
             if (attachment) {
-              nextAttachments.push(attachment);
+              nextAttachments.push({ ...attachment, offset: pasteOffset });
             }
           }
           if (nextAttachments.length === 0) return;
@@ -227,7 +254,7 @@ export default function ChatMessage({
       if (item.type.startsWith("image/")) {
         event.preventDefault();
         const blob = item.getAsFile();
-        if (blob) appendEditImageFiles([blob]);
+        if (blob) appendEditImageFiles([blob], textareaRef.current?.selectionStart ?? editValue.length);
         break;
       }
     }
@@ -242,9 +269,9 @@ export default function ChatMessage({
               <div className="message-edit-box__attachments">
                 {editImages.map((img, imageIndex) => (
                   <AttachmentChip
-                    key={`edit-${img.slice(0, 24)}-${imageIndex}`}
-                    src={img}
-                    name={`image_${imageIndex + 1}.png`}
+                    key={`edit-${img.src.slice(0, 24)}-${imageIndex}`}
+                    src={img.src}
+                    name={img.name ?? `image_${imageIndex + 1}.png`}
                     index={imageIndex}
                     removable
                     onRemove={() => setEditImages((prev) => prev.filter((_, i) => i !== imageIndex))}
@@ -320,7 +347,7 @@ export default function ChatMessage({
               <span key={`text-${segmentIndex}`} className="whitespace-pre-wrap break-words">
                 {segment.text}
               </span>
-            ) : (
+            ) : segment.kind === "attachment" ? (
               <span key={`attachment-${segment.attachment.path}-${segmentIndex}`} className="mx-1 inline-flex align-middle">
                 <AttachmentChip
                   src={segment.attachment.path}
@@ -334,19 +361,15 @@ export default function ChatMessage({
                   }
                 />
               </span>
-            ),
-          )}
-          {message.images && message.images.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {message.images.map((img, imageIndex) => (
+            ) : (
+              <span key={`image-${segmentIndex}`} className="mx-1 inline-flex align-middle">
                 <AttachmentChip
-                  key={`${img.slice(0, 24)}-${imageIndex}`}
-                  src={img}
-                  name={`image_${imageIndex + 1}.png`}
-                  index={imageIndex}
+                  src={segment.image.src}
+                  name={segment.image.name ?? `image_${segmentIndex + 1}.png`}
+                  index={segmentIndex}
                 />
-              ))}
-            </div>
+              </span>
+            ),
           )}
         </div>
       ) : (

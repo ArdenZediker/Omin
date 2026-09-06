@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Bot,
@@ -11,7 +11,7 @@ import {
 import { open } from "@tauri-apps/plugin-dialog";
 import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
-import type { ChatAttachment } from "../adapters/types";
+import type { ChatAttachment, ChatImage } from "../adapters/types";
 import type { ChatSendOptions } from "../chat/types";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
@@ -26,17 +26,17 @@ interface ChatInputProps {
   contextPresetText?: string;
   knowledgeCollections?: KnowledgeCollection[];
   onStartNewTopic?: () => void;
-  onSend: (content: string, images?: string[], options?: ChatSendOptions) => void | Promise<void>;
+  onSend: (content: string, images?: ChatImage[], options?: ChatSendOptions) => void | Promise<void>;
   isLoading: boolean;
   isSendBlocked?: boolean;
   onStop: () => void;
   focusSignal?: number;
   draftScopeKey?: string;
   draftValue?: string;
-  draftImages?: string[];
+  draftImages?: ChatImage[];
   draftAttachments?: ChatAttachment[];
   draftSignal?: number;
-  onDraftChange?: (text: string, images: string[], attachments: ChatAttachment[]) => void;
+  onDraftChange?: (text: string, images: ChatImage[], attachments: ChatAttachment[]) => void;
   fixedHeight?: number | null;
   onSubmit?: () => void;
 }
@@ -100,8 +100,7 @@ export default function ChatInput({
   onSubmit,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
-  const [images, setImages] = useState<string[]>([]);
-  const [imageNames, setImageNames] = useState<string[]>([]);
+  const [images, setImages] = useState<ChatImage[]>([]);
   /** 非图片类本地文件附件（绝对路径引用；不内联内容，发送时注入 prompt 让模型用 /read_file 读取） */
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
@@ -194,7 +193,6 @@ export default function ChatInput({
       suppressNextDraftReportRef.current = true;
       setInput(draftValue);
       setImages(draftImages ?? []);
-      setImageNames((draftImages ?? []).map((_, imageIndex) => `image_${imageIndex + 1}.png`));
       setAttachments(draftAttachments ?? []);
       setCaretIndex(draftValue.length);
 
@@ -304,7 +302,7 @@ export default function ChatInput({
     return Math.min(caretIndex, input.length);
   };
 
-  const appendImageFiles = async (files: File[]) => {
+  const appendImageFiles = async (files: File[], insertOffset: number) => {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) {
       return;
@@ -315,12 +313,12 @@ export default function ChatInput({
         compressImageBlob(file).then((src) => ({
           src,
           name: file.name?.trim() || "Clipboard Image.png",
+          offset: insertOffset,
         })),
       ),
     );
 
-    setImages((prev) => [...prev, ...nextEntries.map((entry) => entry.src)]);
-    setImageNames((prev) => [...prev, ...nextEntries.map((entry) => entry.name)]);
+    setImages((prev) => [...prev, ...nextEntries.filter((entry) => entry.src.length > 0)]);
   };
 
   const clearSuggestionDismissal = () => {
@@ -382,8 +380,10 @@ export default function ChatInput({
         .map((path) => ({ path, name: baseNameOf(path), size: null as number | null, offset: insertOffset }));
 
       if (validImages.length > 0) {
-        setImages((prev) => [...prev, ...validImages.map((entry) => entry.src)]);
-        setImageNames((prev) => [...prev, ...validImages.map((entry) => entry.name)]);
+        setImages((prev) => [
+          ...prev,
+          ...validImages.map((entry) => ({ src: entry.src, name: entry.name, offset: insertOffset })),
+        ]);
       }
 
       setAttachments((prev) => {
@@ -406,6 +406,37 @@ export default function ChatInput({
     .sort((a, b) => a.offset - b.offset || a.index - b.index)
     .map((item) => item.attachment);
 
+  /** 图片同样按上传时的光标位置排序，与附件保持一致（光标在前→排在前面）。 */
+  const orderedImages = images
+    .map((image, index) => ({ image, index, offset: image.offset ?? 0 }))
+    .sort((a, b) => a.offset - b.offset || a.index - b.index)
+    .map((item) => item.image);
+
+  /**
+   * 输入框预览：把图片与附件合并成同一个按 offset 排序的流，
+   * 让「输入框里看到的顺序」与「发送后消息里的交错顺序」保持一致。
+   * offset 相同则按添加先后（全局 seq）排列——与 ChatMessage.buildUserMessageSegments 的稳定排序语义一致。
+   */
+  const composedMedia = useMemo(() => {
+    const items: Array<{
+      kind: "image" | "attachment";
+      offset: number;
+      seq: number;
+      image?: ChatImage;
+      attachment?: ChatAttachment;
+      key: string;
+    }> = [];
+    let seq = 0;
+    images.forEach((image, index) => {
+      items.push({ kind: "image", offset: image.offset ?? 0, seq: seq++, image, key: `${image.src.slice(0, 24)}-${index}` });
+    });
+    attachments.forEach((attachment) => {
+      items.push({ kind: "attachment", offset: attachment.offset ?? 0, seq: seq++, attachment, key: attachment.path });
+    });
+    items.sort((a, b) => a.offset - b.offset || a.seq - b.seq);
+    return items;
+  }, [images, attachments]);
+
   const buildSendOptions = (): ChatSendOptions => ({
     hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
     knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
@@ -417,10 +448,9 @@ export default function ChatInput({
       return;
     }
 
-    void onSend(trimmedInput, images.length > 0 ? images : undefined, buildSendOptions());
+    void onSend(trimmedInput, images.length > 0 ? orderedImages : undefined, buildSendOptions());
     setInput("");
     setImages([]);
-    setImageNames([]);
     setAttachments([]);
     setSelectedKnowledgeCollection(null);
     setCaretIndex(0);
@@ -568,17 +598,17 @@ export default function ChatInput({
   };
 
   const handlePaste = (event: React.ClipboardEvent) => {
+    // 同步采样光标位置：下面的保存/压缩是异步的，届时 event 已不可用。
+    const pasteOffset = getCaretOffset();
     const clipboardFiles = event.clipboardData.files;
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
-      // 同步采样光标位置：下面的 savePastedFileAttachment 是异步的，届时 event 已不可用。
-      const pasteOffset = getCaretOffset();
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
       const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
 
       if (imageFiles.length > 0) {
-        void appendImageFiles(imageFiles);
+        void appendImageFiles(imageFiles, pasteOffset);
       }
 
       if (docFiles.length > 0) {
@@ -608,7 +638,7 @@ export default function ChatInput({
         event.preventDefault();
         const blob = item.getAsFile();
         if (blob) {
-          void appendImageFiles([blob]);
+          void appendImageFiles([blob], pasteOffset);
         }
         break;
       }
@@ -698,36 +728,32 @@ export default function ChatInput({
               />
             </div>
           </div>
-          {images.length > 0 && (
+          {composedMedia.length > 0 && (
             <div className="chat-composer__attachments">
-              {images.map((img, index) => (
-                <AttachmentChip
-                  key={`${img.slice(0, 24)}-${index}`}
-                  src={img}
-                  name={imageNames[index]}
-                  index={index}
-                  removable
-                  onRemove={() => {
-                    setImages((prev) => prev.filter((_, imageIndex) => imageIndex !== index));
-                    setImageNames((prev) => prev.filter((_, imageIndex) => imageIndex !== index));
-                  }}
-                />
-              ))}
-            </div>
-          )}
-          {orderedAttachments.length > 0 && (
-            <div className="chat-composer__attachments">
-              {orderedAttachments.map((attachment, index) => (
-                <AttachmentChip
-                  key={attachment.path}
-                  src={attachment.path}
-                  name={attachment.name}
-                  index={index}
-                  size={attachment.size}
-                  removable
-                  onRemove={() => setAttachments((prev) => prev.filter((item) => item.path !== attachment.path))}
-                />
-              ))}
+              {composedMedia.map((media, index) =>
+                media.kind === "image" ? (
+                  <AttachmentChip
+                    key={media.key}
+                    src={media.image!.src}
+                    name={media.image!.name ?? `image_${index + 1}.png`}
+                    index={index}
+                    removable
+                    onRemove={() => {
+                      setImages((prev) => prev.filter((item) => item.src !== media.image!.src));
+                    }}
+                  />
+                ) : (
+                  <AttachmentChip
+                    key={media.key}
+                    src={media.attachment!.path}
+                    name={media.attachment!.name}
+                    index={index}
+                    size={media.attachment!.size}
+                    removable
+                    onRemove={() => setAttachments((prev) => prev.filter((item) => item.path !== media.attachment!.path))}
+                  />
+                ),
+              )}
             </div>
           )}
         </div>

@@ -3,7 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { ChatAttachment } from "../adapters/types";
+import type { ChatAttachment, ChatImage } from "../adapters/types";
 
 export function baseNameOf(path: string): string {
   const segments = path.split(/[\\/]/);
@@ -158,7 +158,7 @@ export async function readLocalImageAsDataURL(path: string): Promise<string> {
 }
 
 export interface PickedAttachmentsResult {
-  images: string[];
+  images: ChatImage[];
   attachments: ChatAttachment[];
 }
 
@@ -172,13 +172,13 @@ export async function pickLocalAttachments(): Promise<PickedAttachmentsResult | 
     return null;
   }
   const paths = Array.isArray(selected) ? selected : [selected];
-  const images: string[] = [];
+  const images: ChatImage[] = [];
   const attachments: ChatAttachment[] = [];
   await Promise.all(
     paths.map(async (path) => {
       const name = baseNameOf(path);
       if (isImageFile(path)) {
-        images.push(await readLocalImageAsDataURL(path));
+        images.push({ src: await readLocalImageAsDataURL(path), name });
       } else {
         attachments.push({ path, name, size: null });
       }

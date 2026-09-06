@@ -38,7 +38,7 @@ import {
   Trash2,
   Wand2,
 } from "lucide-react";
-import type { Message, ChatAttachment } from "../adapters/types";
+import type { Message, ChatAttachment, ChatImage } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
 import { formatUsageLabel, DEFAULT_PROJECT_ID, MAIN_SESSION_ID } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
@@ -200,7 +200,7 @@ type MainChatViewProps = {
   chatSessions: ChatSession[];
   hasModels: boolean;
   inputDraft: string;
-  inputDraftImages: string[];
+  inputDraftImages: ChatImage[];
   inputDraftAttachments: ChatAttachment[];
   inputDraftKey: number;
   inputFocusKey: number;
@@ -250,7 +250,7 @@ type MainChatViewProps = {
   onDeleteChat: (session: ChatSession) => void;
   onDraftChange: (
     text: string,
-    images: string[],
+    images: ChatImage[],
     attachments: ChatAttachment[],
   ) => void;
   onEditUserMessage: (messageIndex: number) => void;
@@ -267,7 +267,7 @@ type MainChatViewProps = {
   ) => Project | null;
   onSend: (
     content: string,
-    images?: string[],
+    images?: ChatImage[],
     options?: ChatSendOptions,
   ) => void | Promise<void>;
   onSetOpenChatMenu: Dispatch<
