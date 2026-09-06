@@ -4069,8 +4069,9 @@
   border: 2px solid #3f63ff;
   border-radius: 20px;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  flex-direction: row;
+  align-items: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 12px 12px 10px 14px;
   background: var(--omni-panel-bg);
@@ -4078,9 +4079,14 @@
 }
 
 .message-edit-box__attachments {
+  flex: 0 1 auto;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .message-edit-box__add {
@@ -4105,15 +4111,9 @@
   color: #3f63ff;
 }
 
-.message-edit-box__body {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-}
-
 .message-edit-box__textarea {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 220px;
+  min-width: 160px;
   max-height: 220px;
   border: 0;
   outline: 0;
@@ -4131,6 +4131,7 @@
   align-items: center;
   gap: 8px;
   padding-bottom: 1px;
+  flex: 0 0 auto;
 }
 
 .message-edit-box__button {
