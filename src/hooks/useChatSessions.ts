@@ -22,7 +22,7 @@ import {
 import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
 import { savePersistedAutomationState } from "../chat/persistence";
 import { scheduleSessionMirror, clearSessionMirrorSchedule, deleteSessionMirrorFile } from "../chat/sessionMirror";
-import { clearSessionArtifacts, notifyArtifactsChanged } from "../chat/artifacts";
+import { clearSessionArtifacts, clearProjectArtifacts, notifyArtifactsChanged } from "../chat/artifacts";
 import { isMirrorSessionsEnabled } from "../app/outputStorage";
 import type {
   ProjectMemoryRecord,
@@ -474,6 +474,21 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       setProjectMemories(nextMemories);
       setSessionSummaries(nextSummaries);
       setScheduledTasks(nextTasks);
+
+      // 4) 清理该项目下每个会话的对话镜像 .md 文件，并取消待写（删除前先阻止防抖续写）
+      for (const sessionId of relatedSessionIds) {
+        clearSessionMirrorSchedule(sessionId);
+      }
+      const relatedSessions = chatSessions.filter((session) => session.projectId === projectId);
+      try {
+        await Promise.all(relatedSessions.map((session) => deleteSessionMirrorFile(session, target)));
+      } catch {
+        // 镜像文件删除失败不影响项目删除主流程。
+      }
+
+      // 5) 产物：清掉该项目下全部产物并刷新右侧「产物」面板
+      clearProjectArtifacts(projectId);
+      notifyArtifactsChanged();
 
       if (activeProjectId === projectId) {
         activeProjectIdRef.current = DEFAULT_PROJECT_ID;
