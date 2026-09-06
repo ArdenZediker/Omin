@@ -291,6 +291,19 @@ export default function ChatInput({
     }
   }, [knowledgeCollections, selectedKnowledgeCollection]);
 
+  /**
+   * 当前光标在正文中的字符偏移：上传/粘贴文件的瞬间用它定位附件应该出现在文字的哪个位置。
+   * 优先读 textarea 实时的 selectionStart（点击工具栏按钮会让 textarea 失焦，但 selectionStart 通常仍在），
+   * 读不到时回退到 state 里维护的 caretIndex，最后兜底为正文末尾。
+   */
+  const getCaretOffset = () => {
+    const textarea = textareaRef.current;
+    if (textarea && typeof textarea.selectionStart === "number") {
+      return Math.min(textarea.selectionStart, input.length);
+    }
+    return Math.min(caretIndex, input.length);
+  };
+
   const appendImageFiles = async (files: File[]) => {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) {
@@ -341,6 +354,8 @@ export default function ChatInput({
 
   const handleAddFiles = async () => {
     try {
+      // 光标位置必须在打开对话框之前采样：对话框期间 textarea 失焦，之后读不到真实光标。
+      const insertOffset = getCaretOffset();
       const selected = await open({ multiple: true, title: "选择要上传的图片或文件" });
       if (!selected) {
         return;
@@ -364,7 +379,7 @@ export default function ChatInput({
 
       const nextAttachments: ChatAttachment[] = paths
         .filter((path) => !isImageFile(path))
-        .map((path) => ({ path, name: baseNameOf(path), size: null as number | null }));
+        .map((path) => ({ path, name: baseNameOf(path), size: null as number | null, offset: insertOffset }));
 
       if (validImages.length > 0) {
         setImages((prev) => [...prev, ...validImages.map((entry) => entry.src)]);
@@ -381,10 +396,20 @@ export default function ChatInput({
     }
   };
 
+  /**
+   * 附件按上传时的光标位置排序，让输入框里的顺序与最终消息里的顺序一致
+   * （光标在前→排在前面，光标在后→排在后面）。offset 缺省视为 0。
+   * 注意：排序后数组下标已不是原始下标，删除必须按 path 过滤，不能按 index。
+   */
+  const orderedAttachments = attachments
+    .map((attachment, index) => ({ attachment, index, offset: attachment.offset ?? 0 }))
+    .sort((a, b) => a.offset - b.offset || a.index - b.index)
+    .map((item) => item.attachment);
+
   const buildSendOptions = (): ChatSendOptions => ({
     hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
     knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
-    attachments: attachments.length > 0 ? attachments : undefined,
+    attachments: attachments.length > 0 ? orderedAttachments : undefined,
   });
 
   const handleSubmit = () => {
@@ -546,6 +571,8 @@ export default function ChatInput({
     const clipboardFiles = event.clipboardData.files;
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
+      // 同步采样光标位置：下面的 savePastedFileAttachment 是异步的，届时 event 已不可用。
+      const pasteOffset = getCaretOffset();
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
       const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
@@ -560,7 +587,7 @@ export default function ChatInput({
           for (const file of docFiles) {
             const attachment = await savePastedFileAttachment(file);
             if (attachment) {
-              nextAttachments.push(attachment);
+              nextAttachments.push({ ...attachment, offset: pasteOffset });
             }
           }
           if (nextAttachments.length === 0) return;
@@ -688,9 +715,9 @@ export default function ChatInput({
               ))}
             </div>
           )}
-          {attachments.length > 0 && (
+          {orderedAttachments.length > 0 && (
             <div className="chat-composer__attachments">
-              {attachments.map((attachment, index) => (
+              {orderedAttachments.map((attachment, index) => (
                 <AttachmentChip
                   key={attachment.path}
                   src={attachment.path}
@@ -698,7 +725,7 @@ export default function ChatInput({
                   index={index}
                   size={attachment.size}
                   removable
-                  onRemove={() => setAttachments((prev) => prev.filter((_, attachmentIndex) => attachmentIndex !== index))}
+                  onRemove={() => setAttachments((prev) => prev.filter((item) => item.path !== attachment.path))}
                 />
               ))}
             </div>

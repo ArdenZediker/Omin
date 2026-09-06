@@ -18,6 +18,14 @@ export interface ChatAttachment {
   name: string;
   /** 字节数；未知为 null */
   size: number | null;
+  /**
+   * 插入位置：该附件在消息正文（content）中的字符偏移量。
+   *
+   * 由输入框在上传/粘贴的瞬间按光标位置记录；渲染时按 offset 把正文切片，
+   * 把附件 chip 插到对应位置（光标在文字前→chip 在前，光标在文字后→chip 在后）。
+   * 缺省（undefined）视为 0，即排在正文最前面——兼容旧数据。
+   */
+  offset?: number;
 }
 
 /**

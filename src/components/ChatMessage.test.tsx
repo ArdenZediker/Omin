@@ -1,7 +1,54 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import ChatMessage from "./ChatMessage";
+import ChatMessage, { buildUserMessageSegments } from "./ChatMessage";
 import type { Message } from "../adapters/types";
+
+describe("buildUserMessageSegments（按光标位置排布附件）", () => {
+  const att = (path: string, offset?: number) => ({ path, name: path, size: null, offset });
+
+  it("无附件时只返回整段正文", () => {
+    expect(buildUserMessageSegments("abc", [])).toEqual([{ kind: "text", text: "abc" }]);
+  });
+
+  it("光标在文字前（offset=0）：附件排在正文之前", () => {
+    const segments = buildUserMessageSegments("abc", [att("a.png", 0)]);
+    expect(segments[0]).toMatchObject({ kind: "attachment" });
+    expect(segments[1]).toEqual({ kind: "text", text: "abc" });
+  });
+
+  it("光标在文字后（offset=末尾）：附件排在正文之后", () => {
+    const segments = buildUserMessageSegments("abc", [att("a.png", 3)]);
+    expect(segments[0]).toEqual({ kind: "text", text: "abc" });
+    expect(segments[1]).toMatchObject({ kind: "attachment" });
+  });
+
+  it("光标在文字中间：正文被切成两段，附件插在中间", () => {
+    const segments = buildUserMessageSegments("abcd", [att("a.png", 2)]);
+    expect(segments).toHaveLength(3);
+    expect(segments[0]).toEqual({ kind: "text", text: "ab" });
+    expect(segments[1]).toMatchObject({ kind: "attachment" });
+    expect(segments[2]).toEqual({ kind: "text", text: "cd" });
+  });
+
+  it("多个附件按 offset 升序排列，同 offset 保持原始顺序", () => {
+    const segments = buildUserMessageSegments("abcdef", [att("b.png", 4), att("a.png", 2), att("c.png", 2)]);
+    expect(segments.map((s) => (s.kind === "attachment" ? s.attachment.name : s.text))).toEqual([
+      "ab",
+      "a.png",
+      "c.png",
+      "cd",
+      "b.png",
+      "ef",
+    ]);
+  });
+
+  it("offset 缺省（旧数据）视为 0，且超出正文长度时被夹紧到末尾", () => {
+    expect(buildUserMessageSegments("abc", [att("legacy.png")])[0]).toMatchObject({ kind: "attachment" });
+    const clamped = buildUserMessageSegments("abc", [att("far.png", 999)]);
+    expect(clamped[0]).toEqual({ kind: "text", text: "abc" });
+    expect(clamped[1]).toMatchObject({ kind: "attachment" });
+  });
+});
 
 describe("ChatMessage", () => {
   it("工具结果消息不单独渲染（已合并到 assistant 的思考块）", () => {

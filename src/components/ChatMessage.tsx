@@ -18,6 +18,47 @@ import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
 import { savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
+/** 用户消息正文 + 附件的混合片段：文本段与附件段交错，按附件 offset 决定先后顺序 */
+type UserMessageSegment =
+  | { kind: "text"; text: string }
+  | { kind: "attachment"; attachment: ChatAttachment };
+
+/**
+ * 按附件的 offset（上传时的光标位置）把正文切成若干段，附件 chip 插到对应位置。
+ * 光标在文字前 → chip 在前；光标在文字后 → chip 在后；光标在文字中间 → 从中间插入。
+ * offset 缺省（旧数据）视为 0。
+ */
+export function buildUserMessageSegments(content: string, attachments: ChatAttachment[]): UserMessageSegment[] {
+  if (attachments.length === 0) {
+    return content ? [{ kind: "text", text: content }] : [];
+  }
+
+  const ordered = attachments
+    .map((attachment, index) => ({
+      attachment,
+      index,
+      offset: Math.max(0, Math.min(attachment.offset ?? 0, content.length)),
+    }))
+    .sort((a, b) => a.offset - b.offset || a.index - b.index);
+
+  const segments: UserMessageSegment[] = [];
+  let cursor = 0;
+
+  for (const item of ordered) {
+    if (item.offset > cursor) {
+      segments.push({ kind: "text", text: content.slice(cursor, item.offset) });
+    }
+    segments.push({ kind: "attachment", attachment: item.attachment });
+    cursor = item.offset;
+  }
+
+  if (cursor < content.length) {
+    segments.push({ kind: "text", text: content.slice(cursor) });
+  }
+
+  return segments;
+}
+
 interface ChatMessageProps {
   message: Message;
   index: number;
@@ -118,6 +159,11 @@ export default function ChatMessage({
       });
   }, [message.steps, message.toolCallResults]);
   const changeCount = changeEntries.length;
+  /** 用户消息：正文与附件按上传时的光标位置（offset）交错排列 */
+  const userSegments = useMemo(
+    () => buildUserMessageSegments(message.content, message.attachments ?? []),
+    [message.content, message.attachments],
+  );
 
   useEffect(() => {
     if (!isEditing) return;
@@ -269,7 +315,27 @@ export default function ChatMessage({
         </div>
       ) : isUser ? (
         <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-gradient-to-br from-violet-500/80 to-indigo-600/80 text-white/95 text-sm">
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          {userSegments.map((segment, segmentIndex) =>
+            segment.kind === "text" ? (
+              <span key={`text-${segmentIndex}`} className="whitespace-pre-wrap break-words">
+                {segment.text}
+              </span>
+            ) : (
+              <span key={`attachment-${segment.attachment.path}-${segmentIndex}`} className="mx-1 inline-flex align-middle">
+                <AttachmentChip
+                  src={segment.attachment.path}
+                  name={segment.attachment.name}
+                  index={segmentIndex}
+                  size={segment.attachment.size}
+                  onClick={
+                    onOpenAttachment && !segment.attachment.path.startsWith("data:")
+                      ? () => onOpenAttachment(segment.attachment.path)
+                      : undefined
+                  }
+                />
+              </span>
+            ),
+          )}
           {message.images && message.images.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-1.5">
               {message.images.map((img, imageIndex) => (
@@ -278,24 +344,6 @@ export default function ChatMessage({
                   src={img}
                   name={`image_${imageIndex + 1}.png`}
                   index={imageIndex}
-                />
-              ))}
-            </div>
-          )}
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {message.attachments.map((attachment, attachmentIndex) => (
-                <AttachmentChip
-                  key={attachment.path}
-                  src={attachment.path}
-                  name={attachment.name}
-                  index={attachmentIndex}
-                  size={attachment.size}
-                  onClick={
-                    onOpenAttachment && !attachment.path.startsWith("data:")
-                      ? () => onOpenAttachment(attachment.path)
-                      : undefined
-                  }
                 />
               ))}
             </div>

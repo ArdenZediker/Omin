@@ -180,7 +180,13 @@ export async function snapshotAttachments(
       });
       if (copied?.path) {
         // name 保留用户看到的原始文件名，path 指向快照，size 用落盘后的真实字节数。
-        snapshotted.push({ path: copied.path, name: attachment.name, size: copied.size ?? null });
+        // offset 必须透传——它记录了该附件在正文中的插入位置，渲染时靠它决定 chip 排在文字前/中/后。
+        snapshotted.push({
+          path: copied.path,
+          name: attachment.name,
+          size: copied.size ?? null,
+          offset: attachment.offset,
+        });
         continue;
       }
     } catch (error) {
