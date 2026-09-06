@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeClipboardWithFiles } from "../chat/messageClipboard";
 import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ChatAttachment, ChatImage } from "../adapters/types";
@@ -721,6 +722,19 @@ export default function ChatInput({
     }
   };
 
+  const handleCopy = (event: React.ClipboardEvent) => {
+    // 全选态（文字 + 文件 chip 都选中）下复制：把文字和真实文件一起写进系统剪贴板，
+    // 否则原生复制只会把 textarea 里的文字复制出去、文件被丢。
+    if (!allMediaSelected || composedMedia.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const text = input;
+    const paths = attachments.map((attachment) => attachment.path).filter((path): path is string => Boolean(path));
+    const clipboardImages = images.map((image) => ({ name: image.name ?? null, src: image.src }));
+    void writeClipboardWithFiles(text, paths, clipboardImages);
+  };
+
   const renderMediaChip = (media: (typeof composedMedia)[number], index: number) => {
     if (media.kind === "image") {
       return (
@@ -836,6 +850,7 @@ export default function ChatInput({
                 onKeyDownCapture={handleKeyDown}
                 onKeyUp={(event) => updateCaretFromTextarea(event.currentTarget)}
                 onPaste={handlePaste}
+                onCopy={handleCopy}
                 onSelect={(event) => updateCaretFromTextarea(event.currentTarget)}
                 placeholder="输入聊天内容..."
                 className="chat-composer__textarea hide-scrollbar"

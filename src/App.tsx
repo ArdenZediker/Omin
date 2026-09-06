@@ -1,7 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/core";
 import type { Message, ChatAttachment, ChatImage } from "./adapters/types";
 import type { ChatSession } from "./chat/types";
 import { createDesktopActions } from "./app/desktopActions";
@@ -39,7 +38,7 @@ import {
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
-import { formatMessageClipboardText } from "./chat/messageClipboard";
+import { formatMessageClipboardText, writeClipboardWithFiles } from "./chat/messageClipboard";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -587,19 +586,7 @@ function MainApp() {
       src: image.src,
     }));
 
-    if (filePaths.length > 0 || clipboardImages.length > 0) {
-      try {
-        await invoke("write_clipboard_with_files", {
-          text,
-          paths: filePaths,
-          images: clipboardImages,
-        });
-        return;
-      } catch {
-        // 系统级文件剪贴板不可用（如不支持的平台）时，退回纯文本，至少保留文字信息。
-      }
-    }
-    await navigator.clipboard.writeText(text);
+    await writeClipboardWithFiles(text, filePaths, clipboardImages);
   }, []);
 
   useEffect(() => {
