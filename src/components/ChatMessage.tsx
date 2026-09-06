@@ -16,6 +16,7 @@ import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettl
 import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
 /** 用户消息正文 + 附件 + 图片的混合片段：文本段与附件/图片段交错，按 offset 决定先后顺序 */
@@ -200,22 +201,36 @@ export default function ChatMessage({
 
     // 当剪贴板里同时有文件和文字时，必须先把文字插入到编辑框，
     // 否则 event.preventDefault() 会一并取消文字的默认粘贴。
-    const insertPastedText = () => {
-      if (!pastedText) return;
-      const nextValue = editValue.slice(0, pasteOffset) + pastedText + editValue.slice(pasteOffset);
+    const insertPastedText = (textToInsert = pastedText) => {
+      if (!textToInsert) return;
+      const nextValue = editValue.slice(0, pasteOffset) + textToInsert + editValue.slice(pasteOffset);
       setEditValue(nextValue);
       window.requestAnimationFrame(() => {
         const textarea = textareaRef.current;
         if (!textarea) return;
-        const nextCaret = pasteOffset + pastedText.length;
+        const nextCaret = pasteOffset + textToInsert.length;
         textarea.focus();
         textarea.setSelectionRange(nextCaret, nextCaret);
       });
     };
 
+    // Chromium 在剪贴板携带文件（CF_HDROP）时，通常会把 DataTransfer 切成「文件模式」，
+    // 导致 event.clipboardData.getData("text/plain") 读不到文字，但系统剪贴板里仍有 CF_UNICODETEXT。
+    // 用 Tauri 的系统级 readText() 把文字补回来；失败或不在 Tauri 环境则静默回退。
+    const fallbackReadSystemText = () => {
+      void readText()
+        .then((systemText) => {
+          if (systemText) insertPastedText(systemText);
+        })
+        .catch(() => {
+          // 非 Tauri 环境或权限不足：至少保留文件。
+        });
+    };
+
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
       insertPastedText();
+      if (!pastedText) fallbackReadSystemText();
 
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
@@ -249,6 +264,7 @@ export default function ChatMessage({
       if (item.type.startsWith("image/")) {
         event.preventDefault();
         insertPastedText();
+        if (!pastedText) fallbackReadSystemText();
         const blob = item.getAsFile();
         if (blob) appendEditImageFiles([blob], textareaRef.current?.selectionStart ?? editValue.length);
         break;
