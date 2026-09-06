@@ -319,7 +319,11 @@ export default function ChatInput({
       ),
     );
 
-    setImages((prev) => [...prev, ...nextEntries.filter((entry) => entry.src.length > 0)]);
+    setImages((prev) => {
+      const existingSrcs = new Set(prev.map((image) => image.src));
+      const unique = nextEntries.filter((entry) => entry.src.length > 0 && !existingSrcs.has(entry.src));
+      return unique.length > 0 ? [...prev, ...unique] : prev;
+    });
   };
 
   const clearSuggestionDismissal = () => {
@@ -381,10 +385,13 @@ export default function ChatInput({
         .map((path) => ({ path, name: baseNameOf(path), size: null as number | null, offset: insertOffset }));
 
       if (validImages.length > 0) {
-        setImages((prev) => [
-          ...prev,
-          ...validImages.map((entry) => ({ src: entry.src, name: entry.name, offset: insertOffset })),
-        ]);
+        setImages((prev) => {
+          const existingSrcs = new Set(prev.map((image) => image.src));
+          const unique = validImages
+            .map((entry) => ({ src: entry.src, name: entry.name, offset: insertOffset }))
+            .filter((image) => !existingSrcs.has(image.src));
+          return unique.length > 0 ? [...prev, ...unique] : prev;
+        });
       }
 
       setAttachments((prev) => {
@@ -685,7 +692,7 @@ export default function ChatInput({
           index={index}
           removable
           onRemove={() => {
-            setImages((prev) => prev.filter((item) => item.src !== media.image!.src));
+            setImages((prev) => prev.filter((item) => item !== media.image!));
           }}
         />
       );
@@ -698,7 +705,7 @@ export default function ChatInput({
         index={index}
         size={media.attachment!.size}
         removable
-        onRemove={() => setAttachments((prev) => prev.filter((item) => item.path !== media.attachment!.path))}
+        onRemove={() => setAttachments((prev) => prev.filter((item) => item !== media.attachment!))}
       />
     );
   };

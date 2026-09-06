@@ -188,7 +188,11 @@ export default function ChatMessage({
         })),
       ),
     ).then((nextImages) => {
-      setEditImages((prev) => [...prev, ...nextImages.filter((entry) => entry.src.length > 0)]);
+      setEditImages((prev) => {
+        const existingSrcs = new Set(prev.map((image) => image.src));
+        const unique = nextImages.filter((entry) => entry.src.length > 0 && !existingSrcs.has(entry.src));
+        return unique.length > 0 ? [...prev, ...unique] : prev;
+      });
     });
   };
 
@@ -302,7 +306,7 @@ export default function ChatMessage({
                       name={media.image.name ?? `image_${mediaIndex + 1}.png`}
                       index={mediaIndex}
                       removable
-                      onRemove={() => setEditImages((prev) => prev.filter((item) => item.src !== media.image.src))}
+                      onRemove={() => setEditImages((prev) => prev.filter((item) => item !== media.image))}
                     />
                   ) : (
                     <AttachmentChip
@@ -312,7 +316,7 @@ export default function ChatMessage({
                       index={mediaIndex}
                       size={media.attachment.size}
                       removable
-                      onRemove={() => setEditAttachments((prev) => prev.filter((item) => item.path !== media.attachment.path))}
+                      onRemove={() => setEditAttachments((prev) => prev.filter((item) => item !== media.attachment))}
                       onClick={
                         !media.attachment.path.startsWith("data:")
                           ? () => onOpenAttachment?.(media.attachment.path)
