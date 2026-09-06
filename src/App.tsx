@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import type { Message, ChatAttachment, ChatImage } from "./adapters/types";
 import type { ChatSession } from "./chat/types";
 import { createDesktopActions } from "./app/desktopActions";
@@ -578,6 +579,18 @@ function MainApp() {
 
   const handleCopyMessage = useCallback(async (message: Message) => {
     const text = formatMessageClipboardText(message);
+    const filePaths = (message.attachments ?? [])
+      .map((attachment) => attachment.path)
+      .filter((path): path is string => Boolean(path));
+
+    if (filePaths.length > 0) {
+      try {
+        await invoke("write_clipboard_with_files", { text, paths: filePaths });
+        return;
+      } catch {
+        // 系统级文件剪贴板不可用（如不支持的平台）时，退回纯文本，至少保留文字信息。
+      }
+    }
     await navigator.clipboard.writeText(text);
   }, []);
 

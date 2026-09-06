@@ -31,6 +31,7 @@ mod skillhub;
 mod webtools;
 mod gittools;
 mod office_export;
+mod clipboard_files;
 mod connectorhub;
 mod mcp;
 
@@ -46,6 +47,7 @@ use gittools::*;
 use office_export::*;
 use connectorhub::*;
 use mcp::*;
+use clipboard_files::*;
 
 // 需要被其它模块以 `crate::X` 引用的条目，改为显式重导出（显式重导出不会牵扯宏命名空间）。
 pub(crate) use knowledge_embedding_config::{
@@ -544,6 +546,7 @@ pub fn run() {
             load_app_kv,
             save_app_kv,
             remove_app_kv,
+            write_clipboard_with_files,
             delete_chat_session,
             delete_project,
             get_data_root_info,
