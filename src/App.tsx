@@ -582,10 +582,18 @@ function MainApp() {
     const filePaths = (message.attachments ?? [])
       .map((attachment) => attachment.path)
       .filter((path): path is string => Boolean(path));
+    const clipboardImages = (message.images ?? []).map((image) => ({
+      name: image.name ?? null,
+      src: image.src,
+    }));
 
-    if (filePaths.length > 0) {
+    if (filePaths.length > 0 || clipboardImages.length > 0) {
       try {
-        await invoke("write_clipboard_with_files", { text, paths: filePaths });
+        await invoke("write_clipboard_with_files", {
+          text,
+          paths: filePaths,
+          images: clipboardImages,
+        });
         return;
       } catch {
         // 系统级文件剪贴板不可用（如不支持的平台）时，退回纯文本，至少保留文字信息。
