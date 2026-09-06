@@ -10,6 +10,13 @@ describe("buildUserMessageSegments（按光标位置排布附件）", () => {
     expect(buildUserMessageSegments("abc", [])).toEqual([{ kind: "text", text: "abc" }]);
   });
 
+  it("正文缺失（undefined）时不抛 slice 错误，按空串处理", () => {
+    expect(buildUserMessageSegments(undefined, [])).toEqual([]);
+    const segments = buildUserMessageSegments(undefined, [att("legacy.png")]);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ kind: "attachment", attachment: { path: "legacy.png" } });
+  });
+
   it("光标在文字前（offset=0）：附件排在正文之前", () => {
     const segments = buildUserMessageSegments("abc", [att("a.png", 0)]);
     expect(segments[0]).toMatchObject({ kind: "attachment" });

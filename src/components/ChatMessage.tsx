@@ -30,24 +30,25 @@ type UserMessageSegment =
  * 附件与图片按各自的 offset 合并排序，offset 缺省（旧数据）视为 0。
  */
 export function buildUserMessageSegments(
-  content: string,
+  content: string | undefined,
   attachments: ChatAttachment[],
   images: ChatImage[] = [],
 ): UserMessageSegment[] {
+  const safeContent = content ?? "";
   if (attachments.length === 0 && images.length === 0) {
-    return content ? [{ kind: "text", text: content }] : [];
+    return safeContent ? [{ kind: "text", text: safeContent }] : [];
   }
 
   type Placed = { offset: number; index: number; kind: "attachment" | "image"; ref: ChatAttachment | ChatImage };
   const placed: Placed[] = [
     ...attachments.map((attachment, index) => ({
-      offset: Math.max(0, Math.min(attachment.offset ?? 0, content.length)),
+      offset: Math.max(0, Math.min(attachment.offset ?? 0, safeContent.length)),
       index,
       kind: "attachment" as const,
       ref: attachment,
     })),
     ...images.map((image, index) => ({
-      offset: Math.max(0, Math.min(image.offset ?? 0, content.length)),
+      offset: Math.max(0, Math.min(image.offset ?? 0, safeContent.length)),
       index,
       kind: "image" as const,
       ref: image,
@@ -59,7 +60,7 @@ export function buildUserMessageSegments(
 
   for (const item of placed) {
     if (item.offset > cursor) {
-      segments.push({ kind: "text", text: content.slice(cursor, item.offset) });
+      segments.push({ kind: "text", text: safeContent.slice(cursor, item.offset) });
     }
     if (item.kind === "attachment") {
       segments.push({ kind: "attachment", attachment: item.ref as ChatAttachment });
@@ -69,8 +70,8 @@ export function buildUserMessageSegments(
     cursor = item.offset;
   }
 
-  if (cursor < content.length) {
-    segments.push({ kind: "text", text: content.slice(cursor) });
+  if (cursor < safeContent.length) {
+    segments.push({ kind: "text", text: safeContent.slice(cursor) });
   }
 
   return segments;
@@ -127,7 +128,7 @@ export default function ChatMessage({
   if (message.role === "tool") return null;
 
   const isUser = message.role === "user";
-  const [editValue, setEditValue] = useState(message.content);
+  const [editValue, setEditValue] = useState(message.content ?? "");
   // 编辑态下附件的可变副本：用户可删除旧附件，也可在文本框粘贴新文件/图片，
   // 提交时随 onSubmitEdit 回传，覆盖原消息的 images / attachments。
   const [editImages, setEditImages] = useState<ChatImage[]>(message.images ?? []);
@@ -184,7 +185,7 @@ export default function ChatMessage({
 
   useEffect(() => {
     if (!isEditing) return;
-    setEditValue(message.content);
+    setEditValue(message.content ?? "");
     setEditImages(message.images ?? []);
     setEditAttachments(message.attachments ?? []);
     window.requestAnimationFrame(() => {
@@ -400,8 +401,8 @@ export default function ChatMessage({
             isStreaming={isStreaming}
             onOpenFileLocation={onOpenFileLocation}
           />
-          <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
-            {renderMarkdown(message.content)}
+          <div className={isStreaming && message.content?.trim() ? "cursor-blink" : ""}>
+            {renderMarkdown(message.content ?? "")}
           </div>
           {knowledgeSources.length ? (
             <div className="message-knowledge-sources">
