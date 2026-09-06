@@ -22,6 +22,20 @@ pub struct ClipboardImage {
   pub src: String,
 }
 
+/// 清理应用数据目录下的 clipboard_cache（上一轮复制留下的内联图片，用户多半已粘贴）。
+/// best-effort：失败返回 Err 但不致命，调用方可忽略。
+pub fn cleanup_clipboard_cache(app: &tauri::AppHandle) -> Result<(), String> {
+  let base = app
+    .path()
+    .app_data_dir()
+    .map_err(|err| format!("获取应用数据目录失败: {err}"))?;
+  let cache_dir = base.join("clipboard_cache");
+  if cache_dir.exists() {
+    std::fs::remove_dir_all(&cache_dir).map_err(|err| format!("清理剪贴板缓存失败: {err}"))?;
+  }
+  Ok(())
+}
+
 /// 从 data URL 前缀推断图片扩展名（缺省 png）。
 fn image_ext_from_data_url(src: &str) -> &str {
   let prefix = src
@@ -74,6 +88,8 @@ pub fn write_clipboard_with_files(
       .app_data_dir()
       .map_err(|err| format!("获取应用数据目录失败: {err}"))?;
     let cache_dir = base.join("clipboard_cache");
+    // 先清掉上一轮复制的残留，再建新目录，避免旧文件无限累积
+    let _ = cleanup_clipboard_cache(&app);
     std::fs::create_dir_all(&cache_dir).map_err(|err| format!("创建剪贴板缓存目录失败: {err}"))?;
 
     for image in images {

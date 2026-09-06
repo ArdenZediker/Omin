@@ -593,6 +593,11 @@ pub fn run() {
             read_mcp_stderr
         ])
         .setup(|app| {
+            // 清理上一会话遗留的剪贴板图片缓存（best-effort，失败不影响启动）
+            if let Err(err) = clipboard_files::cleanup_clipboard_cache(&app.handle()) {
+                eprintln!("[Omni] 清理剪贴板缓存失败: {err}");
+            }
+
             let show_hide = MenuItemBuilder::with_id("toggle", "打开主界面").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出 Omni").build(app)?;
             let tray_menu = MenuBuilder::new(app)
