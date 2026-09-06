@@ -104,6 +104,8 @@ export default function ChatInput({
   const [images, setImages] = useState<ChatImage[]>([]);
   /** 非图片类本地文件附件（绝对路径引用；不内联内容，发送时注入 prompt 让模型用 /read_file 读取） */
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  /** 是否处于“全选文件 chip”状态（按第二次 Ctrl+A 选中所有 chip） */
+  const [allMediaSelected, setAllMediaSelected] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [dismissedSlashInput, setDismissedSlashInput] = useState("");
   const [selectedKnowledgeCollection, setSelectedKnowledgeCollection] = useState<KnowledgeCollection | null>(null);
@@ -356,6 +358,7 @@ export default function ChatInput({
   };
 
   const handleAddFiles = async () => {
+    setAllMediaSelected(false);
     try {
       // 光标位置必须在打开对话框之前采样：对话框期间 textarea 失焦，之后读不到真实光标。
       const insertOffset = getCaretOffset();
@@ -460,6 +463,7 @@ export default function ChatInput({
     setInput("");
     setImages([]);
     setAttachments([]);
+    setAllMediaSelected(false);
     setSelectedKnowledgeCollection(null);
     setCaretIndex(0);
     clearSuggestionDismissal();
@@ -524,6 +528,15 @@ export default function ChatInput({
   }, [applySuggestion, input, localSuggestions, selectedSuggestionIndex, showSlashSuggestions]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    // 当文件 chip 处于“全选”状态时，除 Ctrl+A / Delete / Backspace 外的其它按键都退出全选。
+    if (allMediaSelected) {
+      const isSelectAllShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a";
+      const isDelete = event.key === "Delete" || event.key === "Backspace";
+      if (!isSelectAllShortcut && !isDelete) {
+        setAllMediaSelected(false);
+      }
+    }
+
     if (showKnowledgeSuggestions && knowledgeSuggestions.length > 0) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -598,6 +611,27 @@ export default function ChatInput({
       }
     }
 
+    // Ctrl+A：第一次默认全选文字；若文字已经全选且仍有文件 chip，第二次 Ctrl+A 选中所有 chip。
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && composedMedia.length > 0) {
+      const textarea = textareaRef.current;
+      if (textarea && textarea.selectionStart === 0 && textarea.selectionEnd === input.length && !allMediaSelected) {
+        event.preventDefault();
+        setAllMediaSelected(true);
+        return;
+      }
+    }
+
+    // Delete / Backspace：若文字已全选且 chip 也处于全选态，一并清空。
+    if ((event.key === "Delete" || event.key === "Backspace") && allMediaSelected) {
+      event.preventDefault();
+      event.stopPropagation();
+      setImages([]);
+      setAttachments([]);
+      setInput("");
+      setAllMediaSelected(false);
+      return;
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
@@ -606,6 +640,7 @@ export default function ChatInput({
   };
 
   const handlePaste = (event: React.ClipboardEvent) => {
+    setAllMediaSelected(false);
     // 同步采样光标位置：下面的保存/压缩是异步的，届时 event 已不可用。
     const pasteOffset = getCaretOffset();
     const clipboardFiles = event.clipboardData.files;
@@ -692,6 +727,7 @@ export default function ChatInput({
           index={index}
           removable
           onRemove={() => {
+            setAllMediaSelected(false);
             setImages((prev) => prev.filter((item) => item !== media.image!));
           }}
         />
@@ -705,7 +741,10 @@ export default function ChatInput({
         index={index}
         size={media.attachment!.size}
         removable
-        onRemove={() => setAttachments((prev) => prev.filter((item) => item !== media.attachment!))}
+        onRemove={() => {
+          setAllMediaSelected(false);
+          setAttachments((prev) => prev.filter((item) => item !== media.attachment!));
+        }}
       />
     );
   };
@@ -773,7 +812,7 @@ export default function ChatInput({
 
         <div className="chat-composer__body">
           {composedMedia.length > 0 && (
-            <div className="chat-composer__attachments chat-composer__attachments--before">
+            <div className={`chat-composer__attachments chat-composer__attachments--before${allMediaSelected ? " chat-composer__attachments--selected" : ""}`}>
               {composedMedia.map(renderMediaChip)}
             </div>
           )}
@@ -786,7 +825,10 @@ export default function ChatInput({
                   setInput(event.target.value);
                   updateCaretFromTextarea(event.currentTarget);
                 }}
-                onClick={(event) => updateCaretFromTextarea(event.currentTarget)}
+                onClick={(event) => {
+                  setAllMediaSelected(false);
+                  updateCaretFromTextarea(event.currentTarget);
+                }}
                 onKeyDownCapture={handleKeyDown}
                 onKeyUp={(event) => updateCaretFromTextarea(event.currentTarget)}
                 onPaste={handlePaste}
