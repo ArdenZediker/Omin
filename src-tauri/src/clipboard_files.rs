@@ -2,9 +2,9 @@
 // 这样用户「复制消息」后，既能在文本编辑器里粘贴出文字，
 // 也能在文件管理器里 Ctrl+V 直接粘贴出文件（CF_HDROP / NSFilenamesPboardType）。
 //
-// 复用 arboard（已作为 tauri-plugin-clipboard-manager 的传递依赖引入）：
-// set().text() 会清空并写入文本；set().file_list() 用 SetClipboardData(CF_HDROP) 直接追加文件格式、不清空，
-// 因此「先 text 后 file_list」可让文字与文件同时存在于剪贴板。
+// Windows 下用 clipboard-win 在「一次打开」里同时写入 CF_UNICODETEXT 和 CF_HDROP，
+// 避免「先 text 后 file_list」分两次打开导致后者清空前者的问题。
+// 其它平台仍回退到 arboard 的 text + file_list。
 //
 // base64 图片（消息内联图）不是真实文件，本命令把它们解码后写入应用数据目录下的
 // clipboard_cache 子目录（不会被系统临时清理误删），再把生成的路径并入文件列表。
@@ -111,19 +111,49 @@ pub fn write_clipboard_with_files(
     }
   }
 
+  set_clipboard_text_and_files(&text, &all_files)
+}
+
+/// 平台相关：把文本和文件路径同时写入系统剪贴板。
+#[cfg(windows)]
+fn set_clipboard_text_and_files(text: &str, files: &[PathBuf]) -> Result<(), String> {
+  use clipboard_win::{options::NoClear, raw, Clipboard};
+
+  let _clipboard = Clipboard::new_attempts(10)
+    .map_err(|err| format!("打开剪贴板失败: {err}"))?;
+
+  raw::empty().map_err(|err| format!("清空剪贴板失败: {err}"))?;
+
+  if !text.is_empty() {
+    raw::set_string_with(text, NoClear)
+      .map_err(|err| format!("写入剪贴板文本失败: {err}"))?;
+  }
+
+  if !files.is_empty() {
+    let paths: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+    raw::set_file_list_with(&paths, NoClear)
+      .map_err(|err| format!("写入剪贴板文件失败: {err}"))?;
+  }
+
+  Ok(())
+}
+
+/// 平台相关：把文本和文件路径同时写入系统剪贴板（非 Windows 回退）。
+#[cfg(not(windows))]
+fn set_clipboard_text_and_files(text: &str, files: &[PathBuf]) -> Result<(), String> {
   let mut clipboard = arboard::Clipboard::new().map_err(|err| format!("打开剪贴板失败: {err}"))?;
 
   if !text.is_empty() {
     clipboard
       .set()
-      .text(text.as_str())
+      .text(text)
       .map_err(|err| format!("写入剪贴板文本失败: {err}"))?;
   }
 
-  if !all_files.is_empty() {
+  if !files.is_empty() {
     clipboard
       .set()
-      .file_list(&all_files)
+      .file_list(files)
       .map_err(|err| format!("写入剪贴板文件失败: {err}"))?;
   }
 
