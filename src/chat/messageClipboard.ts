@@ -2,35 +2,13 @@ import type { Message } from "../adapters/types";
 
 /**
  * 把一条消息渲染成适合复制到剪贴板的纯文本。
- * 包含：
- * - 每条图片的展示名
- * - 每个附件的展示名与本地绝对路径
- * - 消息正文
  *
- * 这样「复制消息」不会只丢掉文件信息；粘贴到笔记/聊天/文档里都能看到
- * 带了哪些文件。若需要把真实文件字节放到系统剪贴板（可粘贴到文件管理器），
- * 那是另一层能力，需额外 OS 级支持。
+ * 仅保留用户可见正文；不再把 `[图片]` / `[文件]` 占位符写进 text/plain，
+ * 避免把消息复制后再粘贴回聊天输入框时，这些占位符也变成可发送文字。
+ *
+ * 真实文件/图片仍会通过系统级文件剪贴板（CF_HDROP / NSFilenamesPboardType）
+ * 随文字一起提供，可在文件管理器中 Ctrl+V 直接粘贴出文件。
  */
 export function formatMessageClipboardText(message: Message): string {
-  const lines: string[] = [];
-
-  for (const image of message.images ?? []) {
-    lines.push(`[图片] ${image.name?.trim() || "image"}`);
-  }
-
-  for (const attachment of message.attachments ?? []) {
-    const name = attachment.name?.trim() || "文件";
-    if (attachment.path) {
-      lines.push(`[文件] ${name} (${attachment.path})`);
-    } else {
-      lines.push(`[文件] ${name}`);
-    }
-  }
-
-  const content = message.content?.trim();
-  if (content) {
-    lines.push(content);
-  }
-
-  return lines.join("\n");
+  return message.content?.trim() ?? "";
 }
