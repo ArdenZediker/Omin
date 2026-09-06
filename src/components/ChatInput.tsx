@@ -437,13 +437,6 @@ export default function ChatInput({
     return items;
   }, [images, attachments]);
 
-  /**
-   * 输入框预览分前后两段：offset=0（光标在文字最前面/无文字）的 chip 放在 textarea 上方，
-   * offset>0 的放在 textarea 下方，让「光标在前→文件在前」在 composer 里也有对应视觉。
-   */
-  const beforeMedia = composedMedia.filter((media) => media.offset === 0);
-  const afterMedia = composedMedia.filter((media) => media.offset > 0);
-
   const buildSendOptions = (): ChatSendOptions => ({
     hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
     knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
@@ -742,9 +735,9 @@ export default function ChatInput({
         </div>
 
         <div className="chat-composer__body">
-          {beforeMedia.length > 0 && (
+          {composedMedia.length > 0 && (
             <div className="chat-composer__attachments chat-composer__attachments--before">
-              {beforeMedia.map(renderMediaChip)}
+              {composedMedia.map(renderMediaChip)}
             </div>
           )}
           <div className="chat-composer__editor-wrap">
@@ -768,11 +761,6 @@ export default function ChatInput({
               />
             </div>
           </div>
-          {afterMedia.length > 0 && (
-            <div className="chat-composer__attachments chat-composer__attachments--after">
-              {afterMedia.map(renderMediaChip)}
-            </div>
-          )}
         </div>
 
         <div className="chat-composer__footer">

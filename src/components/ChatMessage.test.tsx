@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import ChatMessage, { buildUserMessageSegments } from "./ChatMessage";
 import type { Message } from "../adapters/types";
 
-describe("buildUserMessageSegments（按光标位置排布附件）", () => {
+describe("buildUserMessageSegments（附件/图片统一排在正文之前）", () => {
   const att = (path: string, offset?: number) => ({ path, name: path, size: null, offset });
 
   it("无附件时只返回整段正文", () => {
@@ -17,59 +17,38 @@ describe("buildUserMessageSegments（按光标位置排布附件）", () => {
     expect(segments[0]).toMatchObject({ kind: "attachment", attachment: { path: "legacy.png" } });
   });
 
-  it("光标在文字前（offset=0）：附件排在正文之前", () => {
-    const segments = buildUserMessageSegments("abc", [att("a.png", 0)]);
-    expect(segments[0]).toMatchObject({ kind: "attachment" });
+  it("无论 offset 取何值，附件都统一排在正文之前（offset 被忽略）", () => {
+    for (const offset of [undefined, 0, 2, 3, 999]) {
+      const segments = buildUserMessageSegments("abc", [att("a.png", offset)]);
+      expect(segments[0]).toMatchObject({ kind: "attachment" });
+      expect(segments[1]).toEqual({ kind: "text", text: "abc" });
+    }
+  });
+
+  it("多个附件按原数组顺序统一排在正文之前", () => {
+    const segments = buildUserMessageSegments("abcdef", [att("b.png"), att("a.png"), att("c.png")]);
+    expect(
+      segments.map((s) => (s.kind === "attachment" ? s.attachment.name : s.kind === "text" ? s.text : "")),
+    ).toEqual(["b.png", "a.png", "c.png", "abcdef"]);
+  });
+
+  it("图片统一排在正文之前（offset 被忽略）", () => {
+    const segments = buildUserMessageSegments("abc", [], [{ src: "data:img1", offset: 3 }]);
+    expect(segments[0]).toMatchObject({ kind: "image", image: { src: "data:img1" } });
     expect(segments[1]).toEqual({ kind: "text", text: "abc" });
   });
 
-  it("光标在文字后（offset=末尾）：附件排在正文之后", () => {
-    const segments = buildUserMessageSegments("abc", [att("a.png", 3)]);
-    expect(segments[0]).toEqual({ kind: "text", text: "abc" });
-    expect(segments[1]).toMatchObject({ kind: "attachment" });
-  });
-
-  it("光标在文字中间：正文被切成两段，附件插在中间", () => {
-    const segments = buildUserMessageSegments("abcd", [att("a.png", 2)]);
-    expect(segments).toHaveLength(3);
-    expect(segments[0]).toEqual({ kind: "text", text: "ab" });
-    expect(segments[1]).toMatchObject({ kind: "attachment" });
-    expect(segments[2]).toEqual({ kind: "text", text: "cd" });
-  });
-
-  it("多个附件按 offset 升序排列，同 offset 保持原始顺序", () => {
-    const segments = buildUserMessageSegments("abcdef", [att("b.png", 4), att("a.png", 2), att("c.png", 2)]);
-    expect(
-      segments.map((s) =>
-        s.kind === "attachment" ? s.attachment.name : s.kind === "image" ? (s.image.name ?? "") : s.text,
-      ),
-    ).toEqual(["ab", "a.png", "c.png", "cd", "b.png", "ef"]);
-  });
-
-  it("offset 缺省（旧数据）视为 0，且超出正文长度时被夹紧到末尾", () => {
-    expect(buildUserMessageSegments("abc", [att("legacy.png")])[0]).toMatchObject({ kind: "attachment" });
-    const clamped = buildUserMessageSegments("abc", [att("far.png", 999)]);
-    expect(clamped[0]).toEqual({ kind: "text", text: "abc" });
-    expect(clamped[1]).toMatchObject({ kind: "attachment" });
-  });
-
-  it("图片按光标 offset 交错，光标在文字后时图片排在正文之后", () => {
-    const segments = buildUserMessageSegments("abc", [], [{ src: "data:img1", offset: 3 }]);
-    expect(segments[0]).toEqual({ kind: "text", text: "abc" });
-    expect(segments[1]).toMatchObject({ kind: "image", image: { src: "data:img1" } });
-  });
-
-  it("图片与附件按各自 offset 合并排序，offset 相同则附件先于图片（稳定）", () => {
+  it("附件与图片都前置：附件（数组顺序）在前、图片（数组顺序）在后、正文最后", () => {
     const segments = buildUserMessageSegments(
       "abcdef",
-      [att("a.png", 2)],
-      [{ src: "data:img1", offset: 2 }, { src: "data:img2", offset: 4 }],
+      [att("a.png"), att("b.png")],
+      [{ src: "data:img1", offset: 5 }, { src: "data:img2", offset: 1 }],
     );
     expect(
       segments.map((s) =>
         s.kind === "attachment" ? `att:${s.attachment.name}` : s.kind === "image" ? `img:${s.image.src}` : `txt:${s.text}`,
       ),
-    ).toEqual(["txt:ab", "att:a.png", "img:data:img1", "txt:cd", "img:data:img2", "txt:ef"]);
+    ).toEqual(["att:a.png", "att:b.png", "img:data:img1", "img:data:img2", "txt:abcdef"]);
   });
 });
 

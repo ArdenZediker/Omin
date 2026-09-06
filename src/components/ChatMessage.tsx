@@ -25,9 +25,10 @@ type UserMessageSegment =
   | { kind: "image"; image: ChatImage };
 
 /**
- * 按附件与图片的 offset（上传/粘贴时的光标位置）把正文切成若干段，chip 插到对应位置。
- * 光标在文字前 → chip 在前；光标在文字后 → chip 在后；光标在文字中间 → 从中间插入。
- * 附件与图片按各自的 offset 合并排序，offset 缺省（旧数据）视为 0。
+ * 用户消息的附件/图片统一排在正文之前（「统一在前方」）。
+ * 不再按上传时的光标位置（offset）交错插入——textarea 无法在文字流内嵌 chip，
+ * 光标中/后的位置在预览与渲染里都难以对齐，故简化为：所有附件与图片一律在正文前面。
+ * 附件按数组顺序、图片按数组顺序，整体置于正文之前。
  */
 export function buildUserMessageSegments(
   content: string | undefined,
@@ -35,43 +36,16 @@ export function buildUserMessageSegments(
   images: ChatImage[] = [],
 ): UserMessageSegment[] {
   const safeContent = content ?? "";
-  if (attachments.length === 0 && images.length === 0) {
-    return safeContent ? [{ kind: "text", text: safeContent }] : [];
-  }
-
-  type Placed = { offset: number; index: number; kind: "attachment" | "image"; ref: ChatAttachment | ChatImage };
-  const placed: Placed[] = [
-    ...attachments.map((attachment, index) => ({
-      offset: Math.max(0, Math.min(attachment.offset ?? 0, safeContent.length)),
-      index,
-      kind: "attachment" as const,
-      ref: attachment,
-    })),
-    ...images.map((image, index) => ({
-      offset: Math.max(0, Math.min(image.offset ?? 0, safeContent.length)),
-      index,
-      kind: "image" as const,
-      ref: image,
-    })),
-  ].sort((a, b) => a.offset - b.offset || a.index - b.index);
-
   const segments: UserMessageSegment[] = [];
-  let cursor = 0;
 
-  for (const item of placed) {
-    if (item.offset > cursor) {
-      segments.push({ kind: "text", text: safeContent.slice(cursor, item.offset) });
-    }
-    if (item.kind === "attachment") {
-      segments.push({ kind: "attachment", attachment: item.ref as ChatAttachment });
-    } else {
-      segments.push({ kind: "image", image: item.ref as ChatImage });
-    }
-    cursor = item.offset;
+  for (const attachment of attachments) {
+    segments.push({ kind: "attachment", attachment });
   }
-
-  if (cursor < safeContent.length) {
-    segments.push({ kind: "text", text: safeContent.slice(cursor) });
+  for (const image of images) {
+    segments.push({ kind: "image", image });
+  }
+  if (safeContent) {
+    segments.push({ kind: "text", text: safeContent });
   }
 
   return segments;
@@ -177,7 +151,7 @@ export default function ChatMessage({
       });
   }, [message.steps, message.toolCallResults]);
   const changeCount = changeEntries.length;
-  /** 用户消息：正文与附件/图片按上传时的光标位置（offset）交错排列 */
+  /** 用户消息：附件/图片统一排在正文之前 */
   const userSegments = useMemo(
     () => buildUserMessageSegments(message.content, message.attachments ?? [], message.images ?? []),
     [message.content, message.attachments, message.images],
@@ -261,20 +235,18 @@ export default function ChatMessage({
     }
   };
 
-  /** 编辑框预览：图片与附件合并成按 offset 排序的流，与 composer 输入框、最终消息的交错顺序一致 */
+  /** 编辑框预览：图片与附件统一排在文本框之前（与最终消息「统一在前方」一致），忽略 offset */
   const composedEditMedia = (() => {
     type Media =
-      | { kind: "image"; offset: number; seq: number; image: ChatImage; key: string }
-      | { kind: "attachment"; offset: number; seq: number; attachment: ChatAttachment; key: string };
+      | { kind: "image"; image: ChatImage; key: string }
+      | { kind: "attachment"; attachment: ChatAttachment; key: string };
     const items: Media[] = [];
-    let seq = 0;
-    editImages.forEach((image) =>
-      items.push({ kind: "image", offset: image.offset ?? 0, seq: seq++, image, key: `edit-img-${image.src.slice(0, 24)}` }),
-    );
     editAttachments.forEach((attachment) =>
-      items.push({ kind: "attachment", offset: attachment.offset ?? 0, seq: seq++, attachment, key: `edit-att-${attachment.path}` }),
+      items.push({ kind: "attachment", attachment, key: `edit-att-${attachment.path}` }),
     );
-    items.sort((a, b) => a.offset - b.offset || a.seq - b.seq);
+    editImages.forEach((image) =>
+      items.push({ kind: "image", image, key: `edit-img-${image.src.slice(0, 24)}` }),
+    );
     return items;
   })();
 

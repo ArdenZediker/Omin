@@ -2518,13 +2518,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 8px 0 0;
+  margin: 0 0 8px;
   width: 100%;
 }
 
-.chat-composer__attachments--before {
-  margin: 0 0 8px;
-}
 
 .chat-composer__context-chips {
   display: flex;
