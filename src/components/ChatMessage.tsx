@@ -193,10 +193,30 @@ export default function ChatMessage({
 
   const handleEditPaste = (event: React.ClipboardEvent) => {
     const clipboardFiles = event.clipboardData.files;
+    const pastedText = event.clipboardData.getData("text/plain");
+
+    // 同步采样编辑框光标位置：下面的 savePastedFileAttachment 是异步的，届时 event 已不可用。
+    const pasteOffset = textareaRef.current?.selectionStart ?? editValue.length;
+
+    // 当剪贴板里同时有文件和文字时，必须先把文字插入到编辑框，
+    // 否则 event.preventDefault() 会一并取消文字的默认粘贴。
+    const insertPastedText = () => {
+      if (!pastedText) return;
+      const nextValue = editValue.slice(0, pasteOffset) + pastedText + editValue.slice(pasteOffset);
+      setEditValue(nextValue);
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        const nextCaret = pasteOffset + pastedText.length;
+        textarea.focus();
+        textarea.setSelectionRange(nextCaret, nextCaret);
+      });
+    };
+
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
-      // 同步采样编辑框光标位置：下面的 savePastedFileAttachment 是异步的，届时 event 已不可用。
-      const pasteOffset = textareaRef.current?.selectionStart ?? editValue.length;
+      insertPastedText();
+
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
       const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
@@ -228,6 +248,7 @@ export default function ChatMessage({
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         event.preventDefault();
+        insertPastedText();
         const blob = item.getAsFile();
         if (blob) appendEditImageFiles([blob], textareaRef.current?.selectionStart ?? editValue.length);
         break;

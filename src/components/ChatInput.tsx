@@ -601,8 +601,21 @@ export default function ChatInput({
     // 同步采样光标位置：下面的保存/压缩是异步的，届时 event 已不可用。
     const pasteOffset = getCaretOffset();
     const clipboardFiles = event.clipboardData.files;
+    const pastedText = event.clipboardData.getData("text/plain");
+
+    // 当剪贴板里同时有文件和文字时，必须先把文字插入到输入框，
+    // 否则 event.preventDefault() 会一并取消文字的默认粘贴，导致「聊天文本就不见了」。
+    const insertPastedText = () => {
+      if (!pastedText) return;
+      const nextInput = input.slice(0, pasteOffset) + pastedText + input.slice(pasteOffset);
+      setInput(nextInput);
+      focusTextareaAt(pasteOffset + pastedText.length);
+    };
+
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
+      insertPastedText();
+
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
       const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
@@ -636,6 +649,7 @@ export default function ChatInput({
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         event.preventDefault();
+        insertPastedText();
         const blob = item.getAsFile();
         if (blob) {
           void appendImageFiles([blob], pasteOffset);
