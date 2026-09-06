@@ -596,9 +596,10 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       // 2) 定时任务（按 sessionId 过滤，已删除会话不应再触发）
       const nextTasks = scheduledTasks.filter((task) => task.sessionId !== sessionId);
       // 3) 产物（按 项目 + 会话 过滤，清掉右侧「产物」面板里本会话的卡片）
+      //    直接使用 session.projectId：产物正是按该 id 落库的，避免 project 查找为 null 时漏清。
       const sessionProject = projects.find((project) => project.id === session?.projectId) ?? null;
       if (session) {
-        clearSessionArtifacts(sessionProject?.id ?? null, session.id);
+        clearSessionArtifacts(session.projectId, session.id);
       }
       // 4) 对话镜像 .md 侧写文件（会话标题所在目录，按当前标题尽力删除）
       if (session) {
