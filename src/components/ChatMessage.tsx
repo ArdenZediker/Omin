@@ -260,6 +260,23 @@ export default function ChatMessage({
     }
   };
 
+  /** 编辑框预览：图片与附件合并成按 offset 排序的流，与 composer 输入框、最终消息的交错顺序一致 */
+  const composedEditMedia = (() => {
+    type Media =
+      | { kind: "image"; offset: number; seq: number; image: ChatImage; key: string }
+      | { kind: "attachment"; offset: number; seq: number; attachment: ChatAttachment; key: string };
+    const items: Media[] = [];
+    let seq = 0;
+    editImages.forEach((image) =>
+      items.push({ kind: "image", offset: image.offset ?? 0, seq: seq++, image, key: `edit-img-${image.src.slice(0, 24)}` }),
+    );
+    editAttachments.forEach((attachment) =>
+      items.push({ kind: "attachment", offset: attachment.offset ?? 0, seq: seq++, attachment, key: `edit-att-${attachment.path}` }),
+    );
+    items.sort((a, b) => a.offset - b.offset || a.seq - b.seq);
+    return items;
+  })();
+
   return (
     <div data-message-index={index} className={`animate-fade-in flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       {isUser && isEditing ? (
@@ -267,32 +284,33 @@ export default function ChatMessage({
           <div className="message-edit-box__row">
             {(editImages.length > 0 || editAttachments.length > 0) && (
               <div className="message-edit-box__attachments">
-                {editImages.map((img, imageIndex) => (
-                  <AttachmentChip
-                    key={`edit-${img.src.slice(0, 24)}-${imageIndex}`}
-                    src={img.src}
-                    name={img.name ?? `image_${imageIndex + 1}.png`}
-                    index={imageIndex}
-                    removable
-                    onRemove={() => setEditImages((prev) => prev.filter((_, i) => i !== imageIndex))}
-                  />
-                ))}
-                {editAttachments.map((attachment, attachmentIndex) => (
-                  <AttachmentChip
-                    key={`edit-${attachment.path}-${attachmentIndex}`}
-                    src={attachment.path}
-                    name={attachment.name}
-                    index={attachmentIndex}
-                    size={attachment.size}
-                    removable
-                    onRemove={() => setEditAttachments((prev) => prev.filter((_, i) => i !== attachmentIndex))}
-                    onClick={
-                      !attachment.path.startsWith("data:")
-                        ? () => onOpenAttachment?.(attachment.path)
-                        : undefined
-                    }
-                  />
-                ))}
+                {composedEditMedia.map((media, mediaIndex) =>
+                  media.kind === "image" ? (
+                    <AttachmentChip
+                      key={media.key}
+                      src={media.image.src}
+                      name={media.image.name ?? `image_${mediaIndex + 1}.png`}
+                      index={mediaIndex}
+                      removable
+                      onRemove={() => setEditImages((prev) => prev.filter((item) => item.src !== media.image.src))}
+                    />
+                  ) : (
+                    <AttachmentChip
+                      key={media.key}
+                      src={media.attachment.path}
+                      name={media.attachment.name}
+                      index={mediaIndex}
+                      size={media.attachment.size}
+                      removable
+                      onRemove={() => setEditAttachments((prev) => prev.filter((item) => item.path !== media.attachment.path))}
+                      onClick={
+                        !media.attachment.path.startsWith("data:")
+                          ? () => onOpenAttachment?.(media.attachment.path)
+                          : undefined
+                      }
+                    />
+                  ),
+                )}
               </div>
             )}
             <textarea
