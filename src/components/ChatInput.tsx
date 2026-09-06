@@ -650,6 +650,27 @@ export default function ChatInput({
         </div>
 
         <div className="chat-composer__body">
+          <div className="chat-composer__editor-wrap">
+            <div className="chat-composer__editor">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(event) => {
+                  setInput(event.target.value);
+                  updateCaretFromTextarea(event.currentTarget);
+                }}
+                onClick={(event) => updateCaretFromTextarea(event.currentTarget)}
+                onKeyDownCapture={handleKeyDown}
+                onKeyUp={(event) => updateCaretFromTextarea(event.currentTarget)}
+                onPaste={handlePaste}
+                onSelect={(event) => updateCaretFromTextarea(event.currentTarget)}
+                placeholder="输入聊天内容..."
+                className="chat-composer__textarea hide-scrollbar"
+                rows={1}
+                disabled={isLoading}
+              />
+            </div>
+          </div>
           {images.length > 0 && (
             <div className="chat-composer__attachments">
               {images.map((img, index) => (
@@ -682,27 +703,6 @@ export default function ChatInput({
               ))}
             </div>
           )}
-          <div className="chat-composer__editor-wrap">
-            <div className="chat-composer__editor">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(event) => {
-                  setInput(event.target.value);
-                  updateCaretFromTextarea(event.currentTarget);
-                }}
-                onClick={(event) => updateCaretFromTextarea(event.currentTarget)}
-                onKeyDownCapture={handleKeyDown}
-                onKeyUp={(event) => updateCaretFromTextarea(event.currentTarget)}
-                onPaste={handlePaste}
-                onSelect={(event) => updateCaretFromTextarea(event.currentTarget)}
-                placeholder="输入聊天内容..."
-                className="chat-composer__textarea hide-scrollbar"
-                rows={1}
-                disabled={isLoading}
-              />
-            </div>
-          </div>
         </div>
 
         <div className="chat-composer__footer">

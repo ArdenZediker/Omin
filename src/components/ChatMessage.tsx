@@ -269,8 +269,9 @@ export default function ChatMessage({
         </div>
       ) : isUser ? (
         <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-gradient-to-br from-violet-500/80 to-indigo-600/80 text-white/95 text-sm">
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
           {message.images && message.images.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-1.5">
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
               {message.images.map((img, imageIndex) => (
                 <AttachmentChip
                   key={`${img.slice(0, 24)}-${imageIndex}`}
@@ -282,7 +283,7 @@ export default function ChatMessage({
             </div>
           )}
           {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-1.5">
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
               {message.attachments.map((attachment, attachmentIndex) => (
                 <AttachmentChip
                   key={attachment.path}
@@ -299,7 +300,6 @@ export default function ChatMessage({
               ))}
             </div>
           )}
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
       ) : (
         <div className="message-project max-w-[95%] text-sm markdown-body">
