@@ -21,7 +21,8 @@ import {
 } from "../chat/storage";
 import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
 import { savePersistedAutomationState } from "../chat/persistence";
-import { scheduleSessionMirror, clearSessionMirrorSchedule } from "../chat/sessionMirror";
+import { scheduleSessionMirror, clearSessionMirrorSchedule, deleteSessionMirrorFile } from "../chat/sessionMirror";
+import { clearSessionArtifacts, notifyArtifactsChanged } from "../chat/artifacts";
 import { isMirrorSessionsEnabled } from "../app/outputStorage";
 import type {
   ProjectMemoryRecord,
@@ -589,6 +590,27 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         setMessages([]);
       }
 
+      // ---- 级联清理该会话关联的全部内容 ----
+      // 1) 会话摘要（按 sessionId 过滤，避免孤儿记录）
+      const nextSummaries = sessionSummaries.filter((summary) => summary.sessionId !== sessionId);
+      // 2) 定时任务（按 sessionId 过滤，已删除会话不应再触发）
+      const nextTasks = scheduledTasks.filter((task) => task.sessionId !== sessionId);
+      // 3) 产物（按 项目 + 会话 过滤，清掉右侧「产物」面板里本会话的卡片）
+      const sessionProject = projects.find((project) => project.id === session?.projectId) ?? null;
+      if (session) {
+        clearSessionArtifacts(sessionProject?.id ?? null, session.id);
+      }
+      // 4) 对话镜像 .md 侧写文件（会话标题所在目录，按当前标题尽力删除）
+      if (session) {
+        void deleteSessionMirrorFile(session, sessionProject).catch(() => {});
+      }
+
+      setSessionSummaries(nextSummaries);
+      setScheduledTasks(nextTasks);
+      if (session) {
+        notifyArtifactsChanged();
+      }
+
       try {
         await invoke("delete_chat_session", { id: sessionId });
       } catch (error) {
@@ -598,12 +620,14 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
       try {
         await savePersistedChatState(projects, nextSessions);
+        await savePersistedMemoryState(projectMemories, nextSummaries, userPreferences);
+        await savePersistedAutomationState(nextTasks);
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error("deleteChatSession: flush failed", error);
       }
     },
-    [activeChatId, projects, chatSessions]
+    [activeChatId, projects, chatSessions, projectMemories, sessionSummaries, scheduledTasks, userPreferences]
   );
 
   const groupedChatSessions = useMemo(() => {

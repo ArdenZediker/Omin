@@ -578,6 +578,7 @@ pub fn run() {
             export_xlsx,
             export_pptx,
             write_text_file,
+            remove_file,
             path_exists,
             default_artifact_dir,
             list_connectorhub_skills,

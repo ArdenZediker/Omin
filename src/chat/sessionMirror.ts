@@ -34,6 +34,25 @@ export function clearSessionMirrorSchedule(sessionId: string): void {
   pending.delete(sessionId);
 }
 
+/**
+ * 删除某会话已落盘的镜像 .md 文件（会话被删除时清理侧写）。
+ * 路径与 flushSessionMirror 同构；文件已不存在则视为成功（幂等）。
+ * 镜像目录含会话标题 slug，标题若已变更则实际文件可能在旧目录，
+ * 这里按当前标题尽力清理，缺失即跳过，不影响主流程。
+ */
+export async function deleteSessionMirrorFile(session: ChatSession, project: Project | null): Promise<void> {
+  if (typeof window === "undefined" || !isMirrorSessionsEnabled()) return;
+  const base = project?.workspacePath || (await getEffectiveOutputRoot());
+  if (!base) return;
+  const dir = buildSessionOutputDir(base, project?.title, session.title, session.id);
+  const path = `${dir.replace(/[\\/]+$/, "")}/${session.id}.md`;
+  try {
+    await invoke("remove_file", { path });
+  } catch {
+    // 删除失败（如文件已不存在、被围栏拒绝）不影响会话删除主流程。
+  }
+}
+
 async function flushSessionMirror(sessionId: string): Promise<void> {
   const entry = pending.get(sessionId);
   pending.delete(sessionId);
