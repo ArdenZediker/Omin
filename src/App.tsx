@@ -38,6 +38,7 @@ import {
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
+import { formatMessageClipboardText } from "./chat/messageClipboard";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -576,7 +577,8 @@ function MainApp() {
   const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "project");
 
   const handleCopyMessage = useCallback(async (message: Message) => {
-    await navigator.clipboard.writeText(message.content);
+    const text = formatMessageClipboardText(message);
+    await navigator.clipboard.writeText(text);
   }, []);
 
   useEffect(() => {
