@@ -28,7 +28,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Puzzle,
   ChevronDown,
   ChevronRight,
   Search,
@@ -1262,7 +1261,6 @@ export default function MainChatView({
             <div className="chat-history-panel__marketplace-kind-list">
               {[
                 { kind: "skill" as const, label: "技能", icon: Wand2 },
-                { kind: "tool" as const, label: "工具", icon: Puzzle },
                 { kind: "connector" as const, label: "连接器", icon: Cable },
                 { kind: "expert" as const, label: "专家", icon: Bot },
                 {
