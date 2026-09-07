@@ -40,8 +40,12 @@ const entryWithDiff: ChangeEntry = {
   },
 };
 
-function getRowButton(container: HTMLElement) {
-  return container.querySelector(".changes-panel__entry-row") as HTMLButtonElement;
+function getFileButton(container: HTMLElement) {
+  return container.querySelector(".changes-panel__file") as HTMLButtonElement;
+}
+
+function getBackButton(container: HTMLElement) {
+  return container.querySelector(".changes-panel__diff-back") as HTMLButtonElement;
 }
 
 describe("ChangesPanel（非 git 任务级文件清单）", () => {
@@ -50,47 +54,44 @@ describe("ChangesPanel（非 git 任务级文件清单）", () => {
     expect(screen.getByText("暂无变更")).toBeTruthy();
   });
 
-  it("渲染文件产出条目（仅文件名）", () => {
-    render(<ChangesPanel changes={[entry]} />);
+  it("文件列表只显示文件名与 diff 统计", () => {
+    render(<ChangesPanel changes={[entry, entryWithDiff]} />);
     expect(screen.getByText("report.docx")).toBeTruthy();
+    expect(screen.getByText("report.md")).toBeTruthy();
+    // 右侧统计
+    expect(screen.getByText("+2")).toBeTruthy();
+    expect(screen.getByText("−1")).toBeTruthy();
     // 不渲染工具名 / badge / 结果预览
     expect(screen.queryByText("export_docx")).toBeNull();
     expect(screen.queryByText("已导出")).toBeNull();
     expect(screen.queryByText(entry.resultPreview)).toBeNull();
   });
 
-  it("多条变更显示计数徽标", () => {
-    render(<ChangesPanel changes={[entry, { ...entry, name: "export_md" }]} />);
-    expect(screen.getByText("2")).toBeTruthy();
-  });
-
-  it("带 diff 的条目右侧显示增删统计（+N/−M）", () => {
+  it("点击文件进入 diff 详情视图", () => {
     const { container } = render(<ChangesPanel changes={[entryWithDiff]} />);
-    expect(container.querySelector(".diff-add")?.textContent).toBe("+2");
-    expect(container.querySelector(".diff-del")?.textContent).toBe("−1");
+    expect(container.querySelector(".changes-panel__diff-body")).toBeNull();
+
+    fireEvent.click(getFileButton(container));
+
+    // 详情头部显示文件名与返回按钮
+    expect(container.querySelector(".changes-panel__diff-head")).not.toBeNull();
+    expect(screen.getByText("report.md")).toBeTruthy();
+    expect(container.querySelector(".changes-panel__diff-body")).not.toBeNull();
+    // 行号 + 差异行渲染
+    expect(screen.getByText("new line2")).toBeTruthy();
+    expect(screen.getByText("old line2")).toBeTruthy();
+    expect(container.querySelector(".changes-panel__line--add")).not.toBeNull();
+    expect(container.querySelector(".changes-panel__line--del")).not.toBeNull();
   });
 
-  it("diff 默认折叠，点击行后展开逐行 diff（+/− 着色）", () => {
+  it("diff 详情页点击返回回到文件列表", () => {
     const { container } = render(<ChangesPanel changes={[entryWithDiff]} />);
-    expect(container.querySelector(".changes-panel__diff")).toBeNull();
+    fireEvent.click(getFileButton(container));
+    expect(container.querySelector(".changes-panel__diff-body")).not.toBeNull();
 
-    fireEvent.click(getRowButton(container));
-    expect(container.querySelector(".changes-panel__diff")).not.toBeNull();
-    expect(screen.getByText("+new line2")).toBeTruthy();
-    expect(screen.getByText("-old line2")).toBeTruthy();
-    expect(container.querySelector(".diff-line--add")).not.toBeNull();
-    expect(container.querySelector(".diff-line--del")).not.toBeNull();
-    expect(container.querySelector(".diff-line--hunk")).not.toBeNull();
-
-    fireEvent.click(getRowButton(container));
-    expect(container.querySelector(".changes-panel__diff")).toBeNull();
-  });
-
-  it("无 diff 的条目点击行不渲染 diff 区域", () => {
-    const { container } = render(<ChangesPanel changes={[entry]} />);
-    expect(container.querySelector(".diff-add")).toBeNull();
-    fireEvent.click(getRowButton(container));
-    expect(container.querySelector(".changes-panel__diff")).toBeNull();
+    fireEvent.click(getBackButton(container));
+    expect(container.querySelector(".changes-panel__diff-body")).toBeNull();
+    expect(container.querySelector(".changes-panel__list")).not.toBeNull();
   });
 
   it("优先使用返回的真实 path 显示文件名，而非 arguments 里的路径", () => {
@@ -102,5 +103,12 @@ describe("ChangesPanel（非 git 任务级文件清单）", () => {
     render(<ChangesPanel changes={[fromResult]} />);
     expect(screen.getByText("report.docx")).toBeTruthy();
     expect(screen.queryByText("old.docx")).toBeNull();
+  });
+
+  it("无 diff 的文件点击后显示空提示", () => {
+    const noDiff: ChangeEntry = { ...entry, path: "D:/out/binary.bin" };
+    const { container } = render(<ChangesPanel changes={[noDiff]} />);
+    fireEvent.click(getFileButton(container));
+    expect(screen.getByText("该文件无 diff 预览")).toBeTruthy();
   });
 });

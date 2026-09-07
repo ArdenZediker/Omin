@@ -5550,47 +5550,39 @@
   font-variant-numeric: tabular-nums;
 }
 
-.changes-panel__entries {
+.changes-panel__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.changes-panel__files {
   list-style: none;
   margin: 0;
-  padding: 4px 4px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
+  padding: 0;
 }
 
-.changes-panel__entry {
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.changes-panel__entry--error .changes-panel__entry-row {
-  border-left: 2px solid color-mix(in srgb, #dc2626 70%, transparent);
-}
-
-/* 变更条目：一行一个文件名 + 右侧差异统计，点击行展开 diff */
-.changes-panel__entry-row {
+.changes-panel__file {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 5px 10px;
+  padding: 5px 12px;
   background: transparent;
   border: none;
-  border-radius: 6px;
   text-align: left;
   cursor: pointer;
   font-size: 13px;
   color: var(--omni-app-text, #111);
 }
 
-.changes-panel__entry-row:hover {
+.changes-panel__file:hover {
   background: var(--omni-app-surface-3, rgba(0, 0, 0, 0.04));
 }
 
-.changes-panel__entry-name {
+.changes-panel__file-name {
   flex: 1;
   min-width: 0;
   font-weight: 500;
@@ -5599,83 +5591,183 @@
   white-space: nowrap;
 }
 
-/* 变更条目：增删行统计徽标 */
-.changes-panel__entry-stats {
+.changes-panel__file-stats {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+  flex-shrink: 0;
 }
-.changes-panel__entry-stats .diff-add {
-  color: #1a7f37;
-}
-.changes-panel__entry-stats .diff-del {
-  color: #cf222e;
+.changes-panel__file-stats-add { color: #1a7f37; }
+.changes-panel__file-stats-del { color: #cf222e; }
+
+/* Diff 详情（标签页式） */
+.changes-panel__diff {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--omni-app-border, rgba(0, 0, 0, 0.08));
+  overflow: hidden;
 }
 
-/* 变更条目：可展开 unified-diff 预览（自渲染，不依赖 diff2html） */
-.changes-panel__diff {
-  margin-top: 6px;
-  border: 1px solid var(--omni-border, rgba(0, 0, 0, 0.08));
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--omni-code-bg, rgba(0, 0, 0, 0.02));
+.changes-panel__diff-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--omni-app-border, rgba(0, 0, 0, 0.08));
+  background: var(--omni-app-surface-2, rgba(0, 0, 0, 0.02));
+  flex-shrink: 0;
 }
-.changes-panel__diff-pre {
-  margin: 0;
-  padding: 6px 0 12px;
-  max-height: 320px;
+
+.changes-panel__diff-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--omni-app-muted, #646a73);
+  flex-shrink: 0;
+}
+.changes-panel__diff-back:hover {
+  background: var(--omni-app-surface-3, rgba(0, 0, 0, 0.06));
+  color: var(--omni-app-text, #1c1d22);
+}
+
+.changes-panel__diff-title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--omni-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--omni-app-text, #1c1d22);
+}
+
+.changes-panel__diff-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.changes-panel__diff-stats-add { color: #1a7f37; }
+.changes-panel__diff-stats-del { color: #cf222e; }
+
+.changes-panel__diff-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 6px 0;
+  background: var(--omni-app-surface-1, #fafaf7);
   font-family: var(--omni-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
+  /* 细滚动条，降低存在感 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
 }
-.changes-panel__diff-pre .diff-line {
-  padding: 0 10px;
+
+.changes-panel__diff-body::-webkit-scrollbar {
+  width: 5px;
+}
+.changes-panel__diff-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.changes-panel__diff-body::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+}
+
+.changes-panel__diff-wrap {
+  padding: 0 0 12px 0;
+}
+
+.changes-panel__empty-diff {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--omni-app-muted, #646a73);
+  font-size: 13px;
+}
+
+.changes-panel__hunk-table {
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.changes-panel__hunk-table:last-child {
+  margin-bottom: 0;
+}
+
+.changes-panel__lineno {
+  width: 44px;
+  padding: 0 8px 0 6px;
+  text-align: right;
+  color: var(--omni-app-muted, #646a73);
+  font-size: 10.5px;
+  user-select: none;
+  border-right: 1px solid var(--omni-app-border, rgba(0, 0, 0, 0.06));
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+
+.changes-panel__line { padding: 0 6px; white-space: pre; }
+.changes-panel__line-prefix {
+  display: inline-block;
+  width: 16px;
+  color: var(--omni-app-muted, #646a73);
+  user-select: none;
+  text-align: center;
+}
+.changes-panel__line-text {
+  word-break: break-all;
   white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  color: var(--omni-code-fg, #24292f);
 }
-.changes-panel__diff-pre .diff-line--add {
+
+.changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line {
   background: rgba(26, 127, 55, 0.12);
   color: #1a7f37;
 }
-.changes-panel__diff-pre .diff-line--del {
+.changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line-prefix { color: #1a7f37; }
+.changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line {
   background: rgba(207, 34, 46, 0.12);
   color: #cf222e;
 }
-.changes-panel__diff-pre .diff-line--hunk {
-  color: #8250df;
-  background: rgba(130, 80, 223, 0.08);
+.changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line-prefix { color: #cf222e; }
+.changes-panel__hunk-table tr.changes-panel__line--meta .changes-panel__line {
+  color: var(--omni-app-muted, #646a73);
+  font-style: italic;
 }
 
 /* 深色主题：覆盖变更 diff 着色（保证可读性） */
-.dark .changes-panel__entry-stats .diff-add {
-  color: #56d364;
+.dark .changes-panel__file-stats-add { color: #56d364; }
+.dark .changes-panel__file-stats-del { color: #f85149; }
+.dark .changes-panel__diff-body {
+  background: rgba(255, 255, 255, 0.03);
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
-.dark .changes-panel__entry-stats .diff-del {
-  color: #f85149;
+.dark .changes-panel__diff-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
 }
-.dark .changes-panel__diff {
-  background: rgba(255, 255, 255, 0.04);
-}
-.dark .changes-panel__diff-pre .diff-line {
-  color: #c9d1d9;
-}
-.dark .changes-panel__diff-pre .diff-line--add {
+.dark .changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line {
   background: rgba(86, 211, 100, 0.15);
   color: #56d364;
 }
-.dark .changes-panel__diff-pre .diff-line--del {
+.dark .changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line-prefix { color: #56d364; }
+.dark .changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line {
   background: rgba(248, 81, 73, 0.15);
   color: #f85149;
 }
-.dark .changes-panel__diff-pre .diff-line--hunk {
-  color: #d2a8ff;
-  background: rgba(210, 168, 255, 0.1);
-}
+.dark .changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line-prefix { color: #f85149; }
