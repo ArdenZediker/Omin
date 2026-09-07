@@ -469,18 +469,24 @@
   color: var(--omni-app-text) !important;
 }
 
+.omni-knowledge-upload-menu,
 .omni-knowledge-task-scope-menu {
   position: fixed;
   z-index: 220;
-  min-width: 214px;
-  max-width: 248px;
+  min-width: 160px;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 84%, transparent);
   border-radius: 14px;
-  padding: 8px;
+  padding: 8px 0;
   background: color-mix(in srgb, var(--omni-panel-bg) 96%, #ffffff 4%);
   box-shadow: 0 18px 38px rgba(15, 23, 42, 0.2);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+.omni-knowledge-task-scope-menu {
+  min-width: 214px;
+  max-width: 248px;
+  padding: 8px;
 }
 
 .omni-knowledge-task-scope-menu__title {

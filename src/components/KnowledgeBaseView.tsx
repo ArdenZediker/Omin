@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openPath } from "../app/storageApi";
@@ -173,7 +174,9 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
   const deadLetterListRequestSeqRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadButtonRef = useRef<HTMLButtonElement | null>(null);
   const uploadMenuRef = useRef<HTMLDivElement | null>(null);
+  const [uploadMenuPosition, setUploadMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const chunkSearchInputRef = useRef<HTMLInputElement | null>(null);
   const activeCollection = useMemo(() => {
@@ -934,6 +937,34 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
     setSelectedDocumentDetailView("preview");
   }
 
+  const updateUploadMenuPosition = useCallback(() => {
+    const rect = uploadButtonRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    setUploadMenuPosition({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+  }, []);
+
+  const toggleUploadMenu = useCallback(() => {
+    setIsUploadMenuOpen((current) => {
+      if (!current) {
+        updateUploadMenuPosition();
+        return true;
+      }
+      return false;
+    });
+  }, [updateUploadMenuPosition]);
+
+  useEffect(() => {
+    if (!isUploadMenuOpen) {
+      return;
+    }
+    updateUploadMenuPosition();
+    const handleResize = () => updateUploadMenuPosition();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [isUploadMenuOpen, updateUploadMenuPosition]);
+
   function openCollectionSettings(collection: KnowledgeCollection) {
     setKnowledgeMultimodalConfig(loadKnowledgeMultimodalConfig());
     setIsCollectionMenuOpen(null);
@@ -1412,47 +1443,52 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
 
                       <div className="no-drag relative">
                         <button
+                          ref={uploadButtonRef}
                           type="button"
                           onPointerDown={(event) => event.stopPropagation()}
-                          onClick={() => setIsUploadMenuOpen((current) => !current)}
+                          onClick={toggleUploadMenu}
                           className={`omni-knowledge-toolbar-button ${isUploadMenuOpen ? "omni-knowledge-toolbar-button--active" : ""}`}
                           title="上传"
                         >
                           <SquarePlus size={17} strokeWidth={1.9} />
                         </button>
 
-                        {isUploadMenuOpen ? (
-                          <div
-                            ref={uploadMenuRef}
-                            className="no-drag absolute right-0 top-10 z-[130] w-40 rounded-xl border border-slate-200 bg-white py-2 shadow-lg shadow-slate-200/70"
-                            onPointerDown={(event) => event.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={() => {
-                                openFilePicker(fileInputRef.current);
-                                setIsUploadMenuOpen(false);
-                              }}
-                            >
-                              <LucideFileText size={15} strokeWidth={1.8} className="text-slate-500" />
-                              上传文件
-                            </button>
-                            <button
-                              type="button"
-                              className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={() => {
-                                openFilePicker(folderInputRef.current);
-                                setIsUploadMenuOpen(false);
-                              }}
-                            >
-                              <FolderOpen size={15} strokeWidth={1.8} className="text-slate-500" />
-                              上传文件夹
-                            </button>
-                          </div>
-                        ) : null}
+                        {isUploadMenuOpen && uploadMenuPosition
+                          ? createPortal(
+                              <div
+                                ref={uploadMenuRef}
+                                className="no-drag omni-knowledge-upload-menu"
+                                style={{ top: uploadMenuPosition.top, right: uploadMenuPosition.right }}
+                                onPointerDown={(event) => event.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={() => {
+                                    openFilePicker(fileInputRef.current);
+                                    setIsUploadMenuOpen(false);
+                                  }}
+                                >
+                                  <LucideFileText size={15} strokeWidth={1.8} className="text-slate-500" />
+                                  上传文件
+                                </button>
+                                <button
+                                  type="button"
+                                  className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={() => {
+                                    openFilePicker(folderInputRef.current);
+                                    setIsUploadMenuOpen(false);
+                                  }}
+                                >
+                                  <FolderOpen size={15} strokeWidth={1.8} className="text-slate-500" />
+                                  上传文件夹
+                                </button>
+                              </div>,
+                              document.body
+                            )
+                          : null}
                       </div>
 
                       <button
