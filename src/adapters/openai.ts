@@ -91,15 +91,16 @@ export class OpenAIAdapter implements ModelAdapter {
       throw new Error(`模型返回错误：${message}`);
     }
     console.log(`[Omni Adapter Debug] chat response body preview:`, JSON.stringify(data).slice(0, 800));
-    // 多 provider 兼容：非流式响应里 reasoning 字段命名同样不统一（覆盖 GPT-5.6 / Qwen3-thinking / DeepSeek-R1 / Gemini 中转等）
+    // 多 provider 兼容：非流式响应里 reasoning 字段命名同样不统一。通用扫描所有
+    // 命中 reason|think|thought|chain|reflect|analysis 的字符串字段，自动捕获。
     const msg = data.choices?.[0]?.message ?? {};
-    const reasoningText =
-      (typeof msg.reasoning_content === "string" && msg.reasoning_content) ||
-      (typeof msg.reasoning === "string" && msg.reasoning) ||
-      (typeof msg.reasoning_text === "string" && msg.reasoning_text) ||
-      (typeof msg.thinking_content === "string" && msg.thinking_content) ||
-      (typeof msg.thought === "string" && msg.thought) ||
-      undefined;
+    let reasoningText: string | undefined;
+    for (const key of Object.keys(msg)) {
+      if (/reason|think|thought|chain|reflect|analysis/i.test(key) && typeof msg[key] === "string" && (msg[key] as string).trim()) {
+        reasoningText = msg[key] as string;
+        break;
+      }
+    }
     return {
       content: msg.content ?? "",
       reasoning: reasoningText,
@@ -171,20 +172,32 @@ export class OpenAIAdapter implements ModelAdapter {
       }
       const delta = parsed?.choices?.[0]?.delta;
         if (delta) {
+          const deltaKeys = Object.keys(delta);
+          // 调试：打印每个 chunk 的 delta 字段名，便于发现非标准 reasoning 字段
+          console.log(`[Omni Adapter Debug] delta keys:`, JSON.stringify(deltaKeys));
+          const thinkKeys = deltaKeys.filter((k) => /reason|think|thought|chain|reflect|analysis/i.test(k));
+          if (thinkKeys.length > 0) {
+            const reasonObj: Record<string, unknown> = {};
+            for (const k of thinkKeys) reasonObj[k] = delta[k];
+            console.log(`[Omni Adapter Debug] delta thinking-like fields:`, JSON.stringify(reasonObj).slice(0, 800));
+          }
           model = parsed.model || model;
           if (delta.content) {
             fullContent += delta.content;
             onChunk({ content: delta.content, done: false, model });
           }
-          // 多 provider 兼容：DeepSeek-R1 / 阿里 Qwen3-thinking / OpenAI Responses 中转等
-          // 不同服务方对 reasoning 字段命名不统一，依次回退到常见命名
-          const reasoningText =
-            (typeof delta.reasoning_content === "string" && delta.reasoning_content) ||
-            (typeof delta.reasoning === "string" && delta.reasoning) ||
-            (typeof delta.reasoning_text === "string" && delta.reasoning_text) ||
-            (typeof delta.thinking_content === "string" && delta.thinking_content) ||
-            (typeof delta.thought === "string" && delta.thought) ||
-            "";
+          // 多 provider 兼容：reasoning 字段命名高度不统一（OpenAI gpt-5 用 reasoning；
+          // DeepSeek-R1 / Qwen3-thinking 用 reasoning_content；ZR / 其它中转可能用
+          // thinking / chain_of_thought / thought / reasoning_details 等任意名字）。
+          // 改为扫描 delta 中所有命中 reason|think|thought|chain|reflect|analysis 的
+          // 字符串字段，自动捕获任意命名，避免「思考名不是常用名」时漏抓。
+          let reasoningText = "";
+          for (const key of Object.keys(delta)) {
+            if (/reason|think|thought|chain|reflect|analysis/i.test(key) && typeof delta[key] === "string" && delta[key]) {
+              reasoningText = delta[key];
+              break;
+            }
+          }
           if (reasoningText) {
             onChunk({ content: "", done: false, model, reasoning: reasoningText });
           }
@@ -209,6 +222,7 @@ export class OpenAIAdapter implements ModelAdapter {
     for (const rawLine of tailLines) handleLine(rawLine);
 
     console.log(`[Omni Adapter Debug] chatStream finished -> contentLength=${fullContent.length}, model=${model}`);
+    console.log(`[Omni Adapter Debug] chatStream FULL fullContent (${fullContent.length}):`, fullContent);
     return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls() };
   }
 
