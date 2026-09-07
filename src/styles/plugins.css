@@ -1912,6 +1912,19 @@
   border-color: var(--omni-accent, #3b82f6);
   box-shadow: 0 0 0 3px var(--omni-accent-soft, #dbeafe);
 }
+.omni-mcp-create-json {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
+.omni-mcp-create-field__error {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--omni-danger, #dc2626);
+}
 
 .omni-mcp-create-actions {
   display: flex;

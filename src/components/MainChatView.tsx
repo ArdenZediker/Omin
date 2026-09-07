@@ -200,30 +200,47 @@ function MarketplaceSourceTabs({
   );
 }
 
-/** 解析 MCP 启动参数：支持双引号/单引号包裹的含空格参数。 */
-function parseMcpArgs(input: string): string[] {
-  const tokens: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(input))) {
-    tokens.push(match[1] ?? match[2] ?? match[3] ?? "");
+/**
+ * 解析 MCP 启动配置 JSON。支持两种形态：
+ *  - 直接对象：{ "command": "npx", "args": [...], "env": {...} }
+ *  - Claude Desktop 风格包装：{ "mcpServers": { "<name>": { "command": ..., "args": ..., "env": ... } } }
+ * 当前仅支持本地 stdio 启动（command 必填）；含 url 的远程 MCP 暂不支持。
+ */
+type ParsedMcpConfig = { command: string; args: string[]; env: Record<string, string> };
+function parseMcpJson(input: string): ParsedMcpConfig | { error: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(input);
+  } catch (error) {
+    return { error: `JSON 解析失败：${(error as Error).message}` };
   }
-  return tokens;
-}
-
-/** 解析环境变量：每行 KEY=VALUE。 */
-function parseMcpEnv(input: string): Record<string, string> {
+  let cfg: Record<string, unknown> = raw as Record<string, unknown>;
+  if (cfg && typeof cfg === "object" && cfg.mcpServers && typeof cfg.mcpServers === "object") {
+    const servers = cfg.mcpServers as Record<string, unknown>;
+    const keys = Object.keys(servers);
+    if (keys.length === 0) return { error: "mcpServers 为空，请至少配置一个服务器" };
+    cfg = servers[keys[0]] as Record<string, unknown>;
+  }
+  if (!cfg || typeof cfg !== "object") {
+    return { error: "配置必须是一个 JSON 对象" };
+  }
+  if (typeof cfg.url === "string" && cfg.url.trim() && !cfg.command) {
+    return { error: "远程 URL 形式的 MCP（url/headers）暂不支持，当前仅支持本地命令启动（stdio）" };
+  }
+  const command = typeof cfg.command === "string" ? cfg.command.trim() : "";
+  if (!command) return { error: "缺少 command 字段（本地 MCP 必须给出启动命令）" };
+  const args = Array.isArray(cfg.args)
+    ? cfg.args.map((item) => String(item))
+    : cfg.args == null
+      ? []
+      : [String(cfg.args)];
   const env: Record<string, string> = {};
-  for (const line of input.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const idx = trimmed.indexOf("=");
-    if (idx <= 0) continue;
-    const key = trimmed.slice(0, idx).trim();
-    const value = trimmed.slice(idx + 1).trim();
-    if (key) env[key] = value;
+  if (cfg.env && typeof cfg.env === "object") {
+    for (const [key, value] of Object.entries(cfg.env as Record<string, unknown>)) {
+      if (value != null) env[key] = String(value);
+    }
   }
-  return env;
+  return { command, args, env };
 }
 
 type MainChatViewProps = {
@@ -445,10 +462,9 @@ export default function MainChatView({
   const [newMcp, setNewMcp] = useState({
     name: "",
     desc: "",
-    command: "",
-    args: "",
-    env: "",
+    json: "",
   });
+  const [mcpJsonError, setMcpJsonError] = useState<string | null>(null);
   // 强制 <PluginMarketplace> 重挂以刷新连接器列表（新建后立即可见）
   const [marketplaceNonce, setMarketplaceNonce] = useState(0);
 
@@ -560,8 +576,8 @@ export default function MainChatView({
   /** 新增自定义本地 MCP 连接器：写入注册表 → 配置命令/参数/环境变量 → 信任并拉起。 */
   const createMcpConnector = useCallback(async () => {
     const name = newMcp.name.trim();
-    const command = newMcp.command.trim();
-    if (!name || !command) return;
+    const parsed = parseMcpJson(newMcp.json);
+    if (!name || !newMcp.json.trim() || "error" in parsed) return;
     const slug = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -580,9 +596,9 @@ export default function MainChatView({
     };
     pluginRegistry.install(manifest, { type: "local", path: "user" });
     pluginRegistry.setConnectorConfig(id, {
-      command,
-      args: parseMcpArgs(newMcp.args),
-      env: parseMcpEnv(newMcp.env),
+      command: parsed.command,
+      args: parsed.args,
+      env: parsed.env,
     });
     const saved = pluginRegistry.getManifest(id);
     if (saved) {
@@ -594,7 +610,8 @@ export default function MainChatView({
       }
     }
     setCreatingMcp(false);
-    setNewMcp({ name: "", desc: "", command: "", args: "", env: "" });
+    setNewMcp({ name: "", desc: "", json: "" });
+    setMcpJsonError(null);
     setMarketplaceSource("local");
     setMarketplaceNonce((current) => current + 1);
   }, [newMcp, setMarketplaceSource]);
@@ -1962,10 +1979,10 @@ export default function MainChatView({
                 </button>
               </div>
               <p className="omni-mcp-create-modal__hint">
-                填写启动命令（如{" "}
+                以 JSON 填写本机 MCP 服务器的启动配置（如{" "}
                 <code>npx -y @modelcontextprotocol/server-github</code>
-                ），Omni 会作为本机子进程拉起该 MCP 服务器，并将其暴露的工具注入
-                AI 对话。
+                ），Omni 会作为本机子进程拉起该服务器，并将其暴露的工具注入
+                AI 对话。支持直接对象或 Claude Desktop 的 mcpServers 包装格式。
               </p>
               <label className="omni-mcp-create-field">
                 <span>名称 *</span>
@@ -1987,40 +2004,31 @@ export default function MainChatView({
                   placeholder="一句话说明用途"
                 />
               </label>
-              <div className="omni-mcp-create-section">MCP 启动配置</div>
+              <div className="omni-mcp-create-section">MCP 启动配置（JSON）</div>
               <label className="omni-mcp-create-field">
-                <span>启动命令 *</span>
-                <input
-                  value={newMcp.command}
-                  onChange={(event) =>
-                    setNewMcp((value) => ({
-                      ...value,
-                      command: event.target.value,
-                    }))
-                  }
-                  placeholder="如 npx / node / python"
-                />
-              </label>
-              <label className="omni-mcp-create-field">
-                <span>参数（支持引号包裹的空格）</span>
-                <input
-                  value={newMcp.args}
-                  onChange={(event) =>
-                    setNewMcp((value) => ({ ...value, args: event.target.value }))
-                  }
-                  placeholder='如 -y @modelcontextprotocol/server-github'
-                />
-              </label>
-              <label className="omni-mcp-create-field">
-                <span>环境变量（每行 KEY=VALUE）</span>
+                <span>配置 *</span>
                 <textarea
-                  value={newMcp.env}
-                  onChange={(event) =>
-                    setNewMcp((value) => ({ ...value, env: event.target.value }))
+                  className="omni-mcp-create-json"
+                  rows={10}
+                  value={newMcp.json}
+                  spellCheck={false}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setNewMcp((current) => ({ ...current, json: value }));
+                    if (!value.trim()) {
+                      setMcpJsonError(null);
+                      return;
+                    }
+                    const result = parseMcpJson(value);
+                    setMcpJsonError("error" in result ? result.error : null);
+                  }}
+                  placeholder={
+                    '{\n  "command": "npx",\n  "args": ["-y", "@modelcontextprotocol/server-github"],\n  "env": { "GITHUB_TOKEN": "ghp_xxxx" }\n}'
                   }
-                  rows={3}
-                  placeholder="GITHUB_TOKEN=ghp_xxxx"
                 />
+                {mcpJsonError && (
+                  <span className="omni-mcp-create-field__error">{mcpJsonError}</span>
+                )}
               </label>
               <div className="omni-mcp-create-actions">
                 <button
@@ -2034,7 +2042,11 @@ export default function MainChatView({
                   type="button"
                   className="plugin-card__button plugin-card__button--primary"
                   onClick={() => void createMcpConnector()}
-                  disabled={!newMcp.name.trim() || !newMcp.command.trim()}
+                  disabled={
+                    !newMcp.name.trim() ||
+                    !newMcp.json.trim() ||
+                    mcpJsonError !== null
+                  }
                 >
                   创建并连接
                 </button>
