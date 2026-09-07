@@ -7,11 +7,10 @@ import {
   Pencil,
   RefreshCw,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import type { ChatAttachment, ChatImage, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
-import { getToolActionMeta, isFileProducingTool, getFileBadgeLabel, extractToolFilePath } from "../chat/toolActionMap";
+import { getToolActionMeta, isFileProducingTool, getFileBadgeLabel, extractToolFilePath, type ChangeEntry } from "../chat/toolActionMap";
 import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettlement";
 import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
@@ -64,24 +63,11 @@ interface ChatMessageProps {
   onRegenerate?: (index: number) => void;
   onSaveAsMarkdown?: (message: Message) => void | Promise<void>;
   /** 打开右侧变更面板（按事件总线通知 MainChatView 切换 tab） */
-  onOpenChangesPanel?: () => void;
+  onOpenChangesPanel?: (entries: ChangeEntry[]) => void;
   /** 点击 /search_files 命中行：在右侧产物面板打开该文件并定位行号 */
   onOpenFileLocation?: (path: string, line: number) => void;
   /** 点击消息中的文件附件：在右侧产物面板打开该文件 */
   onOpenAttachment?: (path: string) => void;
-}
-
-/** 「查看所有变更」弹层中一条文件产出/修改记录 */
-interface ChangeEntry {
-  name: string;
-  verb: string;
-  title: string;
-  Icon: LucideIcon;
-  path?: string;
-  badge: string;
-  argsSummary: string;
-  resultPreview: string;
-  isError?: boolean;
 }
 
 export default function ChatMessage({
@@ -447,7 +433,11 @@ export default function ChatMessage({
                 </button>
               )}
               {changeCount > 0 && (
-                <button type="button" className="message-aggregate__link" onClick={onOpenChangesPanel}>
+                <button
+                  type="button"
+                  className="message-aggregate__link"
+                  onClick={() => onOpenChangesPanel?.(changeEntries)}
+                >
                   查看所有变更 ({changeCount})
                 </button>
               )}

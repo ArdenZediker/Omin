@@ -45,8 +45,6 @@ import {
   DEFAULT_PROJECT_ID,
   MAIN_SESSION_ID,
 } from "../chat/storage";
-import { loadBasicSettings } from "../app/settingsStore";
-import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type {
   ProjectDraft,
@@ -58,6 +56,7 @@ import type {
 } from "../chat/types";
 import ArtifactsPanel from "./ArtifactsPanel";
 import ChangesPanel from "./ChangesPanel";
+import type { ChangeEntry } from "../chat/toolActionMap";
 import {
   ARTIFACTS_CHANGED_EVENT,
   appendArtifact,
@@ -563,14 +562,8 @@ export default function MainChatView({
     [activeProject, activeChatId],
   );
 
-  // 全局「默认工作空间」：未单独配置工作目录的项目/任务会话自动共用（读一次，设置变更需重开会话刷新）。
-  const defaultWorkspacePath = useMemo(() => {
-    try {
-      return loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).defaultWorkspacePath || "";
-    } catch {
-      return "";
-    }
-  }, []);
+  // 「变更」面板当前展示的条目：由消息内「查看所有变更」按钮把该条消息的工具步骤汇总传上来（非 git，任务级文件改动清单）。
+  const [changesEntries, setChangesEntries] = useState<ChangeEntry[]>([]);
 
   // 点击消息中的文件附件：登记/复用「文件」产物并在右侧产物面板打开。
   const handleOpenAttachment = useCallback(
@@ -2416,7 +2409,8 @@ export default function MainChatView({
                         onSubmitEdit={onSubmitEditedUserMessage}
                         onRegenerate={onRegenerateMessage}
                         onSaveAsMarkdown={handleSaveAsMarkdown}
-                        onOpenChangesPanel={() => {
+                        onOpenChangesPanel={(entries) => {
+                          setChangesEntries(entries);
                           setTopicPanelManualVisible(true);
                           setSidePanelTab("changes");
                         }}
@@ -2632,21 +2626,7 @@ export default function MainChatView({
               ) : null}
 
               {sidePanelTab === "changes" ? (
-                <ChangesPanel
-                  workspacePath={
-                    (activeSession &&
-                    projects.find((p) => p.id === activeSession.projectId)?.workspacePath) ||
-                    activeProject?.workspacePath ||
-                    defaultWorkspacePath ||
-                    null
-                  }
-                  projectTitle={
-                    (activeSession &&
-                    projects.find((p) => p.id === activeSession.projectId)?.title) ||
-                    activeProject?.title ||
-                    null
-                  }
-                />
+                <ChangesPanel changes={changesEntries} />
               ) : null}
             </div>
           </aside>

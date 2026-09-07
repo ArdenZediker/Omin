@@ -18,6 +18,29 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+/** 「查看所有变更」面板中一条文件产出/修改记录。
+ *  由 ChatMessage 基于工具步骤汇总产出，由 ChangesPanel 消费渲染（非 git，纯任务级文件改动清单）。 */
+export interface ChangeEntry {
+  /** 工具名，如 export_docx */
+  name: string;
+  /** 中文动作动词，如「导出」「写入」 */
+  verb: string;
+  /** 英文工具/动作标题，如「Export Word」 */
+  title: string;
+  /** 动作图标 */
+  Icon: LucideIcon;
+  /** 产出/修改的文件路径（可无，如 git_commit 不一定能解析出单文件） */
+  path?: string;
+  /** 状态徽标，如「已导出」「已写入」「已提交」 */
+  badge: string;
+  /** 工具参数摘要（已截断） */
+  argsSummary: string;
+  /** 工具结果预览（已截断） */
+  resultPreview: string;
+  /** 该步骤是否出错 */
+  isError?: boolean;
+}
+
 export interface ToolActionMeta {
   /** 中文动作动词，如「导出」「写入」 */
   verb: string;
