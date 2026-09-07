@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ChatAttachment, ChatImage } from "../adapters/types";
@@ -595,9 +596,31 @@ export default function ChatInput({
   const handlePaste = (event: React.ClipboardEvent) => {
     // 同步采样光标位置：下面的保存/压缩是异步的，届时 event 已不可用。
     const pasteOffset = getCaretOffset();
+
+    // 剪贴板同时携带文件（CF_HDROP）时，Chromium/WebView2 会把 DataTransfer 切成「文件模式」，
+    // 导致 event.clipboardData.getData("text/plain") 返回空，但系统剪贴板的 CF_UNICODETEXT 仍在。
+    // 先同步取一次文字（有值就插），取不到再用 Tauri 系统级 readText() 异步补回；失败静默回退。
+    const pastedText = event.clipboardData.getData("text/plain") ?? "";
+    const insertPastedText = (textToInsert: string = pastedText) => {
+      if (!textToInsert) return;
+      setInput((current) => current.slice(0, pasteOffset) + textToInsert + current.slice(pasteOffset));
+      focusTextareaAt(pasteOffset + textToInsert.length);
+    };
+    const fallbackReadSystemText = () => {
+      void readText()
+        .then((systemText) => insertPastedText(systemText ?? ""))
+        .catch(() => {
+          // 非 Tauri 环境或权限不足：至少保留文件。
+        });
+    };
+
     const clipboardFiles = event.clipboardData.files;
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
+      // 先把文字插回输入框：否则上面的 preventDefault 会把文字的默认粘贴一起取消。
+      insertPastedText();
+      if (!pastedText) fallbackReadSystemText();
+
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
       const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
@@ -631,6 +654,8 @@ export default function ChatInput({
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         event.preventDefault();
+        insertPastedText();
+        if (!pastedText) fallbackReadSystemText();
         const blob = item.getAsFile();
         if (blob) {
           void appendImageFiles([blob], pasteOffset);

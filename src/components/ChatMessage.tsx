@@ -16,6 +16,7 @@ import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettl
 import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
 /** 用户消息正文 + 附件 + 图片的混合片段：文本段与附件/图片段交错，按 offset 决定先后顺序 */
@@ -192,11 +193,39 @@ export default function ChatMessage({
   };
 
   const handleEditPaste = (event: React.ClipboardEvent) => {
+    // 同步采样编辑框光标位置：下面的 savePastedFileAttachment 是异步的，届时 event 已不可用。
+    const pasteOffset = textareaRef.current?.selectionStart ?? editValue.length;
+
+    // 剪贴板同时携带文件（CF_HDROP）时，Chromium/WebView2 会切「文件模式」导致 getData("text/plain") 空，
+    // 但系统剪贴板 CF_UNICODETEXT 仍在。先同步取文字，取不到再用 Tauri readText() 异步补回。
+    const pastedText = event.clipboardData.getData("text/plain") ?? "";
+    const insertPastedText = (textToInsert: string = pastedText) => {
+      if (!textToInsert) return;
+      const nextValue = editValue.slice(0, pasteOffset) + textToInsert + editValue.slice(pasteOffset);
+      setEditValue(nextValue);
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        const nextCaret = pasteOffset + textToInsert.length;
+        textarea.focus();
+        textarea.setSelectionRange(nextCaret, nextCaret);
+      });
+    };
+    const fallbackReadSystemText = () => {
+      void readText()
+        .then((systemText) => insertPastedText(systemText ?? ""))
+        .catch(() => {
+          // 非 Tauri 环境或权限不足：至少保留文件。
+        });
+    };
+
     const clipboardFiles = event.clipboardData.files;
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
-      // 同步采样编辑框光标位置：下面的 savePastedFileAttachment 是异步的，届时 event 已不可用。
-      const pasteOffset = textareaRef.current?.selectionStart ?? editValue.length;
+      // 先把文字插回编辑框：否则上面的 preventDefault 会把文字的默认粘贴一起取消。
+      insertPastedText();
+      if (!pastedText) fallbackReadSystemText();
+
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
       const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
@@ -228,6 +257,8 @@ export default function ChatMessage({
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         event.preventDefault();
+        insertPastedText();
+        if (!pastedText) fallbackReadSystemText();
         const blob = item.getAsFile();
         if (blob) appendEditImageFiles([blob], textareaRef.current?.selectionStart ?? editValue.length);
         break;
