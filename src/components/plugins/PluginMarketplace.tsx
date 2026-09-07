@@ -481,8 +481,6 @@ export default function PluginMarketplace({
     const list = pluginRegistry.list({ kind, query });
     // 内置工具是 Omni 自带能力，无需在扩展中心作为插件展示/管理，故从「工具」tab 隐藏。
     if (kind === "tool") return list.filter((m) => !pluginRegistry.isBuiltin(m.id));
-    // 模型连接器（带 provider）统一在「模型设置」中配置，扩展中心「连接器」tab 只展示 MCP 连接器。
-    if (kind === "connector") return list.filter((m) => !m.provider);
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, query, refreshKey]);
@@ -723,8 +721,8 @@ export default function PluginMarketplace({
     setSelectedIds(new Set());
     setBatchMode(false);
   }, [filteredPlugins, handleUninstall]);
-  // MCP 型连接器：kind=connector 且无 provider（provider 是模型连接器的标志，
-  // 模型连接器走 API Key 配置；MCP 型走 command/args/env 启动配置）。
+  // MCP 型连接器：kind=connector 且无 provider（无 provider 即本机 MCP 服务器，
+  // 走 command/args/env 启动配置；模型统一在「模型设置」配置，不在此作为卡片管理）。
   const isMcpConnector = (manifest: PluginManifest) =>
     manifest.kind === "connector" && !manifest.provider;
 

@@ -409,77 +409,6 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
   },
 ];
 
-export const BUILTIN_CONNECTOR_PLUGINS: PluginManifest[] = [
-  {
-    id: "openai",
-    name: "OpenAI",
-    description: "连接 OpenAI 官方 API。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "connector",
-    category: "模型",
-    icon: "Cloud",
-    provider: "openai",
-    baseUrl: "https://api.openai.com/v1",
-    configFields: [
-      { id: "apiKey", label: "API Key", type: "password", required: true, placeholder: "sk-..." },
-      { id: "baseUrl", label: "Base URL（可选）", type: "string", placeholder: "https://api.openai.com/v1" },
-    ],
-  },
-  {
-    id: "deepseek",
-    name: "DeepSeek",
-    description: "连接 DeepSeek 官方 API。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "connector",
-    category: "模型",
-    icon: "Zap",
-    provider: "deepseek",
-    baseUrl: "https://api.deepseek.com/v1",
-    configFields: [{ id: "apiKey", label: "API Key", type: "password", required: true, placeholder: "..." }],
-  },
-  {
-    id: "claude",
-    name: "Claude",
-    description: "连接 Anthropic Claude API。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "connector",
-    category: "模型",
-    icon: "MessagesSquare",
-    provider: "claude",
-    baseUrl: "https://api.anthropic.com/v1",
-    configFields: [{ id: "apiKey", label: "API Key", type: "password", required: true, placeholder: "sk-ant-..." }],
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    description: "连接 Google Gemini API。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "connector",
-    category: "模型",
-    icon: "Sparkles",
-    provider: "gemini",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    configFields: [{ id: "apiKey", label: "API Key", type: "password", required: true, placeholder: "..." }],
-  },
-  {
-    id: "ollama",
-    name: "Ollama",
-    description: "连接本地 Ollama 服务。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "connector",
-    category: "模型",
-    icon: "Server",
-    provider: "ollama",
-    baseUrl: "http://localhost:11434/v1",
-    configFields: [{ id: "baseUrl", label: "服务地址", type: "string", required: true, placeholder: "http://localhost:11434/v1" }],
-  },
-];
-
 export const BUILTIN_EXPERT_PLUGINS: PluginManifest[] = [
   {
     id: "dev-expert",
@@ -587,7 +516,6 @@ export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
 export const BUILTIN_PLUGINS: PluginManifest[] = [
   ...BUILTIN_SKILL_PLUGINS,
   ...BUILTIN_TOOL_PLUGINS,
-  ...BUILTIN_CONNECTOR_PLUGINS,
   ...BUILTIN_EXPERT_PLUGINS,
   ...BUILTIN_TEMPLATE_PLUGINS,
 ];

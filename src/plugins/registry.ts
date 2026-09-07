@@ -1,5 +1,4 @@
 import { readSqliteBackedJson, saveSqliteBackedValue } from "../app/sqliteStorage";
-import { modelRegistry } from "../adapters/registry";
 import { BUILTIN_PLUGINS } from "./builtins";
 import type {
   InstalledPlugin,
@@ -32,30 +31,6 @@ class PluginRegistry {
       }
     }
     this.loaded = true;
-    this.syncConnectors();
-  }
-
-  /**
-   * 把已启用且有凭证的连接器插件注册进 modelRegistry，
-   * 让「连接器」成为真正的插件扩展点（一切皆插件）。
-   * 守卫：仅有 apiKey（或 ollama 这类本地服务有 baseUrl）时才注册，
-   * 避免覆盖用户在「模型设置」里已有的配置（旧 omni_provider_configs 路径）。
-   */
-  private syncConnectors(): void {
-    for (const manifest of this.listEnabledConnectors()) {
-      if (!manifest.provider) continue;
-      const config = (this.installed.get(manifest.id)?.config as Record<string, unknown>) ?? {};
-      const apiKey = (config.apiKey as string) ?? "";
-      const baseUrl = (config.baseUrl as string) || manifest.baseUrl || "";
-      const needsApiKey = manifest.provider !== "ollama";
-      if (!baseUrl) continue;
-      if (needsApiKey && !apiKey) continue;
-      modelRegistry.registerProvider(manifest.provider, {
-        apiKey,
-        baseUrl,
-        name: manifest.name,
-      });
-    }
   }
 
   private save(): void {
@@ -152,7 +127,6 @@ class PluginRegistry {
     };
     this.installed.set(manifest.id, entry);
     this.save();
-    this.syncConnectors();
     return entry;
   }
 
@@ -161,7 +135,6 @@ class PluginRegistry {
     const removed = this.installed.delete(id);
     if (removed) {
       this.save();
-      this.syncConnectors();
     }
     return removed;
   }
@@ -171,7 +144,6 @@ class PluginRegistry {
     if (!entry) return false;
     entry.enabled = enabled;
     this.save();
-    this.syncConnectors();
     return true;
   }
 
@@ -186,7 +158,6 @@ class PluginRegistry {
     }
     entry.config = { ...(entry.config ?? {}), ...config };
     this.save();
-    this.syncConnectors();
     return true;
   }
 
@@ -231,8 +202,7 @@ class PluginRegistry {
     return {
       skill: all.filter((m) => m.kind === "skill").length,
       tool: all.filter((m) => m.kind === "tool").length,
-      // 模型连接器（带 provider）已移至「模型设置」管理，不计入扩展中心「连接器」数量。
-      connector: all.filter((m) => m.kind === "connector" && !m.provider).length,
+      connector: all.filter((m) => m.kind === "connector").length,
       expert: all.filter((m) => m.kind === "expert").length,
       template: all.filter((m) => m.kind === "template").length,
       total: all.length,
