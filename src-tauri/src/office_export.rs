@@ -748,6 +748,7 @@ fn run_export(
 }
 
 #[derive(serde::Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DiffResult {
     pub filename: String,
     pub insertions: usize,
@@ -756,6 +757,7 @@ pub(crate) struct DiffResult {
 }
 
 #[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ExportOutcome {
     pub(crate) path: String,
     pub(crate) size: u64,

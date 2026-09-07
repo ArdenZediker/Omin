@@ -82,7 +82,7 @@ function ChangeEntryRow({ entry, onOpened }: { entry: ChangeEntry; onOpened: (p:
     }
   }, [entry.path, onOpened]);
 
-  const hasDiff = Boolean(entry.diff && entry.diff.diffContent.trim());
+  const hasDiff = Boolean(entry.diff && entry.diff.diffContent?.trim());
 
   return (
     <li className={`changes-panel__entry ${entry.isError ? "changes-panel__entry--error" : ""}`}>
