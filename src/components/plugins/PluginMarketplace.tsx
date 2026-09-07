@@ -3,7 +3,6 @@ import {
   X,
   Search,
   Download,
-  Copy,
   Check,
   Star,
   Puzzle,
@@ -51,7 +50,6 @@ import type {
   PluginKind,
   PluginManifest,
 } from "../../plugins/types";
-import { buildPluginInstallPrompt } from "../../plugins/registry";
 import SkillhubBrowser from "./SkillhubBrowser";
 import SkillsetsBrowser from "./SkillsetsBrowser";
 import InstalledSkillsetCard, {
@@ -171,8 +169,6 @@ function PluginDetailDrawer({
   onClose,
   onInstall,
   onUninstall,
-  onCopyPrompt,
-  copiedId,
 }: {
   manifest: PluginManifest | null;
   isInstalled: boolean;
@@ -180,10 +176,6 @@ function PluginDetailDrawer({
   onClose: () => void;
   onInstall: (m: PluginManifest) => void;
   onUninstall: (m: PluginManifest) => void;
-  /** 「复制安装」调用方：写入剪贴板 + 触发 copiedId 反馈。 */
-  onCopyPrompt: (m: PluginManifest) => void;
-  /** 当前哪个 manifest.id 处于「已复制」反馈态（用于 footer 按钮文案切换）。 */
-  copiedId: string | null;
 }) {
   useEffect(() => {
     if (!manifest) return;
@@ -372,24 +364,6 @@ function PluginDetailDrawer({
           <button
             type="button"
             className="plugin-card__button plugin-card__button--secondary"
-            onClick={() => onCopyPrompt(manifest)}
-            title="复制安装指令给 AI"
-          >
-            {copiedId === manifest.id ? (
-              <>
-                <Check size={14} strokeWidth={2} />
-                已复制
-              </>
-            ) : (
-              <>
-                <Copy size={14} strokeWidth={1.8} />
-                复制安装
-              </>
-            )}
-          </button>
-          <button
-            type="button"
-            className="plugin-card__button plugin-card__button--secondary"
             onClick={onClose}
           >
             关闭
@@ -452,7 +426,6 @@ export default function PluginMarketplace({
     },
     [isSourceControlled, onSourceChange],
   );
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
@@ -625,17 +598,6 @@ export default function PluginMarketplace({
         };
     }
   }, [kind, onAddMcp, onCreateExpert]);
-
-  const handleCopyInstallPrompt = useCallback((manifest: PluginManifest) => {
-    const prompt = buildPluginInstallPrompt(manifest);
-    navigator.clipboard.writeText(prompt).catch(() => {});
-    setCopiedId(manifest.id);
-    window.setTimeout(
-      () =>
-        setCopiedId((current) => (current === manifest.id ? null : current)),
-      1500,
-    );
-  }, []);
 
   // 数据迁移（2026-09-01 启动 effect）：为「我的技能」tab 内已安装但缺 icon 的
   // SkillHub 来源技能按 slug 拉一次 SkillHub summary，补全 iconUrl/author/category。
@@ -1221,7 +1183,7 @@ export default function PluginMarketplace({
               弹窗中选插件）和「连接器」（套件管理：连接 / 断开 / 配置）两种
               场景保留。其余场景（我的技能 / 我的专家 / 批量管理 / 通用浏览）
               都不再在卡片底部展示按钮行——卡片可整体点击打开详情抽屉，所有
-              安装 / 卸载 / 已安装 / 复制安装 等单卡操作统一入口。避免在 4 列
+              安装 / 卸载 / 已安装 等单卡操作统一入口。避免在 4 列
               grid 下视觉拥挤 + 防止误触「删除」按钮。 */}
           {(onPick || manifest.kind === "connector") && (
             <div
@@ -2171,8 +2133,6 @@ export default function PluginMarketplace({
           onClose={() => setDetailManifest(null)}
           onInstall={(m) => void handleInstall(m)}
           onUninstall={(m) => void handleUninstall(m)}
-          onCopyPrompt={(m) => handleCopyInstallPrompt(m)}
-          copiedId={copiedId}
         />
 
         {/* 危险操作二次确认 dialog（参考 .omni-confirm-overlay / .omni-confirm-dialog
