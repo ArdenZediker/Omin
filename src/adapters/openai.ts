@@ -78,9 +78,7 @@ export class OpenAIAdapter implements ModelAdapter {
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const url = `${this.getBaseUrl()}/chat/completions`;
     const body = this.buildBody(request, false);
-    console.log(`[Omni Adapter Debug] chat start -> ${url}`, { model: body.model, messagesCount: Array.isArray(body.messages) ? body.messages.length : 0 });
     const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal);
-    console.log(`[Omni Adapter Debug] chat response -> HTTP ${response.status}`);
 
     const data = await response.json();
     if (data.error) {
@@ -90,7 +88,6 @@ export class OpenAIAdapter implements ModelAdapter {
           : JSON.stringify(data.error).slice(0, 300);
       throw new Error(`模型返回错误：${message}`);
     }
-    console.log(`[Omni Adapter Debug] chat response body preview:`, JSON.stringify(data).slice(0, 800));
     // 多 provider 兼容：非流式响应里 reasoning 字段命名同样不统一。通用扫描所有
     // 命中 reason|think|thought|chain|reflect|analysis 的字符串字段，自动捕获。
     const msg = data.choices?.[0]?.message ?? {};
@@ -120,12 +117,7 @@ export class OpenAIAdapter implements ModelAdapter {
     const url = `${this.getBaseUrl()}/chat/completions`;
     const body = this.buildBody(request, true);
     const headers = this.getHeaders();
-    console.log(
-      `[Omni Adapter Debug] chatStream start -> ${url}`,
-      { model: body.model, stream: body.stream, messagesCount: Array.isArray(body.messages) ? body.messages.length : 0 }
-    );
     const response = await postJsonStream(url, body, headers, request.signal);
-    console.log(`[Omni Adapter Debug] chatStream response -> HTTP ${response.status}`, response.headers.get("content-type"));
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
@@ -136,9 +128,6 @@ export class OpenAIAdapter implements ModelAdapter {
     let buffer = "";
     const toolAccumulator = new OpenAIStreamToolAccumulator();
 
-    let loggedFirstLines = 0;
-    const MAX_LOGGED_LINES = 5;
-
     const handleLine = (rawLine: string) => {
       const line = rawLine.trim();
       if (!line.startsWith("data: ")) {
@@ -146,7 +135,6 @@ export class OpenAIAdapter implements ModelAdapter {
       }
       const data = line.slice(6);
       if (data === "[DONE]") {
-        console.log(`[Omni Adapter Debug] chatStream [DONE]`);
         onChunk({ content: "", done: true, model });
         return;
       }
@@ -156,10 +144,6 @@ export class OpenAIAdapter implements ModelAdapter {
       } catch {
         // 跳过格式异常的块
         return;
-      }
-      if (loggedFirstLines < MAX_LOGGED_LINES) {
-        loggedFirstLines += 1;
-        console.log(`[Omni Adapter Debug] chatStream raw line #${loggedFirstLines}:`, JSON.stringify(parsed).slice(0, 600));
       }
       // 流内错误（如模型/参数错误、限流）：OpenAI 以 data: {"error":{...}} 形式推送。
       // 必须在 try 之外显式抛出，否则会被「跳过格式异常的块」吞掉，导致 UI 只看到空回复、无报错。
@@ -172,24 +156,15 @@ export class OpenAIAdapter implements ModelAdapter {
       }
       const delta = parsed?.choices?.[0]?.delta;
         if (delta) {
-          const deltaKeys = Object.keys(delta);
-          // 调试：打印每个 chunk 的 delta 字段名，便于发现非标准 reasoning 字段
-          console.log(`[Omni Adapter Debug] delta keys:`, JSON.stringify(deltaKeys));
-          const thinkKeys = deltaKeys.filter((k) => /reason|think|thought|chain|reflect|analysis/i.test(k));
-          if (thinkKeys.length > 0) {
-            const reasonObj: Record<string, unknown> = {};
-            for (const k of thinkKeys) reasonObj[k] = delta[k];
-            console.log(`[Omni Adapter Debug] delta thinking-like fields:`, JSON.stringify(reasonObj).slice(0, 800));
-          }
           model = parsed.model || model;
           if (delta.content) {
             fullContent += delta.content;
             onChunk({ content: delta.content, done: false, model });
           }
           // 多 provider 兼容：reasoning 字段命名高度不统一（OpenAI gpt-5 用 reasoning；
-          // DeepSeek-R1 / Qwen3-thinking 用 reasoning_content；ZR / 其它中转可能用
+          // DeepSeek-R1 / Qwen3-thinking 用 reasoning_content；其它中转可能用
           // thinking / chain_of_thought / thought / reasoning_details 等任意名字）。
-          // 改为扫描 delta 中所有命中 reason|think|thought|chain|reflect|analysis 的
+          // 扫描 delta 中所有命中 reason|think|thought|chain|reflect|analysis 的
           // 字符串字段，自动捕获任意命名，避免「思考名不是常用名」时漏抓。
           let reasoningText = "";
           for (const key of Object.keys(delta)) {
@@ -207,7 +182,6 @@ export class OpenAIAdapter implements ModelAdapter {
         }
     };
 
-    console.log(`[Omni Adapter Debug] chatStream begin reading body...`);
     for await (const value of iterateStream(reader, { signal: request.signal })) {
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
@@ -221,8 +195,6 @@ export class OpenAIAdapter implements ModelAdapter {
     buffer = tailLines.pop() ?? "";
     for (const rawLine of tailLines) handleLine(rawLine);
 
-    console.log(`[Omni Adapter Debug] chatStream finished -> contentLength=${fullContent.length}, model=${model}`);
-    console.log(`[Omni Adapter Debug] chatStream FULL fullContent (${fullContent.length}):`, fullContent);
     return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls() };
   }
 

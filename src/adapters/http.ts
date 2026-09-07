@@ -34,13 +34,10 @@ async function fetchWithTimeout(
     signal.addEventListener("abort", onAbort, { once: true });
   }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  console.log(`[Omni HTTP Debug] fetch start -> ${init.method || "GET"} ${url} (timeout=${timeoutMs}ms)`);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
-    console.log(`[Omni HTTP Debug] fetch end -> ${url} HTTP ${response.status}`);
     return response;
   } catch (error) {
-    console.log(`[Omni HTTP Debug] fetch error -> ${url}:`, error instanceof Error ? error.message : String(error));
     if (error instanceof DOMException && error.name === "AbortError") {
       if (signal?.aborted) {
         throw error; // 用户取消
