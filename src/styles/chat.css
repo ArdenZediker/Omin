@@ -4735,6 +4735,9 @@
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
   box-shadow: var(--omni-surface-shadow);
   background: var(--omni-app-bg);
+  /* 主视图下 marketplace 占满 workspace，允许卡片 hover/focus 的轮廓/阴影超出自身边界，
+   * 避免默认弹窗的 overflow: hidden 把卡片顶部 translateY(-2px) 和 outline 切掉。 */
+  overflow: visible;
 }
 
 .chat-history-panel__marketplace-nav {

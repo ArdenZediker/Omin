@@ -2364,7 +2364,7 @@ body:has(.pet-thought-window),
 }
 
 .plugin-marketplace--main-view .plugin-marketplace__body {
-  padding: 0 20px 12px;
+  padding: 6px 20px 12px;
 }
 
 .artifacts-panel__body {
