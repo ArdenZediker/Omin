@@ -84,6 +84,13 @@ export class OpenAIAdapter implements ModelAdapter {
     );
 
     const data = await response.json();
+    if (data.error) {
+      const message =
+        typeof data.error?.message === "string"
+          ? data.error.message
+          : JSON.stringify(data.error).slice(0, 300);
+      throw new Error(`模型返回错误：${message}`);
+    }
     // 多 provider 兼容：非流式响应里 reasoning 字段命名同样不统一（覆盖 GPT-5.6 / Qwen3-thinking / DeepSeek-R1 / Gemini 中转等）
     const msg = data.choices?.[0]?.message ?? {};
     const reasoningText =
@@ -135,9 +142,23 @@ export class OpenAIAdapter implements ModelAdapter {
         onChunk({ content: "", done: true, model });
         return;
       }
+      let parsed: any;
       try {
-        const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta;
+        parsed = JSON.parse(data);
+      } catch {
+        // 跳过格式异常的块
+        return;
+      }
+      // 流内错误（如模型/参数错误、限流）：OpenAI 以 data: {"error":{...}} 形式推送。
+      // 必须在 try 之外显式抛出，否则会被「跳过格式异常的块」吞掉，导致 UI 只看到空回复、无报错。
+      if (parsed?.error) {
+        const message =
+          typeof parsed.error?.message === "string"
+            ? parsed.error.message
+            : JSON.stringify(parsed.error).slice(0, 300);
+        throw new Error(`模型返回错误：${message}`);
+      }
+      const delta = parsed?.choices?.[0]?.delta;
         if (delta) {
           model = parsed.model || model;
           if (delta.content) {
@@ -160,9 +181,6 @@ export class OpenAIAdapter implements ModelAdapter {
             toolAccumulator.add(delta.tool_calls);
           }
         }
-      } catch {
-        // 跳过格式异常的块
-      }
     };
 
     for await (const value of iterateStream(reader, { signal: request.signal })) {

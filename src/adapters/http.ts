@@ -215,8 +215,14 @@ export async function* iterateStream(
       const result = await Promise.race([settled, wakePromise]);
 
       if (result === WAKE || result === undefined) {
-        // 被超时/取消唤醒：等真正的 read 落定后退出，由下面的 stopReason 统一抛出语义化错误
-        await settled;
+        // 被超时/取消唤醒：等真正的 read 落定后退出，由下面的 stopReason 统一抛出语义化错误。
+        // 关键：部分 WebView2 / fetch 实现下 reader.cancel() 无法真正解除挂起的 read，
+        // 直接 await settled 会永久挂起（表现为 UI「一直没回复」且只能手动停止）。
+        // 因此用短超时 race，绝不无限等待底层 read；挂起的 read 自带 .catch，不会成为 unhandled rejection。
+        await Promise.race([
+          settled,
+          new Promise<void>((resolve) => setTimeout(resolve, 250)),
+        ]);
         break;
       }
 
