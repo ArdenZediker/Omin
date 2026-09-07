@@ -572,6 +572,45 @@ export default function PluginMarketplace({
     [refreshKey],
   );
 
+  const emptyInfo = useMemo(() => {
+    switch (kind) {
+      case "skill":
+        return {
+          icon: Wand2,
+          title: "没有找到匹配的技能",
+          hint: "试试其他关键词，或切换到「SkillHub 实时」发现更多技能",
+        };
+      case "connector":
+        return {
+          icon: Cable,
+          title: "没有找到匹配的连接器",
+          hint: onAddMcp
+            ? "试试其他关键词，或点击右上角「新增 MCP」添加自定义连接器"
+            : "试试其他关键词，或从「远程接入」浏览更多连接器",
+        };
+      case "expert":
+        return {
+          icon: Bot,
+          title: "没有找到匹配的专家",
+          hint: onCreateExpert
+            ? "试试其他关键词，或点击「创建专家」新建一个"
+            : "试试其他关键词",
+        };
+      case "template":
+        return {
+          icon: LayoutTemplate,
+          title: "没有找到匹配的模板",
+          hint: "试试其他关键词",
+        };
+      default:
+        return {
+          icon: Puzzle,
+          title: "没有找到匹配的插件",
+          hint: "试试其他关键词，或从本地/远程导入 SKILL.md",
+        };
+    }
+  }, [kind, onAddMcp, onCreateExpert]);
+
   const handleCopyInstallPrompt = useCallback((manifest: PluginManifest) => {
     const prompt = buildPluginInstallPrompt(manifest);
     navigator.clipboard.writeText(prompt).catch(() => {});
@@ -1911,11 +1950,16 @@ export default function PluginMarketplace({
               )}
             </div>
           ) : filteredPlugins.length === 0 ? (
-            <div className="plugin-marketplace__empty">
-              <Puzzle size={40} strokeWidth={1.2} />
-              <p>没有找到匹配的插件</p>
-              <span>试试其他关键词，或从本地/远程导入 SKILL.md</span>
-            </div>
+            (() => {
+              const EmptyIcon = emptyInfo.icon;
+              return (
+                <div className="plugin-marketplace__empty">
+                  <EmptyIcon size={40} strokeWidth={1.2} />
+                  <p>{emptyInfo.title}</p>
+                  <span>{emptyInfo.hint}</span>
+                </div>
+              );
+            })()
           ) : kind === "tool" && groupedTools.length > 0 ? (
             <div className="plugin-marketplace__groups">
               {groupedTools.map(([group, items]) => (

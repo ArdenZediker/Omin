@@ -45,6 +45,8 @@ import {
   DEFAULT_PROJECT_ID,
   MAIN_SESSION_ID,
 } from "../chat/storage";
+import { loadBasicSettings } from "../app/settingsStore";
+import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type {
   ProjectDraft,
@@ -560,6 +562,15 @@ export default function MainChatView({
     },
     [activeProject, activeChatId],
   );
+
+  // 全局「默认工作空间」：未单独配置工作目录的项目/任务会话自动共用（读一次，设置变更需重开会话刷新）。
+  const defaultWorkspacePath = useMemo(() => {
+    try {
+      return loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).defaultWorkspacePath || "";
+    } catch {
+      return "";
+    }
+  }, []);
 
   // 点击消息中的文件附件：登记/复用「文件」产物并在右侧产物面板打开。
   const handleOpenAttachment = useCallback(
@@ -2405,7 +2416,10 @@ export default function MainChatView({
                         onSubmitEdit={onSubmitEditedUserMessage}
                         onRegenerate={onRegenerateMessage}
                         onSaveAsMarkdown={handleSaveAsMarkdown}
-                        onOpenChangesPanel={() => setSidePanelTab("changes")}
+                        onOpenChangesPanel={() => {
+                          setTopicPanelManualVisible(true);
+                          setSidePanelTab("changes");
+                        }}
                         onOpenFileLocation={handleOpenFileLocation}
                         onOpenAttachment={handleOpenAttachment}
                       />
@@ -2526,10 +2540,11 @@ export default function MainChatView({
                 </button>
                 <button
                   type="button"
-                  className={`chat-topic-panel__tab ${sidePanelTab === "changes" ? "chat-topic-panel__tab--active" : ""} ${activeProject?.workspacePath ? "" : "chat-topic-panel__tab--disabled"}`}
-                  onClick={() =>
-                    activeProject?.workspacePath && setSidePanelTab("changes")
-                  }
+                  className={`chat-topic-panel__tab ${sidePanelTab === "changes" ? "chat-topic-panel__tab--active" : ""}`}
+                  onClick={() => {
+                    setTopicPanelManualVisible(true);
+                    setSidePanelTab("changes");
+                  }}
                 >
                   <GitBranch size={11} strokeWidth={2} />
                   <span>变更</span>
@@ -2616,8 +2631,22 @@ export default function MainChatView({
                 />
               ) : null}
 
-              {sidePanelTab === "changes" && activeProject?.workspacePath ? (
-                <ChangesPanel workspacePath={activeProject.workspacePath} />
+              {sidePanelTab === "changes" ? (
+                <ChangesPanel
+                  workspacePath={
+                    (activeSession &&
+                    projects.find((p) => p.id === activeSession.projectId)?.workspacePath) ||
+                    activeProject?.workspacePath ||
+                    defaultWorkspacePath ||
+                    null
+                  }
+                  projectTitle={
+                    (activeSession &&
+                    projects.find((p) => p.id === activeSession.projectId)?.title) ||
+                    activeProject?.title ||
+                    null
+                  }
+                />
               ) : null}
             </div>
           </aside>

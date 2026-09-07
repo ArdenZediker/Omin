@@ -285,7 +285,7 @@ function ConnectorDetailDrawer({
 
 /**
  * 外部服务接入型技能浏览面板（WorkBuddy 技能库）。
- * 数据来自 GitHub 仓库内的 skills-marketplace marketplace.json，
+ * 数据来自 GitHub 仓库内的 skills-marketplace/.codebuddy-skill/marketplace.json（经 jsDelivr 加速），
  * 前端按白名单过滤出「接入型」技能作为连接器展示；安装 = 整包下载
  * 仓库 zip 并落地该技能子树到本地技能目录。
  */

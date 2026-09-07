@@ -10,7 +10,7 @@
 //! 注册为 kind=connector 的插件，复用「一切皆插件」的安装闭环。
 
 /// marketplace.json 清单地址（可用 marketplace_url 参数覆盖以便测试）。
-const DEFAULT_MARKETPLACE_URL: &str = "https://raw.githubusercontent.com/zhizhunbao/workbuddy/main/skills-marketplace/.codebuddy-skill/marketplace.json";
+const DEFAULT_MARKETPLACE_URL: &str = "https://cdn.jsdelivr.net/gh/zhizhunbao/workbuddy@main/skills-marketplace/.codebuddy-skill/marketplace.json";
 
 /// 仓库 zip 下载地址（codeload，单次请求拿全仓库，按前缀抽取技能子树）。
 const DEFAULT_REPO_ZIP_URL: &str =

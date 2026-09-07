@@ -12,6 +12,8 @@ export type BasicSettings = {
   followCursorScreen: boolean;
   openMainShortcut: string;
   switchPreviousModelShortcut: string;
+  /** 全局「默认工作空间」：未单独配置工作目录的项目/任务会话自动共用此目录 */
+  defaultWorkspacePath: string;
 };
 
 export type ExternalChatEntry = {

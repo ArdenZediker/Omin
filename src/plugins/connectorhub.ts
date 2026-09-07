@@ -2,7 +2,7 @@
  * WorkBuddy 技能库外部服务接入型技能市场。
  *
  * 数据源：GitHub 仓库 zhizhunbao/workbuddy 的 skills-marketplace
- * （.codebuddy-skill/marketplace.json，90 个技能）。其中「外部服务接入型」
+ * （skills-marketplace/.codebuddy-skill/marketplace.json，通过 jsDelivr 加速访问）。其中「外部服务接入型」
  * 技能封装了外部服务的 CLI/OpenAPI/SDK 接入能力，本质就是连接器，
  * 安装后注册为 kind=connector 的插件，出现在扩展中心「连接器」分类。
  *

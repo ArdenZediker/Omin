@@ -25,20 +25,22 @@ import {
 } from "../chat/gitChanges";
 
 interface ChangesPanelProps {
-  /** 当前激活项目的工作区根路径；为 null 时可临时通过「选择目录…」指定一个 git 仓 */
+  /** 当前会话绑定项目的工作区根路径；为 null 时可临时通过「选择目录…」指定一个 git 仓 */
   workspacePath: string | null;
   /** 当前分支名（可选，用于 header 显示） */
   branchName?: string | null;
+  /** 当前会话绑定项目的标题，用于空态提示「去哪个项目设置里配目录」 */
+  projectTitle?: string | null;
   /** 嵌入其他面板时由父级控制显示关闭按钮 */
   onClose?: () => void;
 }
 
-export default function ChangesPanel({ workspacePath, branchName, onClose }: ChangesPanelProps) {
+export default function ChangesPanel({ workspacePath, branchName, projectTitle, onClose }: ChangesPanelProps) {
   // 当 props.workspacePath 为空时，允许用户用「选择目录…」按钮临时选一个本地 git 仓查看变更。
   // props 一旦重新提供有效路径，自动清掉临时选择，让项目自身优先。
   const [overridePath, setOverridePath] = useState<string | null>(null);
   const effectivePath = workspacePath || overridePath || null;
-  const [files, setFiles] = useState<GitFileChange[] | null>(null);
+  const [files, setFiles] = useState<GitFileChange[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
@@ -210,6 +212,7 @@ export default function ChangesPanel({ workspacePath, branchName, onClose }: Cha
         <OverviewView
           workspacePath={effectivePath}
           branchName={branchName}
+          projectTitle={projectTitle}
           files={files ?? []}
           summary={summary}
           loading={loading}
@@ -237,6 +240,7 @@ export default function ChangesPanel({ workspacePath, branchName, onClose }: Cha
 interface OverviewProps {
   workspacePath: string | null;
   branchName?: string | null;
+  projectTitle?: string | null;
   files: GitFileChange[];
   summary: ReturnType<typeof summarizeChanges>;
   loading: boolean;
@@ -251,6 +255,7 @@ interface OverviewProps {
 function OverviewView({
   workspacePath,
   branchName,
+  projectTitle,
   files,
   summary,
   loading,
@@ -261,14 +266,15 @@ function OverviewView({
   onPickDirectory,
 }: OverviewProps) {
   if (!workspacePath) {
+    const projLabel = projectTitle ? `「${projectTitle}」` : "当前";
     return (
       <EmptyState
         icon={<FolderGit2 size={26} strokeWidth={1.4} />}
-        title="未绑定项目工作区"
+        title="未设置项目工作目录"
         hint={
           onPickDirectory
-            ? "为当前会话绑定一个本地项目后可自动跟随；在此之前，可临时选一个本地目录查看变更。"
-            : "为当前会话绑定一个本地项目后，会在此展示该工作区的 Git 变更列表。"
+            ? `${projLabel}项目尚未在「项目设置」中配置工作目录。配置后会自动跟随展示该目录的 Git 变更；在此之前，可临时选一个本地目录查看。`
+            : `${projLabel}项目尚未在「项目设置」中配置工作目录；配置后即可在此自动展示该工作区的 Git 变更列表。`
         }
         action={onPickDirectory ? { label: "选择目录…", onClick: onPickDirectory } : undefined}
       />

@@ -33,6 +33,7 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   followCursorScreen: false,
   openMainShortcut: DEFAULT_OPEN_MAIN_SHORTCUT,
   switchPreviousModelShortcut: UNSET_SHORTCUT,
+  defaultWorkspacePath: "",
 };
 
 export const COMPACT_APPEARANCE_PRESETS: Record<CompactAppearance, { width: number; height: number }> = {

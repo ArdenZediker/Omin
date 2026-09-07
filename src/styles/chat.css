@@ -2814,6 +2814,19 @@
   transform: translateX(12px);
 }
 
+/* chat-topic-panel 的内容容器：必须成为 flex 列并占满剩余高度，
+ * 否则作为 tab 内容嵌入的 ChangesPanel/ArtifactsPanel 拿不到可用高度，
+ * 内部 flex:1 失效，导致面板内容空白。 */
+.chat-topic-panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 12px;
+  gap: 10px;
+}
+
 .main-chat-layout__splitter {
   position: relative;
   flex: 0 0 4px;
@@ -4875,8 +4888,12 @@
   color: var(--omni-message-text);
 }
 
-/* 嵌入 chat-topic-panel 作为 tab 内容时，宽度继承父容器并去掉独立抽屉样式 */
-.chat-topic-panel .artifacts-panel {
+/* 嵌入 chat-topic-panel 作为 tab 内容时，宽度继承父容器并去掉独立抽屉样式，
+ * 同时占满 body 剩余高度，避免内部 flex:1 因父容器无高度而坍缩为 0。 */
+.chat-topic-panel .artifacts-panel,
+.chat-topic-panel .changes-panel {
+  flex: 1;
+  min-height: 0;
   width: 100%;
   min-width: 0;
   border-left: none;

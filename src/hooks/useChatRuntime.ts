@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { ChatToolCall, ChatAttachment, ChatImage, Message, ModelConfig } from "../adapters/types";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { isMainWindowUserVisible } from "../app/window";
-import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
+import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET_THOUGHT_WINDOW_LABEL, BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
+import { loadBasicSettings } from "../app/settingsStore";
 import { snapshotAttachments } from "../app/outputStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
@@ -165,6 +166,23 @@ export function useChatRuntime({
   isCompactWindow,
   view,
 }: UseChatRuntimeArgs) {
+  // 全局「默认工作空间」：未单独配置工作目录的项目/任务会话自动共用此目录。
+  const defaultWorkspacePath = useMemo(() => {
+    try {
+      return loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).defaultWorkspacePath || "";
+    } catch {
+      return "";
+    }
+  }, []);
+
+  // 把全局默认工作空间回填到未配目录的项目上：工具读写/导出自动跟随「设置空间」，
+  // 但保留项目自身的 allowedToolIds 等配置（仅覆盖 workspacePath）。
+  const resolvedActiveProject = useMemo<Project | null>(() => {
+    if (!activeProject) return null;
+    if (activeProject.workspacePath) return activeProject;
+    if (!defaultWorkspacePath) return activeProject;
+    return { ...activeProject, workspacePath: defaultWorkspacePath };
+  }, [activeProject, defaultWorkspacePath]);
   const [error, setError] = useState<string | null>(null);
   const [loadingSessionIds, setLoadingSessionIds] = useState<string[]>([]);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
@@ -856,7 +874,7 @@ export function useChatRuntime({
       const abortController = new AbortController();
       const runId = startSessionRun(sessionId, abortController);
       const petThoughtId = startPetThought(sessionId, conversationMessages);
-      const executionProject = options.projectOverride ?? activeProject;
+      const executionProject = options.projectOverride ?? resolvedActiveProject;
       const systemPrompt = resolveProjectSystemPrompt(options.projectOverride);
       const knowledgeCollectionId = executionProject?.knowledgeCollectionId ?? null;
       const latestUserQuery = [...conversationMessages].reverse().find((message) => message.role === "user")?.content ?? "";
@@ -1032,7 +1050,7 @@ export function useChatRuntime({
     async (command: { command: string; args: string }): Promise<ToolResultWithArtifact | void> => {
       const result = await executeLocalTool(
         {
-          activeProject,
+          activeProject: resolvedActiveProject,
           activeChatId,
           getChatSessionById,
           searchChatSessions,
@@ -1057,7 +1075,7 @@ export function useChatRuntime({
       return result;
     },
     [
-      activeProject,
+      resolvedActiveProject,
       activeChatId,
       getChatSessionById,
       searchChatSessions,
