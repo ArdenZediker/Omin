@@ -1796,3 +1796,126 @@
   background: transparent;
   z-index: auto;
 }
+
+/* ================= 新增 MCP 连接器 ================= */
+.plugin-marketplace__source-tab--add {
+  color: var(--omni-accent, #3b82f6);
+  font-weight: 600;
+}
+.plugin-marketplace__source-tab--add:hover {
+  background: var(--omni-accent-soft, #f0f7ff);
+}
+
+.omni-mcp-create-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  padding: 24px;
+}
+
+.omni-mcp-create-modal {
+  width: min(480px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px 24px;
+  border-radius: 16px;
+  background: var(--omni-panel-bg, #ffffff);
+  border: 1px solid var(--omni-panel-border, #e2e8f0);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+.omni-mcp-create-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.omni-mcp-create-modal__head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--omni-app-text, #0f172a);
+}
+.omni-mcp-create-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--omni-app-muted, #64748b);
+  cursor: pointer;
+}
+.omni-mcp-create-modal__close:hover {
+  background: var(--omni-soft-bg, #f1f5f9);
+}
+
+.omni-mcp-create-modal__hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--omni-app-muted, #64748b);
+}
+.omni-mcp-create-modal__hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--omni-soft-bg, #f1f5f9);
+  color: var(--omni-app-text, #0f172a);
+}
+
+.omni-mcp-create-section {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--omni-app-muted, #64748b);
+  padding-top: 6px;
+  border-top: 1px dashed var(--omni-panel-border, #e2e8f0);
+}
+
+.omni-mcp-create-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.omni-mcp-create-field > span {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--omni-app-text, #0f172a);
+}
+.omni-mcp-create-field input,
+.omni-mcp-create-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--omni-panel-border, #e2e8f0);
+  background: var(--omni-input-bg, #ffffff);
+  color: var(--omni-app-text, #0f172a);
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+}
+.omni-mcp-create-field input:focus,
+.omni-mcp-create-field textarea:focus {
+  border-color: var(--omni-accent, #3b82f6);
+  box-shadow: 0 0 0 3px var(--omni-accent-soft, #dbeafe);
+}
+
+.omni-mcp-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}

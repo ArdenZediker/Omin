@@ -36,6 +36,7 @@ import {
   Sparkles,
   Trash2,
   Wand2,
+  X,
 } from "lucide-react";
 import type { Message, ChatAttachment, ChatImage } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
@@ -76,6 +77,9 @@ import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
 import ModelSelector from "./ModelSelector";
 import PluginMarketplace from "./plugins/PluginMarketplace";
 import type { MarketplaceSource } from "./plugins/PluginMarketplace";
+import { pluginRegistry } from "../plugins/registry";
+import { setConnectorTrusted, ensureMcpConnector } from "../plugins/mcp";
+import type { PluginManifest } from "../plugins/types";
 import type { PluginKind } from "../plugins/types";
 import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -126,10 +130,12 @@ function MarketplaceSourceTabs({
   kind,
   source,
   onSourceChange,
+  onAddMcp,
 }: {
   kind: PluginKind;
   source: MarketplaceSource;
   onSourceChange: (next: MarketplaceSource) => void;
+  onAddMcp?: () => void;
 }) {
   const items: {
     value: MarketplaceSource;
@@ -180,8 +186,44 @@ function MarketplaceSourceTabs({
           </button>
         );
       })}
+    {kind === "connector" && onAddMcp && (
+      <button
+        type="button"
+        className="plugin-marketplace__source-tab plugin-marketplace__source-tab--add"
+        onClick={onAddMcp}
+      >
+        <Plus size={14} strokeWidth={2} />
+        <span>新增 MCP</span>
+      </button>
+    )}
     </div>
   );
+}
+
+/** 解析 MCP 启动参数：支持双引号/单引号包裹的含空格参数。 */
+function parseMcpArgs(input: string): string[] {
+  const tokens: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(input))) {
+    tokens.push(match[1] ?? match[2] ?? match[3] ?? "");
+  }
+  return tokens;
+}
+
+/** 解析环境变量：每行 KEY=VALUE。 */
+function parseMcpEnv(input: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const line of input.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf("=");
+    if (idx <= 0) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const value = trimmed.slice(idx + 1).trim();
+    if (key) env[key] = value;
+  }
+  return env;
 }
 
 type MainChatViewProps = {
@@ -398,6 +440,17 @@ export default function MainChatView({
             ? "my"
             : "local",
   );
+  // 新增 MCP 连接器（自定义本地 MCP 服务器）的弹窗与表单状态
+  const [creatingMcp, setCreatingMcp] = useState(false);
+  const [newMcp, setNewMcp] = useState({
+    name: "",
+    desc: "",
+    command: "",
+    args: "",
+    env: "",
+  });
+  // 强制 <PluginMarketplace> 重挂以刷新连接器列表（新建后立即可见）
+  const [marketplaceNonce, setMarketplaceNonce] = useState(0);
 
   useEffect(() => {
     if (openMarketplace !== undefined) {
@@ -503,6 +556,48 @@ export default function MainChatView({
     onMarketplaceChange?.(false);
     onJumpToChat?.("/expert-manager ");
   }, [onMarketplaceChange, onJumpToChat]);
+
+  /** 新增自定义本地 MCP 连接器：写入注册表 → 配置命令/参数/环境变量 → 信任并拉起。 */
+  const createMcpConnector = useCallback(async () => {
+    const name = newMcp.name.trim();
+    const command = newMcp.command.trim();
+    if (!name || !command) return;
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const id = `mcp-${slug || "user"}-${Date.now().toString(36)}`;
+    const manifest: PluginManifest = {
+      id,
+      name,
+      description: newMcp.desc.trim() || `本地 MCP 连接器：${name}`,
+      version: "1.0.0",
+      author: "用户",
+      kind: "connector",
+      category: "MCP",
+      icon: "Cable",
+      configFields: [],
+    };
+    pluginRegistry.install(manifest, { type: "local", path: "user" });
+    pluginRegistry.setConnectorConfig(id, {
+      command,
+      args: parseMcpArgs(newMcp.args),
+      env: parseMcpEnv(newMcp.env),
+    });
+    const saved = pluginRegistry.getManifest(id);
+    if (saved) {
+      setConnectorTrusted(saved, true);
+      try {
+        await ensureMcpConnector(saved);
+      } catch {
+        // 启动失败不阻断创建，用户可在卡片上重试连接
+      }
+    }
+    setCreatingMcp(false);
+    setNewMcp({ name: "", desc: "", command: "", args: "", env: "" });
+    setMarketplaceSource("local");
+    setMarketplaceNonce((current) => current + 1);
+  }, [newMcp, setMarketplaceSource]);
   const [projectDeleteConfirm, setProjectDeleteConfirm] =
     useState<ProjectDeleteConfirmState>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -1836,7 +1931,7 @@ export default function MainChatView({
       <section className="main-chat-stage">
         {showPluginMarketplace && (
           <PluginMarketplace
-            key={`marketplace-${marketplaceFilter.kind}-${marketplaceFilter.category}`}
+            key={`marketplace-${marketplaceFilter.kind}-${marketplaceFilter.category}-${marketplaceNonce}`}
             mainView
             initialFilter={marketplaceFilter}
             onClose={closeMarketplace}
@@ -1845,6 +1940,107 @@ export default function MainChatView({
             onSourceChange={setMarketplaceSource}
             omitTopTabs
           />
+        )}
+        {creatingMcp && (
+          <div
+            className="omni-mcp-create-overlay"
+            onClick={() => setCreatingMcp(false)}
+          >
+            <div
+              className="omni-mcp-create-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="omni-mcp-create-modal__head">
+                <h3>新增 MCP 服务器</h3>
+                <button
+                  type="button"
+                  className="omni-mcp-create-modal__close"
+                  onClick={() => setCreatingMcp(false)}
+                  aria-label="关闭"
+                >
+                  <X size={16} strokeWidth={1.8} />
+                </button>
+              </div>
+              <p className="omni-mcp-create-modal__hint">
+                填写启动命令（如{" "}
+                <code>npx -y @modelcontextprotocol/server-github</code>
+                ），Omni 会作为本机子进程拉起该 MCP 服务器，并将其暴露的工具注入
+                AI 对话。
+              </p>
+              <label className="omni-mcp-create-field">
+                <span>名称 *</span>
+                <input
+                  value={newMcp.name}
+                  onChange={(event) =>
+                    setNewMcp((value) => ({ ...value, name: event.target.value }))
+                  }
+                  placeholder="如 GitHub MCP"
+                />
+              </label>
+              <label className="omni-mcp-create-field">
+                <span>描述（可选）</span>
+                <input
+                  value={newMcp.desc}
+                  onChange={(event) =>
+                    setNewMcp((value) => ({ ...value, desc: event.target.value }))
+                  }
+                  placeholder="一句话说明用途"
+                />
+              </label>
+              <div className="omni-mcp-create-section">MCP 启动配置</div>
+              <label className="omni-mcp-create-field">
+                <span>启动命令 *</span>
+                <input
+                  value={newMcp.command}
+                  onChange={(event) =>
+                    setNewMcp((value) => ({
+                      ...value,
+                      command: event.target.value,
+                    }))
+                  }
+                  placeholder="如 npx / node / python"
+                />
+              </label>
+              <label className="omni-mcp-create-field">
+                <span>参数（支持引号包裹的空格）</span>
+                <input
+                  value={newMcp.args}
+                  onChange={(event) =>
+                    setNewMcp((value) => ({ ...value, args: event.target.value }))
+                  }
+                  placeholder='如 -y @modelcontextprotocol/server-github'
+                />
+              </label>
+              <label className="omni-mcp-create-field">
+                <span>环境变量（每行 KEY=VALUE）</span>
+                <textarea
+                  value={newMcp.env}
+                  onChange={(event) =>
+                    setNewMcp((value) => ({ ...value, env: event.target.value }))
+                  }
+                  rows={3}
+                  placeholder="GITHUB_TOKEN=ghp_xxxx"
+                />
+              </label>
+              <div className="omni-mcp-create-actions">
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--secondary"
+                  onClick={() => setCreatingMcp(false)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--primary"
+                  onClick={() => void createMcpConnector()}
+                  disabled={!newMcp.name.trim() || !newMcp.command.trim()}
+                >
+                  创建并连接
+                </button>
+              </div>
+            </div>
+          </div>
         )}
         {projectNotice && (
           <div
@@ -1906,6 +2102,7 @@ export default function MainChatView({
                     kind={marketplaceFilter.kind}
                     source={marketplaceSource}
                     onSourceChange={setMarketplaceSource}
+                    onAddMcp={() => setCreatingMcp(true)}
                   />
                 )}
               </div>
