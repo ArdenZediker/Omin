@@ -1800,13 +1800,6 @@
 }
 
 /* ================= 新增 MCP 连接器 ================= */
-.plugin-marketplace__source-tab--add {
-  color: var(--omni-accent, #3b82f6);
-  font-weight: 600;
-}
-.plugin-marketplace__source-tab--add:hover {
-  background: var(--omni-accent-soft, #f0f7ff);
-}
 
 .omni-mcp-create-overlay {
   position: fixed;
@@ -1933,4 +1926,26 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 4px;
+}
+
+/* 连接器 tab 页面内「新增 MCP」按钮：放在 top-bar 右侧，与搜索/视图切换同排 */
+.plugin-marketplace__add-mcp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--omni-accent, #3b82f6);
+  border: 1px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.plugin-marketplace__add-mcp-btn:hover {
+  background: color-mix(in srgb, var(--omni-accent, #3b82f6) 88%, #000);
 }

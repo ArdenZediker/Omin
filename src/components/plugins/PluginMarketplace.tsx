@@ -51,7 +51,9 @@ import type {
 import { buildPluginInstallPrompt } from "../../plugins/registry";
 import SkillhubBrowser from "./SkillhubBrowser";
 import SkillsetsBrowser from "./SkillsetsBrowser";
-import InstalledSkillsetCard, { collectSkillsetSlugs } from "./InstalledSkillsetCard";
+import InstalledSkillsetCard, {
+  collectSkillsetSlugs,
+} from "./InstalledSkillsetCard";
 import ConnectorhubBrowser from "./ConnectorhubBrowser";
 import { getMcpCommandTemplate } from "../../plugins/connectorhub";
 import { uninstallSkillhubSkill } from "../../plugins/skillhub";
@@ -65,6 +67,8 @@ type PluginMarketplaceProps = {
   mainView?: boolean;
   /** 「创建专家」入口：点击后由宿主跳转到对话框预填创建指令。 */
   onCreateExpert?: () => void;
+  /** 「新增 MCP」入口：连接器 tab 页面内会渲染新增按钮，点击回调。 */
+  onAddMcp?: () => void;
   /** Marketplace 数据源（local/skillhub/...）。传入即受控；省略则用内部默认行为（=未推荐）。
    *  受控时父组件需同步保存 state，组件内部按 `kind` 自动同步 source 的逻辑也会
    *  改为通过 `onSourceChange` 回写，避免双 state 不同步。 */
@@ -79,7 +83,7 @@ type PluginMarketplaceProps = {
 
 /** Marketplace 二级数据源（在「一级 kind」之下的二级切换）。
  *  - skill     → local = "我的技能"，skillhub = "SkillHub 实时"，suites = "专家团"
- *  - connector → local = "本地连接器"，connectors = "远程接入"
+ *  - connector → local = "我的连接器"，connectors = "远程接入"
  *  - expert    → my = "我的专家"，local = "本地内置"
  *  - tool/template → 只能 local */
 export type MarketplaceSource =
@@ -128,7 +132,10 @@ const TOOL_GROUP_ORDER = [
 function renderPluginIcon(manifest: PluginManifest) {
   const iconValue = manifest.icon?.trim();
   if (iconValue) {
-    if (/^(https?:|data:|blob:|file:)/i.test(iconValue) || iconValue.startsWith("/")) {
+    if (
+      /^(https?:|data:|blob:|file:)/i.test(iconValue) ||
+      iconValue.startsWith("/")
+    ) {
       return (
         <img
           src={iconValue}
@@ -397,6 +404,7 @@ export default function PluginMarketplace({
   embedded = false,
   mainView = false,
   onCreateExpert,
+  onAddMcp,
   source: controlledSource,
   onSourceChange,
   omitTopTabs = false,
@@ -446,7 +454,9 @@ export default function PluginMarketplace({
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
   // 详情抽屉选中（点击整卡打开）。onPick 模式下用 onPick 选择，不打开详情。
-  const [detailManifest, setDetailManifest] = useState<PluginManifest | null>(null);
+  const [detailManifest, setDetailManifest] = useState<PluginManifest | null>(
+    null,
+  );
   // MCP 型连接器（无 provider 的 connector）启动配置草稿
   const [mcpDraft, setMcpDraft] = useState({ command: "", args: "", env: "" });
   // 当前已连接的 MCP 服务器（内存态，来自 mcp.ts）
@@ -481,7 +491,8 @@ export default function PluginMarketplace({
     // 本地列表 = 已安装/内置；不再混入 MARKETPLACE_PLUGINS 静态示例（2026-09-01 移除）。
     const list = pluginRegistry.list({ kind, query });
     // 内置工具是 Omni 自带能力，无需在扩展中心作为插件展示/管理，故从「工具」tab 隐藏。
-    if (kind === "tool") return list.filter((m) => !pluginRegistry.isBuiltin(m.id));
+    if (kind === "tool")
+      return list.filter((m) => !pluginRegistry.isBuiltin(m.id));
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, query, refreshKey]);
@@ -489,7 +500,8 @@ export default function PluginMarketplace({
   // SkillHub / 专家团浏览界面只在「技能」一级分类下出现；远程连接器只在「连接器」下出现。
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
   const showSuites = !onPick && source === "suites" && kind === "skill";
-  const showConnectorhub = !onPick && source === "connectors" && kind === "connector";
+  const showConnectorhub =
+    !onPick && source === "connectors" && kind === "connector";
   // 「我的专家」：用户自己创建/安装的专家（非内置）。
   const showMyExperts = !onPick && source === "my" && kind === "expert";
   // 「我的技能」：用户已安装/内置的本地技能（不混入 SkillHub/专家团），按用户要求不分类、一栏通览。
@@ -614,7 +626,9 @@ export default function PluginMarketplace({
             author: entry.manifest.author || summary.ownerName,
             category:
               entry.manifest.category ||
-              (summary.category ? mapSkillhubCategory(summary.category) : undefined),
+              (summary.category
+                ? mapSkillhubCategory(summary.category)
+                : undefined),
           };
           pluginRegistry.install(patched, source);
           setRefreshKey((current) => current + 1);
@@ -660,7 +674,8 @@ export default function PluginMarketplace({
   const handleUninstall = useCallback((manifest: PluginManifest) => {
     const parts = manifest.id.split("/");
     const slug = parts[parts.length - 1] ?? manifest.id;
-    const namespace = parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
+    const namespace =
+      parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
     if (manifest.kind === "skill") {
       uninstallSkillhubSkill(slug, namespace)
         .catch(() => {
@@ -782,10 +797,7 @@ export default function PluginMarketplace({
         : getMcpCommandTemplate(manifest.id);
       setMcpDraft({
         command: String(existing.command ?? template?.command ?? ""),
-        args:
-          args.length > 0
-            ? args.join(" ")
-            : (template?.args ?? ""),
+        args: args.length > 0 ? args.join(" ") : (template?.args ?? ""),
         env:
           Object.keys(env).length > 0
             ? Object.entries(env)
@@ -844,8 +856,7 @@ export default function PluginMarketplace({
           } catch (error) {
             setMcpError({
               connectorId: manifest.id,
-              message:
-                error instanceof Error ? error.message : String(error),
+              message: error instanceof Error ? error.message : String(error),
             });
           }
         } else {
@@ -986,9 +997,7 @@ export default function PluginMarketplace({
                   className={`plugin-card__batch-checkbox ${isSelected ? "plugin-card__batch-checkbox--checked" : ""}`}
                   aria-hidden="true"
                 >
-                  {isSelected ? (
-                    <Check size={14} strokeWidth={2.2} />
-                  ) : null}
+                  {isSelected ? <Check size={14} strokeWidth={2.2} /> : null}
                 </span>
               ) : (
                 renderPluginIcon(manifest)
@@ -1041,9 +1050,7 @@ export default function PluginMarketplace({
               )}
               <div className="plugin-card__meta">
                 <span>{manifest.author ?? "Omni"}</span>
-                {manifest.category && (
-                  <span>· {manifest.category}</span>
-                )}
+                {manifest.category && <span>· {manifest.category}</span>}
                 {!isBuiltin && <span>· v{manifest.version}</span>}
               </div>
             </div>
@@ -1055,143 +1062,139 @@ export default function PluginMarketplace({
               安装 / 卸载 / 已安装 / 复制安装 等单卡操作统一入口。避免在 4 列
               grid 下视觉拥挤 + 防止误触「删除」按钮。 */}
           {(onPick || manifest.kind === "connector") && (
-          <div
-            className="plugin-card__actions"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {inBatch ? (
-              isBuiltin ? (
-                <span className="plugin-card__connected">
-                  <span className="plugin-card__connected-dot" />
-                  <span>内置</span>
-                </span>
+            <div
+              className="plugin-card__actions"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {inBatch ? (
+                isBuiltin ? (
+                  <span className="plugin-card__connected">
+                    <span className="plugin-card__connected-dot" />
+                    <span>内置</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className={
+                      isSelected
+                        ? "plugin-card__button plugin-card__button--danger"
+                        : "plugin-card__button plugin-card__button--secondary"
+                    }
+                    onClick={() => toggleSelected(manifest.id)}
+                    aria-label={
+                      isSelected
+                        ? `取消选中 ${manifest.name}`
+                        : `选中 ${manifest.name}`
+                    }
+                  >
+                    {isSelected ? <Check size={14} strokeWidth={2} /> : null}
+                    <span>{isSelected ? "已选中" : "选择"}</span>
+                  </button>
+                )
+              ) : onPick ? (
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--primary"
+                  onClick={() => onPick(manifest)}
+                >
+                  <Check size={14} strokeWidth={2} />
+                  <span>选择</span>
+                </button>
+              ) : manifest.kind === "connector" ? (
+                <>
+                  <button
+                    type="button"
+                    className="plugin-card__button plugin-card__button--secondary"
+                    onClick={() => openConfig(manifest)}
+                  >
+                    <Settings size={14} strokeWidth={1.8} />
+                    <span>配置</span>
+                  </button>
+                  {!installed ? (
+                    <button
+                      type="button"
+                      className="plugin-card__button plugin-card__button--primary"
+                      onClick={() => handleInstall(manifest)}
+                    >
+                      <Download size={14} strokeWidth={1.8} />
+                      <span>安装</span>
+                    </button>
+                  ) : isMcpConnector(manifest) ? (
+                    mcpConnected ? (
+                      <>
+                        <span
+                          className="plugin-card__connected"
+                          title={`已连接 · 暴露 ${mcpConnected.toolCount} 个工具`}
+                        >
+                          <span className="plugin-card__connected-dot" />
+                          <span>{mcpConnected.toolCount} 工具</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="plugin-card__button plugin-card__button--secondary"
+                          onClick={() => void handleDisconnect(manifest)}
+                        >
+                          <Unplug size={14} strokeWidth={1.8} />
+                          <span>断开</span>
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className={
+                          isConnectorTrusted(manifest)
+                            ? "plugin-card__button plugin-card__button--primary"
+                            : "plugin-card__button plugin-card__button--trust"
+                        }
+                        onClick={() => void handleConnect(manifest)}
+                        title={
+                          isConnectorTrusted(manifest)
+                            ? "启动该 MCP 服务器，并将其工具注入 AI 对话"
+                            : "该连接器尚未获得信任，点击后需确认信任才会启动"
+                        }
+                      >
+                        {isConnectorTrusted(manifest) ? (
+                          <PlugZap size={14} strokeWidth={1.8} />
+                        ) : (
+                          <ShieldAlert size={14} strokeWidth={1.8} />
+                        )}
+                        <span>
+                          {isConnectorTrusted(manifest) ? "连接" : "信任并连接"}
+                        </span>
+                      </button>
+                    )
+                  ) : null}
+                </>
+              ) : installed && !pluginRegistry.isBuiltin(manifest.id) ? (
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--danger"
+                  onClick={() => handleUninstall(manifest)}
+                  title="卸载并删除此插件"
+                >
+                  <Trash2 size={14} strokeWidth={1.8} />
+                  <span>删除</span>
+                </button>
+              ) : installed ? (
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--installed"
+                  disabled
+                >
+                  <Star size={14} strokeWidth={1.8} />
+                  <span>已安装</span>
+                </button>
               ) : (
                 <button
                   type="button"
-                  className={
-                    isSelected
-                      ? "plugin-card__button plugin-card__button--danger"
-                      : "plugin-card__button plugin-card__button--secondary"
-                  }
-                  onClick={() => toggleSelected(manifest.id)}
-                  aria-label={
-                    isSelected
-                      ? `取消选中 ${manifest.name}`
-                      : `选中 ${manifest.name}`
-                  }
+                  className="plugin-card__button plugin-card__button--primary"
+                  onClick={() => handleInstall(manifest)}
                 >
-                  {isSelected ? (
-                    <Check size={14} strokeWidth={2} />
-                  ) : null}
-                  <span>{isSelected ? "已选中" : "选择"}</span>
+                  <Download size={14} strokeWidth={1.8} />
+                  <span>安装</span>
                 </button>
-              )
-            ) : onPick ? (
-              <button
-                type="button"
-                className="plugin-card__button plugin-card__button--primary"
-                onClick={() => onPick(manifest)}
-              >
-                <Check size={14} strokeWidth={2} />
-                <span>选择</span>
-              </button>
-            ) : manifest.kind === "connector" ? (
-              <>
-                <button
-                  type="button"
-                  className="plugin-card__button plugin-card__button--secondary"
-                  onClick={() => openConfig(manifest)}
-                >
-                  <Settings size={14} strokeWidth={1.8} />
-                  <span>配置</span>
-                </button>
-                {!installed ? (
-                  <button
-                    type="button"
-                    className="plugin-card__button plugin-card__button--primary"
-                    onClick={() => handleInstall(manifest)}
-                  >
-                    <Download size={14} strokeWidth={1.8} />
-                    <span>安装</span>
-                  </button>
-                ) : isMcpConnector(manifest) ? (
-                  mcpConnected ? (
-                    <>
-                      <span
-                        className="plugin-card__connected"
-                        title={`已连接 · 暴露 ${mcpConnected.toolCount} 个工具`}
-                      >
-                        <span className="plugin-card__connected-dot" />
-                        <span>{mcpConnected.toolCount} 工具</span>
-                      </span>
-                      <button
-                        type="button"
-                        className="plugin-card__button plugin-card__button--secondary"
-                        onClick={() => void handleDisconnect(manifest)}
-                      >
-                        <Unplug size={14} strokeWidth={1.8} />
-                        <span>断开</span>
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className={
-                        isConnectorTrusted(manifest)
-                          ? "plugin-card__button plugin-card__button--primary"
-                          : "plugin-card__button plugin-card__button--trust"
-                      }
-                      onClick={() => void handleConnect(manifest)}
-                      title={
-                        isConnectorTrusted(manifest)
-                          ? "启动该 MCP 服务器，并将其工具注入 AI 对话"
-                          : "该连接器尚未获得信任，点击后需确认信任才会启动"
-                      }
-                    >
-                      {isConnectorTrusted(manifest) ? (
-                        <PlugZap size={14} strokeWidth={1.8} />
-                      ) : (
-                        <ShieldAlert size={14} strokeWidth={1.8} />
-                      )}
-                      <span>
-                        {isConnectorTrusted(manifest)
-                          ? "连接"
-                          : "信任并连接"}
-                      </span>
-                    </button>
-                  )
-                ) : null}
-              </>
-            ) : installed && !pluginRegistry.isBuiltin(manifest.id) ? (
-              <button
-                type="button"
-                className="plugin-card__button plugin-card__button--danger"
-                onClick={() => handleUninstall(manifest)}
-                title="卸载并删除此插件"
-              >
-                <Trash2 size={14} strokeWidth={1.8} />
-                <span>删除</span>
-              </button>
-            ) : installed ? (
-              <button
-                type="button"
-                className="plugin-card__button plugin-card__button--installed"
-                disabled
-              >
-                <Star size={14} strokeWidth={1.8} />
-                <span>已安装</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="plugin-card__button plugin-card__button--primary"
-                onClick={() => handleInstall(manifest)}
-              >
-                <Download size={14} strokeWidth={1.8} />
-                <span>安装</span>
-              </button>
-            )}
-          </div>
+              )}
+            </div>
           )}
           {trustPromptId === manifest.id &&
             (() => {
@@ -1206,9 +1209,11 @@ export default function PluginMarketplace({
                     <span>信任「{manifest.name}」？</span>
                   </div>
                   <p className="plugin-card__trust-warn">
-                    该连接器会暴露 MCP 工具给 AI
-                    直接调用，<strong>不受 Omni 内置工具权限（只读 /
-                    写入白名单）约束</strong>。请确认你信任它的来源与连接配置。
+                    该连接器会暴露 MCP 工具给 AI 直接调用，
+                    <strong>
+                      不受 Omni 内置工具权限（只读 / 写入白名单）约束
+                    </strong>
+                    。请确认你信任它的来源与连接配置。
                   </p>
                   {info.type === "stdio" ? (
                     <>
@@ -1268,9 +1273,9 @@ export default function PluginMarketplace({
             })()}
           {mcpError?.connectorId === manifest.id && (
             <div
-            className="plugin-card__mcp-error"
-            onClick={(e) => e.stopPropagation()}
-          >
+              className="plugin-card__mcp-error"
+              onClick={(e) => e.stopPropagation()}
+            >
               <AlertTriangle size={13} strokeWidth={1.8} />
               <span>{mcpError.message}</span>
             </div>
@@ -1279,14 +1284,11 @@ export default function PluginMarketplace({
             ((manifest.configFields?.length ?? 0) > 0 ||
               isMcpConnector(manifest)) && (
               <div
-              className="plugin-card__config"
-              onClick={(e) => e.stopPropagation()}
-            >
+                className="plugin-card__config"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {manifest.configFields?.map((field) => (
-                  <label
-                    key={field.id}
-                    className="plugin-card__config-field"
-                  >
+                  <label key={field.id} className="plugin-card__config-field">
                     <span>
                       {field.label}
                       {field.required ? " *" : ""}
@@ -1313,10 +1315,7 @@ export default function PluginMarketplace({
                           {field.placeholder ?? "请选择"}
                         </option>
                         {field.options?.map((option) => (
-                          <option
-                            key={option.value}
-                            value={option.value}
-                          >
+                          <option key={option.value} value={option.value}>
                             {option.label}
                           </option>
                         ))}
@@ -1361,7 +1360,7 @@ export default function PluginMarketplace({
                         onChange={(event) =>
                           updateMcpDraft("args", event.target.value)
                         }
-                        placeholder='如 -y @modelcontextprotocol/server-github'
+                        placeholder="如 -y @modelcontextprotocol/server-github"
                       />
                     </label>
                     <label className="plugin-card__config-field">
@@ -1400,158 +1399,310 @@ export default function PluginMarketplace({
     };
 
     return (
-    <div
-      className={`plugin-marketplace ${embedded ? "plugin-marketplace--embedded" : ""} ${mainView ? "plugin-marketplace--main-view" : ""}`}
-      role={embedded || mainView ? undefined : "dialog"}
-      aria-modal={embedded || mainView ? undefined : "true"}
-      aria-labelledby={
-        embedded || mainView ? undefined : "plugin-marketplace-title"
-      }
-    >
-      <div className="plugin-marketplace__header">
-        {!mainView && (
-          <>
-            <div className="plugin-marketplace__title-row">
-              <h2 id="plugin-marketplace-title">扩展中心</h2>
-              {!embedded && (
-                <button
-                  type="button"
-                  className="plugin-marketplace__close"
-                  onClick={onClose}
-                  aria-label="关闭"
-                >
-                  <X size={18} strokeWidth={1.8} />
-                </button>
-              )}
+      <div
+        className={`plugin-marketplace ${embedded ? "plugin-marketplace--embedded" : ""} ${mainView ? "plugin-marketplace--main-view" : ""}`}
+        role={embedded || mainView ? undefined : "dialog"}
+        aria-modal={embedded || mainView ? undefined : "true"}
+        aria-labelledby={
+          embedded || mainView ? undefined : "plugin-marketplace-title"
+        }
+      >
+        <div className="plugin-marketplace__header">
+          {!mainView && (
+            <>
+              <div className="plugin-marketplace__title-row">
+                <h2 id="plugin-marketplace-title">扩展中心</h2>
+                {!embedded && (
+                  <button
+                    type="button"
+                    className="plugin-marketplace__close"
+                    onClick={onClose}
+                    aria-label="关闭"
+                  >
+                    <X size={18} strokeWidth={1.8} />
+                  </button>
+                )}
+              </div>
+              <p className="plugin-marketplace__subtitle">
+                参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能
+              </p>
+            </>
+          )}
+
+          {!omitTopTabs && !onPick && kind === "skill" && (
+            <div
+              className="plugin-marketplace__source-tabs"
+              role="tablist"
+              aria-label="技能来源"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={source === "local"}
+                className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
+                onClick={() => setSource("local")}
+              >
+                <LayoutTemplate size={14} strokeWidth={1.8} />
+                <span>我的技能</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={source === "skillhub"}
+                className={`plugin-marketplace__source-tab ${source === "skillhub" ? "plugin-marketplace__source-tab--active" : ""}`}
+                onClick={() => setSource("skillhub")}
+              >
+                <Bot size={14} strokeWidth={1.8} />
+                <span>SkillHub 实时</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={source === "suites"}
+                className={`plugin-marketplace__source-tab ${source === "suites" ? "plugin-marketplace__source-tab--active" : ""}`}
+                onClick={() => setSource("suites")}
+              >
+                <Package size={14} strokeWidth={1.8} />
+                <span>专家团</span>
+              </button>
             </div>
-            <p className="plugin-marketplace__subtitle">
-              参考 SkillHub / DeepSeek Harness，发现可安装的插件与技能
-            </p>
-          </>
-        )}
+          )}
 
-        {!omitTopTabs && !onPick && kind === "skill" && (
-          <div
-            className="plugin-marketplace__source-tabs"
-            role="tablist"
-            aria-label="技能来源"
-          >
-<button
-            type="button"
-            role="tab"
-            aria-selected={source === "local"}
-            className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
-            onClick={() => setSource("local")}
-          >
-            <LayoutTemplate size={14} strokeWidth={1.8} />
-            <span>我的技能</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={source === "skillhub"}
-            className={`plugin-marketplace__source-tab ${source === "skillhub" ? "plugin-marketplace__source-tab--active" : ""}`}
-            onClick={() => setSource("skillhub")}
-          >
-            <Bot size={14} strokeWidth={1.8} />
-            <span>SkillHub 实时</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={source === "suites"}
-            className={`plugin-marketplace__source-tab ${source === "suites" ? "plugin-marketplace__source-tab--active" : ""}`}
-            onClick={() => setSource("suites")}
-          >
-            <Package size={14} strokeWidth={1.8} />
-            <span>专家团</span>
-          </button>
-          </div>
-        )}
+          {!omitTopTabs && !onPick && kind === "connector" && (
+            <div
+              className="plugin-marketplace__source-tabs"
+              role="tablist"
+              aria-label="连接器来源"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={source === "local"}
+                className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
+                onClick={() => setSource("local")}
+              >
+                <Settings size={14} strokeWidth={1.8} />
+                <span>我的连接器</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={source === "connectors"}
+                className={`plugin-marketplace__source-tab ${source === "connectors" ? "plugin-marketplace__source-tab--active" : ""}`}
+                onClick={() => setSource("connectors")}
+              >
+                <Cable size={14} strokeWidth={1.8} />
+                <span>远程接入</span>
+              </button>
+            </div>
+          )}
 
-        {!omitTopTabs && !onPick && kind === "connector" && (
-          <div
-            className="plugin-marketplace__source-tabs"
-            role="tablist"
-            aria-label="连接器来源"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "local"}
-              className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
-              onClick={() => setSource("local")}
+          {!omitTopTabs && !onPick && kind === "expert" && (
+            <div
+              className="plugin-marketplace__source-tabs"
+              role="tablist"
+              aria-label="专家来源"
             >
-              <Settings size={14} strokeWidth={1.8} />
-              <span>本地连接器</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "connectors"}
-              className={`plugin-marketplace__source-tab ${source === "connectors" ? "plugin-marketplace__source-tab--active" : ""}`}
-              onClick={() => setSource("connectors")}
-            >
-              <Cable size={14} strokeWidth={1.8} />
-              <span>远程接入</span>
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={source === "my"}
+                className={`plugin-marketplace__source-tab ${source === "my" ? "plugin-marketplace__source-tab--active" : ""}`}
+                onClick={() => setSource("my")}
+              >
+                <Bot size={14} strokeWidth={1.8} />
+                <span>我的专家</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={source === "local"}
+                className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
+                onClick={() => setSource("local")}
+              >
+                <LayoutTemplate size={14} strokeWidth={1.8} />
+                <span>本地内置</span>
+              </button>
+            </div>
+          )}
 
-        {!omitTopTabs && !onPick && kind === "expert" && (
-          <div
-            className="plugin-marketplace__source-tabs"
-            role="tablist"
-            aria-label="专家来源"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "my"}
-              className={`plugin-marketplace__source-tab ${source === "my" ? "plugin-marketplace__source-tab--active" : ""}`}
-              onClick={() => setSource("my")}
-            >
-              <Bot size={14} strokeWidth={1.8} />
-              <span>我的专家</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "local"}
-              className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
-              onClick={() => setSource("local")}
-            >
-              <LayoutTemplate size={14} strokeWidth={1.8} />
-              <span>本地内置</span>
-            </button>
-          </div>
-        )}
+          {showSkillhub ||
+          showSuites ||
+          showConnectorhub ||
+          showMyExperts ? null : (
+            <>
+              {mainView ? (
+                <>
+                  <div className="plugin-marketplace__top-bar">
+                    {showMySkills && (
+                      <button
+                        type="button"
+                        className={`plugin-marketplace__batch-btn ${batchMode ? "plugin-marketplace__batch-btn--active" : ""}`}
+                        onClick={() => {
+                          setBatchMode((v) => !v);
+                          setSelectedIds(new Set());
+                        }}
+                        aria-pressed={batchMode}
+                        aria-label="批量管理"
+                        title={
+                          batchMode
+                            ? "退出批量管理模式"
+                            : "进入批量管理模式：多选并删除已安装技能"
+                        }
+                      >
+                        <Eye size={14} strokeWidth={1.8} />
+                        <span>批量管理</span>
+                      </button>
+                    )}
+                    {!showMySkills && (
+                      <div className="plugin-marketplace__category-tabs">
+                        {PLUGIN_CATEGORIES.filter(
+                          (c) =>
+                            c === "全部" ||
+                            allPlugins.some((m) => m.category === c),
+                        ).map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
+                            onClick={() => setCategory(c)}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-        {showSkillhub || showSuites || showConnectorhub || showMyExperts ? null : (
-          <>
-            {mainView ? (
-              <>
-                <div className="plugin-marketplace__top-bar">
-                  {showMySkills && (
-                    <button
-                      type="button"
-                      className={`plugin-marketplace__batch-btn ${batchMode ? "plugin-marketplace__batch-btn--active" : ""}`}
-                      onClick={() => {
-                        setBatchMode((v) => !v);
-                        setSelectedIds(new Set());
-                      }}
-                      aria-pressed={batchMode}
-                      aria-label="批量管理"
-                      title={
-                        batchMode
-                          ? "退出批量管理模式"
-                          : "进入批量管理模式：多选并删除已安装技能"
-                      }
+                    <div
+                      className={`plugin-marketplace__search ${searchExpanded ? "plugin-marketplace__search--expanded" : ""}`}
                     >
-                      <Eye size={14} strokeWidth={1.8} />
-                      <span>批量管理</span>
-                    </button>
-                  )}
+                      {searchExpanded ? (
+                        <>
+                          <Search size={16} strokeWidth={1.8} />
+                          <input
+                            value={query}
+                            onChange={(event) => setQuery(event.target.value)}
+                            placeholder={
+                              showMySkills
+                                ? "搜索已安装的技能"
+                                : "搜索插件、技能、专家..."
+                            }
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            className="plugin-marketplace__search-close"
+                            onClick={() => {
+                              setQuery("");
+                              setSearchExpanded(false);
+                            }}
+                            aria-label="清除搜索"
+                          >
+                            <X size={14} strokeWidth={1.8} />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="plugin-marketplace__search-toggle"
+                          onClick={() => setSearchExpanded(true)}
+                          aria-label="展开搜索"
+                          title="搜索"
+                        >
+                          <Search size={18} strokeWidth={1.8} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div
+                      className="plugin-marketplace__view-toggle"
+                      role="group"
+                      aria-label="视图布局"
+                    >
+                      <button
+                        type="button"
+                        className={
+                          localViewMode === "grid"
+                            ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
+                            : "plugin-marketplace__icon-btn"
+                        }
+                        onClick={() => setLocalViewMode("grid")}
+                        title="网格视图"
+                        aria-label="网格视图"
+                        aria-pressed={localViewMode === "grid"}
+                      >
+                        <LayoutGrid size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          localViewMode === "list"
+                            ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
+                            : "plugin-marketplace__icon-btn"
+                        }
+                        onClick={() => setLocalViewMode("list")}
+                        title="列表视图"
+                        aria-label="列表视图"
+                        aria-pressed={localViewMode === "list"}
+                      >
+                        <LayoutList size={16} />
+                      </button>
+                    </div>
+
+                    {kind === "connector" && onAddMcp && (
+                      <button
+                        type="button"
+                        className="plugin-marketplace__add-mcp-btn"
+                        onClick={onAddMcp}
+                        title="新增自定义 MCP 连接器"
+                      >
+                        <Plus size={14} strokeWidth={2} />
+                        <span>新增 MCP</span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="plugin-marketplace__search">
+                    <Search size={16} strokeWidth={1.8} />
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder={
+                        showMySkills
+                          ? "搜索已安装的技能"
+                          : "搜索插件、技能、专家..."
+                      }
+                    />
+                    {query && (
+                      <button
+                        type="button"
+                        className="plugin-marketplace__search-clear"
+                        onClick={() => setQuery("")}
+                        aria-label="清除搜索"
+                      >
+                        <X size={14} strokeWidth={1.8} />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="plugin-marketplace__kind-tabs">
+                    {KIND_TABS.filter((tab) => tab.kind !== "tool").map(
+                      (tab) => (
+                        <button
+                          key={tab.kind}
+                          type="button"
+                          className={`plugin-marketplace__kind-tab ${kind === tab.kind ? "plugin-marketplace__kind-tab--active" : ""}`}
+                          onClick={() => setKind(tab.kind)}
+                        >
+                          <tab.icon size={14} strokeWidth={1.8} />
+                          <span>{tab.label}</span>
+                        </button>
+                      ),
+                    )}
+                  </div>
+
                   {!showMySkills && (
                     <div className="plugin-marketplace__category-tabs">
                       {PLUGIN_CATEGORIES.filter(
@@ -1570,259 +1721,114 @@ export default function PluginMarketplace({
                       ))}
                     </div>
                   )}
+                </>
+              )}
+            </>
+          )}
+        </div>
 
-                  <div
-                    className={`plugin-marketplace__search ${searchExpanded ? "plugin-marketplace__search--expanded" : ""}`}
-                  >
-                    {searchExpanded ? (
-                      <>
-                        <Search size={16} strokeWidth={1.8} />
-                        <input
-                          value={query}
-                          onChange={(event) => setQuery(event.target.value)}
-                          placeholder={showMySkills ? "搜索已安装的技能" : "搜索插件、技能、专家..."}
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          className="plugin-marketplace__search-close"
-                          onClick={() => {
-                            setQuery("");
-                            setSearchExpanded(false);
-                          }}
-                          aria-label="清除搜索"
-                        >
-                          <X size={14} strokeWidth={1.8} />
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className="plugin-marketplace__search-toggle"
-                        onClick={() => setSearchExpanded(true)}
-                        aria-label="展开搜索"
-                        title="搜索"
-                      >
-                        <Search size={18} strokeWidth={1.8} />
-                      </button>
-                    )}
-                  </div>
-
-                  <div
-                    className="plugin-marketplace__view-toggle"
-                    role="group"
-                    aria-label="视图布局"
-                  >
-                    <button
-                      type="button"
-                      className={
-                        localViewMode === "grid"
-                          ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
-                          : "plugin-marketplace__icon-btn"
-                      }
-                      onClick={() => setLocalViewMode("grid")}
-                      title="网格视图"
-                      aria-label="网格视图"
-                      aria-pressed={localViewMode === "grid"}
-                    >
-                      <LayoutGrid size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        localViewMode === "list"
-                          ? "plugin-marketplace__icon-btn plugin-marketplace__icon-btn--active"
-                          : "plugin-marketplace__icon-btn"
-                      }
-                      onClick={() => setLocalViewMode("list")}
-                      title="列表视图"
-                      aria-label="列表视图"
-                      aria-pressed={localViewMode === "list"}
-                    >
-                      <LayoutList size={16} />
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="plugin-marketplace__search">
-                  <Search size={16} strokeWidth={1.8} />
-                  <input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder={showMySkills ? "搜索已安装的技能" : "搜索插件、技能、专家..."}
-                  />
-                  {query && (
-                    <button
-                      type="button"
-                      className="plugin-marketplace__search-clear"
-                      onClick={() => setQuery("")}
-                      aria-label="清除搜索"
-                    >
-                      <X size={14} strokeWidth={1.8} />
-                    </button>
-                  )}
-                </div>
-
-                <div className="plugin-marketplace__kind-tabs">
-                  {KIND_TABS.filter((tab) => tab.kind !== "tool").map(
-                    (tab) => (
-                      <button
-                        key={tab.kind}
-                        type="button"
-                        className={`plugin-marketplace__kind-tab ${kind === tab.kind ? "plugin-marketplace__kind-tab--active" : ""}`}
-                        onClick={() => setKind(tab.kind)}
-                      >
-                        <tab.icon size={14} strokeWidth={1.8} />
-                        <span>{tab.label}</span>
-                      </button>
-                    ),
-                  )}
-                </div>
-
-                {!showMySkills && (
-                  <div className="plugin-marketplace__category-tabs">
-                    {PLUGIN_CATEGORIES.filter(
-                      (c) =>
-                        c === "全部" ||
-                        allPlugins.some((m) => m.category === c),
-                    ).map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        className={`plugin-marketplace__category-tab ${category === c ? "plugin-marketplace__category-tab--active" : ""}`}
-                        onClick={() => setCategory(c)}
-                      >
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
-      </div>
-
-      <div className="plugin-marketplace__body">
-        {showMySkills && batchMode && (
-          <div
-            className="plugin-marketplace__batch-top-bar"
-            role="toolbar"
-            aria-label="批量操作"
-          >
-            <div className="plugin-marketplace__batch-top-left">
-              <span className="plugin-marketplace__batch-top-count">
-                已选 <strong>{selectedIds.size}</strong> 项
-              </span>
-              <button
-                type="button"
-                className="plugin-marketplace__batch-top-mini"
-                onClick={() => {
-                  const selectable = filteredPlugins.filter(
-                    (m) => !pluginRegistry.isBuiltin(m.id),
-                  );
-                  const allSelected =
-                    selectable.length > 0 &&
-                    selectable.every((m) => selectedIds.has(m.id));
-                  if (allSelected) setSelectedIds(new Set());
-                  else setSelectedIds(new Set(selectable.map((m) => m.id)));
-                }}
-              >
-                {filteredPlugins
-                  .filter((m) => !pluginRegistry.isBuiltin(m.id))
-                  .every((m) => selectedIds.has(m.id))
-                  ? "取消全选"
-                  : "全选"}
-              </button>
-              <button
-                type="button"
-                className="plugin-marketplace__batch-top-mini"
-                disabled={selectedIds.size === 0}
-                onClick={() => setSelectedIds(new Set())}
-              >
-                清空
-              </button>
-            </div>
-            <div className="plugin-marketplace__batch-top-right">
-              <button
-                type="button"
-                className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--primary"
-                onClick={() => handleBatchAllSetEnabled(true)}
-                title="开启所有非内置技能"
-              >
-                <Power size={14} strokeWidth={1.8} />
-                <span>开启</span>
-              </button>
-              <button
-                type="button"
-                className="plugin-marketplace__batch-top-btn"
-                onClick={() => handleBatchAllSetEnabled(false)}
-                title="关闭所有非内置技能"
-              >
-                <PowerOff size={14} strokeWidth={1.8} />
-                <span>关闭</span>
-              </button>
-              <button
-                type="button"
-                className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--danger"
-                onClick={() => {
-                  const targets = filteredPlugins.filter(
-                    (m) => !pluginRegistry.isBuiltin(m.id),
-                  );
-                  if (targets.length === 0) return;
-                  setConfirmDialog({
-                    title: "确认批量卸载",
-                    message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 专家团 / 工具 / 连接器 / 专家 / 模板）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
-                    danger: true,
-                    onConfirm: () => handleBatchAllUninstall(),
-                  });
-                }}
-                title="卸载所有非内置技能"
-              >
-                <Trash2 size={14} strokeWidth={1.8} />
-                <span>卸载</span>
-              </button>
-              <button
-                type="button"
-                className="plugin-marketplace__batch-top-btn"
-                onClick={() => {
-                  setBatchMode(false);
-                  setSelectedIds(new Set());
-                }}
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        )}
-        {showSkillhub ? (
-          <SkillhubBrowser />
-        ) : showSuites ? (
-          <SkillsetsBrowser />
-        ) : showConnectorhub ? (
-          <ConnectorhubBrowser />
-        ) : showMyExperts ? (
-          <div className="plugin-marketplace__my-experts">
-            <div className="plugin-marketplace__my-experts-toolbar">
-              <span>你创建或从市场安装的专家</span>
-              <button
-                type="button"
-                className="plugin-marketplace__create-expert"
-                onClick={onCreateExpert}
-              >
-                <Plus size={14} strokeWidth={2} />
-                <span>创建专家</span>
-              </button>
-            </div>
-            {myExperts.length === 0 ? (
-              <div className="plugin-marketplace__empty plugin-marketplace__empty--my-experts">
-                <Bot size={40} strokeWidth={1.2} />
-                <p>还没有自定义专家</p>
-                <span>
-                  点击「创建专家」跳到对话框，让 AI 按 Omni 专家规范帮你生成专家定义并注册
+        <div className="plugin-marketplace__body">
+          {showMySkills && batchMode && (
+            <div
+              className="plugin-marketplace__batch-top-bar"
+              role="toolbar"
+              aria-label="批量操作"
+            >
+              <div className="plugin-marketplace__batch-top-left">
+                <span className="plugin-marketplace__batch-top-count">
+                  已选 <strong>{selectedIds.size}</strong> 项
                 </span>
+                <button
+                  type="button"
+                  className="plugin-marketplace__batch-top-mini"
+                  onClick={() => {
+                    const selectable = filteredPlugins.filter(
+                      (m) => !pluginRegistry.isBuiltin(m.id),
+                    );
+                    const allSelected =
+                      selectable.length > 0 &&
+                      selectable.every((m) => selectedIds.has(m.id));
+                    if (allSelected) setSelectedIds(new Set());
+                    else setSelectedIds(new Set(selectable.map((m) => m.id)));
+                  }}
+                >
+                  {filteredPlugins
+                    .filter((m) => !pluginRegistry.isBuiltin(m.id))
+                    .every((m) => selectedIds.has(m.id))
+                    ? "取消全选"
+                    : "全选"}
+                </button>
+                <button
+                  type="button"
+                  className="plugin-marketplace__batch-top-mini"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  清空
+                </button>
+              </div>
+              <div className="plugin-marketplace__batch-top-right">
+                <button
+                  type="button"
+                  className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--primary"
+                  onClick={() => handleBatchAllSetEnabled(true)}
+                  title="开启所有非内置技能"
+                >
+                  <Power size={14} strokeWidth={1.8} />
+                  <span>开启</span>
+                </button>
+                <button
+                  type="button"
+                  className="plugin-marketplace__batch-top-btn"
+                  onClick={() => handleBatchAllSetEnabled(false)}
+                  title="关闭所有非内置技能"
+                >
+                  <PowerOff size={14} strokeWidth={1.8} />
+                  <span>关闭</span>
+                </button>
+                <button
+                  type="button"
+                  className="plugin-marketplace__batch-top-btn plugin-marketplace__batch-top-btn--danger"
+                  onClick={() => {
+                    const targets = filteredPlugins.filter(
+                      (m) => !pluginRegistry.isBuiltin(m.id),
+                    );
+                    if (targets.length === 0) return;
+                    setConfirmDialog({
+                      title: "确认批量卸载",
+                      message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 专家团 / 工具 / 连接器 / 专家 / 模板）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
+                      danger: true,
+                      onConfirm: () => handleBatchAllUninstall(),
+                    });
+                  }}
+                  title="卸载所有非内置技能"
+                >
+                  <Trash2 size={14} strokeWidth={1.8} />
+                  <span>卸载</span>
+                </button>
+                <button
+                  type="button"
+                  className="plugin-marketplace__batch-top-btn"
+                  onClick={() => {
+                    setBatchMode(false);
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          )}
+          {showSkillhub ? (
+            <SkillhubBrowser />
+          ) : showSuites ? (
+            <SkillsetsBrowser />
+          ) : showConnectorhub ? (
+            <ConnectorhubBrowser />
+          ) : showMyExperts ? (
+            <div className="plugin-marketplace__my-experts">
+              <div className="plugin-marketplace__my-experts-toolbar">
+                <span>你创建或从市场安装的专家</span>
                 <button
                   type="button"
                   className="plugin-marketplace__create-expert"
@@ -1832,187 +1838,204 @@ export default function PluginMarketplace({
                   <span>创建专家</span>
                 </button>
               </div>
-            ) : (
-              <div className="plugin-marketplace__grid">
-                {myExperts.map((manifest) => {
-                  return (
-                    <div key={manifest.id} className="plugin-card">
-                      <div className="plugin-card__icon">
-                        {renderPluginIcon(manifest)}
-                      </div>
-                      <div className="plugin-card__main">
-                        <div className="plugin-card__title-row">
-                          <h3>{manifest.name}</h3>
-                          <span className="plugin-card__badge">expert</span>
-                        </div>
-                        <p className="plugin-card__description">
-                          {manifest.description}
-                        </p>
-                        <div className="plugin-card__meta">
-                          <span>{manifest.author ?? "Omni"}</span>
-                          {manifest.category && (
-                            <span>· {manifest.category}</span>
-                          )}
-                          <span>· v{manifest.version}</span>
-                        </div>
-                        {manifest.tags && manifest.tags.length > 0 && (
-                          <div className="plugin-card__tags">
-                            {manifest.tags.map((tag) => (
-                              <span key={tag} className="plugin-card__tag">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="plugin-card__actions">
-                        <span className="plugin-card__connected">
-                          <span className="plugin-card__connected-dot" />
-                          <span>已启用</span>
-                        </span>
-                        <button
-                          type="button"
-                          className="plugin-card__button plugin-card__button--danger"
-                          onClick={() => handleUninstall(manifest)}
-                          title="卸载并删除此专家"
-                          aria-label={`删除 ${manifest.name}`}
-                        >
-                          <Trash2 size={14} strokeWidth={1.8} />
-                          <span>删除</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : filteredPlugins.length === 0 ? (
-          <div className="plugin-marketplace__empty">
-            <Puzzle size={40} strokeWidth={1.2} />
-            <p>没有找到匹配的插件</p>
-            <span>试试其他关键词，或从本地/远程导入 SKILL.md</span>
-          </div>
-        ) : kind === "tool" && groupedTools.length > 0 ? (
-          <div className="plugin-marketplace__groups">
-            {groupedTools.map(([group, items]) => (
-              <section key={group} className="plugin-marketplace__group">
-                <h3 className="plugin-marketplace__group-title">
-                  {group}
-                  <span className="plugin-marketplace__group-count">
-                    {items.length}
+              {myExperts.length === 0 ? (
+                <div className="plugin-marketplace__empty plugin-marketplace__empty--my-experts">
+                  <Bot size={40} strokeWidth={1.2} />
+                  <p>还没有自定义专家</p>
+                  <span>
+                    点击「创建专家」跳到对话框，让 AI 按 Omni
+                    专家规范帮你生成专家定义并注册
                   </span>
-                </h3>
-                <div
-                  className={
-                    mainView && localViewMode === "list"
-                      ? "plugin-marketplace__grid plugin-marketplace__grid--list"
-                      : "plugin-marketplace__grid"
-                  }
-                >
-                  {items.map((manifest) => renderPluginCard(manifest))}
+                  <button
+                    type="button"
+                    className="plugin-marketplace__create-expert"
+                    onClick={onCreateExpert}
+                  >
+                    <Plus size={14} strokeWidth={2} />
+                    <span>创建专家</span>
+                  </button>
                 </div>
-              </section>
-            ))}
-          </div>
-        ) : (
-          <div
-            className={
-              mainView && localViewMode === "list"
-                ? "plugin-marketplace__grid plugin-marketplace__grid--list"
-                : "plugin-marketplace__grid"
-            }
-          >
-            {filteredPlugins.map((manifest) => renderPluginCard(manifest))}
-          </div>
-        )}
-      </div>
-
-      <div className="plugin-marketplace__footer">
-        <div className="plugin-marketplace__stats">
-          <span>已启用：{stats.skill} 技能</span>
-          <span>{stats.tool} 工具</span>
-          <span>{stats.connector} 连接器</span>
-          <span>{stats.expert} 专家</span>
-          <span>{stats.template} 模板</span>
+              ) : (
+                <div className="plugin-marketplace__grid">
+                  {myExperts.map((manifest) => {
+                    return (
+                      <div key={manifest.id} className="plugin-card">
+                        <div className="plugin-card__icon">
+                          {renderPluginIcon(manifest)}
+                        </div>
+                        <div className="plugin-card__main">
+                          <div className="plugin-card__title-row">
+                            <h3>{manifest.name}</h3>
+                            <span className="plugin-card__badge">expert</span>
+                          </div>
+                          <p className="plugin-card__description">
+                            {manifest.description}
+                          </p>
+                          <div className="plugin-card__meta">
+                            <span>{manifest.author ?? "Omni"}</span>
+                            {manifest.category && (
+                              <span>· {manifest.category}</span>
+                            )}
+                            <span>· v{manifest.version}</span>
+                          </div>
+                          {manifest.tags && manifest.tags.length > 0 && (
+                            <div className="plugin-card__tags">
+                              {manifest.tags.map((tag) => (
+                                <span key={tag} className="plugin-card__tag">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="plugin-card__actions">
+                          <span className="plugin-card__connected">
+                            <span className="plugin-card__connected-dot" />
+                            <span>已启用</span>
+                          </span>
+                          <button
+                            type="button"
+                            className="plugin-card__button plugin-card__button--danger"
+                            onClick={() => handleUninstall(manifest)}
+                            title="卸载并删除此专家"
+                            aria-label={`删除 ${manifest.name}`}
+                          >
+                            <Trash2 size={14} strokeWidth={1.8} />
+                            <span>删除</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : filteredPlugins.length === 0 ? (
+            <div className="plugin-marketplace__empty">
+              <Puzzle size={40} strokeWidth={1.2} />
+              <p>没有找到匹配的插件</p>
+              <span>试试其他关键词，或从本地/远程导入 SKILL.md</span>
+            </div>
+          ) : kind === "tool" && groupedTools.length > 0 ? (
+            <div className="plugin-marketplace__groups">
+              {groupedTools.map(([group, items]) => (
+                <section key={group} className="plugin-marketplace__group">
+                  <h3 className="plugin-marketplace__group-title">
+                    {group}
+                    <span className="plugin-marketplace__group-count">
+                      {items.length}
+                    </span>
+                  </h3>
+                  <div
+                    className={
+                      mainView && localViewMode === "list"
+                        ? "plugin-marketplace__grid plugin-marketplace__grid--list"
+                        : "plugin-marketplace__grid"
+                    }
+                  >
+                    {items.map((manifest) => renderPluginCard(manifest))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div
+              className={
+                mainView && localViewMode === "list"
+                  ? "plugin-marketplace__grid plugin-marketplace__grid--list"
+                  : "plugin-marketplace__grid"
+              }
+            >
+              {filteredPlugins.map((manifest) => renderPluginCard(manifest))}
+            </div>
+          )}
         </div>
-      </div>
 
-      <PluginDetailDrawer
-        manifest={detailManifest}
-        isInstalled={detailManifest ? isInstalled(detailManifest.id) : false}
-        isBuiltin={
-          detailManifest ? pluginRegistry.isBuiltin(detailManifest.id) : false
-        }
-        onClose={() => setDetailManifest(null)}
-        onInstall={(m) => void handleInstall(m)}
-        onUninstall={(m) => void handleUninstall(m)}
-        onCopyPrompt={(m) => handleCopyInstallPrompt(m)}
-        copiedId={copiedId}
-      />
+        <div className="plugin-marketplace__footer">
+          <div className="plugin-marketplace__stats">
+            <span>已启用：{stats.skill} 技能</span>
+            <span>{stats.tool} 工具</span>
+            <span>{stats.connector} 连接器</span>
+            <span>{stats.expert} 专家</span>
+            <span>{stats.template} 模板</span>
+          </div>
+        </div>
 
-      {/* 危险操作二次确认 dialog（参考 .omni-confirm-overlay / .omni-confirm-dialog
+        <PluginDetailDrawer
+          manifest={detailManifest}
+          isInstalled={detailManifest ? isInstalled(detailManifest.id) : false}
+          isBuiltin={
+            detailManifest ? pluginRegistry.isBuiltin(detailManifest.id) : false
+          }
+          onClose={() => setDetailManifest(null)}
+          onInstall={(m) => void handleInstall(m)}
+          onUninstall={(m) => void handleUninstall(m)}
+          onCopyPrompt={(m) => handleCopyInstallPrompt(m)}
+          copiedId={copiedId}
+        />
+
+        {/* 危险操作二次确认 dialog（参考 .omni-confirm-overlay / .omni-confirm-dialog
           共享样式）。打开时 Esc 关闭 + 自动聚焦「取消」按钮（不是「确认」——
           因为危险操作的「确认」红色按钮如果默认 focus，Enter 会直接破坏数据
           而无取消机会；让 focus 落在「取消」反而要求用户主动选择「确认」
           才能继续破坏操作，是 UX 安全设计）。 */}
-      {confirmDialog && (
-        <div
-          className="omni-confirm-overlay"
-          role="presentation"
-          onClick={() => setConfirmDialog(null)}
-        >
+        {confirmDialog && (
           <div
-            className="omni-confirm-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="plugin-marketplace-confirm-title"
-            aria-describedby="plugin-marketplace-confirm-message"
-            onClick={(e) => e.stopPropagation()}
+            className="omni-confirm-overlay"
+            role="presentation"
+            onClick={() => setConfirmDialog(null)}
           >
             <div
-              className="omni-confirm-dialog__title"
-              id="plugin-marketplace-confirm-title"
+              className="omni-confirm-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="plugin-marketplace-confirm-title"
+              aria-describedby="plugin-marketplace-confirm-message"
+              onClick={(e) => e.stopPropagation()}
             >
-              {confirmDialog.title}
-            </div>
-            <div
-              className="omni-confirm-dialog__message"
-              id="plugin-marketplace-confirm-message"
-            >
-              {confirmDialog.message}
-            </div>
-            <div className="omni-confirm-dialog__actions">
-              <button
-                type="button"
-                className="omni-confirm-dialog__button"
-                onClick={() => setConfirmDialog(null)}
-                autoFocus
+              <div
+                className="omni-confirm-dialog__title"
+                id="plugin-marketplace-confirm-title"
               >
-                取消
-              </button>
-              <button
-                type="button"
-                className={
-                  confirmDialog.danger
-                    ? "omni-confirm-dialog__button omni-confirm-dialog__button--danger"
-                    : "omni-confirm-dialog__button omni-confirm-dialog__button--primary"
-                }
-                onClick={() => {
-                  const cb = confirmDialog.onConfirm;
-                  setConfirmDialog(null);
-                  cb();
-                }}
+                {confirmDialog.title}
+              </div>
+              <div
+                className="omni-confirm-dialog__message"
+                id="plugin-marketplace-confirm-message"
               >
-                {confirmDialog.danger ? "确认卸载" : "确认"}
-              </button>
+                {confirmDialog.message}
+              </div>
+              <div className="omni-confirm-dialog__actions">
+                <button
+                  type="button"
+                  className="omni-confirm-dialog__button"
+                  onClick={() => setConfirmDialog(null)}
+                  autoFocus
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className={
+                    confirmDialog.danger
+                      ? "omni-confirm-dialog__button omni-confirm-dialog__button--danger"
+                      : "omni-confirm-dialog__button omni-confirm-dialog__button--primary"
+                  }
+                  onClick={() => {
+                    const cb = confirmDialog.onConfirm;
+                    setConfirmDialog(null);
+                    cb();
+                  }}
+                >
+                  {confirmDialog.danger ? "确认卸载" : "确认"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-};
+        )}
+      </div>
+    );
+  };
 
   if (embedded || mainView) {
     return renderMarketplace();
