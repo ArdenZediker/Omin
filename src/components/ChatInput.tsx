@@ -3,7 +3,6 @@ import {
   BookOpen,
   Bot,
   CirclePlus,
-  Paperclip,
   Send,
   Square,
   X,
@@ -737,12 +736,17 @@ export default function ChatInput({
 
   const renderMediaChip = (media: (typeof composedMedia)[number], index: number) => {
     if (media.kind === "image") {
+      const src = media.image!.src;
+      const comma = src.indexOf(",");
+      const b64 = comma >= 0 ? src.slice(comma + 1) : src;
+      const imageBytes = Math.max(0, Math.floor(b64.length * 0.75));
       return (
         <AttachmentChip
           key={media.key}
-          src={media.image!.src}
+          src={src}
           name={media.image!.name ?? `image_${index + 1}.png`}
           index={index}
+          size={imageBytes}
           removable
           onRemove={() => {
             setAllMediaSelected(false);
@@ -811,29 +815,24 @@ export default function ChatInput({
 
       <div className="chat-composer__panel">
         <div className="chat-composer__toolbar">
-          <PermissionModeSelector />
-
-          <div className="chat-composer__toolbar-group">
-            <button
-              type="button"
-              className="chat-composer__tool-button"
-              title="上传图片或文件（随消息让模型读取）"
-              onClick={() => void handleAddFiles()}
-            >
-              <Paperclip size={16} strokeWidth={1.8} />
-            </button>
-          </div>
-
           <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
-
         </div>
 
         <div className="chat-composer__body">
-          {composedMedia.length > 0 && (
-            <div className={`chat-composer__attachments chat-composer__attachments--before${allMediaSelected ? " chat-composer__attachments--selected" : ""}`}>
-              {composedMedia.map(renderMediaChip)}
-            </div>
-          )}
+          <div
+            className={`chat-composer__attachments chat-composer__attachments--before${allMediaSelected ? " chat-composer__attachments--selected" : ""}`}
+          >
+            {composedMedia.map(renderMediaChip)}
+            <button
+              type="button"
+              className="chat-composer__add-media"
+              title="继续添加图片或文件"
+              onClick={() => void handleAddFiles()}
+            >
+              <CirclePlus size={18} strokeWidth={1.8} />
+            </button>
+            <PermissionModeSelector />
+          </div>
           <div className="chat-composer__editor-wrap">
             <div className="chat-composer__editor">
               <textarea

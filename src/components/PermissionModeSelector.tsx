@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Shield, ShieldCheck } from "lucide-react";
+import { Check } from "lucide-react";
 import { getPermissionMode, isFullAccess, setPermissionMode, subscribePermissionMode, type PermissionMode } from "../chat/permissionMode";
 
 const MODE_LABELS: Record<PermissionMode, string> = {
@@ -42,11 +42,12 @@ export default function PermissionModeSelector() {
     <div className="permission-mode-selector" ref={panelRef}>
       <button
         type="button"
-        className={`chat-composer__tool-button ${fullAccess ? "chat-composer__tool-button--active" : ""}`}
-        title={MODE_LABELS[mode]}
+        className={`permission-mode-selector__trigger ${fullAccess ? "permission-mode-selector__trigger--active" : ""}`}
+        title={`权限控制：${MODE_LABELS[mode]}`}
         onClick={() => setIsOpen((open) => !open)}
       >
-        {fullAccess ? <ShieldCheck size={16} strokeWidth={1.8} /> : <Shield size={16} strokeWidth={1.8} />}
+        <Check size={15} strokeWidth={2.4} />
+        <span className="permission-mode-selector__trigger-label">{MODE_LABELS[mode]}</span>
       </button>
 
       {isOpen && (

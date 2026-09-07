@@ -6,6 +6,37 @@
   align-items: center;
 }
 
+.permission-mode-selector__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--omni-frame-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.permission-mode-selector__trigger:hover {
+  border-color: var(--omni-accent, #8b5cf6);
+  color: var(--omni-app-text);
+}
+
+.permission-mode-selector__trigger--active {
+  border-color: var(--omni-accent, #8b5cf6);
+  color: var(--omni-accent, #8b5cf6);
+  background: color-mix(in srgb, var(--omni-accent, #8b5cf6) 10%, transparent);
+}
+
+.permission-mode-selector__trigger-label {
+  line-height: 1;
+}
+
 .permission-mode-selector__panel {
   position: absolute;
   left: 0;
