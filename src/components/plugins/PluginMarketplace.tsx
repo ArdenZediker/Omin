@@ -409,7 +409,10 @@ export default function PluginMarketplace({
   // 约定：任何带视图切换的列表页默认一律走 grid，保证跨页面视觉一致。
   const [localViewMode, setLocalViewMode] = useState<"grid" | "list">("grid");
   // 不设「全部」混合列表：一级分类必须具体，默认落在技能（SkillHub）。
-  const [kind, setKind] = useState<PluginKind>(initialFilter.kind ?? "skill");
+  // 「工具」tab 已从扩展中心移除（内置工具始终暴露，无需在此管理）。
+  const [kind, setKind] = useState<PluginKind>(
+    initialFilter.kind === "tool" ? "skill" : (initialFilter.kind ?? "skill"),
+  );
   const [category, setCategory] = useState(initialFilter.category ?? "全部");
   // source 受控 ↔ 非受控：当 parent 传入 `source` 时即走受控模式，所有写入通过
   // `onSourceChange` 回写父组件；不传则保留未受控默认行为，内部 `useEffect([kind])`
@@ -481,15 +484,6 @@ export default function PluginMarketplace({
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, query, refreshKey]);
-
-  // 「工具」tab 是否展示：仅当存在非内置（用户安装/导入）工具时才显示该分类。
-  const hasToolTab = useMemo(
-    () =>
-      pluginRegistry
-        .list({ kind: "tool" })
-        .some((m) => !pluginRegistry.isBuiltin(m.id)),
-    [refreshKey],
-  );
 
   // SkillHub / 专家团浏览界面只在「技能」一级分类下出现；远程连接器只在「连接器」下出现。
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
@@ -1673,19 +1667,19 @@ export default function PluginMarketplace({
                 </div>
 
                 <div className="plugin-marketplace__kind-tabs">
-                  {KIND_TABS.filter(
-                    (tab) => tab.kind !== "tool" || hasToolTab,
-                  ).map((tab) => (
-                    <button
-                      key={tab.kind}
-                      type="button"
-                      className={`plugin-marketplace__kind-tab ${kind === tab.kind ? "plugin-marketplace__kind-tab--active" : ""}`}
-                      onClick={() => setKind(tab.kind)}
-                    >
-                      <tab.icon size={14} strokeWidth={1.8} />
-                      <span>{tab.label}</span>
-                    </button>
-                  ))}
+                  {KIND_TABS.filter((tab) => tab.kind !== "tool").map(
+                    (tab) => (
+                      <button
+                        key={tab.kind}
+                        type="button"
+                        className={`plugin-marketplace__kind-tab ${kind === tab.kind ? "plugin-marketplace__kind-tab--active" : ""}`}
+                        onClick={() => setKind(tab.kind)}
+                      >
+                        <tab.icon size={14} strokeWidth={1.8} />
+                        <span>{tab.label}</span>
+                      </button>
+                    ),
+                  )}
                 </div>
 
                 {!showMySkills && (
