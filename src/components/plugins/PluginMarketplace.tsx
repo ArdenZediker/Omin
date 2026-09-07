@@ -37,6 +37,7 @@ import {
   isConnectorTrusted,
   setConnectorTrusted,
   getMcpTrustInfo,
+  parseMcpJson,
 } from "../../plugins/mcp";
 import { PLUGIN_CATEGORIES } from "../../plugins/builtins";
 import {
@@ -457,8 +458,9 @@ export default function PluginMarketplace({
   const [detailManifest, setDetailManifest] = useState<PluginManifest | null>(
     null,
   );
-  // MCP 型连接器（无 provider 的 connector）启动配置草稿
-  const [mcpDraft, setMcpDraft] = useState({ command: "", args: "", env: "" });
+  // MCP 型连接器（无 provider 的 connector）启动配置草稿（统一 JSON 输入）
+  const [mcpDraft, setMcpDraft] = useState("");
+  const [mcpDraftError, setMcpDraftError] = useState<string | null>(null);
   // 当前已连接的 MCP 服务器（内存态，来自 mcp.ts）
   const [connectedList, setConnectedList] = useState(() =>
     listConnectedMcpServers(),
@@ -781,30 +783,6 @@ export default function PluginMarketplace({
   const isMcpConnector = (manifest: PluginManifest) =>
     manifest.kind === "connector" && !manifest.provider;
 
-  /** 解析命令行参数（支持双引号/单引号包裹的空格参数）。 */
-  const parseArgsLine = (input: string): string[] => {
-    const tokens: string[] = [];
-    const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(input)) !== null) {
-      tokens.push(m[1] ?? m[2] ?? m[3]);
-    }
-    return tokens;
-  };
-
-  /** 解析环境变量文本（每行 KEY=VALUE，忽略空行与 # 注释）。 */
-  const parseEnvLines = (input: string): Record<string, string> => {
-    const env: Record<string, string> = {};
-    for (const line of input.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eq = trimmed.indexOf("=");
-      if (eq <= 0) continue;
-      env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-    }
-    return env;
-  };
-
   const refreshConnected = useCallback(() => {
     setConnectedList(listConnectedMcpServers());
   }, []);
@@ -823,28 +801,53 @@ export default function PluginMarketplace({
     }
     setConfigDraft(draft);
     if (isMcpConnector(manifest)) {
-      const args = Array.isArray(existing.args)
-        ? (existing.args as unknown[]).map(String)
-        : [];
-      const env =
-        existing.env && typeof existing.env === "object"
-          ? (existing.env as Record<string, unknown>)
-          : {};
-      // 未配置过 command 时用高频服务模板预填
-      const template = String(existing.command ?? "").trim()
-        ? null
-        : getMcpCommandTemplate(manifest.id);
-      setMcpDraft({
-        command: String(existing.command ?? template?.command ?? ""),
-        args: args.length > 0 ? args.join(" ") : (template?.args ?? ""),
-        env:
-          Object.keys(env).length > 0
-            ? Object.entries(env)
-                .map(([key, value]) => `${key}=${String(value)}`)
-                .join("\n")
-            : (template?.env ?? ""),
-      });
+      const url = String(existing.url ?? "").trim();
+      const command = String(existing.command ?? "").trim();
+      const hasExistingConfig = url !== "" || command !== "";
+      let configJson: Record<string, unknown>;
+      if (url) {
+        const headers =
+          existing.headers && typeof existing.headers === "object"
+            ? (existing.headers as Record<string, unknown>)
+            : {};
+        configJson = { url };
+        if (Object.keys(headers).length > 0) configJson.headers = headers;
+      } else if (command) {
+        const args = Array.isArray(existing.args)
+          ? (existing.args as unknown[]).map(String)
+          : [];
+        const env =
+          existing.env && typeof existing.env === "object"
+            ? (existing.env as Record<string, unknown>)
+            : {};
+        configJson = { command };
+        if (args.length > 0) configJson.args = args;
+        if (Object.keys(env).length > 0) configJson.env = env;
+      } else {
+        // 未配置过 command/url 时用高频服务模板预填
+        const template = getMcpCommandTemplate(manifest.id);
+        if (template) {
+          configJson = { command: template.command };
+          if (template.args.trim()) configJson.args = template.args.trim().split(/\s+/);
+          if (template.env.trim()) {
+            const env: Record<string, string> = {};
+            for (const line of template.env.split("\n")) {
+              const trimmed = line.trim();
+              const eq = trimmed.indexOf("=");
+              if (eq > 0) env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+            }
+            if (Object.keys(env).length > 0) configJson.env = env;
+          }
+        } else {
+          configJson = { command: "" };
+        }
+      }
+      const jsonText = hasExistingConfig
+        ? JSON.stringify(configJson, null, 2)
+        : `// 请填写 MCP 启动配置\n${JSON.stringify(configJson, null, 2)}`;
+      setMcpDraft(jsonText);
     }
+    setMcpDraftError(null);
     setConfiguringId(manifest.id);
   }, []);
 
@@ -852,12 +855,15 @@ export default function PluginMarketplace({
     setConfigDraft((current) => ({ ...current, [id]: value }));
   }, []);
 
-  const updateMcpDraft = useCallback(
-    (key: "command" | "args" | "env", value: string) => {
-      setMcpDraft((current) => ({ ...current, [key]: value }));
-    },
-    [],
-  );
+  const updateMcpDraft = useCallback((value: string) => {
+    setMcpDraft(value);
+    if (!value.trim()) {
+      setMcpDraftError(null);
+      return;
+    }
+    const result = parseMcpJson(value);
+    setMcpDraftError("error" in result ? result.error : null);
+  }, []);
 
   const saveConfig = useCallback(
     async (manifest: PluginManifest) => {
@@ -868,38 +874,72 @@ export default function PluginMarketplace({
         values[field.id] = field.type === "number" ? Number(raw) : raw;
       }
       if (isMcpConnector(manifest)) {
-        values.command = mcpDraft.command.trim();
-        values.args = parseArgsLine(mcpDraft.args);
-        values.env = parseEnvLines(mcpDraft.env);
-        // 启动命令/参数变更 → 重置信任态。新的 command 可能是一个完全不同的
-        // 程序（比如从只读的文件服务器换成能执行 shell 的服务器），必须让用户
-        // 重新确认一次，不能沿用旧信任。
+        const jsonText = mcpDraft.trim();
+        if (!jsonText) {
+          setMcpDraftError("配置不能为空");
+          return;
+        }
+        const parsed = parseMcpJson(jsonText);
+        if ("error" in parsed) {
+          setMcpDraftError(parsed.error);
+          return;
+        }
+
+        // 写入解析后的配置，并清理旧配置中可能冲突的字段
+        if (parsed.type === "http") {
+          values.url = parsed.url;
+          values.headers = parsed.headers;
+          delete values.command;
+          delete values.args;
+          delete values.env;
+        } else {
+          values.command = parsed.command;
+          values.args = parsed.args;
+          values.env = parsed.env;
+          delete values.url;
+          delete values.headers;
+        }
+
+        // 启动命令/远程地址变更 → 重置信任态。新的配置可能指向完全不同的
+        // 服务器（比如从只读的文件服务器换成能执行 shell 的服务器），必须让
+        // 用户重新确认一次，不能沿用旧信任。
         const prev = pluginRegistry.getConnectorConfig(manifest.id) ?? {};
-        const commandChanged =
-          String(prev.command ?? "").trim() !== values.command;
-        const argsChanged =
-          JSON.stringify(Array.isArray(prev.args) ? prev.args : []) !==
-          JSON.stringify(values.args);
-        if (commandChanged || argsChanged) {
+        const prevUrl = String(prev.url ?? "").trim();
+        const prevCommand = String(prev.command ?? "").trim();
+        const configChanged =
+          parsed.type === "http"
+            ? prevUrl !== parsed.url ||
+              JSON.stringify(prev.headers ?? {}) !==
+                JSON.stringify(parsed.headers)
+            : prevCommand !== parsed.command ||
+              JSON.stringify(Array.isArray(prev.args) ? prev.args : []) !==
+                JSON.stringify(parsed.args);
+        if (configChanged) {
           values.trusted = false;
         }
       }
       pluginRegistry.setConnectorConfig(manifest.id, values);
       setConfiguringId(null);
+      setMcpDraftError(null);
       setRefreshKey((current) => current + 1);
       // MCP 型连接器：已信任 → 立即拉起；未信任 → 只弹信任确认，不自动激活。
-      if (isMcpConnector(manifest) && String(values.command ?? "").trim()) {
-        if (isConnectorTrusted(manifest)) {
-          try {
-            await ensureMcpConnector(manifest);
-          } catch (error) {
-            setMcpError({
-              connectorId: manifest.id,
-              message: error instanceof Error ? error.message : String(error),
-            });
+      if (isMcpConnector(manifest)) {
+        const hasLaunch =
+          String(values.command ?? "").trim() ||
+          String(values.url ?? "").trim();
+        if (hasLaunch) {
+          if (isConnectorTrusted(manifest)) {
+            try {
+              await ensureMcpConnector(manifest);
+            } catch (error) {
+              setMcpError({
+                connectorId: manifest.id,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          } else {
+            setTrustPromptId(manifest.id);
           }
-        } else {
-          setTrustPromptId(manifest.id);
         }
       }
       refreshConnected();
@@ -1380,39 +1420,34 @@ export default function PluginMarketplace({
                 {isMcpConnector(manifest) && (
                   <>
                     <div className="plugin-card__config-section">
-                      MCP 启动配置
+                      MCP 启动配置（JSON）
                     </div>
                     <label className="plugin-card__config-field">
-                      <span>启动命令 *</span>
-                      <input
-                        value={mcpDraft.command}
-                        onChange={(event) =>
-                          updateMcpDraft("command", event.target.value)
-                        }
-                        placeholder="如 npx / node / python"
-                      />
-                    </label>
-                    <label className="plugin-card__config-field">
-                      <span>参数（支持引号包裹的空格）</span>
-                      <input
-                        value={mcpDraft.args}
-                        onChange={(event) =>
-                          updateMcpDraft("args", event.target.value)
-                        }
-                        placeholder="如 -y @modelcontextprotocol/server-github"
-                      />
-                    </label>
-                    <label className="plugin-card__config-field">
-                      <span>环境变量（每行 KEY=VALUE）</span>
+                      <span>配置 JSON *</span>
                       <textarea
-                        value={mcpDraft.env}
-                        onChange={(event) =>
-                          updateMcpDraft("env", event.target.value)
-                        }
-                        rows={3}
-                        placeholder="GITHUB_TOKEN=ghp_xxxxxxxx&#10;GITHUB_REPO_OWNER=..."
+                        className="omni-mcp-create-json"
+                        value={mcpDraft}
+                        onChange={(event) => updateMcpDraft(event.target.value)}
+                        rows={10}
+                        spellCheck={false}
+                        placeholder='{
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-github"],
+  "env": { "GITHUB_TOKEN": "ghp_xxxx" }
+}
+
+// 或远程 Streamable HTTP：
+{
+  "url": "https://api.example.com/mcp",
+  "headers": { "Authorization": "Bearer xxx" }
+}'
                       />
                     </label>
+                    {mcpDraftError && (
+                      <div className="omni-mcp-create-field__error">
+                        {mcpDraftError}
+                      </div>
+                    )}
                   </>
                 )}
                 <div className="plugin-card__config-actions">

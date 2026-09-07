@@ -38,6 +38,71 @@ export type McpLaunchConfig =
   | { type: "stdio"; command: string; args: string[]; env?: Record<string, string> }
   | { type: "http"; url: string; headers?: Record<string, string> };
 
+/**
+ * 解析 MCP 启动配置 JSON。支持两种形态：
+ *  - 直接对象：{ "command": "npx", "args": [...], "env": {...} }
+ *                 或 { "url": "...", "headers": {...} }
+ *  - Claude Desktop 风格包装：{ "mcpServers": { "<name>": { ... } } }
+ * 优先识别 url → Streamable HTTP；否则识别 command → stdio。
+ */
+export type ParsedMcpConfig =
+  | { type: "stdio"; command: string; args: string[]; env: Record<string, string> }
+  | { type: "http"; url: string; headers: Record<string, string> };
+
+export function parseMcpJson(input: string): ParsedMcpConfig | { error: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(input);
+  } catch (error) {
+    return { error: `JSON 解析失败：${(error as Error).message}` };
+  }
+  let cfg: Record<string, unknown> = raw as Record<string, unknown>;
+  if (
+    cfg &&
+    typeof cfg === "object" &&
+    cfg.mcpServers &&
+    typeof cfg.mcpServers === "object"
+  ) {
+    const servers = cfg.mcpServers as Record<string, unknown>;
+    const keys = Object.keys(servers);
+    if (keys.length === 0) return { error: "mcpServers 为空，请至少配置一个服务器" };
+    cfg = servers[keys[0]] as Record<string, unknown>;
+  }
+  if (!cfg || typeof cfg !== "object") {
+    return { error: "配置必须是一个 JSON 对象" };
+  }
+
+  const url = typeof cfg.url === "string" ? cfg.url.trim() : "";
+  if (url) {
+    const headers: Record<string, string> = {};
+    if (cfg.headers && typeof cfg.headers === "object") {
+      for (const [key, value] of Object.entries(
+        cfg.headers as Record<string, unknown>,
+      )) {
+        if (value != null) headers[key] = String(value);
+      }
+    }
+    return { type: "http", url, headers };
+  }
+
+  const command = typeof cfg.command === "string" ? cfg.command.trim() : "";
+  if (!command) return { error: "缺少 command 或 url 字段（必须提供其一）" };
+  const args = Array.isArray(cfg.args)
+    ? cfg.args.map((item) => String(item))
+    : cfg.args == null
+      ? []
+      : [String(cfg.args)];
+  const env: Record<string, string> = {};
+  if (cfg.env && typeof cfg.env === "object") {
+    for (const [key, value] of Object.entries(
+      cfg.env as Record<string, unknown>,
+    )) {
+      if (value != null) env[key] = String(value);
+    }
+  }
+  return { type: "stdio", command, args, env };
+}
+
 interface ConnectedMcpServer {
   serverId: string;
   connectorId: string;
