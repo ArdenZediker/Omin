@@ -231,7 +231,8 @@ class PluginRegistry {
     return {
       skill: all.filter((m) => m.kind === "skill").length,
       tool: all.filter((m) => m.kind === "tool").length,
-      connector: all.filter((m) => m.kind === "connector").length,
+      // 模型连接器（带 provider）已移至「模型设置」管理，不计入扩展中心「连接器」数量。
+      connector: all.filter((m) => m.kind === "connector" && !m.provider).length,
       expert: all.filter((m) => m.kind === "expert").length,
       template: all.filter((m) => m.kind === "template").length,
       total: all.length,
