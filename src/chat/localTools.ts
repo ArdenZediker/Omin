@@ -839,6 +839,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             ok: true,
             outputText: `${title}已生成：${outcome.path}（${(outcome.size / 1024).toFixed(1)} KB）`,
             data: outcome,
+            path: outcome.path,
             artifact: {
               type: tauriCommand === "export_docx" ? "docx" : tauriCommand === "export_xlsx" ? "xlsx" : "pptx",
               title: outcome.path.split(/[\\/]/).pop() || title,
@@ -903,6 +904,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           ok: true,
           outputText: `Markdown 已生成：${outcome.path}（${(outcome.size / 1024).toFixed(1)} KB）`,
           data: outcome,
+          path: outcome.path,
           artifact: {
             type: "file",
             title: outcome.path.split(/[\\/]/).pop() || "文档.md",

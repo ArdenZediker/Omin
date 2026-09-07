@@ -92,4 +92,15 @@ describe("ChangesPanel（非 git 任务级文件清单）", () => {
     fireEvent.click(getRowButton(container));
     expect(container.querySelector(".changes-panel__diff")).toBeNull();
   });
+
+  it("优先使用返回的真实 path 显示文件名，而非 arguments 里的路径", () => {
+    const fromResult: ChangeEntry = {
+      ...entry,
+      path: "D:/workspace/final/report.docx",
+      argsSummary: '{ path: "/tmp/old.docx" }',
+    };
+    render(<ChangesPanel changes={[fromResult]} />);
+    expect(screen.getByText("report.docx")).toBeTruthy();
+    expect(screen.queryByText("old.docx")).toBeNull();
+  });
 });

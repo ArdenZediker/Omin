@@ -24,6 +24,8 @@ const MAX_TOOL_ROUNDS = 6;
 export interface ToolCallOutcome {
   outputText: string;
   artifact?: { artifactId: string; title: string };
+  /** 本次执行最终产出/修改的文件绝对路径（写文件类工具回填，供变更面板显示真实文件名） */
+  path?: string;
   /** 文件写入类工具产生的差异（随结果透传，供变更面板 before/after 对比） */
   fileDiff?: FileDiff;
 }
@@ -289,13 +291,13 @@ async function runToolLoop(options: {
 
     // 并行执行本轮全部工具调用（保持结果顺序与 tool_calls 一致）
     const outcomes = await Promise.all(
-      response.toolCalls.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"]; fileDiff?: FileDiff }> => {
+      response.toolCalls.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"]; path?: string; fileDiff?: FileDiff }> => {
         try {
           const raw = await executeToolCall(toolCall);
           if (typeof raw === "string") {
             return { text: raw };
           }
-          return { text: raw.outputText, artifact: raw.artifact, fileDiff: raw.fileDiff };
+          return { text: raw.outputText, artifact: raw.artifact, path: raw.path, fileDiff: raw.fileDiff };
         } catch (error) {
           return { text: `工具执行失败：${error instanceof Error ? error.message : String(error)}` };
         }
@@ -313,6 +315,7 @@ async function runToolLoop(options: {
         result,
         isError,
         round,
+        path: outcome.path,
         fileDiff: outcome.fileDiff,
       };
       allToolCallResults.push(stepRecord);
@@ -323,6 +326,7 @@ async function runToolLoop(options: {
         arguments: toolCall.arguments,
         result,
         isError,
+        path: outcome.path,
         fileDiff: outcome.fileDiff,
       };
       steps.push(step);

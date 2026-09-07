@@ -24,6 +24,8 @@ export type ToolExecutionResult = {
   artifact?: ArtifactSpec;
   /** 本次执行产生的文件差异（仅文件写入类工具填充），供变更面板做 before/after 对比 */
   fileDiff?: FileDiff;
+  /** 本次执行最终产出/修改的文件绝对路径（写文件类工具回填，供变更面板显示真实文件名） */
+  path?: string;
 };
 
 export type ToolDefinition = {

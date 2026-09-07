@@ -112,6 +112,7 @@ export default function ChatMessage({
       arguments: string;
       result: string;
       isError?: boolean;
+      path?: string;
       fileDiff?: FileDiff;
     }> = (
       message.steps && message.steps.length > 0
@@ -124,6 +125,7 @@ export default function ChatMessage({
             arguments: t.arguments,
             result: t.result,
             isError: t.isError,
+            path: t.path,
             fileDiff: t.fileDiff,
           }))
     );
@@ -131,7 +133,7 @@ export default function ChatMessage({
       .filter((t) => isFileProducingTool(t.name))
       .map((t) => {
         const meta = getToolActionMeta(t.name);
-        const path = extractToolFilePath(t.arguments, t.name);
+        const path = t.path ?? extractToolFilePath(t.arguments, t.name);
         return {
           name: t.name,
           verb: meta.verb,

@@ -111,6 +111,8 @@ export interface ChatToolCallResult {
   isError?: boolean;
   /** 所属工具循环轮次（0 起始）；用于 UI 显示「第 N 步」 */
   round?: number;
+  /** 该工具调用最终产出/修改的文件绝对路径（写文件类工具回填，供变更面板显示真实文件名） */
+  path?: string;
   /** 该工具调用产生的文件差异（写前读基线、内存算出的 unified-diff；仅文件写入类工具填充） */
   fileDiff?: FileDiff;
 }
@@ -134,6 +136,8 @@ export type ChatStep =
       result: string;
       isError?: boolean;
       status?: "running" | "interrupted";
+      /** 该步骤最终产出/修改的文件绝对路径（写文件类工具回填） */
+      path?: string;
       /** 该步骤产生的文件差异（仅文件写入类工具填充） */
       fileDiff?: FileDiff;
     }
