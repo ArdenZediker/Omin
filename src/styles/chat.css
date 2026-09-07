@@ -5556,106 +5556,62 @@
   padding: 4px 4px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   overflow-y: auto;
 }
 
 .changes-panel__entry {
-  border: 1px solid var(--omni-app-border, rgba(0, 0, 0, 0.08));
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: var(--omni-app-surface, #fff);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.changes-panel__entry--error {
-  border-color: color-mix(in srgb, #dc2626 45%, transparent);
+.changes-panel__entry--error .changes-panel__entry-row {
+  border-left: 2px solid color-mix(in srgb, #dc2626 70%, transparent);
 }
 
-.changes-panel__entry-head {
+/* 变更条目：一行一个文件名 + 右侧差异统计，点击行展开 diff */
+.changes-panel__entry-row {
   display: flex;
   align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+}
+
+.changes-panel__entry-row:hover {
+  background: var(--omni-app-surface-3, rgba(0, 0, 0, 0.04));
+}
+
+.changes-panel__entry-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-}
-
-.changes-panel__entry-icon {
-  display: inline-flex;
-  color: var(--omni-accent, #7c3aed);
-  flex-shrink: 0;
-}
-
-.changes-panel__entry-badge {
-  flex-shrink: 0;
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: 11px;
-  line-height: 1.5;
-  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 14%, transparent);
-  color: var(--omni-accent, #7c3aed);
-}
-
-.changes-panel__entry--error .changes-panel__entry-badge {
-  background: color-mix(in srgb, #dc2626 14%, transparent);
-  color: #dc2626;
+  min-width: 0;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--omni-app-text, #111);
 }
 
 .changes-panel__entry-name {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--omni-app-text, #111);
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .changes-panel__entry-actions {
-  display: flex;
-  gap: 4px;
+  display: inline-flex;
+  gap: 2px;
   flex-shrink: 0;
-}
-
-.changes-panel__entry-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  color: var(--omni-app-muted, #666);
-}
-
-.changes-panel__entry-verb {
-  color: var(--omni-app-text, #111);
-  font-weight: 500;
-}
-
-.changes-panel__entry-tool {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  opacity: 0.8;
-}
-
-.changes-panel__entry-dir {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
-.changes-panel__entry-result {
-  font-size: 11.5px;
-  color: var(--omni-app-muted, #666);
-  background: var(--omni-app-surface-2, rgba(0, 0, 0, 0.03));
-  border-radius: 6px;
-  padding: 6px 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
 }
 
 /* 变更条目：增删行统计徽标 */
