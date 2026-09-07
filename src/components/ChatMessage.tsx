@@ -275,8 +275,8 @@ export default function ChatMessage({
     editAttachments.forEach((attachment) =>
       items.push({ kind: "attachment", attachment, key: `edit-att-${attachment.path}` }),
     );
-    editImages.forEach((image) =>
-      items.push({ kind: "image", image, key: `edit-img-${image.src.slice(0, 24)}` }),
+    editImages.forEach((image, imageIndex) =>
+      items.push({ kind: "image", image, key: `edit-img-${imageIndex}-${image.src.slice(0, 16)}` }),
     );
     return items;
   })();

@@ -275,11 +275,13 @@ export function useChatRuntime({
         const lastIdx = prev.length - 1;
         const lastMessage = prev[lastIdx];
         if (lastMessage.role !== "project") {
+          console.log(`[Omni Runtime Debug] setLastProjectContent skip: lastMessage.role=${lastMessage.role}`);
           return prev;
         }
         if (lastMessage.content === content) {
           return prev;
         }
+        console.log(`[Omni Runtime Debug] setLastProjectContent: prevLen=${prev.length}, oldLen=${lastMessage.content.length}, newLen=${content.length}`);
         const updated = [...prev];
         updated[lastIdx] = { ...lastMessage, content };
         return updated;
@@ -795,6 +797,7 @@ export function useChatRuntime({
       const conversationMessages = taskResult.conversationMessages ?? fallbackMessages;
 
       if (taskResult.finalResult) {
+        console.log(`[Omni Runtime Debug] finishTaskResult finalResult.content len=${(taskResult.finalResult.content ?? "").length}, reasoning len=${(taskResult.finalResult.reasoning ?? "").length}`);
         const pendingArtifacts = pendingArtifactsRef.current;
         pendingArtifactsRef.current = [];
         const finalToolResults = taskResult.finalResult.toolCallResults;
@@ -905,6 +908,7 @@ export function useChatRuntime({
             }
             streamedProjectReply += chunk;
             streamedFilter.append(chunk);
+            console.log(`[Omni Runtime Debug] onChunk len=${chunk.length}, visible=${streamedFilter.getVisibleText().length}, streamed=${streamedProjectReply.length}`);
             updateThoughtPreview();
             updateStreamPreview();
           },
@@ -1220,6 +1224,7 @@ export function useChatRuntime({
             }
             streamedProjectReply += chunk;
             streamedFilter.append(chunk);
+            console.log(`[Omni Runtime Debug] onChunk len=${chunk.length}, visible=${streamedFilter.getVisibleText().length}, streamed=${streamedProjectReply.length}`);
             updateThoughtPreview();
             updateStreamPreview();
           },
@@ -1492,6 +1497,7 @@ export function useChatRuntime({
             }
             streamedProjectReply += chunk;
             streamedFilter.append(chunk);
+            console.log(`[Omni Runtime Debug] onChunk len=${chunk.length}, visible=${streamedFilter.getVisibleText().length}, streamed=${streamedProjectReply.length}`);
             updateThoughtPreview();
             updateStreamPreview();
           },
