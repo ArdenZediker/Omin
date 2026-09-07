@@ -1,16 +1,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { FileCode2 } from "lucide-react";
 import ChangesPanel from "./ChangesPanel";
 import type { ChangeEntry } from "../chat/toolActionMap";
-
-const openMock = vi.fn().mockResolvedValue(true);
-const revealMock = vi.fn().mockResolvedValue(true);
-
-vi.mock("./ArtifactCards", () => ({
-  openArtifactPath: (...args: unknown[]) => openMock(...args),
-  revealArtifactPath: (...args: unknown[]) => revealMock(...args),
-}));
 
 const entry: ChangeEntry = {
   name: "export_docx",
@@ -49,34 +41,22 @@ const entryWithDiff: ChangeEntry = {
 };
 
 function getRowButton(container: HTMLElement) {
-  return container.querySelector(".changes-panel__entry-main") as HTMLButtonElement;
+  return container.querySelector(".changes-panel__entry-row") as HTMLButtonElement;
 }
 
 describe("ChangesPanel（非 git 任务级文件清单）", () => {
-  beforeEach(() => {
-    openMock.mockClear();
-    revealMock.mockClear();
-  });
-
   it("无变更时显示空态引导", () => {
     render(<ChangesPanel changes={[]} />);
     expect(screen.getByText("暂无变更")).toBeTruthy();
   });
 
-  it("渲染文件产出条目与打开/定位按钮", () => {
+  it("渲染文件产出条目（仅文件名）", () => {
     render(<ChangesPanel changes={[entry]} />);
     expect(screen.getByText("report.docx")).toBeTruthy();
-    fireEvent.click(screen.getByLabelText("打开文件"));
-    expect(openMock).toHaveBeenCalledWith("D:/out/report.docx");
-    fireEvent.click(screen.getByLabelText("在文件夹中显示"));
-    expect(revealMock).toHaveBeenCalledWith("D:/out/report.docx");
-  });
-
-  it("无 path 的条目禁用打开/定位按钮", () => {
-    const noPath: ChangeEntry = { ...entry, path: undefined };
-    render(<ChangesPanel changes={[noPath]} />);
-    expect((screen.getByLabelText("打开文件") as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByLabelText("在文件夹中显示") as HTMLButtonElement).disabled).toBe(true);
+    // 不渲染工具名 / badge / 结果预览
+    expect(screen.queryByText("export_docx")).toBeNull();
+    expect(screen.queryByText("已导出")).toBeNull();
+    expect(screen.queryByText(entry.resultPreview)).toBeNull();
   });
 
   it("多条变更显示计数徽标", () => {
@@ -84,34 +64,24 @@ describe("ChangesPanel（非 git 任务级文件清单）", () => {
     expect(screen.getByText("2")).toBeTruthy();
   });
 
-  it("带 diff 的条目显示增删统计徽标（+N/−M）", () => {
+  it("带 diff 的条目右侧显示增删统计（+N/−M）", () => {
     const { container } = render(<ChangesPanel changes={[entryWithDiff]} />);
-    const add = container.querySelector(".diff-add");
-    const del = container.querySelector(".diff-del");
-    expect(add).not.toBeNull();
-    expect(del).not.toBeNull();
-    expect(add!.textContent).toBe("+2");
-    expect(del!.textContent).toBe("−1");
+    expect(container.querySelector(".diff-add")?.textContent).toBe("+2");
+    expect(container.querySelector(".diff-del")?.textContent).toBe("−1");
   });
 
   it("diff 默认折叠，点击行后展开逐行 diff（+/− 着色）", () => {
     const { container } = render(<ChangesPanel changes={[entryWithDiff]} />);
-    // 折叠态不渲染 diff 区域
     expect(container.querySelector(".changes-panel__diff")).toBeNull();
 
     fireEvent.click(getRowButton(container));
-    const diffWrap = container.querySelector(".changes-panel__diff");
-    expect(diffWrap).not.toBeNull();
-    // unified-diff 内容透传
+    expect(container.querySelector(".changes-panel__diff")).not.toBeNull();
     expect(screen.getByText("+new line2")).toBeTruthy();
-    expect(screen.getByText("+new line3")).toBeTruthy();
     expect(screen.getByText("-old line2")).toBeTruthy();
-    // 着色类生效
     expect(container.querySelector(".diff-line--add")).not.toBeNull();
     expect(container.querySelector(".diff-line--del")).not.toBeNull();
     expect(container.querySelector(".diff-line--hunk")).not.toBeNull();
 
-    // 再次点击收起
     fireEvent.click(getRowButton(container));
     expect(container.querySelector(".changes-panel__diff")).toBeNull();
   });

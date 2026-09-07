@@ -6,9 +6,8 @@
 // 也不受嵌套 git 仓库影响——展示的是「本次任务 agent 实际改动的文件」。
 //
 // 展示格式：一行一个文件名，右侧 +N/−M 差异统计，点击行展开 diff。
-import { useCallback, useState } from "react";
-import { FileCode2, FolderSearch, X } from "lucide-react";
-import { openArtifactPath, revealArtifactPath } from "./ArtifactCards";
+import { useState } from "react";
+import { FileCode2, X } from "lucide-react";
 import type { ChangeEntry } from "../chat/toolActionMap";
 
 interface ChangesPanelProps {
@@ -19,8 +18,6 @@ interface ChangesPanelProps {
 }
 
 export default function ChangesPanel({ changes, onClose }: ChangesPanelProps) {
-  const [openPath, setOpenPath] = useState<string | null>(null);
-
   return (
     <aside className="changes-panel">
       <div className="changes-panel__header">
@@ -55,78 +52,36 @@ export default function ChangesPanel({ changes, onClose }: ChangesPanelProps) {
               <ChangeEntryRow
                 key={`${entry.name}::${entry.path ?? entry.title}::${idx}`}
                 entry={entry}
-                onOpened={setOpenPath}
               />
             ))}
           </ul>
         </div>
       )}
-
-      {openPath ? <span className="sr-only">{openPath}</span> : null}
     </aside>
   );
 }
 
-function ChangeEntryRow({ entry, onOpened }: { entry: ChangeEntry; onOpened: (p: string) => void }) {
-  const canOpen = Boolean(entry.path);
+function ChangeEntryRow({ entry }: { entry: ChangeEntry }) {
   const [diffOpen, setDiffOpen] = useState(false);
   const filename = entry.path ? fileNameOf(entry.path) : entry.title;
-
-  const handleOpen = useCallback(() => {
-    if (entry.path) {
-      void openArtifactPath(entry.path);
-      onOpened(entry.path);
-    }
-  }, [entry.path, onOpened]);
-  const handleReveal = useCallback(() => {
-    if (entry.path) {
-      void revealArtifactPath(entry.path);
-      onOpened(entry.path);
-    }
-  }, [entry.path, onOpened]);
-
   const hasDiff = Boolean(entry.diff && entry.diff.diffContent?.trim());
 
   return (
     <li className={`changes-panel__entry ${entry.isError ? "changes-panel__entry--error" : ""}`}>
-      <div className="changes-panel__entry-row">
-        <button
-          type="button"
-          className="changes-panel__entry-main"
-          onClick={() => setDiffOpen((v) => !v)}
-          title={entry.path ?? entry.title}
-        >
-          <span className="changes-panel__entry-name">{filename}</span>
-          {hasDiff ? (
-            <span className="changes-panel__entry-stats">
-              <span className="diff-add">+{entry.diff!.insertions}</span>
-              <span className="diff-del">−{entry.diff!.deletions}</span>
-            </span>
-          ) : null}
-        </button>
-        <span className="changes-panel__entry-actions">
-          <button
-            type="button"
-            className="changes-panel__iconbtn"
-            disabled={!canOpen}
-            onClick={handleOpen}
-            title="打开文件"
-            aria-label="打开文件"
-          >
-            <FileCode2 size={13} strokeWidth={2} />
-          </button>
-          <button
-            type="button"
-            className="changes-panel__iconbtn"
-            disabled={!canOpen}
-            onClick={handleReveal}
-            title="在文件夹中显示"
-            aria-label="在文件夹中显示"
-          >
-            <FolderSearch size={13} strokeWidth={2} />
-          </button>
-        </span>
-      </div>
+      <button
+        type="button"
+        className="changes-panel__entry-row"
+        onClick={() => setDiffOpen((v) => !v)}
+        title={entry.path ?? entry.title}
+      >
+        <span className="changes-panel__entry-name">{filename}</span>
+        {hasDiff ? (
+          <span className="changes-panel__entry-stats">
+            <span className="diff-add">+{entry.diff!.insertions}</span>
+            <span className="diff-del">−{entry.diff!.deletions}</span>
+          </span>
+        ) : null}
+      </button>
       {hasDiff && diffOpen ? <DiffView content={entry.diff!.diffContent} /> : null}
     </li>
   );

@@ -5573,23 +5573,10 @@
 .changes-panel__entry-row {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 6px;
-}
-
-.changes-panel__entry-row:hover {
-  background: var(--omni-app-surface-3, rgba(0, 0, 0, 0.04));
-}
-
-.changes-panel__entry-main {
-  flex: 1;
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-width: 0;
-  padding: 4px 8px;
+  width: 100%;
+  padding: 5px 10px;
   background: transparent;
   border: none;
   border-radius: 6px;
@@ -5599,6 +5586,10 @@
   color: var(--omni-app-text, #111);
 }
 
+.changes-panel__entry-row:hover {
+  background: var(--omni-app-surface-3, rgba(0, 0, 0, 0.04));
+}
+
 .changes-panel__entry-name {
   flex: 1;
   min-width: 0;
@@ -5606,12 +5597,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.changes-panel__entry-actions {
-  display: inline-flex;
-  gap: 2px;
-  flex-shrink: 0;
 }
 
 /* 变更条目：增删行统计徽标 */
