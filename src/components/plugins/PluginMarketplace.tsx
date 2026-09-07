@@ -1191,26 +1191,6 @@ export default function PluginMarketplace({
                 <span>安装</span>
               </button>
             )}
-            {!inBatch && (
-              <button
-                type="button"
-                className="plugin-card__button plugin-card__button--secondary"
-                onClick={() => handleCopyInstallPrompt(manifest)}
-                title="复制给 AI 安装"
-              >
-                {copiedId === manifest.id ? (
-                  <>
-                    <Check size={14} strokeWidth={2} />
-                    <span>已复制</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy size={14} strokeWidth={1.8} />
-                    <span>复制安装</span>
-                  </>
-                )}
-              </button>
-            )}
           </div>
           )}
           {trustPromptId === manifest.id &&
