@@ -1584,8 +1584,8 @@ export default function PluginMarketplace({
                             onChange={(event) => setQuery(event.target.value)}
                             placeholder={
                               showMySkills
-                                ? "搜索已安装的技能"
-                                : "搜索插件、技能、专家..."
+                                ? "搜索已安装的连接器"
+                                : "搜索连接器..."
                             }
                             autoFocus
                           />
