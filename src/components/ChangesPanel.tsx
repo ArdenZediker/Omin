@@ -5,7 +5,7 @@
 // 经 onOpenChangesPanel 传上来的 ChangeEntry[]。完全不依赖目录是否为 git 仓库，
 // 也不受嵌套 git 仓库影响——展示的是「本次任务 agent 实际改动的文件」。
 import { useCallback, useState } from "react";
-import { FileCode2, FolderSearch, X } from "lucide-react";
+import { ChevronDown, ChevronUp, FileCode2, FolderSearch, X } from "lucide-react";
 import { openArtifactPath, revealArtifactPath } from "./ArtifactCards";
 import type { ChangeEntry } from "../chat/toolActionMap";
 
@@ -68,6 +68,7 @@ export default function ChangesPanel({ changes, onClose }: ChangesPanelProps) {
 function ChangeEntryRow({ entry, onOpened }: { entry: ChangeEntry; onOpened: (p: string) => void }) {
   const { Icon } = entry;
   const canOpen = Boolean(entry.path);
+  const [diffOpen, setDiffOpen] = useState(false);
   const handleOpen = useCallback(() => {
     if (entry.path) {
       void openArtifactPath(entry.path);
@@ -81,6 +82,8 @@ function ChangeEntryRow({ entry, onOpened }: { entry: ChangeEntry; onOpened: (p:
     }
   }, [entry.path, onOpened]);
 
+  const hasDiff = Boolean(entry.diff && entry.diff.diffContent.trim());
+
   return (
     <li className={`changes-panel__entry ${entry.isError ? "changes-panel__entry--error" : ""}`}>
       <div className="changes-panel__entry-head">
@@ -91,7 +94,24 @@ function ChangeEntryRow({ entry, onOpened }: { entry: ChangeEntry; onOpened: (p:
         <span className="changes-panel__entry-name" title={entry.path ?? entry.title}>
           {entry.path ? fileNameOf(entry.path) : entry.title}
         </span>
+        {hasDiff ? (
+          <span className="changes-panel__entry-stats">
+            <span className="diff-add">+{entry.diff!.insertions}</span>
+            <span className="diff-del">−{entry.diff!.deletions}</span>
+          </span>
+        ) : null}
         <span className="changes-panel__entry-actions">
+          {hasDiff ? (
+            <button
+              type="button"
+              className="changes-panel__iconbtn"
+              onClick={() => setDiffOpen((v) => !v)}
+              title={diffOpen ? "收起差异" : "查看差异"}
+              aria-label={diffOpen ? "收起差异" : "查看差异"}
+            >
+              {diffOpen ? <ChevronUp size={13} strokeWidth={2} /> : <ChevronDown size={13} strokeWidth={2} />}
+            </button>
+          ) : null}
           <button
             type="button"
             className="changes-panel__iconbtn"
@@ -120,7 +140,33 @@ function ChangeEntryRow({ entry, onOpened }: { entry: ChangeEntry; onOpened: (p:
         {entry.path ? <span className="changes-panel__entry-dir">{fileDirOf(entry.path)}</span> : null}
       </div>
       {entry.resultPreview ? <div className="changes-panel__entry-result">{entry.resultPreview}</div> : null}
+      {hasDiff && diffOpen ? <DiffView content={entry.diff!.diffContent} /> : null}
     </li>
+  );
+}
+
+/** 自渲染 unified-diff：按行着色 +/−，默认折叠（由父级按钮控制展开）。不引 diff2html。 */
+function DiffView({ content }: { content: string }) {
+  const lines = content.split("\n");
+  return (
+    <div className="changes-panel__diff">
+      <pre className="changes-panel__diff-pre">
+        {lines.map((line, idx) => {
+          const cls = line.startsWith("+") && !line.startsWith("+++")
+            ? "diff-line diff-line--add"
+            : line.startsWith("-") && !line.startsWith("---")
+              ? "diff-line diff-line--del"
+              : line.startsWith("@@")
+                ? "diff-line diff-line--hunk"
+                : "diff-line";
+          return (
+            <div key={idx} className={cls}>
+              {line || " "}
+            </div>
+          );
+        })}
+      </pre>
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { modelRegistry } from "../adapters/registry";
 import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig } from "../adapters/types";
+import type { FileDiff } from "./fileDiff";
 import { invoke } from "@tauri-apps/api/core";
 import { getUsagePreferences, loadPersonaConfig } from "./storage";
 import type { ChatExecutionResult } from "./types";
@@ -23,6 +24,8 @@ const MAX_TOOL_ROUNDS = 6;
 export interface ToolCallOutcome {
   outputText: string;
   artifact?: { artifactId: string; title: string };
+  /** 文件写入类工具产生的差异（随结果透传，供变更面板 before/after 对比） */
+  fileDiff?: FileDiff;
 }
 
 /** 上下文窗口占用超过该比例触发历史压缩 */
@@ -286,13 +289,13 @@ async function runToolLoop(options: {
 
     // 并行执行本轮全部工具调用（保持结果顺序与 tool_calls 一致）
     const outcomes = await Promise.all(
-      response.toolCalls.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"] }> => {
+      response.toolCalls.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"]; fileDiff?: FileDiff }> => {
         try {
           const raw = await executeToolCall(toolCall);
           if (typeof raw === "string") {
             return { text: raw };
           }
-          return { text: raw.outputText, artifact: raw.artifact };
+          return { text: raw.outputText, artifact: raw.artifact, fileDiff: raw.fileDiff };
         } catch (error) {
           return { text: `工具执行失败：${error instanceof Error ? error.message : String(error)}` };
         }
@@ -310,6 +313,7 @@ async function runToolLoop(options: {
         result,
         isError,
         round,
+        fileDiff: outcome.fileDiff,
       };
       allToolCallResults.push(stepRecord);
       // steps 流：本轮工具调用按执行顺序追加
@@ -319,6 +323,7 @@ async function runToolLoop(options: {
         arguments: toolCall.arguments,
         result,
         isError,
+        fileDiff: outcome.fileDiff,
       };
       steps.push(step);
       // 实时上屏：每完成一个工具调用立刻通知 UI（WorkBuddy 式「边执行边看到步骤」体验）

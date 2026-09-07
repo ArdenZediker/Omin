@@ -5,6 +5,7 @@ import type { PluginManifest } from "../plugins/types";
 import { pluginRegistry, parseSkillMarkdown } from "../plugins/registry";
 import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
+import type { FileDiff } from "./fileDiff";
 import { requestConfirmation } from "./confirmationGate";
 import { buildSessionOutputDir, getEffectiveOutputRoot } from "../app/outputStorage";
 
@@ -892,7 +893,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           overwrite,
           workspacePath: ws,
         });
-        const outcome = await invoke<{ path: string; size: number }>("write_text_file", {
+        const outcome = await invoke<{ path: string; size: number; diff: FileDiff | null }>("write_text_file", {
           path,
           content,
           overwrite,
@@ -909,6 +910,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             size: outcome.size,
             content,
           },
+          // 写前读基线、内存算出的 unified-diff（Rust 返回；超大文件为 null）
+          fileDiff: outcome.diff ?? undefined,
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };

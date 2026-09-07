@@ -1,5 +1,6 @@
 import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
 import type { Artifact } from "../chat/artifacts";
+import type { FileDiff } from "../chat/fileDiff";
 
 // Omni - 多模型适配层
 // 为所有 AI 模型提供统一接口
@@ -110,6 +111,8 @@ export interface ChatToolCallResult {
   isError?: boolean;
   /** 所属工具循环轮次（0 起始）；用于 UI 显示「第 N 步」 */
   round?: number;
+  /** 该工具调用产生的文件差异（写前读基线、内存算出的 unified-diff；仅文件写入类工具填充） */
+  fileDiff?: FileDiff;
 }
 
 /**
@@ -131,6 +134,8 @@ export type ChatStep =
       result: string;
       isError?: boolean;
       status?: "running" | "interrupted";
+      /** 该步骤产生的文件差异（仅文件写入类工具填充） */
+      fileDiff?: FileDiff;
     }
   /** WorkBuddy 式异构时间线条目：由渲染层直接映射为「动作行」（人类可读标签 + 图标 + 迷你文件卡片）。engine 当前不产出，仅作为向前兼容的扩展点。 */
   | {

@@ -743,13 +743,55 @@ fn run_export(
     Ok(ExportOutcome {
         path: target.to_string_lossy().into_owned(),
         size,
+        diff: None,
     })
+}
+
+#[derive(serde::Serialize, Debug, Clone)]
+pub(crate) struct DiffResult {
+    pub filename: String,
+    pub insertions: usize,
+    pub deletions: usize,
+    pub diff_content: String,
 }
 
 #[derive(serde::Serialize, Debug)]
 pub(crate) struct ExportOutcome {
     pub(crate) path: String,
     pub(crate) size: u64,
+    /// 写前读基线、内存算出的 unified-diff（仅 write_text_file 文本写入填充；OOXML 导出为 None）。
+    pub(crate) diff: Option<DiffResult>,
+}
+
+/// 内存计算文件差异，不依赖 git。
+/// old_content 为修改前磁盘内容（文件不存在传空串）；new_content 为将要写入的内容。
+/// 返回标准 unified-diff 文本（兼容 git diff 格式）与增删行统计。
+fn compute_file_diff(old_content: &str, new_content: &str, filename: &str) -> DiffResult {
+    let diff = similar::TextDiff::from_lines(old_content, new_content);
+    // 输出标准 unified-diff，头部 a/ b/ 与 git diff 一致
+    let old_header = format!("a/{filename}");
+    let new_header = format!("b/{filename}");
+    let mut buf: Vec<u8> = Vec::new();
+    let _ = diff
+        .unified_diff()
+        .header(&old_header, &new_header)
+        .to_writer(&mut buf);
+    let diff_content = String::from_utf8_lossy(&buf).to_string();
+    let mut insertions = 0usize;
+    let mut deletions = 0usize;
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            similar::ChangeTag::Insert => insertions += 1,
+            similar::ChangeTag::Delete => deletions += 1,
+            similar::ChangeTag::Equal => {}
+        }
+    }
+    DiffResult {
+        filename: filename.to_string(),
+        insertions,
+        deletions,
+        diff_content,
+    }
 }
 
 #[tauri::command]
@@ -805,6 +847,23 @@ pub(crate) async fn write_text_file(
 ) -> Result<ExportOutcome, String> {
     let overwrite = overwrite.unwrap_or(false);
     let p = check_path(&path, &["md", "markdown"], overwrite, workspace_path.as_deref())?;
+    // 写前读基线：文件已存在则读旧内容作内存基线，否则基线为空串（新建文件）。
+    // 仅对中等体量文件算 diff；超大文件跳过 diff 防性能/内存风险（前端不显示行级对比）。
+    let baseline = if p.is_file() {
+        std::fs::read_to_string(&p).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    const MAX_DIFF_CHARS: usize = 2_000_000;
+    let diff = if baseline.len() <= MAX_DIFF_CHARS && content.len() <= MAX_DIFF_CHARS {
+        let filename = p
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        Some(compute_file_diff(&baseline, &content, &filename))
+    } else {
+        None
+    };
     std::fs::write(&p, content.as_bytes()).map_err(|e| format!("写入文件失败: {e}"))?;
     let size = std::fs::metadata(&p)
         .map_err(|e| format!("读取文件元数据失败: {e}"))?
@@ -812,6 +871,7 @@ pub(crate) async fn write_text_file(
     Ok(ExportOutcome {
         path: p.to_string_lossy().to_string(),
         size,
+        diff,
     })
 }
 
@@ -1014,6 +1074,34 @@ mod tests {
     }
 
     // ---------- write_text_file（/export_md 落盘）围栏 ----------
+
+    #[test]
+    fn compute_file_diff_new_file_is_all_insertions() {
+        // 新建文件：基线为空，全部为新增行
+        let new = (0..285).map(|i| format!("行{i}")).collect::<Vec<_>>().join("\n");
+        let res = compute_file_diff("", &new, "architecture-design.md");
+        assert_eq!(res.insertions, 285);
+        assert_eq!(res.deletions, 0);
+        assert!(res.diff_content.contains("+++ b/architecture-design.md"));
+        assert!(res.diff_content.starts_with("--- a/architecture-design.md"));
+    }
+
+    #[test]
+    fn compute_file_diff_modify_counts_insert_and_delete() {
+        let old = "a\nb\nc\nd\ne\n";
+        let new = "a\nB\nc\nd\nf\n";
+        let res = compute_file_diff(old, new, "sample.md");
+        // b->B 算删除+新增（行级），e->f 同理；共 2 增 2 删
+        assert_eq!(res.insertions, 2);
+        assert_eq!(res.deletions, 2);
+    }
+
+    #[test]
+    fn compute_file_diff_empty_no_change() {
+        let res = compute_file_diff("", "", "x.md");
+        assert_eq!(res.insertions, 0);
+        assert_eq!(res.deletions, 0);
+    }
 
     #[test]
     fn write_text_file_allows_md_and_markdown_ext() {

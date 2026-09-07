@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { ChatAttachment, ChatImage, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
+import type { FileDiff } from "../chat/fileDiff";
 import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { getToolActionMeta, isFileProducingTool, getFileBadgeLabel, extractToolFilePath, type ChangeEntry } from "../chat/toolActionMap";
@@ -106,7 +107,13 @@ export default function ChatMessage({
    *  遗留为 running 但 result 已带回成功信息时，依旧作为「已完成变更」计入，
    *  避免「摘要显示已完成 · 6 个动作」但 footer 区无「查看所有变更」按钮。 */
   const changeEntries = useMemo<ChangeEntry[]>(() => {
-    const sourceTools: Array<{ name: string; arguments: string; result: string; isError?: boolean }> = (
+    const sourceTools: Array<{
+      name: string;
+      arguments: string;
+      result: string;
+      isError?: boolean;
+      fileDiff?: FileDiff;
+    }> = (
       message.steps && message.steps.length > 0
         ? (message.steps as ChatStep[]).filter(
             (s): s is Extract<ChatStep, { type: "tool_call" }> =>
@@ -117,6 +124,7 @@ export default function ChatMessage({
             arguments: t.arguments,
             result: t.result,
             isError: t.isError,
+            fileDiff: t.fileDiff,
           }))
     );
     return sourceTools
@@ -134,6 +142,7 @@ export default function ChatMessage({
           argsSummary: formatToolArgs(t.arguments),
           resultPreview: formatToolResult(t.result),
           isError: t.isError,
+          diff: t.fileDiff,
         };
       });
   }, [message.steps, message.toolCallResults]);

@@ -1,6 +1,7 @@
 import type { Message } from "../adapters/types";
 import type { ResolvedLocalSlashCommand } from "./skills";
 import type { ArtifactSpec } from "./artifacts";
+import type { FileDiff } from "./fileDiff";
 import { requestConfirmation, type ConfirmationRequest } from "./confirmationGate";
 
 export type ToolExecutionCommand = Pick<ResolvedLocalSlashCommand, "command" | "args">;
@@ -21,6 +22,8 @@ export type ToolExecutionResult = {
   data?: unknown;
   /** 本次执行产出的可交付内容（文件/网页/技能等），UI 渲染产物卡片并入聚合面板 */
   artifact?: ArtifactSpec;
+  /** 本次执行产生的文件差异（仅文件写入类工具填充），供变更面板做 before/after 对比 */
+  fileDiff?: FileDiff;
 };
 
 export type ToolDefinition = {

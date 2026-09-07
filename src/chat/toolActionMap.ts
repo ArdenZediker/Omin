@@ -17,6 +17,7 @@ import {
   Terminal as TerminalIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { FileDiff } from "./fileDiff";
 
 /** 「查看所有变更」面板中一条文件产出/修改记录。
  *  由 ChatMessage 基于工具步骤汇总产出，由 ChangesPanel 消费渲染（非 git，纯任务级文件改动清单）。 */
@@ -39,6 +40,8 @@ export interface ChangeEntry {
   resultPreview: string;
   /** 该步骤是否出错 */
   isError?: boolean;
+  /** 该文件改动对应的 before/after diff（仅文本写入类工具、且非超大文件时填充） */
+  diff?: FileDiff;
 }
 
 export interface ToolActionMeta {

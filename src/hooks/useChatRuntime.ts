@@ -1096,7 +1096,7 @@ export function useChatRuntime({
         command: toolCallNameToCommand(toolCall.name),
         args: extractToolCallArgs(toolCall.arguments),
       });
-      return { outputText: formatToolCallResult(result), artifact: result?.savedArtifact };
+      return { outputText: formatToolCallResult(result), artifact: result?.savedArtifact, fileDiff: result?.fileDiff };
     },
     [executeTool]
   );

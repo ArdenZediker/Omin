@@ -5657,3 +5657,81 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
+
+/* 变更条目：增删行统计徽标 */
+.changes-panel__entry-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.changes-panel__entry-stats .diff-add {
+  color: #1a7f37;
+}
+.changes-panel__entry-stats .diff-del {
+  color: #cf222e;
+}
+
+/* 变更条目：可展开 unified-diff 预览（自渲染，不依赖 diff2html） */
+.changes-panel__diff {
+  margin-top: 6px;
+  border: 1px solid var(--omni-border, rgba(0, 0, 0, 0.08));
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--omni-code-bg, rgba(0, 0, 0, 0.02));
+}
+.changes-panel__diff-pre {
+  margin: 0;
+  padding: 6px 0;
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--omni-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.changes-panel__diff-pre .diff-line {
+  padding: 0 10px;
+  white-space: pre;
+  color: var(--omni-code-fg, #24292f);
+}
+.changes-panel__diff-pre .diff-line--add {
+  background: rgba(26, 127, 55, 0.12);
+  color: #1a7f37;
+}
+.changes-panel__diff-pre .diff-line--del {
+  background: rgba(207, 34, 46, 0.12);
+  color: #cf222e;
+}
+.changes-panel__diff-pre .diff-line--hunk {
+  color: #8250df;
+  background: rgba(130, 80, 223, 0.08);
+}
+
+/* 深色主题：覆盖变更 diff 着色（保证可读性） */
+.dark .changes-panel__entry-stats .diff-add {
+  color: #56d364;
+}
+.dark .changes-panel__entry-stats .diff-del {
+  color: #f85149;
+}
+.dark .changes-panel__diff {
+  background: rgba(255, 255, 255, 0.04);
+}
+.dark .changes-panel__diff-pre .diff-line {
+  color: #c9d1d9;
+}
+.dark .changes-panel__diff-pre .diff-line--add {
+  background: rgba(86, 211, 100, 0.15);
+  color: #56d364;
+}
+.dark .changes-panel__diff-pre .diff-line--del {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+.dark .changes-panel__diff-pre .diff-line--hunk {
+  color: #d2a8ff;
+  background: rgba(210, 168, 255, 0.1);
+}
