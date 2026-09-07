@@ -529,9 +529,10 @@ function ThinkingBlock({
   const [expanded, setExpanded] = useState(false);
   /** 用户手动点过折叠按钮后置位：新一轮开始前不再强制展开，结束后也不强制收起 */
   const userToggledRef = useRef(false);
-  const wasStreamingRef = useRef(Boolean(isStreaming));
+  const wasStreamingRef = useRef(false);
 
   // 流式期间自动展开（思考过程实时显示在块内），结束后自动收起为摘要行并保持可再展开。
+  // wasStreamingRef 初始化为 false，确保消息一进入流式状态（即使组件挂载时 isStreaming 已为 true）也会展开。
   useEffect(() => {
     const streaming = Boolean(isStreaming);
     if (streaming && !wasStreamingRef.current) {
