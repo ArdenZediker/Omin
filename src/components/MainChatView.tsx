@@ -418,8 +418,22 @@ export default function MainChatView({
     name: "",
     desc: "",
     json: "",
+    mode: "stdio" as "stdio" | "http",
   });
   const [mcpJsonError, setMcpJsonError] = useState<string | null>(null);
+  // 新增 MCP 弹窗的连接模式分段切换：把 JSON 草稿换成对应空骨架，
+  // 与卡片内配置面板保持一致的视觉与交互。
+  const switchNewMcpMode = (mode: "stdio" | "http") => {
+    setNewMcp((value) => {
+      if (value.mode === mode) return value;
+      const skeleton =
+        mode === "http"
+          ? { url: "", headers: {} }
+          : { command: "", args: [], env: {} };
+      return { ...value, mode, json: JSON.stringify(skeleton, null, 2) };
+    });
+    setMcpJsonError(null);
+  };
   // 强制 <PluginMarketplace> 重挂以刷新连接器列表（新建后立即可见）
   const [marketplaceNonce, setMarketplaceNonce] = useState(0);
 
@@ -563,12 +577,14 @@ export default function MainChatView({
       pluginRegistry.setConnectorConfig(id, {
         url: parsed.url,
         headers: parsed.headers,
+        rawJson: newMcp.json,
       });
     } else {
       pluginRegistry.setConnectorConfig(id, {
         command: parsed.command,
         args: parsed.args,
         env: parsed.env,
+        rawJson: newMcp.json,
       });
     }
     const saved = pluginRegistry.getManifest(id);
@@ -581,7 +597,7 @@ export default function MainChatView({
       }
     }
     setCreatingMcp(false);
-    setNewMcp({ name: "", desc: "", json: "" });
+    setNewMcp({ name: "", desc: "", json: "", mode: "stdio" });
     setMcpJsonError(null);
     setMarketplaceSource("local");
     setMarketplaceNonce((current) => current + 1);
@@ -1983,7 +1999,37 @@ export default function MainChatView({
                 />
               </label>
               <div className="omni-mcp-create-section">
-                MCP 启动配置（JSON）
+                <div
+                  className="omni-mcp-seg"
+                  role="tablist"
+                  aria-label="连接模式"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={newMcp.mode === "http"}
+                    className={`omni-mcp-seg__btn ${
+                      newMcp.mode === "http" ? "omni-mcp-seg__btn--active" : ""
+                    }`}
+                    onClick={() => switchNewMcpMode("http")}
+                  >
+                    Remote
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={newMcp.mode === "stdio"}
+                    className={`omni-mcp-seg__btn ${
+                      newMcp.mode === "stdio" ? "omni-mcp-seg__btn--active" : ""
+                    }`}
+                    onClick={() => switchNewMcpMode("stdio")}
+                  >
+                    Stdio
+                  </button>
+                </div>
+                <span className="plugin-card__config-section-label">
+                  MCP 启动配置（JSON）
+                </span>
               </div>
               <label className="omni-mcp-create-field">
                 <span>配置 *</span>

@@ -463,6 +463,9 @@ export default function PluginMarketplace({
   // MCP 型连接器（无 provider 的 connector）启动配置草稿（统一 JSON 输入）
   const [mcpDraft, setMcpDraft] = useState("");
   const [mcpDraftError, setMcpDraftError] = useState<string | null>(null);
+  // 配置面板的连接模式分段（仅视觉：Remote = http / Stdio = 子进程）。
+  // 点击切换会把草稿换成对应模式的空骨架，底层仍是 JSON，不改变解析链路。
+  const [mcpMode, setMcpMode] = useState<"stdio" | "http">("stdio");
   // 当前已连接的 MCP 服务器（内存态，来自 mcp.ts）
   const [connectedList, setConnectedList] = useState(() =>
     listConnectedMcpServers(),
@@ -823,15 +826,23 @@ export default function PluginMarketplace({
     if (isMcpConnector(manifest)) {
       const url = String(existing.url ?? "").trim();
       const command = String(existing.command ?? "").trim();
-      const hasExistingConfig = url !== "" || command !== "";
-      let configJson: Record<string, unknown>;
-      if (url) {
+      // 优先回显新增/上次保存时的原始 JSON，保证打开配置与填写时完全一致
+      // （parseMcpJson 会归一化并丢弃 mcpServers 包装、字段顺序等，不能丢原始输入）。
+      const rawJson =
+        typeof existing.rawJson === "string"
+          ? existing.rawJson.trim()
+          : "";
+      let jsonText: string;
+      if (rawJson) {
+        jsonText = rawJson;
+      } else if (url) {
         const headers =
           existing.headers && typeof existing.headers === "object"
             ? (existing.headers as Record<string, unknown>)
             : {};
-        configJson = { url };
+        const configJson: Record<string, unknown> = { url };
         if (Object.keys(headers).length > 0) configJson.headers = headers;
+        jsonText = JSON.stringify(configJson, null, 2);
       } else if (command) {
         const args = Array.isArray(existing.args)
           ? (existing.args as unknown[]).map(String)
@@ -840,36 +851,50 @@ export default function PluginMarketplace({
           existing.env && typeof existing.env === "object"
             ? (existing.env as Record<string, unknown>)
             : {};
-        configJson = { command };
+        const configJson: Record<string, unknown> = { command };
         if (args.length > 0) configJson.args = args;
         if (Object.keys(env).length > 0) configJson.env = env;
+        jsonText = JSON.stringify(configJson, null, 2);
       } else {
         // 未配置过 command/url 时用高频服务模板预填
         const template = getMcpCommandTemplate(manifest.id);
-        if (template) {
-          configJson = { command: template.command };
-          if (template.args.trim()) configJson.args = template.args.trim().split(/\s+/);
-          if (template.env.trim()) {
-            const env: Record<string, string> = {};
-            for (const line of template.env.split("\n")) {
-              const trimmed = line.trim();
-              const eq = trimmed.indexOf("=");
-              if (eq > 0) env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-            }
-            if (Object.keys(env).length > 0) configJson.env = env;
+        const configJson: Record<string, unknown> = template
+          ? { command: template.command }
+          : { command: "" };
+        if (template && template.args.trim())
+          configJson.args = template.args.trim().split(/\s+/);
+        if (template && template.env.trim()) {
+          const env: Record<string, string> = {};
+          for (const line of template.env.split("\n")) {
+            const trimmed = line.trim();
+            const eq = trimmed.indexOf("=");
+            if (eq > 0) env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
           }
-        } else {
-          configJson = { command: "" };
+          if (Object.keys(env).length > 0) configJson.env = env;
         }
+        jsonText = JSON.stringify(configJson, null, 2);
       }
-      const jsonText = hasExistingConfig
-        ? JSON.stringify(configJson, null, 2)
-        : `// 请填写 MCP 启动配置\n${JSON.stringify(configJson, null, 2)}`;
       setMcpDraft(jsonText);
+      // 已有 url → Remote(http) 模式；否则 Stdio 模式（默认骨架）。
+      setMcpMode(url ? "http" : "stdio");
     }
     setMcpDraftError(null);
     setConfiguringId(manifest.id);
   }, []);
+
+  // 切换连接模式分段：把草稿替换为对应模式的空骨架模板。
+  // 内部仍是 JSON 文本，不改变 parseMcpJson 解析链路。
+  const switchMcpMode = useCallback((mode: "stdio" | "http") => {
+    if (mode === mcpMode) return;
+    setMcpMode(mode);
+    const skeleton =
+      mode === "http"
+        ? { url: "", headers: {} }
+        : { command: "", args: [], env: {} };
+    const text = JSON.stringify(skeleton, null, 2);
+    setMcpDraft(text);
+    setMcpDraftError(null);
+  }, [mcpMode]);
 
   const updateDraft = useCallback((id: string, value: string) => {
     setConfigDraft((current) => ({ ...current, [id]: value }));
@@ -938,6 +963,9 @@ export default function PluginMarketplace({
           values.trusted = false;
         }
       }
+      // 同步保存原始 JSON 草稿，保证下次打开配置与本次编辑完全一致
+      // （parseMcpJson 只存归一化字段，会丢失 mcpServers 包装 / 字段顺序）。
+      values.rawJson = mcpDraft.trim();
       pluginRegistry.setConnectorConfig(manifest.id, values);
       setConfiguringId(null);
       setMcpDraftError(null);
@@ -1480,7 +1508,41 @@ export default function PluginMarketplace({
                 {isMcpConnector(manifest) && (
                   <>
                     <div className="plugin-card__config-section">
-                      MCP 启动配置（JSON）
+                      <div
+                        className="omni-mcp-seg"
+                        role="tablist"
+                        aria-label="连接模式"
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={mcpMode === "http"}
+                          className={`omni-mcp-seg__btn ${
+                            mcpMode === "http"
+                              ? "omni-mcp-seg__btn--active"
+                              : ""
+                          }`}
+                          onClick={() => switchMcpMode("http")}
+                        >
+                          Remote
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={mcpMode === "stdio"}
+                          className={`omni-mcp-seg__btn ${
+                            mcpMode === "stdio"
+                              ? "omni-mcp-seg__btn--active"
+                              : ""
+                          }`}
+                          onClick={() => switchMcpMode("stdio")}
+                        >
+                          Stdio
+                        </button>
+                      </div>
+                      <span className="plugin-card__config-section-label">
+                        MCP 启动配置（JSON）
+                      </span>
                     </div>
                     <label className="plugin-card__config-field">
                       <span>配置 JSON *</span>

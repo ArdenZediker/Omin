@@ -468,6 +468,8 @@
 
 .plugin-marketplace__grid {
   display: grid;
+  /* 卡片各自按内容撑高，不被同一行其他展开卡同步拉高 */
+  align-items: start;
   /* 默认宽屏固定 4 列（用户 2026-09-01「表格展示改为一行四列」）。
    * 窄屏按断点降级为 3 / 2 / 1 列。 */
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1571,12 +1573,13 @@
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 12px;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 14px 16px 16px;
   border: 1px solid var(--omni-panel-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--omni-soft-bg);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
 }
 
 .plugin-card__config-field {
@@ -1612,17 +1615,61 @@
 .plugin-card__config-field select:focus,
 .plugin-card__config-field textarea:focus {
   border-color: var(--omni-accent, #6366f1);
+  box-shadow: 0 0 0 3px var(--omni-accent-soft, rgba(99, 102, 241, 0.15));
 }
 
 .plugin-card__config-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  margin-top: 2px;
+  border-top: 1px dashed var(--omni-panel-border);
+}
+
+.plugin-card__config-section-label {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.4px;
   text-transform: uppercase;
   color: var(--omni-app-muted);
-  padding-top: 4px;
-  margin-top: 2px;
-  border-top: 1px dashed var(--omni-panel-border);
+}
+
+/* Remote / Stdio 分段控件（视觉壳：点击切换 JSON 骨架，不改变解析链路） */
+.omni-mcp-seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 9px;
+  background: var(--omni-input-bg);
+  border: 1px solid var(--omni-panel-border);
+}
+
+.omni-mcp-seg__btn {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 7px;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.omni-mcp-seg__btn:hover {
+  color: var(--omni-app-text);
+}
+
+.omni-mcp-seg__btn--active {
+  background: var(--omni-panel-bg, #ffffff);
+  color: var(--omni-app-text);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
+}
+
+.dark .omni-mcp-seg__btn--active {
+  background: var(--omni-input-bg);
 }
 
 .plugin-card__config-field input[type="checkbox"] {
@@ -1882,11 +1929,12 @@
 }
 
 .omni-mcp-create-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
   margin-top: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--omni-app-muted, #64748b);
-  padding-top: 6px;
   border-top: 1px dashed var(--omni-panel-border, #e2e8f0);
 }
 
@@ -1926,10 +1974,15 @@
   tab-size: 2;
 }
 .omni-mcp-create-field__error {
-  margin-top: 6px;
+  display: block;
+  margin-top: 2px;
+  padding: 8px 10px;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--omni-danger, #dc2626);
+  background: var(--omni-danger-soft, rgba(220, 38, 38, 0.08));
+  border-left: 3px solid var(--omni-danger, #dc2626);
+  border-radius: 0 8px 8px 0;
 }
 
 .omni-mcp-create-actions {
