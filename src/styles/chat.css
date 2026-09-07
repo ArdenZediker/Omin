@@ -5626,7 +5626,7 @@
 }
 .changes-panel__diff-pre {
   margin: 0;
-  padding: 6px 0;
+  padding: 6px 0 16px;
   max-height: 320px;
   overflow: auto;
   font-family: var(--omni-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
