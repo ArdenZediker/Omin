@@ -34,11 +34,13 @@ import {
   ensureMcpConnector,
   disconnectMcpConnector,
   listConnectedMcpServers,
+  listMcpTools,
   isConnectorTrusted,
   setConnectorTrusted,
   getMcpTrustInfo,
   parseMcpJson,
 } from "../../plugins/mcp";
+import type { McpToolInfo } from "../../plugins/mcp";
 import { PLUGIN_CATEGORIES } from "../../plugins/builtins";
 import {
   listSkillhubSkills,
@@ -521,6 +523,14 @@ export default function PluginMarketplace({
     danger: boolean;
     onConfirm: () => void;
   } | null>(null);
+  // MCP 工具列表弹窗：点击已连接连接器的「X 工具」徽标查看暴露的工具。
+  const [toolsDialog, setToolsDialog] = useState<{
+    connectorId: string;
+    connectorName: string;
+    tools: McpToolInfo[];
+    loading: boolean;
+    error?: string;
+  } | null>(null);
   // 离开「我的技能」时清理批量状态，避免回到「我的技能」时残留选择
   useEffect(() => {
     if (!showMySkills && (batchMode || selectedIds.size > 0)) {
@@ -698,6 +708,16 @@ export default function PluginMarketplace({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [confirmDialog]);
+
+  // Esc 关闭 MCP 工具列表弹窗（仅打开时挂监听）。
+  useEffect(() => {
+    if (!toolsDialog) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setToolsDialog(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [toolsDialog]);
 
   const handleInstall = useCallback((manifest: PluginManifest) => {
     pluginRegistry.install(manifest, {
@@ -1003,6 +1023,38 @@ export default function PluginMarketplace({
     [refreshConnected],
   );
 
+  const handleShowTools = useCallback(
+    async (manifest: PluginManifest) => {
+      setToolsDialog({
+        connectorId: manifest.id,
+        connectorName: manifest.name,
+        tools: [],
+        loading: true,
+      });
+      try {
+        const tools = await listMcpTools(manifest.id);
+        setToolsDialog({
+          connectorId: manifest.id,
+          connectorName: manifest.name,
+          tools,
+          loading: false,
+        });
+      } catch (error) {
+        setToolsDialog({
+          connectorId: manifest.id,
+          connectorName: manifest.name,
+          tools: [],
+          loading: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : String(error ?? "获取工具列表失败"),
+        });
+      }
+    },
+    [],
+  );
+
   const renderMarketplace = () => {
     /** 单张插件卡片渲染，被平铺列表与工具分组列表共用。 */
     const renderPluginCard = (manifest: PluginManifest) => {
@@ -1201,13 +1253,15 @@ export default function PluginMarketplace({
                   ) : isMcpConnector(manifest) ? (
                     mcpConnected ? (
                       <>
-                        <span
-                          className="plugin-card__connected"
-                          title={`已连接 · 暴露 ${mcpConnected.toolCount} 个工具`}
+                        <button
+                          type="button"
+                          className="plugin-card__connected plugin-card__connected--clickable"
+                          title={`已连接 · 暴露 ${mcpConnected.toolCount} 个工具，点击查看详情`}
+                          onClick={() => void handleShowTools(manifest)}
                         >
                           <span className="plugin-card__connected-dot" />
                           <span>{mcpConnected.toolCount} 工具</span>
-                        </span>
+                        </button>
                         <button
                           type="button"
                           className="plugin-card__button plugin-card__button--secondary"
@@ -2107,6 +2161,85 @@ export default function PluginMarketplace({
                   }}
                 >
                   {confirmDialog.danger ? "确认卸载" : "确认"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MCP 工具列表弹窗：点击已连接连接器的「X 工具」徽标打开。 */}
+        {toolsDialog && (
+          <div
+            className="omni-confirm-overlay"
+            role="presentation"
+            onClick={() => setToolsDialog(null)}
+          >
+            <div
+              className="omni-confirm-dialog omni-tools-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="plugin-marketplace-tools-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="omni-tools-dialog__header">
+                <div>
+                  <div
+                    className="omni-confirm-dialog__title omni-tools-dialog__title"
+                    id="plugin-marketplace-tools-title"
+                  >
+                    {toolsDialog.connectorName} 的工具
+                  </div>
+                  <div className="omni-tools-dialog__subtitle">
+                    {toolsDialog.loading
+                      ? "正在加载…"
+                      : `${toolsDialog.tools.length} 个工具已暴露给 AI 调用`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="omni-tools-dialog__close"
+                  onClick={() => setToolsDialog(null)}
+                  aria-label="关闭"
+                >
+                  <X size={18} strokeWidth={1.8} />
+                </button>
+              </div>
+              <div className="omni-tools-dialog__body">
+                {toolsDialog.error ? (
+                  <div className="omni-tools-dialog__error">
+                    <AlertTriangle size={16} strokeWidth={1.8} />
+                    <span>{toolsDialog.error}</span>
+                  </div>
+                ) : toolsDialog.loading ? (
+                  <div className="omni-tools-dialog__loading">
+                    正在获取工具列表…
+                  </div>
+                ) : toolsDialog.tools.length === 0 ? (
+                  <div className="omni-tools-dialog__empty">
+                    该连接器未暴露任何工具。
+                  </div>
+                ) : (
+                  <ul className="omni-tools-dialog__list">
+                    {toolsDialog.tools.map((tool) => (
+                      <li key={tool.name} className="omni-tools-dialog__item">
+                        <div className="omni-tools-dialog__item-name">
+                          {tool.name}
+                        </div>
+                        <div className="omni-tools-dialog__item-desc">
+                          {tool.description || "无描述"}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="omni-confirm-dialog__actions omni-tools-dialog__actions">
+                <button
+                  type="button"
+                  className="omni-confirm-dialog__button omni-confirm-dialog__button--primary"
+                  onClick={() => setToolsDialog(null)}
+                >
+                  关闭
                 </button>
               </div>
             </div>
