@@ -51,6 +51,7 @@ import {
 } from "./hooks/useCompactWindowState";
 import { initializePluginRegistry } from "./plugins/registry";
 import { useThemeSync } from "./hooks/useThemeSync";
+import { formatMessageClipboardText, writeClipboardWithFiles } from "./chat/messageClipboard";
 import "./App.css";
 
 const KnowledgeBaseView = lazy(() => import("./components/KnowledgeBaseView"));
@@ -576,7 +577,16 @@ function MainApp() {
   const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "project");
 
   const handleCopyMessage = useCallback(async (message: Message) => {
-    await navigator.clipboard.writeText(message.content);
+    const text = formatMessageClipboardText(message);
+    const filePaths = (message.attachments ?? [])
+      .map((attachment) => attachment.path)
+      .filter((path): path is string => Boolean(path));
+    const clipboardImages = (message.images ?? []).map((image) => ({
+      name: image.name ?? null,
+      src: image.src,
+    }));
+
+    await writeClipboardWithFiles(text, filePaths, clipboardImages);
   }, []);
 
   useEffect(() => {

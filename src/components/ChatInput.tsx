@@ -413,27 +413,22 @@ export default function ChatInput({
     .map((item) => item.image);
 
   /**
-   * 输入框预览：把图片与附件合并成同一个按 offset 排序的流，
-   * 让「输入框里看到的顺序」与「发送后消息里的交错顺序」保持一致。
-   * offset 相同则按添加先后（全局 seq）排列——与 ChatMessage.buildUserMessageSegments 的稳定排序语义一致。
+   * 输入框预览：附件与图片统一排在文字输入区之前（「统一在前方」）。
+   * 不再按上传/粘贴时的光标位置（offset）排序，避免 chip 在文字中间穿插导致视觉错位。
    */
   const composedMedia = useMemo(() => {
     const items: Array<{
       kind: "image" | "attachment";
-      offset: number;
-      seq: number;
       image?: ChatImage;
       attachment?: ChatAttachment;
       key: string;
     }> = [];
-    let seq = 0;
-    images.forEach((image, index) => {
-      items.push({ kind: "image", offset: image.offset ?? 0, seq: seq++, image, key: `${image.src.slice(0, 24)}-${index}` });
-    });
     attachments.forEach((attachment) => {
-      items.push({ kind: "attachment", offset: attachment.offset ?? 0, seq: seq++, attachment, key: attachment.path });
+      items.push({ kind: "attachment", attachment, key: attachment.path });
     });
-    items.sort((a, b) => a.offset - b.offset || a.seq - b.seq);
+    images.forEach((image, index) => {
+      items.push({ kind: "image", image, key: `${image.src.slice(0, 24)}-${index}` });
+    });
     return items;
   }, [images, attachments]);
 
@@ -707,6 +702,34 @@ export default function ChatInput({
         </div>
 
         <div className="chat-composer__body">
+          {composedMedia.length > 0 && (
+            <div className="chat-composer__attachments">
+              {composedMedia.map((media, index) =>
+                media.kind === "image" ? (
+                  <AttachmentChip
+                    key={media.key}
+                    src={media.image!.src}
+                    name={media.image!.name ?? `image_${index + 1}.png`}
+                    index={index}
+                    removable
+                    onRemove={() => {
+                      setImages((prev) => prev.filter((item) => item !== media.image!));
+                    }}
+                  />
+                ) : (
+                  <AttachmentChip
+                    key={media.key}
+                    src={media.attachment!.path}
+                    name={media.attachment!.name}
+                    index={index}
+                    size={media.attachment!.size}
+                    removable
+                    onRemove={() => setAttachments((prev) => prev.filter((item) => item !== media.attachment!))}
+                  />
+                ),
+              )}
+            </div>
+          )}
           <div className="chat-composer__editor-wrap">
             <div className="chat-composer__editor">
               <textarea
@@ -728,34 +751,6 @@ export default function ChatInput({
               />
             </div>
           </div>
-          {composedMedia.length > 0 && (
-            <div className="chat-composer__attachments">
-              {composedMedia.map((media, index) =>
-                media.kind === "image" ? (
-                  <AttachmentChip
-                    key={media.key}
-                    src={media.image!.src}
-                    name={media.image!.name ?? `image_${index + 1}.png`}
-                    index={index}
-                    removable
-                    onRemove={() => {
-                      setImages((prev) => prev.filter((item) => item.src !== media.image!.src));
-                    }}
-                  />
-                ) : (
-                  <AttachmentChip
-                    key={media.key}
-                    src={media.attachment!.path}
-                    name={media.attachment!.name}
-                    index={index}
-                    size={media.attachment!.size}
-                    removable
-                    onRemove={() => setAttachments((prev) => prev.filter((item) => item.path !== media.attachment!.path))}
-                  />
-                ),
-              )}
-            </div>
-          )}
         </div>
 
         <div className="chat-composer__footer">

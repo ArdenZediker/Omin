@@ -31,6 +31,7 @@ mod skillhub;
 mod webtools;
 mod gittools;
 mod office_export;
+mod clipboard_files;
 mod connectorhub;
 mod mcp;
 
@@ -44,6 +45,7 @@ use skillhub::*;
 use webtools::*;
 use gittools::*;
 use office_export::*;
+use clipboard_files::*;
 use connectorhub::*;
 use mcp::*;
 
@@ -544,6 +546,7 @@ pub fn run() {
             load_app_kv,
             save_app_kv,
             remove_app_kv,
+            write_clipboard_with_files,
             delete_chat_session,
             delete_project,
             get_data_root_info,
@@ -589,6 +592,11 @@ pub fn run() {
             read_mcp_stderr
         ])
         .setup(|app| {
+            // 清理上一会话遗留的剪贴板图片缓存（best-effort，失败不影响启动）
+            if let Err(err) = clipboard_files::cleanup_clipboard_cache(&app.handle()) {
+                eprintln!("[Omni] 清理剪贴板缓存失败: {err}");
+            }
+
             let show_hide = MenuItemBuilder::with_id("toggle", "打开主界面").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出 Omni").build(app)?;
             let tray_menu = MenuBuilder::new(app)
