@@ -970,7 +970,10 @@ export default function PluginMarketplace({
   const handleConnect = useCallback(
     async (manifest: PluginManifest) => {
       const config = pluginRegistry.getConnectorConfig(manifest.id) ?? {};
-      if (!String(config.command ?? "").trim()) {
+      const hasLaunch =
+        String(config.command ?? "").trim() ||
+        String(config.url ?? "").trim();
+      if (!hasLaunch) {
         openConfig(manifest);
         return;
       }
