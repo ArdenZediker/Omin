@@ -3,12 +3,12 @@
  *
  * 数据源：GitHub 仓库 zhizhunbao/workbuddy 的 skills-marketplace
  * （skills-marketplace/.codebuddy-skill/marketplace.json，通过 jsDelivr 加速访问）。其中「外部服务接入型」
- * 技能封装了外部服务的 CLI/OpenAPI/SDK 接入能力，本质就是连接器，
- * 安装后注册为 kind=connector 的插件，出现在扩展中心「连接器」分类。
+ * 技能封装了外部服务的 CLI/OpenAPI/SDK 接入能力，本质是技能包，
+ * 安装后注册为 kind=skill 的插件，出现在扩展中心「我的技能」分类（不再伪装成 MCP 连接器）。
  *
  * 安装由 Rust 命令 install_connectorhub_skill 完成：下载仓库 zip、抽取
  * skills-marketplace/skills/<source>/ 子树到 ~/.dsh/skills，返回 SKILL.md
- * 原文；这里解析并注册为 connector 插件。
+ * 原文；这里解析并注册为 skill 插件。
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -227,7 +227,7 @@ export async function installConnectorhubSkill(
     throw new Error("SKILL.md 解析失败，无法注册为连接器");
   }
   parsed.id = result.slug;
-  parsed.kind = "connector";
+  parsed.kind = "skill";
   parsed.name = connectorDisplayName(result.slug);
   parsed.category = connectorCategory(result.slug);
   parsed.sourceUrl =

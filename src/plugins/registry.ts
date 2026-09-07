@@ -41,6 +41,11 @@ class PluginRegistry {
     saveSqliteBackedValue(INSTALLED_PLUGINS_STORAGE_KEY, JSON.stringify(snapshot));
   }
 
+  /** 公开持久化（供模块级的一次性数据迁移等场景调用）。 */
+  flush(): void {
+    this.save();
+  }
+
   /** 获取某个插件的 manifest（内置优先，其次已安装） */
   getManifest(id: string): PluginManifest | null {
     return this.builtins.get(id) ?? this.installed.get(id)?.manifest ?? null;
@@ -215,6 +220,23 @@ export const pluginRegistry = new PluginRegistry();
 /** 初始化调用一次；可在 App 启动时执行。 */
 export function initializePluginRegistry(): void {
   pluginRegistry.load();
+  // 一次性迁移（2026-09-08）：旧的「远程接入」连接器（来自 connectorhub 市场、
+  // kind=connector）改注册为 kind=skill，使其出现在「我的技能」而非「我的连接器」
+  // （不再伪装成 MCP 服务器）。新安装已直接注册为 skill，此处仅修正历史数据。
+  let migrated = false;
+  for (const { entry } of pluginRegistry.listInstalled()) {
+    const repo =
+      entry.source?.type === "marketplace" ? entry.source.repository : "";
+    if (
+      entry.manifest.kind === "connector" &&
+      typeof repo === "string" &&
+      repo.startsWith("connectorhub/")
+    ) {
+      entry.manifest.kind = "skill";
+      migrated = true;
+    }
+  }
+  if (migrated) pluginRegistry.flush();
 }
 
 /** 解析一个 DeepSeek Harness 风格的 SKILL.md 内容（YAML frontmatter + Markdown body）。 */

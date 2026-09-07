@@ -152,12 +152,12 @@ function MarketplaceSourceTabs({
         { value: "local", label: "我的技能", Icon: LayoutTemplate },
         { value: "skillhub", label: "SkillHub 实时", Icon: Bot },
         { value: "suites", label: "专家团", Icon: Package },
+        { value: "connectors", label: "远程技能", Icon: Cable },
       ];
     }
     if (kind === "connector") {
       return [
         { value: "local", label: "我的连接器", Icon: Settings },
-        { value: "connectors", label: "远程接入", Icon: Cable },
       ];
     }
     if (kind === "expert") {

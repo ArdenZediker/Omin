@@ -83,8 +83,8 @@ type PluginMarketplaceProps = {
 };
 
 /** Marketplace 二级数据源（在「一级 kind」之下的二级切换）。
- *  - skill     → local = "我的技能"，skillhub = "SkillHub 实时"，suites = "专家团"
- *  - connector → local = "我的连接器"，connectors = "远程接入"
+ *  - skill     → local = "我的技能"，skillhub = "SkillHub 实时"，suites = "专家团"，connectors = "远程技能"
+ *  - connector → local = "我的连接器"（仅 MCP；原远程接入市场已并入「我的技能」的「远程技能」tab）
  *  - expert    → my = "我的专家"，local = "本地内置"
  *  - tool/template → 只能 local */
 export type MarketplaceSource =
@@ -481,7 +481,7 @@ export default function PluginMarketplace({
   const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
   const showSuites = !onPick && source === "suites" && kind === "skill";
   const showConnectorhub =
-    !onPick && source === "connectors" && kind === "connector";
+    !onPick && source === "connectors" && kind === "skill";
   // 「我的专家」：用户自己创建/安装的专家（非内置）。
   const showMyExperts = !onPick && source === "my" && kind === "expert";
   // 「我的技能」：用户已安装/内置的本地技能（不混入 SkillHub/专家团），按用户要求不分类、一栏通览。
@@ -574,7 +574,7 @@ export default function PluginMarketplace({
           title: "没有找到匹配的连接器",
           hint: onAddMcp
             ? "试试其他关键词，或点击右上角「新增 MCP」添加自定义连接器"
-            : "试试其他关键词，或从「远程接入」浏览更多连接器",
+            : "试试其他关键词，或从「远程技能」浏览更多技能",
         };
       case "expert":
         return {
@@ -1623,6 +1623,16 @@ export default function PluginMarketplace({
                 <Package size={14} strokeWidth={1.8} />
                 <span>专家团</span>
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={source === "connectors"}
+                className={`plugin-marketplace__source-tab ${source === "connectors" ? "plugin-marketplace__source-tab--active" : ""}`}
+                onClick={() => setSource("connectors")}
+              >
+                <Cable size={14} strokeWidth={1.8} />
+                <span>远程技能</span>
+              </button>
             </div>
           )}
 
@@ -1641,16 +1651,6 @@ export default function PluginMarketplace({
               >
                 <Settings size={14} strokeWidth={1.8} />
                 <span>我的连接器</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={source === "connectors"}
-                className={`plugin-marketplace__source-tab ${source === "connectors" ? "plugin-marketplace__source-tab--active" : ""}`}
-                onClick={() => setSource("connectors")}
-              >
-                <Cable size={14} strokeWidth={1.8} />
-                <span>远程接入</span>
               </button>
             </div>
           )}

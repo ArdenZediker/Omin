@@ -66,7 +66,7 @@ const ConnectorCard = memo(function ConnectorCard({
         <div className="plugin-card__main">
           <div className="plugin-card__title-row">
             <h3 title={skill.displayName}>{skill.displayName}</h3>
-            <span className="plugin-card__badge">连接器</span>
+            <span className="plugin-card__badge">技能</span>
           </div>
           <p className="plugin-card__description" title={description}>
             {description}
@@ -74,7 +74,7 @@ const ConnectorCard = memo(function ConnectorCard({
           {isInstalled && (
             <p className="connectorhub-browser__hint">
               <Info size={12} strokeWidth={1.8} />
-              已安装 — 请到「本地连接器」中配置启动命令并连接
+              已安装 — 已在「我的技能」中，启用后即可在对话中使用
             </p>
           )}
           <div className="plugin-card__meta">
@@ -185,7 +185,7 @@ function ConnectorDetailDrawer({
               <h2>{skill.displayName}</h2>
               <div className="skillhub-detail__title-row">
                 <span className="plugin-card__badge">{skill.category}</span>
-                <span className="skillhub-detail__source">外部连接器</span>
+                <span className="skillhub-detail__source">外部技能</span>
               </div>
             </div>
           </div>
@@ -286,7 +286,7 @@ function ConnectorDetailDrawer({
 /**
  * 外部服务接入型技能浏览面板（WorkBuddy 技能库）。
  * 数据来自 GitHub 仓库内的 skills-marketplace/.codebuddy-skill/marketplace.json（经 jsDelivr 加速），
- * 前端按白名单过滤出「接入型」技能作为连接器展示；安装 = 整包下载
+ * 前端按白名单过滤出「接入型」技能作为技能展示；安装 = 整包下载
  * 仓库 zip 并落地该技能子树到本地技能目录。
  */
 export default function ConnectorhubBrowser() {
@@ -435,7 +435,7 @@ export default function ConnectorhubBrowser() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索连接器名称、来源或描述…"
+          placeholder="搜索技能名称、来源或描述…"
         />
       </div>
 
@@ -451,7 +451,7 @@ export default function ConnectorhubBrowser() {
       )}
       {!loading && !error && filtered.length === 0 && (
         <div className="skillhub-browser__empty">
-          未找到外部服务接入型连接器
+          未找到远程技能
         </div>
       )}
 
