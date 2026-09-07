@@ -203,10 +203,13 @@ function MarketplaceSourceTabs({
 /**
  * 解析 MCP 启动配置 JSON。支持两种形态：
  *  - 直接对象：{ "command": "npx", "args": [...], "env": {...} }
- *  - Claude Desktop 风格包装：{ "mcpServers": { "<name>": { "command": ..., "args": ..., "env": ... } } }
- * 当前仅支持本地 stdio 启动（command 必填）；含 url 的远程 MCP 暂不支持。
+ *                 或 { "url": "...", "headers": {...} }
+ *  - Claude Desktop 风格包装：{ "mcpServers": { "<name>": { ... } } }
+ * 优先识别 url → Streamable HTTP；否则识别 command → stdio。
  */
-type ParsedMcpConfig = { command: string; args: string[]; env: Record<string, string> };
+type ParsedMcpConfig =
+  | { type: "stdio"; command: string; args: string[]; env: Record<string, string> }
+  | { type: "http"; url: string; headers: Record<string, string> };
 function parseMcpJson(input: string): ParsedMcpConfig | { error: string } {
   let raw: unknown;
   try {
@@ -224,11 +227,20 @@ function parseMcpJson(input: string): ParsedMcpConfig | { error: string } {
   if (!cfg || typeof cfg !== "object") {
     return { error: "配置必须是一个 JSON 对象" };
   }
-  if (typeof cfg.url === "string" && cfg.url.trim() && !cfg.command) {
-    return { error: "远程 URL 形式的 MCP（url/headers）暂不支持，当前仅支持本地命令启动（stdio）" };
+
+  const url = typeof cfg.url === "string" ? cfg.url.trim() : "";
+  if (url) {
+    const headers: Record<string, string> = {};
+    if (cfg.headers && typeof cfg.headers === "object") {
+      for (const [key, value] of Object.entries(cfg.headers as Record<string, unknown>)) {
+        if (value != null) headers[key] = String(value);
+      }
+    }
+    return { type: "http", url, headers };
   }
+
   const command = typeof cfg.command === "string" ? cfg.command.trim() : "";
-  if (!command) return { error: "缺少 command 字段（本地 MCP 必须给出启动命令）" };
+  if (!command) return { error: "缺少 command 或 url 字段（必须提供其一）" };
   const args = Array.isArray(cfg.args)
     ? cfg.args.map((item) => String(item))
     : cfg.args == null
@@ -240,7 +252,7 @@ function parseMcpJson(input: string): ParsedMcpConfig | { error: string } {
       if (value != null) env[key] = String(value);
     }
   }
-  return { command, args, env };
+  return { type: "stdio", command, args, env };
 }
 
 type MainChatViewProps = {
@@ -573,7 +585,7 @@ export default function MainChatView({
     onJumpToChat?.("/expert-manager ");
   }, [onMarketplaceChange, onJumpToChat]);
 
-  /** 新增自定义本地 MCP 连接器：写入注册表 → 配置命令/参数/环境变量 → 信任并拉起。 */
+  /** 新增自定义 MCP 连接器：写入注册表 → 配置启动信息 → 信任并拉起。 */
   const createMcpConnector = useCallback(async () => {
     const name = newMcp.name.trim();
     const parsed = parseMcpJson(newMcp.json);
@@ -586,7 +598,7 @@ export default function MainChatView({
     const manifest: PluginManifest = {
       id,
       name,
-      description: newMcp.desc.trim() || `本地 MCP 连接器：${name}`,
+      description: newMcp.desc.trim() || `MCP 连接器：${name}`,
       version: "1.0.0",
       author: "用户",
       kind: "connector",
@@ -595,11 +607,18 @@ export default function MainChatView({
       configFields: [],
     };
     pluginRegistry.install(manifest, { type: "local", path: "user" });
-    pluginRegistry.setConnectorConfig(id, {
-      command: parsed.command,
-      args: parsed.args,
-      env: parsed.env,
-    });
+    if (parsed.type === "http") {
+      pluginRegistry.setConnectorConfig(id, {
+        url: parsed.url,
+        headers: parsed.headers,
+      });
+    } else {
+      pluginRegistry.setConnectorConfig(id, {
+        command: parsed.command,
+        args: parsed.args,
+        env: parsed.env,
+      });
+    }
     const saved = pluginRegistry.getManifest(id);
     if (saved) {
       setConnectorTrusted(saved, true);
@@ -1979,10 +1998,11 @@ export default function MainChatView({
                 </button>
               </div>
               <p className="omni-mcp-create-modal__hint">
-                以 JSON 填写本机 MCP 服务器的启动配置（如{" "}
+                以 JSON 填写 MCP 连接配置。支持 stdio 子进程（如{" "}
                 <code>npx -y @modelcontextprotocol/server-github</code>
-                ），Omni 会作为本机子进程拉起该服务器，并将其暴露的工具注入
-                AI 对话。支持直接对象或 Claude Desktop 的 mcpServers 包装格式。
+                ）或 Streamable HTTP 远程地址（{" "}
+                <code>url / headers</code>
+                ）。支持直接对象或 Claude Desktop 的 mcpServers 包装格式。
               </p>
               <label className="omni-mcp-create-field">
                 <span>名称 *</span>
@@ -2023,7 +2043,7 @@ export default function MainChatView({
                     setMcpJsonError("error" in result ? result.error : null);
                   }}
                   placeholder={
-                    '{\n  "command": "npx",\n  "args": ["-y", "@modelcontextprotocol/server-github"],\n  "env": { "GITHUB_TOKEN": "ghp_xxxx" }\n}'
+                    '{\n  "command": "npx",\n  "args": ["-y", "@modelcontextprotocol/server-github"],\n  "env": { "GITHUB_TOKEN": "ghp_xxxx" }\n}\n\n// 或远程 Streamable HTTP：\n{\n  "url": "https://api.example.com/mcp",\n  "headers": { "Authorization": "Bearer xxx" }\n}'
                   }
                 />
                 {mcpJsonError && (

@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Terminal,
+  Globe,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import {
@@ -1225,28 +1226,46 @@ export default function PluginMarketplace({
                     <span>信任「{manifest.name}」？</span>
                   </div>
                   <p className="plugin-card__trust-warn">
-                    该连接器会作为本机子进程启动，它暴露的工具可被 AI
+                    该连接器会暴露 MCP 工具给 AI
                     直接调用，<strong>不受 Omni 内置工具权限（只读 /
-                    写入白名单）约束</strong>。请确认你信任它的来源与
-                    启动命令。
+                    写入白名单）约束</strong>。请确认你信任它的来源与连接配置。
                   </p>
-                  <div className="plugin-card__trust-cmd">
-                    <Terminal size={12} strokeWidth={1.8} />
-                    <code>
-                      {info.command}
-                      {info.args.length > 0
-                        ? ` ${info.args.join(" ")}`
-                        : ""}
-                    </code>
-                  </div>
-                  {info.envKeys.length > 0 && (
-                    <div className="plugin-card__trust-env">
-                      <span>环境变量</span>
-                      {info.envKeys.map((key) => (
-                        <code key={key}>{key}=••••</code>
-                      ))}
-                    </div>
-                  )}
+                  {info.type === "stdio" ? (
+                    <>
+                      <div className="plugin-card__trust-cmd">
+                        <Terminal size={12} strokeWidth={1.8} />
+                        <code>
+                          {info.command}
+                          {info.args.length > 0
+                            ? ` ${info.args.join(" ")}`
+                            : ""}
+                        </code>
+                      </div>
+                      {info.envKeys.length > 0 && (
+                        <div className="plugin-card__trust-env">
+                          <span>环境变量</span>
+                          {info.envKeys.map((key) => (
+                            <code key={key}>{key}=••••</code>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : info.type === "http" ? (
+                    <>
+                      <div className="plugin-card__trust-cmd">
+                        <Globe size={12} strokeWidth={1.8} />
+                        <code>{info.url}</code>
+                      </div>
+                      {info.headerKeys.length > 0 && (
+                        <div className="plugin-card__trust-env">
+                          <span>请求头</span>
+                          {info.headerKeys.map((key) => (
+                            <code key={key}>{key}: ••••</code>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : null}
                   <div className="plugin-card__trust-actions">
                     <button
                       type="button"

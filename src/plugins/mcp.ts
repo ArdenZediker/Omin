@@ -1,8 +1,8 @@
 /**
  * Omni MCP 连接器运行层（前端）。
  *
- * 与 WorkBuddy 的连接器模型对齐：连接器 = MCP 服务器（stdio 子进程）。
- * 已启用且配置了启动命令（config.command）的连接器插件，应用启动时自动
+ * 与 WorkBuddy 的连接器模型对齐：连接器 = MCP 服务器（stdio 子进程或 HTTP 远程）。
+ * 已启用且配置了启动命令（config.command）或远程地址（config.url）的连接器插件，应用启动时自动
  * 拉起对应 MCP 服务器，其 tools/list 暴露的工具以 `mcp__{serverId}__{tool}`
  * 命名注入对话的 function calling 工具列表；模型发起调用时经 Rust
  * call_mcp_tool 执行并回填结果。
@@ -33,6 +33,11 @@ export interface McpToolResult {
   error?: string | null;
 }
 
+/** MCP 启动配置：stdio 子进程 或 Streamable HTTP 远程。 */
+export type McpLaunchConfig =
+  | { type: "stdio"; command: string; args: string[]; env?: Record<string, string> }
+  | { type: "http"; url: string; headers?: Record<string, string> };
+
 interface ConnectedMcpServer {
   serverId: string;
   connectorId: string;
@@ -53,11 +58,26 @@ const connecting = new Set<string>();
 
 export async function startMcpServer(
   id: string,
-  command: string,
-  args: string[],
-  env?: Record<string, string>,
+  config: McpLaunchConfig,
 ): Promise<McpServerInfo> {
-  return invoke<McpServerInfo>("start_mcp_server", { id, command, args, env: env ?? null });
+  if (config.type === "stdio") {
+    return invoke<McpServerInfo>("start_mcp_server", {
+      id,
+      command: config.command,
+      args: config.args,
+      env: config.env ?? null,
+      url: null,
+      headers: null,
+    });
+  }
+  return invoke<McpServerInfo>("start_mcp_server", {
+    id,
+    command: null,
+    args: null,
+    env: null,
+    url: config.url,
+    headers: config.headers ?? null,
+  });
 }
 
 export async function stopMcpServer(id: string): Promise<string[]> {
@@ -112,34 +132,52 @@ export function setConnectorTrusted(manifest: PluginManifest, trusted: boolean):
   pluginRegistry.setConnectorConfig(manifest.id, { trusted });
 }
 
-/** 信任确认弹窗要展示的启动信息（env 只给 key，值脱敏防 token 泄露）。 */
+/** 信任确认弹窗要展示的启动信息（env/header 只给 key，值脱敏防 token 泄露）。 */
 export function getMcpTrustInfo(manifest: PluginManifest): {
+  type: "stdio" | "http" | null;
   command: string;
   args: string[];
   envKeys: string[];
+  url: string;
+  headerKeys: string[];
 } {
   const launch = getMcpLaunchConfig(manifest);
   return {
-    command: launch?.command ?? "",
-    args: launch?.args ?? [],
-    envKeys: Object.keys(launch?.env ?? {}),
+    type: launch?.type ?? null,
+    command: launch?.type === "stdio" ? launch.command : "",
+    args: launch?.type === "stdio" ? launch.args : [],
+    envKeys: launch?.type === "stdio" ? Object.keys(launch.env ?? {}) : [],
+    url: launch?.type === "http" ? launch.url : "",
+    headerKeys: launch?.type === "http" ? Object.keys(launch.headers ?? {}) : [],
   };
 }
 
 /** 从连接器插件的 config 中读取 MCP 启动配置。 */
-function getMcpLaunchConfig(manifest: PluginManifest): { command: string; args: string[]; env?: Record<string, string> } | null {
+function getMcpLaunchConfig(manifest: PluginManifest): McpLaunchConfig | null {
   const config = pluginRegistry.getConnectorConfig(manifest.id) ?? {};
+  const url = String(config.url ?? "").trim();
+  if (url) {
+    const headers =
+      config.headers && typeof config.headers === "object"
+        ? (config.headers as Record<string, string>)
+        : undefined;
+    return { type: "http", url, headers };
+  }
   const command = String(config.command ?? "").trim();
   if (!command) return null;
   const args = Array.isArray(config.args) ? config.args.map(String) : [];
-  const env = config.env && typeof config.env === "object" ? (config.env as Record<string, string>) : undefined;
-  return { command, args, env };
+  const env =
+    config.env && typeof config.env === "object"
+      ? (config.env as Record<string, string>)
+      : undefined;
+  return { type: "stdio", command, args, env };
 }
 
 /**
  * 启动（或复用）一个连接器对应的 MCP 服务器，并记录其暴露的工具。
- * 连接器插件需 enabled 且已配置 command。
+ * 连接器插件需 enabled 且已配置 command 或 url。
  */
+
 export async function ensureMcpConnector(
   manifest: PluginManifest,
   options?: { requireTrust?: boolean },
@@ -158,7 +196,7 @@ export async function ensureMcpConnector(
   try {
     const existing = connectedServers.get(manifest.id);
     if (existing) return existing.info;
-    const info = await startMcpServer(manifest.id, launch.command, launch.args, launch.env);
+    const info = await startMcpServer(manifest.id, launch);
     connectedServers.set(manifest.id, {
       serverId: manifest.id,
       connectorId: manifest.id,
@@ -179,7 +217,7 @@ export async function disconnectMcpConnector(connectorId: string): Promise<void>
     try {
       await stopMcpServer(connectorId);
     } catch {
-      // 进程可能已退出
+      // 进程可能已退出或远程连接已关闭
     }
     connectedServers.delete(connectorId);
   }
@@ -190,6 +228,7 @@ export async function disconnectMcpConnector(connectorId: string): Promise<void>
  * 未获信任的会被 ensureMcpConnector 的信任门挡下——配置完成不等于激活，
  * 这是刻意为之的安全设计。静默失败，不阻塞启动。
  */
+
 export async function syncMcpConnectors(): Promise<void> {
   const manifests = pluginRegistry.listEnabledConnectors();
   for (const manifest of manifests) {
