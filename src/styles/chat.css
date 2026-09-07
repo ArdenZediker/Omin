@@ -2517,41 +2517,10 @@
 .chat-composer__attachments {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 8px;
-  margin: 0 0 8px;
+  margin: 8px 0 0;
   width: 100%;
 }
-
-.chat-composer__add-media {
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  border: 1px dashed var(--omni-frame-border);
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: var(--omni-app-muted);
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
-}
-
-.chat-composer__add-media:hover {
-  border-color: var(--omni-accent, #8b5cf6);
-  color: var(--omni-accent, #8b5cf6);
-  background: color-mix(in srgb, var(--omni-accent, #8b5cf6) 8%, transparent);
-}
-
-.chat-composer__attachments--selected {
-  padding: 6px;
-  margin: -6px -6px 2px;
-  background: var(--selection-bg, rgba(var(--accent-rgb, 59 130 246) / 0.15));
-  border-radius: 8px;
-  outline: 2px solid var(--accent-color, #3b82f6);
-}
-
 
 .chat-composer__context-chips {
   display: flex;

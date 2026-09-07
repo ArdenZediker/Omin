@@ -21,8 +21,7 @@ import {
 } from "../chat/storage";
 import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
 import { savePersistedAutomationState } from "../chat/persistence";
-import { scheduleSessionMirror, clearSessionMirrorSchedule, deleteSessionMirrorFile } from "../chat/sessionMirror";
-import { clearSessionArtifacts, clearProjectArtifacts, notifyArtifactsChanged } from "../chat/artifacts";
+import { scheduleSessionMirror, clearSessionMirrorSchedule } from "../chat/sessionMirror";
 import { isMirrorSessionsEnabled } from "../app/outputStorage";
 import type {
   ProjectMemoryRecord,
@@ -475,21 +474,6 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       setSessionSummaries(nextSummaries);
       setScheduledTasks(nextTasks);
 
-      // 4) 清理该项目下每个会话的对话镜像 .md 文件，并取消待写（删除前先阻止防抖续写）
-      for (const sessionId of relatedSessionIds) {
-        clearSessionMirrorSchedule(sessionId);
-      }
-      const relatedSessions = chatSessions.filter((session) => session.projectId === projectId);
-      try {
-        await Promise.all(relatedSessions.map((session) => deleteSessionMirrorFile(session, target)));
-      } catch {
-        // 镜像文件删除失败不影响项目删除主流程。
-      }
-
-      // 5) 产物：清掉该项目下全部产物并刷新右侧「产物」面板
-      clearProjectArtifacts(projectId);
-      notifyArtifactsChanged();
-
       if (activeProjectId === projectId) {
         activeProjectIdRef.current = DEFAULT_PROJECT_ID;
         setActiveProjectId(DEFAULT_PROJECT_ID);
@@ -605,28 +589,6 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         setMessages([]);
       }
 
-      // ---- 级联清理该会话关联的全部内容 ----
-      // 1) 会话摘要（按 sessionId 过滤，避免孤儿记录）
-      const nextSummaries = sessionSummaries.filter((summary) => summary.sessionId !== sessionId);
-      // 2) 定时任务（按 sessionId 过滤，已删除会话不应再触发）
-      const nextTasks = scheduledTasks.filter((task) => task.sessionId !== sessionId);
-      // 3) 产物（按 项目 + 会话 过滤，清掉右侧「产物」面板里本会话的卡片）
-      //    直接使用 session.projectId：产物正是按该 id 落库的，避免 project 查找为 null 时漏清。
-      const sessionProject = projects.find((project) => project.id === session?.projectId) ?? null;
-      if (session) {
-        clearSessionArtifacts(session.projectId, session.id);
-      }
-      // 4) 对话镜像 .md 侧写文件（会话标题所在目录，按当前标题尽力删除）
-      if (session) {
-        void deleteSessionMirrorFile(session, sessionProject).catch(() => {});
-      }
-
-      setSessionSummaries(nextSummaries);
-      setScheduledTasks(nextTasks);
-      if (session) {
-        notifyArtifactsChanged();
-      }
-
       try {
         await invoke("delete_chat_session", { id: sessionId });
       } catch (error) {
@@ -636,14 +598,12 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
       try {
         await savePersistedChatState(projects, nextSessions);
-        await savePersistedMemoryState(projectMemories, nextSummaries, userPreferences);
-        await savePersistedAutomationState(nextTasks);
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error("deleteChatSession: flush failed", error);
       }
     },
-    [activeChatId, projects, chatSessions, projectMemories, sessionSummaries, scheduledTasks, userPreferences]
+    [activeChatId, projects, chatSessions]
   );
 
   const groupedChatSessions = useMemo(() => {

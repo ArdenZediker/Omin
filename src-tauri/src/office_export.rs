@@ -815,37 +815,6 @@ pub(crate) async fn write_text_file(
     })
 }
 
-/// 删除本地文件（用于清理会话镜像等侧写文件）。
-/// 仅允许绝对路径、非 No-Go Zone、扩展名为 md/markdown 的文件，避免误删任意文件。
-/// 文件不存在时视为成功（幂等），便于「删除已不存在的镜像」不报错。
-#[tauri::command]
-pub(crate) async fn remove_file(path: String) -> Result<(), String> {
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        return Err("删除路径不能为空".to_string());
-    }
-    let p = std::path::Path::new(trimmed);
-    if !p.is_absolute() {
-        return Err(format!("删除路径必须是绝对路径（收到「{trimmed}」）。请使用真实本机路径，不要使用虚拟路径"));
-    }
-    // 兜底 No-Go Zones：即使前端已放行也拒绝删除系统/密钥目录文件。
-    if let Some(zone) = no_go_zone(p) {
-        return Err(format!("删除路径位于禁止操作的{zone}，已拒绝"));
-    }
-    let ext = p
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    if ext != "md" && ext != "markdown" {
-        return Err(format!("只允许删除 .md / .markdown 侧写文件（收到「{ext}」）"));
-    }
-    if !p.is_file() {
-        return Ok(());
-    }
-    std::fs::remove_file(p).map_err(|e| format!("删除文件失败: {e}"))?;
-    Ok(())
-}
-
 /// 校验产物路径在本机是否真实存在（供前端打开/下载前检查，杜绝虚拟路径静默失败）。
 #[tauri::command]
 pub(crate) fn path_exists(path: String) -> bool {

@@ -3,13 +3,12 @@ import {
   BookOpen,
   Bot,
   CirclePlus,
+  Paperclip,
   Send,
   Square,
   X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readText } from "@tauri-apps/plugin-clipboard-manager";
-import { writeClipboardWithFiles } from "../chat/messageClipboard";
 import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ChatAttachment, ChatImage } from "../adapters/types";
@@ -104,8 +103,6 @@ export default function ChatInput({
   const [images, setImages] = useState<ChatImage[]>([]);
   /** 非图片类本地文件附件（绝对路径引用；不内联内容，发送时注入 prompt 让模型用 /read_file 读取） */
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  /** 是否处于“全选文件 chip”状态（按第二次 Ctrl+A 选中所有 chip） */
-  const [allMediaSelected, setAllMediaSelected] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [dismissedSlashInput, setDismissedSlashInput] = useState("");
   const [selectedKnowledgeCollection, setSelectedKnowledgeCollection] = useState<KnowledgeCollection | null>(null);
@@ -321,11 +318,7 @@ export default function ChatInput({
       ),
     );
 
-    setImages((prev) => {
-      const existingSrcs = new Set(prev.map((image) => image.src));
-      const unique = nextEntries.filter((entry) => entry.src.length > 0 && !existingSrcs.has(entry.src));
-      return unique.length > 0 ? [...prev, ...unique] : prev;
-    });
+    setImages((prev) => [...prev, ...nextEntries.filter((entry) => entry.src.length > 0)]);
   };
 
   const clearSuggestionDismissal = () => {
@@ -358,7 +351,6 @@ export default function ChatInput({
   };
 
   const handleAddFiles = async () => {
-    setAllMediaSelected(false);
     try {
       // 光标位置必须在打开对话框之前采样：对话框期间 textarea 失焦，之后读不到真实光标。
       const insertOffset = getCaretOffset();
@@ -388,13 +380,10 @@ export default function ChatInput({
         .map((path) => ({ path, name: baseNameOf(path), size: null as number | null, offset: insertOffset }));
 
       if (validImages.length > 0) {
-        setImages((prev) => {
-          const existingSrcs = new Set(prev.map((image) => image.src));
-          const unique = validImages
-            .map((entry) => ({ src: entry.src, name: entry.name, offset: insertOffset }))
-            .filter((image) => !existingSrcs.has(image.src));
-          return unique.length > 0 ? [...prev, ...unique] : prev;
-        });
+        setImages((prev) => [
+          ...prev,
+          ...validImages.map((entry) => ({ src: entry.src, name: entry.name, offset: insertOffset })),
+        ]);
       }
 
       setAttachments((prev) => {
@@ -463,7 +452,6 @@ export default function ChatInput({
     setInput("");
     setImages([]);
     setAttachments([]);
-    setAllMediaSelected(false);
     setSelectedKnowledgeCollection(null);
     setCaretIndex(0);
     clearSuggestionDismissal();
@@ -528,15 +516,6 @@ export default function ChatInput({
   }, [applySuggestion, input, localSuggestions, selectedSuggestionIndex, showSlashSuggestions]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    // 当文件 chip 处于“全选”状态时，除 Ctrl+A / Delete / Backspace 外的其它按键都退出全选。
-    if (allMediaSelected) {
-      const isSelectAllShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a";
-      const isDelete = event.key === "Delete" || event.key === "Backspace";
-      if (!isSelectAllShortcut && !isDelete) {
-        setAllMediaSelected(false);
-      }
-    }
-
     if (showKnowledgeSuggestions && knowledgeSuggestions.length > 0) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -611,31 +590,6 @@ export default function ChatInput({
       }
     }
 
-    // Ctrl+A：有文件 chip 时，第一次按下就直接全选「文字 + 所有 chip」（无需按两次）。
-    // 当没有文件时则放行浏览器默认行为，只全选文字。
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && composedMedia.length > 0) {
-      event.preventDefault();
-      event.stopPropagation();
-      const textarea = textareaRef.current;
-      if (textarea) {
-        textarea.focus();
-        textarea.setSelectionRange(0, input.length);
-      }
-      setAllMediaSelected(true);
-      return;
-    }
-
-    // Delete / Backspace：若文字已全选且 chip 也处于全选态，一并清空。
-    if ((event.key === "Delete" || event.key === "Backspace") && allMediaSelected) {
-      event.preventDefault();
-      event.stopPropagation();
-      setImages([]);
-      setAttachments([]);
-      setInput("");
-      setAllMediaSelected(false);
-      return;
-    }
-
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
@@ -644,39 +598,11 @@ export default function ChatInput({
   };
 
   const handlePaste = (event: React.ClipboardEvent) => {
-    setAllMediaSelected(false);
     // 同步采样光标位置：下面的保存/压缩是异步的，届时 event 已不可用。
     const pasteOffset = getCaretOffset();
     const clipboardFiles = event.clipboardData.files;
-    const pastedText = event.clipboardData.getData("text/plain");
-
-    // 当剪贴板里同时有文件和文字时，必须先把文字插入到输入框，
-    // 否则 event.preventDefault() 会一并取消文字的默认粘贴，导致「聊天文本就不见了」。
-    const insertPastedText = (textToInsert = pastedText) => {
-      if (!textToInsert) return;
-      const nextInput = input.slice(0, pasteOffset) + textToInsert + input.slice(pasteOffset);
-      setInput(nextInput);
-      focusTextareaAt(pasteOffset + textToInsert.length);
-    };
-
-    // Chromium 在剪贴板携带文件（CF_HDROP）时，通常会把 DataTransfer 切成「文件模式」，
-    // 导致 event.clipboardData.getData("text/plain") 读不到文字，但系统剪贴板里仍有 CF_UNICODETEXT。
-    // 用 Tauri 的系统级 readText() 把文字补回来；失败或不在 Tauri 环境则静默回退。
-    const fallbackReadSystemText = () => {
-      void readText()
-        .then((systemText) => {
-          if (systemText) insertPastedText(systemText);
-        })
-        .catch(() => {
-          // 非 Tauri 环境或权限不足：至少保留文件。
-        });
-    };
-
     if (clipboardFiles && clipboardFiles.length > 0) {
       event.preventDefault();
-      insertPastedText();
-      if (!pastedText) fallbackReadSystemText();
-
       const fileList = Array.from(clipboardFiles);
       const imageFiles = fileList.filter((file) => file.type.startsWith("image/"));
       const docFiles = fileList.filter((file) => !file.type.startsWith("image/"));
@@ -710,8 +636,6 @@ export default function ChatInput({
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         event.preventDefault();
-        insertPastedText();
-        if (!pastedText) fallbackReadSystemText();
         const blob = item.getAsFile();
         if (blob) {
           void appendImageFiles([blob], pasteOffset);
@@ -719,56 +643,6 @@ export default function ChatInput({
         break;
       }
     }
-  };
-
-  const handleCopy = (event: React.ClipboardEvent) => {
-    // 全选态（文字 + 文件 chip 都选中）下复制：把文字和真实文件一起写进系统剪贴板，
-    // 否则原生复制只会把 textarea 里的文字复制出去、文件被丢。
-    if (!allMediaSelected || composedMedia.length === 0) {
-      return;
-    }
-    event.preventDefault();
-    const text = input;
-    const paths = attachments.map((attachment) => attachment.path).filter((path): path is string => Boolean(path));
-    const clipboardImages = images.map((image) => ({ name: image.name ?? null, src: image.src }));
-    void writeClipboardWithFiles(text, paths, clipboardImages);
-  };
-
-  const renderMediaChip = (media: (typeof composedMedia)[number], index: number) => {
-    if (media.kind === "image") {
-      const src = media.image!.src;
-      const comma = src.indexOf(",");
-      const b64 = comma >= 0 ? src.slice(comma + 1) : src;
-      const imageBytes = Math.max(0, Math.floor(b64.length * 0.75));
-      return (
-        <AttachmentChip
-          key={media.key}
-          src={src}
-          name={media.image!.name ?? `image_${index + 1}.png`}
-          index={index}
-          size={imageBytes}
-          removable
-          onRemove={() => {
-            setAllMediaSelected(false);
-            setImages((prev) => prev.filter((item) => item !== media.image!));
-          }}
-        />
-      );
-    }
-    return (
-      <AttachmentChip
-        key={media.key}
-        src={media.attachment!.path}
-        name={media.attachment!.name}
-        index={index}
-        size={media.attachment!.size}
-        removable
-        onRemove={() => {
-          setAllMediaSelected(false);
-          setAttachments((prev) => prev.filter((item) => item !== media.attachment!));
-        }}
-      />
-    );
   };
 
   return (
@@ -815,24 +689,24 @@ export default function ChatInput({
 
       <div className="chat-composer__panel">
         <div className="chat-composer__toolbar">
+          <PermissionModeSelector />
+
+          <div className="chat-composer__toolbar-group">
+            <button
+              type="button"
+              className="chat-composer__tool-button"
+              title="上传图片或文件（随消息让模型读取）"
+              onClick={() => void handleAddFiles()}
+            >
+              <Paperclip size={16} strokeWidth={1.8} />
+            </button>
+          </div>
+
           <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
+
         </div>
 
         <div className="chat-composer__body">
-          <div
-            className={`chat-composer__attachments chat-composer__attachments--before${allMediaSelected ? " chat-composer__attachments--selected" : ""}`}
-          >
-            {composedMedia.map(renderMediaChip)}
-            <button
-              type="button"
-              className="chat-composer__add-media"
-              title="继续添加图片或文件"
-              onClick={() => void handleAddFiles()}
-            >
-              <CirclePlus size={18} strokeWidth={1.8} />
-            </button>
-            <PermissionModeSelector />
-          </div>
           <div className="chat-composer__editor-wrap">
             <div className="chat-composer__editor">
               <textarea
@@ -842,14 +716,10 @@ export default function ChatInput({
                   setInput(event.target.value);
                   updateCaretFromTextarea(event.currentTarget);
                 }}
-                onClick={(event) => {
-                  setAllMediaSelected(false);
-                  updateCaretFromTextarea(event.currentTarget);
-                }}
+                onClick={(event) => updateCaretFromTextarea(event.currentTarget)}
                 onKeyDownCapture={handleKeyDown}
                 onKeyUp={(event) => updateCaretFromTextarea(event.currentTarget)}
                 onPaste={handlePaste}
-                onCopy={handleCopy}
                 onSelect={(event) => updateCaretFromTextarea(event.currentTarget)}
                 placeholder="输入聊天内容..."
                 className="chat-composer__textarea hide-scrollbar"
@@ -858,6 +728,34 @@ export default function ChatInput({
               />
             </div>
           </div>
+          {composedMedia.length > 0 && (
+            <div className="chat-composer__attachments">
+              {composedMedia.map((media, index) =>
+                media.kind === "image" ? (
+                  <AttachmentChip
+                    key={media.key}
+                    src={media.image!.src}
+                    name={media.image!.name ?? `image_${index + 1}.png`}
+                    index={index}
+                    removable
+                    onRemove={() => {
+                      setImages((prev) => prev.filter((item) => item.src !== media.image!.src));
+                    }}
+                  />
+                ) : (
+                  <AttachmentChip
+                    key={media.key}
+                    src={media.attachment!.path}
+                    name={media.attachment!.name}
+                    index={index}
+                    size={media.attachment!.size}
+                    removable
+                    onRemove={() => setAttachments((prev) => prev.filter((item) => item.path !== media.attachment!.path))}
+                  />
+                ),
+              )}
+            </div>
+          )}
         </div>
 
         <div className="chat-composer__footer">

@@ -38,7 +38,6 @@ import {
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
-import { formatMessageClipboardText, writeClipboardWithFiles } from "./chat/messageClipboard";
 import { useChatSessions } from "./hooks/useChatSessions";
 import { useChatRuntime } from "./hooks/useChatRuntime";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
@@ -577,16 +576,7 @@ function MainApp() {
   const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "project");
 
   const handleCopyMessage = useCallback(async (message: Message) => {
-    const text = formatMessageClipboardText(message);
-    const filePaths = (message.attachments ?? [])
-      .map((attachment) => attachment.path)
-      .filter((path): path is string => Boolean(path));
-    const clipboardImages = (message.images ?? []).map((image) => ({
-      name: image.name ?? null,
-      src: image.src,
-    }));
-
-    await writeClipboardWithFiles(text, filePaths, clipboardImages);
+    await navigator.clipboard.writeText(message.content);
   }, []);
 
   useEffect(() => {

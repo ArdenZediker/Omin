@@ -31,7 +31,6 @@ mod skillhub;
 mod webtools;
 mod gittools;
 mod office_export;
-mod clipboard_files;
 mod connectorhub;
 mod mcp;
 
@@ -47,7 +46,6 @@ use gittools::*;
 use office_export::*;
 use connectorhub::*;
 use mcp::*;
-use clipboard_files::*;
 
 // 需要被其它模块以 `crate::X` 引用的条目，改为显式重导出（显式重导出不会牵扯宏命名空间）。
 pub(crate) use knowledge_embedding_config::{
@@ -546,7 +544,6 @@ pub fn run() {
             load_app_kv,
             save_app_kv,
             remove_app_kv,
-            write_clipboard_with_files,
             delete_chat_session,
             delete_project,
             get_data_root_info,
@@ -581,7 +578,6 @@ pub fn run() {
             export_xlsx,
             export_pptx,
             write_text_file,
-            remove_file,
             path_exists,
             default_artifact_dir,
             list_connectorhub_skills,
@@ -593,11 +589,6 @@ pub fn run() {
             read_mcp_stderr
         ])
         .setup(|app| {
-            // 清理上一会话遗留的剪贴板图片缓存（best-effort，失败不影响启动）
-            if let Err(err) = clipboard_files::cleanup_clipboard_cache(&app.handle()) {
-                eprintln!("[Omni] 清理剪贴板缓存失败: {err}");
-            }
-
             let show_hide = MenuItemBuilder::with_id("toggle", "打开主界面").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出 Omni").build(app)?;
             let tray_menu = MenuBuilder::new(app)
