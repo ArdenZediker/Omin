@@ -1239,7 +1239,10 @@ export default function PluginMarketplace({
                   <button
                     type="button"
                     className="plugin-card__button plugin-card__button--secondary"
-                    onClick={() => openConfig(manifest)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openConfig(manifest);
+                    }}
                   >
                     <Settings size={14} strokeWidth={1.8} />
                     <span>配置</span>
