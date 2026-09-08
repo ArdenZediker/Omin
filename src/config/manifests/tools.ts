@@ -481,17 +481,20 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/bash",
     title: "运行 Shell 命令",
     description:
-      "在本机执行 shell 命令（Windows 走 cmd /C，macOS/Linux 走 sh -c），可运行 bun/npm/curl 等 CLI 工具。只读命令自动执行，修改类命令需用户确认，危险命令会被拦截。",
+      "在持久 bash 会话（真 PTY）中执行 shell 命令：cwd、环境变量、导出跨调用保留。可运行 bun/npm/curl 等 CLI 工具。只读命令自动执行，修改类命令需用户确认，危险命令会被拦截。",
     promptContribution:
       "Call /bash to run a shell command on the user's local machine. " +
-      "PLATFORM SHELL: on Windows the executor is cmd.exe (cmd /C), or Git Bash (bash -lc) when installed; " +
-      "on macOS/Linux it runs via sh -c. The user may override the shell path in settings (e.g. MSYS2/Cygwin bash); " +
-      "on macOS/Linux it runs via sh -c. " +
-      "POSIX-only syntax (grep, ls, head, $(), single-quote semantics) only works under Git Bash / sh — " +
-      "prefer cross-platform CLIs (rg, node, python, bun) or cmd equivalents (dir, findstr, type) to stay portable. " +
+      "PERSISTENT SESSION: commands run in a persistent bash session scoped to this conversation — " +
+      "cwd, exported env vars and functions persist across calls (e.g. `cd src` once, later calls stay there; " +
+      "export once, later calls see it). Pass reset=true to wipe state and start a fresh session. " +
+      "On timeout the session survives and partial output is returned — long tasks can end with \" &\" to background, " +
+      "then poll later with `jobs` / `wait`. " +
+      "PLATFORM SHELL: the persistent session runs Git Bash / MSYS2 bash on Windows (POSIX syntax available: grep, ls, head, $(), pipes); " +
+      "on macOS/Linux it runs system bash. If the persistent session is unavailable it falls back to a one-shot shell " +
+      "(Windows cmd /C semantics apply there). " +
       "If a command is reported missing, switch to an equivalent available command instead of retrying the same one. " +
       "Use it for CLI-based skills that need bun/npm/curl/powershell, such as the tencent-news CLI. " +
-      "Always pass command as the full shell string; cwd defaults to the project workspace. " +
+      "Always pass command as the full shell string; the session starts in the project workspace. " +
       "NOTE: clearly read-only commands (ls/dir/cat/type/git status/log/diff, grep/findstr, etc.) run WITHOUT confirmation; " +
       "anything that writes/installs/kills/networks requires explicit user confirmation (a dialog shows the exact command); " +
       "destructive commands (rm -rf, del /s, format, net user, reg add, iex/-enc, shutdown, etc.) are hard-blocked by the tool layer. " +
@@ -501,11 +504,15 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
       properties: {
         command: {
           type: "string",
-          description: "完整的 shell 命令字符串，原样交给系统 shell（可含管道、重定向、&& 串联）",
+          description: "完整的 shell 命令字符串，原样交给持久 shell（可含管道、重定向、&& 串联）",
         },
         cwd: {
           type: "string",
-          description: "工作目录（绝对路径，可选）。建议锁定在项目工作区；缺省回落到应用目录",
+          description: "初始工作目录（绝对路径，可选，仅会话新建时生效）。建议锁定在项目工作区",
+        },
+        reset: {
+          type: "boolean",
+          description: "true = 先重置持久会话再执行（丢弃已保留的 cwd/环境变量，回到全新 shell）。默认 false。",
         },
       },
       required: ["command"],

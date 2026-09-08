@@ -548,7 +548,7 @@ describe("/bash 自定义 Shell 路径（设置 → 命令执行）", () => {
     localStorage.removeItem("omni_basic_settings");
   });
 
-  it("设置里配置了 shellPath 时透传给 execute_command", async () => {
+  it("设置里配置了 shellPath 时透传给持久会话执行", async () => {
     localStorage.setItem("omni_basic_settings", JSON.stringify({ shellPath: "C:/msys64/usr/bin/bash.exe" }));
     const runtime = createRuntime({ activeProject: createProject() });
     mockedInvoke.mockResolvedValueOnce({ exitCode: 0, output: "ok", timedOut: false });
@@ -559,11 +559,11 @@ describe("/bash 自定义 Shell 路径（设置 → 命令执行）", () => {
     });
 
     expect(result?.ok).toBe(true);
-    // Rust 端签名 execute_command(input: ExecuteCommandInput)：参数整体包在 input 键下
+    // bash 工具默认走持久会话 shell_session_exec（input 包裹，含按会话隔离的 sessionId）
     expect(mockedInvoke).toHaveBeenCalledWith(
-      "execute_command",
+      "shell_session_exec",
       expect.objectContaining({
-        input: expect.objectContaining({ shellPath: "C:/msys64/usr/bin/bash.exe" }),
+        input: expect.objectContaining({ shellPath: "C:/msys64/usr/bin/bash.exe", sessionId: "session-1" }),
       }),
     );
   });
@@ -579,11 +579,65 @@ describe("/bash 自定义 Shell 路径（设置 → 命令执行）", () => {
 
     expect(result?.ok).toBe(true);
     expect(mockedInvoke).toHaveBeenCalledWith(
-      "execute_command",
+      "shell_session_exec",
       expect.objectContaining({
         input: expect.objectContaining({ shellPath: null }),
       }),
     );
+  });
+
+  it("reset=true 时先重置会话再执行（两次 invoke 按序）", async () => {
+    const runtime = createRuntime({ activeProject: createProject() });
+    mockedInvoke
+      .mockResolvedValueOnce({ reset: true })
+      .mockResolvedValueOnce({ exitCode: 0, output: "ok", timedOut: false, shellReset: false });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "pwd", reset: true }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "shell_session_reset", {
+      input: { sessionId: "session-1" },
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(
+      2,
+      "shell_session_exec",
+      expect.objectContaining({ input: expect.objectContaining({ sessionId: "session-1", command: "pwd" }) }),
+    );
+  });
+
+  it("持久会话不可用时回落一次性 execute_command", async () => {
+    const runtime = createRuntime({ activeProject: createProject() });
+    mockedInvoke
+      .mockRejectedValueOnce("未找到 bash（持久会话需要 Git Bash / MSYS2）")
+      .mockResolvedValueOnce({ exitCode: 0, output: "fallback ok", timedOut: false });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "dir" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("fallback ok");
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "execute_command",
+      expect.objectContaining({ input: expect.objectContaining({ command: "dir" }) }),
+    );
+  });
+
+  it("会话自动重置（shellReset=true）时输出前缀提示", async () => {
+    const runtime = createRuntime({ activeProject: createProject() });
+    mockedInvoke.mockResolvedValueOnce({ exitCode: 0, output: "ok", timedOut: false, shellReset: true });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "pwd" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("持久 shell 已自动重置");
   });
 });
 

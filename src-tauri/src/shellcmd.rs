@@ -16,12 +16,12 @@ use std::thread;
 use std::time::Duration;
 
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// 默认命令超时（毫秒）。CLI 技能包（如腾讯新闻 install-cli）可能要下载，给足时间。
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 /// 单次输出上限，超出截断，避免超大输出撑爆上下文。
-const MAX_OUTPUT_CHARS: usize = 32_000;
+pub(crate) const MAX_OUTPUT_CHARS: usize = 32_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,7 +51,7 @@ pub struct ExecuteCommandResult {
     pub timed_out: bool,
 }
 
-fn cap_output(text: &str, max: usize) -> String {
+pub(crate) fn cap_output(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         text.to_string()
     } else {
@@ -69,7 +69,7 @@ fn cap_output(text: &str, max: usize) -> String {
 /// 3. PATH 上的 `bash.exe`（便携版 Git 等），**排除 `C:\Windows\System32\bash.exe`** ——
 ///    那是 WSL，路径体系（/mnt/c）和行为完全不同，误用会造成语义错乱。
 #[cfg(windows)]
-fn detect_git_bash() -> Option<String> {
+pub(crate) fn detect_git_bash() -> Option<String> {
     use std::sync::OnceLock;
     static GIT_BASH: OnceLock<Option<String>> = OnceLock::new();
     GIT_BASH
@@ -226,11 +226,8 @@ fn build_shell_command(command: &str, shell_path: Option<&str>) -> Result<Comman
     Ok(c)
 }
 
-/// 环境变量脱敏（对齐 Codex spawn_child 的 allowlist 语义）：
-/// 子进程不再继承父进程全部环境变量——密钥类变量（apiKey/token 等）不会随 /bash 泄漏到
-/// 命令输出或第三方 CLI。白名单只保留系统/基础设施必需项，保证 shell、PATH 解析、
-/// 用户目录、临时目录等正常工作。Git-Bash 需 MSYSTEM/EXEPATH 才能正确初始化。
-fn scrub_environment(cmd: &mut Command) {
+/// 环境变量白名单判断（scrub_environment 与持久会话 scrub_pty_env 共用）。
+pub(crate) fn is_env_allowed(key: &str) -> bool {
     const ALLOWED: &[&str] = &[
         // Windows 系统必需
         "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "OS",
@@ -248,10 +245,17 @@ fn scrub_environment(cmd: &mut Command) {
         "MSYSTEM", "EXEPATH", "HOME_DRIVE",
         "JAVA_HOME", "CARGO_HOME", "RUSTUP_HOME", "GOPATH", "GOROOT", "PYTHONDONTWRITEBYTECODE",
     ];
+    ALLOWED.iter().any(|allowed| allowed.eq_ignore_ascii_case(key))
+}
+
+/// 环境变量脱敏（对齐 Codex spawn_child 的 allowlist 语义）：
+/// 子进程不再继承父进程全部环境变量——密钥类变量（apiKey/token 等）不会随 /bash 泄漏到
+/// 命令输出或第三方 CLI。白名单只保留系统/基础设施必需项，保证 shell、PATH 解析、
+/// 用户目录、临时目录等正常工作。Git-Bash 需 MSYSTEM/EXEPATH 才能正确初始化。
+fn scrub_environment(cmd: &mut Command) {
     cmd.env_clear();
     for (key, value) in std::env::vars_os() {
-        let key_str = key.to_string_lossy();
-        if ALLOWED.iter().any(|allowed| allowed.eq_ignore_ascii_case(&key_str)) {
+        if is_env_allowed(&key.to_string_lossy()) {
             cmd.env(key, value);
         }
     }

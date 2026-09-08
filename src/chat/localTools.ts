@@ -1336,26 +1336,56 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           return { ok: false, error: "已取消：未确认执行本地命令" };
         }
 
-        const result = await invoke<{
-          exitCode: number;
-          output: string;
-          timedOut: boolean;
-        }>("execute_command", {
-          // Rust 端签名为 `execute_command(input: ExecuteCommandInput)`，
-          // 参数必须整体包在 input 键下（扁平传参会报 missing required key input）。
-          input: {
-            command,
-            cwd,
-            shellPath,
-            timeoutMs: 120_000,
-          },
-        });
+        // 持久 shell 会话：按聊天会话隔离（同会话复用同一常驻 bash，cwd/env 跨调用保留）。
+        // reset=true 先杀掉旧会话，本次 exec 会自动新建全新会话。
+        const sessionId = runtime.activeChatId ?? "default";
+        if (json?.reset === true) {
+          try {
+            await invoke("shell_session_reset", { input: { sessionId } });
+          } catch {
+            // 会话不存在时重置失败无妨，后续 exec 会新建
+          }
+        }
 
+        let result: { exitCode: number; output: string; timedOut: boolean; shellReset?: boolean };
+        try {
+          result = await invoke<{
+            exitCode: number;
+            output: string;
+            timedOut: boolean;
+            shellReset?: boolean;
+          }>("shell_session_exec", {
+            input: { sessionId, command, cwd, shellPath, timeoutMs: 120_000 },
+          });
+        } catch {
+          // 持久会话不可用（未找到 bash / 自定义 Shell 非 bash 族）→ 回落一次性执行。
+          result = await invoke<{
+            exitCode: number;
+            output: string;
+            timedOut: boolean;
+          }>("execute_command", {
+            // Rust 端签名为 `execute_command(input: ExecuteCommandInput)`，
+            // 参数必须整体包在 input 键下（扁平传参会报 missing required key input）。
+            input: {
+              command,
+              cwd,
+              shellPath,
+              timeoutMs: 120_000,
+            },
+          });
+        }
+
+        const resetPrefix = result.shellReset
+          ? "（持久 shell 已自动重置：旧会话已失效，本次在全新会话中执行，cwd/环境变量回到初始状态）\n"
+          : "";
         if (result.timedOut) {
+          const note = typeof result.shellReset === "boolean"
+            ? "（命令超时，持久会话仍存活；长命令可在末尾加 \" &\" 转后台，稍后用 echo $! / jobs 查询）"
+            : "（命令超时，已被终止）";
           return {
             ok: true,
-            outputText: `（命令超时，已被终止）\n${withClipNote(result.output)}`,
-            data: { exitCode: result.exitCode, timedOut: true },
+            outputText: `${resetPrefix}${note}\n${withClipNote(result.output)}`,
+            data: { exitCode: result.exitCode, timedOut: true, shellReset: result.shellReset ?? false },
           };
         }
         if (result.exitCode !== 0) {
@@ -1364,14 +1394,14 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           const hint = missing ? buildMissingCommandHint(missing) : "";
           return {
             ok: true,
-            outputText: `（退出码 ${result.exitCode}）\n${withClipNote(result.output)}${hint}`,
-            data: { exitCode: result.exitCode },
+            outputText: `${resetPrefix}（退出码 ${result.exitCode}）\n${withClipNote(result.output)}${hint}`,
+            data: { exitCode: result.exitCode, shellReset: result.shellReset ?? false },
           };
         }
         return {
           ok: true,
-          outputText: withClipNote(result.output) || "（命令执行成功，无输出）",
-          data: { exitCode: 0 },
+          outputText: `${resetPrefix}${withClipNote(result.output) || "（命令执行成功，无输出）"}`,
+          data: { exitCode: 0, shellReset: result.shellReset ?? false },
         };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };

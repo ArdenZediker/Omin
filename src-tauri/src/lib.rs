@@ -35,6 +35,7 @@ mod clipboard_files;
 mod connectorhub;
 mod mcp;
 mod shellcmd;
+mod shell_session;
 mod filemod;
 
 // 从 lib.rs 拆分出去的四个模块，用私有 glob 取回其中的函数与类型。
@@ -51,6 +52,7 @@ use clipboard_files::*;
 use connectorhub::*;
 use mcp::*;
 use shellcmd::*;
+use shell_session::*;
 use filemod::*;
 
 // 需要被其它模块以 `crate::X` 引用的条目，改为显式重导出（显式重导出不会牵扯宏命名空间）。
@@ -596,6 +598,8 @@ pub fn run() {
             read_mcp_stderr,
             execute_command,
             detect_shell,
+            shell_session_exec,
+            shell_session_reset,
             write_file_tool,
             edit_file_tool,
             undo_file_edit

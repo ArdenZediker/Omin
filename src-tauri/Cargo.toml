@@ -25,6 +25,8 @@ tauri-plugin-clipboard-manager = "2"
 arboard = "3"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
+# 持久 shell 会话（shell_session.rs）：真 PTY——Windows 走 ConPTY，Unix 走 openpty（codex 同款）。
+portable-pty = "0.9"
 
 [target."cfg(windows)".dependencies]
 clipboard-win = { version = "5", features = ["std"] }
