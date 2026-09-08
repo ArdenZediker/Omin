@@ -267,6 +267,43 @@ export default function BasicSettingsSection({
         </p>
       </div>
 
+      <div className="space-y-4 border-t border-slate-100 pt-4">
+        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">命令执行</h3>
+        <div className="grid grid-cols-[120px_1fr] gap-4">
+          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">Shell 路径</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={basicSettings.shellPath}
+              onChange={(e) => onUpdateBasicSettings({ shellPath: e.target.value })}
+              placeholder="留空自动探测（Git-Bash → cmd /C）"
+              className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                const picked = await openDialog({
+                  directory: false,
+                  multiple: false,
+                  title: "选择 Shell 可执行文件",
+                  filters: [{ name: "Shell", extensions: ["exe", "bat", "cmd", "sh", "bash"] }],
+                });
+                if (typeof picked === "string" && picked.trim()) {
+                  onUpdateBasicSettings({ shellPath: picked.trim() });
+                }
+              }}
+              className="h-9 shrink-0 rounded-md border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              选择文件
+            </button>
+          </div>
+        </div>
+        <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
+          「运行 Shell 命令」工具使用的 Shell。留空时 Windows 自动探测 Git-Bash（未命中回落 cmd），macOS/Linux 用系统 sh；
+          指定后按可执行名匹配参数（bash/zsh → -lc，cmd → /C，pwsh → -Command，其余 → -c），可指向 MSYS2、Cygwin 或任意自定义 Shell。
+        </p>
+      </div>
+
       <div className="border-t border-slate-100 pt-4">
         <CodexPetSection
           packages={codexPetPackages}

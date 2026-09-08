@@ -8,6 +8,8 @@ import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 import type { FileDiff } from "./fileDiff";
 import { requestConfirmation } from "./confirmationGate";
 import { buildSessionOutputDir, getEffectiveOutputRoot } from "../app/outputStorage";
+import { loadBasicSettings } from "../app/settings";
+import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
 
 export type LocalToolSession = {
   id: string;
@@ -1096,6 +1098,14 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       // 工作目录锁定到项目工作区（缺省回落由 Rust 端处理）。
       const cwd = runtime.activeProject?.workspacePath || null;
 
+      // 自定义 Shell 路径（设置 → 命令执行）：非空时覆盖 Rust 端的自动探测。
+      let shellPath: string | null = null;
+      try {
+        shellPath = loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).shellPath?.trim() || null;
+      } catch {
+        shellPath = null;
+      }
+
       // 只读命令快通道：对齐 Codex is_known_safe_command —— 明确只读的命令跳过确认门直接执行；
       // 其余（含可疑 shell 元字符、非白名单可执行）仍走 HITL 确认（保守默认）。
       const autoApproved = isKnownSafeCommand(command);
@@ -1128,6 +1138,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         }>("execute_command", {
           command,
           cwd,
+          shellPath,
           timeoutMs: 120_000,
         });
 

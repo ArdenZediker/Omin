@@ -34,6 +34,7 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   openMainShortcut: DEFAULT_OPEN_MAIN_SHORTCUT,
   switchPreviousModelShortcut: UNSET_SHORTCUT,
   defaultWorkspacePath: "",
+  shellPath: "",
 };
 
 export const COMPACT_APPEARANCE_PRESETS: Record<CompactAppearance, { width: number; height: number }> = {

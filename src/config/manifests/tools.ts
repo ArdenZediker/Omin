@@ -384,6 +384,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     promptContribution:
       "Call /bash to run a shell command on the user's local machine. " +
       "PLATFORM SHELL: on Windows the executor is cmd.exe (cmd /C), or Git Bash (bash -lc) when installed; " +
+      "on macOS/Linux it runs via sh -c. The user may override the shell path in settings (e.g. MSYS2/Cygwin bash); " +
       "on macOS/Linux it runs via sh -c. " +
       "POSIX-only syntax (grep, ls, head, $(), single-quote semantics) only works under Git Bash / sh — " +
       "prefer cross-platform CLIs (rg, node, python, bun) or cmd equivalents (dir, findstr, type) to stay portable. " +

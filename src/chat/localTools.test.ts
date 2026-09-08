@@ -541,3 +541,43 @@ describe("/bash 命令未找到时报错引导（方案C）", () => {
     expect(result?.outputText).not.toContain("未找到命令");
   });
 });
+
+describe("/bash 自定义 Shell 路径（设置 → 命令执行）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.removeItem("omni_basic_settings");
+  });
+
+  it("设置里配置了 shellPath 时透传给 execute_command", async () => {
+    localStorage.setItem("omni_basic_settings", JSON.stringify({ shellPath: "C:/msys64/usr/bin/bash.exe" }));
+    const runtime = createRuntime({ activeProject: createProject() });
+    mockedInvoke.mockResolvedValueOnce({ exitCode: 0, output: "ok", timedOut: false });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "ls -la" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "execute_command",
+      expect.objectContaining({ shellPath: "C:/msys64/usr/bin/bash.exe" }),
+    );
+  });
+
+  it("shellPath 为空（默认）时透传 null，由 Rust 端自动探测", async () => {
+    const runtime = createRuntime({ activeProject: createProject() });
+    mockedInvoke.mockResolvedValueOnce({ exitCode: 0, output: "ok", timedOut: false });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "dir" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "execute_command",
+      expect.objectContaining({ shellPath: null }),
+    );
+  });
+});

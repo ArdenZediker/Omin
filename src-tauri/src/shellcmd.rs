@@ -31,6 +31,10 @@ pub struct ExecuteCommandInput {
     /// 工作目录（绝对路径）。建议锁定在项目工作区。
     #[serde(default)]
     pub cwd: Option<String>,
+    /// 自定义 Shell 可执行文件路径（设置 → 命令执行）。非空时覆盖自动探测；
+    /// 按可执行名匹配参数：bash/zsh → -lc，cmd → /C，pwsh → -Command，其余 → -c。
+    #[serde(default)]
+    pub shell_path: Option<String>,
     /// 自定义超时（毫秒），可选；超出用默认。
     #[serde(default)]
     pub timeout_ms: Option<u64>,
@@ -86,32 +90,89 @@ fn detect_git_bash() -> Option<String> {
         .clone()
 }
 
+/// 按可执行文件名选择传参方式（自定义 Shell 与自动探测共用）。
+/// bash/zsh 用登录 shell（-l 加载标准 PATH，ls/grep 等 POSIX 工具可用）；
+/// sh/dash/fish 及未知可执行用最通用的 -c；PowerShell 用 -NoLogo -Command；cmd 用 /C。
+fn apply_shell_args(cmd: &mut Command, exe_stem: &str, command: &str) {
+    let name = exe_stem.to_ascii_lowercase();
+    let is_powershell = name == "pwsh" || name.contains("powershell");
+    let is_bash_like = name.contains("bash") || name.contains("zsh");
+    let is_cmd = name == "cmd" || name == "cmd.exe";
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        if is_cmd {
+            // raw_arg 原样传命令，避开 Rust 自动加引号触发 cmd 外层引号剥离规则。
+            cmd.raw_arg("/C").raw_arg(command);
+            return;
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = is_cmd;
+
+    if is_powershell {
+        cmd.arg("-NoLogo").arg("-Command").arg(command);
+    } else if is_bash_like {
+        cmd.arg("-lc").arg(command);
+    } else {
+        cmd.arg("-c").arg(command);
+    }
+}
+
+/// 解析自定义 Shell 路径：非空时校验文件存在并返回（路径, 可执行名）。
+fn resolve_custom_shell(shell_path: Option<&str>) -> Result<Option<(String, String)>, String> {
+    let Some(p) = shell_path.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let path = std::path::Path::new(p);
+    if !path.is_file() {
+        return Err(format!("自定义 Shell 路径不存在：{p}"));
+    }
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(Some((p.to_string(), stem)))
+}
+
 /// 构造系统 shell 包装命令。
-/// Windows（方案A）：优先 Git-Bash（存在即 `bash -lc`，登录 shell 加载标准 PATH，
-/// ls/grep/sed 等 POSIX 工具可用）；否则回落 `cmd /C`，用 `raw_arg` **原样**传命令
-/// 字符串（不做 Rust 的自动引号转义）——若用 `.args(["/C", cmd])`，Rust 会在命令含
+/// 优先级：设置里的自定义 Shell 路径 > Windows 自动探测 Git-Bash > 系统默认。
+/// Windows 自动探测未命中时回落 `cmd /C`，用 `raw_arg` **原样**传命令字符串
+/// （不做 Rust 的自动引号转义）——若用 `.args(["/C", cmd])`，Rust 会在命令含
 /// 空格时整体加引号变成 `cmd /C "整个命令"`，触发 cmd 特殊的外层引号剥离规则，
-/// 导致含空格路径、嵌套双引号的命令解析错乱（手动 cmd 能跑、程序调用就失败的典型
-/// 根因）。原样传递等价于手敲 `cmd /C <命令>`。
+/// 导致含空格路径、嵌套双引号的命令解析错乱（手动 cmd 能跑、程序调用就失败的
+/// 典型根因）。原样传递等价于手敲 `cmd /C <命令>`。
 /// 其他平台：`sh -c <命令>`。
 #[cfg(windows)]
-fn build_shell_command(command: &str) -> Command {
+fn build_shell_command(command: &str, shell_path: Option<&str>) -> Result<Command, String> {
+    if let Some((path, stem)) = resolve_custom_shell(shell_path)? {
+        let mut c = Command::new(path);
+        apply_shell_args(&mut c, &stem, command);
+        return Ok(c);
+    }
     if let Some(bash) = detect_git_bash() {
         let mut c = Command::new(bash);
         c.arg("-lc").arg(command);
-        return c;
+        return Ok(c);
     }
     use std::os::windows::process::CommandExt;
     let mut c = Command::new("cmd");
     c.raw_arg("/C").raw_arg(command);
-    c
+    Ok(c)
 }
 
 #[cfg(not(windows))]
-fn build_shell_command(command: &str) -> Command {
+fn build_shell_command(command: &str, shell_path: Option<&str>) -> Result<Command, String> {
+    if let Some((path, stem)) = resolve_custom_shell(shell_path)? {
+        let mut c = Command::new(path);
+        apply_shell_args(&mut c, &stem, command);
+        return Ok(c);
+    }
     let mut c = Command::new("sh");
     c.arg("-c").arg(command);
-    c
+    Ok(c)
 }
 
 /// 用系统 shell 执行命令，带超时与跨平台无窗口处理。
@@ -119,7 +180,7 @@ fn run_shell(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String>
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
     let cwd = input.cwd.clone();
 
-    let mut cmd = build_shell_command(&input.command);
+    let mut cmd = build_shell_command(&input.command, input.shell_path.as_deref())?;
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {

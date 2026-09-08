@@ -14,6 +14,8 @@ export type BasicSettings = {
   switchPreviousModelShortcut: string;
   /** 全局「默认工作空间」：未单独配置工作目录的项目/任务会话自动共用此目录 */
   defaultWorkspacePath: string;
+  /** 自定义 Shell 可执行文件路径（/bash 工具）。留空时 Windows 自动探测 Git-Bash，未命中回落 cmd /C；macOS/Linux 用系统 sh */
+  shellPath: string;
 };
 
 export type ExternalChatEntry = {
