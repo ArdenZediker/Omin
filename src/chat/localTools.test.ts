@@ -559,9 +559,12 @@ describe("/bash 自定义 Shell 路径（设置 → 命令执行）", () => {
     });
 
     expect(result?.ok).toBe(true);
+    // Rust 端签名 execute_command(input: ExecuteCommandInput)：参数整体包在 input 键下
     expect(mockedInvoke).toHaveBeenCalledWith(
       "execute_command",
-      expect.objectContaining({ shellPath: "C:/msys64/usr/bin/bash.exe" }),
+      expect.objectContaining({
+        input: expect.objectContaining({ shellPath: "C:/msys64/usr/bin/bash.exe" }),
+      }),
     );
   });
 
@@ -577,7 +580,9 @@ describe("/bash 自定义 Shell 路径（设置 → 命令执行）", () => {
     expect(result?.ok).toBe(true);
     expect(mockedInvoke).toHaveBeenCalledWith(
       "execute_command",
-      expect.objectContaining({ shellPath: null }),
+      expect.objectContaining({
+        input: expect.objectContaining({ shellPath: null }),
+      }),
     );
   });
 });

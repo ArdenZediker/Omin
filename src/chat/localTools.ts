@@ -1292,10 +1292,14 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           output: string;
           timedOut: boolean;
         }>("execute_command", {
-          command,
-          cwd,
-          shellPath,
-          timeoutMs: 120_000,
+          // Rust 端签名为 `execute_command(input: ExecuteCommandInput)`，
+          // 参数必须整体包在 input 键下（扁平传参会报 missing required key input）。
+          input: {
+            command,
+            cwd,
+            shellPath,
+            timeoutMs: 120_000,
+          },
         });
 
         if (result.timedOut) {
