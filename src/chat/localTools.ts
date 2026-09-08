@@ -980,6 +980,95 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     },
   });
 
+  registry.register({
+    id: "bash",
+    command: "/bash",
+    title: "运行 Shell 命令",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const command = strArg(json, "command") ?? resolvedCommand.args.trim();
+      if (!command) return { ok: false, error: "用法：/bash JSON{\"command\":\"...\"}" };
+
+      // 危险命令黑名单：直接拦截，不弹确认（对齐「Warn + List + Confirm」铁律）。
+      const DANGEROUS_PATTERNS = [
+        /\brm\s+-rf?\b/i,
+        /\brm\b.*-r.*-f/i,
+        /\brd\b.*\/s/i,
+        /\bdel\b.*\/[sq]/i,
+        /\bformat\s+[a-z]:/i,
+        /\bshutdown\b/i,
+        /\bhalt\b/i,
+        /\breboot\b/i,
+        /\bmkfs\b/i,
+        /:\s*\(\)\s*\{.*\}\s*;/, // fork bomb
+        /\bdd\s+if=.*of=\/dev\//i,
+        /\bchmod\s+-r\s+777\s+\//i,
+        /\bcurl\b.*\|\s*(sudo\s+)?(ba)?sh\b/i,
+        /\bwget\b.*\|\s*(sudo\s+)?(ba)?sh\b/i,
+      ];
+      if (DANGEROUS_PATTERNS.some((re) => re.test(command))) {
+        return {
+          ok: false,
+          error: "该命令被安全策略拦截（疑似破坏性/高危操作）：" + command,
+        };
+      }
+
+      // 工作目录锁定到项目工作区（缺省回落由 Rust 端处理）。
+      const cwd = runtime.activeProject?.workspacePath || null;
+
+      try {
+        const approved = await requestConfirmation({
+          source: "bash",
+          title: "执行本地命令？",
+          summary: "模型请求在本机运行一条 shell 命令（腾讯新闻等 CLI 技能需要）。",
+          riskLevel: "write",
+          details: [
+            { label: "命令", value: command },
+            ...(cwd ? [{ label: "工作目录", value: cwd }] : []),
+          ],
+          targets: [command],
+          warning: "命令将在你的本机执行。请确认来源可信、命令符合预期后再允许；高危命令将被自动拦截。",
+          confirmLabel: "确认执行",
+        });
+        if (!approved) {
+          return { ok: false, error: "已取消：未确认执行本地命令" };
+        }
+
+        const result = await invoke<{
+          exitCode: number;
+          output: string;
+          timedOut: boolean;
+        }>("execute_command", {
+          command,
+          cwd,
+          timeoutMs: 120_000,
+        });
+
+        if (result.timedOut) {
+          return {
+            ok: true,
+            outputText: `（命令超时，已被终止）\n${result.output}`,
+            data: { exitCode: result.exitCode, timedOut: true },
+          };
+        }
+        if (result.exitCode !== 0) {
+          return {
+            ok: true,
+            outputText: `（退出码 ${result.exitCode}）\n${result.output}`,
+            data: { exitCode: result.exitCode },
+          };
+        }
+        return {
+          ok: true,
+          outputText: result.output || "（命令执行成功，无输出）",
+          data: { exitCode: 0 },
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
   return registry;
 }
 

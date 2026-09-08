@@ -34,6 +34,7 @@ mod office_export;
 mod clipboard_files;
 mod connectorhub;
 mod mcp;
+mod shellcmd;
 
 // 从 lib.rs 拆分出去的四个模块，用私有 glob 取回其中的函数与类型。
 // 这些模块内部**不要**写 `use super::*`：那会把 crate 根的 `__cmd__*` 宏吸进模块，
@@ -48,6 +49,7 @@ use office_export::*;
 use clipboard_files::*;
 use connectorhub::*;
 use mcp::*;
+use shellcmd::*;
 
 // 需要被其它模块以 `crate::X` 引用的条目，改为显式重导出（显式重导出不会牵扯宏命名空间）。
 pub(crate) use knowledge_embedding_config::{
@@ -589,7 +591,8 @@ pub fn run() {
             stop_mcp_server,
             list_mcp_tools,
             call_mcp_tool,
-            read_mcp_stderr
+            read_mcp_stderr,
+            execute_command
         ])
         .setup(|app| {
             // 清理上一会话遗留的剪贴板图片缓存（best-effort，失败不影响启动）

@@ -375,6 +375,34 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
       required: ["id", "content"],
     },
   },
+  {
+    id: "bash",
+    command: "/bash",
+    title: "运行 Shell 命令",
+    description:
+      "在本机执行 shell 命令（Windows 走 cmd /C，macOS/Linux 走 sh -c），可运行 bun/npm/curl 等 CLI 工具。执行前需用户确认，危险命令会被拦截。",
+    promptContribution:
+      "Call /bash to run a shell command on the user's local machine (Windows: cmd /C; macOS/Linux: sh -c). " +
+      "Use it for CLI-based skills that need bun/npm/curl/powershell, such as the tencent-news CLI. " +
+      "Always pass command as the full shell string; cwd defaults to the project workspace. " +
+      "NOTE: every execution requires explicit user confirmation (a dialog shows the exact command); " +
+      "destructive commands (rm -rf, format, shutdown, etc.) are blocked by the tool layer. " +
+      "Prefer this over web_fetch when a skill explicitly instructs using a local CLI.",
+    parameters: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "完整的 shell 命令字符串，原样交给系统 shell（可含管道、重定向、&& 串联）",
+        },
+        cwd: {
+          type: "string",
+          description: "工作目录（绝对路径，可选）。建议锁定在项目工作区；缺省回落到应用目录",
+        },
+      },
+      required: ["command"],
+    },
+  },
 ];
 
 export const TOOLSET_MANIFESTS: ToolsetManifest[] = [
@@ -450,6 +478,7 @@ export const BUILTIN_TOOL_IDS = [
   "export_xlsx",
   "export_pptx",
   "export_md",
+  "bash",
 ];
 
 export const ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [...BUILTIN_TOOL_IDS];
