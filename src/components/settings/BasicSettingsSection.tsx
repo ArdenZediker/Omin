@@ -367,6 +367,24 @@ export default function BasicSettingsSection({
             {shellProbe.output || (shellProbe.ok ? "可用" : "未知错误")}
           </p>
         )}
+        <div className="grid grid-cols-[120px_1fr] gap-4">
+          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">沙箱模式（实验）</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={basicSettings.sandboxEnabled === true}
+                onChange={(e) => onUpdateBasicSettings({ sandboxEnabled: e.target.checked })}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              在受限 token 沙箱中执行命令（剥离全部特权，防止提权）
+            </label>
+            <p className="text-xs text-slate-500 omni-settings-muted">
+              实验特性，默认关闭。启用后命令在 Windows 受限令牌下执行（无法提权、密钥类环境变量不注入），
+              但会关闭持久 bash 会话（每次一次性执行，cwd 环境变量不再跨调用保留）；非 Windows 平台自动回落普通执行。
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="border-t border-slate-100 pt-4">

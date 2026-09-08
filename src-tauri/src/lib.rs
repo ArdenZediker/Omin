@@ -35,6 +35,7 @@ mod clipboard_files;
 mod connectorhub;
 mod mcp;
 mod shellcmd;
+mod sandbox;
 mod shell_session;
 mod filemod;
 

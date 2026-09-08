@@ -3297,6 +3297,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tokio",
  "uuid",
+ "windows-sys 0.52.0",
  "zip",
 ]
 

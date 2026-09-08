@@ -16,6 +16,8 @@ export type BasicSettings = {
   defaultWorkspacePath: string;
   /** 自定义 Shell 可执行文件路径（/bash 工具）。留空时 Windows 自动探测 Git-Bash，未命中回落 cmd /C；macOS/Linux 用系统 sh */
   shellPath: string;
+  /** 沙箱模式（实验）：命令在 Windows 受限 token 下执行（剥离全部特权防提权）。默认关闭；非 Windows 自动回落普通执行 */
+  sandboxEnabled: boolean;
 };
 
 export type ExternalChatEntry = {

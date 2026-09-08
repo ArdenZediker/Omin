@@ -1369,8 +1369,18 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
         // 持久 shell 会话：按聊天会话隔离（同会话复用同一常驻 bash，cwd/env 跨调用保留）。
         // reset=true 先杀掉旧会话，本次 exec 会自动新建全新会话。
+        // 沙箱模式开启时跳过持久会话（PTY 无法注入受限 token），直接走受限一次性执行
+        // ——损失 cwd/env 跨调用持久性，换取 OS 层防提权兜底，由用户在设置中权衡。
+        const sandboxEnabled = (() => {
+          try {
+            return loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).sandboxEnabled === true;
+          } catch {
+            return false;
+          }
+        })();
+
         const sessionId = runtime.activeChatId ?? "default";
-        if (json?.reset === true) {
+        if (!sandboxEnabled && json?.reset === true) {
           try {
             await invoke("shell_session_reset", { input: { sessionId } });
           } catch {
@@ -1379,17 +1389,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         }
 
         let result: { exitCode: number; output: string; timedOut: boolean; shellReset?: boolean };
-        try {
-          result = await invoke<{
-            exitCode: number;
-            output: string;
-            timedOut: boolean;
-            shellReset?: boolean;
-          }>("shell_session_exec", {
-            input: { sessionId, command, cwd, shellPath, timeoutMs: 120_000 },
-          });
-        } catch {
-          // 持久会话不可用（未找到 bash / 自定义 Shell 非 bash 族）→ 回落一次性执行。
+        if (sandboxEnabled) {
           result = await invoke<{
             exitCode: number;
             output: string;
@@ -1397,13 +1397,30 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           }>("execute_command", {
             // Rust 端签名为 `execute_command(input: ExecuteCommandInput)`，
             // 参数必须整体包在 input 键下（扁平传参会报 missing required key input）。
-            input: {
-              command,
-              cwd,
-              shellPath,
-              timeoutMs: 120_000,
-            },
+            input: { command, cwd, shellPath, timeoutMs: 120_000, sandbox: true },
           });
+        } else {
+          try {
+            result = await invoke<{
+              exitCode: number;
+              output: string;
+              timedOut: boolean;
+              shellReset?: boolean;
+            }>("shell_session_exec", {
+              input: { sessionId, command, cwd, shellPath, timeoutMs: 120_000 },
+            });
+          } catch {
+            // 持久会话不可用（未找到 bash / 自定义 Shell 非 bash 族）→ 回落一次性执行。
+            result = await invoke<{
+              exitCode: number;
+              output: string;
+              timedOut: boolean;
+            }>("execute_command", {
+              // Rust 端签名为 `execute_command(input: ExecuteCommandInput)`，
+              // 参数必须整体包在 input 键下（扁平传参会报 missing required key input）。
+              input: { command, cwd, shellPath, timeoutMs: 120_000, sandbox: false },
+            });
+          }
         }
 
         const resetPrefix = result.shellReset

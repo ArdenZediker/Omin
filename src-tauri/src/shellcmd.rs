@@ -38,6 +38,9 @@ pub struct ExecuteCommandInput {
     /// 自定义超时（毫秒），可选；超出用默认。
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// 是否在受限 token 沙箱中执行（设置 → 命令执行）。默认关闭；非 Windows 平台自动回落普通执行。
+    #[serde(default)]
+    pub sandbox: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -265,6 +268,19 @@ fn scrub_environment(cmd: &mut Command) {
 fn run_shell(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String> {
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
     let cwd = input.cwd.clone();
+
+    // 沙箱模式（设置开关，默认关）：Windows 受限 token 执行，剥离全部特权防提权。
+    // 非 Windows 或未启用时回落普通路径（策略模型已就位，后端按平台补齐）。
+    if input.sandbox.unwrap_or(false)
+        && crate::sandbox::get_platform_sandbox(true) == crate::sandbox::SandboxType::WindowsRestrictedToken
+    {
+        let exec = crate::sandbox::execute_restricted(&input.command, cwd.as_deref(), timeout)?;
+        return Ok(ExecuteCommandResult {
+            exit_code: exec.exit_code,
+            output: exec.output,
+            timed_out: exec.timed_out,
+        });
+    }
 
     let mut cmd = build_shell_command(&input.command, input.shell_path.as_deref())?;
     scrub_environment(&mut cmd);
