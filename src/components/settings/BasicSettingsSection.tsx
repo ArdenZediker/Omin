@@ -8,6 +8,16 @@ import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
 import CodexPetSection from "./CodexPetSection";
 
+// 常见 Shell 可执行文件路径示例（Windows 为主）：点按回填到 Shell 路径输入框。
+const SHELL_EXAMPLES: Array<{ label: string; path: string }> = [
+  { label: "Git-Bash", path: "C:\\Program Files\\Git\\bin\\bash.exe" },
+  { label: "MSYS2", path: "C:\\msys64\\usr\\bin\\bash.exe" },
+  { label: "Cygwin", path: "C:\\cygwin64\\bin\\bash.exe" },
+  { label: "WSL", path: "C:\\Windows\\System32\\wsl.exe" },
+  { label: "busybox", path: "C:\\tools\\busybox.exe" },
+  { label: "PowerShell 7", path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe" },
+];
+
 type Props = {
   basicSettings: BasicSettings;
   themeMode: ThemeMode;
@@ -324,6 +334,23 @@ export default function BasicSettingsSection({
               选择文件
             </button>
           </div>
+        </div>
+        <div className="pl-[136px] flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-slate-500 omni-settings-muted">常见示例：</span>
+          {SHELL_EXAMPLES.map((example) => (
+            <button
+              key={example.label}
+              type="button"
+              title={example.path}
+              onClick={() => {
+                onUpdateBasicSettings({ shellPath: example.path });
+                setShellProbe(null);
+              }}
+              className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900"
+            >
+              {example.label}
+            </button>
+          ))}
         </div>
         <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
           「运行 Shell 命令」工具使用的 Shell。留空时 Windows 自动探测 Git-Bash（未命中回落 cmd），macOS/Linux 用系统 sh；
