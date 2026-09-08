@@ -20,8 +20,14 @@ import {
   iconByName,
 } from "../chat/toolActionMap";
 import { parseSearchMatches, type ParsedSearchMatch } from "../chat/searchResultText";
+import {
+  inferPresentView,
+  parseDiffLines,
+  MAX_READ_PREVIEW_CHARS,
+  type ToolPresentView,
+} from "../chat/presentViews";
 import { requestOpenArtifactInPanel } from "../chat/artifacts";
-import { openArtifactPath, revealArtifactPath } from "./ArtifactCards";
+import { openArtifactPath, revealArtifactPath, openArtifactUrl } from "./ArtifactCards";
 
 /** 从工具参数 JSON 提取一句简短摘要（取首个关键字段值），截断 60 字 */
 export function formatToolArgs(args: string): string {
@@ -116,6 +122,11 @@ export function ExecutionTimeline({
           // /search_files 结果解析为可点击命中行（解析失败/无命中回退普通文本预览）
           const searchMatches =
             step.name === "search_files" && hasSuccessResult ? parseSearchMatches(step.result) : [];
+          // 展示卡：按工具名 + 已持久化字段推导类型化视图（失败/中断/运行中不走卡片）
+          const presentView =
+            hasSuccessResult && !isRunning && !isInterrupted
+              ? inferPresentView(step.name, step.arguments, step.result, step.fileDiff)
+              : null;
           return (
             <ActionStep
               key={`t-${index}-${step.name}`}
@@ -125,6 +136,7 @@ export function ExecutionTimeline({
               argsSummary={formatToolArgs(step.arguments)}
               resultPreview={formatToolResult(step.result)}
               searchMatches={searchMatches.length > 0 ? searchMatches : undefined}
+              presentView={presentView}
               onOpenFileLocation={onOpenFileLocation}
               file={filePath ? { path: filePath, badge: getFileBadgeLabel(step.name) } : undefined}
               isError={step.isError}
@@ -189,6 +201,7 @@ function ActionStep({
   argsSummary,
   resultPreview,
   searchMatches,
+  presentView,
   onOpenFileLocation,
   file,
   isError,
@@ -203,6 +216,8 @@ function ActionStep({
   resultPreview?: string;
   /** /search_files 的结构化命中行：非空时以可点击列表替代纯文本预览 */
   searchMatches?: ParsedSearchMatch[];
+  /** 展示卡视图：非空时按类型渲染结构化卡片（优先级低于 searchMatches） */
+  presentView?: ToolPresentView | null;
   onOpenFileLocation?: (path: string, line: number) => void;
   file?: { path: string; badge: string };
   isError?: boolean;
@@ -274,6 +289,8 @@ function ActionStep({
               </div>
             ))}
           </div>
+        ) : presentView ? (
+          <PresentCard view={presentView} />
         ) : resultPreview ? (
           <div className="exec-action__result">{resultPreview}</div>
         ) : null}
@@ -290,5 +307,165 @@ function ArtifactMiniRow({ artifactId, title }: { artifactId: string; title: str
       <span className="exec-artifact__title">{title}</span>
       <span className="exec-artifact__open">在产物面板打开</span>
     </button>
+  );
+}
+
+/** 展示卡分发：按视图类型渲染对应卡片（harness presentationMeta 思路） */
+function PresentCard({ view }: { view: ToolPresentView }) {
+  if (view.kind === "terminal") return <TerminalCard view={view} />;
+  if (view.kind === "diff") return <DiffCard view={view} />;
+  if (view.kind === "read") return <ReadCard view={view} />;
+  return <WebCard view={view} />;
+}
+
+/** terminal 卡：命令 + 退出码/超时徽标 + 可滚动输出 + 重置/截断注记 */
+function TerminalCard({
+  view,
+}: {
+  view: Extract<ToolPresentView, { kind: "terminal" }>;
+}) {
+  const statusLabel = view.timedOut
+    ? "超时"
+    : view.exitCode != null && view.exitCode !== 0
+      ? `exit ${view.exitCode}`
+      : "exit 0";
+  const statusClass =
+    view.timedOut || (view.exitCode != null && view.exitCode !== 0)
+      ? "exec-card__status--fail"
+      : "exec-card__status--ok";
+  return (
+    <div className="exec-card">
+      <div className="exec-card__head">
+        <span className="exec-card__badge exec-card__badge--terminal">terminal</span>
+        {view.command ? (
+          <code className="exec-card__cmd" title={view.command}>
+            {view.command}
+          </code>
+        ) : null}
+        <span className={`exec-card__status ${statusClass}`}>{statusLabel}</span>
+      </div>
+      {view.output ? <pre className="exec-card__pre">{view.output}</pre> : null}
+      {view.shellReset ? (
+        <div className="exec-card__note">持久 shell 已自动重置，cwd/环境变量回到初始状态</div>
+      ) : null}
+      {view.timedOut ? (
+        <div className="exec-card__note">命令超时；持久会话仍存活，长命令可在末尾加 &quot; &amp;&quot; 转后台后轮询</div>
+      ) : null}
+      {view.clipped ? <div className="exec-card__note">输出被截断 — 用 head/tail/grep 精确提取后重试</div> : null}
+    </div>
+  );
+}
+
+/** diff 卡：文件名 + 增删统计，默认折叠，展开为行级着色的 unified-diff */
+function DiffCard({ view }: { view: Extract<ToolPresentView, { kind: "diff" }> }) {
+  const [open, setOpen] = useState(false);
+  const { lines, omitted } = parseDiffLines(view.diffContent);
+  return (
+    <div className="exec-card">
+      <button
+        type="button"
+        className="exec-card__head exec-card__head--btn"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+      >
+        <span className="exec-card__badge exec-card__badge--diff">diff</span>
+        <code className="exec-card__cmd" title={view.filename}>
+          {view.filename}
+        </code>
+        <span className="exec-card__stats">
+          <span className="exec-card__stat-add">+{view.insertions}</span>
+          <span className="exec-card__stat-del">−{view.deletions}</span>
+        </span>
+        <ChevronRight
+          size={12}
+          strokeWidth={2}
+          className={`exec-seg__chevron ${open ? "exec-seg__chevron--open" : ""}`}
+        />
+      </button>
+      {open ? (
+        <pre className="exec-card__diff">
+          {lines.map((line, lineIndex) => (
+            <span key={lineIndex} className={`exec-diff-line exec-diff-line--${line.type}`}>
+              {line.text || " "}
+            </span>
+          ))}
+          {omitted > 0 ? <span className="exec-card__note">其余 {omitted} 行省略 — 完整 diff 在变更面板查看</span> : null}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
+/** read 卡：路径 + 行区间 + 阅读进度，默认折叠，展开为带滚动的内容预览 */
+function ReadCard({ view }: { view: Extract<ToolPresentView, { kind: "read" }> }) {
+  const [open, setOpen] = useState(false);
+  const pct = view.total > 0 ? Math.round((view.returned / view.total) * 100) : 100;
+  const preview =
+    view.content.length > MAX_READ_PREVIEW_CHARS
+      ? `${view.content.slice(0, MAX_READ_PREVIEW_CHARS)}\n…（预览截断，完整内容在编辑器打开）`
+      : view.content;
+  return (
+    <div className="exec-card">
+      <button
+        type="button"
+        className="exec-card__head exec-card__head--btn"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+      >
+        <span className="exec-card__badge">read</span>
+        <code className="exec-card__cmd" title={view.path}>
+          {view.path}
+        </code>
+        <span className="exec-card__status">
+          {view.lineFrom != null ? `第 ${view.lineFrom}-${view.lineTo} 行 · ` : ""}
+          {view.returned}/{view.total} 字符（{pct}%）
+        </span>
+        <ChevronRight
+          size={12}
+          strokeWidth={2}
+          className={`exec-seg__chevron ${open ? "exec-seg__chevron--open" : ""}`}
+        />
+      </button>
+      {open && preview ? <pre className="exec-card__pre">{preview}</pre> : null}
+      {view.clipped ? (
+        <div className="exec-card__note">内容被截断 — 先用 search_files 定位行号，再按 offsetChars 续读</div>
+      ) : null}
+    </div>
+  );
+}
+
+/** web 卡：搜索结果列表（标题可点击打开链接）或抓取页标题+地址 */
+function WebCard({ view }: { view: Extract<ToolPresentView, { kind: "web" }> }) {
+  return (
+    <div className="exec-card">
+      <div className="exec-card__head">
+        <span className="exec-card__badge exec-card__badge--web">web</span>
+        <span className="exec-card__cmd" title={view.source}>
+          {view.mode === "search" ? `搜索「${view.source}」` : view.source}
+        </span>
+        {view.mode === "search" ? (
+          <span className="exec-card__status">{view.items.length} 条结果</span>
+        ) : null}
+      </div>
+      <div className="exec-web-items">
+        {view.items.map((item, itemIndex) => (
+          <div key={`${item.url}:${itemIndex}`} className="exec-web-item">
+            {item.url ? (
+              <button
+                type="button"
+                className="exec-web-item__title"
+                title={item.url}
+                onClick={() => void openArtifactUrl(item.url)}
+              >
+                {item.title || item.url}
+              </button>
+            ) : (
+              <span className="exec-web-item__title">{item.title}</span>
+            )}
+            {item.snippet ? <span className="exec-web-item__snippet">{item.snippet}</span> : null}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

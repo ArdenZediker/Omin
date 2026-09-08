@@ -170,3 +170,117 @@ describe("ExecutionTimeline（共享组件）", () => {
     expect(container.querySelector(".exec-action__result")).not.toBeNull();
   });
 });
+
+describe("ExecutionTimeline · 展示卡（presentView 分发）", () => {
+  it("bash 成功结果渲染 terminal 卡：命令 + exit 0 + 输出", () => {
+    const steps: ChatStep[] = [
+      {
+        type: "tool_call",
+        name: "bash",
+        arguments: JSON.stringify({ command: "git status" }),
+        result: "On branch main\nnothing to commit",
+      },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+
+    expect(container.querySelector(".exec-card--badge, .exec-card")).not.toBeNull();
+    expect(container.querySelector(".exec-card__badge--terminal")).not.toBeNull();
+    expect(container.querySelector(".exec-card__cmd")!.textContent).toBe("git status");
+    expect(container.querySelector(".exec-card__status--ok")!.textContent).toBe("exit 0");
+    expect(container.querySelector(".exec-card__pre")!.textContent).toContain("nothing to commit");
+  });
+
+  it("bash 非零退出码渲染失败态徽标，不再显示纯文本预览", () => {
+    const steps: ChatStep[] = [
+      {
+        type: "tool_call",
+        name: "bash",
+        arguments: JSON.stringify({ command: "ls nope" }),
+        result: "（退出码 2）\nls: cannot access 'nope'",
+      },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+
+    expect(container.querySelector(".exec-card__status--fail")!.textContent).toBe("exit 2");
+    expect(container.querySelector(".exec-action__result")).toBeNull();
+  });
+
+  it("write_file 携带 fileDiff 渲染 diff 卡，点击展开行级着色 diff", () => {
+    const steps: ChatStep[] = [
+      {
+        type: "tool_call",
+        name: "write_file",
+        arguments: JSON.stringify({ path: "src/app.ts" }),
+        result: "已写入 src/app.ts",
+        fileDiff: { filename: "app.ts", insertions: 1, deletions: 1, diffContent: "@@ -1,1 +1,1 @@\n-old line\n+new line" },
+      },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+
+    expect(container.querySelector(".exec-card__badge--diff")).not.toBeNull();
+    expect(container.querySelector(".exec-card__cmd")!.textContent).toBe("app.ts");
+    expect(container.querySelector(".exec-card__stat-add")!.textContent).toBe("+1");
+    expect(container.querySelector(".exec-card__stat-del")!.textContent).toBe("−1");
+    // 默认折叠：无 diff 行
+    expect(container.querySelector(".exec-diff-line")).toBeNull();
+
+    fireEvent.click(container.querySelector(".exec-card__head--btn")!);
+    expect(container.querySelector(".exec-diff-line--add")!.textContent).toBe("+new line");
+    expect(container.querySelector(".exec-diff-line--del")!.textContent).toBe("-old line");
+  });
+
+  it("read_file 带 file-meta 渲染 read 卡（行区间 + 进度），默认折叠内容", () => {
+    const steps: ChatStep[] = [
+      {
+        type: "tool_call",
+        name: "read_file",
+        arguments: JSON.stringify({ path: "docs/notes.md" }),
+        result: [
+          "文件：docs/notes.md",
+          "",
+          "1 内容行",
+          "",
+          "[file-meta total=5000 offset=0 returned=600 lines=1-20 truncated=true]",
+          "[clipped-note] 已读 600/5000 字符（第 1-20 行），下一步 offsetChars=600 续读",
+        ].join("\n"),
+      },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+
+    expect(container.querySelector(".exec-card")).not.toBeNull();
+    expect(container.querySelector(".exec-card__cmd")!.textContent).toBe("docs/notes.md");
+    expect(container.querySelector(".exec-card__status")!.textContent).toContain("第 1-20 行");
+    expect(container.querySelector(".exec-card__status")!.textContent).toContain("12%");
+    expect(container.querySelector(".exec-card__note")!.textContent).toContain("search_files");
+  });
+
+  it("web_search 渲染结果列表卡，标题点击走 openArtifactUrl", () => {
+    const steps: ChatStep[] = [
+      {
+        type: "tool_call",
+        name: "web_search",
+        arguments: JSON.stringify({ query: "portable-pty" }),
+        result: [
+          "「portable-pty」搜索结果（1 条）：",
+          "1. wezterm/portable-pty — GitHub",
+          "   https://github.com/wezterm/wezterm",
+          "   Cross-platform PTY library",
+        ].join("\n"),
+      },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+
+    expect(container.querySelector(".exec-card__badge--web")).not.toBeNull();
+    expect(container.querySelector(".exec-web-item__title")!.textContent).toBe("wezterm/portable-pty — GitHub");
+    expect(container.querySelector(".exec-web-item__snippet")!.textContent).toBe("Cross-platform PTY library");
+  });
+
+  it("无匹配格式的工具结果仍走普通文本预览（回归保护）", () => {
+    const steps: ChatStep[] = [
+      { type: "tool_call", name: "list_files", arguments: "{}", result: "找到 5 个匹配项（glob=*）：" },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+    expect(container.querySelector(".exec-card")).toBeNull();
+    expect(container.querySelector(".exec-action__result")!.textContent).toContain("找到 5 个匹配项");
+  });
+});
