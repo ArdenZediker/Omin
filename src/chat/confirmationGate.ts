@@ -10,7 +10,7 @@
  */
 
 /** 风险等级：决定弹窗配色与措辞强度。 */
-import { isFullAccess } from "./permissionMode";
+import { canGrantSessionPermission, grantSessionPermission, isFullAccess, isSessionGranted } from "./permissionMode";
 
 export type RiskLevel =
   /** 读取越界：工作区外读文件，仅信息泄露风险，副作用可控 */
@@ -95,12 +95,19 @@ export function subscribeConfirmation(
   };
 }
 
-/** 结算某个待确认请求。approved=true 放行，false 拒绝。 */
-export function resolveConfirmation(id: string, approved: boolean): void {
+/**
+ * 结算某个待确认请求。approved=true 放行，false 拒绝。
+ * grantForSession=true 时（仅用户点「本次会话不再询问」）同时把该来源加入会话临时授权，
+ * 后续同来源请求直接放行——只对允许授予的类别生效（write/read 且非 ui: 动作）。
+ */
+export function resolveConfirmation(id: string, approved: boolean, grantForSession = false): void {
   if (!pending || pending.id !== id) return;
   const current = pending;
   pending = null;
   notify();
+  if (approved && grantForSession && canGrantSessionPermission(current)) {
+    grantSessionPermission(current.source);
+  }
   current.resolve(approved);
 }
 
@@ -117,7 +124,7 @@ export function setConfirmationTimeout(ms: number): void {
  * - 超过 timeoutMs 未响应自动拒绝。
  */
 export function requestConfirmation(request: ConfirmationRequest): Promise<boolean> {
-  if (isFullAccess()) return Promise.resolve(true);
+  if (isFullAccess() || isSessionGranted(request.source)) return Promise.resolve(true);
   if (pending) return Promise.resolve(false);
   if (listeners.size === 0) return Promise.resolve(false);
 

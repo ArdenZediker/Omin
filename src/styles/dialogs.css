@@ -269,6 +269,14 @@
   background: color-mix(in srgb, var(--omni-app-text) 88%, #000000 12%);
 }
 
+.omni-confirm-dialog__button--grant {
+  border-color: var(--omni-app-border, rgba(0, 0, 0, 0.15));
+  color: var(--omni-app-text);
+}
+.omni-confirm-dialog__button--grant:hover {
+  background: var(--omni-app-surface-3, rgba(0, 0, 0, 0.06));
+}
+
 .omni-confirm-dialog--project-settings {
   width: min(920px, calc(100vw - 36px));
   max-height: calc(100vh - 32px);

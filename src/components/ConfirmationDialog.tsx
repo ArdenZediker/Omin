@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Check, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Check, ShieldAlert, ShieldCheck } from "lucide-react";
 import {
   getPendingConfirmation,
   resolveConfirmation,
@@ -8,6 +8,7 @@ import {
   type ConfirmationRequest,
   type RiskLevel,
 } from "../chat/confirmationGate";
+import { canGrantSessionPermission } from "../chat/permissionMode";
 
 type PendingEntry = ConfirmationRequest & { id: string };
 
@@ -45,6 +46,9 @@ export function ConfirmationDialog() {
 
   const risk = RISK_META[pending.riskLevel];
   const isSevere = pending.riskLevel === "irreversible";
+  // 会话临时授权：仅低风险类别（写入/读取）提供「本次会话不再询问」；
+  // destructive / irreversible（删除、推送等）永远逐次确认。
+  const grantable = canGrantSessionPermission(pending);
 
   return createPortal(
     <div
@@ -113,6 +117,17 @@ export function ConfirmationDialog() {
           >
             <span>取消</span>
           </button>
+          {grantable ? (
+            <button
+              type="button"
+              className="omni-confirm-dialog__button omni-confirm-dialog__button--grant"
+              onClick={() => resolveConfirmation(pending.id, true, true)}
+              title={`本次使用期间，「${pending.source}」类操作不再逐一询问（重启应用后恢复）`}
+            >
+              <ShieldCheck size={14} strokeWidth={2.2} />
+              <span>本次会话不再询问</span>
+            </button>
+          ) : null}
           <button
             type="button"
             className={`omni-confirm-dialog__button ${isSevere ? "omni-confirm-dialog__button--danger" : "omni-confirm-dialog__button--primary"}`}
