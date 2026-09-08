@@ -866,6 +866,8 @@ export default function MainChatView({
   const [knowledgeCollections, setKnowledgeCollections] = useState<
     KnowledgeCollection[]
   >([]);
+  // 可 @ 的专家（内置 + 已安装）；每次渲染即时读取注册表，安装/卸载后自然刷新
+  const expertOptions = pluginRegistry.listExperts();
   const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
   const isMessagesAtBottomRef = useRef(true);
   const lastAutoScrolledSessionRef = useRef<string | null>(null);
@@ -2442,6 +2444,7 @@ export default function MainChatView({
                     canStartNewTopic={Boolean(activeProject)}
                     contextPresetText={composerContextPresetText}
                     knowledgeCollections={knowledgeCollections}
+                    experts={expertOptions}
                     onSend={onSend}
                     hasConversation={messages.some(
                       (message) => message.role === "user",

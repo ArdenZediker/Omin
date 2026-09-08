@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChatTools, createStructuredOutputFilter, extractToolCallArgs, resolveEnabledToolNames } from "./chatRuntimeHelpers";
+import { buildChatTools, buildExpertAgentHint, createStructuredOutputFilter, extractToolCallArgs, resolveEnabledToolNames } from "./chatRuntimeHelpers";
 import { BUILTIN_TOOL_IDS } from "../config/manifests/tools";
 import type { Project } from "../chat/types";
 
@@ -104,5 +104,29 @@ describe("内置工具对所有模型/会话公用", () => {
     expect(toolNames).toContain("Search Sessions");
     expect(toolNames).toContain("Read File");
     expect(toolNames).toContain("Web Search");
+  });
+});
+
+describe("buildExpertAgentHint（agent 工具的动态专家名册）", () => {
+  it("无项目绑定时列出全部可用专家（含内置）", () => {
+    const hint = buildExpertAgentHint(null);
+    expect(hint).toContain("AVAILABLE EXPERTS");
+    expect(hint).toContain("dev-expert");
+  });
+
+  it("agent 工具描述自动追加专家名册", () => {
+    const agentTool = buildChatTools(null).find((t) => t.name === "agent");
+    expect(agentTool).toBeDefined();
+    expect(agentTool!.description).toContain("AVAILABLE EXPERTS");
+  });
+
+  it("项目绑定专家时只暴露绑定集；绑定的专家不存在则回退到无专家提示", () => {
+    const bound = { boundExpertIds: ["dev-expert"] } as unknown as Project;
+    const hint = buildExpertAgentHint(bound);
+    expect(hint).toContain("dev-expert");
+    expect(hint).not.toContain("writer-expert");
+
+    const boundMissing = { boundExpertIds: ["ghost-expert"] } as unknown as Project;
+    expect(buildExpertAgentHint(boundMissing)).toContain("none available");
   });
 });

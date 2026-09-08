@@ -1,16 +1,22 @@
 import type { ChatToolCall, ChatToolParam, Message } from "../adapters/types";
 import { executeChatTurn, type ToolCallOutcome } from "./engine";
 import type { ChatStep, Project } from "./types";
+import type { PluginManifest } from "../plugins/types";
 
 /**
  * 子 Agent 调度（对齐 Codex/Claude Code 的 Task 工具形态）：
- * 主模型通过 `agent` 工具把一个独立、自包含的只读调研子任务委派给子 Agent。
- * 子 Agent 拥有全新上下文（不带主对话历史）+ 只读工具白名单，跑完一轮
- * executeChatTurn 后把最终报告作为工具结果回填给主循环。
+ * 主模型通过 `agent` 工具把一个独立、自包含的调研子任务委派给子 Agent。
+ * 子 Agent 拥有全新上下文（不带主对话历史），跑完一轮 executeChatTurn 后
+ * 把最终报告作为工具结果回填给主循环。
+ *
+ * 两种形态：
+ * - 通用调研（缺省）：只读工具白名单（搜索/读取/联网/git 查看）+ 固定调研员提示词；
+ * - 专家模式（expertId）：委派给已安装专家，系统提示词/工具集/技能集按专家
+ *   manifest（templatePrompt/defaultToolIds/defaultSkillIds）注入——写类工具
+ *   允许出现，HITL 确认门在执行器里照常生效。
  *
  * 安全边界：
- * - 工具白名单只含只读工具（搜索/读取/联网/git 查看），无写文件、无 bash、无安装类；
- * - 白名单与父运行已启用工具取交集——父会话没启用的只读工具子 Agent 也用不了；
+ * - 工具集 = 白名单/专家声明 ∩ 父运行已启用工具——父会话没启用的子 Agent 也用不了；
  * - 深度守卫：子 Agent 内再发起 agent 调用会被拒绝（MAX_SUB_AGENT_DEPTH=1）；
  * - 回填报告超长时截断，保护主循环上下文预算。
  */
@@ -33,7 +39,7 @@ export const MAX_SUB_AGENT_DEPTH = 1;
 /** 子 Agent 报告回填主循环的最大字符数（超出截断，保护主上下文预算）。 */
 export const MAX_SUB_AGENT_OUTPUT_CHARS = 12000;
 
-const SUB_AGENT_SYSTEM_PROMPT = [
+const SUB_AGENT_RESEARCH_PROMPT = [
   "你是 Omni 的子 Agent（只读调研员），由主 Agent 通过 agent 工具派出，负责完成一个独立、自包含的调研任务。",
   "",
   "规则：",
@@ -41,6 +47,18 @@ const SUB_AGENT_SYSTEM_PROMPT = [
   "- 你看不到主对话的任何历史；任务的全部背景都在用户消息里。若任务描述信息不足，基于现有信息尽力完成，并在报告中注明所做假设。",
   "- 围绕任务目标直接行动：多用工具查证，不要反问、不要寒暄。",
   "- 最终输出一份紧凑的调查报告（Markdown，建议 2000 字以内）：结论先行，附关键证据（文件路径+行号、链接、命令输出摘录）。不要输出与任务无关的内容。",
+].join("\n");
+
+/** 专家子 Agent 的通用运行规则（叠加在专家 templatePrompt 之后）。 */
+const SUB_AGENT_EXPERT_RULES = [
+  "",
+  "---",
+  "",
+  "子 Agent 运行规则（由 Omni 追加）：",
+  "- 你由主 Agent 通过 agent 工具派出，看不到主对话历史；任务的全部背景都在用户消息里。若任务描述信息不足，基于现有信息尽力完成，并在报告中注明所做假设。",
+  "- 你的能力以「可用工具/技能」为准：写入/导出类操作会由系统弹出用户确认，被拒绝时如实报告并继续其余工作。",
+  "- 围绕任务目标直接行动：多用工具查证，不要反问、不要寒暄。",
+  "- 最终输出一份紧凑的报告（Markdown，建议 2000 字以内）：结论先行，附关键证据；交付文件时报告文件路径。",
 ].join("\n");
 
 /** 模块级深度计数：同一 JS 运行时内所有子 Agent 运行共享（防嵌套 + 便于测试）。 */
@@ -53,12 +71,11 @@ export function isSubAgentActive(): boolean {
 
 /**
  * 宽容解析 agent 工具入参：
- * 1. {"task": "..."} → 取 task；
- * 2. 纯 JSON 字符串 → 整段作为任务；
- * 3. 非 JSON 文本 → 整段作为任务描述；
+ * 1. {"task":"...","expertId":"..."} → 取 task / expertId；
+ * 2. 纯 JSON 字符串 / 非 JSON 文本 → 整段作为任务（无专家）；
  * 缺失有效任务时返回 error。
  */
-export function parseSubAgentArgs(raw: string): { task: string } | { error: string } {
+export function parseSubAgentArgs(raw: string): { task: string; expertId?: string } | { error: string } {
   const missing = "缺少 task 参数：请传入完整、自包含的子任务描述";
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return { error: missing };
@@ -69,9 +86,11 @@ export function parseSubAgentArgs(raw: string): { task: string } | { error: stri
       return text ? { task: text } : { error: missing };
     }
     if (parsed && typeof parsed === "object") {
-      const task = (parsed as Record<string, unknown>).task;
+      const record = parsed as Record<string, unknown>;
+      const task = record.task;
       if (typeof task === "string" && task.trim()) {
-        return { task: task.trim() };
+        const expertId = typeof record.expertId === "string" && record.expertId.trim() ? record.expertId.trim() : undefined;
+        return { task: task.trim(), expertId };
       }
     }
     return { error: missing };
@@ -97,16 +116,23 @@ export function truncateSubAgentOutput(text: string): string {
 export type SubAgentRunContext = {
   model: string;
   project?: Project | null;
-  /** 父运行的完整工具声明集（runSubAgent 内部自行过滤白名单） */
+  /** 父运行的完整工具声明集（runSubAgent 内部按白名单或专家声明过滤） */
   tools: ChatToolParam[];
-  /** 父运行的工具执行器（子 Agent 复用同一执行器，只读工具天然免确认） */
+  /** 父运行的工具执行器（子 Agent 复用同一执行器，写类操作仍走 HITL 确认门） */
   executeToolCall: (toolCall: ChatToolCall) => Promise<string | ToolCallOutcome>;
+  /** 按 id 解析专家 manifest（非专家 kind 返回 null）；由运行时注入以隔离 pluginRegistry */
+  resolveExpert?: (id: string) => PluginManifest | null;
   signal?: AbortSignal;
   onToolStep?: (step: ChatStep) => void;
 };
 
 function summarizeTask(task: string): string {
   return task.length > 80 ? `${task.slice(0, 77)}...` : task;
+}
+
+/** 专家子 Agent 的派发动作标签 */
+function expertActionDetail(expert: PluginManifest, task: string): string {
+  return `${expert.name} ← ${summarizeTask(task)}`;
 }
 
 /**
@@ -127,22 +153,44 @@ export async function runSubAgent(options: {
     return { outputText: parsed.error };
   }
 
-  const tools = filterSubAgentTools(context.tools);
-  if (tools.length === 0) {
-    return {
-      outputText:
-        "子 Agent 无可用工具：当前会话未启用任何只读工具（list_files/read_file/search_files/web_search 等），无法委派任务。",
-    };
+  // 专家模式：expertId 指向已安装/内置专家时，用专家的提示词/工具/技能驱动子 Agent。
+  let expert: PluginManifest | null = null;
+  if (parsed.expertId && context.resolveExpert) {
+    const resolved = context.resolveExpert(parsed.expertId);
+    if (!resolved || resolved.kind !== "expert") {
+      return { outputText: `专家「${parsed.expertId}」不存在或不是有效的专家定义，请改用通用只读调研（省略 expertId）。` };
+    }
+    expert = resolved;
+  }
+
+  let tools: ChatToolParam[];
+  let systemPrompt: string;
+  let skillIds: string[] | undefined;
+  if (expert) {
+    // 工具按专家声明给（写类工具允许，HITL 确认门在执行器里照常生效）；声明为空 = 纯文本专家。
+    const declared = new Set(expert.defaultToolIds ?? []);
+    tools = declared.size > 0 ? context.tools.filter((tool) => declared.has(tool.name)) : [];
+    systemPrompt = [expert.templatePrompt?.trim() || `你是「${expert.name}」专家。`, SUB_AGENT_EXPERT_RULES].join("\n");
+    skillIds = expert.defaultSkillIds;
+  } else {
+    tools = filterSubAgentTools(context.tools);
+    if (tools.length === 0) {
+      return {
+        outputText:
+          "子 Agent 无可用工具：当前会话未启用任何只读工具（list_files/read_file/search_files/web_search 等），无法委派任务。",
+      };
+    }
+    systemPrompt = SUB_AGENT_RESEARCH_PROMPT;
   }
 
   const { model, project, executeToolCall, signal, onToolStep } = context;
   activeSubAgentRuns += 1;
   onToolStep?.({
     type: "action",
-    label: "派出子Agent",
-    title: "Sub Agent",
+    label: expert ? "委派专家" : "派出子Agent",
+    title: expert?.name ?? "Sub Agent",
     icon: "Bot",
-    detail: summarizeTask(parsed.task),
+    detail: expert ? expertActionDetail(expert, parsed.task) : summarizeTask(parsed.task),
   });
 
   try {
@@ -150,7 +198,7 @@ export async function runSubAgent(options: {
       model,
       messages: [{ role: "user", content: parsed.task } satisfies Message],
       signal,
-      systemPrompt: SUB_AGENT_SYSTEM_PROMPT,
+      systemPrompt,
       project: project ?? null,
       tools,
       executeToolCall,
@@ -160,6 +208,8 @@ export async function runSubAgent(options: {
       enableMemoryExtraction: false,
       enableSummaryExtraction: false,
       enableToolProtocol: false,
+      // 专家模式按专家绑定过滤技能提示；通用调研子 Agent 不注入任何技能
+      enabledSkillIds: skillIds ?? [],
     });
 
     const report = result.content?.trim() || "";

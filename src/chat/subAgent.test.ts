@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { PluginManifest } from "../plugins/types";
 import {
   SUB_AGENT_TOOL_IDS,
   MAX_SUB_AGENT_DEPTH,
@@ -25,6 +26,7 @@ function makeContext(overrides?: Partial<SubAgentRunContext>): SubAgentRunContex
     tools: [
       { name: "read_file", description: "read", parameters: { type: "object", properties: {} } },
       { name: "write_file", description: "write", parameters: { type: "object", properties: {} } },
+      { name: "export_md", description: "export", parameters: { type: "object", properties: {} } },
       { name: "web_search", description: "web", parameters: { type: "object", properties: {} } },
       { name: "agent", description: "sub agent", parameters: { type: "object", properties: {} } },
       { name: "mcp__server__tool", description: "mcp", parameters: { type: "object", properties: {} } },
@@ -48,6 +50,13 @@ describe("parseSubAgentArgs", () => {
 
   it("非 JSON 文本宽容当作任务描述", () => {
     expect(parseSubAgentArgs("统计仓库里 TODO 的数量")).toEqual({ task: "统计仓库里 TODO 的数量" });
+  });
+
+  it("携带 expertId 时一并解析", () => {
+    expect(parseSubAgentArgs(JSON.stringify({ task: "写周报", expertId: "writer-expert" }))).toEqual({
+      task: "写周报",
+      expertId: "writer-expert",
+    });
   });
 
   it("空入参 / 缺 task 字段返回 error", () => {
@@ -89,6 +98,62 @@ describe("truncateSubAgentOutput", () => {
 describe("runSubAgent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  const expertManifest: PluginManifest = {
+    id: "writer-expert",
+    name: "写作专家",
+    description: "擅长产出文稿",
+    version: "1.0.0",
+    kind: "expert",
+    templatePrompt: "你是写作专家，擅长输出 Markdown 文稿。",
+    defaultToolIds: ["read_file", "export_md"],
+    defaultSkillIds: ["weekly-report"],
+  };
+
+  function makeExpertContext(expert: PluginManifest | null, overrides?: Partial<SubAgentRunContext>): SubAgentRunContext {
+    return makeContext({
+      resolveExpert: (id) => (expert && id === expert.id ? expert : null),
+      ...overrides,
+    });
+  }
+
+  it("专家模式：注入专家提示词、按 defaultToolIds 给工具（含写类）、按 defaultSkillIds 过滤技能", async () => {
+    mockedExecuteChatTurn.mockResolvedValue({ content: "专家报告", toolRounds: 1 } as never);
+    const { outputText } = await runSubAgent({
+      args: JSON.stringify({ task: "写一篇周报", expertId: "writer-expert" }),
+      context: makeExpertContext(expertManifest),
+    });
+
+    expect(outputText).toContain("专家报告");
+    const call = mockedExecuteChatTurn.mock.calls[0][0];
+    expect(call.systemPrompt).toContain("你是写作专家");
+    expect(call.systemPrompt).toContain("子 Agent 运行规则");
+    // 工具按专家声明给：read_file + 写类 export_md，write_file（未声明）与 MCP 被排除
+    expect(call.tools?.map((t) => t.name)).toEqual(["read_file", "export_md"]);
+    expect(call.enabledSkillIds).toEqual(["weekly-report"]);
+    expect(call.enableKnowledgeContext).toBe(false);
+  });
+
+  it("专家 id 无法解析时返回错误文本", async () => {
+    const { outputText } = await runSubAgent({
+      args: JSON.stringify({ task: "任务", expertId: "ghost-expert" }),
+      context: makeExpertContext(expertManifest),
+    });
+    expect(outputText).toContain("不存在");
+    expect(mockedExecuteChatTurn).not.toHaveBeenCalled();
+  });
+
+  it("专家未声明工具时以纯文本专家运行（不报错）", async () => {
+    mockedExecuteChatTurn.mockResolvedValue({ content: "纯文本产出", toolRounds: 0 } as never);
+    const noToolExpert = { ...expertManifest, defaultToolIds: [], defaultSkillIds: [] };
+    const { outputText } = await runSubAgent({
+      args: JSON.stringify({ task: "写段文案", expertId: "writer-expert" }),
+      context: makeExpertContext(noToolExpert),
+    });
+    expect(outputText).toContain("纯文本产出");
+    expect(mockedExecuteChatTurn.mock.calls[0][0].tools).toEqual([]);
+    expect(mockedExecuteChatTurn.mock.calls[0][0].enabledSkillIds).toEqual([]);
   });
 
   it("以独立上下文调用引擎：白名单工具集、无知识检索/记忆抽取、任务作为 user 消息", async () => {

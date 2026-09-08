@@ -60,6 +60,8 @@ export type ProjectDraft = {
   knowledgeCollectionId?: string | null;
   allowedToolIds?: string[];
   allowedSkillIds?: string[];
+  /** 项目绑定的专家（子 Agent 委派白名单）；空/缺省 = 不限，暴露全部已装专家 */
+  boundExpertIds?: string[];
   memoryScope?: ProjectMemoryScope;
 };
 
@@ -77,6 +79,8 @@ export type Project = {
   knowledgeCollectionId?: string | null;
   allowedToolIds: string[];
   allowedSkillIds: string[];
+  /** 项目绑定的专家（子 Agent 委派白名单）；空/缺省 = 不限 */
+  boundExpertIds?: string[];
   memoryScope: ProjectMemoryScope;
   createdAt: number;
   updatedAt: number;
@@ -186,6 +190,8 @@ export type ChatExecutionResult = {
 export type ChatSendOptions = {
   hiddenContext?: string;
   knowledgeCollectionId?: string | null;
+  /** 本次对话指定专家（@专家角色切换）：用专家提示词/工具/技能集驱动本轮 */
+  expertId?: string | null;
   /** 本次发送附带的本地文件（绝对路径引用，不内联内容） */
   attachments?: ChatAttachment[];
 };

@@ -20,10 +20,11 @@ const knowledgeCollections: KnowledgeCollection[] = [
   },
 ];
 
-function renderChatInput(onSend = vi.fn()) {
+function renderChatInput(onSend = vi.fn(), experts: Parameters<typeof ChatInput>[0]["experts"] = []) {
   render(
     <ChatInput
       knowledgeCollections={knowledgeCollections}
+      experts={experts}
       onSend={onSend}
       isLoading={false}
       onStop={vi.fn()}
@@ -56,6 +57,45 @@ describe("ChatInput", () => {
     expect(onSend).toHaveBeenCalledWith("帮我查一下 定价策略", undefined, {
       hiddenContext: undefined,
       knowledgeCollectionId: "collection-product",
+      expertId: null,
+      attachments: undefined,
+    });
+  });
+
+  it("selects an expert with @ and sends the expert id for role switch", () => {
+    const onSend = renderChatInput(vi.fn(), [
+      {
+        id: "writer-expert",
+        name: "写作专家",
+        description: "擅长产出文稿",
+        version: "1.0.0",
+        kind: "expert",
+        templatePrompt: "你是写作专家",
+      },
+    ]);
+    const textarea = screen.getByPlaceholderText("输入聊天内容...");
+
+    fireEvent.change(textarea, {
+      target: {
+        value: "帮我 @写",
+        selectionStart: 6,
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /@ 写作专家/ }));
+    fireEvent.change(textarea, {
+      target: {
+        value: "帮我润色这段话",
+        selectionStart: 7,
+      },
+    });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(onSend).toHaveBeenCalledWith("帮我润色这段话", undefined, {
+      hiddenContext: undefined,
+      knowledgeCollectionId: null,
+      expertId: "writer-expert",
+      attachments: undefined,
     });
   });
 });

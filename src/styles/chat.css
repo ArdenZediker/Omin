@@ -2577,6 +2577,16 @@
   background: color-mix(in srgb, #4f46e5 12%, var(--omni-panel-bg));
 }
 
+.chat-composer__status-chip--expert {
+  border-color: color-mix(in srgb, #0d9488 24%, var(--omni-panel-border));
+  background: color-mix(in srgb, #0d9488 8%, var(--omni-panel-bg));
+  color: color-mix(in srgb, #134e4a 76%, var(--omni-app-text));
+}
+
+.chat-composer__status-chip--expert:hover {
+  background: color-mix(in srgb, #0d9488 12%, var(--omni-panel-bg));
+}
+
 .attachment-chip {
   position: relative;
   display: inline-flex;

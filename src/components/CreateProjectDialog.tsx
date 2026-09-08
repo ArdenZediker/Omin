@@ -108,6 +108,8 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
           ...picked.skills.map((m) => m.id),
         ]),
       ],
+      // 选中的专家记为项目绑定专家：该项目会话里 agent 工具只委派给这些专家
+      boundExpertIds: picked.experts.map((m) => m.id),
     };
     onCreate(draft);
     onClose();

@@ -424,18 +424,24 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     description:
       "Delegate a self-contained read-only research subtask to a sub-agent (fresh context + read-only tools); returns its final report.",
     promptContribution:
-      "Call agent to delegate a self-contained READ-ONLY research subtask to a sub-agent, which runs with a fresh context " +
-      "and only read tools (search_sessions/read_session/list_files/read_file/search_files/web_search/web_fetch/git_info) — " +
-      "it cannot write files, run shell commands, or see this conversation. " +
-      "Pass task as a COMPLETE, self-contained instruction: goal, all needed background (paths/keywords/constraints), and the expected report format. " +
-      "Use it to offload multi-step investigations (multi-file surveys, multi-source web research, repo exploration) so the main context stays lean; " +
-      "launch several in parallel when the subtasks are independent. Do NOT use it for anything requiring writes or user confirmation.",
+      "Call agent to delegate a self-contained research subtask to a sub-agent, which runs with a fresh context. " +
+      "Without expertId the sub-agent is a READ-ONLY researcher (search_sessions/read_session/list_files/read_file/search_files/web_search/web_fetch/git_info only). " +
+      "With expertId you delegate to an installed EXPERT (see the expert roster in this description): the expert's own system prompt, tools and skills apply — " +
+      "its declared write/export tools still require user confirmation at runtime. " +
+      "Pass task as a COMPLETE, self-contained instruction: goal, all needed background (paths/keywords/constraints), and the expected report format; " +
+      "the sub-agent cannot see this conversation. " +
+      "Use it to offload multi-step investigations or specialist work so the main context stays lean; " +
+      "launch several in parallel when the subtasks are independent.",
     parameters: {
       type: "object",
       properties: {
         task: {
           type: "string",
           description: "Complete, self-contained subtask instruction for the sub-agent (it cannot see this conversation).",
+        },
+        expertId: {
+          type: "string",
+          description: "Optional expert id to delegate to (see the expert roster). Omit for a generic read-only researcher.",
         },
       },
       required: ["task"],

@@ -16,6 +16,7 @@ import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
 import { getChatSessionTitle, stripPendingPlaceholder } from "../chat/storage";
 import { settleInterruptedSteps } from "../chat/stepSettlement";
 import { executeLocalTool } from "../chat/localTools";
+import { pluginRegistry } from "../plugins/registry";
 import { requestConfirmation } from "../chat/confirmationGate";
 import { appendArtifact, loadArtifacts, notifyArtifactsChanged, NO_PROJECT_ARTIFACT_KEY, type Artifact } from "../chat/artifacts";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
@@ -201,6 +202,11 @@ export function useChatRuntime({
   /** 子 Agent 调度上下文：每轮任务开始时注入（模型/项目/信号/工具/执行器/步骤回调），
    *  executeToolCall 拦截 `agent` 调用时读取；运行结束在 finishSessionRun 中清除。 */
   const subAgentContextRef = useRef<SubAgentRunContext | null>(null);
+  /** 按 id 解析专家 manifest（专家委派用）；kind 非 expert 一律视为无效。 */
+  const resolveExpertForSubAgent = useCallback((id: string) => {
+    const manifest = pluginRegistry.getManifest(id);
+    return manifest && manifest.kind === "expert" ? manifest : null;
+  }, []);
   /** 整轮任务看门狗定时器；被看门狗中断的会话（用于区分用户手动停止） */
   const runWatchdogRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const watchdogAbortedSessionIdsRef = useRef<Set<string>>(new Set());
@@ -925,6 +931,7 @@ export function useChatRuntime({
           signal: abortController.signal,
           tools: runTools,
           executeToolCall,
+          resolveExpert: resolveExpertForSubAgent,
           onToolStep: handleToolStep,
         };
 
@@ -1258,6 +1265,7 @@ export function useChatRuntime({
           signal: abortController.signal,
           tools: runTools,
           executeToolCall: makeTaskToolExecutor(session.id, taskId, taskWs),
+          resolveExpert: resolveExpertForSubAgent,
           onToolStep: handleToolStep,
         };
 
@@ -1519,8 +1527,14 @@ export function useChatRuntime({
           if (artifactsDirty) notifyArtifactsChanged();
         }
         const attachmentContext = buildAttachmentContext(attachments);
+        // @专家角色切换：本轮对话用专家的提示词/工具/技能集驱动（MCP 工具不并入，按专家声明给）
+        const selectedExpertId = options.expertId?.trim() || null;
+        const activeExpert = selectedExpertId ? resolveExpertForSubAgent(selectedExpertId) : null;
+        const expertToolIds = activeExpert ? new Set<string>(activeExpert.defaultToolIds ?? []) : null;
         // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
-        const runTools = [...buildChatTools(activeProject), ...listActiveMcpTools()];
+        const runTools = expertToolIds
+          ? buildChatTools(activeProject).filter((tool) => expertToolIds.has(tool.name))
+          : [...buildChatTools(activeProject), ...listActiveMcpTools()];
         const handleToolStep = (step: ChatStep) => {
           if (!isCurrentSessionRun(sessionId, runId, abortController)) {
             return;
@@ -1533,6 +1547,7 @@ export function useChatRuntime({
           signal: abortController.signal,
           tools: runTools,
           executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs),
+          resolveExpert: resolveExpertForSubAgent,
           onToolStep: handleToolStep,
         };
         const taskResult = await executeInputTask({
@@ -1555,7 +1570,7 @@ export function useChatRuntime({
             hasPetThought = true;
           },
           signal: abortController.signal,
-          systemPrompt: [projectSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+          systemPrompt: [activeExpert?.templatePrompt, projectSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
           knowledgeCollectionId: selectedKnowledgeCollectionId ?? activeProject?.knowledgeCollectionId ?? null,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
@@ -1579,6 +1594,7 @@ export function useChatRuntime({
           executeTool,
           tools: runTools,
           executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs),
+          enabledSkillIds: activeExpert ? activeExpert.defaultSkillIds ?? [] : undefined,
         });
 
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {

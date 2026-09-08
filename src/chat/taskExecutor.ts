@@ -86,6 +86,8 @@ export async function executeTask(options: {
   tools?: ChatToolParam[];
   /** 执行一次模型发起的工具调用（透传给 executeChatTurn） */
   executeToolCall?: (toolCall: ChatToolCall) => Promise<string | import("./engine").ToolCallOutcome>;
+  /** 只注入这些 id 的技能提示（专家角色切换时按专家绑定过滤）；透传给 executeChatTurn */
+  enabledSkillIds?: string[];
 }): Promise<TaskExecutionResult> {
   const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, onReasoning, onToolStep, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
@@ -125,9 +127,10 @@ export async function executeTask(options: {
           enableKnowledgeContext: intent === "chat",
           enableMemoryExtraction: intent === "chat",
           enableSummaryExtraction: intent === "chat",
-          enableToolProtocol: intent !== "chat",
+  enableToolProtocol: intent !== "chat",
           tools: options.tools,
           executeToolCall: options.executeToolCall,
+          enabledSkillIds: options.enabledSkillIds,
         });
         api.setFinalResult(finalResult);
         api.appendTrace("模型回复生成完成");
@@ -240,6 +243,8 @@ export async function executeInputTask(options: {
   tools?: ChatToolParam[];
   /** 执行一次模型发起的工具调用（透传给 executeTask） */
   executeToolCall?: (toolCall: ChatToolCall) => Promise<string | import("./engine").ToolCallOutcome>;
+  /** 只注入这些 id 的技能提示（专家角色切换时按专家绑定过滤）；透传给 executeTask */
+  enabledSkillIds?: string[];
 }): Promise<TaskExecutionResult> {
   const {
     input,
@@ -283,6 +288,7 @@ export async function executeInputTask(options: {
     intent: "chat",
     tools: options.tools,
     executeToolCall: options.executeToolCall,
+    enabledSkillIds: options.enabledSkillIds,
   });
 }
 
@@ -320,5 +326,6 @@ export async function executeInputTask(options: {
     plan,
     tools: options.tools,
     executeToolCall: options.executeToolCall,
+    enabledSkillIds: options.enabledSkillIds,
   });
 }

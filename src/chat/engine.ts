@@ -399,6 +399,8 @@ export async function executeChatTurn(options: {
   enableMemoryExtraction?: boolean;
   enableSummaryExtraction?: boolean;
   enableToolProtocol?: boolean;
+  /** 只注入这些 id 的技能提示（专家模式/子 Agent 按专家绑定过滤）；缺省 = 全部已启用技能 */
+  enabledSkillIds?: string[];
   /** function calling：工具声明；与 executeToolCall 同时提供时启用工具循环 */
   tools?: ChatToolParam[];
   /** 执行一次模型发起的工具调用，返回结果文本（或携带落库产物引用的增强结果） */
@@ -422,6 +424,7 @@ export async function executeChatTurn(options: {
     enableMemoryExtraction = true,
     enableSummaryExtraction = true,
     enableToolProtocol = false,
+    enabledSkillIds,
     tools,
     executeToolCall,
   } = options;
@@ -494,7 +497,11 @@ export async function executeChatTurn(options: {
     includeToolProtocol: enableToolProtocol,
     persona: personaConfig,
     projectAgentsMd,
-    enabledSkillPrompts: pluginRegistry.listEnabledSkills().map((s) => s.systemPrompt).filter((t): t is string => Boolean(t)),
+    enabledSkillPrompts: pluginRegistry
+      .listEnabledSkills()
+      .filter((s) => !enabledSkillIds || enabledSkillIds.includes(s.id))
+      .map((s) => s.systemPrompt)
+      .filter((t): t is string => Boolean(t)),
   });
   const systemMessage: Message = { role: "system", content: composedSystemPrompt };
   const knowledgeMessages: Message[] = knowledgeContext

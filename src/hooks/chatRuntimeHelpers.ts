@@ -3,6 +3,7 @@ import { BUILTIN_TOOL_IDS, getToolManifestById } from "../config/manifests/tools
 import type { ChatToolParam, Message } from "../adapters/types";
 import type { Project } from "../chat/types";
 import { buildShellEnvHint } from "../chat/shellEnv";
+import { pluginRegistry } from "../plugins/registry";
 import type { PetThoughtState } from "../app/types";
 
 export type SessionLite = {
@@ -11,6 +12,39 @@ export type SessionLite = {
   title: string;
   messages: Message[];
 };
+
+/** 专家名册上限：避免专家装太多时把 agent 工具描述撑爆（超出部分提示用户去扩展中心看）。 */
+const EXPERT_ROSTER_LIMIT = 12;
+
+/**
+ * agent 工具的动态专家名册（仿 bash 的 buildShellEnvHint 动态描述模式）：
+ * 列出可委派的专家（id + 名称 + 一句话描述），主模型据此决定是否带 expertId 派发。
+ * 项目绑定专家（boundExpertIds 非空）时只暴露绑定集；无可用专家时给出兜底说明。
+ */
+export function buildExpertAgentHint(project: Project | null): string {
+  const allExperts = pluginRegistry
+    .listExperts()
+    .filter((manifest) => manifest.templatePrompt?.trim());
+  const bound = (project?.boundExpertIds ?? []).filter(Boolean);
+  const experts = bound.length > 0 ? allExperts.filter((m) => bound.includes(m.id)) : allExperts;
+  if (experts.length === 0) {
+    return "\nEXPERTS: none available right now — delegate generic read-only research (omit expertId)." +
+      (bound.length > 0 ? " (This project has bound experts that are not installed/enabled.)" : "");
+  }
+  const lines = experts.slice(0, EXPERT_ROSTER_LIMIT).map((m) => {
+    const desc = (m.description ?? "").trim();
+    const skills = (m.defaultSkillIds ?? []).length;
+    return `- ${m.id}: ${m.name}${desc ? ` — ${desc}` : ""}${skills ? `（绑定 ${skills} 个技能）` : ""}`;
+  });
+  const more = experts.length > EXPERT_ROSTER_LIMIT ? `\n（另有 ${experts.length - EXPERT_ROSTER_LIMIT} 位专家未列出）` : "";
+  return [
+    "\nAVAILABLE EXPERTS (pass expertId to delegate to one; the expert's own prompt/tools/skills apply):",
+    ...lines,
+    more,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 // 内置工具是所有模型/会话的公用工具：无条件纳入系统提示与可用工具集。
 export function resolveEnabledToolNames(project: Project | null) {
@@ -26,8 +60,11 @@ export function resolveEnabledToolNames(project: Project | null) {
     toolNames.push(manifest.title);
     // 仿 deepseek「插件自带指令」：优先使用 manifest 的声明式提示贡献。
     // /bash 额外追加当前 Shell 环境的动态提示（方案B：用户自定义 Shell 时引导模型用对应语法）。
+    // /agent 额外追加专家名册（主模型据此选择委派对象）。
     const base = manifest.promptContribution ?? manifest.description;
-    const contribution = toolId === "bash" ? base + buildShellEnvHint() : base;
+    let contribution = base;
+    if (toolId === "bash") contribution += buildShellEnvHint();
+    if (toolId === "agent") contribution += buildExpertAgentHint(project);
     if (contribution) {
       toolDescriptions[manifest.title] = contribution;
     }
@@ -54,11 +91,14 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
   for (const toolId of new Set(sourceToolIds)) {
     const manifest = getToolManifestById(toolId);
     if (!manifest) continue;
-    // /bash 额外追加当前 Shell 环境的动态提示（方案B），与 resolveEnabledToolNames 保持一致。
+    // /bash 额外追加当前 Shell 环境的动态提示（方案B），/agent 追加专家名册；与 resolveEnabledToolNames 保持一致。
     const base = manifest.promptContribution ?? manifest.description;
+    let description = base;
+    if (toolId === "bash") description += buildShellEnvHint();
+    if (toolId === "agent") description += buildExpertAgentHint(project);
     tools.push({
       name: manifest.id,
-      description: toolId === "bash" ? base + buildShellEnvHint() : base,
+      description,
       parameters: manifest.parameters ?? { type: "object", properties: {} },
     });
   }

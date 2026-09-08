@@ -14,6 +14,7 @@ import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ChatAttachment, ChatImage } from "../adapters/types";
 import type { ChatSendOptions } from "../chat/types";
+import type { PluginManifest } from "../plugins/types";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
 import { baseNameOf, isImageFile, readLocalImageAsDataURL, savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
@@ -26,6 +27,8 @@ interface ChatInputProps {
   usageLabel?: string | null;
   contextPresetText?: string;
   knowledgeCollections?: KnowledgeCollection[];
+  /** 可选专家（@专家 = 本轮对话切换为该专家的角色/工具/技能集） */
+  experts?: PluginManifest[];
   onStartNewTopic?: () => void;
   onSend: (content: string, images?: ChatImage[], options?: ChatSendOptions) => void | Promise<void>;
   isLoading: boolean;
@@ -47,6 +50,11 @@ type KnowledgeMentionTrigger = {
   end: number;
   query: string;
 };
+
+/** @ 提及建议条目：知识库（本轮检索范围）或专家（本轮角色切换）。 */
+type MentionSuggestion =
+  | { kind: "knowledge"; collection: KnowledgeCollection }
+  | { kind: "expert"; expert: PluginManifest };
 
 function normalizeMentionText(value: string) {
   return value.trim().toLocaleLowerCase();
@@ -87,6 +95,7 @@ export default function ChatInput({
   contextPresetText,
   onSend,
   knowledgeCollections = [],
+  experts = [],
   isLoading,
   isSendBlocked = false,
   onStop,
@@ -107,6 +116,7 @@ export default function ChatInput({
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [dismissedSlashInput, setDismissedSlashInput] = useState("");
   const [selectedKnowledgeCollection, setSelectedKnowledgeCollection] = useState<KnowledgeCollection | null>(null);
+  const [selectedExpert, setSelectedExpert] = useState<PluginManifest | null>(null);
   const [selectedKnowledgeIndex, setSelectedKnowledgeIndex] = useState(0);
   const [dismissedMentionInput, setDismissedMentionInput] = useState("");
   const [caretIndex, setCaretIndex] = useState(0);
@@ -148,20 +158,24 @@ export default function ChatInput({
   const mentionTrigger = getKnowledgeMentionTrigger(input, caretIndex);
   const mentionQuery = mentionTrigger?.query ?? null;
   const normalizedMentionQuery = normalizeMentionText(mentionQuery ?? "");
-  const knowledgeSuggestions = knowledgeCollections
-    .filter((collection) => {
-      if (selectedKnowledgeCollection?.id === collection.id) {
-        return false;
-      }
-      if (!normalizedMentionQuery) {
-        return true;
-      }
-      return normalizeMentionText(`${collection.name} ${collection.description ?? ""}`).includes(normalizedMentionQuery);
-    })
-    .slice(0, 8);
-  const hasComposerStatus = Boolean(activeModeLabel || selectedKnowledgeCollection);
-  const canShowKnowledgeSuggestions = Boolean(mentionTrigger && input !== dismissedMentionInput && knowledgeCollections.length > 0);
-  const showKnowledgeSuggestions = canShowKnowledgeSuggestions && knowledgeSuggestions.length > 0;
+  const matchesMention = (haystack: string) =>
+    !normalizedMentionQuery || normalizeMentionText(haystack).includes(normalizedMentionQuery);
+  const mentionSuggestions: MentionSuggestion[] = [
+    ...knowledgeCollections
+      .filter((collection) => {
+        if (selectedKnowledgeCollection?.id === collection.id) return false;
+        return matchesMention(`${collection.name} ${collection.description ?? ""}`);
+      })
+      .map((collection) => ({ kind: "knowledge" as const, collection })),
+    ...experts
+      .filter((expert) => {
+        if (selectedExpert?.id === expert.id) return false;
+        return matchesMention(`${expert.name} ${expert.description ?? ""} ${(expert.tags ?? []).join(" ")}`);
+      })
+      .map((expert) => ({ kind: "expert" as const, expert })),
+  ].slice(0, 8);
+  const hasComposerStatus = Boolean(activeModeLabel || selectedKnowledgeCollection || selectedExpert);
+  const showMentionSuggestions = Boolean(mentionTrigger && input !== dismissedMentionInput && mentionSuggestions.length > 0);
   const showSlashSuggestions =
     localSuggestions.length > 0 &&
     !activeModeLabel &&
@@ -223,8 +237,8 @@ export default function ChatInput({
   }, [localSuggestions.length]);
 
   useEffect(() => {
-    knowledgeSuggestionItemRefs.current = knowledgeSuggestionItemRefs.current.slice(0, knowledgeSuggestions.length);
-  }, [knowledgeSuggestions.length]);
+    knowledgeSuggestionItemRefs.current = knowledgeSuggestionItemRefs.current.slice(0, mentionSuggestions.length);
+  }, [mentionSuggestions.length]);
 
   useEffect(() => {
     if (!showSlashSuggestions) {
@@ -236,13 +250,13 @@ export default function ChatInput({
   }, [localSuggestions.length, showSlashSuggestions]);
 
   useEffect(() => {
-    if (!showKnowledgeSuggestions) {
+    if (!showMentionSuggestions) {
       setSelectedKnowledgeIndex(0);
       return;
     }
 
-    setSelectedKnowledgeIndex((current) => Math.min(current, knowledgeSuggestions.length - 1));
-  }, [knowledgeSuggestions.length, showKnowledgeSuggestions]);
+    setSelectedKnowledgeIndex((current) => Math.min(current, mentionSuggestions.length - 1));
+  }, [mentionSuggestions.length, showMentionSuggestions]);
 
   useEffect(() => {
     if (!showSlashSuggestions) {
@@ -253,12 +267,12 @@ export default function ChatInput({
   }, [selectedSuggestionIndex, showSlashSuggestions]);
 
   useEffect(() => {
-    if (!showKnowledgeSuggestions) {
+    if (!showMentionSuggestions) {
       return;
     }
 
     scrollElementIntoView(knowledgeSuggestionItemRefs.current[selectedKnowledgeIndex]);
-  }, [selectedKnowledgeIndex, showKnowledgeSuggestions]);
+  }, [selectedKnowledgeIndex, showMentionSuggestions]);
 
   useEffect(() => {
     if (!dismissedSlashInput) {
@@ -436,6 +450,7 @@ export default function ChatInput({
   const buildSendOptions = (): ChatSendOptions => ({
     hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
     knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
+    expertId: selectedExpert?.id ?? null,
     attachments: attachments.length > 0 ? orderedAttachments : undefined,
   });
 
@@ -449,6 +464,7 @@ export default function ChatInput({
     setImages([]);
     setAttachments([]);
     setSelectedKnowledgeCollection(null);
+    setSelectedExpert(null);
     setCaretIndex(0);
     clearSuggestionDismissal();
     clearMentionDismissal();
@@ -463,10 +479,14 @@ export default function ChatInput({
     textareaRef.current?.focus();
   };
 
-  const applyKnowledgeSuggestion = (collection: KnowledgeCollection) => {
+  const applyMentionSuggestion = (suggestion: MentionSuggestion) => {
     const textarea = textareaRef.current;
     const trigger = getKnowledgeMentionTrigger(input, textarea?.selectionStart ?? caretIndex);
-    setSelectedKnowledgeCollection(collection);
+    if (suggestion.kind === "knowledge") {
+      setSelectedKnowledgeCollection(suggestion.collection);
+    } else {
+      setSelectedExpert(suggestion.expert);
+    }
     clearMentionDismissal();
 
     if (!trigger) {
@@ -512,7 +532,7 @@ export default function ChatInput({
   }, [applySuggestion, input, localSuggestions, selectedSuggestionIndex, showSlashSuggestions]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (showKnowledgeSuggestions && knowledgeSuggestions.length > 0) {
+    if (showMentionSuggestions && mentionSuggestions.length > 0) {
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -523,28 +543,28 @@ export default function ChatInput({
       if (event.key === "Tab") {
         event.preventDefault();
         event.stopPropagation();
-        applyKnowledgeSuggestion(knowledgeSuggestions[selectedKnowledgeIndex] ?? knowledgeSuggestions[0]);
+        applyMentionSuggestion(mentionSuggestions[selectedKnowledgeIndex] ?? mentionSuggestions[0]);
         return;
       }
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
         event.stopPropagation();
-        setSelectedKnowledgeIndex((current) => (current + 1) % knowledgeSuggestions.length);
+        setSelectedKnowledgeIndex((current) => (current + 1) % mentionSuggestions.length);
         return;
       }
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
         event.stopPropagation();
-        setSelectedKnowledgeIndex((current) => (current - 1 + knowledgeSuggestions.length) % knowledgeSuggestions.length);
+        setSelectedKnowledgeIndex((current) => (current - 1 + mentionSuggestions.length) % mentionSuggestions.length);
         return;
       }
 
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
-        applyKnowledgeSuggestion(knowledgeSuggestions[selectedKnowledgeIndex] ?? knowledgeSuggestions[0]);
+        applyMentionSuggestion(mentionSuggestions[selectedKnowledgeIndex] ?? mentionSuggestions[0]);
         return;
       }
     }
@@ -704,6 +724,22 @@ export default function ChatInput({
             </button>
           )}
 
+          {selectedExpert && (
+            <button
+              type="button"
+              className="chat-composer__status-chip chat-composer__status-chip--expert"
+              onClick={() => {
+                setSelectedExpert(null);
+                textareaRef.current?.focus();
+              }}
+              title="取消本次专家对话（恢复默认角色）"
+            >
+              <Bot size={13} strokeWidth={1.9} />
+              <span>专家: {selectedExpert.name}</span>
+              <X size={12} strokeWidth={2} />
+            </button>
+          )}
+
         </div>
       )}
 
@@ -832,35 +868,42 @@ export default function ChatInput({
         </div>
       )}
 
-      {showKnowledgeSuggestions && (
+      {showMentionSuggestions && (
         <div className="chat-composer__suggestions chat-composer__suggestions--knowledge">
           <div className="chat-composer__suggestions-list">
             <div className="chat-composer__suggestion-group">
-              <div className="chat-composer__suggestion-group-title">选择知识库</div>
-              {knowledgeSuggestions.map((collection, index) => (
-                <button
-                  key={collection.id}
-                  ref={(element) => {
-                    knowledgeSuggestionItemRefs.current[index] = element;
-                  }}
-                  type="button"
-                  className={`chat-composer__suggestion chat-composer__suggestion--knowledge${
-                    selectedKnowledgeIndex === index ? " chat-composer__suggestion--active" : ""
-                  }`}
-                  onClick={() => applyKnowledgeSuggestion(collection)}
-                  onMouseEnter={() => setSelectedKnowledgeIndex(index)}
-                >
-                  <span className="chat-composer__suggestion-icon" aria-hidden="true">
-                    <BookOpen size={15} strokeWidth={1.9} />
-                  </span>
-                  <span className="chat-composer__suggestion-copy chat-composer__suggestion-copy--knowledge">
-                    <span className="chat-composer__suggestion-command">@ {collection.name}</span>
-                    <span className="chat-composer__suggestion-description">
-                      {collection.description?.trim() || "使用该知识库回答本次问题"}
+              <div className="chat-composer__suggestion-group-title">选择知识库或专家</div>
+              {mentionSuggestions.map((suggestion, index) => {
+                const isExpert = suggestion.kind === "expert";
+                const title = isExpert
+                  ? `@ ${suggestion.expert.name}`
+                  : `@ ${suggestion.collection.name}`;
+                const description = isExpert
+                  ? suggestion.expert.description?.trim() || "本轮对话切换为该专家"
+                  : suggestion.collection.description?.trim() || "使用该知识库回答本次问题";
+                return (
+                  <button
+                    key={isExpert ? `expert-${suggestion.expert.id}` : `knowledge-${suggestion.collection.id}`}
+                    ref={(element) => {
+                      knowledgeSuggestionItemRefs.current[index] = element;
+                    }}
+                    type="button"
+                    className={`chat-composer__suggestion chat-composer__suggestion--knowledge${
+                      selectedKnowledgeIndex === index ? " chat-composer__suggestion--active" : ""
+                    }`}
+                    onClick={() => applyMentionSuggestion(suggestion)}
+                    onMouseEnter={() => setSelectedKnowledgeIndex(index)}
+                  >
+                    <span className="chat-composer__suggestion-icon" aria-hidden="true">
+                      {isExpert ? <Bot size={15} strokeWidth={1.9} /> : <BookOpen size={15} strokeWidth={1.9} />}
                     </span>
-                  </span>
-                </button>
-              ))}
+                    <span className="chat-composer__suggestion-copy chat-composer__suggestion-copy--knowledge">
+                      <span className="chat-composer__suggestion-command">{title}</span>
+                      <span className="chat-composer__suggestion-description">{description}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

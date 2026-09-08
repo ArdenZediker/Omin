@@ -169,6 +169,7 @@ export function createCustomProject(input?: ProjectDraft): Project {
     knowledgeCollectionId: input?.knowledgeCollectionId?.trim() || null,
     allowedToolIds: input?.allowedToolIds?.length ? [...input.allowedToolIds] : [...DEFAULT_PROJECT_TOOL_IDS],
     allowedSkillIds: input?.allowedSkillIds?.length ? [...input.allowedSkillIds] : [...DEFAULT_PROJECT_SKILL_IDS],
+    boundExpertIds: input?.boundExpertIds?.length ? [...input.boundExpertIds] : undefined,
     memoryScope: input?.memoryScope ?? DEFAULT_PROJECT_MEMORY_SCOPE,
     createdAt: now,
     updatedAt: now,
