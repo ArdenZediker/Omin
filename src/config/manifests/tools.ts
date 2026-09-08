@@ -449,6 +449,7 @@ export const PROJECT_TOOL_MANIFESTS = TOOL_MANIFESTS.filter((tool) =>
     "export_pptx",
     "export_md",
     "install_skill",
+    "bash",
   ].includes(tool.id)
 );
 
