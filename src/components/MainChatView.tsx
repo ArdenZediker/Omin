@@ -77,6 +77,7 @@ import {
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import CreateProjectDialog from "./CreateProjectDialog";
+import CreateExpertDialog from "./CreateExpertDialog";
 import ProjectSettingsDialog from "./ProjectSettingsDialog";
 import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
 import ModelSelector from "./ModelSelector";
@@ -354,7 +355,6 @@ export default function MainChatView({
   onOpenKnowledge,
   openMarketplace,
   onMarketplaceChange,
-  onJumpToChat,
 }: MainChatViewProps) {
   const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(
     null,
@@ -416,6 +416,7 @@ export default function MainChatView({
   );
   // 新增 MCP 连接器（自定义本地 MCP 服务器）的弹窗与表单状态
   const [creatingMcp, setCreatingMcp] = useState(false);
+  const [creatingExpert, setCreatingExpert] = useState(false);
   const [newMcp, setNewMcp] = useState({
     name: "",
     desc: "",
@@ -546,12 +547,10 @@ export default function MainChatView({
     onMarketplaceChange?.(false);
   }, [onMarketplaceChange]);
 
-  /** 「创建专家」：关闭扩展中心，跳回对话框并预填 /expert-manager 创建指令。 */
+  /** 「创建专家」：打开表单对话框直接创建（注册为本地插件，无需经过对话）。 */
   const handleCreateExpert = useCallback(() => {
-    setShowPluginMarketplace(false);
-    onMarketplaceChange?.(false);
-    onJumpToChat?.("/expert-manager ");
-  }, [onMarketplaceChange, onJumpToChat]);
+    setCreatingExpert(true);
+  }, []);
 
   /** 新增自定义 MCP 连接器：写入注册表 → 配置启动信息 → 信任并拉起。 */
   const createMcpConnector = useCallback(async () => {
@@ -2652,6 +2651,12 @@ export default function MainChatView({
         project={customProjects.find((project) => project.id === projectSettingsId) ?? null}
         onClose={() => setProjectSettingsId(null)}
         onUpdate={onUpdateProject}
+      />
+
+      <CreateExpertDialog
+        open={creatingExpert}
+        onClose={() => setCreatingExpert(false)}
+        onCreated={() => setMarketplaceNonce((current) => current + 1)}
       />
     </div>
   );

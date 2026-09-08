@@ -2001,8 +2001,8 @@ export default function PluginMarketplace({
                   <Bot size={40} strokeWidth={1.2} />
                   <p>还没有自定义专家</p>
                   <span>
-                    点击「创建专家」跳到对话框，让 AI 按 Omni
-                    专家规范帮你生成专家定义并注册
+                    点击「创建专家」填写名称、角色提示词并绑定工具/技能，
+                    创建后可通过项目绑定、@ 提及或 agent 委派使用
                   </span>
                   <button
                     type="button"
