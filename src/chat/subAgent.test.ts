@@ -4,8 +4,10 @@ import {
   SUB_AGENT_TOOL_IDS,
   MAX_SUB_AGENT_DEPTH,
   MAX_SUB_AGENT_OUTPUT_CHARS,
+  MAX_SUB_AGENT_BATCH,
   filterSubAgentTools,
   parseSubAgentArgs,
+  parseSubAgentBatchArgs,
   truncateSubAgentOutput,
   runSubAgent,
   isSubAgentActive,
@@ -63,6 +65,44 @@ describe("parseSubAgentArgs", () => {
     expect(parseSubAgentArgs("")).toHaveProperty("error");
     expect(parseSubAgentArgs(JSON.stringify({ goal: "x" }))).toHaveProperty("error");
     expect(parseSubAgentArgs(JSON.stringify({ task: "   " }))).toHaveProperty("error");
+  });
+});
+
+describe("parseSubAgentBatchArgs", () => {
+  it("批量形态：tasks 数组解析为多个子任务（对象/字符串混排 + expertId）", () => {
+    const parsed = parseSubAgentBatchArgs(
+      JSON.stringify({
+        tasks: [{ task: "调研 A", expertId: "writer-expert" }, "调研 B", { task: "调研 C" }],
+      })
+    );
+    expect(parsed).toEqual({
+      tasks: [
+        { task: "调研 A", expertId: "writer-expert" },
+        { task: "调研 B" },
+        { task: "调研 C" },
+      ],
+    });
+  });
+
+  it("单任务形态 / 纯文本自动包装为单元素批量", () => {
+    expect(parseSubAgentBatchArgs(JSON.stringify({ task: "单任务" }))).toEqual({ tasks: [{ task: "单任务" }] });
+    expect(parseSubAgentBatchArgs("纯文本任务")).toEqual({ tasks: [{ task: "纯文本任务" }] });
+  });
+
+  it("无效条目 / 空数组 / 超上限返回 error", () => {
+    expect(parseSubAgentBatchArgs(JSON.stringify({ tasks: [{ goal: "x" }] }))).toHaveProperty("error");
+    expect(parseSubAgentBatchArgs(JSON.stringify({ tasks: [] }))).toHaveProperty("error");
+    const tooMany = parseSubAgentBatchArgs(
+      JSON.stringify({ tasks: Array.from({ length: MAX_SUB_AGENT_BATCH + 1 }, (_, i) => ({ task: `任务 ${i}` })) })
+    );
+    expect(tooMany).toHaveProperty("error");
+  });
+
+  it("上限边界值恰好可派发", () => {
+    const atLimit = parseSubAgentBatchArgs(
+      JSON.stringify({ tasks: Array.from({ length: MAX_SUB_AGENT_BATCH }, (_, i) => ({ task: `任务 ${i}` })) })
+    );
+    expect(atLimit).toHaveProperty("tasks");
   });
 });
 
@@ -247,6 +287,60 @@ describe("runSubAgent", () => {
     mockedExecuteChatTurn.mockResolvedValue({ content: "  ", toolRounds: 1, usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7 }, estimated: false } as never);
     const empty = await runSubAgent({ args: "任务", context: makeContext() });
     expect(empty.usage).toBeUndefined();
+  });
+
+  it("批量并行派发：每个子任务独立调引擎，报告分节 + 用量聚合", async () => {
+    mockedExecuteChatTurn.mockImplementation(async (options) => {
+      const prompt = options.messages[0].content;
+      if (String(prompt).includes("调研 A")) {
+        return { content: "A 报告", toolRounds: 2, usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 }, estimated: false } as never;
+      }
+      return { content: "B 报告", toolRounds: 3, usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 }, estimated: true } as never;
+    });
+
+    const result = await runSubAgent({
+      args: JSON.stringify({ tasks: [{ task: "调研 A" }, { task: "调研 B" }] }),
+      context: makeContext(),
+    });
+
+    expect(mockedExecuteChatTurn).toHaveBeenCalledTimes(2);
+    expect(result.outputText).toContain("## 子任务 1：调研 A");
+    expect(result.outputText).toContain("A 报告");
+    expect(result.outputText).toContain("## 子任务 2：调研 B");
+    expect(result.outputText).toContain("B 报告");
+    // 用量聚合：token 求和 + estimated 任一为真即为真
+    expect(result.usage).toEqual({ promptTokens: 110, completionTokens: 55, totalTokens: 165, estimated: true });
+    expect(result.toolRounds).toBe(5);
+    expect(isSubAgentActive()).toBe(false);
+  });
+
+  it("批量中单个子任务失败不影响其余（失败节报错误文本、不贡献用量）", async () => {
+    mockedExecuteChatTurn.mockImplementation(async (options) => {
+      const prompt = String(options.messages[0].content);
+      if (prompt.includes("会失败的任务")) {
+        throw new Error("模型不可用");
+      }
+      return { content: "成功报告", toolRounds: 1, usage: { promptTokens: 20, completionTokens: 10, totalTokens: 30 }, estimated: false } as never;
+    });
+
+    const result = await runSubAgent({
+      args: JSON.stringify({ tasks: ["会失败的任务", "正常任务"] }),
+      context: makeContext(),
+    });
+
+    expect(result.outputText).toContain("子 Agent 执行失败");
+    expect(result.outputText).toContain("成功报告");
+    expect(result.usage).toEqual({ promptTokens: 20, completionTokens: 10, totalTokens: 30, estimated: false });
+    expect(result.toolRounds).toBe(1);
+  });
+
+  it("批量超过上限时拒绝并引导拆分", async () => {
+    const result = await runSubAgent({
+      args: JSON.stringify({ tasks: Array.from({ length: MAX_SUB_AGENT_BATCH + 1 }, (_, i) => ({ task: `任务 ${i}` })) }),
+      context: makeContext(),
+    });
+    expect(result.outputText).toContain("拆分");
+    expect(mockedExecuteChatTurn).not.toHaveBeenCalled();
   });
 
   it("引擎抛错时以错误文本返回（不向外抛出）", async () => {

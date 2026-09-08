@@ -430,8 +430,9 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
       "its declared write/export tools still require user confirmation at runtime. " +
       "Pass task as a COMPLETE, self-contained instruction: goal, all needed background (paths/keywords/constraints), and the expected report format; " +
       "the sub-agent cannot see this conversation. " +
-      "Use it to offload multi-step investigations or specialist work so the main context stays lean; " +
-      "launch several in parallel when the subtasks are independent.",
+      "Use it to offload multi-step investigations or specialist work so the main context stays lean. " +
+      "For several INDEPENDENT subtasks, dispatch them in ONE call via the tasks array (max 5) — they run in parallel and you receive one combined report; " +
+      "the single-task {task, expertId} form also works.",
     parameters: {
       type: "object",
       properties: {
@@ -442,6 +443,25 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
         expertId: {
           type: "string",
           description: "Optional expert id to delegate to (see the expert roster). Omit for a generic read-only researcher.",
+        },
+        tasks: {
+          type: "array",
+          description:
+            "Parallel batch: dispatch multiple INDEPENDENT subtasks in one call (max 5). Each item is either a task string or {task, expertId}. Results return as one combined sectioned report.",
+          items: {
+            type: "object",
+            properties: {
+              task: {
+                type: "string",
+                description: "Complete, self-contained subtask instruction.",
+              },
+              expertId: {
+                type: "string",
+                description: "Optional expert id for this subtask.",
+              },
+            },
+            required: ["task"],
+          },
         },
       },
       required: ["task"],

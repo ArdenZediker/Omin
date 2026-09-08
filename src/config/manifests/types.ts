@@ -4,6 +4,19 @@ export type ProjectPreset = {
   description: string;
 };
 
+/** function calling 参数的 JSON Schema 属性（支持一层嵌套对象数组，如 agent 工具的 tasks 批量派发）。 */
+export type ToolParamProperty = {
+  type: string;
+  description: string;
+  enum?: string[];
+  items?: {
+    type: string;
+    description?: string;
+    properties?: Record<string, ToolParamProperty>;
+    required?: string[];
+  };
+};
+
 export type ToolManifest = {
   id: string;
   command?: string;
@@ -22,15 +35,7 @@ export type ToolManifest = {
    */
   parameters?: {
     type: "object";
-    properties: Record<
-      string,
-      {
-        type: string;
-        description: string;
-        enum?: string[];
-        items?: { type: string; description?: string };
-      }
-    >;
+    properties: Record<string, ToolParamProperty>;
     required?: string[];
   };
 };
