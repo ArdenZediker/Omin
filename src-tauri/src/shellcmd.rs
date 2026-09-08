@@ -93,11 +93,15 @@ fn detect_git_bash() -> Option<String> {
 /// 按可执行文件名选择传参方式（自定义 Shell 与自动探测共用）。
 /// bash/zsh 用登录 shell（-l 加载标准 PATH，ls/grep 等 POSIX 工具可用）；
 /// sh/dash/fish 及未知可执行用最通用的 -c；PowerShell 用 -NoLogo -Command；cmd 用 /C。
+/// 特例：wsl.exe 用 `-- <命令>`（交默认 Linux shell 执行，路径体系 /mnt/c）；
+/// busybox.exe 用 `sh -c <命令>`（busybox 本体不是 shell，需指定 applet）。
 fn apply_shell_args(cmd: &mut Command, exe_stem: &str, command: &str) {
     let name = exe_stem.to_ascii_lowercase();
     let is_powershell = name == "pwsh" || name.contains("powershell");
     let is_bash_like = name.contains("bash") || name.contains("zsh");
     let is_cmd = name == "cmd" || name == "cmd.exe";
+    let is_wsl = name == "wsl" || name == "wsl.exe";
+    let is_busybox = name == "busybox";
 
     #[cfg(windows)]
     {
@@ -107,11 +111,19 @@ fn apply_shell_args(cmd: &mut Command, exe_stem: &str, command: &str) {
             cmd.raw_arg("/C").raw_arg(command);
             return;
         }
+        if is_wsl {
+            // wsl.exe 对参数有自己的解析（会拼回 Linux 命令行），同样用 raw_arg 原样传递，
+            // 避免 Rust 的自动引号被 wsl 再剥一层。
+            cmd.raw_arg("--").raw_arg(command);
+            return;
+        }
     }
     #[cfg(not(windows))]
-    let _ = is_cmd;
+    let _ = (is_cmd, is_wsl);
 
-    if is_powershell {
+    if is_busybox {
+        cmd.arg("sh").arg("-c").arg(command);
+    } else if is_powershell {
         cmd.arg("-NoLogo").arg("-Command").arg(command);
     } else if is_bash_like {
         cmd.arg("-lc").arg(command);
@@ -273,4 +285,87 @@ pub(crate) async fn execute_command(input: ExecuteCommandInput) -> Result<Execut
     tauri::async_runtime::spawn_blocking(move || run_shell(input))
         .await
         .map_err(|e| format!("execute_command 任务失败: {e}"))?
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectShellResult {
+    /// 是否检测通过（文件存在且 `--version` 正常返回）。
+    pub ok: bool,
+    /// Shell 自报的版本信息（或失败原因），供设置页展示。
+    pub output: String,
+}
+
+/// 检测自定义 Shell 可用性：执行 `{path} --version`（8s 超时），供设置页「检测可用性」按钮。
+/// 注意：仅做可用性探测，不改变任何安全策略——黑名单/确认门/工作目录锁定不受 Shell 类型影响。
+#[tauri::command]
+pub(crate) async fn detect_shell(path: String) -> Result<DetectShellResult, String> {
+    let p = path.trim().to_string();
+    if p.is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+    if !std::path::Path::new(&p).is_file() {
+        return Ok(DetectShellResult {
+            ok: false,
+            output: format!("文件不存在：{p}"),
+        });
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = Command::new(&p);
+        cmd.arg("--version")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let child = cmd
+            .spawn()
+            .map_err(|e| format!("无法启动（不是有效的可执行文件？）：{e}"))?;
+        let child_arc = Arc::new(Mutex::new(child));
+        let wait_child = Arc::clone(&child_arc);
+        let (tx, rx) = std::sync::mpsc::channel::<std::process::ExitStatus>();
+        thread::spawn(move || {
+            if let Ok(status) = wait_child.lock().unwrap().wait() {
+                let _ = tx.send(status);
+            }
+        });
+        let status = match rx.recv_timeout(Duration::from_secs(8)) {
+            Ok(status) => Some(status),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let _ = child_arc.lock().unwrap().kill();
+                None
+            }
+            Err(_) => None,
+        };
+        let mut guard = child_arc.lock().unwrap();
+        let mut output = String::new();
+        if let Some(mut out) = guard.stdout.take() {
+            use std::io::Read;
+            let _ = out.read_to_string(&mut output);
+        }
+        if let Some(mut err) = guard.stderr.take() {
+            use std::io::Read;
+            let mut e = String::new();
+            let _ = err.read_to_string(&mut e);
+            if !e.is_empty() {
+                if !output.is_empty() {
+                    output.push('\n');
+                }
+                output.push_str(&e);
+            }
+        }
+        drop(guard);
+        let ok = matches!(status, Some(s) if s.success());
+        if status.is_none() {
+            output.push_str("\n[检测超时（8s），已终止]");
+        }
+        Ok(DetectShellResult {
+            ok,
+            output: cap_output(output.trim_end(), 2_000),
+        })
+    })
+    .await
+    .map_err(|e| format!("detect_shell 任务失败: {e}"))?
 }

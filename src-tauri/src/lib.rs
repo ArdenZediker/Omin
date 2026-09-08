@@ -592,7 +592,8 @@ pub fn run() {
             list_mcp_tools,
             call_mcp_tool,
             read_mcp_stderr,
-            execute_command
+            execute_command,
+            detect_shell
         ])
         .setup(|app| {
             // 清理上一会话遗留的剪贴板图片缓存（best-effort，失败不影响启动）

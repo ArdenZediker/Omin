@@ -1,5 +1,6 @@
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import type { BasicSettings } from "../../app/types";
 import type { ThemeMode } from "../../app/settings";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
@@ -65,6 +66,21 @@ export default function BasicSettingsSection({
   onCancelShortcutCapture,
   recordingShortcut,
 }: Props) {
+  // Shell 可用性检测结果（点「检测可用性」后展示）。
+  const [shellProbe, setShellProbe] = useState<{ ok: boolean; output: string; probing: boolean } | null>(null);
+
+  const probeShell = async () => {
+    const path = basicSettings.shellPath.trim();
+    if (!path) return;
+    setShellProbe({ ok: false, output: "", probing: true });
+    try {
+      const result = await invoke<{ ok: boolean; output: string }>("detect_shell", { path });
+      setShellProbe({ ok: result.ok, output: result.output.split("\n")[0]?.slice(0, 160) || "", probing: false });
+    } catch (error) {
+      setShellProbe({ ok: false, output: error instanceof Error ? error.message : String(error), probing: false });
+    }
+  };
+
   return (
     <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
       <div className="border-b border-slate-100 pb-3">
@@ -275,10 +291,21 @@ export default function BasicSettingsSection({
             <input
               type="text"
               value={basicSettings.shellPath}
-              onChange={(e) => onUpdateBasicSettings({ shellPath: e.target.value })}
+              onChange={(e) => {
+                onUpdateBasicSettings({ shellPath: e.target.value });
+                setShellProbe(null);
+              }}
               placeholder="留空自动探测（Git-Bash → cmd /C）"
               className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
             />
+            <button
+              type="button"
+              onClick={() => void probeShell()}
+              disabled={!basicSettings.shellPath.trim() || shellProbe?.probing}
+              className="h-9 shrink-0 rounded-md border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {shellProbe?.probing ? "检测中…" : "检测可用性"}
+            </button>
             <button
               type="button"
               onClick={async () => {
@@ -300,8 +327,19 @@ export default function BasicSettingsSection({
         </div>
         <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
           「运行 Shell 命令」工具使用的 Shell。留空时 Windows 自动探测 Git-Bash（未命中回落 cmd），macOS/Linux 用系统 sh；
-          指定后按可执行名匹配参数（bash/zsh → -lc，cmd → /C，pwsh → -Command，其余 → -c），可指向 MSYS2、Cygwin 或任意自定义 Shell。
+          指定后按可执行名匹配参数（bash/zsh → -lc，cmd → /C，pwsh → -Command，wsl → --，busybox → sh -c，其余 → -c），
+          可指向 Git-Bash、WSL、MSYS2、Cygwin 或任意自定义 Shell。⚠️ 切换自定义 Shell 不会关闭命令安全校验，
+          高危命令依旧被拦截、修改类操作依旧需要确认。
         </p>
+        {shellProbe && !shellProbe.probing && (
+          <p
+            className={`pl-[136px] text-xs ${shellProbe.ok ? "text-emerald-600" : "text-red-600"}`}
+            role="status"
+          >
+            {shellProbe.ok ? "✅ 检测成功：" : "❌ 检测失败："}
+            {shellProbe.output || (shellProbe.ok ? "可用" : "未知错误")}
+          </p>
+        )}
       </div>
 
       <div className="border-t border-slate-100 pt-4">

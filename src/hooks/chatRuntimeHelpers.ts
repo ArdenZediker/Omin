@@ -2,6 +2,7 @@ import { emit, emitTo } from "@tauri-apps/api/event";
 import { BUILTIN_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
 import type { ChatToolParam, Message } from "../adapters/types";
 import type { Project } from "../chat/types";
+import { buildShellEnvHint } from "../chat/shellEnv";
 import type { PetThoughtState } from "../app/types";
 
 export type SessionLite = {
@@ -24,7 +25,9 @@ export function resolveEnabledToolNames(project: Project | null) {
     if (!manifest?.title) continue;
     toolNames.push(manifest.title);
     // 仿 deepseek「插件自带指令」：优先使用 manifest 的声明式提示贡献。
-    const contribution = manifest.promptContribution ?? manifest.description;
+    // /bash 额外追加当前 Shell 环境的动态提示（方案B：用户自定义 Shell 时引导模型用对应语法）。
+    const base = manifest.promptContribution ?? manifest.description;
+    const contribution = toolId === "bash" ? base + buildShellEnvHint() : base;
     if (contribution) {
       toolDescriptions[manifest.title] = contribution;
     }
@@ -51,9 +54,11 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
   for (const toolId of new Set(sourceToolIds)) {
     const manifest = getToolManifestById(toolId);
     if (!manifest) continue;
+    // /bash 额外追加当前 Shell 环境的动态提示（方案B），与 resolveEnabledToolNames 保持一致。
+    const base = manifest.promptContribution ?? manifest.description;
     tools.push({
       name: manifest.id,
-      description: manifest.promptContribution ?? manifest.description,
+      description: toolId === "bash" ? base + buildShellEnvHint() : base,
       parameters: manifest.parameters ?? { type: "object", properties: {} },
     });
   }
