@@ -119,7 +119,7 @@ describe("runSubAgent", () => {
   }
 
   it("专家模式：注入专家提示词、按 defaultToolIds 给工具（含写类）、按 defaultSkillIds 过滤技能", async () => {
-    mockedExecuteChatTurn.mockResolvedValue({ content: "专家报告", toolRounds: 1 } as never);
+    mockedExecuteChatTurn.mockResolvedValue({ content: "专家报告", toolRounds: 1, usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 }, estimated: false } as never);
     const { outputText } = await runSubAgent({
       args: JSON.stringify({ task: "写一篇周报", expertId: "writer-expert" }),
       context: makeExpertContext(expertManifest),
@@ -145,7 +145,7 @@ describe("runSubAgent", () => {
   });
 
   it("专家未声明工具时以纯文本专家运行（不报错）", async () => {
-    mockedExecuteChatTurn.mockResolvedValue({ content: "纯文本产出", toolRounds: 0 } as never);
+    mockedExecuteChatTurn.mockResolvedValue({ content: "纯文本产出", toolRounds: 0, usage: { promptTokens: 8, completionTokens: 4, totalTokens: 12 }, estimated: false } as never);
     const noToolExpert = { ...expertManifest, defaultToolIds: [], defaultSkillIds: [] };
     const { outputText } = await runSubAgent({
       args: JSON.stringify({ task: "写段文案", expertId: "writer-expert" }),
@@ -157,7 +157,7 @@ describe("runSubAgent", () => {
   });
 
   it("以独立上下文调用引擎：白名单工具集、无知识检索/记忆抽取、任务作为 user 消息", async () => {
-    mockedExecuteChatTurn.mockResolvedValue({ content: "子任务报告正文", toolRounds: 2 } as never);
+    mockedExecuteChatTurn.mockResolvedValue({ content: "子任务报告正文", toolRounds: 2, usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 }, estimated: false } as never);
     const context = makeContext();
     const { outputText } = await runSubAgent({
       args: JSON.stringify({ task: "调研项目结构" }),
@@ -178,7 +178,7 @@ describe("runSubAgent", () => {
   });
 
   it("推送开始/完成动作步骤到父运行时间线", async () => {
-    mockedExecuteChatTurn.mockResolvedValue({ content: "报告", toolRounds: 1 } as never);
+    mockedExecuteChatTurn.mockResolvedValue({ content: "报告", toolRounds: 1, usage: { promptTokens: 6, completionTokens: 3, totalTokens: 9 }, estimated: false } as never);
     const onToolStep = vi.fn();
     await runSubAgent({ args: "做点调研", context: makeContext({ onToolStep }) });
     const labels = onToolStep.mock.calls.map(([step]) => (step as { label: string }).label);
@@ -201,7 +201,7 @@ describe("runSubAgent", () => {
         name: "agent",
         arguments: JSON.stringify({ task: "再嵌套一层" }),
       });
-      return { content: result as string, toolRounds: 2 } as never;
+      return { content: result as string, toolRounds: 2, usage: { promptTokens: 20, completionTokens: 10, totalTokens: 30 }, estimated: false } as never;
     });
 
     const { outputText } = await runSubAgent({ args: "外层任务", context });
@@ -210,9 +210,43 @@ describe("runSubAgent", () => {
   });
 
   it("引擎无内容返回时给出兜底提示", async () => {
-    mockedExecuteChatTurn.mockResolvedValue({ content: "  ", toolRounds: 1 } as never);
+    mockedExecuteChatTurn.mockResolvedValue({ content: "  ", toolRounds: 1, usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7 }, estimated: false } as never);
     const { outputText } = await runSubAgent({ args: "任务", context: makeContext() });
     expect(outputText).toContain("未返回有效报告");
+  });
+
+  it("成功时回传子 Agent 用量与工具轮数（并入主会话统计）", async () => {
+    mockedExecuteChatTurn.mockResolvedValue({
+      content: "调研报告",
+      toolRounds: 3,
+      usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      estimated: false,
+    } as never);
+    const result = await runSubAgent({ args: JSON.stringify({ task: "调研" }), context: makeContext() });
+    expect(result.usage).toEqual({ promptTokens: 100, completionTokens: 50, totalTokens: 150, estimated: false });
+    expect(result.toolRounds).toBe(3);
+  });
+
+  it("引擎报告估算用量时透传 estimated 标记", async () => {
+    mockedExecuteChatTurn.mockResolvedValue({
+      content: "估算报告",
+      toolRounds: 1,
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      estimated: true,
+    } as never);
+    const result = await runSubAgent({ args: JSON.stringify({ task: "调研" }), context: makeContext() });
+    expect(result.usage?.estimated).toBe(true);
+  });
+
+  it("失败/兜底路径不携带用量", async () => {
+    mockedExecuteChatTurn.mockRejectedValue(new Error("模型不可用"));
+    const failed = await runSubAgent({ args: "任务", context: makeContext() });
+    expect(failed.usage).toBeUndefined();
+    expect(failed.toolRounds).toBeUndefined();
+
+    mockedExecuteChatTurn.mockResolvedValue({ content: "  ", toolRounds: 1, usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7 }, estimated: false } as never);
+    const empty = await runSubAgent({ args: "任务", context: makeContext() });
+    expect(empty.usage).toBeUndefined();
   });
 
   it("引擎抛错时以错误文本返回（不向外抛出）", async () => {

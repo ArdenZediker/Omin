@@ -137,12 +137,17 @@ function expertActionDetail(expert: PluginManifest, task: string): string {
 
 /**
  * 运行一次子 Agent：独立上下文 + 只读工具白名单执行委派任务，返回回填给主循环的报告文本。
- * 永不抛异常（除中止信号透传外），失败以错误文本返回，保证主工具循环收敛。
+ * 成功时附带子 Agent 的模型用量与工具轮数（ToolCallOutcome.usage/toolRounds 透传，
+ * 由父工具循环并入主会话统计）。永不抛异常（除中止信号透传外），失败以错误文本返回。
  */
 export async function runSubAgent(options: {
   args: string;
   context: SubAgentRunContext;
-}): Promise<{ outputText: string }> {
+}): Promise<{
+  outputText: string;
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number; estimated?: boolean };
+  toolRounds?: number;
+}> {
   const { args, context } = options;
   if (activeSubAgentRuns >= MAX_SUB_AGENT_DEPTH) {
     return { outputText: "嵌套调用被拒绝：子 Agent 内不能再派出子 Agent。请直接完成调研并汇报。" };
@@ -225,7 +230,17 @@ export async function runSubAgent(options: {
       icon: "Bot",
       detail: `${rounds} 轮工具调用，报告 ${truncateSubAgentOutput(report).length} 字符`,
     });
-    return { outputText: `子 Agent 报告（${rounds} 轮工具调用）：\n\n${truncateSubAgentOutput(report)}` };
+    return {
+      outputText: `子 Agent 报告（${rounds} 轮工具调用）：\n\n${truncateSubAgentOutput(report)}`,
+      // 子 Agent 用量并入主会话统计：token 累加 + estimated 徽标透传
+      usage: {
+        promptTokens: result.usage.promptTokens,
+        completionTokens: result.usage.completionTokens,
+        totalTokens: result.usage.totalTokens,
+        estimated: Boolean(result.estimated),
+      },
+      toolRounds: rounds,
+    };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error;

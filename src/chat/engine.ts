@@ -29,6 +29,10 @@ export interface ToolCallOutcome {
   path?: string;
   /** 文件写入类工具产生的差异（随结果透传，供变更面板 before/after 对比） */
   fileDiff?: FileDiff;
+  /** 工具内部产生的额外模型用量（子 Agent 委派回填，并入父循环用量统计） */
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number; estimated?: boolean };
+  /** 工具内部消耗的额外工具轮数（子 Agent 委派回填，并入会话「N 轮工具」统计） */
+  toolRounds?: number;
 }
 
 /** 上下文窗口占用超过该比例触发历史压缩 */
@@ -202,6 +206,8 @@ async function runToolLoop(options: {
   let roundReasoning = "";
   const allToolCallResults: ChatToolCallResult[] = [];
   const steps: ChatStep[] = [];
+  // 工具内部消耗的额外工具轮数（子 Agent 委派回填，跨轮累计）
+  let extraToolRounds = 0;
   const canStream = modelConfig?.supportsStreaming !== false;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -270,7 +276,7 @@ async function runToolLoop(options: {
       if (roundContentBuffer) {
         onChunk?.(roundContentBuffer);
       }
-      return { content: roundContentBuffer || response.content || "", model: response.model, usage, toolRounds: round + 1, reasoning, toolCallResults: allToolCallResults, steps };
+      return { content: roundContentBuffer || response.content || "", model: response.model, usage, toolRounds: round + 1 + extraToolRounds, reasoning, toolCallResults: allToolCallResults, steps };
     }
 
     // 本轮 reasoning 增量 → step（本轮 reasoning 在工具调用之前发生）
@@ -292,18 +298,31 @@ async function runToolLoop(options: {
 
     // 并行执行本轮全部工具调用（保持结果顺序与 tool_calls 一致）
     const outcomes = await Promise.all(
-      response.toolCalls.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"]; path?: string; fileDiff?: FileDiff }> => {
+      response.toolCalls.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"]; path?: string; fileDiff?: FileDiff; usage?: ToolCallOutcome["usage"]; toolRounds?: number }> => {
         try {
           const raw = await executeToolCall(toolCall);
           if (typeof raw === "string") {
             return { text: raw };
           }
-          return { text: raw.outputText, artifact: raw.artifact, path: raw.path, fileDiff: raw.fileDiff };
+          return { text: raw.outputText, artifact: raw.artifact, path: raw.path, fileDiff: raw.fileDiff, usage: raw.usage, toolRounds: raw.toolRounds };
         } catch (error) {
           return { text: `工具执行失败：${error instanceof Error ? error.message : String(error)}` };
         }
       })
     );
+    // 工具内部产生的额外模型用量（子 Agent 委派）并入父循环统计：
+    // token 直接累加；estimated 标记污染 allReal（会话统计的「估算」徽标随之点亮）。
+    for (const outcome of outcomes) {
+      if (outcome.usage) {
+        usage.promptTokens += outcome.usage.promptTokens;
+        usage.completionTokens += outcome.usage.completionTokens;
+        usage.totalTokens += outcome.usage.totalTokens;
+        if (outcome.usage.estimated) usage.allReal = false;
+      }
+      if (typeof outcome.toolRounds === "number") {
+        extraToolRounds += outcome.toolRounds;
+      }
+    }
     // 记录本轮全部 tool_call 结果（按时间/调用顺序追加），供 UI 思考块渲染步骤
     response.toolCalls.forEach((toolCall, index) => {
       const outcome = outcomes[index];
@@ -374,7 +393,7 @@ async function runToolLoop(options: {
     promptTokens: estimatePromptTokens(degradeMessages),
     completionTokens: estimateTokens(response.content ?? ""),
   });
-  return { content: response.content ?? "", model: response.model, usage, toolRounds: MAX_TOOL_ROUNDS, reasoning, toolCallResults: allToolCallResults, steps };
+  return { content: response.content ?? "", model: response.model, usage, toolRounds: MAX_TOOL_ROUNDS + extraToolRounds, reasoning, toolCallResults: allToolCallResults, steps };
 }
 
 export async function executeChatTurn(options: {
