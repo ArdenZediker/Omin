@@ -417,6 +417,7 @@ export default function MainChatView({
   // 新增 MCP 连接器（自定义本地 MCP 服务器）的弹窗与表单状态
   const [creatingMcp, setCreatingMcp] = useState(false);
   const [creatingExpert, setCreatingExpert] = useState(false);
+  const [editingExpert, setEditingExpert] = useState<PluginManifest | null>(null);
   const [newMcp, setNewMcp] = useState({
     name: "",
     desc: "",
@@ -549,6 +550,13 @@ export default function MainChatView({
 
   /** 「创建专家」：打开表单对话框直接创建（注册为本地插件，无需经过对话）。 */
   const handleCreateExpert = useCallback(() => {
+    setEditingExpert(null);
+    setCreatingExpert(true);
+  }, []);
+
+  /** 「编辑专家」：打开表单对话框预填已有档案，保存走 updateManifest。 */
+  const handleEditExpert = useCallback((manifest: PluginManifest) => {
+    setEditingExpert(manifest);
     setCreatingExpert(true);
   }, []);
 
@@ -1955,6 +1963,7 @@ export default function MainChatView({
             initialFilter={marketplaceFilter}
             onClose={closeMarketplace}
             onCreateExpert={handleCreateExpert}
+            onEditExpert={handleEditExpert}
             onAddMcp={() => setCreatingMcp(true)}
             source={marketplaceSource}
             onSourceChange={setMarketplaceSource}
@@ -2655,7 +2664,11 @@ export default function MainChatView({
 
       <CreateExpertDialog
         open={creatingExpert}
-        onClose={() => setCreatingExpert(false)}
+        editing={editingExpert}
+        onClose={() => {
+          setCreatingExpert(false);
+          setEditingExpert(null);
+        }}
         onCreated={() => setMarketplaceNonce((current) => current + 1)}
       />
     </div>

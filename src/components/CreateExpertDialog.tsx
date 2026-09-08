@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { X, Bot, Wand2, Cable, Check } from "lucide-react";
 import { TOOL_MANIFESTS } from "../config/manifests/tools";
@@ -7,8 +7,10 @@ import type { PluginManifest } from "../plugins/types";
 
 export type CreateExpertDialogProps = {
   open: boolean;
+  /** 编辑模式：传入已有专家 manifest（id 不可改，保存走 updateManifest 覆盖）。 */
+  editing?: PluginManifest | null;
   onClose: () => void;
-  /** 创建成功后回调（宿主用于刷新扩展中心列表）。 */
+  /** 创建/保存成功后回调（宿主用于刷新扩展中心列表）。 */
   onCreated?: (manifest: PluginManifest) => void;
 };
 
@@ -25,17 +27,40 @@ const EXPERT_CATEGORIES = [
 ];
 
 /**
- * 创建专家对话框：表单化生成 PluginManifest(kind: "expert") 并注册为本地插件。
+ * 创建/编辑专家对话框：表单化生成或更新 PluginManifest(kind: "expert")。
  * 专家 = 子 Agent 档案：templatePrompt 为角色提示词，defaultToolIds/defaultSkillIds
  * 决定该专家被 agent 委派或 @ 指定时的能力边界。
+ * 编辑模式（editing 非空）预填表单，保存走 pluginRegistry.updateManifest（保留启用状态）。
  */
-export default function CreateExpertDialog({ open, onClose, onCreated }: CreateExpertDialogProps) {
+export default function CreateExpertDialog({ open, editing = null, onClose, onCreated }: CreateExpertDialogProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState(EXPERT_CATEGORIES[0]);
   const [templatePrompt, setTemplatePrompt] = useState("");
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+
+  const isEditing = Boolean(editing);
+
+  // 打开时初始化：编辑模式预填已有档案，创建模式清空表单。
+  useEffect(() => {
+    if (!open) return;
+    if (editing) {
+      setName(editing.name);
+      setDescription(editing.description ?? "");
+      setCategory(editing.category && EXPERT_CATEGORIES.includes(editing.category) ? editing.category : EXPERT_CATEGORIES[0]);
+      setTemplatePrompt(editing.templatePrompt ?? "");
+      setSelectedToolIds([...(editing.defaultToolIds ?? [])]);
+      setSelectedSkillIds([...(editing.defaultSkillIds ?? [])]);
+    } else {
+      setName("");
+      setDescription("");
+      setCategory(EXPERT_CATEGORIES[0]);
+      setTemplatePrompt("");
+      setSelectedToolIds([]);
+      setSelectedSkillIds([]);
+    }
+  }, [open, editing]);
 
   // 可声明工具：全部内置工具清单（排除 agent 自身，避免专家声明递归派发）。
   const toolOptions = useMemo(
@@ -65,33 +90,35 @@ export default function CreateExpertDialog({ open, onClose, onCreated }: CreateE
 
   const handleConfirm = () => {
     if (!canSubmit) return;
-    const slug =
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "expert";
-    const manifest: PluginManifest = {
-      id: `expert-${slug}-${Date.now().toString(36)}`,
+    const fields = {
       name: name.trim(),
       description: description.trim() || `${name.trim()}：自定义专家`,
-      version: "1.0.0",
-      author: "用户",
-      kind: "expert",
       category: category,
-      icon: "Bot",
       templatePrompt: templatePrompt.trim(),
       defaultToolIds: [...selectedToolIds],
       defaultSkillIds: [...selectedSkillIds],
     };
-    pluginRegistry.install(manifest, { type: "local", path: "user" });
+    let manifest: PluginManifest;
+    if (editing) {
+      manifest = { ...editing, ...fields };
+      pluginRegistry.updateManifest(manifest);
+    } else {
+      const slug =
+        name
+          .toLowerCase()
+          .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "expert";
+      manifest = {
+        id: `expert-${slug}-${Date.now().toString(36)}`,
+        version: "1.0.0",
+        author: "用户",
+        kind: "expert",
+        icon: "Bot",
+        ...fields,
+      };
+      pluginRegistry.install(manifest, { type: "local", path: "user" });
+    }
     onCreated?.(manifest);
-    // 重置表单，便于连续创建
-    setName("");
-    setDescription("");
-    setCategory(EXPERT_CATEGORIES[0]);
-    setTemplatePrompt("");
-    setSelectedToolIds([]);
-    setSelectedSkillIds([]);
     onClose();
   };
 
@@ -100,7 +127,7 @@ export default function CreateExpertDialog({ open, onClose, onCreated }: CreateE
       <div className="omni-dialog-backdrop" onClick={onClose} />
       <div className="omni-dialog omni-dialog--create-project" role="dialog" aria-modal="true" aria-labelledby="create-expert-title">
         <div className="omni-dialog__header">
-          <h2 id="create-expert-title">创建专家</h2>
+          <h2 id="create-expert-title">{isEditing ? "编辑专家" : "创建专家"}</h2>
           <button type="button" className="omni-dialog__close" onClick={onClose} aria-label="关闭">
             <X size={18} strokeWidth={1.8} />
           </button>
@@ -225,7 +252,7 @@ export default function CreateExpertDialog({ open, onClose, onCreated }: CreateE
             onClick={handleConfirm}
             disabled={!canSubmit}
           >
-            创建
+            {isEditing ? "保存" : "创建"}
           </button>
         </div>
       </div>

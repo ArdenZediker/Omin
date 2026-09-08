@@ -15,6 +15,7 @@ import {
   PlugZap,
   Unplug,
   Plus,
+  Pencil,
   AlertTriangle,
   Trash2,
   Hash,
@@ -66,8 +67,10 @@ type PluginMarketplaceProps = {
   onClose: () => void;
   embedded?: boolean;
   mainView?: boolean;
-  /** 「创建专家」入口：点击后由宿主跳转到对话框预填创建指令。 */
+  /** 「创建专家」入口：点击后由宿主打开创建对话框。 */
   onCreateExpert?: () => void;
+  /** 「编辑专家」入口：点击后由宿主打开编辑对话框（传入待编辑 manifest）。 */
+  onEditExpert?: (manifest: PluginManifest) => void;
   /** 「新增 MCP」入口：连接器 tab 页面内会渲染新增按钮，点击回调。 */
   onAddMcp?: () => void;
   /** Marketplace 数据源（local/skillhub/...）。传入即受控；省略则用内部默认行为（=未推荐）。
@@ -381,6 +384,7 @@ export default function PluginMarketplace({
   embedded = false,
   mainView = false,
   onCreateExpert,
+  onEditExpert,
   onAddMcp,
   source: controlledSource,
   onSourceChange,
@@ -2051,6 +2055,18 @@ export default function PluginMarketplace({
                             <span className="plugin-card__connected-dot" />
                             <span>已启用</span>
                           </span>
+                          {onEditExpert && (
+                            <button
+                              type="button"
+                              className="plugin-card__button"
+                              onClick={() => onEditExpert(manifest)}
+                              title="编辑此专家的提示词/工具/技能"
+                              aria-label={`编辑 ${manifest.name}`}
+                            >
+                              <Pencil size={14} strokeWidth={1.8} />
+                              <span>编辑</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="plugin-card__button plugin-card__button--danger"

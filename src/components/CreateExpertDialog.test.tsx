@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import CreateExpertDialog from "./CreateExpertDialog";
 import { pluginRegistry } from "../plugins/registry";
 
@@ -62,5 +62,47 @@ describe("CreateExpertDialog", () => {
 
     const created = onCreated.mock.calls[0][0];
     expect(created.defaultToolIds.length).toBe(2);
+  });
+
+  it("编辑模式：预填已有档案，保存走 updateManifest 且 id/启用状态不变", () => {
+    pluginRegistry.load();
+    const original = {
+      id: "expert-editable-test",
+      name: "可编辑专家",
+      description: "原始描述",
+      version: "1.0.0",
+      author: "用户",
+      kind: "expert" as const,
+      templatePrompt: "原始提示词",
+      defaultToolIds: ["read_file"],
+      defaultSkillIds: [],
+    };
+    pluginRegistry.install(original, { type: "local", path: "user" });
+    const installedBefore = pluginRegistry.listInstalled().find((item) => item.id === original.id)?.entry;
+
+    const onCreated = vi.fn();
+    render(<CreateExpertDialog open editing={original} onClose={vi.fn()} onCreated={onCreated} />);
+
+    // 预填断言
+    expect((screen.getByPlaceholderText("如：周报专家、代码评审专家") as HTMLInputElement).value).toBe("可编辑专家");
+    expect((screen.getByPlaceholderText(/专家的系统提示词/) as HTMLTextAreaElement).value).toBe("原始提示词");
+
+    // 标题与按钮为编辑态
+    expect(screen.getByText("编辑专家")).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText(/专家的系统提示词/), {
+      target: { value: "修改后的提示词" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    const saved = onCreated.mock.calls[0][0];
+    expect(saved.id).toBe("expert-editable-test");
+    expect(saved.templatePrompt).toBe("修改后的提示词");
+
+    const updated = pluginRegistry.getManifest("expert-editable-test");
+    expect(updated?.templatePrompt).toBe("修改后的提示词");
+    const installedAfter = pluginRegistry.listInstalled().find((item) => item.id === original.id)?.entry;
+    expect(installedAfter?.installedAt).toBe(installedBefore?.installedAt);
+    expect(installedAfter?.enabled).toBe(true);
   });
 });

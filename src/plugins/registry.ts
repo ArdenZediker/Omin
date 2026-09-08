@@ -135,6 +135,15 @@ class PluginRegistry {
     return entry;
   }
 
+  /** 更新已安装插件的 manifest（保留 enabled/installedAt/source，仅替换定义）。用于专家编辑。 */
+  updateManifest(manifest: PluginManifest): boolean {
+    const entry = this.installed.get(manifest.id);
+    if (!entry) return false;
+    entry.manifest = manifest;
+    this.save();
+    return true;
+  }
+
   uninstall(id: string): boolean {
     if (this.builtins.has(id)) return false;
     const removed = this.installed.delete(id);
