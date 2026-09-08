@@ -880,6 +880,8 @@ export default function MainChatView({
   const expertOptions = pluginRegistry.listExperts();
   const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
   const isMessagesAtBottomRef = useRef(true);
+  /** 程序滚动宽限窗口的时间戳：窗口内的 scroll 事件不视为「用户滚走」。 */
+  const programmaticScrollUntilRef = useRef(0);
   const lastAutoScrolledSessionRef = useRef<string | null>(null);
   const selectedExecutionModel =
     availableModels.find((model) => model.id === executionModel) ?? null;
@@ -1081,6 +1083,7 @@ export default function MainChatView({
 
       const scrollElement = messagesScrollRef.current;
       if (scrollElement && isMessagesAtBottomRef.current) {
+        programmaticScrollUntilRef.current = Date.now() + 150;
         scrollElement.scrollTop = scrollElement.scrollHeight;
       }
     };
@@ -1113,6 +1116,7 @@ export default function MainChatView({
     const sessionKey = activeChatId ?? "__empty__";
     if (lastAutoScrolledSessionRef.current !== sessionKey) {
       lastAutoScrolledSessionRef.current = sessionKey;
+      programmaticScrollUntilRef.current = Date.now() + 150;
       scrollElement.scrollTop = scrollElement.scrollHeight;
       setIsMessagesAtBottom(true);
       isMessagesAtBottomRef.current = true;
@@ -1120,6 +1124,7 @@ export default function MainChatView({
     }
 
     if (messages.length > 0 && scrollElement.scrollTop <= 0) {
+      programmaticScrollUntilRef.current = Date.now() + 150;
       scrollElement.scrollTop = scrollElement.scrollHeight;
       setIsMessagesAtBottom(true);
       isMessagesAtBottomRef.current = true;
@@ -1130,21 +1135,56 @@ export default function MainChatView({
     const scrollElement = messagesScrollRef.current;
     if (!scrollElement) return;
 
+    const distanceToBottom = () =>
+      scrollElement.scrollHeight -
+      scrollElement.scrollTop -
+      scrollElement.clientHeight;
+
+    // 贴底判定：scroll/resize 只能「重新贴底」（含程序滚动落底后的确认）；
+    // 只有宽限窗口之外、离底超过阈值的滚动才视为用户主动滚走，解除跟随。
     const updateAtBottom = () => {
-      const distanceToBottom =
-        scrollElement.scrollHeight -
-        scrollElement.scrollTop -
-        scrollElement.clientHeight;
-      setIsMessagesAtBottom(distanceToBottom < 36);
+      if (distanceToBottom() < 36) {
+        setIsMessagesAtBottom(true);
+        isMessagesAtBottomRef.current = true;
+      } else if (Date.now() > programmaticScrollUntilRef.current) {
+        setIsMessagesAtBottom(false);
+        isMessagesAtBottomRef.current = false;
+      }
+    };
+
+    // 用户明确的向上操作（滚轮向上/触摸/键盘）立即解除跟随。
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        setIsMessagesAtBottom(false);
+        isMessagesAtBottomRef.current = false;
+      }
+    };
+    const handleTouchMove = () => {
+      setIsMessagesAtBottom(false);
+      isMessagesAtBottomRef.current = false;
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (["ArrowUp", "PageUp", "Home"].includes(event.key)) {
+        setIsMessagesAtBottom(false);
+        isMessagesAtBottomRef.current = false;
+      }
     };
 
     updateAtBottom();
     scrollElement.addEventListener("scroll", updateAtBottom, { passive: true });
     const resizeObserver = new ResizeObserver(updateAtBottom);
     resizeObserver.observe(scrollElement);
+    // wheel/touch/keydown 捕获用户主动离开底部的意图；内容增长引发的
+    // scroll/resize 只会「重新确认贴底」，不会中断流式跟随。
+    scrollElement.addEventListener("wheel", handleWheel, { passive: true });
+    scrollElement.addEventListener("touchmove", handleTouchMove, { passive: true });
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
       scrollElement.removeEventListener("scroll", updateAtBottom);
       resizeObserver.disconnect();
+      scrollElement.removeEventListener("wheel", handleWheel);
+      scrollElement.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [messagesScrollRef]);
 
@@ -1153,15 +1193,18 @@ export default function MainChatView({
     if (!scrollElement || !isStreaming || !isMessagesAtBottom) {
       return;
     }
-    scrollElement.scrollTo({
-      top: scrollElement.scrollHeight,
-      behavior: "smooth",
-    });
+    // 流式跟随必须瞬时跳底：smooth 动画在高频更新下持续滞后，
+    // 且动画中途会被观察者判为「离底过远」而中断跟随。
+    programmaticScrollUntilRef.current = Date.now() + 150;
+    scrollElement.scrollTop = scrollElement.scrollHeight;
   }, [isMessagesAtBottom, isStreaming, messages, messagesScrollRef]);
 
   const scrollMessagesToBottom = useCallback(() => {
     const scrollElement = messagesScrollRef.current;
-    scrollElement?.scrollTo({
+    if (!scrollElement) return;
+    // 平滑滚动动画期间的 scroll 事件不应视为「用户滚走」
+    programmaticScrollUntilRef.current = Date.now() + 600;
+    scrollElement.scrollTo({
       top: scrollElement.scrollHeight,
       behavior: "smooth",
     });
