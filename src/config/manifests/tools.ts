@@ -380,13 +380,19 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/bash",
     title: "运行 Shell 命令",
     description:
-      "在本机执行 shell 命令（Windows 走 cmd /C，macOS/Linux 走 sh -c），可运行 bun/npm/curl 等 CLI 工具。执行前需用户确认，危险命令会被拦截。",
+      "在本机执行 shell 命令（Windows 走 cmd /C，macOS/Linux 走 sh -c），可运行 bun/npm/curl 等 CLI 工具。只读命令自动执行，修改类命令需用户确认，危险命令会被拦截。",
     promptContribution:
-      "Call /bash to run a shell command on the user's local machine (Windows: cmd /C; macOS/Linux: sh -c). " +
+      "Call /bash to run a shell command on the user's local machine. " +
+      "PLATFORM SHELL: on Windows the executor is cmd.exe (cmd /C), or Git Bash (bash -lc) when installed; " +
+      "on macOS/Linux it runs via sh -c. " +
+      "POSIX-only syntax (grep, ls, head, $(), single-quote semantics) only works under Git Bash / sh — " +
+      "prefer cross-platform CLIs (rg, node, python, bun) or cmd equivalents (dir, findstr, type) to stay portable. " +
+      "If a command is reported missing, switch to an equivalent available command instead of retrying the same one. " +
       "Use it for CLI-based skills that need bun/npm/curl/powershell, such as the tencent-news CLI. " +
       "Always pass command as the full shell string; cwd defaults to the project workspace. " +
-      "NOTE: every execution requires explicit user confirmation (a dialog shows the exact command); " +
-      "destructive commands (rm -rf, format, shutdown, etc.) are blocked by the tool layer. " +
+      "NOTE: clearly read-only commands (ls/dir/cat/type/git status/log/diff, grep/findstr, etc.) run WITHOUT confirmation; " +
+      "anything that writes/installs/kills/networks requires explicit user confirmation (a dialog shows the exact command); " +
+      "destructive commands (rm -rf, del /s, format, net user, reg add, iex/-enc, shutdown, etc.) are hard-blocked by the tool layer. " +
       "Prefer this over web_fetch when a skill explicitly instructs using a local CLI.",
     parameters: {
       type: "object",

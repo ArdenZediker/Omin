@@ -1,58 +1,57 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import ChatMessage, { buildUserMessageSegments } from "./ChatMessage";
 import type { Message } from "../adapters/types";
 
-describe("buildUserMessageSegments（按光标位置排布附件）", () => {
+describe("buildUserMessageSegments（统一前方：附件/图片一律排在正文之前，无视 offset）", () => {
   const att = (path: string, offset?: number) => ({ path, name: path, size: null, offset });
 
   it("无附件时只返回整段正文", () => {
     expect(buildUserMessageSegments("abc", [])).toEqual([{ kind: "text", text: "abc" }]);
   });
 
-  it("光标在文字前（offset=0）：附件排在正文之前", () => {
+  it("有附件时附件排在正文之前（offset 不影响布局）", () => {
     const segments = buildUserMessageSegments("abc", [att("a.png", 0)]);
     expect(segments[0]).toMatchObject({ kind: "attachment" });
     expect(segments[1]).toEqual({ kind: "text", text: "abc" });
   });
 
-  it("光标在文字后（offset=末尾）：附件排在正文之后", () => {
+  it("附件始终排在正文之前，正文保持完整不再被光标切开", () => {
     const segments = buildUserMessageSegments("abc", [att("a.png", 3)]);
-    expect(segments[0]).toEqual({ kind: "text", text: "abc" });
-    expect(segments[1]).toMatchObject({ kind: "attachment" });
+    expect(segments[0]).toMatchObject({ kind: "attachment" });
+    expect(segments[1]).toEqual({ kind: "text", text: "abc" });
   });
 
-  it("光标在文字中间：正文被切成两段，附件插在中间", () => {
+  it("光标在文字中间也不切分正文：附件整体排在正文之前", () => {
     const segments = buildUserMessageSegments("abcd", [att("a.png", 2)]);
-    expect(segments).toHaveLength(3);
-    expect(segments[0]).toEqual({ kind: "text", text: "ab" });
-    expect(segments[1]).toMatchObject({ kind: "attachment" });
-    expect(segments[2]).toEqual({ kind: "text", text: "cd" });
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toMatchObject({ kind: "attachment" });
+    expect(segments[1]).toEqual({ kind: "text", text: "abcd" });
   });
 
-  it("多个附件按 offset 升序排列，同 offset 保持原始顺序", () => {
+  it("多个附件按传入顺序排在正文之前，正文在最后", () => {
     const segments = buildUserMessageSegments("abcdef", [att("b.png", 4), att("a.png", 2), att("c.png", 2)]);
     expect(
       segments.map((s) =>
-        s.kind === "attachment" ? s.attachment.name : s.kind === "image" ? (s.image.name ?? "") : s.text,
+        s.kind === "attachment" ? s.attachment.name : s.kind === "image" ? (s.image.src ?? "") : s.text,
       ),
-    ).toEqual(["ab", "a.png", "c.png", "cd", "b.png", "ef"]);
+    ).toEqual(["b.png", "a.png", "c.png", "abcdef"]);
   });
 
-  it("offset 缺省（旧数据）视为 0，且超出正文长度时被夹紧到末尾", () => {
+  it("offset 缺省（旧数据）或超出正文长度均被忽略，附件仍排在正文之前", () => {
     expect(buildUserMessageSegments("abc", [att("legacy.png")])[0]).toMatchObject({ kind: "attachment" });
     const clamped = buildUserMessageSegments("abc", [att("far.png", 999)]);
-    expect(clamped[0]).toEqual({ kind: "text", text: "abc" });
-    expect(clamped[1]).toMatchObject({ kind: "attachment" });
+    expect(clamped[0]).toMatchObject({ kind: "attachment" });
+    expect(clamped[1]).toEqual({ kind: "text", text: "abc" });
   });
 
-  it("图片按光标 offset 交错，光标在文字后时图片排在正文之后", () => {
+  it("图片排在正文之前（无视 offset）", () => {
     const segments = buildUserMessageSegments("abc", [], [{ src: "data:img1", offset: 3 }]);
-    expect(segments[0]).toEqual({ kind: "text", text: "abc" });
-    expect(segments[1]).toMatchObject({ kind: "image", image: { src: "data:img1" } });
+    expect(segments[0]).toMatchObject({ kind: "image" });
+    expect(segments[1]).toEqual({ kind: "text", text: "abc" });
   });
 
-  it("图片与附件按各自 offset 合并排序，offset 相同则附件先于图片（稳定）", () => {
+  it("合并顺序：先所有附件、再所有图片、最后正文（无视各自 offset）", () => {
     const segments = buildUserMessageSegments(
       "abcdef",
       [att("a.png", 2)],
@@ -62,7 +61,7 @@ describe("buildUserMessageSegments（按光标位置排布附件）", () => {
       segments.map((s) =>
         s.kind === "attachment" ? `att:${s.attachment.name}` : s.kind === "image" ? `img:${s.image.src}` : `txt:${s.text}`,
       ),
-    ).toEqual(["txt:ab", "att:a.png", "img:data:img1", "txt:cd", "img:data:img2", "txt:ef"]);
+    ).toEqual(["att:a.png", "img:data:img1", "img:data:img2", "txt:abcdef"]);
   });
 });
 
@@ -225,7 +224,7 @@ describe("ChatMessage", () => {
     expect(openedArtifactId).toBe("art-1");
   });
 
-  it("running 过渡态步骤（流式中）渲染为 spinner 动作行，且不显示文件卡片与结果", () => {
+  it("running 过渡态步骤（流式中）渲染为 spinner 动作行，且不显示文件卡片与结果", async () => {
     const message: Message = {
       role: "project",
       content: "",
@@ -242,12 +241,14 @@ describe("ChatMessage", () => {
 
     const { container } = render(<ChatMessage message={message} index={6} isStreaming />);
 
-    // 展开思考块（挂载即流式时不会自动展开，仅响应 false→true 变化），running 步骤以 spinner 呈现
-    fireEvent.click(container.querySelector(".message-reasoning__toggle")!);
-    const row = container.querySelector(".exec-action--running");
-    expect(row).not.toBeNull();
-    expect(row!.textContent).toContain("正在导出");
-    expect(row!.textContent).toContain("Export Word");
+    // 流式中：ThinkingBlock 经 useEffect 自动展开，running 步骤以 spinner 呈现
+    // （isRunning 仅在 isStreaming 时成立；非流式会被降级为「已中断」）
+    await waitFor(() => {
+      expect(container.querySelector(".exec-action--running")).not.toBeNull();
+    });
+    const row = container.querySelector(".exec-action--running")!;
+    expect(row.textContent).toContain("正在导出");
+    expect(row.textContent).toContain("Export Word");
     // running 态不显示「已导出」文件卡片与结果预览
     expect(container.querySelector(".exec-action__file")).toBeNull();
     expect(container.querySelector(".exec-action__result")).toBeNull();

@@ -39,6 +39,70 @@ function getMessageRoleLabel(role: Message["role"]) {
 }
 
 /**
+ * 只读命令快通道（对齐 Codex is_known_safe_command）：明确只读的命令跳过 HITL 确认门直接执行。
+ * 仅当命令是「单一、不含可疑 shell 元字符、可执行在只读白名单」时才判定为安全；
+ * 任何复合命令（管道/重定向/后台/子shell/命令替换）或非白名单可执行都保守回落到确认门。
+ * 注意：powershell/cmd/sh/bash 等外壳包装器、python/node/npm/pip 等可执码的运行时、
+ * 以及 tee/sed(-i)/find(-delete) 等带写入变体的命令一律不在此列，需人工确认。
+ */
+const SAFE_READONLY_COMMANDS = new Set<string>([
+  "ls", "dir", "cat", "type", "echo", "pwd", "cd", "wc", "head", "tail",
+  "grep", "rg", "sort", "uniq", "cut", "tr", "nl", "which", "where", "file",
+  "stat", "readlink", "realpath", "date", "whoami", "uname", "hostname", "id",
+  "git", "tree", "less", "more", "basename", "dirname", "xxd", "od", "strings", "diff",
+]);
+const READONLY_GIT_SUBCOMMANDS = new Set<string>([
+  "status", "log", "diff", "branch", "show", "remote", "tag", "stash", "ls-files",
+  "ls-remote", "rev-parse", "rev-list", "blame", "shortlog", "reflog", "cat-file", "grep",
+]);
+export function isKnownSafeCommand(command: string): boolean {
+  const cmd = command.trim();
+  if (!cmd) return false;
+  // 含 shell 元字符（复合/管道/重定向/后台/子shell/命令替换）→ 保守回落确认门
+  if (/[;&|<>()`$]/.test(cmd)) return false;
+  const tokens = cmd.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  // 取可执行名：去掉前导 ./ 与路径，再去掉扩展名，小写化
+  let exe = tokens[0].replace(/^[./\\]+/, "");
+  exe = exe.includes("/") || exe.includes("\\") ? exe.split(/[\\/]/).pop()! : exe;
+  exe = exe.replace(/\.(exe|cmd|bat|ps1|sh|bash)$/i, "").toLowerCase();
+
+  if (exe === "git") {
+    const sub = (tokens[1] || "").toLowerCase().replace(/^-+/, "");
+    if (sub === "config") {
+      // git config 仅 --get/--list 等只读查询放行，--global/--system 写值需确认
+      return tokens.slice(2).some((t) => /^(--get|--get-all|--get-regexp|--list|-l|-h|--help)$/.test(t));
+    }
+    return READONLY_GIT_SUBCOMMANDS.has(sub);
+  }
+  return SAFE_READONLY_COMMANDS.has(exe);
+}
+
+/** 「命令未找到」类报错模式：cmd（中/英）与 POSIX shell 两种形态，捕获缺失的命令名。 */
+const NOT_FOUND_PATTERNS: RegExp[] = [
+  /'([^']+)'\s*(?:不是内部或外部命令|is not recognized as an internal or external command)/i,
+  /(?:^|\n)[^\n]*?(?:bash|sh|zsh)\s*:\s*([\w.\-/]+)\s*:\s*command not found/i,
+];
+
+/** 从命令输出里识别「命令未找到」并提取缺失的命令名（方案C：报错引导自修正）。 */
+export function missingCommandFrom(output: string): string | null {
+  for (const re of NOT_FOUND_PATTERNS) {
+    const m = output.match(re);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+}
+
+/** 命令未找到时给模型的改用引导（单段文本同时覆盖 cmd 与 POSIX 两种环境）。 */
+function buildMissingCommandHint(missing: string): string {
+  return (
+    `\n（提示：未找到命令「${missing}」。` +
+    "请改用当前环境的等价命令——Windows cmd 用 dir/findstr/type，" +
+    "或跨平台 CLI（rg/node/python/bun）；若确属 POSIX 工具，请确认已安装（如 Git Bash/WSL）并加入 PATH。）"
+  );
+}
+
+/**
  * 宽容解析 /install_expert 的参数为专家 manifest。
  * 支持：裸 JSON、```json 代码围栏包裹、字符串二次编码、{ manifest: {...} } 包装。
  */
@@ -1005,6 +1069,22 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         /\bchmod\s+-r\s+777\s+\//i,
         /\bcurl\b.*\|\s*(sudo\s+)?(ba)?sh\b/i,
         /\bwget\b.*\|\s*(sudo\s+)?(ba)?sh\b/i,
+        // Windows / PowerShell 高危补充：账号/网络配置/注册表/持久化/系统状态破坏。
+        /\bnet\s+(user|localgroup)\b/i,                          // 账号与用户组操作
+        /\bnetsh\b/i,                                            // 防火墙/代理/接口配置
+        /\breg\s+(add|delete|import)\b/i,                        // 注册表写入/删除
+        /\bschtasks\b/i,                                         // 计划任务（持久化惯用）
+        /\bdiskpart\b/i,                                         // 磁盘分区
+        /\bbcdedit\b/i,                                          // 启动配置
+        /\bvssadmin\b[\s\S]*\bdelete\b/i,                        // 删卷影副本（勒索软件惯用）
+        /\bwevtutil\b\s+cl\b/i,                                  // 清空事件日志
+        /\bcipher\b\s+\/w\b/i,                                   // 擦除空闲空间
+        /\bwmic\b[\s\S]*\bdelete\b/i,                            // WMI 对象删除
+        /\bremove-item\b(?=[\s\S]*-recurse)(?=[\s\S]*-force)/i,  // PowerShell 版 rm -rf
+        /\|\s*(iex|invoke-expression)\b/i,                       // 管道注入执行
+        /\biex\b\s*\(|\binvoke-expression\b/i,                   // 直接执行表达式
+        /(^|\s)-enc(odedcommand)?\b/i,                           // 编码命令混淆执行
+        /\b(irm|invoke-restmethod|iwr|invoke-webrequest)\b[\s\S]*\|\s*(iex|invoke-expression)\b/i, // PS 下载即执行
       ];
       if (DANGEROUS_PATTERNS.some((re) => re.test(command))) {
         return {
@@ -1016,20 +1096,27 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       // 工作目录锁定到项目工作区（缺省回落由 Rust 端处理）。
       const cwd = runtime.activeProject?.workspacePath || null;
 
+      // 只读命令快通道：对齐 Codex is_known_safe_command —— 明确只读的命令跳过确认门直接执行；
+      // 其余（含可疑 shell 元字符、非白名单可执行）仍走 HITL 确认（保守默认）。
+      const autoApproved = isKnownSafeCommand(command);
+
       try {
-        const approved = await requestConfirmation({
-          source: "bash",
-          title: "执行本地命令？",
-          summary: "模型请求在本机运行一条 shell 命令（腾讯新闻等 CLI 技能需要）。",
-          riskLevel: "write",
-          details: [
-            { label: "命令", value: command },
-            ...(cwd ? [{ label: "工作目录", value: cwd }] : []),
-          ],
-          targets: [command],
-          warning: "命令将在你的本机执行。请确认来源可信、命令符合预期后再允许；高危命令将被自动拦截。",
-          confirmLabel: "确认执行",
-        });
+        let approved = true;
+        if (!autoApproved) {
+          approved = await requestConfirmation({
+            source: "bash",
+            title: "执行本地命令？",
+            summary: "模型请求在本机运行一条 shell 命令（腾讯新闻等 CLI 技能需要）。",
+            riskLevel: "write",
+            details: [
+              { label: "命令", value: command },
+              ...(cwd ? [{ label: "工作目录", value: cwd }] : []),
+            ],
+            targets: [command],
+            warning: "命令将在你的本机执行。请确认来源可信、命令符合预期后再允许；高危命令将被自动拦截。",
+            confirmLabel: "确认执行",
+          });
+        }
         if (!approved) {
           return { ok: false, error: "已取消：未确认执行本地命令" };
         }
@@ -1052,9 +1139,12 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           };
         }
         if (result.exitCode !== 0) {
+          // 方案C：识别「命令未找到」类报错，附加改用引导，减少模型在 Windows 下无效重试。
+          const missing = missingCommandFrom(result.output);
+          const hint = missing ? buildMissingCommandHint(missing) : "";
           return {
             ok: true,
-            outputText: `（退出码 ${result.exitCode}）\n${result.output}`,
+            outputText: `（退出码 ${result.exitCode}）\n${result.output}${hint}`,
             data: { exitCode: result.exitCode },
           };
         }

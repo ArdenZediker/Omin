@@ -56,20 +56,70 @@ fn cap_output(text: &str, max: usize) -> String {
     }
 }
 
+/// 探测 Git for Windows 自带的 bash.exe（结果缓存，进程生命周期内只查一次盘）。
+/// 覆盖：Program Files / Program Files (x86) / 用户级安装（%LOCALAPPDATA%\Programs\Git）
+/// 与 scoop 安装。**刻意不探测 `C:\Windows\System32\bash.exe`** —— 那是 WSL，
+/// 路径体系（/mnt/c）和行为完全不同，误用会造成语义错乱。
+#[cfg(windows)]
+fn detect_git_bash() -> Option<String> {
+    use std::sync::OnceLock;
+    static GIT_BASH: OnceLock<Option<String>> = OnceLock::new();
+    GIT_BASH
+        .get_or_init(|| {
+            let mut candidates: Vec<String> = Vec::new();
+            if let Ok(pf) = std::env::var("ProgramFiles") {
+                candidates.push(format!("{pf}\\Git\\bin\\bash.exe"));
+            }
+            if let Ok(pf) = std::env::var("ProgramFiles(x86)") {
+                candidates.push(format!("{pf}\\Git\\bin\\bash.exe"));
+            }
+            if let Ok(lad) = std::env::var("LOCALAPPDATA") {
+                candidates.push(format!("{lad}\\Programs\\Git\\bin\\bash.exe"));
+            }
+            if let Ok(home) = std::env::var("USERPROFILE") {
+                candidates.push(format!("{home}\\scoop\\apps\\git\\current\\bin\\bash.exe"));
+            }
+            candidates
+                .into_iter()
+                .find(|p| std::path::Path::new(p).is_file())
+        })
+        .clone()
+}
+
+/// 构造系统 shell 包装命令。
+/// Windows（方案A）：优先 Git-Bash（存在即 `bash -lc`，登录 shell 加载标准 PATH，
+/// ls/grep/sed 等 POSIX 工具可用）；否则回落 `cmd /C`，用 `raw_arg` **原样**传命令
+/// 字符串（不做 Rust 的自动引号转义）——若用 `.args(["/C", cmd])`，Rust 会在命令含
+/// 空格时整体加引号变成 `cmd /C "整个命令"`，触发 cmd 特殊的外层引号剥离规则，
+/// 导致含空格路径、嵌套双引号的命令解析错乱（手动 cmd 能跑、程序调用就失败的典型
+/// 根因）。原样传递等价于手敲 `cmd /C <命令>`。
+/// 其他平台：`sh -c <命令>`。
+#[cfg(windows)]
+fn build_shell_command(command: &str) -> Command {
+    if let Some(bash) = detect_git_bash() {
+        let mut c = Command::new(bash);
+        c.arg("-lc").arg(command);
+        return c;
+    }
+    use std::os::windows::process::CommandExt;
+    let mut c = Command::new("cmd");
+    c.raw_arg("/C").raw_arg(command);
+    c
+}
+
+#[cfg(not(windows))]
+fn build_shell_command(command: &str) -> Command {
+    let mut c = Command::new("sh");
+    c.arg("-c").arg(command);
+    c
+}
+
 /// 用系统 shell 执行命令，带超时与跨平台无窗口处理。
 fn run_shell(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String> {
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
     let cwd = input.cwd.clone();
 
-    let mut cmd = if cfg!(windows) {
-        let mut c = Command::new("cmd");
-        c.args(["/C", &input.command]);
-        c
-    } else {
-        let mut c = Command::new("sh");
-        c.args(["-c", &input.command]);
-        c
-    };
+    let mut cmd = build_shell_command(&input.command);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
