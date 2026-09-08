@@ -1,4 +1,5 @@
 import { modelRegistry } from "../adapters/registry";
+import { pluginRegistry } from "../plugins/registry";
 import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig } from "../adapters/types";
 import type { FileDiff } from "./fileDiff";
 import { invoke } from "@tauri-apps/api/core";
@@ -493,6 +494,7 @@ export async function executeChatTurn(options: {
     includeToolProtocol: enableToolProtocol,
     persona: personaConfig,
     projectAgentsMd,
+    enabledSkillPrompts: pluginRegistry.listEnabledSkills().map((s) => s.systemPrompt).filter((t): t is string => Boolean(t)),
   });
   const systemMessage: Message = { role: "system", content: composedSystemPrompt };
   const knowledgeMessages: Message[] = knowledgeContext

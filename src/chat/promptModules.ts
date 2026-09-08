@@ -19,6 +19,8 @@ export type PromptBuildOptions = {
   persona?: PersonaConfig | null;
   /** 来自项目工作目录下 AGENTS.md / AGENTS.override.md 的自由格式指令（仿 codex / deepseek-harness）。 */
   projectAgentsMd?: string | null;
+  /** 已启用技能正文的集合（普通对话时把技能能力注入系统提示，使模型知道可用技能）。 */
+  enabledSkillPrompts?: string[];
 };
 
 export const OMNI_STRUCTURED_MEMORY_TAG = "omni_memory";
@@ -255,6 +257,20 @@ export const SYSTEM_PROMPT_FRAGMENTS: PromptFragment[] = [
   {
     id: "summaryExtraction",
     build: (o) => ((o.includeSummaryExtraction ?? true) ? SUMMARY_EXTRACTION_PROMPT : null),
+  },
+  {
+    id: "enabledSkills",
+    build: (o) => {
+      const prompts = (o.enabledSkillPrompts ?? [])
+        .map((text) => text?.trim())
+        .filter((text): text is string => Boolean(text));
+      if (prompts.length === 0) return null;
+      return [
+        "已启用技能（你拥有以下技能，当用户请求匹配其能力时应主动使用）：",
+        ...prompts.map((text, index) => `### 技能 ${index + 1}\n${text}`),
+      ].join("\n\n");
+    },
+    maxChars: 12_000,
   },
 ];
 
