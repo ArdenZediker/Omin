@@ -337,6 +337,10 @@ function normalizeProject(input: Partial<Project> & Pick<Project, "id" | "title"
     allowedSkillIds: Array.isArray(input.allowedSkillIds) && input.allowedSkillIds.length > 0
       ? [...new Set([...DEFAULT_PROJECT_SKILL_IDS, ...input.allowedSkillIds])]
       : [...DEFAULT_PROJECT_SKILL_IDS],
+    // 项目绑定专家：从存储恢复时必须保留，否则重启后绑定丢失
+    boundExpertIds: Array.isArray(input.boundExpertIds) && input.boundExpertIds.length
+      ? [...new Set(input.boundExpertIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0))]
+      : undefined,
     memoryScope:
       input.memoryScope === "off" || input.memoryScope === "session" || input.memoryScope === "project"
         ? input.memoryScope

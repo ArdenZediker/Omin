@@ -32,6 +32,7 @@ import {
   ChevronRight,
   Search,
   Settings,
+  Settings2,
   Share2,
   Sparkles,
   Trash2,
@@ -76,6 +77,7 @@ import {
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import CreateProjectDialog from "./CreateProjectDialog";
+import ProjectSettingsDialog from "./ProjectSettingsDialog";
 import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
 import ModelSelector from "./ModelSelector";
 import PluginMarketplace from "./plugins/PluginMarketplace";
@@ -648,6 +650,7 @@ export default function MainChatView({
   >(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectTitle, setEditingProjectTitle] = useState("");
+  const [projectSettingsId, setProjectSettingsId] = useState<string | null>(null);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const projectCardMenuRefs = useRef<Record<string, HTMLSpanElement | null>>(
     {},
@@ -1813,6 +1816,17 @@ export default function MainChatView({
                                           <Pencil size={13} strokeWidth={1.9} />
                                           <span>重命名</span>
                                         </button>
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            setOpenProjectCardMenuId(null);
+                                            setProjectSettingsId(project.id);
+                                          }}
+                                        >
+                                          <Settings2 size={13} strokeWidth={1.9} />
+                                          <span>项目设置</span>
+                                        </button>
                                         {project.id !== DEFAULT_PROJECT_ID && (
                                           <>
                                             <div className="chat-history-panel__project-dropdown-divider" />
@@ -2631,6 +2645,13 @@ export default function MainChatView({
         open={createProjectDialogOpen}
         onClose={() => setCreateProjectDialogOpen(false)}
         onCreate={handleCreateProjectFromDialog}
+      />
+
+      <ProjectSettingsDialog
+        open={projectSettingsId !== null}
+        project={customProjects.find((project) => project.id === projectSettingsId) ?? null}
+        onClose={() => setProjectSettingsId(null)}
+        onUpdate={onUpdateProject}
       />
     </div>
   );
