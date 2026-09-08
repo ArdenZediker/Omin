@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { executeChatTurn } from "./engine";
-import type { ChatResponse, ModelConfig, StreamChunk } from "../adapters/types";
+import { executeChatTurn, partitionToolCallsForExecution } from "./engine";
+import type { ChatResponse, ChatToolCall, ModelConfig, StreamChunk } from "../adapters/types";
 import { modelRegistry } from "../adapters/registry";
 
 vi.mock("./storage", () => ({
@@ -121,5 +121,33 @@ describe("executeChatTurn", () => {
     });
 
     expect(chunksReceived.join("")).toBe("Hello world");
+  });
+});
+
+describe("partitionToolCallsForExecution（concurrencySafe 并行分块契约）", () => {
+  const call = (id: string, name: string): ChatToolCall => ({ id, name, arguments: "{}" });
+  const safe = (name: string) => name.startsWith("read") || name === "search_files";
+
+  it("连续安全只读调用合入同一块（可并行）", () => {
+    const chunks = partitionToolCallsForExecution(
+      [call("1", "read_file"), call("2", "read_file"), call("3", "search_files")],
+      safe
+    );
+    expect(chunks).toEqual([[call("1", "read_file"), call("2", "read_file"), call("3", "search_files")]]);
+  });
+
+  it("不安全调用独占成块：safe, write, safe → 三块且顺序保持", () => {
+    const calls = [call("1", "read_file"), call("2", "write_file"), call("3", "read_file")];
+    const chunks = partitionToolCallsForExecution(calls, safe);
+    expect(chunks.map((chunk) => chunk.map((c) => c.id))).toEqual([["1"], ["2"], ["3"]]);
+  });
+
+  it("全部安全 → 单块；全部不安全 → 各自成块", () => {
+    expect(partitionToolCallsForExecution([call("1", "search_files"), call("2", "search_files")], safe)).toHaveLength(1);
+    expect(partitionToolCallsForExecution([call("1", "bash"), call("2", "bash")], safe).map((c) => c.length)).toEqual([1, 1]);
+  });
+
+  it("空调用列表 → 空块序列", () => {
+    expect(partitionToolCallsForExecution([], safe)).toEqual([]);
   });
 });

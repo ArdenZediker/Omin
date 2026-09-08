@@ -717,3 +717,91 @@ describe("isOutsideWorkspace（工作区边界判定）", () => {
     expect(isOutsideWorkspace("C:/Users/me/a.ts", "")).toBe(true);
   });
 });
+
+describe("localTools 截断提示（clipped-note，对齐 harness NOTE 风格）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("/read_file 截断时附加「已读比例 + 下一步 offset」指引", async () => {
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+    mockedInvoke.mockResolvedValueOnce({
+      content: "第二段",
+      total_chars: 5000,
+      returned_chars: 600,
+      offset_chars: 1600,
+      truncated: true,
+      start_line: 41,
+      end_line: 47,
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/read_file",
+      args: JSON.stringify({ path: "docs/notes.md" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("[clipped-note]");
+    expect(result?.outputText).toContain("600/5000 字符");
+    expect(result?.outputText).toContain("第 41-47 行");
+    expect(result?.outputText).toContain("offsetChars=2200");
+  });
+
+  it("/read_file 未截断时不附加提示", async () => {
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+    mockedInvoke.mockResolvedValueOnce({
+      content: "全量",
+      total_chars: 2,
+      returned_chars: 2,
+      offset_chars: 0,
+      truncated: false,
+      start_line: 1,
+      end_line: 1,
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/read_file",
+      args: "docs/notes.md",
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).not.toContain("[clipped-note]");
+  });
+
+  it("/list_files 列表超渲染上限时提示省略数量", async () => {
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+    mockedInvoke.mockResolvedValueOnce(
+      Array.from({ length: 30 }, (_, i) => ({ path: `file-${i}.ts`, is_dir: false })),
+    );
+
+    const result = await executeLocalTool(runtime, { command: "/list_files", args: "" });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("找到 30 个匹配项");
+    expect(result?.outputText).toContain("仅展示前 20 条（其余 10 条省略）");
+  });
+
+  it("/list_files 未超上限时不提示", async () => {
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+    mockedInvoke.mockResolvedValueOnce([{ path: "a.ts", is_dir: false }]);
+
+    const result = await executeLocalTool(runtime, { command: "/list_files", args: "" });
+
+    expect(result?.outputText).not.toContain("[clipped-note]");
+  });
+
+  it("/bash 输出被 Rust 端截断时附加提取指引", async () => {
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+    mockedInvoke.mockResolvedValueOnce({
+      exitCode: 0,
+      output: "大量日志……[输出超过 32000 字符已截断]",
+      timedOut: false,
+    });
+
+    const result = await executeLocalTool(runtime, { command: "/bash", args: "cat big.log" });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("[clipped-note]");
+    expect(result?.outputText).toContain("head/tail/grep");
+  });
+});

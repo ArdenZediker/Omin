@@ -252,6 +252,15 @@ function formatFileMetaLine(result: ReadFileResult): string {
   return `[file-meta total=${result.total_chars} offset=${result.offset_chars} returned=${result.returned_chars}${lines} truncated=${result.truncated}]`;
 }
 
+/**
+ * 截断提示语（对齐 harness 的 <response clipped><NOTE> 风格）：
+ * 输出没给全时必须显式告诉模型「缺了多少 + 下一步怎么拿到缺的部分」，
+ * 避免模型对着残缺输出作答或盲目原样重试。
+ */
+function buildClippedNote(detail: string, action: string): string {
+  return `[clipped-note] ${detail}。下一步：${action}`;
+}
+
 /** 给读文件内容加「行号 | 内容」前缀（cat -n 风格），与 /search_files 的行号对齐。 */
 function numberLines(content: string, startLine?: number): string {
   if (typeof startLine !== "number" || !content) return content;
@@ -349,8 +358,16 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         };
       }
 
-      const lines = entries.slice(0, 20).map((entry, index) => `${index + 1}. ${entry.is_dir ? "[目录]" : "[文件]"} ${entry.path}`);
-      return { ok: true, outputText: [`找到 ${entries.length} 个匹配项（glob=${glob ?? "*"}）：`, ...lines].join("\n"), data: entries };
+      const rendered = entries.slice(0, 20);
+      const omitted = entries.length - rendered.length;
+      const lines = rendered.map((entry, index) => `${index + 1}. ${entry.is_dir ? "[目录]" : "[文件]"} ${entry.path}`);
+      // 列表被渲染截断时显式告知省略量并建议收窄 glob（模型不应把「前 20 条」当成全量）。
+      const omittedNote = omitted > 0 ? buildClippedNote(`共 ${entries.length} 个匹配，仅展示前 20 条（其余 ${omitted} 条省略）`, "用更精确的 glob 收窄范围后重查") : "";
+      return {
+        ok: true,
+        outputText: [`找到 ${entries.length} 个匹配项（glob=${glob ?? "*"}）：`, ...lines, ...(omittedNote ? ["", omittedNote] : [])].join("\n"),
+        data: entries,
+      };
     },
   });
 
@@ -383,9 +400,27 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         limitChars: limitChars ?? null,
       });
 
+      // 截断时给出续读/检索指引（harness NOTE 风格）：先用搜索定位行号，必要时再按 offset 续读。
+      const clippedNote = result.truncated
+        ? buildClippedNote(
+            `本次仅返回 ${result.returned_chars}/${result.total_chars} 字符` +
+              (typeof result.start_line === "number" && typeof result.end_line === "number"
+                ? `（第 ${result.start_line}-${result.end_line} 行）`
+                : ""),
+            "若目标内容在其他位置，先用 /search_files 在该文件内定位行号再按需读取；" +
+              `否则带 offsetChars=${result.offset_chars + result.returned_chars} 续读剩余部分`
+          )
+        : "";
       return {
         ok: true,
-        outputText: [`文件：${path}`, "", numberLines(result.content, result.start_line), "", formatFileMetaLine(result)].join("\n"),
+        outputText: [
+          `文件：${path}`,
+          "",
+          numberLines(result.content, result.start_line),
+          ...(clippedNote ? ["", clippedNote] : []),
+          "",
+          formatFileMetaLine(result),
+        ].join("\n"),
         data: {
           path,
           totalChars: result.total_chars,
@@ -429,7 +464,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         return { ok: true, outputText: `没有文件内容匹配「${pattern}」。`, data: [] };
       }
 
-      const lines = matches.slice(0, 20).map((m, index) => {
+      const rendered = matches.slice(0, 20);
+      const omitted = matches.length - rendered.length;
+      const lines = rendered.map((m, index) => {
         const ctx = [
           ...m.before.map((l) => `  ${l}`),
           `${m.path}:${m.line_number} ${m.line}`,
@@ -437,7 +474,13 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         ].join("\n");
         return `${index + 1}.\n${ctx}`;
       });
-      return { ok: true, outputText: [`找到 ${matches.length} 个相关匹配：`, ...lines].join("\n"), data: matches };
+      // 匹配被渲染截断时显式告知省略量（模型可加大 limit 或收窄 pattern/glob 再查）。
+      const omittedNote = omitted > 0 ? buildClippedNote(`共 ${matches.length} 个匹配，仅展示前 20 个（其余 ${omitted} 个省略）`, "收窄 pattern/glob 或加大 limit 后重查") : "";
+      return {
+        ok: true,
+        outputText: [`找到 ${matches.length} 个相关匹配：`, ...lines, ...(omittedNote ? ["", omittedNote] : [])].join("\n"),
+        data: matches,
+      };
     },
   });
 
@@ -1266,6 +1309,12 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       // 其余（含可疑 shell 元字符、非白名单可执行）仍走 HITL 确认（保守默认）。
       const autoApproved = isKnownSafeCommand(command);
 
+      // Rust 端 cap_output 超限时以「…[输出超过 N 字符已截断]」收尾：检测到标记即附加提取指引。
+      const withClipNote = (output: string) =>
+        output.includes("字符已截断]")
+          ? `${output}\n${buildClippedNote("命令输出超长被截断", "重跑命令并用 head/tail/grep（或 rg）精确提取所需片段")}`
+          : output;
+
       try {
         let approved = true;
         if (!autoApproved) {
@@ -1305,7 +1354,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         if (result.timedOut) {
           return {
             ok: true,
-            outputText: `（命令超时，已被终止）\n${result.output}`,
+            outputText: `（命令超时，已被终止）\n${withClipNote(result.output)}`,
             data: { exitCode: result.exitCode, timedOut: true },
           };
         }
@@ -1315,13 +1364,13 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           const hint = missing ? buildMissingCommandHint(missing) : "";
           return {
             ok: true,
-            outputText: `（退出码 ${result.exitCode}）\n${result.output}${hint}`,
+            outputText: `（退出码 ${result.exitCode}）\n${withClipNote(result.output)}${hint}`,
             data: { exitCode: result.exitCode },
           };
         }
         return {
           ok: true,
-          outputText: result.output || "（命令执行成功，无输出）",
+          outputText: withClipNote(result.output) || "（命令执行成功，无输出）",
           data: { exitCode: 0 },
         };
       } catch (error) {

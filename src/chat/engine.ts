@@ -1,5 +1,6 @@
 import { modelRegistry } from "../adapters/registry";
 import { pluginRegistry } from "../plugins/registry";
+import { getToolManifestById } from "../config/manifests/tools";
 import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig } from "../adapters/types";
 import type { FileDiff } from "./fileDiff";
 import { invoke } from "@tauri-apps/api/core";
@@ -172,6 +173,32 @@ async function compactHistoryIfNeeded(options: {
   };
 }
 
+/** 工具是否声明了并行安全（concurrencySafe 契约）：MCP 与未声明工具一律视为不安全（保守默认）。 */
+function isConcurrencySafeTool(name: string): boolean {
+  return getToolManifestById(name)?.concurrencySafe === true;
+}
+
+/**
+ * 依据 concurrencySafe 声明把同轮工具调用切分为执行块（对齐 harness 的 isConcurrencySafe 契约）：
+ * 连续的安全只读调用合入同一块并行执行；任何未声明安全的调用（写入/shell/安装/子 Agent/MCP）
+ * 独占一块，块间严格串行，块内 Promise.all。返回块序列，块内元素顺序与原数组一致。
+ */
+export function partitionToolCallsForExecution(
+  toolCalls: ChatToolCall[],
+  isSafe: (name: string) => boolean
+): ChatToolCall[][] {
+  const chunks: ChatToolCall[][] = [];
+  for (const call of toolCalls) {
+    const previous = chunks[chunks.length - 1]?.[0];
+    if (isSafe(call.name) && previous && isSafe(previous.name)) {
+      chunks[chunks.length - 1].push(call);
+    } else {
+      chunks.push([call]);
+    }
+  }
+  return chunks;
+}
+
 /**
  * 工具调用循环：流式发起（文本实时回显），模型发起 tool_calls → 并行执行 →
  * 结果回填 → 再次流式请求，直到给出最终回复或轮数耗尽。
@@ -296,20 +323,30 @@ async function runToolLoop(options: {
       onToolStep?.({ type: "tool_call", name: toolCall.name, arguments: toolCall.arguments, result: "", status: "running" });
     }
 
-    // 并行执行本轮全部工具调用（保持结果顺序与 tool_calls 一致）
-    const outcomes = await Promise.all(
-      response.toolCalls.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"]; path?: string; fileDiff?: FileDiff; usage?: ToolCallOutcome["usage"]; toolRounds?: number }> => {
-        try {
-          const raw = await executeToolCall(toolCall);
-          if (typeof raw === "string") {
-            return { text: raw };
+    // 并行执行本轮工具调用（concurrencySafe 契约：连续只读调用同块并行，
+    // 写类/shell/子 Agent 独占执行、与其余调用串行），结果顺序与 tool_calls 一致。
+    const executionChunks = partitionToolCallsForExecution(response.toolCalls, isConcurrencySafeTool);
+    const outcomes = new Array<{ text: string; artifact?: ToolCallOutcome["artifact"]; path?: string; fileDiff?: FileDiff; usage?: ToolCallOutcome["usage"]; toolRounds?: number }>(response.toolCalls.length);
+    let chunkCursor = 0;
+    for (const chunk of executionChunks) {
+      const settled = await Promise.all(
+        chunk.map(async (toolCall): Promise<{ text: string; artifact?: ToolCallOutcome["artifact"]; path?: string; fileDiff?: FileDiff; usage?: ToolCallOutcome["usage"]; toolRounds?: number }> => {
+          try {
+            const raw = await executeToolCall(toolCall);
+            if (typeof raw === "string") {
+              return { text: raw };
+            }
+            return { text: raw.outputText, artifact: raw.artifact, path: raw.path, fileDiff: raw.fileDiff, usage: raw.usage, toolRounds: raw.toolRounds };
+          } catch (error) {
+            return { text: `工具执行失败：${error instanceof Error ? error.message : String(error)}` };
           }
-          return { text: raw.outputText, artifact: raw.artifact, path: raw.path, fileDiff: raw.fileDiff, usage: raw.usage, toolRounds: raw.toolRounds };
-        } catch (error) {
-          return { text: `工具执行失败：${error instanceof Error ? error.message : String(error)}` };
-        }
-      })
-    );
+        })
+      );
+      settled.forEach((outcome, index) => {
+        outcomes[chunkCursor + index] = outcome;
+      });
+      chunkCursor += chunk.length;
+    }
     // 工具内部产生的额外模型用量（子 Agent 委派）并入父循环统计：
     // token 直接累加；estimated 标记污染 allReal（会话统计的「估算」徽标随之点亮）。
     for (const outcome of outcomes) {

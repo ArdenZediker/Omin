@@ -13,6 +13,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/search_sessions",
     title: "Search Sessions",
     description: "Search local sessions by title or content",
+    concurrencySafe: true,
     promptContribution: "Call /search_sessions <keyword> to search local chat history by title or content.",
     parameters: {
       type: "object",
@@ -27,6 +28,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/read_session",
     title: "Read Session",
     description: "Read the context of a specified session",
+    concurrencySafe: true,
     promptContribution: "Call /read_session <sessionId> to read the full context of a past session.",
     parameters: {
       type: "object",
@@ -44,6 +46,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/list_files",
     title: "List Files",
     description: "List workspace files/directories by glob (gitignore-aware).",
+    concurrencySafe: true,
     promptContribution:
       "Call /list_files with a glob to list matching files/directories. " +
       "Supports glob wildcards like **/*.ts and src/**/test_*.rs (leave empty or pass \"*\" to list everything). " +
@@ -60,6 +63,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/read_file",
     title: "Read File",
     description: "Read file contents with optional windowing (maxChars/offsetChars/limitChars).",
+    concurrencySafe: true,
     promptContribution:
       "Call /read_file <path> [maxChars=N] [offset=N] [limit=N] to read file contents. " +
       "Output lines are prefixed as \"N | text\"; N matches /search_files line_number, so you can cite exact lines. " +
@@ -95,6 +99,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/search_files",
     title: "Search Files",
     description: "Search file contents across the workspace with regex (ripgrep-powered, gitignore-aware).",
+    concurrencySafe: true,
     promptContribution:
       "Call /search_files to find code/text by pattern. " +
       "pattern is a regex; set literal=true to match a plain string; ignoreCase=true for case-insensitive. " +
@@ -162,6 +167,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     title: "Read Persona",
     description:
       "Read the local persona markdown file; fields: userName / assistantName / personaDescription / customInstruction / longTermMemory / agentsMd / style",
+    concurrencySafe: true,
     promptContribution:
       "Call /read_persona <field> to read the local persona profile (user name, assistant name, persona, custom instructions, long-term memory, AGENTS.md, style) so responses fit the user's preferences.",
     parameters: {
@@ -210,6 +216,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/web_search",
     title: "Web Search",
     description: "Search the web via DuckDuckGo; returns titles, links, and snippets",
+    concurrencySafe: true,
     promptContribution:
       "Call /web_search to fetch real-time information from the web; proactively use it when the user asks about news, prices, versions, weather, match results, or other time-sensitive topics.",
     parameters: {
@@ -226,6 +233,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/web_fetch",
     title: "Web Fetch",
     description: "Fetch the main text of a URL (converted to plain text) with a list of key links",
+    concurrencySafe: true,
     promptContribution:
       "Call /web_fetch to retrieve page content; after getting links from /web_search or from the user, use it to read the page for further analysis.",
     parameters: {
@@ -242,6 +250,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/git_info",
     title: "Git Info",
     description: "Inspect a Git repo's status / commit history / diff / branches (read-only)",
+    concurrencySafe: true,
     promptContribution:
       "Call /git_info to view a Git repo's status, log, diff, diff-staged, and branch; use it when analyzing changes or debugging.",
     parameters: {

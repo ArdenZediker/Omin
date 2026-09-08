@@ -29,6 +29,13 @@ export type ToolManifest = {
    */
   promptContribution?: string;
   /**
+   * 并行安全声明（对齐 harness 的 isConcurrencySafe 契约）：
+   * 仅显式声明 true 的只读工具可与同轮其他安全工具并行执行；
+   * 未声明或 false 的工具（写入/安装/shell/导出/子 Agent）独占执行，
+   * 与任何其他调用串行，避免同轮读写竞态。缺省视为不安全（保守默认）。
+   */
+  concurrencySafe?: boolean;
+  /**
    * function calling 的参数 JSON Schema（buildChatTools 直接透传给适配器）。
    * 字段名必须与 chatRuntimeHelpers.extractToolCallArgs 的 directKeys 对齐，
    * 否则模型传的对象参数会被兜底拼接成 "key=value" 破坏 execute 解析。
