@@ -495,6 +495,11 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
       "If a command is reported missing, switch to an equivalent available command instead of retrying the same one. " +
       "Use it for CLI-based skills that need bun/npm/curl/powershell, such as the tencent-news CLI. " +
       "Always pass command as the full shell string; the session starts in the project workspace. " +
+      "WRITE SEMANTICS: commands that write files (output redirects > >>, tee, sed -i, cp/mv/touch/mkdir, rm/del, " +
+      "package installs, archive extraction) are detected by a static scan and require explicit user confirmation " +
+      "with the scan-extracted targets; writing into protected dirs (.ssh, AppData, Windows, Program Files) is " +
+      "hard-blocked. Prefer /write_file and /edit_file for file modifications — they get diff preview and undo; " +
+      "use /bash writes only for quick redirects or when a CLI generates the file. " +
       "NOTE: clearly read-only commands (ls/dir/cat/type/git status/log/diff, grep/findstr, etc.) run WITHOUT confirmation; " +
       "anything that writes/installs/kills/networks requires explicit user confirmation (a dialog shows the exact command); " +
       "destructive commands (rm -rf, del /s, format, net user, reg add, iex/-enc, shutdown, etc.) are hard-blocked by the tool layer. " +

@@ -7,6 +7,7 @@ import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 import type { FileDiff } from "./fileDiff";
 import { requestConfirmation } from "./confirmationGate";
+import { scanBashWriteSemantics, findNoGoZoneTarget } from "./bashWriteScan";
 import { buildSessionOutputDir, getEffectiveOutputRoot } from "../app/outputStorage";
 import { loadBasicSettings } from "../app/settings";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
@@ -1307,7 +1308,30 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
       // 只读命令快通道：对齐 Codex is_known_safe_command —— 明确只读的命令跳过确认门直接执行；
       // 其余（含可疑 shell 元字符、非白名单可执行）仍走 HITL 确认（保守默认）。
-      const autoApproved = isKnownSafeCommand(command);
+      // 写语义静态扫描：识别重定向/tee/sed -i/rm/del/安装等落盘动作并提取写目标——
+      // bash 是写围栏的旁路（write_file 围栏管不到命令字符串），必须在执行前补上这层。
+      const writeScan = scanBashWriteSemantics(command);
+      const autoApproved = isKnownSafeCommand(command) && !writeScan.hasWriteSemantics;
+
+      // 禁区硬拦截：写目标命中 .ssh/AppData/Windows/Program Files → 不提供确认，直接拒绝。
+      // 权威判定走 Rust no_go_zone_check（含 TEMP 豁免，与 write 工具围栏同源）；
+      // TS 静态启发先兜底筛一轮，invoke 异常时仍能拦住最明显的禁区。
+      let noGoTarget = findNoGoZoneTarget(writeScan.targets);
+      if (!noGoTarget && writeScan.targets.length > 0) {
+        try {
+          noGoTarget = await invoke<string | null>("no_go_zone_check", { paths: writeScan.targets.slice(0, 10) });
+        } catch {
+          // Rust 判定不可用时维持 TS 兜底结果
+        }
+      }
+      if (noGoTarget) {
+        return {
+          ok: false,
+          error:
+            `已拦截：命令试图写入受保护目录「${noGoTarget}」（.ssh / AppData / Windows / Program Files 等系统与密钥目录）。` +
+            "请在项目工作区内选择输出路径。",
+        };
+      }
 
       // Rust 端 cap_output 超限时以「…[输出超过 N 字符已截断]」收尾：检测到标记即附加提取指引。
       const withClipNote = (output: string) =>
@@ -1320,15 +1344,22 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         if (!autoApproved) {
           approved = await requestConfirmation({
             source: "bash",
-            title: "执行本地命令？",
-            summary: "模型请求在本机运行一条 shell 命令（腾讯新闻等 CLI 技能需要）。",
-            riskLevel: "write",
+            title: writeScan.hasWriteSemantics ? "执行会修改文件的命令？" : "执行本地命令？",
+            summary: writeScan.hasWriteSemantics
+              ? "命令含写文件语义（重定向/复制/删除/原地修改/安装等），会改动本机文件。"
+              : "模型请求在本机运行一条 shell 命令（腾讯新闻等 CLI 技能需要）。",
+            riskLevel: writeScan.destructive ? "destructive" : "write",
             details: [
               { label: "命令", value: command },
+              ...(writeScan.targets.length > 0
+                ? [{ label: "写目标（静态扫描）", value: writeScan.targets.slice(0, 5).join("、") }]
+                : []),
               ...(cwd ? [{ label: "工作目录", value: cwd }] : []),
             ],
-            targets: [command],
-            warning: "命令将在你的本机执行。请确认来源可信、命令符合预期后再允许；高危命令将被自动拦截。",
+            targets: writeScan.targets.length > 0 ? writeScan.targets.slice(0, 5) : [command],
+            warning: writeScan.hasWriteSemantics
+              ? "静态扫描识别到写文件语义；写目标可能不完整，请核对命令本身。文件写入建议改用 /write_file（可获得 diff 预览与撤销）；系统/密钥目录会被无条件拦截。"
+              : "命令将在你的本机执行。请确认来源可信、命令符合预期后再允许；高危命令将被自动拦截。",
             confirmLabel: "确认执行",
           });
         }

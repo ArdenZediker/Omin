@@ -483,7 +483,11 @@ describe("/bash 危险命令黑名单（Windows/PowerShell 高危补充）", () 
 
   it("普通修改类命令不被黑名单误伤（正常走确认后执行）", async () => {
     const runtime = createRuntime({ activeProject: createProject() });
-    mockedInvoke.mockResolvedValueOnce({ exitCode: 0, output: "ok", timedOut: false });
+    mockedInvoke.mockImplementation(async (cmd: string) =>
+      cmd === "no_go_zone_check"
+        ? null
+        : { exitCode: 0, output: "ok", timedOut: false },
+    );
 
     const result = await executeLocalTool(runtime, {
       command: "/bash",
@@ -491,7 +495,7 @@ describe("/bash 危险命令黑名单（Windows/PowerShell 高危补充）", () 
     });
 
     expect(result?.ok).toBe(true);
-    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    expect(mockedInvoke).toHaveBeenCalledTimes(2); // no_go_zone_check + shell_session_exec
   });
 });
 
@@ -857,5 +861,80 @@ describe("localTools 截断提示（clipped-note，对齐 harness NOTE 风格）
     expect(result?.ok).toBe(true);
     expect(result?.outputText).toContain("[clipped-note]");
     expect(result?.outputText).toContain("head/tail/grep");
+  });
+});
+
+describe("bash 写语义扫描集成（围栏旁路封堵）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("重定向写目标命中禁区 → 无条件拦截，不弹确认也不执行", async () => {
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "echo key > C:/Windows/Temp/evil.txt" }),
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("已拦截");
+    expect(result?.error).toContain("C:/Windows/Temp/evil.txt");
+    expect(mockedInvoke).not.toHaveBeenCalledWith("shell_session_exec", expect.anything());
+  });
+
+  it("含写语义命令 → 确认弹窗升级为写类措辞并展示扫描目标", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    mockedInvoke.mockImplementation(async (cmd: string) =>
+      cmd === "no_go_zone_check"
+        ? null
+        : { exitCode: 0, output: "ok", timedOut: false },
+    );
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "echo hi > out.txt" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(requestConfirmation).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(requestConfirmation).mock.calls[0][0] as { title: string; riskLevel: string; details: Array<{ label: string; value: string }> };
+    expect(call.title).toContain("修改文件");
+    expect(call.riskLevel).toBe("write");
+    expect(call.details.some((d) => d.label === "写目标（静态扫描）" && d.value.includes("out.txt"))).toBe(true);
+  });
+
+  it("rm 命令 → 确认弹窗为 destructive 等级", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    mockedInvoke.mockImplementation(async (cmd: string) =>
+      cmd === "no_go_zone_check"
+        ? null
+        : { exitCode: 0, output: "", timedOut: false },
+    );
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+
+    await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "rm old-cache.bin" }),
+    });
+
+    const call = vi.mocked(requestConfirmation).mock.calls[0][0] as { riskLevel: string; title: string };
+    expect(call.riskLevel).toBe("destructive");
+  });
+
+  it("纯只读命令不触发 no_go_zone_check 与确认", async () => {
+    mockedInvoke.mockResolvedValueOnce({ exitCode: 0, output: "main", timedOut: false });
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "git status" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).not.toHaveBeenCalledWith("no_go_zone_check", expect.anything());
+    const { requestConfirmation } = await import("./confirmationGate");
+    expect(requestConfirmation).not.toHaveBeenCalled();
   });
 });

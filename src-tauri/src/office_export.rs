@@ -838,6 +838,20 @@ pub(crate) async fn export_pptx(
     .map_err(|e| format!("export_pptx 任务失败: {e}"))?
 }
 
+/// 批量禁区路径校验（供前端 bash 写语义扫描调用）：
+/// 返回首个命中 No-Go Zone 的路径；全部通过返回 None。
+/// 单一事实来源仍是本文件的 no_go_zone()——bash 旁路围栏与写工具围栏共用同一规则。
+#[tauri::command]
+pub(crate) async fn no_go_zone_check(paths: Vec<String>) -> Option<String> {
+    for p in &paths {
+        if let Some(reason) = no_go_zone(std::path::Path::new(p)) {
+            let _ = reason;
+            return Some(p.clone());
+        }
+    }
+    None
+}
+
 /// 把纯文本/Markdown 正文直接落盘为 .md 文件（不走 OOXML 渲染，保留原文）。
 /// 复用 check_path 的围栏：绝对路径、No-Go Zones、项目工作区边界、扩展名、覆盖开关、自动建目录。
 #[tauri::command]
