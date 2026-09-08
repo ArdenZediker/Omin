@@ -418,6 +418,30 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     },
   },
   {
+    id: "agent",
+    command: "/agent",
+    title: "Sub Agent",
+    description:
+      "Delegate a self-contained read-only research subtask to a sub-agent (fresh context + read-only tools); returns its final report.",
+    promptContribution:
+      "Call agent to delegate a self-contained READ-ONLY research subtask to a sub-agent, which runs with a fresh context " +
+      "and only read tools (search_sessions/read_session/list_files/read_file/search_files/web_search/web_fetch/git_info) — " +
+      "it cannot write files, run shell commands, or see this conversation. " +
+      "Pass task as a COMPLETE, self-contained instruction: goal, all needed background (paths/keywords/constraints), and the expected report format. " +
+      "Use it to offload multi-step investigations (multi-file surveys, multi-source web research, repo exploration) so the main context stays lean; " +
+      "launch several in parallel when the subtasks are independent. Do NOT use it for anything requiring writes or user confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        task: {
+          type: "string",
+          description: "Complete, self-contained subtask instruction for the sub-agent (it cannot see this conversation).",
+        },
+      },
+      required: ["task"],
+    },
+  },
+  {
     id: "bash",
     command: "/bash",
     title: "运行 Shell 命令",
@@ -506,10 +530,10 @@ export const PROJECT_TOOL_MANIFESTS = TOOL_MANIFESTS.filter((tool) =>
     "export_pptx",
     "export_md",
     "install_skill",
+    "agent",
     "bash",
   ].includes(tool.id)
 );
-
 export const PROJECT_TOOL_OPTIONS = PROJECT_TOOL_MANIFESTS.map((tool) => ({
   id: tool.id,
   label: tool.title,
@@ -538,6 +562,7 @@ export const BUILTIN_TOOL_IDS = [
   "export_xlsx",
   "export_pptx",
   "export_md",
+  "agent",
   "bash",
 ];
 

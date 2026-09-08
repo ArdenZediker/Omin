@@ -9,6 +9,7 @@ import { loadBasicSettings } from "../app/settingsStore";
 import { snapshotAttachments } from "../app/outputStorage";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
+import { runSubAgent, type SubAgentRunContext } from "../chat/subAgent";
 import type { ToolCallOutcome } from "../chat/engine";
 import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSelection";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
@@ -197,6 +198,9 @@ export function useChatRuntime({
   const currentTaskIdRef = useRef<Map<string, string>>(new Map());
   const workspaceWriteQueueRef = useRef<Map<string, Promise<unknown>>>(new Map());
   const workspaceWriteOwnerRef = useRef<Map<string, string>>(new Map());
+  /** 子 Agent 调度上下文：每轮任务开始时注入（模型/项目/信号/工具/执行器/步骤回调），
+   *  executeToolCall 拦截 `agent` 调用时读取；运行结束在 finishSessionRun 中清除。 */
+  const subAgentContextRef = useRef<SubAgentRunContext | null>(null);
   /** 整轮任务看门狗定时器；被看门狗中断的会话（用于区分用户手动停止） */
   const runWatchdogRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const watchdogAbortedSessionIdsRef = useRef<Set<string>>(new Set());
@@ -263,6 +267,7 @@ export function useChatRuntime({
       if (sessionRunIdsRef.current.get(sessionId) !== runId) return;
       if (abortControllersRef.current.get(sessionId) !== abortController) return;
       abortControllersRef.current.delete(sessionId);
+      subAgentContextRef.current = null;
       const watchdog = runWatchdogRef.current.get(sessionId);
       if (watchdog) {
         clearTimeout(watchdog);
@@ -905,6 +910,24 @@ export function useChatRuntime({
         const { toolNames: resolvedToolNames, toolDescriptions: resolvedToolDescriptions } =
           resolveEnabledToolNames(executionProject);
 
+        // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
+        const runTools = [...buildChatTools(executionProject), ...listActiveMcpTools()];
+        const handleToolStep = (step: ChatStep) => {
+          if (!isCurrentSessionRun(sessionId, runId, abortController)) {
+            return;
+          }
+          // 实时上屏：每完成一个工具调用立刻把步骤追加到最后一条消息的思考块
+          appendLastProjectStep(sessionId, step);
+        };
+        subAgentContextRef.current = {
+          model: executionModel,
+          project: executionProject,
+          signal: abortController.signal,
+          tools: runTools,
+          executeToolCall,
+          onToolStep: handleToolStep,
+        };
+
         const taskResult = await executeTask({
           model: executionModel,
           messages: conversationMessages,
@@ -915,7 +938,7 @@ export function useChatRuntime({
           enabledToolNames: resolvedToolNames,
           enabledToolDescriptions: resolvedToolDescriptions,
           knowledgeCollectionId,
-          tools: [...buildChatTools(executionProject), ...listActiveMcpTools()],
+          tools: runTools,
           executeToolCall,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
@@ -935,13 +958,7 @@ export function useChatRuntime({
             flushReasoningDelta();
             updateReasoningPreview();
           },
-          onToolStep: (step) => {
-            if (!isCurrentSessionRun(sessionId, runId, abortController)) {
-              return;
-            }
-            // 实时上屏：每完成一个工具调用立刻把步骤追加到最后一条消息的思考块
-            appendLastProjectStep(sessionId, step);
-          },
+          onToolStep: handleToolStep,
         });
 
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {
@@ -1088,6 +1105,14 @@ export function useChatRuntime({
    */
   const executeToolCall = useCallback(
     async (toolCall: ChatToolCall): Promise<string | ToolCallOutcome> => {
+      // 子 Agent 调度：主模型发起 agent 调用 → 独立上下文 + 只读白名单跑一轮子任务
+      if (toolCall.name === "agent") {
+        const context = subAgentContextRef.current;
+        if (!context) {
+          return "子 Agent 不可用：当前没有正在运行的对话任务上下文";
+        }
+        return runSubAgent({ args: toolCall.arguments, context });
+      }
       // MCP 连接器工具：mcp__{serverId}__{toolName}
       if (toolCall.name.startsWith("mcp__")) {
         return executeMcpToolCall(toolCall.name, toolCall.arguments);
@@ -1219,6 +1244,23 @@ export function useChatRuntime({
       });
 
       try {
+        // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
+        const runTools = [...buildChatTools(targetProject), ...listActiveMcpTools()];
+        const handleToolStep = (step: ChatStep) => {
+          if (!isCurrentSessionRun(session.id, runId, abortController)) {
+            return;
+          }
+          appendLastProjectStep(session.id, step);
+        };
+        subAgentContextRef.current = {
+          model: resolvedModelId,
+          project: targetProject,
+          signal: abortController.signal,
+          tools: runTools,
+          executeToolCall: makeTaskToolExecutor(session.id, taskId, taskWs),
+          onToolStep: handleToolStep,
+        };
+
         const taskResult = await executeInputTask({
           input: content,
           currentMessages: session.messages,
@@ -1250,14 +1292,9 @@ export function useChatRuntime({
             flushReasoningDelta();
             updateReasoningPreview();
           },
-          onToolStep: (step) => {
-            if (!isCurrentSessionRun(session.id, runId, abortController)) {
-              return;
-            }
-            appendLastProjectStep(session.id, step);
-          },
+          onToolStep: handleToolStep,
           executeTool,
-          tools: [...buildChatTools(targetProject), ...listActiveMcpTools()],
+          tools: runTools,
           executeToolCall: makeTaskToolExecutor(session.id, taskId, taskWs),
         });
 
@@ -1482,6 +1519,22 @@ export function useChatRuntime({
           if (artifactsDirty) notifyArtifactsChanged();
         }
         const attachmentContext = buildAttachmentContext(attachments);
+        // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
+        const runTools = [...buildChatTools(activeProject), ...listActiveMcpTools()];
+        const handleToolStep = (step: ChatStep) => {
+          if (!isCurrentSessionRun(sessionId, runId, abortController)) {
+            return;
+          }
+          appendLastProjectStep(sessionId, step);
+        };
+        subAgentContextRef.current = {
+          model: executionModel,
+          project: activeProject,
+          signal: abortController.signal,
+          tools: runTools,
+          executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs),
+          onToolStep: handleToolStep,
+        };
         const taskResult = await executeInputTask({
           input: content,
           images,
@@ -1522,14 +1575,9 @@ export function useChatRuntime({
             flushReasoningDelta();
             updateReasoningPreview();
           },
-          onToolStep: (step) => {
-            if (!isCurrentSessionRun(sessionId, runId, abortController)) {
-              return;
-            }
-            appendLastProjectStep(sessionId, step);
-          },
+          onToolStep: handleToolStep,
           executeTool,
-          tools: [...buildChatTools(activeProject), ...listActiveMcpTools()],
+          tools: runTools,
           executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs),
         });
 

@@ -4,6 +4,7 @@
 // 「运行命令 / 写入 / 导出 / 创建」等可读动作行，并在产出文件时附迷你文件卡片。
 import {
   Archive,
+  Bot,
   Eye,
   FileDown,
   FilePen,
@@ -74,6 +75,7 @@ const VERB_MAP: Record<string, ToolActionMeta> = {
   export_pptx: { verb: "导出", title: "Export PPT", icon: FileDown, producesFile: true },
   export_md: { verb: "导出", title: "Export Markdown", icon: FileDown, producesFile: true },
   // 本地工具可能以工具名直接作为 step.name 出现
+  agent: { verb: "调度", title: "Sub Agent", icon: Bot, producesFile: false },
   write_file: { verb: "写入", title: "Write File", icon: FilePen, producesFile: true },
   edit_file: { verb: "修改", title: "Edit File", icon: Pencil, producesFile: true },
   write_text_file: { verb: "写入", title: "Write File", icon: FilePen, producesFile: true },
@@ -149,6 +151,7 @@ export function iconByName(name?: string): LucideIcon | undefined {
   const map: Record<string, LucideIcon> = {
     Search,
     Archive,
+    Bot,
     Eye,
     FolderTree,
     GitBranch,
