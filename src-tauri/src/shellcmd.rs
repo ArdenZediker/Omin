@@ -61,9 +61,13 @@ fn cap_output(text: &str, max: usize) -> String {
 }
 
 /// 探测 Git for Windows 自带的 bash.exe（结果缓存，进程生命周期内只查一次盘）。
-/// 覆盖：Program Files / Program Files (x86) / 用户级安装（%LOCALAPPDATA%\Programs\Git）
-/// 与 scoop 安装。**刻意不探测 `C:\Windows\System32\bash.exe`** —— 那是 WSL，
-/// 路径体系（/mnt/c）和行为完全不同，误用会造成语义错乱。
+/// 覆盖（按序）：
+/// 1. 标准安装位置：Program Files / Program Files (x86) / 用户级安装（%LOCALAPPDATA%\Programs\Git）
+///    与 scoop 安装；
+/// 2. PATH 上 `git.exe` 的兄弟目录——Git for Windows 装在自定义位置（如 D:\Dev_tools\Git）时，
+///    通常只有 `\cmd` 加入 PATH，bash.exe 在其 `..\bin` / `..\usr\bin` 下；
+/// 3. PATH 上的 `bash.exe`（便携版 Git 等），**排除 `C:\Windows\System32\bash.exe`** ——
+///    那是 WSL，路径体系（/mnt/c）和行为完全不同，误用会造成语义错乱。
 #[cfg(windows)]
 fn detect_git_bash() -> Option<String> {
     use std::sync::OnceLock;
@@ -83,11 +87,46 @@ fn detect_git_bash() -> Option<String> {
             if let Ok(home) = std::env::var("USERPROFILE") {
                 candidates.push(format!("{home}\\scoop\\apps\\git\\current\\bin\\bash.exe"));
             }
+            // PATH 上 git.exe 的祖先目录里找 bash.exe（自定义安装位置兜底）。
+            for git_dir in where_on_path("git.exe") {
+                let git_path = std::path::Path::new(&git_dir);
+                for ancestor in git_path.ancestors().skip(1).take(3) {
+                    candidates.push(format!("{}\\bin\\bash.exe", ancestor.display()));
+                    candidates.push(format!("{}\\usr\\bin\\bash.exe", ancestor.display()));
+                }
+            }
+            // PATH 上的 bash.exe（便携版 Git 等），排除 System32 的 WSL bash。
+            for bash in where_on_path("bash.exe") {
+                if bash.to_ascii_lowercase().contains("\\system32\\") {
+                    continue;
+                }
+                candidates.push(bash);
+            }
             candidates
                 .into_iter()
                 .find(|p| std::path::Path::new(p).is_file())
         })
         .clone()
+}
+
+/// `where <name>` 的解析结果（PATH 上匹配的绝对路径列表）；where 不可用或无匹配时返回空。
+#[cfg(windows)]
+fn where_on_path(name: &str) -> Vec<String> {
+    Command::new("where.exe")
+        .arg(name)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// 按可执行文件名选择传参方式（自定义 Shell 与自动探测共用）。
@@ -400,4 +439,28 @@ pub(crate) async fn detect_shell(path: String) -> Result<DetectShellResult, Stri
     })
     .await
     .map_err(|e| format!("detect_shell 任务失败: {e}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn where_on_path_finds_where_itself_and_rejects_unknown() {
+        // where.exe 必然在 System32（PATH 上）——能找到自己说明解析逻辑可用。
+        assert!(where_on_path("where.exe").iter().any(|p| p.to_ascii_lowercase().contains("where.exe")));
+        // 无匹配时返回空而非报错。
+        assert!(where_on_path("definitely-not-a-real-exe-xyz").is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn detect_git_bash_finds_a_posix_bash() {
+        // 本机存在任一 Git Bash（标准位置/自定义 Git 安装/PATH 便携版）时应能命中，
+        // 且命中的绝不是 System32 的 WSL bash。
+        if let Some(bash) = detect_git_bash() {
+            assert!(!bash.to_ascii_lowercase().contains("\\system32\\"), "误探测到 WSL bash: {bash}");
+            assert!(std::path::Path::new(&bash).is_file());
+        }
+    }
 }
