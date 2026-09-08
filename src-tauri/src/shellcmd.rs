@@ -187,12 +187,44 @@ fn build_shell_command(command: &str, shell_path: Option<&str>) -> Result<Comman
     Ok(c)
 }
 
+/// 环境变量脱敏（对齐 Codex spawn_child 的 allowlist 语义）：
+/// 子进程不再继承父进程全部环境变量——密钥类变量（apiKey/token 等）不会随 /bash 泄漏到
+/// 命令输出或第三方 CLI。白名单只保留系统/基础设施必需项，保证 shell、PATH 解析、
+/// 用户目录、临时目录等正常工作。Git-Bash 需 MSYSTEM/EXEPATH 才能正确初始化。
+fn scrub_environment(cmd: &mut Command) {
+    const ALLOWED: &[&str] = &[
+        // Windows 系统必需
+        "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "OS",
+        "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS",
+        "ALLUSERSPROFILE", "PROGRAMDATA", "PUBLIC",
+        "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432",
+        "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)", "COMMONPROGRAMW6432",
+        // 用户与目录
+        "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "HOME", "APPDATA", "LOCALAPPDATA",
+        "TEMP", "TMP", "TMPDIR",
+        // 身份
+        "USERNAME", "COMPUTERNAME", "USERDOMAIN", "USERDOMAIN_ROAMINGPROFILE",
+        // Shell / 工具链
+        "PATH", "SHELL", "LANG", "LC_ALL", "TERM",
+        "MSYSTEM", "EXEPATH", "HOME_DRIVE",
+        "JAVA_HOME", "CARGO_HOME", "RUSTUP_HOME", "GOPATH", "GOROOT", "PYTHONDONTWRITEBYTECODE",
+    ];
+    cmd.env_clear();
+    for (key, value) in std::env::vars_os() {
+        let key_str = key.to_string_lossy();
+        if ALLOWED.iter().any(|allowed| allowed.eq_ignore_ascii_case(&key_str)) {
+            cmd.env(key, value);
+        }
+    }
+}
+
 /// 用系统 shell 执行命令，带超时与跨平台无窗口处理。
 fn run_shell(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String> {
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
     let cwd = input.cwd.clone();
 
     let mut cmd = build_shell_command(&input.command, input.shell_path.as_deref())?;
+    scrub_environment(&mut cmd);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {

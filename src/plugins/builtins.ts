@@ -393,6 +393,38 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
       "Call /export_md to export articles, notes, docs, or READMEs as raw Markdown into a .md file. content is the full Markdown text, path is optional: auto-saves to the project directory or system Documents/Omni. Tell the user the file path when done. In a project session, an absolute path outside the workspace only executes after user confirmation.",
   },
   {
+    id: "write_file",
+    name: "Write File",
+    description:
+      "Call this to create a new text/code file or overwrite an existing one inside the project workspace (diff-tracked, revertible).",
+    version: "1.0.0",
+    author: "Omni",
+    kind: "tool",
+    category: "代码工作台",
+    group: "文件修改",
+    icon: "FilePen",
+    command: "/write_file",
+    promptContribution:
+      "Call /write_file to create a new file or fully overwrite an existing one: JSON{path, content, overwrite?}. " +
+      "Prefer /edit_file for targeted changes to existing files. Writes inside the workspace apply directly; paths outside require user confirmation.",
+  },
+  {
+    id: "edit_file",
+    name: "Edit File",
+    description:
+      "Call this to apply a targeted exact-match search-and-replace to an existing text file (diff-tracked, revertible).",
+    version: "1.0.0",
+    author: "Omni",
+    kind: "tool",
+    category: "代码工作台",
+    group: "文件修改",
+    icon: "Pencil",
+    command: "/edit_file",
+    promptContribution:
+      "Call /edit_file for precise in-place edits: JSON{path, find, replace, replace_all?}. " +
+      "find must be copied verbatim from the file (exact whitespace); 0 or ambiguous matches are rejected with no changes. Read the file first.",
+  },
+  {
     id: "install_skill",
     name: "Install Skill",
     description:

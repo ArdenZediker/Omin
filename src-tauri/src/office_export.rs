@@ -768,7 +768,7 @@ pub(crate) struct ExportOutcome {
 /// 内存计算文件差异，不依赖 git。
 /// old_content 为修改前磁盘内容（文件不存在传空串）；new_content 为将要写入的内容。
 /// 返回标准 unified-diff 文本（兼容 git diff 格式）与增删行统计。
-fn compute_file_diff(old_content: &str, new_content: &str, filename: &str) -> DiffResult {
+pub(crate) fn compute_file_diff(old_content: &str, new_content: &str, filename: &str) -> DiffResult {
     let diff = similar::TextDiff::from_lines(old_content, new_content);
     // 输出标准 unified-diff，头部 a/ b/ 与 git diff 一致
     let old_header = format!("a/{filename}");

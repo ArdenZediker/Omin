@@ -57,6 +57,19 @@ const READONLY_GIT_SUBCOMMANDS = new Set<string>([
   "status", "log", "diff", "branch", "show", "remote", "tag", "stash", "ls-files",
   "ls-remote", "rev-parse", "rev-list", "blame", "shortlog", "reflog", "cat-file", "grep",
 ]);
+
+/** 判定路径是否落在项目工作区之外（决定 write_file/edit_file 是否触发确认门；
+ *  相对路径由 Rust 端拼接工作区解析，视为域内；未绑定工作区时绝对路径一律需确认）。 */
+export function isOutsideWorkspace(path: string, workspacePath: string): boolean {
+  const trimmed = path.trim();
+  const isAbsolute = /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith("/") || trimmed.startsWith("\\\\");
+  if (!isAbsolute) return false;
+  if (!workspacePath) return true;
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const t = norm(trimmed);
+  const w = norm(workspacePath);
+  return t !== w && !t.startsWith(`${w}/`);
+}
 export function isKnownSafeCommand(command: string): boolean {
   const cmd = command.trim();
   if (!cmd) return false;
@@ -979,6 +992,149 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             content,
           },
           // 写前读基线、内存算出的 unified-diff（Rust 返回；超大文件为 null）
+          fileDiff: outcome.diff ?? undefined,
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  // ---- 文件修改工具（Rust：filemod.rs write_file_tool / edit_file_tool）----
+  // Codex 风格代码工作台核心：原子粒度写入 + 定点搜索替换，全部 diff 追踪、可在变更面板撤销。
+  // 安全策略：工作区内静默执行；工作区外（绝对路径越界或未绑定工作区）走 HITL 确认门；
+  // No-Go Zone（.ssh/AppData/Windows/Program Files）由 Rust 端无条件拒绝。
+
+  function formatBytes(size: number): string {
+    return size >= 1024 ? `${(size / 1024).toFixed(1)} KB` : `${size} B`;
+  }
+
+  function truncateForDisplay(text: string, max = 160): string {
+    const single = text.replace(/\r?\n/g, "\\n");
+    return single.length > max ? `${single.slice(0, max)}…` : single;
+  }
+
+  registry.register({
+    id: "write_file",
+    command: "/write_file",
+    title: "Write File",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const path = strArg(json, "path", "file");
+      const content = strArg(json, "content", "text", "body");
+      const overwrite = json?.overwrite === true || json?.overwrite === "true";
+      if (!path) return { ok: false, error: "用法：/write_file JSON{path, content, overwrite?}" };
+      if (!content) return { ok: false, error: "缺少 content：请提供要写入的完整文件内容" };
+
+      const ws = runtime.activeProject?.workspacePath || "";
+      const outside = isOutsideWorkspace(path, ws);
+      if (outside) {
+        const approved = await requestConfirmation({
+          source: "write_file",
+          title: "写入工作区外的文件？",
+          summary: "模型请求在项目工作区之外创建/覆盖文件。",
+          riskLevel: "write",
+          details: [{ label: "路径", value: path }],
+          targets: [path],
+          warning: "该路径不在项目工作区内。请确认文件位置符合预期；系统/密钥目录（AppData、.ssh 等）会被无条件拒绝。",
+          confirmLabel: "确认写入",
+        });
+        if (!approved) {
+          return { ok: false, error: "已取消：未确认写入工作区外的文件" };
+        }
+      }
+
+      try {
+        const outcome = await invoke<{
+          path: string;
+          size: number;
+          created: boolean;
+          replacements: number;
+          diff: FileDiff | null;
+          snapshotAvailable: boolean;
+        }>("write_file_tool", {
+          path,
+          content,
+          overwrite,
+          workspacePath: ws || null,
+          confirmedOutside: outside,
+        });
+        return {
+          ok: true,
+          outputText:
+            `${outcome.created ? "已创建文件" : "已覆盖文件"}：${outcome.path}（${formatBytes(outcome.size)}）` +
+            `。可在「变更」面板查看 diff 并撤销本次修改。`,
+          data: outcome,
+          path: outcome.path,
+          artifact: { type: "file", title: outcome.path.split(/[\\/]/).pop() || "文件", path: outcome.path, size: outcome.size },
+          fileDiff: outcome.diff ?? undefined,
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  registry.register({
+    id: "edit_file",
+    command: "/edit_file",
+    title: "Edit File",
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const path = strArg(json, "path", "file");
+      const find = strArg(json, "find", "old_string", "search");
+      const replace = strArg(json, "replace", "new_string");
+      const replaceAll = json?.replace_all === true || json?.replace_all === "true" || json?.replaceAll === true;
+      if (!path || find == null) {
+        return { ok: false, error: "用法：/edit_file JSON{path, find, replace, replace_all?}。find 必须是从文件中精确复制的原文" };
+      }
+      if (replace == null) return { ok: false, error: "缺少 replace：请提供替换后的文本（删除内容可传空字符串）" };
+
+      const ws = runtime.activeProject?.workspacePath || "";
+      const outside = isOutsideWorkspace(path, ws);
+      if (outside) {
+        const approved = await requestConfirmation({
+          source: "edit_file",
+          title: "修改工作区外的文件？",
+          summary: "模型请求对项目工作区之外的文件做定点替换。",
+          riskLevel: "write",
+          details: [
+            { label: "路径", value: path },
+            { label: "替换", value: `${truncateForDisplay(find)} → ${truncateForDisplay(replace)}` },
+          ],
+          targets: [path],
+          warning: "该路径不在项目工作区内。请确认修改目标符合预期；系统/密钥目录会被无条件拒绝。",
+          confirmLabel: "确认修改",
+        });
+        if (!approved) {
+          return { ok: false, error: "已取消：未确认修改工作区外的文件" };
+        }
+      }
+
+      try {
+        const outcome = await invoke<{
+          path: string;
+          size: number;
+          created: boolean;
+          replacements: number;
+          diff: FileDiff | null;
+          snapshotAvailable: boolean;
+        }>("edit_file_tool", {
+          path,
+          find,
+          replace,
+          replaceAll,
+          workspacePath: ws || null,
+          confirmedOutside: outside,
+        });
+        return {
+          ok: true,
+          outputText:
+            `已修改文件：${outcome.path}（替换 ${outcome.replacements} 处，${formatBytes(outcome.size)}）` +
+            `。可在「变更」面板查看 diff 并撤销本次修改。`,
+          data: outcome,
+          path: outcome.path,
+          artifact: { type: "file", title: outcome.path.split(/[\\/]/).pop() || "文件", path: outcome.path, size: outcome.size },
           fileDiff: outcome.diff ?? undefined,
         };
       } catch (error) {

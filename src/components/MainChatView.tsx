@@ -2606,7 +2606,18 @@ export default function MainChatView({
               ) : null}
 
               {sidePanelTab === "changes" ? (
-                <ChangesPanel changes={changesEntries} />
+                <ChangesPanel
+                  changes={changesEntries}
+                  onRevert={async (entry) => {
+                    if (!entry.path) return false;
+                    try {
+                      await invoke("undo_file_edit", { path: entry.path });
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }}
+                />
               ) : null}
             </div>
           </aside>

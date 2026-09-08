@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "../adapters/types";
 import type { Project } from "./types";
-import { executeLocalTool, isKnownSafeCommand, type LocalToolRuntime, type LocalToolSession } from "./localTools";
+import { executeLocalTool, isKnownSafeCommand, isOutsideWorkspace, type LocalToolRuntime, type LocalToolSession } from "./localTools";
 
 const mockedInvoke = vi.hoisted(() => vi.fn());
 
@@ -579,5 +579,136 @@ describe("/bash 自定义 Shell 路径（设置 → 命令执行）", () => {
       "execute_command",
       expect.objectContaining({ shellPath: null }),
     );
+  });
+});
+
+describe("/write_file /edit_file（文件修改工具）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.removeItem("omni_basic_settings");
+  });
+
+  it("工作区内相对路径：静默执行，confirmedOutside=false", async () => {
+    const runtime = createRuntime({ activeProject: createProject() });
+    mockedInvoke.mockResolvedValueOnce({
+      path: "D:/ws/src/app.ts",
+      size: 120,
+      created: true,
+      replacements: 0,
+      diff: { filename: "app.ts", insertions: 5, deletions: 0, diffContent: "@@ -0,0 +1,5 @@" },
+      snapshotAvailable: true,
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({ path: "src/app.ts", content: "const a = 1;\n" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "write_file_tool",
+      expect.objectContaining({ path: "src/app.ts", overwrite: false, confirmedOutside: false }),
+    );
+    expect(result?.fileDiff).toEqual({ filename: "app.ts", insertions: 5, deletions: 0, diffContent: "@@ -0,0 +1,5 @@" });
+  });
+
+  it("工作区外绝对路径：先弹确认门，确认后 confirmedOutside=true", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/ws" }) });
+    mockedInvoke.mockResolvedValueOnce({
+      path: "D:/other/notes.md",
+      size: 30,
+      created: true,
+      replacements: 0,
+      diff: null,
+      snapshotAvailable: true,
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({ path: "D:/other/notes.md", content: "hi" }),
+    });
+
+    expect(requestConfirmation).toHaveBeenCalledTimes(1);
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "write_file_tool",
+      expect.objectContaining({ confirmedOutside: true }),
+    );
+  });
+
+  it("工作区外绝对路径：用户拒绝则不执行", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    vi.mocked(requestConfirmation).mockResolvedValueOnce(false);
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/ws" }) });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({ path: "D:/other/notes.md", content: "hi" }),
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("已存在文件未传 overwrite：不写盘直接返回错误提示", async () => {
+    const runtime = createRuntime({ activeProject: createProject() });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({ path: "src/app.ts", content: "x" }),
+    });
+
+    // 该校验在 Rust 端：模拟其报错并断言结果透传
+    mockedInvoke.mockRejectedValueOnce("文件已存在：D:/ws/src/app.ts。传 overwrite=true 覆盖整个文件，或改用 edit_file 做定点搜索替换（更安全）");
+    const second = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({ path: "src/app.ts", content: "x" }),
+    });
+    void result;
+    expect(second?.ok).toBe(false);
+    expect(second?.error).toContain("edit_file");
+  });
+
+  it("/edit_file 传参映射：find/replace/replace_all 透传", async () => {
+    const runtime = createRuntime({ activeProject: createProject() });
+    mockedInvoke.mockResolvedValueOnce({
+      path: "D:/ws/src/app.ts",
+      size: 100,
+      created: false,
+      replacements: 1,
+      diff: { filename: "app.ts", insertions: 1, deletions: 1, diffContent: "@@ -1,1 +1,1 @@" },
+      snapshotAvailable: true,
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/edit_file",
+      args: JSON.stringify({ path: "src/app.ts", find: "const a = 1;", replace: "const a = 2;" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "edit_file_tool",
+      expect.objectContaining({ find: "const a = 1;", replace: "const a = 2;", replaceAll: false, confirmedOutside: false }),
+    );
+    expect(result?.outputText).toContain("替换 1 处");
+  });
+});
+
+describe("isOutsideWorkspace（工作区边界判定）", () => {
+  it("相对路径恒为域内（由 Rust 拼接工作区解析）", () => {
+    expect(isOutsideWorkspace("src/a.ts", "D:/ws")).toBe(false);
+    expect(isOutsideWorkspace("src/a.ts", "")).toBe(false);
+  });
+
+  it("绝对路径在工作区内为域内（大小写/分隔符不敏感）", () => {
+    expect(isOutsideWorkspace("D:/WS/src/a.ts", "D:/ws")).toBe(false);
+    expect(isOutsideWorkspace("D:/ws\\src\\a.ts", "D:/ws")).toBe(false);
+    expect(isOutsideWorkspace("D:/ws", "D:/ws")).toBe(false);
+  });
+
+  it("绝对路径越界或未绑定工作区时为域外", () => {
+    expect(isOutsideWorkspace("D:/other/a.ts", "D:/ws")).toBe(true);
+    expect(isOutsideWorkspace("C:/Users/me/a.ts", "")).toBe(true);
   });
 });

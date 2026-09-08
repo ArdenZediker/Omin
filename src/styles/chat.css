@@ -5208,6 +5208,15 @@
 .changes-panel__iconbtn:disabled { opacity: 0.5; cursor: wait; }
 .changes-panel__iconbtn--spin { animation: changes-spin 0.9s linear infinite; }
 @keyframes changes-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.changes-panel__revert-done {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--omni-app-success-bg, rgba(99, 153, 34, 0.12));
+  color: var(--omni-app-success, #3b6d11);
+  font-size: 11px;
+  font-weight: 500;
+}
 
 .changes-panel__loading {
   display: flex;

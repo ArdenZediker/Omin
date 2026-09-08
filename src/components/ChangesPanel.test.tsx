@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { FileCode2 } from "lucide-react";
 import ChangesPanel from "./ChangesPanel";
@@ -110,5 +110,38 @@ describe("ChangesPanel（非 git 任务级文件清单）", () => {
     const { container } = render(<ChangesPanel changes={[noDiff]} />);
     fireEvent.click(getFileButton(container));
     expect(screen.getByText("该文件无 diff 预览")).toBeTruthy();
+  });
+});
+
+describe("ChangesPanel 撤销按钮", () => {
+  it("write_file/edit_file 且传 onRevert 时显示撤销按钮，点击成功显示已撤销", async () => {
+    const revertEntry = {
+      ...entryWithDiff,
+      name: "edit_file",
+      verb: "修改",
+      title: "Edit File",
+    };
+    let reverted: ChangeEntry | null = null;
+    const { container } = render(
+      <ChangesPanel
+        changes={[revertEntry]}
+        onRevert={async (e) => {
+          reverted = e;
+          return true;
+        }}
+      />,
+    );
+    fireEvent.click(getFileButton(container));
+    const revertBtn = container.querySelector(".changes-panel__iconbtn[aria-label='撤销本次修改']") as HTMLButtonElement;
+    expect(revertBtn).toBeTruthy();
+    fireEvent.click(revertBtn);
+    await waitFor(() => expect(screen.getByText("已撤销")).toBeTruthy());
+    expect(reverted).not.toBeNull();
+  });
+
+  it("非文件修改工具（export_docx）不显示撤销按钮", () => {
+    const { container } = render(<ChangesPanel changes={[entryWithDiff]} />);
+    fireEvent.click(getFileButton(container));
+    expect(container.querySelector(".changes-panel__iconbtn[aria-label='撤销本次修改']")).toBeNull();
   });
 });

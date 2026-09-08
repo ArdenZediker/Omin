@@ -7,18 +7,23 @@
 //
 // 交互：文件列表 → 点击某行 → 进入该文件的 diff 详情页（顶部返回 + 文件名 + 统计 + 关闭）。
 import { useState } from "react";
-import { ArrowLeft, FileCode2, X } from "lucide-react";
+import { ArrowLeft, FileCode2, Undo2, X } from "lucide-react";
 import type { ChangeEntry } from "../chat/toolActionMap";
 import type { FileDiff } from "../chat/fileDiff";
+
+/** 支持一键撤销的工具（Rust 端有修改前快照的文件修改类工具）。 */
+const REVERTIBLE_TOOLS = new Set(["write_file", "edit_file"]);
 
 interface ChangesPanelProps {
   /** 由消息「查看所有变更」传上来的本次任务文件改动清单（非 git） */
   changes: ChangeEntry[];
   /** 嵌入其他面板时由父级控制显示关闭按钮 */
   onClose?: () => void;
+  /** 撤销该文件的本次修改（仅 write_file/edit_file 且 Rust 端存在快照时可用）；返回是否成功 */
+  onRevert?: (entry: ChangeEntry) => Promise<boolean>;
 }
 
-export default function ChangesPanel({ changes, onClose }: ChangesPanelProps) {
+export default function ChangesPanel({ changes, onClose, onRevert }: ChangesPanelProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const activeEntry = activeIndex != null ? changes[activeIndex] ?? null : null;
 
@@ -54,6 +59,7 @@ export default function ChangesPanel({ changes, onClose }: ChangesPanelProps) {
           entry={activeEntry}
           onBack={() => setActiveIndex(null)}
           onClose={onClose}
+          onRevert={onRevert}
         />
       ) : (
         <FileListView changes={changes} onSelect={setActiveIndex} />
@@ -103,13 +109,24 @@ function DiffDetailView({
   entry,
   onBack,
   onClose,
+  onRevert,
 }: {
   entry: ChangeEntry;
   onBack: () => void;
   onClose?: () => void;
+  onRevert?: (entry: ChangeEntry) => Promise<boolean>;
 }) {
   const filename = entry.path ? fileNameOf(entry.path) : entry.title;
   const hasDiff = Boolean(entry.diff && entry.diff.diffContent?.trim());
+  const revertible = Boolean(onRevert && entry.path && REVERTIBLE_TOOLS.has(entry.name));
+  const [revertState, setRevertState] = useState<"idle" | "busy" | "done" | "failed">("idle");
+
+  const handleRevert = async () => {
+    if (!onRevert || revertState === "busy") return;
+    setRevertState("busy");
+    const ok = await onRevert(entry);
+    setRevertState(ok ? "done" : "failed");
+  };
 
   return (
     <div className="changes-panel__diff">
@@ -132,6 +149,19 @@ function DiffDetailView({
             <span className="changes-panel__diff-stats-del">−{entry.diff!.deletions}</span>
           </span>
         ) : null}
+        {revertible && revertState !== "done" ? (
+          <button
+            type="button"
+            className="changes-panel__iconbtn"
+            onClick={() => void handleRevert()}
+            disabled={revertState === "busy"}
+            title={revertState === "failed" ? "撤销失败：无修改快照（可能由其他途径改动或应用已重启）" : "撤销本次修改，恢复到修改前的内容"}
+            aria-label="撤销本次修改"
+          >
+            <Undo2 size={14} strokeWidth={1.8} />
+          </button>
+        ) : null}
+        {revertState === "done" ? <span className="changes-panel__revert-done">已撤销</span> : null}
         {onClose ? (
           <button
             type="button"

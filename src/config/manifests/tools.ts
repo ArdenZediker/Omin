@@ -115,6 +115,48 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     },
   },
   {
+    id: "write_file",
+    command: "/write_file",
+    title: "Write File",
+    description: "Create a new text file or overwrite an existing one in the workspace (with diff preview and undo).",
+    promptContribution:
+      "Call /write_file to create a new file or fully overwrite an existing one: JSON{\"path\":\"src/app.ts\",\"content\":\"...\",\"overwrite\":false}. " +
+      "path is relative to the workspace (or absolute). If the file already exists and overwrite is not true, the call is REJECTED — " +
+      "prefer /edit_file for targeted changes instead of overwriting whole files. " +
+      "Writes inside the project workspace apply directly; a path outside the workspace requires user confirmation. " +
+      "System/key directories (AppData, .ssh, Windows, Program Files) are always blocked. Every write is diff-tracked and revertible in the Changes panel.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File path (relative to the workspace, or absolute)." },
+        content: { type: "string", description: "Full file content to write." },
+        overwrite: { type: "boolean", description: "true = overwrite an existing file. Default false (rejects if exists)." },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
+    id: "edit_file",
+    command: "/edit_file",
+    title: "Edit File",
+    description: "Apply a targeted search-and-replace to a text file (exact match, with diff preview and undo).",
+    promptContribution:
+      "Call /edit_file for precise in-place edits: JSON{\"path\":\"src/app.ts\",\"find\":\"exact original text (copy it verbatim from the file, may span lines)\",\"replace\":\"new text\",\"replace_all\":false}. " +
+      "find must match EXACTLY (including indentation/whitespace); if it occurs 0 times or more than once without replace_all=true, the call is rejected with no changes. " +
+      "Prefer this over /write_file for modifying existing files — it keeps the rest of the file untouched. " +
+      "Read the file first (/read_file) to copy the exact text. Every edit is diff-tracked and revertible in the Changes panel.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File path (relative to the workspace, or absolute). Must exist." },
+        find: { type: "string", description: "Exact original text to find (verbatim, may span multiple lines)." },
+        replace: { type: "string", description: "Replacement text." },
+        replace_all: { type: "boolean", description: "true = replace every occurrence. Default false (requires a unique match)." },
+      },
+      required: ["path", "find", "replace"],
+    },
+  },
+  {
     id: "read_persona",
     command: "/read_persona",
     title: "Read Persona",
@@ -437,6 +479,12 @@ export const TOOLSET_MANIFESTS: ToolsetManifest[] = [
     description: "适合浏览目录、读取文件和定位内容",
     toolIds: ["list_files", "read_file", "search_files"],
   },
+  {
+    id: "code-authoring",
+    title: "代码编写",
+    description: "适合在本机项目中创建、修改代码文件",
+    toolIds: ["list_files", "read_file", "search_files", "write_file", "edit_file", "bash", "git_commit"],
+  },
 ];
 
 export const PROJECT_TOOL_MANIFESTS = TOOL_MANIFESTS.filter((tool) =>
@@ -446,6 +494,8 @@ export const PROJECT_TOOL_MANIFESTS = TOOL_MANIFESTS.filter((tool) =>
     "list_files",
     "read_file",
     "search_files",
+    "write_file",
+    "edit_file",
     "web_search",
     "web_fetch",
     "git_info",
@@ -473,6 +523,8 @@ export const BUILTIN_TOOL_IDS = [
   "list_files",
   "read_file",
   "search_files",
+  "write_file",
+  "edit_file",
   "read_persona",
   "update_persona",
   "install_expert",

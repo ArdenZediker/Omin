@@ -74,6 +74,8 @@ const VERB_MAP: Record<string, ToolActionMeta> = {
   export_pptx: { verb: "导出", title: "Export PPT", icon: FileDown, producesFile: true },
   export_md: { verb: "导出", title: "Export Markdown", icon: FileDown, producesFile: true },
   // 本地工具可能以工具名直接作为 step.name 出现
+  write_file: { verb: "写入", title: "Write File", icon: FilePen, producesFile: true },
+  edit_file: { verb: "修改", title: "Edit File", icon: Pencil, producesFile: true },
   write_text_file: { verb: "写入", title: "Write File", icon: FilePen, producesFile: true },
   read_text_file: { verb: "读取", title: "Read File", icon: Eye, producesFile: false },
 };
