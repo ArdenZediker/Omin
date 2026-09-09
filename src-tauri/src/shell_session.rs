@@ -35,6 +35,9 @@ const SCROLLBACK_MAX_CHARS: usize = 200_000;
 const POLL_INTERVAL_MS: u64 = 25;
 /// 单条命令默认等待超时。
 const DEFAULT_EXEC_TIMEOUT_MS: u64 = 120_000;
+/// 新建持久 shell 会话后的健康探测超时（毫秒）。探测失败说明当前 PTY/bash 环境不兼容，
+/// 直接返回错误让前端回落到一次性 execute_command，避免后续所有命令都等到 120s 主超时。
+const HEALTH_PROBE_TIMEOUT_MS: u64 = 5_000;
 /// PTY 初始尺寸（行/列）。模型输出不依赖宽度，默认 80 列即可。
 const PTY_ROWS: u16 = 24;
 const PTY_COLS: u16 = 80;
@@ -380,24 +383,63 @@ pub(crate) async fn shell_session_exec(input: ShellSessionExecInput) -> Result<S
         .map_err(|e| format!("shell_session_exec 任务失败: {e}"))?
 }
 
+enum ExecOutcome {
+    Completed(String, i32),
+    TimedOut(String),
+}
+
+/// 在已持有的 ShellSession 上执行单条命令并等待结果。不处理会话生命周期（由调用方负责重建/清理）。
+fn run_command_in_session(
+    session: &mut ShellSession,
+    command: &str,
+    timeout: Duration,
+) -> Result<ExecOutcome, String> {
+    let m = markers();
+    let wrapped = wrap_command(command, &m);
+    let writer = session
+        .writer
+        .as_mut()
+        .ok_or_else(|| "持久 shell 的 stdin 已关闭".to_string())?;
+    writer
+        .write_all(wrapped.as_bytes())
+        .and_then(|_| writer.write_all(b"\n"))
+        .and_then(|_| writer.flush())
+        .map_err(|e| format!("写入持久 shell 失败：{e}"))?;
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+        let snap = session.scrollback.lock().unwrap();
+        if let Some((body, code)) = extract_completed(&snap.text, &m) {
+            let output = cap_output(&normalize_pty_text(&body), MAX_OUTPUT_CHARS);
+            return Ok(ExecOutcome::Completed(output, code));
+        }
+        if Instant::now() >= deadline {
+            let mut partial = normalize_pty_text(&extract_partial(&snap.text, &m));
+            if snap.lost_prefix {
+                partial = format!("[提示] 输出开头部分已被滚动缓冲丢弃，以下是最早保留的内容。\n{partial}");
+            }
+            let output = cap_output(&partial, MAX_OUTPUT_CHARS);
+            return Ok(ExecOutcome::TimedOut(output));
+        }
+    }
+}
+
 fn run_session_exec(input: ShellSessionExecInput) -> Result<ShellSessionExecResult, String> {
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(DEFAULT_EXEC_TIMEOUT_MS));
     let mut shell_reset = false;
 
     // 最多两轮：会话不存在/已死 → 自动重建并重试一次（harness 同款 reset 语义）。
     for attempt in 0..2 {
-        let entry = {
+        let (entry, is_new) = {
             let mut map = sessions().lock().unwrap();
             match map.get(&input.session_id) {
-                Some(entry) => Arc::clone(entry),
+                Some(entry) => (Arc::clone(entry), false),
                 None => {
                     let session = ShellSession::spawn(input.cwd.as_deref(), input.shell_path.as_deref())?;
                     let entry = Arc::new(Mutex::new(session));
                     map.insert(input.session_id.clone(), Arc::clone(&entry));
-                    if attempt > 0 {
-                        shell_reset = true;
-                    }
-                    entry
+                    (entry, true)
                 }
             }
         };
@@ -420,18 +462,53 @@ fn run_session_exec(input: ShellSessionExecInput) -> Result<ShellSessionExecResu
             Ok(None) => {}
         }
 
-        let m = markers();
-        let wrapped = wrap_command(&input.command, &m);
-        {
-            let writer = guard
-                .writer
-                .as_mut()
-                .ok_or_else(|| "持久 shell 的 stdin 已关闭".to_string())?;
-            let written = writer
-                .write_all(wrapped.as_bytes())
-                .and_then(|_| writer.write_all(b"\n"))
-                .and_then(|_| writer.flush());
-            if let Err(e) = written {
+        // 健康探测：新建会话先跑一条空命令，确认 PTY 真能用；若连 true 都跑不通，
+        // 说明当前 bash/PTY 环境不兼容（常见 PortableGit + ConPTY 场景），不要死等主超时。
+        if is_new {
+            match run_command_in_session(
+                &mut guard,
+                "true",
+                Duration::from_millis(HEALTH_PROBE_TIMEOUT_MS),
+            ) {
+                Ok(ExecOutcome::Completed(_, _)) => {}
+                Ok(ExecOutcome::TimedOut(_)) => {
+                    let mut map = sessions().lock().unwrap();
+                    map.remove(&input.session_id);
+                    drop(guard);
+                    return Err(
+                        "持久 shell 健康探测超时：PTY/bash 环境不兼容，已清理会话并回落到一次性命令执行"
+                            .to_string(),
+                    );
+                }
+                Err(e) => {
+                    let mut map = sessions().lock().unwrap();
+                    map.remove(&input.session_id);
+                    drop(guard);
+                    return Err(format!(
+                        "持久 shell 健康探测失败（{e}）：已清理会话并回落到一次性命令执行"
+                    ));
+                }
+            }
+        }
+
+        match run_command_in_session(&mut guard, &input.command, timeout) {
+            Ok(ExecOutcome::Completed(output, code)) => {
+                return Ok(ShellSessionExecResult {
+                    exit_code: code,
+                    output,
+                    timed_out: false,
+                    shell_reset,
+                });
+            }
+            Ok(ExecOutcome::TimedOut(output)) => {
+                return Ok(ShellSessionExecResult {
+                    exit_code: -1,
+                    output,
+                    timed_out: true,
+                    shell_reset,
+                });
+            }
+            Err(e) => {
                 let mut map = sessions().lock().unwrap();
                 map.remove(&input.session_id);
                 drop(guard);
@@ -439,26 +516,7 @@ fn run_session_exec(input: ShellSessionExecInput) -> Result<ShellSessionExecResu
                     shell_reset = true;
                     continue;
                 }
-                return Err(format!("写入持久 shell 失败（会话已退出）且重建失败：{e}"));
-            }
-        }
-
-        // 轮询 scrollback 等待 END 标记；超时返回部分输出（不杀会话）。
-        let deadline = Instant::now() + timeout;
-        loop {
-            thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
-            let snap = guard.scrollback.lock().unwrap();
-            if let Some((body, code)) = extract_completed(&snap.text, &m) {
-                let output = cap_output(&normalize_pty_text(&body), MAX_OUTPUT_CHARS);
-                return Ok(ShellSessionExecResult { exit_code: code, output, timed_out: false, shell_reset });
-            }
-            if Instant::now() >= deadline {
-                let mut partial = normalize_pty_text(&extract_partial(&snap.text, &m));
-                if snap.lost_prefix {
-                    partial = format!("[提示] 输出开头部分已被滚动缓冲丢弃，以下是最早保留的内容。\n{partial}");
-                }
-                let output = cap_output(&partial, MAX_OUTPUT_CHARS);
-                return Ok(ShellSessionExecResult { exit_code: -1, output, timed_out: true, shell_reset });
+                return Err(format!("{e} 且重建失败"));
             }
         }
     }
