@@ -1,13 +1,11 @@
-// 产出归档配置：生成文档的「产出根目录」与「对话镜像为 Markdown」开关。
-// 全部走前端设置（sqliteStorage），无需改动 Rust；实际落盘复用已有的 write_text_file 命令。
+// 产出归档配置：「产出根目录」设置、路径工具与附件快照。
+// 全部走前端设置（sqliteStorage），无需改动 Rust；实际落盘复用已有的 write_text_file / copy_file_to_store 命令。
 
 import { invoke } from "@tauri-apps/api/core";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
-import type { ChatSession } from "../chat/types";
 import type { ChatAttachment } from "../adapters/types";
 
 export const OUTPUT_ROOT_KEY = "omni_output_root_v1";
-export const MIRROR_SESSIONS_KEY = "omni_mirror_sessions_md_v1";
 
 // ---------- 设置读写 ----------
 
@@ -18,15 +16,6 @@ export function getOutputRootSetting(): string {
 
 export function setOutputRootSetting(value: string): void {
   saveSqliteBackedValue(OUTPUT_ROOT_KEY, value.trim());
-}
-
-export function isMirrorSessionsEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  return readSqliteBackedValue(MIRROR_SESSIONS_KEY) === "true";
-}
-
-export function setMirrorSessionsEnabled(enabled: boolean): void {
-  saveSqliteBackedValue(MIRROR_SESSIONS_KEY, enabled ? "true" : "false");
 }
 
 // ---------- 路径工具 ----------
@@ -83,38 +72,6 @@ export async function getEffectiveOutputRoot(): Promise<string> {
     // 忽略：回退空串
   }
   return "";
-}
-
-// ---------- 对话渲染 ----------
-
-function renderMessageContent(content: string): string {
-  return content.trim();
-}
-
-/** 把一场对话渲染成 Markdown：标题 + 元信息 + 按角色分节的消息。 */
-export function renderSessionMarkdown(session: ChatSession, projectTitle?: string | null): string {
-  const lines: string[] = [];
-  lines.push(`# ${session.title || "未命名对话"}`);
-  lines.push("");
-  if (projectTitle) {
-    lines.push(`> 项目：${projectTitle}`);
-    lines.push("");
-  }
-  const created = new Date(session.createdAt).toISOString().replace("T", " ").slice(0, 19);
-  const updated = new Date(session.updatedAt).toISOString().replace("T", " ").slice(0, 19);
-  lines.push(`> 创建：${created}　更新：${updated}　会话ID：${session.id}`);
-  lines.push("");
-  lines.push("---");
-  lines.push("");
-  for (const msg of session.messages) {
-    const role = msg.role === "user" ? "用户" : msg.role === "project" ? "Omni" : msg.role;
-    const body = renderMessageContent(msg.content) || "_（空）_";
-    lines.push(`## ${role}`);
-    lines.push("");
-    lines.push(body);
-    lines.push("");
-  }
-  return lines.join("\n");
 }
 
 // ---------- 会话附件快照 ----------

@@ -19,8 +19,6 @@ import {
 } from "../chat/storage";
 import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
 import { savePersistedAutomationState } from "../chat/persistence";
-import { scheduleSessionMirror, clearSessionMirrorSchedule } from "../chat/sessionMirror";
-import { isMirrorSessionsEnabled } from "../app/outputStorage";
 import type {
   ProjectMemoryRecord,
   Project,
@@ -153,15 +151,6 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         });
         return changed ? next : sessions;
       });
-
-      // 流式输出期间也防抖镜像活跃会话（开启开关时）。
-      if (isMirrorSessionsEnabled() && activeChatId) {
-        const meta = chatSessionsRef.current.find((session) => session.id === activeChatId);
-        if (meta) {
-          const project = projectsRef.current.find((p) => p.id === meta.projectId) ?? null;
-          scheduleSessionMirror({ ...meta, messages, updatedAt: now }, project);
-        }
-      }
     }, 90);
   }, [activeChatId, messages, persist]);
 
@@ -364,12 +353,6 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         setMessages(messagesForSession);
       }
 
-      // 开启「镜像对话为 Markdown」时，防抖地把这场对话写入其产出目录。
-      if (isMirrorSessionsEnabled()) {
-        const project = projectsRef.current.find((project) => project.id === updated.projectId) ?? null;
-        scheduleSessionMirror(updated, project);
-      }
-
       return nextSessions;
     });
   }, []);
@@ -558,7 +541,6 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
   const deleteChatSession = useCallback(
     async (sessionId: string): Promise<void> => {
-      clearSessionMirrorSchedule(sessionId);
       const session = chatSessions.find((item) => item.id === sessionId);
       // 破坏性操作：删除后无回收站，必须用户过目确认（与 git 工具共用同一道确认门）。
       const approved = await requestConfirmation({

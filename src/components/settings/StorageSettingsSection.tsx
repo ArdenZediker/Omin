@@ -13,8 +13,6 @@ import {
 import {
   getOutputRootSetting,
   setOutputRootSetting,
-  isMirrorSessionsEnabled,
-  setMirrorSessionsEnabled,
 } from "../../app/outputStorage";
 
 const SOURCE_LABEL: Record<DataRootSource, string> = {
@@ -62,7 +60,6 @@ export default function StorageSettingsSection() {
   const [importTarget, setImportTarget] = useState("");
 
   const [outputRoot, setOutputRoot] = useState(() => getOutputRootSetting());
-  const [mirrorMd, setMirrorMd] = useState(() => isMirrorSessionsEnabled());
 
   const refresh = useCallback(async () => {
     try {
@@ -140,12 +137,6 @@ export default function StorageSettingsSection() {
   const handleResetOutputRoot = () => {
     setOutputRootSetting("");
     setOutputRoot("");
-  };
-
-  const handleToggleMirror = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const next = event.target.checked;
-    setMirrorSessionsEnabled(next);
-    setMirrorMd(next);
   };
 
   const handleExport = async () => {
@@ -275,9 +266,9 @@ export default function StorageSettingsSection() {
       </p>
 
       <div className="space-y-4 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">生成文档与对话归档</h3>
+        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">生成文档归档</h3>
         <p className="text-xs text-slate-500 omni-settings-muted">
-          各类生成文件（文档/表格/演示/Markdown）会按「产出根目录 / 项目 / 会话」自动分子目录存放；开启镜像后，每场对话还会在同目录写一份 Markdown。
+          各类生成文件（文档/表格/演示/Markdown）会按「产出根目录 / 项目 / 会话」自动分子目录存放。
         </p>
 
         <div className="grid grid-cols-[120px_1fr] gap-4">
@@ -304,22 +295,6 @@ export default function StorageSettingsSection() {
               </button>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-start gap-3">
-          <input
-            id="mirror-sessions-md"
-            type="checkbox"
-            className="mt-1 h-4 w-4 rounded border-slate-300"
-            checked={mirrorMd}
-            onChange={handleToggleMirror}
-          />
-          <label htmlFor="mirror-sessions-md" className="text-sm text-slate-700 omni-settings-label">
-            镜像对话为 Markdown 文件
-            <span className="mt-0.5 block text-xs text-slate-500 omni-settings-muted">
-              开启后，每场对话在其产出目录写入 <code className="rounded bg-slate-100 px-1 text-slate-700">{"<会话ID>.md"}</code>，与生成文件放在一起。SQLite 仍为主存储，此文件仅作可读副本。
-            </span>
-          </label>
         </div>
       </div>
 
