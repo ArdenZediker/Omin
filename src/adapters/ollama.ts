@@ -3,6 +3,7 @@ import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk,
 import { toWireRole } from "./types";
 import { toOllamaTools, toOllamaMessage, parseOllamaToolCalls } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { resolveRequestOptions, ollamaToolChoice } from "./chatOptions";
 
 const OLLAMA_MODELS: ModelConfig[] = [
   { id: "llama3", name: "Llama 3 (Local)", provider: "ollama", maxTokens: 8192, maxOutput: 4096, supportsVision: false, supportsStreaming: true, toolCalling: true },
@@ -40,19 +41,28 @@ export class OllamaAdapter implements ModelAdapter {
     });
   }
 
+  private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+    const opts = resolveRequestOptions(request);
+    const options: Record<string, unknown> = {
+      temperature: opts.temperature ?? 0.7,
+      num_predict: opts.maxTokens,
+    };
+    // 中性工具选择 → Ollama tool_choice（仅支持 auto/required/none，Specific 回落 required）
+    const tc = ollamaToolChoice(opts.toolChoice);
+    if (tc) options.tool_choice = tc;
+    return {
+      model: request.model,
+      messages: this.buildMessages(request),
+      stream,
+      options,
+      ...(request.tools && request.tools.length > 0 ? { tools: toOllamaTools(request.tools) } : {}),
+    };
+  }
+
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const response = await postJsonWithRetry(
       `${this.getBaseUrl()}/api/chat`,
-      {
-        model: request.model,
-        messages: this.buildMessages(request),
-        stream: false,
-        options: {
-          temperature: request.temperature ?? 0.7,
-          num_predict: request.maxTokens,
-        },
-        ...(request.tools && request.tools.length > 0 ? { tools: toOllamaTools(request.tools) } : {}),
-      },
+      this.buildBody(request, false),
       this.getHeaders(),
       request.signal,
       { retryable: false }
@@ -69,16 +79,7 @@ export class OllamaAdapter implements ModelAdapter {
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
     const response = await postJsonStream(
       `${this.getBaseUrl()}/api/chat`,
-      {
-        model: request.model,
-        messages: this.buildMessages(request),
-        stream: true,
-        options: {
-          temperature: request.temperature ?? 0.7,
-          num_predict: request.maxTokens,
-        },
-        ...(request.tools && request.tools.length > 0 ? { tools: toOllamaTools(request.tools) } : {}),
-      },
+      this.buildBody(request, true),
       this.getHeaders(),
       request.signal
     );

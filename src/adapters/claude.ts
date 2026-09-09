@@ -4,6 +4,7 @@ import { mimeTypeFromDataUrl } from "./types";
 import { toWireRole } from "./types";
 import { toClaudeTools, toClaudeMessage, parseClaudeToolCalls, ClaudeStreamToolAccumulator } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { resolveRequestOptions, claudeThinkingConfig, claudeToolChoice, ToolChoice } from "./chatOptions";
 
 const CLAUDE_MODELS: ModelConfig[] = [
   { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
@@ -72,19 +73,32 @@ export class ClaudeAdapter implements ModelAdapter {
     return { system, messages };
   }
 
-  async chat(request: ChatRequest): Promise<ChatResponse> {
+  private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+    const opts = resolveRequestOptions(request);
     const { system, messages } = this.buildMessages(request);
+    const maxTokens = opts.maxTokens || 4096;
+    const body: Record<string, unknown> = {
+      model: request.model,
+      max_tokens: maxTokens,
+      system,
+      messages,
+      stream,
+    };
+    // 中性推理力度 → Anthropic thinking budget（仅 thinking 模型引擎会带；budget 必须 < max_tokens）
+    const thinking = claudeThinkingConfig(opts.reasoningEffort, maxTokens);
+    if (thinking) body.thinking = thinking;
+    // 工具选择：Claude 无原生「禁用工具」语义，None 时直接省略 tools 块（等价于不调用）
+    if (request.tools && request.tools.length > 0 && opts.toolChoice !== ToolChoice.None) {
+      body.tools = toClaudeTools(request.tools);
+      body.tool_choice = claudeToolChoice(opts.toolChoice, opts.toolChoiceName);
+    }
+    return body;
+  }
 
+  async chat(request: ChatRequest): Promise<ChatResponse> {
     const response = await postJsonWithRetry(
       `${this.getBaseUrl()}/v1/messages`,
-      {
-        model: request.model,
-        max_tokens: request.maxTokens || 4096,
-        system,
-        messages,
-        stream: false,
-        ...(request.tools && request.tools.length > 0 ? { tools: toClaudeTools(request.tools) } : {}),
-      },
+      this.buildBody(request, false),
       this.getHeaders(),
       request.signal
     );
@@ -116,18 +130,9 @@ export class ClaudeAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const { system, messages } = this.buildMessages(request);
-
     const response = await postJsonStream(
       `${this.getBaseUrl()}/v1/messages`,
-      {
-        model: request.model,
-        max_tokens: request.maxTokens || 4096,
-        system,
-        messages,
-        stream: true,
-        ...(request.tools && request.tools.length > 0 ? { tools: toClaudeTools(request.tools) } : {}),
-      },
+      this.buildBody(request, true),
       this.getHeaders(),
       request.signal
     );

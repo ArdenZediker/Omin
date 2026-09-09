@@ -3,6 +3,7 @@ import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk,
 import { mimeTypeFromDataUrl } from "./types";
 import { toGeminiTools, toGeminiContent, parseGeminiToolCalls, parseGeminiStreamToolCalls } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { resolveRequestOptions, geminiThinkingConfig, geminiToolConfig } from "./chatOptions";
 
 const GEMINI_MODELS: ModelConfig[] = [
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "gemini", maxTokens: 1048576, maxOutput: 65536, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
@@ -51,19 +52,25 @@ export class GeminiAdapter implements ModelAdapter {
   }
 
   private buildBody(request: ChatRequest): Record<string, unknown> {
+    const opts = resolveRequestOptions(request);
     const systemInstruction = request.messages.find((m) => m.role === "system");
+    const generationConfig: Record<string, unknown> = {
+      temperature: opts.temperature ?? 0.7,
+      maxOutputTokens: opts.maxTokens,
+    };
+    // 中性推理力度 → Gemini thinkingConfig（仅 thinking 模型引擎会带）
+    const thinking = geminiThinkingConfig(opts.reasoningEffort);
+    if (thinking) generationConfig.thinkingConfig = thinking;
     const body: Record<string, unknown> = {
       contents: this.buildContents(request),
-      generationConfig: {
-        temperature: request.temperature ?? 0.7,
-        maxOutputTokens: request.maxTokens,
-      },
+      generationConfig,
     };
     if (systemInstruction) {
       body.systemInstruction = { parts: [{ text: systemInstruction.content }] };
     }
     if (request.tools && request.tools.length > 0) {
       body.tools = toGeminiTools(request.tools);
+      body.toolConfig = geminiToolConfig(opts.toolChoice, opts.toolChoiceName);
     }
     return body;
   }

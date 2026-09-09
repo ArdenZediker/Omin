@@ -1,6 +1,7 @@
 // Omni - OpenAI 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, EmbeddingResponse } from "./types";
 import { toWireRole } from "./types";
+import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice } from "./chatOptions";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
@@ -56,21 +57,25 @@ export class OpenAIAdapter implements ModelAdapter {
   }
 
   private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+    const opts = resolveRequestOptions(request);
     const body: Record<string, unknown> = {
       model: request.model,
       messages: this.buildMessages(request),
       stream,
     };
     if (isOSeries(request.model)) {
-      // o 系列：只认 max_completion_tokens，无 temperature
-      body.max_completion_tokens = request.maxTokens ?? 32768;
+      // o 系列：只认 max_completion_tokens，无 temperature（但支持 reasoning_effort）
+      body.max_completion_tokens = opts.maxTokens ?? 32768;
     } else {
-      if (request.temperature !== undefined) body.temperature = request.temperature;
-      if (request.maxTokens) body.max_tokens = request.maxTokens;
+      if (opts.temperature !== undefined) body.temperature = opts.temperature;
+      if (opts.maxTokens) body.max_tokens = opts.maxTokens;
     }
+    // 中性推理力度 → OpenAI 系 reasoning_effort 字符串（仅 thinking 模型会带，由引擎决定）
+    const effort = reasoningEffortToOpenAI(opts.reasoningEffort);
+    if (effort) body.reasoning_effort = effort;
     if (request.tools && request.tools.length > 0) {
       body.tools = toOpenAITools(request.tools);
-      body.tool_choice = "auto";
+      body.tool_choice = openAIToolChoice(opts.toolChoice, opts.toolChoiceName);
     }
     return body;
   }

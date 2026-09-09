@@ -2,6 +2,7 @@
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice } from "./chatOptions";
 
 const DEEPSEEK_MODELS: ModelConfig[] = [
   { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, maxOutput: 8192, supportsVision: false, supportsStreaming: true, toolCalling: true },
@@ -34,17 +35,29 @@ export class DeepSeekAdapter implements ModelAdapter {
     return Boolean(request.tools?.length) && !String(request.model).includes("reasoner");
   }
 
+  private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+    const opts = resolveRequestOptions(request);
+    const body: Record<string, unknown> = {
+      model: request.model,
+      messages: request.messages.map((m) => toOpenAIMessage(m)),
+      temperature: opts.temperature ?? 0.7,
+      max_tokens: opts.maxTokens,
+      stream,
+    };
+    // 中性推理力度 → reasoning_effort（DeepSeek-R1 等支持；非 thinking 模型引擎不带，零影响）
+    const effort = reasoningEffortToOpenAI(opts.reasoningEffort);
+    if (effort) body.reasoning_effort = effort;
+    if (this.supportsTools(request)) {
+      body.tools = toOpenAITools(request.tools);
+      body.tool_choice = openAIToolChoice(opts.toolChoice, opts.toolChoiceName);
+    }
+    return body;
+  }
+
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const response = await postJsonWithRetry(
       `${this.getBaseUrl()}/chat/completions`,
-      {
-        model: request.model,
-        messages: request.messages.map((m) => toOpenAIMessage(m)),
-        temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens,
-        stream: false,
-        ...(this.supportsTools(request) ? { tools: toOpenAITools(request.tools) } : {}),
-      },
+      this.buildBody(request, false),
       this.getHeaders(),
       request.signal
     );
@@ -77,14 +90,7 @@ export class DeepSeekAdapter implements ModelAdapter {
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
     const response = await postJsonStream(
       `${this.getBaseUrl()}/chat/completions`,
-      {
-        model: request.model,
-        messages: request.messages.map((m) => toOpenAIMessage(m)),
-        temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens,
-        stream: true,
-        ...(this.supportsTools(request) ? { tools: toOpenAITools(request.tools) } : {}),
-      },
+      this.buildBody(request, true),
       this.getHeaders(),
       request.signal
     );

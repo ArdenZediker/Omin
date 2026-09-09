@@ -1,6 +1,7 @@
 import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
 import type { Artifact } from "../chat/artifacts";
 import type { FileDiff } from "../chat/fileDiff";
+import type { ChatOptions } from "./chatOptions";
 
 // Omni - 多模型适配层
 // 为所有 AI 模型提供统一接口
@@ -193,6 +194,8 @@ export interface ChatRequest {
   tools?: ChatToolParam[];
   /** 取消信号：透传到底层 fetch（立即中断在途请求） */
   signal?: AbortSignal;
+  /** 中性 per-call 请求旋钮（推理力度 / 工具选择 / 上限 / 温度）。优先于上面的 flat 字段；缺省时回落。 */
+  options?: ChatOptions;
 }
 
 export interface ChatResponse {
@@ -259,3 +262,20 @@ export interface CustomModelConfig {
 
 // 内置模型目录（含窗口/能力/价格元数据），见 modelCatalog.ts
 export { BUILTIN_MODELS } from "./modelCatalog";
+
+// 中性 per-call 请求选项（推理力度 / 工具选择 / 上限 / 温度）及其适配器映射助手
+export {
+  ReasoningEffort,
+  ToolChoice,
+  reasoningEffortFromConfig,
+  defaultChatOptions,
+  resolveRequestOptions,
+  reasoningEffortToOpenAI,
+  claudeThinkingConfig,
+  geminiThinkingConfig,
+  openAIToolChoice,
+  claudeToolChoice,
+  geminiToolConfig,
+  ollamaToolChoice,
+} from "./chatOptions";
+export type { ChatOptions } from "./chatOptions";

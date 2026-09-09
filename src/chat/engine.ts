@@ -1,7 +1,8 @@
 import { modelRegistry } from "../adapters/registry";
 import { pluginRegistry } from "../plugins/registry";
 import { getToolManifestById } from "../config/manifests/tools";
-import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig } from "../adapters/types";
+import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig, ChatOptions } from "../adapters/types";
+import { defaultChatOptions } from "../adapters/chatOptions";
 import type { FileDiff } from "./fileDiff";
 import { invoke } from "@tauri-apps/api/core";
 import { getUsagePreferences, loadPersonaConfig } from "./storage";
@@ -147,10 +148,9 @@ async function compactHistoryIfNeeded(options: {
     const response = await modelRegistry.chat({
       model,
       messages: [{ role: "system", content: COMPACTION_PROMPT }, ...compactSlice],
-      maxTokens: 600,
       stream: false,
       signal,
-      temperature: 0.2,
+      options: { maxTokens: 600, temperature: 0.2 },
     });
     const summary = response.content.trim();
     if (summary && summary.length > 20) {
@@ -207,8 +207,8 @@ export function partitionToolCallsForExecution(
 async function runToolLoop(options: {
   model: string;
   requestMessages: Message[];
-  temperature?: number;
-  maxTokens?: number;
+  /** 中性 per-call 请求旋钮（温度/上限/推理力度/工具选择），由引擎统一构造 */
+  chatOptions?: ChatOptions;
   tools: ChatToolParam[];
   signal?: AbortSignal;
   modelConfig?: ModelConfig;
@@ -226,7 +226,7 @@ async function runToolLoop(options: {
   toolCallResults: ChatToolCallResult[];
   steps: ChatStep[];
 }> {
-  const { model, requestMessages, temperature, maxTokens, tools, signal, modelConfig, onChunk, onReasoning, onToolStep, executeToolCall } = options;
+  const { model, requestMessages, chatOptions, tools, signal, modelConfig, onChunk, onReasoning, onToolStep, executeToolCall } = options;
   let workingMessages = [...requestMessages];
   const usage = emptyUsage();
   let reasoning = "";
@@ -251,11 +251,10 @@ async function runToolLoop(options: {
         {
           messages: workingMessages,
           model,
-          temperature,
-          maxTokens,
           stream: true,
           tools,
           signal,
+          options: chatOptions,
         },
         (chunk) => {
           if (signal?.aborted) return;
@@ -273,11 +272,10 @@ async function runToolLoop(options: {
       response = await modelRegistry.chat({
         messages: workingMessages,
         model,
-        temperature,
-        maxTokens,
         stream: false,
         tools,
         signal,
+        options: chatOptions,
       });
       // 非流式响应：把模型一次性返回的 reasoning 文本累加到本轮 reasoning（与流式分支语义对齐）
       if (response.reasoning) {
@@ -421,10 +419,9 @@ async function runToolLoop(options: {
   const response = await modelRegistry.chat({
     messages: degradeMessages,
     model,
-    temperature,
-    maxTokens,
     stream: false,
     signal,
+    options: chatOptions,
   });
   accumulateUsage(usage, response.usage, {
     promptTokens: estimatePromptTokens(degradeMessages),
@@ -501,6 +498,11 @@ export async function executeChatTurn(options: {
 
   const modelConfig = modelRegistry.getModelConfig(model);
   const preferences = getUsagePreferences();
+  // 中性 per-call 选项：由引擎统一构造（thinking 模型默认带 Medium 推理力度；非 thinking 零影响）
+  const chatOptions = defaultChatOptions(modelConfig, {
+    temperature: preferences.temperature,
+    maxOutputTokens: preferences.maxOutputTokens,
+  });
   const personaConfig = await loadPersonaConfig();
   const hasImages = messages.some((message) => (message.images?.length ?? 0) > 0);
   if (hasImages && (!modelConfig?.supportsVision || !preferences.enableVisionInput)) {
@@ -589,8 +591,7 @@ export async function executeChatTurn(options: {
     const toolResult = await runToolLoop({
       model,
       requestMessages,
-      temperature: preferences.temperature,
-      maxTokens: preferences.maxOutputTokens,
+      chatOptions,
       tools: tools!,
       signal,
       modelConfig,
@@ -630,10 +631,9 @@ export async function executeChatTurn(options: {
       {
         messages: requestMessages,
         model,
-        temperature: preferences.temperature,
-        maxTokens: preferences.maxOutputTokens,
         stream: true,
         signal,
+        options: chatOptions,
       },
       (chunk) => {
         if (signal?.aborted) {
@@ -678,10 +678,9 @@ export async function executeChatTurn(options: {
   const response = await modelRegistry.chat({
     messages: requestMessages,
     model,
-    temperature: preferences.temperature,
-    maxTokens: preferences.maxOutputTokens,
     stream: false,
     signal,
+    options: chatOptions,
   });
 
   if (signal?.aborted) {
