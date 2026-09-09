@@ -49,7 +49,6 @@ import type { ContextUsageSnapshot, ContextUsageItem } from "./ContextUsagePanel
 import {
   formatUsageLabel,
   DEFAULT_PROJECT_ID,
-  MAIN_SESSION_ID,
 } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type {
@@ -859,16 +858,10 @@ export default function MainChatView({
       `${project.title} ${project.description}`,
     ).includes(normalizedProjectSearchQuery);
   });
-  const basicProject =
-    projects.find((project) => project.kind === "basic") ?? null;
   const standaloneSessions = useMemo(
     () =>
       [...chatSessions]
-        .filter(
-          (session) =>
-            session.projectId === DEFAULT_PROJECT_ID &&
-            session.id !== MAIN_SESSION_ID,
-        )
+        .filter((session) => session.projectId === DEFAULT_PROJECT_ID)
         .sort(
           (a, b) =>
             Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
@@ -1520,35 +1513,6 @@ export default function MainChatView({
                 </div>
                 {!taskSectionCollapsed && (
                   <div className="chat-history-panel__session-list">
-                    {basicProject && (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        className={`chat-history-panel__session chat-history-panel__session--main ${activeChatId === MAIN_SESSION_ID ? "chat-history-panel__session--active" : ""}`}
-                        onClick={() => {
-                          onSelectChat(MAIN_SESSION_ID);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            onSelectChat(MAIN_SESSION_ID);
-                          }
-                        }}
-                      >
-                        <span
-                          className="chat-history-panel__session-avatar"
-                          style={{
-                            backgroundColor: "#e0f2fe",
-                            color: "#0ea5e9",
-                          }}
-                        >
-                          <Bot size={14} strokeWidth={1.9} />
-                        </span>
-                        <span className="chat-history-panel__session-title">
-                          {basicProject.title}
-                        </span>
-                      </div>
-                    )}
                     {standaloneSessions.length === 0 ? (
                       <div className="chat-history-panel__empty">
                         暂无任务，点击 + 新建

@@ -33,8 +33,8 @@ export type PersonaFieldKey =
   | "agentsMd";
 export const DEFAULT_PROJECT_ID = "project-basic-chat";
 
-/** 主会话（Omni）专属会话的固定 id；它与普通任务会话并列挂在
- *  DEFAULT_PROJECT_ID 下，但不可删除，且在侧栏中作为固定项常驻。 */
+/** 主会话（Omni）专属会话的固定 id；历史兼容用途，新逻辑不再自动创建、
+ *  不再常驻侧栏，且与普通任务会话一样可删除。 */
 export const MAIN_SESSION_ID = "session-omni-main";
 export const DEFAULT_PROJECT_TOOL_IDS = [
   "search_sessions",
@@ -244,7 +244,8 @@ export function createChatSession(messages: Message[] = [], projectId = DEFAULT_
   };
 }
 
-/** 构造主会话（Omni）专属会话：固定 id，初始标题为「Omni」。 */
+/** 构造主会话（Omni）专属会话：固定 id，初始标题为「Omni」。
+ * @deprecated 主会话不再常驻，新逻辑不再自动创建。 */
 export function createMainSession(): ChatSession {
   const now = Date.now();
   return {
