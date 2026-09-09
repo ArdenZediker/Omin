@@ -343,6 +343,63 @@ describe("compactHistoryIfNeeded 三级阶梯（stub → truncate → summarize�
   });
 });
 
+describe("compactHistoryIfNeeded（TokenBudget 模式：零 LLM 滑动窗口重置）", () => {
+  const tinyModel: ModelConfig = {
+    id: "tiny",
+    name: "Tiny",
+    provider: "openai",
+    maxTokens: 100,
+    supportsVision: false,
+    supportsStreaming: false,
+    toolCalling: true,
+  };
+
+  beforeEach(() => vi.restoreAllMocks());
+
+  function buildLongHistory(): Message[] {
+    return [
+      { role: "system", content: "s" },
+      { role: "user", content: "很长的需求问题描述".repeat(40) },
+      { role: "assistant", content: "很长的助手回复内容".repeat(40) },
+      { role: "user", content: "追问" },
+    ];
+  }
+
+  it("token_budget 模式丢弃最旧历史、保近端窗口，且零 LLM 调用", async () => {
+    const chatSpy = vi.spyOn(modelRegistry, "chat").mockRejectedValue(new Error("不应被调用"));
+    const res = await compactHistoryIfNeeded({
+      model: "tiny",
+      requestMessages: buildLongHistory(),
+      modelConfig: tinyModel,
+      compactionStrategy: "token_budget",
+    });
+    // 关键：绝不应召 LLM 摘要
+    expect(chatSpy).not.toHaveBeenCalled();
+    // 最旧的两轮（长 user + 长 assistant）被丢弃，仅保留 system + 近端追问
+    expect(res.compaction?.fallback).toBe(true);
+    expect(res.compaction?.removedCount).toBe(2);
+    expect(res.messages.some((m) => m.content.includes("很长的需求问题描述"))).toBe(false);
+    // 系统前缀与最近追问仍在
+    expect(res.messages[0].role).toBe("system");
+    expect(res.messages.some((m) => m.content === "追问")).toBe(true);
+    expect(estimatePromptTokens(res.messages)).toBeLessThanOrEqual(Math.floor(100 * 0.75));
+  });
+
+  it("summarize 模式（默认）在同口径下仍会召 LLM 摘要，对比验证策略生效", async () => {
+    const chatSpy = vi
+      .spyOn(modelRegistry, "chat")
+      .mockResolvedValue({ content: "很久以前用户提了一个很长很长的需求，涉及多个模块的改造与联调", model: "tiny" } as ChatResponse);
+    const res = await compactHistoryIfNeeded({
+      model: "tiny",
+      requestMessages: buildLongHistory(),
+      modelConfig: tinyModel,
+      compactionStrategy: "summarize",
+    });
+    expect(chatSpy).toHaveBeenCalled();
+    expect(res.messages.some((m) => m.content.startsWith("【历史对话摘要】"))).toBe(true);
+  });
+});
+
 describe("compactHistoryIfNeeded（改造4：剪枝 + 无收益守卫）", () => {
   // 用小窗口模型把预算压到 75 token，便于稳定触发压缩
   const tinyModel: ModelConfig = {

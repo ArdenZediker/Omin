@@ -3,6 +3,7 @@ import { pluginRegistry } from "../plugins/registry";
 import { getToolManifestById } from "../config/manifests/tools";
 import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig, ChatOptions } from "../adapters/types";
 import { defaultChatOptions, resolveContextWindow } from "../adapters/chatOptions";
+import type { CompactionStrategy } from "../adapters/chatOptions";
 import type { FileDiff } from "./fileDiff";
 import { invoke } from "@tauri-apps/api/core";
 import { getUsagePreferences, loadPersonaConfig } from "./storage";
@@ -239,6 +240,31 @@ async function compactOnce(options: {
 }
 
 /**
+ * TokenBudget 压缩：直接丢弃最旧历史、只保留「系统前缀 + 近端滑动窗口」，**零 LLM 调用**。
+ * 对齐 codex-main 的 TokenBudget「开新上下文窗口」思路——成本敏感时跳过摘要，用上下文损失换算力。
+ * 滑动窗口从末尾向前累加消息，直到逼近预算上限；始终保留至少最后一条消息（避免清空），
+ * 因此当「仅剩 system + 一条仍超预算」时已无可砍空间，调用方据此停止循环。
+ */
+function applyTokenBudgetReset(messages: Message[], budget: number): { messages: Message[]; removedCount: number } {
+  const leadingEnd = messages.findIndex((m) => m.role !== "system");
+  const leading = leadingEnd < 0 ? [] : messages.slice(0, leadingEnd);
+  const rest = leadingEnd < 0 ? messages : messages.slice(leadingEnd);
+  const kept: Message[] = [];
+  let used = 0;
+  for (let j = rest.length - 1; j >= 0; j--) {
+    const tokens = estimatePromptTokens([rest[j]]);
+    // 至少保留最后一条；其余需能在预算内才纳入窗口
+    if (kept.length === 0 || used + tokens <= budget) {
+      kept.unshift(rest[j]);
+      used += tokens;
+    } else {
+      break;
+    }
+  }
+  return { messages: [...leading, ...kept], removedCount: rest.length - kept.length };
+}
+
+/**
  * 上下文预算压缩（带溢出重试）：超窗时循环压缩最旧部分，直到进入预算或无可压缩区间。
  * 单次压缩见 `compactOnce`；本函数在「压一次仍超预算」的极端长对话下继续升级压缩，
  * 而非压一次就放行（避免溢出窗口导致模型侧截断/报错）。guard 防极端死循环。
@@ -248,6 +274,8 @@ export async function compactHistoryIfNeeded(options: {
   requestMessages: Message[];
   modelConfig?: ModelConfig;
   signal?: AbortSignal;
+  /** 压缩策略；缺省 summarize（LLM 摘要）。token_budget 走零 LLM 滑动窗口重置。 */
+  compactionStrategy?: CompactionStrategy;
 }): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean; cacheEpoch?: number } }> {
   let current = options.requestMessages;
   let lastCompaction: { removedCount: number; fallback: boolean; cacheEpoch?: number } | undefined;
@@ -282,7 +310,20 @@ export async function compactHistoryIfNeeded(options: {
       lastCompaction = { removedCount: 0, fallback: false, cacheEpoch };
       continue;
     }
-    // 第 3 档 summarize：LLM 摘要最旧可压缩区间（含无收益守卫 + 兜底丢最旧一轮）
+    // 第 3 档：据策略压缩最旧区间。
+    // token_budget：零 LLM 滑动窗口重置（直接丢最旧历史，保近端）。
+    if (options.compactionStrategy === "token_budget") {
+      const reset = applyTokenBudgetReset(current, budget);
+      // 无可砍空间（仅剩 system + 一条仍超预算）→ 停止避免死循环
+      if (reset.removedCount === 0) {
+        return { messages: current, compaction: lastCompaction };
+      }
+      cacheEpoch++;
+      current = reset.messages;
+      lastCompaction = { removedCount: reset.removedCount, fallback: true, cacheEpoch };
+      continue;
+    }
+    // summarize（默认）：LLM 摘要最旧可压缩区间（含无收益守卫 + 兜底丢最旧一轮）
     const result = await compactOnce({ ...options, requestMessages: current });
     // 无进展（消息数未减）说明已无可压缩区间，停止避免死循环
     if (result.messages.length >= current.length) {
@@ -547,7 +588,7 @@ async function runToolLoop(options: {
       return pruned.slice(cs, pruned.length - 1 - lu).length >= 2;
     })();
     const precheck = hasCompletableHistory
-      ? await compactHistoryIfNeeded({ model, requestMessages: pruned, modelConfig, signal })
+      ? await compactHistoryIfNeeded({ model, requestMessages: pruned, modelConfig, signal, compactionStrategy: chatOptions?.compactionStrategy })
       : { messages: pruned };
     if (precheck.messages.length < workingMessages.length) {
       workingMessages = precheck.messages;
@@ -668,6 +709,8 @@ export async function executeChatTurn(options: {
   const chatOptions = defaultChatOptions(modelConfig, {
     temperature: preferences.temperature,
     maxOutputTokens: preferences.maxOutputTokens,
+  }, {
+    compactionStrategy: preferences.costSaverCompaction ? "token_budget" : "summarize",
   });
   const personaConfig = await loadPersonaConfig();
   const hasImages = messages.some((message) => (message.images?.length ?? 0) > 0);
@@ -735,7 +778,7 @@ export async function executeChatTurn(options: {
 
   // 上下文预算：超窗压缩（不重复压缩，一次足够）
   if (requestMessages.length > 4) {
-    const compacted = await compactHistoryIfNeeded({ model, requestMessages, modelConfig, signal });
+    const compacted = await compactHistoryIfNeeded({ model, requestMessages, modelConfig, signal, compactionStrategy: chatOptions?.compactionStrategy });
     requestMessages = compacted.messages;
     if (compacted.compaction) {
       emitEngineAction({

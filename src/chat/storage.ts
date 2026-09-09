@@ -64,6 +64,7 @@ export const DEFAULT_USAGE_PREFERENCES: ChatUsagePreferences = {
   enableVisionInput: true,
   temperature: 0.7,
   maxOutputTokens: 4096,
+  costSaverCompaction: false,
 };
 
 export const DEFAULT_PERSONA_CONFIG: PersonaConfig = {

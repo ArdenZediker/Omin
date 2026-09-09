@@ -8,6 +8,11 @@ export type ChatUsagePreferences = {
   enableVisionInput: boolean;
   temperature: number;
   maxOutputTokens: number;
+  /**
+   * 省算力压缩：开启后上下文溢出时跳过 LLM 摘要、直接丢弃最旧历史（TokenBudget 滑动窗口），
+   * 用上下文损失换算力。缺省 false（保真摘要）。
+   */
+  costSaverCompaction?: boolean;
 };
 
 export type PersonaStyle =

@@ -92,7 +92,8 @@ function areUsagePreferencesEqual(a: ChatUsagePreferences, b: ChatUsagePreferenc
     a.enableStreaming === b.enableStreaming &&
     a.enableVisionInput === b.enableVisionInput &&
     a.temperature === b.temperature &&
-    a.maxOutputTokens === b.maxOutputTokens
+    a.maxOutputTokens === b.maxOutputTokens &&
+    Boolean(a.costSaverCompaction) === Boolean(b.costSaverCompaction)
   );
 }
 
@@ -107,6 +108,7 @@ function normalizeUsagePreferences(prefs: ChatUsagePreferences): ChatUsagePrefer
     enableVisionInput: prefs.enableVisionInput,
     temperature: Math.min(2, Math.max(0, temperature)),
     maxOutputTokens: Math.min(200000, Math.max(1, maxOutputTokens)),
+    costSaverCompaction: Boolean(prefs.costSaverCompaction),
   };
 }
 

@@ -79,7 +79,17 @@ export interface ChatOptions {
   toolChoice?: ToolChoice;
   /** 当 toolChoice 为 Specific 时，要求模型调用的工具名 */
   toolChoiceName?: string;
+  /**
+   * 上下文溢出时的压缩策略：
+   * - `summarize`（默认）：对最旧区间召 LLM 摘要（保真、耗 token）。
+   * - `token_budget`：直接丢弃最旧历史、只保留近端滑动窗口（零 LLM 调用、最省算力，
+   *   代价是丢失远端上下文，对齐 codex-main 的 TokenBudget「开新上下文窗口」思路）。
+   */
+  compactionStrategy?: CompactionStrategy;
 }
+
+/** 上下文压缩策略。 */
+export type CompactionStrategy = "summarize" | "token_budget";
 
 /**
  * 合并中性选项与遗留 flat 字段：options 优先，回退到 ChatRequest 上的 temperature/maxTokens。
@@ -150,7 +160,7 @@ export function resolveContextWindow(model?: {
 export function defaultChatOptions(
   model: ModelConfig | undefined,
   prefs: { temperature: number; maxOutputTokens: number },
-  explicit?: { reasoningEffort?: ReasoningEffort; toolChoice?: ToolChoice; toolChoiceName?: string }
+  explicit?: { reasoningEffort?: ReasoningEffort; toolChoice?: ToolChoice; toolChoiceName?: string; compactionStrategy?: CompactionStrategy }
 ): ChatOptions {
   const reasoningEffort =
     explicit?.reasoningEffort ?? (model?.thinking ? ReasoningEffort.Medium : undefined);
@@ -160,6 +170,7 @@ export function defaultChatOptions(
     reasoningEffort,
     toolChoice: explicit?.toolChoice ?? ToolChoice.Auto,
     toolChoiceName: explicit?.toolChoiceName,
+    compactionStrategy: explicit?.compactionStrategy,
   };
 }
 

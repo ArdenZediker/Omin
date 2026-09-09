@@ -230,6 +230,13 @@ export default function ModelSettingsSection({
                 </div>
                 <OmniSwitch checked={prefs.enableVisionInput} onChange={(checked) => onSetPrefs({ ...prefs, enableVisionInput: checked })} ariaLabel="允许图片" />
               </label>
+              <label className="omni-model-prefs-toggle">
+                <div>
+                  <div className="omni-model-prefs-label">省算力压缩</div>
+                  <div className="omni-model-prefs-hint">上下文溢出时跳过 LLM 摘要、直接丢弃最旧历史（TokenBudget），更省 token、代价是丢失远端上下文。</div>
+                </div>
+                <OmniSwitch checked={prefs.costSaverCompaction ?? false} onChange={(checked) => onSetPrefs({ ...prefs, costSaverCompaction: checked })} ariaLabel="省算力压缩" />
+              </label>
               <label className="omni-model-prefs-field">
                 <span className="omni-model-prefs-label">采样温度</span>
                 <input
