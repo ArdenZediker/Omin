@@ -3,8 +3,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::collections::HashMap;
 use std::fs;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::current_timestamp_ms;
 
@@ -117,12 +120,53 @@ struct DbChatSession {
 /// 全局锁串行化所有会话文件读写，规避多窗口并发写竞争。
 static SESSION_FILE_LOCK: Mutex<()> = Mutex::new(());
 
+/// 会话 JSONL 文件格式版本。升级消息 schema 时递增，并在 read 侧做版本校验/迁移。
+const SESSION_FORMAT_VERSION: u32 = 1;
+/// 会话文件头魔数键：首行 JSON 含此键即视为格式头（而非消息）。
+const SESSION_HEADER_MAGIC: &str = "_omni_session_format";
+/// 跨进程写锁文件路径（在 sessions_root 下），通过 create_new 原子创建实现咨询锁。
+/// 与进程内 Mutex 配合，确保多实例并发写不会撕裂文件。
+const SESSION_LEASE_FILE: &str = ".omni_sessions.lock";
+/// 获取跨进程写锁的最长等待时间。
+const SESSION_LEASE_TIMEOUT: Duration = Duration::from_secs(10);
+
 fn session_file_path(root: &Path, id: &str) -> PathBuf {
     root.join(id).join("session.jsonl")
 }
 
+/// 构造会话文件头行（JSONL 首行），记录格式版本与压缩方式，供后续迁移识别。
+fn build_session_header() -> String {
+    let mut header = serde_json::Map::new();
+    header.insert(SESSION_HEADER_MAGIC.to_string(), JsonValue::from(SESSION_FORMAT_VERSION));
+    header.insert("compression".to_string(), JsonValue::from("none"));
+    JsonValue::Object(header).to_string()
+}
+
+/// 跨进程写锁：在 sessions_root 下原子创建 .omni_sessions.lock。
+/// 创建成功即持有锁；超时或异常返回错误。调用方须在临界区结束后删除该文件释放锁。
+fn acquire_cross_process_lease(root: &Path) -> Result<fs::File, String> {
+    let lock_path = root.join(SESSION_LEASE_FILE);
+    let deadline = Instant::now() + SESSION_LEASE_TIMEOUT;
+    loop {
+        match OpenOptions::new().write(true).create_new(true).open(&lock_path) {
+            Ok(file) => return Ok(file),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                if Instant::now() >= deadline {
+                    return Err(format!("获取会话写锁超时: {}", lock_path.display()));
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(err) => {
+                return Err(format!("创建会话写锁失败 {}: {}", lock_path.display(), err));
+            }
+        }
+    }
+}
+
 fn write_session_messages(root: &Path, id: &str, messages: &JsonValue) -> Result<(), String> {
     let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // 进程间互斥：多实例并发写时串行化，避免文件撕裂。
+    let _lease = acquire_cross_process_lease(root)?;
     let dir = root.join(id);
     fs::create_dir_all(&dir).map_err(|err| format!("创建会话目录失败 {}: {}", dir.display(), err))?;
     let target = dir.join("session.jsonl");
@@ -133,6 +177,9 @@ fn write_session_messages(root: &Path, id: &str, messages: &JsonValue) -> Result
         other => vec![other],
     };
     let mut content = String::new();
+    // 首行为格式头，便于后续版本迁移识别；其余每行一个消息。
+    content.push_str(&build_session_header());
+    content.push('\n');
     for item in array {
         let line = serde_json::to_string(item).map_err(|err| err.to_string())?;
         content.push_str(&line);
@@ -142,6 +189,8 @@ fn write_session_messages(root: &Path, id: &str, messages: &JsonValue) -> Result
         .map_err(|err| format!("写入会话临时文件失败 {}: {}", tmp.display(), err))?;
     fs::rename(&tmp, &target)
         .map_err(|err| format!("重命名会话文件失败 {}: {}", target.display(), err))?;
+    // 释放跨进程写锁（仅本进程持有，Mutex 已保证唯一进入者）。
+    let _ = fs::remove_file(root.join(SESSION_LEASE_FILE));
     Ok(())
 }
 
@@ -154,10 +203,28 @@ fn read_session_messages(root: &Path, id: &str) -> Result<Option<Vec<JsonValue>>
     let raw = fs::read_to_string(&file)
         .map_err(|err| format!("读取会话文件失败 {}: {}", file.display(), err))?;
     let mut out: Vec<JsonValue> = Vec::new();
+    let mut first_line = true;
     for (index, line) in raw.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
             continue;
+        }
+        if first_line {
+            first_line = false;
+            // 首行可能是格式头：含魔数键则校验版本后跳过；否则视为无头旧文件，按消息解析。
+            if let Ok(JsonValue::Object(map)) = serde_json::from_str::<JsonValue>(line) {
+                if let Some(JsonValue::Number(version)) = map.get(SESSION_HEADER_MAGIC) {
+                    let v = version.as_u64().unwrap_or(0) as u32;
+                    if v > SESSION_FORMAT_VERSION {
+                        return Err(format!(
+                            "会话 {} 的文件格式版本 {} 高于当前支持的 {}，需迁移",
+                            id, v, SESSION_FORMAT_VERSION
+                        ));
+                    }
+                    continue; // 跳过头行，不计入消息
+                }
+            }
+            // 无头旧文件：首行即消息，落到下方解析
         }
         match serde_json::from_str::<JsonValue>(line) {
             Ok(value) => out.push(value),
@@ -966,6 +1033,42 @@ mod session_file_tests {
             .expect("应读到");
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0]["role"], "system");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_includes_format_header_and_read_skips_it() {
+        let root = temp_root();
+        let msgs = sample_messages();
+        write_session_messages(&root, "s5", &msgs).expect("写入应成功");
+
+        // 首行应为格式头，含魔数键与版本号
+        let raw = fs::read_to_string(root.join("s5").join("session.jsonl")).expect("读原文件");
+        let first_line = raw.lines().next().expect("应有首行");
+        let header: serde_json::Map<String, JsonValue> =
+            serde_json::from_str(first_line).expect("头行应为合法 JSON");
+        assert_eq!(header.get("_omni_session_format").and_then(|v| v.as_u64()), Some(1));
+
+        // 读取结果只含消息、不含头行
+        let loaded = read_session_messages(&root, "s5")
+            .expect("读取应成功")
+            .expect("应读到消息");
+        assert_eq!(&loaded, msgs.as_array().unwrap());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_rejects_header_with_future_format_version() {
+        let root = temp_root();
+        let dir = root.join("s6");
+        fs::create_dir_all(&dir).expect("创建目录");
+        let mut f = fs::File::create(dir.join("session.jsonl")).expect("创建文件");
+        writeln!(f, "{{\"_omni_session_format\":999,\"compression\":\"none\"}}").expect("写头行");
+        writeln!(f, "{{\"role\":\"user\",\"content\":\"x\"}}").expect("写消息行");
+        drop(f);
+
+        let result = read_session_messages(&root, "s6");
+        assert!(result.is_err(), "未来版本号应被拒绝");
         let _ = fs::remove_dir_all(&root);
     }
 
