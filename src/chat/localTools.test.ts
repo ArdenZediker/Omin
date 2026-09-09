@@ -201,7 +201,7 @@ describe("localTools", () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke)
       .mockResolvedValueOnce(false) // path_exists：目标文件不存在
-      .mockResolvedValueOnce({ path: "D:/proj/周报.docx", size: 2048 }); // export_docx 结果
+      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/周报.docx", size: 2048 }); // export_docx 结果
 
     const runtime = createRuntime({
       activeProject: createProject({ workspacePath: "D:/proj", allowedToolIds: ["export_docx"] }),
@@ -213,10 +213,10 @@ describe("localTools", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("D:/proj/周报.docx");
+    expect(result?.outputText).toContain("D:/proj/Omni-导出");
     expect(invoke).toHaveBeenCalledWith(
       "export_docx",
-      expect.objectContaining({ path: "D:/proj/测试助手/当前会话_session-/周报.docx" })
+      expect.objectContaining({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/周报.docx" })
     );
   });
 
@@ -225,7 +225,7 @@ describe("localTools", () => {
     vi.mocked(invoke)
       .mockResolvedValueOnce(true) // path_exists：周报.docx 已存在
       .mockResolvedValueOnce(false) // path_exists：周报-1.docx 不存在
-      .mockResolvedValueOnce({ path: "D:/proj/周报-1.docx", size: 1024 }); // export_docx 结果
+      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/周报-1.docx", size: 1024 }); // export_docx 结果
 
     const runtime = createRuntime({
       activeProject: createProject({ workspacePath: "D:/proj", allowedToolIds: ["export_docx"] }),
@@ -237,10 +237,10 @@ describe("localTools", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("D:/proj/周报-1.docx");
+    expect(result?.outputText).toContain("D:/proj/Omni-导出");
     expect(invoke).toHaveBeenCalledWith(
       "export_docx",
-      expect.objectContaining({ path: "D:/proj/测试助手/当前会话_session-/周报-1.docx" })
+      expect.objectContaining({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/周报-1.docx" })
     );
   });
 
@@ -248,7 +248,7 @@ describe("localTools", () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke)
       .mockResolvedValueOnce(false) // path_exists：目标文件不存在
-      .mockResolvedValueOnce({ path: "D:/proj/我的笔记.md", size: 30 }); // write_text_file 结果
+      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/我的笔记.md", size: 30 }); // write_text_file 结果
 
     const runtime = createRuntime({
       activeProject: createProject({ workspacePath: "D:/proj", allowedToolIds: ["export_md"] }),
@@ -260,27 +260,26 @@ describe("localTools", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("D:/proj/我的笔记.md");
+    expect(result?.outputText).toContain("D:/proj/Omni-导出");
     expect(invoke).toHaveBeenCalledWith(
       "write_text_file",
-      expect.objectContaining({ path: "D:/proj/测试助手/当前会话_session-/我的笔记.md" })
+      expect.objectContaining({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/我的笔记.md" })
     );
     const callArgs = vi.mocked(invoke).mock.calls.find((c) => c[0] === "write_text_file")?.[1] as { content?: string };
     expect(callArgs?.content).toContain("这是正文内容。");
     expect(result?.artifact?.type).toBe("file");
-    expect(result?.artifact?.path).toBe("D:/proj/我的笔记.md");
+    expect(result?.artifact?.path).toBe("D:/proj/Omni-导出/测试助手/当前会话_session-/我的笔记.md");
     expect(result?.artifact?.content).toContain("我的笔记");
   });
 
-  it("导出工具非项目会话时落到文档目录/Omni 兜底目录", async () => {
+  it("导出工具落到工作空间下的 Omni-导出 子目录", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke)
-      .mockResolvedValueOnce("C:/Users/Test/Documents") // default_artifact_dir
-      .mockResolvedValueOnce(false) // path_exists
-      .mockResolvedValueOnce({ path: "C:/Users/Test/Documents/Omni/数据.xlsx", size: 512 }); // export_xlsx 结果
+      .mockResolvedValueOnce(false) // path_exists：目标文件不存在
+      .mockResolvedValueOnce({ path: "C:/Users/Test/Documents/Omni-导出/数据.xlsx", size: 512 }); // export_xlsx 结果
 
     const runtime = createRuntime({
-      activeProject: createProject({ workspacePath: "", allowedToolIds: ["export_xlsx"] }),
+      activeProject: createProject({ workspacePath: "C:/Users/Test/Documents", allowedToolIds: ["export_xlsx"] }),
     });
 
     const result = await executeLocalTool(runtime, {
@@ -289,7 +288,7 @@ describe("localTools", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("C:/Users/Test/Documents/Omni/数据.xlsx");
+    expect(result?.outputText).toContain("C:/Users/Test/Documents/Omni-导出/数据.xlsx");
   });
 });
 

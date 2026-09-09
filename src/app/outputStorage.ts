@@ -3,6 +3,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
+import { loadBasicSettings } from "../app/settingsStore";
+import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
+import { getFallbackWorkspacePath } from "../chat/storage";
 import type { ChatAttachment } from "../adapters/types";
 
 export const OUTPUT_ROOT_KEY = "omni_output_root_v1";
@@ -59,18 +62,27 @@ export function buildSessionOutputDir(
 }
 
 /**
- * 产出根目录：优先用用户设置的绝对路径；否则回退系统文档目录/Omni（与既有默认行为一致）。
- * 返回空串表示无法确定（如非 Tauri 环境）。
+ * 解析「有效产出根目录」：导出文档/表格/演示/Markdown 与附件快照的落地根。
+ *
+ * 优先级（对齐 codex「永远在工作空间内」的极简哲学，避免再堆一个独立「产出目录」设置）：
+ *  1. 用户主动设置的「固定归档目录」覆盖（仅当用户在设置里勾选并选择后才存在）；
+ *  2. 否则落到「有效工作空间」下的 `Omni-导出` 子目录：
+ *     - 全局默认工作空间（BasicSettings.defaultWorkspacePath）；
+ *     - 再回退兜底目录（<data_root>/fallback-workspace，仿 codex ~/.codex）。
+ *
+ * 这样未绑定工作空间的会话，其生成物也落在明确、可预期的目录，而非散到 ~/Documents。
+ * 返回空串表示无法解析（如非 Tauri 环境）。
  */
 export async function getEffectiveOutputRoot(): Promise<string> {
-  const setting = getOutputRootSetting();
-  if (setting && isAbsolutePath(setting)) return setting;
-  try {
-    const dir = await invoke<string>("default_artifact_dir");
-    if (typeof dir === "string" && dir.trim()) return joinPath(dir.trim(), "Omni");
-  } catch {
-    // 忽略：回退空串
-  }
+  // ① 用户显式覆盖：想把导出固定归档到工作空间之外时才需要
+  const override = getOutputRootSetting();
+  if (override && isAbsolutePath(override)) return override;
+
+  // ② 默认：有效工作空间 / Omni-导出
+  const defaultWs =
+    loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).defaultWorkspacePath?.trim() ?? "";
+  const base = defaultWs || getFallbackWorkspacePath();
+  if (base) return joinPath(base, "Omni-导出");
   return "";
 }
 

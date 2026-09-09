@@ -1,9 +1,10 @@
-import { useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useState, useEffect, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { BasicSettings } from "../../app/types";
 import type { ThemeMode } from "../../app/settings";
 import { modelRegistry } from "../../adapters/registry";
+import { getDataRootInfo } from "../../app/storageApi";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
 import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
@@ -79,6 +80,22 @@ export default function BasicSettingsSection({
 }: Props) {
   // Shell 可用性检测结果（点「检测可用性」后展示）。
   const [shellProbe, setShellProbe] = useState<{ ok: boolean; output: string; probing: boolean } | null>(null);
+
+  // 兜底工作目录提示：设置页打开时按需拉取当前数据根，拼出 fallback-workspace 真实路径。
+  const [fallbackWorkspaceHint, setFallbackWorkspaceHint] = useState("");
+  useEffect(() => {
+    let active = true;
+    getDataRootInfo()
+      .then((info) => {
+        if (!active || !info?.path) return;
+        const base = info.path.endsWith("/") || info.path.endsWith("\\") ? info.path : `${info.path}/`;
+        setFallbackWorkspaceHint(`${base}fallback-workspace`);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const probeShell = async () => {
     const path = basicSettings.shellPath.trim();
@@ -290,7 +307,13 @@ export default function BasicSettingsSection({
           </div>
         </div>
         <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
-          未单独配置工作目录的项目与任务会话，自动共用此目录作为工作空间；在项目设置里单独填了「工作目录」的会以项目为准。
+          未单独配置工作目录的项目与任务会话，自动共用此目录作为工作空间；在项目设置里单独填了「工作目录」的会以项目为准。留空时，未绑定会话将使用兜底工作目录：
+          {fallbackWorkspaceHint ? (
+            <code className="ml-1 rounded bg-slate-100 px-1 py-0.5 text-[11px] text-slate-600">{fallbackWorkspaceHint}</code>
+          ) : (
+            <span className="ml-1">（应用数据目录内的 fallback-workspace）</span>
+          )}
+          。
         </p>
       </div>
 

@@ -10,15 +10,25 @@ import {
 } from "./outputStorage";
 
 const mockedInvoke = vi.hoisted(() => vi.fn());
+const fallbackState = vi.hoisted(() => ({ path: "" }));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: mockedInvoke,
 }));
 
 /** 让 getEffectiveOutputRoot 拿到固定的产出根：屏蔽 sqlite 设置，只走 invoke 回退。 */
-vi.mock("./sqliteStorage", () => ({
-  readSqliteBackedValue: () => null,
-  saveSqliteBackedValue: () => {},
+vi.mock("./sqliteStorage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./sqliteStorage")>();
+  return {
+    ...actual,
+    readSqliteBackedValue: () => null,
+    saveSqliteBackedValue: () => {},
+  };
+});
+
+/** getEffectiveOutputRoot 的兜底目录来源（默认工作空间为空时回退到这里）。 */
+vi.mock("../chat/storage", () => ({
+  getFallbackWorkspacePath: () => fallbackState.path,
 }));
 
 describe("outputStorage 路径工具", () => {
@@ -56,6 +66,7 @@ describe("outputStorage 路径工具", () => {
 describe("会话附件快照", () => {
   beforeEach(() => {
     mockedInvoke.mockReset();
+    fallbackState.path = "";
   });
 
   it("sanitizeAttachmentFileName 去掉路径分隔符与非法字符但保留扩展名", () => {
@@ -72,11 +83,11 @@ describe("会话附件快照", () => {
   });
 
   it("snapshotAttachments 复制成功后把路径改写成快照路径并回填真实大小", async () => {
+    fallbackState.path = "C:/Docs";
     mockedInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "default_artifact_dir") return Promise.resolve("C:/Docs");
       if (cmd === "copy_file_to_store") {
         return Promise.resolve({
-          path: "C:/Docs/Omni/我的项目/sessions/sess-123/attachments/report.md",
+          path: "C:/Docs/Omni-导出/我的项目/sessions/sess-123/attachments/report.md",
           size: 2048,
         });
       }
@@ -101,8 +112,8 @@ describe("会话附件快照", () => {
   });
 
   it("复制失败时回退原始路径，不阻断发送", async () => {
+    fallbackState.path = "C:/Docs";
     mockedInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "default_artifact_dir") return Promise.resolve("C:/Docs");
       if (cmd === "copy_file_to_store") return Promise.reject(new Error("磁盘已满"));
       return Promise.reject(new Error(`unexpected command: ${cmd}`));
     });

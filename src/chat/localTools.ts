@@ -831,7 +831,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
   /** 解析产出根目录：项目会话优先用项目工作区；否则用「产出根目录」设置（未设则回退系统文档/Omni）。 */
   const resolveOutputBase = async (workspacePath: string): Promise<string> => {
-    if (workspacePath) return workspacePath;
+    // 有工作空间时，导出落到其下的 Omni-导出 子目录，避免生成物散落在工作区根目录。
+    if (workspacePath) return joinPath(workspacePath, "Omni-导出");
     return getEffectiveOutputRoot();
   };
 
@@ -871,8 +872,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       return ensureExtension(pathArg, ext);
     }
 
-    // 目录：项目会话优先用项目工作区；否则用「产出根目录」设置（未设则回退系统文档/Omni）。
-    // 再自动按「项目 / 会话」分子目录，避免不同会话产物平铺混在一起。
+    // 目录：有工作空间时落到「工作空间/Omni-导出」；无工作空间（无活动项目）时回退到
+    // 「固定归档目录」覆盖或默认工作空间/兜底目录下的 Omni-导出。再按「项目 / 会话」分子目录，
+    // 避免不同会话产物平铺混在一起。
     const base = await resolveOutputBase(workspacePath);
     let dir = base;
     if (base) {

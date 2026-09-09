@@ -60,6 +60,8 @@ export default function StorageSettingsSection() {
   const [importTarget, setImportTarget] = useState("");
 
   const [outputRoot, setOutputRoot] = useState(() => getOutputRootSetting());
+  // 产出根目录默认不暴露：导出固定落到工作空间下的 Omni-导出。仅当用户主动勾选覆盖时才展开输入框。
+  const [useOutputOverride, setUseOutputOverride] = useState(() => getOutputRootSetting() !== "");
 
   const refresh = useCallback(async () => {
     try {
@@ -134,11 +136,6 @@ export default function StorageSettingsSection() {
     }
   };
 
-  const handleResetOutputRoot = () => {
-    setOutputRootSetting("");
-    setOutputRoot("");
-  };
-
   const handleExport = async () => {
     const target = await openDialog({
       save: true,
@@ -205,97 +202,128 @@ export default function StorageSettingsSection() {
   return (
     <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
       <div className="border-b border-slate-100 pb-3">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">数据存储位置</h3>
+        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">生成文档归档</h3>
         <p className="mt-1 text-xs text-slate-500 omni-settings-muted">
-          数据库与知识库文件统一存放。可改为自定义目录、跟随软件便携存放，或导出/导入整库备份。
+          各类生成文件（文档/表格/演示/Markdown）默认存放到「当前工作空间下的 <code className="rounded bg-slate-100 px-1 text-slate-700">Omni-导出</code> 文件夹」，并按「项目 / 会话」自动分子目录。通常无需设置。
         </p>
       </div>
 
-      <StatusBanner message={message} />
-
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-3">
-          <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-              info ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-500"
-            }`}
-          >
-            {loading ? "读取中…" : info ? SOURCE_LABEL[info.source] : "未知"}
-          </span>
-          {info && !info.writable && (
-            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-700">目录不可写</span>
-          )}
-          {info?.fallbackReason && (
-            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-700">已回退</span>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="text-xs text-slate-400">正在读取当前数据目录…</div>
-        ) : info ? (
+      <div className="space-y-3">
+        <div className="grid grid-cols-[120px_1fr] gap-4">
+          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">归档位置</label>
           <div className="space-y-2">
-            <InfoRow label="数据根目录" value={info.path} />
-            <InfoRow label="数据库" value={info.databasePath} />
-            <InfoRow label="知识库" value={info.knowledgePath} />
-            {info.fallbackReason && (
-              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-200">
-                {info.fallbackReason}
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={useOutputOverride}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  if (!next) {
+                    setOutputRootSetting("");
+                    setOutputRoot("");
+                  }
+                  setUseOutputOverride(next);
+                }}
+              />
+              固定归档到其它目录（覆盖默认工作空间位置）
+            </label>
+
+            {useOutputOverride && (
+              <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+                <span className="block break-all rounded-md bg-white px-2 py-1 text-xs text-slate-600">
+                  {outputRoot || "未选择目录"}
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    onClick={handlePickOutputRoot}
+                  >
+                    选择目录…
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    onClick={() => {
+                      setOutputRootSetting("");
+                      setOutputRoot("");
+                    }}
+                  >
+                    清除
+                  </button>
+                </div>
+                <p className="text-xs text-slate-400">设置后，所有导出将固定落到此目录，不再跟随工作空间。</p>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="text-xs text-slate-400">无法读取数据目录信息。</div>
-        )}
-      </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className="rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50" onClick={handleOpen} disabled={busy !== null || !info}>
-          打开数据目录
-        </button>
-        <button type="button" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50" onClick={handlePickRoot} disabled={busy !== null}>
-          更改存储位置…
-        </button>
-        <button type="button" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50" onClick={handleReset} disabled={busy !== null}>
-          恢复默认位置
-        </button>
-      </div>
-
-      <p className="text-xs leading-5 text-slate-500 omni-settings-muted">
-        不要把数据目录放进云同步盘（OneDrive / Dropbox / 百度网盘等）或网络盘——SQLite 的 WAL 模式在这些位置可能静默损坏。
-        软件安装在 <code className="rounded bg-slate-100 px-1 text-slate-700">Program Files</code> 等只读位置时，会自动改用应用数据目录。
-      </p>
-
-      <div className="space-y-4 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">生成文档归档</h3>
-        <p className="text-xs text-slate-500 omni-settings-muted">
-          各类生成文件（文档/表格/演示/Markdown）会按「产出根目录 / 项目 / 会话」自动分子目录存放。
-        </p>
-
-        <div className="grid grid-cols-[120px_1fr] gap-4">
-          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">产出根目录</label>
-          <div className="space-y-2">
-            <span className="block break-all rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-600">
-              {outputRoot || "未设置（默认 ~/Documents/Omni）"}
-            </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                onClick={handlePickOutputRoot}
-              >
-                选择目录…
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                onClick={handleResetOutputRoot}
-                disabled={!outputRoot}
-              >
-                恢复默认
-              </button>
-            </div>
+            {!useOutputOverride && (
+              <p className="text-xs text-slate-400">
+                默认：导出到工作空间下的 <code className="rounded bg-slate-100 px-1 text-slate-600">Omni-导出</code>。如想把生成文件固定归档到别处，勾选上方选项即可。
+              </p>
+            )}
           </div>
         </div>
+      </div>
+
+      <div className="space-y-4 border-t border-slate-100 pt-4">
+        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">高级 · 应用数据存储</h3>
+        <p className="text-xs text-slate-500 omni-settings-muted">
+          Omni 自身的数据（数据库、知识库）存放位置，一般无需修改。
+        </p>
+
+        <StatusBanner message={message} />
+
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                info ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {loading ? "读取中…" : info ? SOURCE_LABEL[info.source] : "未知"}
+            </span>
+            {info && !info.writable && (
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-700">目录不可写</span>
+            )}
+            {info?.fallbackReason && (
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-700">已回退</span>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="text-xs text-slate-400">正在读取当前数据目录…</div>
+          ) : info ? (
+            <div className="space-y-2">
+              <InfoRow label="数据根目录" value={info.path} />
+              <InfoRow label="数据库" value={info.databasePath} />
+              <InfoRow label="知识库" value={info.knowledgePath} />
+              {info.fallbackReason && (
+                <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-200">
+                  {info.fallbackReason}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400">无法读取数据目录信息。</div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50" onClick={handleOpen} disabled={busy !== null || !info}>
+            打开数据目录
+          </button>
+          <button type="button" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50" onClick={handlePickRoot} disabled={busy !== null}>
+            更改存储位置…
+          </button>
+          <button type="button" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50" onClick={handleReset} disabled={busy !== null}>
+            恢复默认位置
+          </button>
+        </div>
+
+        <p className="text-xs leading-5 text-slate-500 omni-settings-muted">
+          不要把数据目录放进云同步盘（OneDrive / Dropbox / 百度网盘等）或网络盘——SQLite 的 WAL 模式在这些位置可能静默损坏。
+          软件安装在 <code className="rounded bg-slate-100 px-1 text-slate-700">Program Files</code> 等只读位置时，会自动改用应用数据目录。
+        </p>
       </div>
 
       <div className="space-y-4 border-t border-slate-100 pt-4">
