@@ -36,6 +36,8 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   defaultWorkspacePath: "",
   shellPath: "",
   sandboxEnabled: false,
+  subAgentModel: "",
+  subAgentFastModel: "",
 };
 
 export const COMPACT_APPEARANCE_PRESETS: Record<CompactAppearance, { width: number; height: number }> = {

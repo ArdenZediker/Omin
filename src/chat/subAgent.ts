@@ -41,8 +41,11 @@ export const MAX_SUB_AGENT_BATCH = 5;
 /** 子 Agent 报告回填主循环的最大字符数（超出截断，保护主上下文预算）。 */
 export const MAX_SUB_AGENT_OUTPUT_CHARS = 12000;
 
+/** 子 Agent 强弱档：fast=轻量低成本（通用只读调研），capable=能力强（专家委派/复杂任务）。 */
+export type SubAgentTier = "fast" | "capable";
+
 /** 单个子任务规格。 */
-export type SubAgentTaskSpec = { task: string; expertId?: string };
+export type SubAgentTaskSpec = { task: string; expertId?: string; tier?: SubAgentTier };
 
 /** runSubAgent 的返回：报告文本 + 可选的用量/轮数（ToolCallOutcome.usage/toolRounds 透传）。 */
 export type SubAgentResult = {
@@ -87,11 +90,11 @@ export function isSubAgentActive(): boolean {
  * 2. 纯 JSON 字符串 / 非 JSON 文本 → 整段作为任务（无专家）；
  * 缺失有效任务时返回 error。
  */
-export function parseSubAgentArgs(raw: string): { task: string; expertId?: string } | { error: string } {
+export function parseSubAgentArgs(raw: string): { task: string; expertId?: string; tier?: SubAgentTier } | { error: string } {
   const parsed = parseSubAgentBatchArgs(raw);
   if ("error" in parsed) return parsed;
   const first = parsed.tasks[0];
-  return { task: first.task, expertId: first.expertId };
+  return { task: first.task, expertId: first.expertId, tier: first.tier };
 }
 
 /**
@@ -132,7 +135,8 @@ export function parseSubAgentBatchArgs(raw: string): { tasks: SubAgentTaskSpec[]
           const task = entry.task;
           if (typeof task === "string" && task.trim()) {
             const expertId = typeof entry.expertId === "string" && entry.expertId.trim() ? entry.expertId.trim() : undefined;
-            specs.push({ task: task.trim(), expertId });
+            const tier = parseSubAgentTier(entry.tier);
+            specs.push({ task: task.trim(), expertId, tier });
             continue;
           }
         }
@@ -144,11 +148,12 @@ export function parseSubAgentBatchArgs(raw: string): { tasks: SubAgentTaskSpec[]
       }
       return { tasks: specs };
     }
-    // 单任务形态 {task, expertId?}
+    // 单任务形态 {task, expertId?, tier?}
     const task = record.task;
     if (typeof task === "string" && task.trim()) {
       const expertId = typeof record.expertId === "string" && record.expertId.trim() ? record.expertId.trim() : undefined;
-      return { tasks: [{ task: task.trim(), expertId }] };
+      const tier = parseSubAgentTier(record.tier);
+      return { tasks: [{ task: task.trim(), expertId, tier }] };
     }
   }
   return { error: missing };
@@ -166,9 +171,44 @@ export function truncateSubAgentOutput(text: string): string {
   return `${text.slice(0, MAX_SUB_AGENT_OUTPUT_CHARS)}\n\n（报告过长，已截断至 ${MAX_SUB_AGENT_OUTPUT_CHARS} 字符）`;
 }
 
+/**
+ * 解析 agent 工具入参里的 tier 字段（宽容）：仅接受 "fast" / "capable"，
+ * 其余（缺失、大小写/空白异常、未知值）一律视为 undefined（走自动路由）。
+ */
+export function parseSubAgentTier(value: unknown): SubAgentTier | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "fast") return "fast";
+  if (normalized === "capable") return "capable";
+  return undefined;
+}
+
+/**
+ * 按强弱路由解析子 Agent 实际使用的模型 id（对齐 atomcode SubagentProvider 的 fast/capable 分层）：
+ * - 自动路由（tier 未指定）：专家委派（expertId 存在）→ capable 档；通用只读调研 → fast 档；
+ * - capable 档：优先用 context.capableModel，未配置则回落本轮主运行模型；
+ * - fast 档：优先用 context.fastModel，未配置则回落 capableModel，再回落主运行模型。
+ * 任何档位最终都保证返回一个可用模型（主运行模型是兜底层）。
+ */
+export function resolveSubAgentModel(
+  context: Pick<SubAgentRunContext, "model"> & Partial<Pick<SubAgentRunContext, "capableModel" | "fastModel">>,
+  spec: SubAgentTaskSpec
+): string {
+  const tier: SubAgentTier = spec.tier ?? (spec.expertId ? "capable" : "fast");
+  if (tier === "capable") {
+    return context.capableModel?.trim() || context.model;
+  }
+  return context.fastModel?.trim() || context.capableModel?.trim() || context.model;
+}
+
 /** 子 Agent 运行所需的父运行上下文（由运行时在每轮任务开始时注入）。 */
 export type SubAgentRunContext = {
+  /** 本轮主运行模型：tier 未单独配置时的最终兜底。 */
   model: string;
+  /** 能力强档模型（专家委派 / tier=capable）。留空回落 model。 */
+  capableModel?: string;
+  /** 轻量档模型（通用只读调研 / tier=fast）。留空回落 capableModel → model。 */
+  fastModel?: string;
   project?: Project | null;
   /** 父运行的完整工具声明集（runSubAgent 内部按白名单或专家声明过滤） */
   tools: ChatToolParam[];
@@ -227,13 +267,14 @@ async function runSingleSubAgent(spec: SubAgentTaskSpec, context: SubAgentRunCon
     systemPrompt = SUB_AGENT_RESEARCH_PROMPT;
   }
 
-  const { model, project, executeToolCall, signal, onToolStep } = context;
+  const { project, executeToolCall, signal, onToolStep } = context;
+  const model = resolveSubAgentModel(context, spec);
   onToolStep?.({
     type: "action",
     label: expert ? "委派专家" : "派出子Agent",
     title: expert?.name ?? "Sub Agent",
     icon: "Bot",
-    detail: expert ? expertActionDetail(expert, task) : summarizeTask(task),
+    detail: expert ? expertActionDetail(expert, task) : `${summarizeTask(task)} · ${model}`,
   });
 
   try {

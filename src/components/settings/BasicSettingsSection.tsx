@@ -3,6 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { BasicSettings } from "../../app/types";
 import type { ThemeMode } from "../../app/settings";
+import { modelRegistry } from "../../adapters/registry";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
 import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
@@ -385,6 +386,35 @@ export default function BasicSettingsSection({
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="space-y-4 border-t border-slate-100 pt-4">
+        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">子 Agent 模型</h3>
+        <p className="text-xs text-slate-500 omni-settings-muted">
+          通过 agent 工具派出的子 Agent 可走「能力强 / 轻量」两档模型。未设置时回落到本轮主运行模型；轻量档未设置再回落能力强档。通用只读调研默认走轻量档，专家委派默认走能力强档，也可用 tier 参数显式覆盖。
+        </p>
+        <Field label="能力强模型">
+          <OmniSelect
+            value={basicSettings.subAgentModel}
+            onChange={(value) => onUpdateBasicSettings({ subAgentModel: value })}
+            ariaLabel="子 Agent 能力强模型"
+            options={[
+              { value: "", label: "未设置（回落主模型）" },
+              ...modelRegistry.getAvailableModels().map((m) => ({ value: m.id, label: m.name })),
+            ]}
+          />
+        </Field>
+        <Field label="轻量模型">
+          <OmniSelect
+            value={basicSettings.subAgentFastModel}
+            onChange={(value) => onUpdateBasicSettings({ subAgentFastModel: value })}
+            ariaLabel="子 Agent 轻量模型"
+            options={[
+              { value: "", label: "未设置（回落能力强档）" },
+              ...modelRegistry.getAvailableModels().map((m) => ({ value: m.id, label: m.name })),
+            ]}
+          />
+        </Field>
       </div>
 
       <div className="border-t border-slate-100 pt-4">

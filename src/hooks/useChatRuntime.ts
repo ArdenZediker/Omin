@@ -925,8 +925,11 @@ export function useChatRuntime({
           // 实时上屏：每完成一个工具调用立刻把步骤追加到最后一条消息的思考块
           appendLastProjectStep(sessionId, step);
         };
+        const subAgentSettings = loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS);
         subAgentContextRef.current = {
           model: executionModel,
+          capableModel: subAgentSettings.subAgentModel?.trim() || undefined,
+          fastModel: subAgentSettings.subAgentFastModel?.trim() || undefined,
           project: executionProject,
           signal: abortController.signal,
           tools: runTools,
@@ -1259,8 +1262,11 @@ export function useChatRuntime({
           }
           appendLastProjectStep(session.id, step);
         };
+        const subAgentSettings = loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS);
         subAgentContextRef.current = {
           model: resolvedModelId,
+          capableModel: subAgentSettings.subAgentModel?.trim() || undefined,
+          fastModel: subAgentSettings.subAgentFastModel?.trim() || undefined,
           project: targetProject,
           signal: abortController.signal,
           tools: runTools,
@@ -1541,8 +1547,11 @@ export function useChatRuntime({
           }
           appendLastProjectStep(sessionId, step);
         };
+        const subAgentSettings = loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS);
         subAgentContextRef.current = {
           model: executionModel,
+          capableModel: subAgentSettings.subAgentModel?.trim() || undefined,
+          fastModel: subAgentSettings.subAgentFastModel?.trim() || undefined,
           project: activeProject,
           signal: abortController.signal,
           tools: runTools,

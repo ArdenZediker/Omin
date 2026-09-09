@@ -18,6 +18,16 @@ export type BasicSettings = {
   shellPath: string;
   /** 沙箱模式（实验）：命令在 Windows 受限 token 下执行（剥离全部特权防提权）。默认关闭；非 Windows 自动回落普通执行 */
   sandboxEnabled: boolean;
+  /**
+   * 子 Agent「能力强」模型（capable 档）：专家委派与显式 tier=capable 时选用。
+   * 留空则回落到本轮主运行模型。对应 atomcode SubagentProvider 的 capable 层。
+   */
+  subAgentModel: string;
+  /**
+   * 子 Agent「轻量」模型（fast 档）：通用只读调研默认选用，追求低延迟低成本。
+   * 留空则回落到 subAgentModel（再回落主运行模型）。对应 atomcode SubagentProvider 的 fast 层。
+   */
+  subAgentFastModel: string;
 };
 
 export type ExternalChatEntry = {

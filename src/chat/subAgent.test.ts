@@ -8,6 +8,8 @@ import {
   filterSubAgentTools,
   parseSubAgentArgs,
   parseSubAgentBatchArgs,
+  parseSubAgentTier,
+  resolveSubAgentModel,
   truncateSubAgentOutput,
   runSubAgent,
   isSubAgentActive,
@@ -61,6 +63,11 @@ describe("parseSubAgentArgs", () => {
     });
   });
 
+  it("携带 tier 时一并解析（fast / capable）", () => {
+    expect(parseSubAgentArgs(JSON.stringify({ task: "快查", tier: "fast" }))).toEqual({ task: "快查", tier: "fast" });
+    expect(parseSubAgentArgs(JSON.stringify({ task: "深研", tier: "capable" }))).toEqual({ task: "深研", tier: "capable" });
+  });
+
   it("空入参 / 缺 task 字段返回 error", () => {
     expect(parseSubAgentArgs("")).toHaveProperty("error");
     expect(parseSubAgentArgs(JSON.stringify({ goal: "x" }))).toHaveProperty("error");
@@ -104,6 +111,25 @@ describe("parseSubAgentBatchArgs", () => {
     );
     expect(atLimit).toHaveProperty("tasks");
   });
+
+  it("批量/单任务形态携带 tier 并透传给规格", () => {
+    const batch = parseSubAgentBatchArgs(
+      JSON.stringify({ tasks: [{ task: "A", tier: "fast" }, { task: "B", expertId: "e", tier: "capable" }] })
+    );
+    expect(batch).toEqual({
+      tasks: [
+        { task: "A", tier: "fast" },
+        { task: "B", expertId: "e", tier: "capable" },
+      ],
+    });
+    const single = parseSubAgentBatchArgs(JSON.stringify({ task: "单任务", tier: "capable" }));
+    expect(single).toEqual({ tasks: [{ task: "单任务", tier: "capable" }] });
+  });
+
+  it("未知 tier 值被忽略（走自动路由）", () => {
+    const parsed = parseSubAgentBatchArgs(JSON.stringify({ task: "t", tier: "quick" }));
+    expect(parsed).toEqual({ tasks: [{ task: "t" }] });
+  });
 });
 
 describe("filterSubAgentTools", () => {
@@ -132,6 +158,58 @@ describe("truncateSubAgentOutput", () => {
     const truncated = truncateSubAgentOutput(long);
     expect(truncated.length).toBeLessThanOrEqual(MAX_SUB_AGENT_OUTPUT_CHARS + 40);
     expect(truncated).toContain("已截断");
+  });
+});
+
+describe("parseSubAgentTier", () => {
+  it("接受 fast / capable（含前后空白）", () => {
+    expect(parseSubAgentTier("fast")).toBe("fast");
+    expect(parseSubAgentTier("capable")).toBe("capable");
+    expect(parseSubAgentTier("  FAST ")).toBe("fast");
+    expect(parseSubAgentTier("Capable")).toBe("capable");
+  });
+
+  it("拒绝未知值 / 缺失 / 非字符串", () => {
+    expect(parseSubAgentTier("quick")).toBeUndefined();
+    expect(parseSubAgentTier("")).toBeUndefined();
+    expect(parseSubAgentTier(undefined)).toBeUndefined();
+    expect(parseSubAgentTier(null)).toBeUndefined();
+    expect(parseSubAgentTier(123)).toBeUndefined();
+  });
+});
+
+describe("resolveSubAgentModel（强弱路由）", () => {
+  it("通用只读调研默认走 fast 档：fastModel 优先", () => {
+    expect(resolveSubAgentModel({ model: "main", capableModel: "cap", fastModel: "fast" }, { task: "t" })).toBe("fast");
+  });
+
+  it("通用调研 fast 档未配置时回落 capableModel", () => {
+    expect(resolveSubAgentModel({ model: "main", capableModel: "cap" }, { task: "t" })).toBe("cap");
+  });
+
+  it("通用调研两档均未配置时回落主运行模型", () => {
+    expect(resolveSubAgentModel({ model: "main" }, { task: "t" })).toBe("main");
+  });
+
+  it("专家委派默认走 capable 档：capableModel 优先", () => {
+    expect(resolveSubAgentModel({ model: "main", capableModel: "cap", fastModel: "fast" }, { task: "t", expertId: "e" })).toBe("cap");
+  });
+
+  it("专家委派 capable 档未配置时回落主运行模型（不走 fast）", () => {
+    expect(resolveSubAgentModel({ model: "main", fastModel: "fast" }, { task: "t", expertId: "e" })).toBe("main");
+  });
+
+  it("显式 tier=fast 可让专家也走 fast 档", () => {
+    expect(resolveSubAgentModel({ model: "main", capableModel: "cap", fastModel: "fast" }, { task: "t", expertId: "e", tier: "fast" })).toBe("fast");
+  });
+
+  it("显式 tier=capable 可让通用调研走 capable 档", () => {
+    expect(resolveSubAgentModel({ model: "main", capableModel: "cap", fastModel: "fast" }, { task: "t", tier: "capable" })).toBe("cap");
+  });
+
+  it("tier 覆盖时即使未配置对应档也回落到兜底模型", () => {
+    expect(resolveSubAgentModel({ model: "main" }, { task: "t", tier: "capable" })).toBe("main");
+    expect(resolveSubAgentModel({ model: "main" }, { task: "t", tier: "fast" })).toBe("main");
   });
 });
 
@@ -215,6 +293,24 @@ describe("runSubAgent", () => {
     expect(call.enableMemoryExtraction).toBe(false);
     expect(call.enableSummaryExtraction).toBe(false);
     expect(context.executeToolCall).not.toHaveBeenCalled();
+  });
+
+  it("强弱路由：通用调研走 fast 档、专家委派走 capable 档（未配置则回落主模型）", async () => {
+    mockedExecuteChatTurn.mockResolvedValue({ content: "报告", toolRounds: 1, usage: { promptTokens: 6, completionTokens: 3, totalTokens: 9 }, estimated: false } as never);
+
+    // 通用调研：上下文带 fastModel → 引擎应使用 fast-model
+    const fastContext = makeContext({ model: "main-model", capableModel: "cap-model", fastModel: "fast-model" });
+    await runSubAgent({ args: JSON.stringify({ task: "快查资料" }), context: fastContext });
+    expect(mockedExecuteChatTurn.mock.calls[0][0].model).toBe("fast-model");
+
+    // 专家委派：上下文带 capableModel → 引擎应使用 cap-model（不走 fast）
+    await runSubAgent({ args: JSON.stringify({ task: "写周报", expertId: "writer-expert" }), context: makeExpertContext(expertManifest, { model: "main-model", capableModel: "cap-model", fastModel: "fast-model" }) });
+    expect(mockedExecuteChatTurn.mock.calls[1][0].model).toBe("cap-model");
+
+    // 两档均未配置：回落主模型
+    const fallthrough = makeContext({ model: "only-model" });
+    await runSubAgent({ args: JSON.stringify({ task: "兜底任务" }), context: fallthrough });
+    expect(mockedExecuteChatTurn.mock.calls[2][0].model).toBe("only-model");
   });
 
   it("推送开始/完成动作步骤到父运行时间线", async () => {

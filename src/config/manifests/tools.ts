@@ -440,8 +440,10 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
       "Pass task as a COMPLETE, self-contained instruction: goal, all needed background (paths/keywords/constraints), and the expected report format; " +
       "the sub-agent cannot see this conversation. " +
       "Use it to offload multi-step investigations or specialist work so the main context stays lean. " +
+      "Model tier: by default an expert delegation uses the 'capable' model and a generic read-only research uses the lightweight 'fast' model; " +
+      "you can override per subtask with tier:'fast' or tier:'capable' in the task object. " +
       "For several INDEPENDENT subtasks, dispatch them in ONE call via the tasks array (max 5) — they run in parallel and you receive one combined report; " +
-      "the single-task {task, expertId} form also works.",
+      "the single-task {task, expertId, tier} form also works.",
     parameters: {
       type: "object",
       properties: {
@@ -453,10 +455,16 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
           type: "string",
           description: "Optional expert id to delegate to (see the expert roster). Omit for a generic read-only researcher.",
         },
+        tier: {
+          type: "string",
+          enum: ["fast", "capable"],
+          description:
+            "Model tier for this subtask: 'fast' (lightweight, low-cost — for quick read-only research) or 'capable' (stronger — for expert delegation / complex work). Omit to auto-route (expert → capable, generic research → fast).",
+        },
         tasks: {
           type: "array",
           description:
-            "Parallel batch: dispatch multiple INDEPENDENT subtasks in one call (max 5). Each item is either a task string or {task, expertId}. Results return as one combined sectioned report.",
+            "Parallel batch: dispatch multiple INDEPENDENT subtasks in one call (max 5). Each item is either a task string or {task, expertId, tier}. Results return as one combined sectioned report.",
           items: {
             type: "object",
             properties: {
@@ -467,6 +475,11 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
               expertId: {
                 type: "string",
                 description: "Optional expert id for this subtask.",
+              },
+              tier: {
+                type: "string",
+                enum: ["fast", "capable"],
+                description: "Optional model tier for this subtask ('fast' | 'capable'). Omit to auto-route.",
               },
             },
             required: ["task"],
