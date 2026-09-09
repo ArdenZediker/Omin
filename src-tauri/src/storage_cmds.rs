@@ -33,6 +33,7 @@ pub(crate) fn load_chat_storage(
     if payload.projects_json.is_some() || payload.sessions_json.is_some() {
         save_structured_chat_storage(
             &connection,
+            &app,
             payload.projects_json.as_deref().unwrap_or("[]"),
             payload.sessions_json.as_deref().unwrap_or("[]"),
             &sessions_root,
@@ -52,6 +53,7 @@ pub(crate) fn save_chat_storage(
     let connection = open_sqlite_connection(&app)?;
     save_structured_chat_storage(
         &connection,
+        &app,
         &projects_json,
         &sessions_json,
         &storage_paths::chat_sessions_root(&app)?,

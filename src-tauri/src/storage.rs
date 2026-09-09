@@ -10,6 +10,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::current_timestamp_ms;
+use crate::storage_paths::fallback_workspace_root;
+use tauri::AppHandle;
 
 pub(crate) const KNOWLEDGE_EMBEDDING_CONFIG_KEY: &str = "omni_knowledge_embedding_profile";
 pub(crate) const KNOWLEDGE_MULTIMODAL_CONFIG_KEY: &str = "omni_knowledge_multimodal_profile";
@@ -111,6 +113,10 @@ struct DbChatSession {
     created_at: i64,
     updated_at: i64,
     usage: DbChatUsageStats,
+    /// 会话固化的工作目录（effective workspace）。空字符串 = 未绑定，落盘时由
+    /// `fallback_workspace_root` 补全为兜底目录，保证「永远有 cwd」（仿 codex）。
+    #[serde(default)]
+    workspace_path: String,
 }
 
 /// 会话消息权威源：<sessions_root>/<sessionId>/session.jsonl（JSONL 事件日志，每行一个 message）。
@@ -630,7 +636,7 @@ pub(crate) fn load_structured_chat_storage(
     let mut session_stmt = connection
         .prepare(
             r#"
-            SELECT id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json
+            SELECT id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path
             FROM chat_sessions
             ORDER BY updated_at DESC, created_at DESC, id DESC
             "#,
@@ -647,6 +653,7 @@ pub(crate) fn load_structured_chat_storage(
         i64,
         i64,
         String,
+        String,
     )> = session_stmt
         .query_map([], |row| {
             Ok((
@@ -659,6 +666,7 @@ pub(crate) fn load_structured_chat_storage(
                 row.get(6)?,
                 row.get(7)?,
                 row.get(8)?,
+                row.get::<_, String>(9).unwrap_or_default(),
             ))
         })
         .map_err(|err| err.to_string())?
@@ -668,7 +676,7 @@ pub(crate) fn load_structured_chat_storage(
     let sessions: Vec<DbChatSession> = raw_sessions
         .into_iter()
         .map(
-            |(id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json)| {
+            |(id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path)| {
                 // 消息优先从 JSONL 文件读取；文件缺失时回退旧 messages_json 列
                 // （首次从旧版本升级时的迁移路径），并写回文件，之后文件成为权威源。
                 let messages = match read_session_messages(sessions_root, &id)? {
@@ -700,6 +708,7 @@ pub(crate) fn load_structured_chat_storage(
                     created_at,
                     updated_at,
                     usage,
+                    workspace_path,
                 })
             },
         )
@@ -713,13 +722,14 @@ pub(crate) fn load_structured_chat_storage(
 
 pub(crate) fn save_structured_chat_storage(
     connection: &Connection,
+    app: &AppHandle,
     projects_json: &str,
     sessions_json: &str,
     sessions_root: &Path,
 ) -> Result<(), String> {
     let projects: Vec<DbProject> =
         serde_json::from_str(projects_json).map_err(|err| err.to_string())?;
-    let sessions: Vec<DbChatSession> =
+    let mut sessions: Vec<DbChatSession> =
         serde_json::from_str(sessions_json).map_err(|err| err.to_string())?;
 
     let tx = connection
@@ -768,13 +778,21 @@ pub(crate) fn save_structured_chat_storage(
             .prepare(
                 r#"
                 INSERT OR REPLACE INTO chat_sessions (
-                  id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                  id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                 "#,
             )
             .map_err(|err| err.to_string())?;
 
-        for session in &sessions {
+        for session in sessions.iter_mut() {
+            // 固化 effective workspace：未绑定则回退到兜底目录（仿 codex 永远有 cwd）。
+            // 解析后写回 session，使返回的 sessions_json 也携带固化值，前端重载后保持一致。
+            let resolved = if session.workspace_path.trim().is_empty() {
+                fallback_workspace_root(app)?.to_string_lossy().into_owned()
+            } else {
+                session.workspace_path.clone()
+            };
+            session.workspace_path = resolved;
             stmt.execute(params![
                 session.id,
                 session.project_id,
@@ -794,6 +812,7 @@ pub(crate) fn save_structured_chat_storage(
                 session.created_at,
                 session.updated_at,
                 serde_json::to_string(&session.usage).map_err(|err| err.to_string())?,
+                &session.workspace_path,
             ])
             .map_err(|err| err.to_string())?;
         }

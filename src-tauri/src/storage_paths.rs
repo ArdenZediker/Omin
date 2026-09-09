@@ -207,6 +207,18 @@ pub(crate) fn chat_sessions_root(app: &tauri::AppHandle) -> Result<PathBuf, Stri
     Ok(dir)
 }
 
+/// 兜底工作目录（fallback workspace）。
+///
+/// 仿 codex 的 `~/.codex`：任何未显式绑定工作空间的会话/项目，其文件操作都落到这里，
+/// 保证「不指定空间也能对话、也能执行 /bash、/write_file 等文件工具」——永远有一个 cwd。
+/// 该目录位于数据根下，属应用自有目录，天然避开 No-Go Zone 与云同步目录风险。
+pub(crate) fn fallback_workspace_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let root = resolve_data_root(app)?;
+    let dir = root.join("fallback-workspace");
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    Ok(dir)
+}
+
 pub(crate) fn data_root_info(app: &tauri::AppHandle) -> Result<DataRootInfo, String> {
     let (root, source, fallback_reason) = resolve_with_source(app)?;
     Ok(DataRootInfo {

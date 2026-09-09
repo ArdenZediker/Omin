@@ -15,6 +15,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crate::storage_paths::fallback_workspace_root;
+
 #[cfg(windows)]
 pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -368,11 +370,17 @@ fn combine(stdout: String, stderr: String) -> String {
 }
 
 #[tauri::command]
-pub(crate) async fn execute_command(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String> {
+pub(crate) async fn execute_command(app: tauri::AppHandle, input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String> {
     if input.command.trim().is_empty() {
         return Err("命令不能为空".to_string());
     }
-    let input = input;
+    let mut input = input;
+    // 未传工作目录时回退到兜底目录（仿 codex 永远有 cwd），避免回落到不可控的应用当前目录。
+    if input.cwd.as_deref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+        if let Ok(fb) = fallback_workspace_root(&app) {
+            input.cwd = Some(fb.to_string_lossy().into_owned());
+        }
+    }
     tauri::async_runtime::spawn_blocking(move || run_shell(input))
         .await
         .map_err(|e| format!("execute_command 任务失败: {e}"))?

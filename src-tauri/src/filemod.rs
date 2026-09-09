@@ -11,6 +11,7 @@
 //!   结果经前端 fileDiff 透传进变更面板。
 
 use crate::office_export::{no_go_zone, DiffResult};
+use crate::storage_paths::fallback_workspace_root;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -151,6 +152,7 @@ fn read_text(target: &Path) -> Result<String, String> {
 /// 已存在且未传 overwrite=true 时拒绝，引导模型改用 edit_file 做定点修改。
 #[tauri::command]
 pub(crate) async fn write_file_tool(
+    app: tauri::AppHandle,
     path: String,
     content: String,
     overwrite: Option<bool>,
@@ -161,8 +163,12 @@ pub(crate) async fn write_file_tool(
         return Err("写入内容为空：如需清空文件请明确说明，普通写入请提供完整内容".to_string());
     }
     let overwrite = overwrite.unwrap_or(false);
+    // 未绑定工作空间时回退到兜底目录（仿 codex 永远有 cwd）。
+    let ws = workspace_path
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
     tauri::async_runtime::spawn_blocking(move || {
-        let target = resolve_target(&path, workspace_path.as_deref(), confirmed_outside.unwrap_or(false))?;
+        let target = resolve_target(&path, ws.as_deref(), confirmed_outside.unwrap_or(false))?;
         let created = !target.is_file();
         if !created && !overwrite {
             return Err(format!(
@@ -199,6 +205,7 @@ pub(crate) async fn write_file_tool(
 /// 多处命中且未传 replace_all 时拒绝（要求补充上下文或显式 replace_all）。
 #[tauri::command]
 pub(crate) async fn edit_file_tool(
+    app: tauri::AppHandle,
     path: String,
     find: String,
     replace: String,
@@ -210,8 +217,12 @@ pub(crate) async fn edit_file_tool(
         return Err("find 不能为空：请提供要替换的精确原文（可包含多行）".to_string());
     }
     let replace_all = replace_all.unwrap_or(false);
+    // 未绑定工作空间时回退到兜底目录（仿 codex 永远有 cwd）。
+    let ws = workspace_path
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
     tauri::async_runtime::spawn_blocking(move || {
-        let target = resolve_target(&path, workspace_path.as_deref(), confirmed_outside.unwrap_or(false))?;
+        let target = resolve_target(&path, ws.as_deref(), confirmed_outside.unwrap_or(false))?;
         if !target.is_file() {
             return Err(format!(
                 "文件不存在：{}。请先用 list_files/search_files 定位，或用 write_file 新建",

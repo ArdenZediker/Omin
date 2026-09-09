@@ -11,6 +11,8 @@ export type SessionLite = {
   projectId?: string;
   title: string;
   messages: Message[];
+  /** 会话固化的工作目录（effective workspace）；空字符串表示未绑定，落盘时由 Rust 补全兜底目录。 */
+  workspacePath?: string;
 };
 
 /** 专家名册上限：避免专家装太多时把 agent 工具描述撑爆（超出部分提示用户去扩展中心看）。 */

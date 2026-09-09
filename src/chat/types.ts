@@ -167,6 +167,9 @@ export type ChatSession = {
   createdAt: number;
   updatedAt: number;
   usage: ChatUsageStats;
+  /** 会话固化的工作目录（effective workspace）。与 codex 一致：即使未显式绑定工作空间，
+   *  也会落盘为一个兜底目录，保证「永远有 cwd」。空字符串表示尚未固化（落盘时由 Rust 补全）。 */
+  workspacePath?: string;
 };
 
 export type ChatExecutionResult = {

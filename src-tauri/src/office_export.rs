@@ -13,6 +13,8 @@ use std::path::Path;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
+use crate::storage_paths::fallback_workspace_root;
+
 // ---------- 通用工具 ----------
 
 fn esc_xml(s: &str) -> String {
@@ -798,13 +800,17 @@ pub(crate) fn compute_file_diff(old_content: &str, new_content: &str, filename: 
 
 #[tauri::command]
 pub(crate) async fn export_docx(
+    app: tauri::AppHandle,
     path: String,
     spec_json: String,
     overwrite: Option<bool>,
     workspace_path: Option<String>,
 ) -> Result<ExportOutcome, String> {
+    let ws = workspace_path
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["docx"], build_docx, workspace_path.as_deref())
+        run_export(&path, &spec_json, overwrite, &["docx"], build_docx, ws.as_deref())
     })
     .await
     .map_err(|e| format!("export_docx 任务失败: {e}"))?
@@ -812,13 +818,17 @@ pub(crate) async fn export_docx(
 
 #[tauri::command]
 pub(crate) async fn export_xlsx(
+    app: tauri::AppHandle,
     path: String,
     spec_json: String,
     overwrite: Option<bool>,
     workspace_path: Option<String>,
 ) -> Result<ExportOutcome, String> {
+    let ws = workspace_path
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["xlsx"], build_xlsx, workspace_path.as_deref())
+        run_export(&path, &spec_json, overwrite, &["xlsx"], build_xlsx, ws.as_deref())
     })
     .await
     .map_err(|e| format!("export_xlsx 任务失败: {e}"))?
@@ -826,13 +836,17 @@ pub(crate) async fn export_xlsx(
 
 #[tauri::command]
 pub(crate) async fn export_pptx(
+    app: tauri::AppHandle,
     path: String,
     spec_json: String,
     overwrite: Option<bool>,
     workspace_path: Option<String>,
 ) -> Result<ExportOutcome, String> {
+    let ws = workspace_path
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["pptx"], build_pptx, workspace_path.as_deref())
+        run_export(&path, &spec_json, overwrite, &["pptx"], build_pptx, ws.as_deref())
     })
     .await
     .map_err(|e| format!("export_pptx 任务失败: {e}"))?
@@ -856,13 +870,18 @@ pub(crate) async fn no_go_zone_check(paths: Vec<String>) -> Option<String> {
 /// 复用 check_path 的围栏：绝对路径、No-Go Zones、项目工作区边界、扩展名、覆盖开关、自动建目录。
 #[tauri::command]
 pub(crate) async fn write_text_file(
+    app: tauri::AppHandle,
     path: String,
     content: String,
     overwrite: Option<bool>,
     workspace_path: Option<String>,
 ) -> Result<ExportOutcome, String> {
     let overwrite = overwrite.unwrap_or(false);
-    let p = check_path(&path, &["md", "markdown"], overwrite, workspace_path.as_deref())?;
+    // 未绑定工作空间时回退到兜底目录（仿 codex 永远有 cwd）。
+    let ws = workspace_path
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
+    let p = check_path(&path, &["md", "markdown"], overwrite, ws.as_deref())?;
     // 写前读基线：文件已存在则读旧内容作内存基线，否则基线为空串（新建文件）。
     // 仅对中等体量文件算 diff；超大文件跳过 diff 防性能/内存风险（前端不显示行级对比）。
     let baseline = if p.is_file() {

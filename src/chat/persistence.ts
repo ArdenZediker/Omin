@@ -26,10 +26,12 @@ import {
   serializeSessionSummariesSnapshot,
   serializeScheduledTasksSnapshot,
   serializeUserPreferencesSnapshot,
+  setDataRootPath,
   SCHEDULED_TASKS_STORAGE_KEY,
   SESSION_SUMMARIES_STORAGE_KEY,
   USER_PREFERENCES_STORAGE_KEY,
 } from "./storage";
+import { getDataRootInfo } from "../app/storageApi";
 
 type ChatStoragePayload = {
   projectsJson?: string | null;
@@ -110,6 +112,17 @@ export async function loadPersistedChatState(): Promise<PersistedChatState> {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("loadPersistedChatState: loadAutomationStorage failed", error);
+  }
+
+  // 缓存数据根路径，供 TS 侧解析兜底工作目录（与 Rust fallback_workspace_root 对应）。
+  // 即便此处失败也不影响加载——Rust 侧会在文件操作/落盘时补全兜底目录。
+  if (canUseTauriStorage()) {
+    try {
+      const info = await getDataRootInfo();
+      if (info?.path) setDataRootPath(info.path);
+    } catch {
+      // 忽略：缓存仅为展示/写串行化键优化，非必须。
+    }
   }
 
   return {

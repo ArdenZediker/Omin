@@ -13,7 +13,7 @@ import { runSubAgent, type SubAgentRunContext } from "../chat/subAgent";
 import type { ToolCallOutcome } from "../chat/engine";
 import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSelection";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
-import { getChatSessionTitle, stripPendingPlaceholder } from "../chat/storage";
+import { getChatSessionTitle, getFallbackWorkspacePath, stripPendingPlaceholder } from "../chat/storage";
 import { settleInterruptedSteps } from "../chat/stepSettlement";
 import { executeLocalTool } from "../chat/localTools";
 import { pluginRegistry } from "../plugins/registry";
@@ -179,10 +179,11 @@ export function useChatRuntime({
 
   // 把全局默认工作空间回填到未配目录的项目上：工具读写/导出自动跟随「设置空间」，
   // 但保留项目自身的 allowedToolIds 等配置（仅覆盖 workspacePath）。
+  // 二者皆空时回落到兜底目录（仿 codex 永远有 cwd），不让工作空间为空。
   const resolvedActiveProject = useMemo<Project | null>(() => {
     if (!activeProject) return null;
     if (activeProject.workspacePath) return activeProject;
-    if (!defaultWorkspacePath) return activeProject;
+    if (!defaultWorkspacePath) return { ...activeProject, workspacePath: getFallbackWorkspacePath() };
     return { ...activeProject, workspacePath: defaultWorkspacePath };
   }, [activeProject, defaultWorkspacePath]);
   const [error, setError] = useState<string | null>(null);
@@ -1137,9 +1138,14 @@ export function useChatRuntime({
   );
 
   const getWorkspacePathForSession = (sid: string | null): string => {
+    // 会话级固化值优先（已落盘的工作目录，避免改全局默认后旧会话「瞬移」）。
     const sess = sid ? getChatSessionById(sid) : null;
+    if (sess?.workspacePath) return sess.workspacePath;
+    // 其次回退项目工作目录 → 全局默认工作空间 → 兜底目录（仿 codex 永远有 cwd）。
     const proj = sess?.projectId ? getProjectById(sess.projectId) : activeProject;
-    return proj?.workspacePath ?? "";
+    if (proj?.workspacePath) return proj.workspacePath;
+    if (defaultWorkspacePath) return defaultWorkspacePath;
+    return getFallbackWorkspacePath();
   };
 
   // 任务级工具执行器：写类工具按工作区串行化，并在检测到另一并发任务占用同工作区时走确认门。

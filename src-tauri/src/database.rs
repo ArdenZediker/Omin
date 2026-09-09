@@ -49,6 +49,9 @@ pub(crate) fn migrate_legacy_project_data(connection: &Connection) -> Result<(),
     if table_exists(connection, "projects") && !table_has_column(connection, "projects", "workspace_path").unwrap_or(false) {
         guarded("ALTER TABLE projects ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''");
     }
+    if table_exists(connection, "chat_sessions") && !table_has_column(connection, "chat_sessions", "workspace_path").unwrap_or(false) {
+        guarded("ALTER TABLE chat_sessions ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''");
+    }
 
     Ok(())
 }
@@ -170,7 +173,8 @@ fn init_schema_once(connection: &Connection, app: &tauri::AppHandle) -> Result<(
           favorite INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL,
-          usage_json TEXT NOT NULL
+          usage_json TEXT NOT NULL,
+          workspace_path TEXT NOT NULL DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS knowledge_collections (
@@ -311,6 +315,7 @@ fn migrate_legacy_chat_kv_to_structured(connection: &Connection, app: &tauri::Ap
 
     save_structured_chat_storage(
         connection,
+        app,
         projects_json.as_deref().unwrap_or("[]"),
         sessions_json.as_deref().unwrap_or("[]"),
         &crate::storage_paths::chat_sessions_root(app)?,

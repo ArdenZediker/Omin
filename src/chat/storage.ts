@@ -36,6 +36,28 @@ export const DEFAULT_PROJECT_ID = "project-basic-chat";
 /** 主会话（Omni）专属会话的固定 id；历史兼容用途，新逻辑不再自动创建、
  *  不再常驻侧栏，且与普通任务会话一样可删除。 */
 export const MAIN_SESSION_ID = "session-omni-main";
+
+/**
+ * 兜底工作目录（fallback workspace）路径缓存。
+ *
+ * 仿 codex 的 `~/.codex`：未显式绑定工作空间的会话/项目，文件操作统一落到这里，
+ * 保证「不指定空间也能对话、也能执行文件工具」。Rust 侧 `fallback_workspace_root`
+ * 是权威来源（落盘时补全），TS 侧仅在已知数据根时提供该路径用于展示与写串行化键；
+ * 未知时返回空串，由 Rust 在文件操作/落盘时补全，行为一致。
+ */
+let cachedDataRootPath = "";
+
+export function setDataRootPath(path: string): void {
+  cachedDataRootPath = path || "";
+}
+
+export function getFallbackWorkspacePath(): string {
+  if (!cachedDataRootPath) return "";
+  const base = cachedDataRootPath.endsWith("/") || cachedDataRootPath.endsWith("\\")
+    ? cachedDataRootPath
+    : `${cachedDataRootPath}/`;
+  return `${base}fallback-workspace`;
+}
 export const DEFAULT_PROJECT_TOOL_IDS = [
   "search_sessions",
   "read_session",
