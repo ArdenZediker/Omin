@@ -2,6 +2,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::current_timestamp_ms;
 
@@ -105,6 +108,73 @@ struct DbChatSession {
     created_at: i64,
     updated_at: i64,
     usage: DbChatUsageStats,
+}
+
+/// 会话消息权威源：<sessions_root>/<sessionId>/session.jsonl（JSONL 事件日志，每行一个 message）。
+/// SQLite chat_sessions 表的 messages_json 列仅作一次性迁移占位（"[]"），不再承载消息实体。
+///
+/// 写路径先落临时文件再原子 rename，避免崩溃时留下半截文件（撕裂）；
+/// 全局锁串行化所有会话文件读写，规避多窗口并发写竞争。
+static SESSION_FILE_LOCK: Mutex<()> = Mutex::new(());
+
+fn session_file_path(root: &Path, id: &str) -> PathBuf {
+    root.join(id).join("session.jsonl")
+}
+
+fn write_session_messages(root: &Path, id: &str, messages: &JsonValue) -> Result<(), String> {
+    let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = root.join(id);
+    fs::create_dir_all(&dir).map_err(|err| format!("创建会话目录失败 {}: {}", dir.display(), err))?;
+    let target = dir.join("session.jsonl");
+    let tmp = dir.join("session.jsonl.tmp");
+
+    let array: Vec<&JsonValue> = match messages {
+        JsonValue::Array(items) => items.iter().collect(),
+        other => vec![other],
+    };
+    let mut content = String::new();
+    for item in array {
+        let line = serde_json::to_string(item).map_err(|err| err.to_string())?;
+        content.push_str(&line);
+        content.push('\n');
+    }
+    fs::write(&tmp, content.as_bytes())
+        .map_err(|err| format!("写入会话临时文件失败 {}: {}", tmp.display(), err))?;
+    fs::rename(&tmp, &target)
+        .map_err(|err| format!("重命名会话文件失败 {}: {}", target.display(), err))?;
+    Ok(())
+}
+
+fn read_session_messages(root: &Path, id: &str) -> Result<Option<Vec<JsonValue>>, String> {
+    let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let file = session_file_path(root, id);
+    if !file.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&file)
+        .map_err(|err| format!("读取会话文件失败 {}: {}", file.display(), err))?;
+    let mut out: Vec<JsonValue> = Vec::new();
+    for (index, line) in raw.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<JsonValue>(line) {
+            Ok(value) => out.push(value),
+            Err(err) => {
+                eprintln!("跳过会话 {} 中损坏的消息行 {}: {}", id, index + 1, err);
+            }
+        }
+    }
+    Ok(Some(out))
+}
+
+fn delete_session_dir(root: &Path, id: &str) {
+    let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = root.join(id);
+    if dir.exists() {
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
 
 pub(crate) fn read_kv(connection: &Connection, key: &str) -> Result<Option<String>, String> {
@@ -453,6 +523,7 @@ pub(crate) fn has_structured_chat_storage(connection: &Connection) -> Result<boo
 
 pub(crate) fn load_structured_chat_storage(
     connection: &Connection,
+    sessions_root: &Path,
 ) -> Result<ChatStoragePayload, String> {
     let mut project_stmt = connection
         .prepare(
@@ -499,22 +570,50 @@ pub(crate) fn load_structured_chat_storage(
         )
         .map_err(|err| err.to_string())?;
 
-    let sessions = session_stmt
+    let raw_sessions: Vec<(
+        String,
+        String,
+        String,
+        String,
+        Option<bool>,
+        Option<bool>,
+        i64,
+        i64,
+        String,
+    )> = session_stmt
         .query_map([], |row| {
-            let messages_json: String = row.get(3)?;
-            let usage_json: String = row.get(8)?;
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get::<_, i64>(4).ok().map(|value| value != 0),
+                row.get::<_, i64>(5).ok().map(|value| value != 0),
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+            ))
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
 
-            Ok(DbChatSession {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                title: row.get(2)?,
-                messages: serde_json::from_str(&messages_json)
-                    .unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
-                pinned: Some(row.get::<_, i64>(4)? != 0),
-                favorite: Some(row.get::<_, i64>(5)? != 0),
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-                usage: serde_json::from_str(&usage_json).unwrap_or(DbChatUsageStats {
+    let sessions: Vec<DbChatSession> = raw_sessions
+        .into_iter()
+        .map(
+            |(id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json)| {
+                // 消息优先从 JSONL 文件读取；文件缺失时回退旧 messages_json 列
+                // （首次从旧版本升级时的迁移路径），并写回文件，之后文件成为权威源。
+                let messages = match read_session_messages(sessions_root, &id)? {
+                    Some(items) => JsonValue::Array(items),
+                    None => {
+                        let parsed: JsonValue = serde_json::from_str(&messages_json)
+                            .unwrap_or(JsonValue::Array(Vec::new()));
+                        let _ = write_session_messages(sessions_root, &id, &parsed);
+                        parsed
+                    }
+                };
+                let usage = serde_json::from_str(&usage_json).unwrap_or(DbChatUsageStats {
                     request_count: 0,
                     prompt_tokens: 0,
                     completion_tokens: 0,
@@ -523,12 +622,21 @@ pub(crate) fn load_structured_chat_storage(
                     last_model: None,
                     last_used_at: None,
                     has_estimated_usage: false,
-                }),
-            })
-        })
-        .map_err(|err| err.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| err.to_string())?;
+                });
+                Ok(DbChatSession {
+                    id,
+                    project_id,
+                    title,
+                    messages,
+                    pinned,
+                    favorite,
+                    created_at,
+                    updated_at,
+                    usage,
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, String>>()?;
 
     Ok(ChatStoragePayload {
         projects_json: Some(serde_json::to_string(&projects).map_err(|err| err.to_string())?),
@@ -540,6 +648,7 @@ pub(crate) fn save_structured_chat_storage(
     connection: &Connection,
     projects_json: &str,
     sessions_json: &str,
+    sessions_root: &Path,
 ) -> Result<(), String> {
     let projects: Vec<DbProject> =
         serde_json::from_str(projects_json).map_err(|err| err.to_string())?;
@@ -553,8 +662,6 @@ pub(crate) fn save_structured_chat_storage(
     // 前端以整个快照为真相源，保存前清理不在快照中的旧记录，
     // 避免 delete_project/delete_chat_session 异步失败或窗口提前关闭导致"幽灵"记录复活。
     tx.execute("DELETE FROM projects WHERE kind != 'basic'", [])
-        .map_err(|err| err.to_string())?;
-    tx.execute("DELETE FROM chat_sessions", [])
         .map_err(|err| err.to_string())?;
 
     {
@@ -600,12 +707,13 @@ pub(crate) fn save_structured_chat_storage(
             )
             .map_err(|err| err.to_string())?;
 
-        for session in sessions {
+        for session in &sessions {
             stmt.execute(params![
                 session.id,
                 session.project_id,
                 session.title,
-                serde_json::to_string(&session.messages).map_err(|err| err.to_string())?,
+                // 消息实体已迁出到 JSONL 文件，这里仅留占位，避免破坏 NOT NULL 约束。
+                "[]",
                 if session.pinned.unwrap_or(false) {
                     1_i64
                 } else {
@@ -625,24 +733,77 @@ pub(crate) fn save_structured_chat_storage(
     }
 
     tx.commit().map_err(|err| err.to_string())?;
+
+    // 元数据入库后落会话消息文件（JSONL 事件日志，原子 rename 写入）。
+    // helper 内部已持全局锁，这里无需额外加锁。
+    let mut incoming: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for session in &sessions {
+        write_session_messages(sessions_root, &session.id, &session.messages)?;
+        incoming.insert(session.id.clone());
+    }
+
+    // 清理快照之外的"幽灵"会话：删 SQL 行 + 删其目录。
+    let existing: Vec<String> = {
+        let mut stmt = connection
+            .prepare("SELECT id FROM chat_sessions")
+            .map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|err| err.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())?;
+        rows
+    };
+    for id in existing {
+        if !incoming.contains(&id) {
+            connection
+                .execute("DELETE FROM chat_sessions WHERE id = ?1", params![id])
+                .map_err(|err| err.to_string())?;
+            delete_session_dir(sessions_root, &id);
+        }
+    }
+
     Ok(())
 }
 
-pub(crate) fn delete_chat_session_by_id(connection: &Connection, id: &str) -> Result<(), String> {
+pub(crate) fn delete_chat_session_by_id(
+    connection: &Connection,
+    id: &str,
+    sessions_root: &Path,
+) -> Result<(), String> {
     connection
         .execute("DELETE FROM chat_sessions WHERE id = ?1", params![id])
         .map_err(|err| err.to_string())?;
+    delete_session_dir(sessions_root, id);
     Ok(())
 }
 
-pub(crate) fn delete_project_by_id(connection: &Connection, id: &str) -> Result<(), String> {
+pub(crate) fn delete_project_by_id(
+    connection: &Connection,
+    id: &str,
+    sessions_root: &Path,
+) -> Result<(), String> {
     // 默认助手不允许删除；同时清理其所属会话，避免孤儿记录。
     connection
         .execute("DELETE FROM projects WHERE id = ?1 AND kind != 'basic'", params![id])
         .map_err(|err| err.to_string())?;
-    connection
-        .execute("DELETE FROM chat_sessions WHERE project_id = ?1", params![id])
-        .map_err(|err| err.to_string())?;
+    let orphan_ids: Vec<String> = {
+        let mut stmt = connection
+            .prepare("SELECT id FROM chat_sessions WHERE project_id = ?1")
+            .map_err(|err| err.to_string())?;
+        let rows = stmt
+            .query_map(params![id], |row| row.get::<_, String>(0))
+            .map_err(|err| err.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())?;
+        rows
+    };
+    for orphan_id in orphan_ids {
+        connection
+            .execute("DELETE FROM chat_sessions WHERE id = ?1", params![orphan_id])
+            .map_err(|err| err.to_string())?;
+        delete_session_dir(sessions_root, &orphan_id);
+    }
     Ok(())
 }
 
@@ -725,4 +886,96 @@ pub(crate) fn save_automation_storage(
         write_kv(connection, SNAPSHOT_SCHEDULED_TASKS_KEY, value)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod session_file_tests {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_root() -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "omni_session_test_{}_{}",
+            std::process::id(),
+            n
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("创建临时目录");
+        dir
+    }
+
+    fn sample_messages() -> JsonValue {
+        JsonValue::Array(vec![
+            serde_json::json!({"role":"user","content":"你好"}),
+            serde_json::json!({"role":"assistant","content":"你好，有什么可以帮你？","reasoning":"我先看看用户想问什么"}),
+        ])
+    }
+
+    #[test]
+    fn write_then_read_roundtrip_preserves_order_and_content() {
+        let root = temp_root();
+        let msgs = sample_messages();
+        write_session_messages(&root, "s1", &msgs).expect("写入应成功");
+        let loaded = read_session_messages(&root, "s1")
+            .expect("读取应成功")
+            .expect("应读到消息");
+        assert_eq!(&loaded, msgs.as_array().unwrap());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_missing_session_returns_none() {
+        let root = temp_root();
+        assert_eq!(read_session_messages(&root, "nope").unwrap(), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_tolerates_corrupt_lines_and_keeps_valid_ones() {
+        let root = temp_root();
+        write_session_messages(&root, "s2", &sample_messages()).expect("写入应成功");
+        // 模拟崩溃撕裂：追加一行半截/损坏数据 + 一行有效数据
+        let path = root.join("s2").join("session.jsonl");
+        let mut f = fs::OpenOptions::new().append(true).open(&path).expect("打开文件");
+        writeln!(f, "{{this is not valid json").expect("追加损坏行");
+        writeln!(f, "{{\"role\":\"user\",\"content\":\"追加的有效行\"}}").expect("追加有效行");
+        drop(f);
+
+        let loaded = read_session_messages(&root, "s2")
+            .expect("读取应成功")
+            .expect("应读到");
+        // 原始 2 行 + 1 行有效追加 = 3；损坏行被跳过
+        assert_eq!(loaded.len(), 3);
+        assert_eq!(loaded[2]["content"], "追加的有效行");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn overwrite_replaces_content_not_append() {
+        let root = temp_root();
+        write_session_messages(&root, "s3", &sample_messages()).expect("写入应成功");
+        let replacement = JsonValue::Array(vec![serde_json::json!({"role":"system","content":"只有一条"})]);
+        write_session_messages(&root, "s3", &replacement).expect("重写应成功");
+        let loaded = read_session_messages(&root, "s3")
+            .expect("读取应成功")
+            .expect("应读到");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0]["role"], "system");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_removes_session_dir() {
+        let root = temp_root();
+        write_session_messages(&root, "s4", &sample_messages()).expect("写入应成功");
+        assert!(read_session_messages(&root, "s4").unwrap().is_some());
+        delete_session_dir(&root, "s4");
+        assert_eq!(read_session_messages(&root, "s4").unwrap(), None);
+        let _ = fs::remove_dir_all(&root);
+    }
 }

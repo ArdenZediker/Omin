@@ -197,6 +197,16 @@ pub(crate) fn pasted_attachments_root(app: &tauri::AppHandle) -> Result<PathBuf,
     Ok(dir)
 }
 
+/// 对话消息的权威存储目录：每个会话一个独立子目录，内部为 session.jsonl 事件日志。
+/// SQLite 的 chat_sessions 表只存会话元数据，消息实体落盘到这里，
+/// 规避「整 blob 重写」的脆弱形态，并实现崩溃隔离与按会话级读写。
+pub(crate) fn chat_sessions_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let root = resolve_data_root(app)?;
+    let dir = root.join("chat-sessions");
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    Ok(dir)
+}
+
 pub(crate) fn data_root_info(app: &tauri::AppHandle) -> Result<DataRootInfo, String> {
     let (root, source, fallback_reason) = resolve_with_source(app)?;
     Ok(DataRootInfo {

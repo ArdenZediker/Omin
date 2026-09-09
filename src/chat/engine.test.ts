@@ -4,6 +4,7 @@ import {
   partitionToolCallsForExecution,
   compactHistoryIfNeeded,
   pruneToolResultMessages,
+  stubToolResultMessages,
   isCompactionNoGain,
 } from "./engine";
 import type { ChatResponse, ChatToolCall, ChatStep, Message, ModelConfig, StreamChunk } from "../adapters/types";
@@ -253,6 +254,92 @@ describe("isCompactionNoGain（无收益守卫，吸 atomcode committed/refused�
 
   it("原文为 0 token → 不误判无收益", () => {
     expect(isCompactionNoGain("摘要", 0)).toBe(false);
+  });
+});
+
+describe("stubToolResultMessages（三级压缩第 1 档：stub 旧工具结果）", () => {
+  it("把历史超长工具结果改写成单行 stub，保留 active turn 与 read_file 豁免", () => {
+    const messages: Message[] = [
+      { role: "system", content: "system" },
+      { role: "user", content: "需求" },
+      { role: "assistant", content: "已处理" },
+      { role: "tool", content: "Y".repeat(3000), toolCallId: "t1", toolCallName: "bash" },
+      { role: "user", content: "追问" },
+      { role: "assistant", content: "继续" },
+      { role: "tool", content: "Z".repeat(3000), toolCallId: "t2", toolCallName: "read_file" },
+    ];
+    // 最近一条 user 是「追问」(idx4)，其后的 read_file 属 active turn 不被压缩；
+    // 历史里的 bash 结果(idx3)应被 stub。
+    const res = stubToolResultMessages(messages);
+    expect(res.changed).toBe(true);
+    expect(res.stubbedCount).toBe(1);
+    expect(res.messages[3].content.startsWith("[bash ok:")).toBe(true);
+    // read_file 豁免：原样保留
+    expect(res.messages[6].content).toBe("Z".repeat(3000));
+    expect(res.messages[6].content.length).toBe(3000);
+  });
+
+  it("历史中的 read_file 结果被豁免（即便超长）", () => {
+    const messages: Message[] = [
+      { role: "user", content: "u" },
+      { role: "tool", content: "A".repeat(3000), toolCallId: "t1", toolCallName: "read_file" },
+      { role: "user", content: "最后一条" },
+    ];
+    const res = stubToolResultMessages(messages);
+    expect(res.changed).toBe(false);
+    expect(res.messages[1].content).toBe("A".repeat(3000));
+  });
+
+  it("全部未超长或无可压缩历史时返回原数组引用（不变更）", () => {
+    const messages: Message[] = [
+      { role: "user", content: "u" },
+      { role: "tool", content: "短结果", toolCallId: "t1", toolCallName: "bash" },
+    ];
+    const res = stubToolResultMessages(messages);
+    expect(res.changed).toBe(false);
+    expect(res.messages).toBe(messages);
+  });
+});
+
+describe("compactHistoryIfNeeded 三级阶梯（stub → truncate → summarize）", () => {
+  // 用小窗口模型把预算压到 75 token，便于稳定触发压缩
+  const tinyModel: ModelConfig = {
+    id: "tiny",
+    name: "Tiny",
+    provider: "openai",
+    maxTokens: 100,
+    supportsVision: false,
+    supportsStreaming: false,
+    toolCalling: true,
+  };
+
+  // 隔离：同文件其它 describe 会 spy modelRegistry.chat 且不跨 describe restore，
+  // 这里在每个用例前清掉残留 spy，避免复用持久 mock 导致调用计数污染。
+  beforeEach(() => vi.restoreAllMocks());
+
+  function buildOldBashOverflow(): Message[] {
+    return [
+      { role: "system", content: "s" },
+      { role: "user", content: "需求" },
+      { role: "assistant", content: "已处理" },
+      { role: "tool", content: "X".repeat(3000), toolCallId: "t1", toolCallName: "bash" },
+      { role: "user", content: "追问" },
+    ];
+  }
+
+  it("第 1 档 stub 即可压到预算内时，零 LLM 调用且不插入摘要", async () => {
+    const chatSpy = vi.spyOn(modelRegistry, "chat").mockRejectedValue(new Error("不应被调用"));
+    const res = await compactHistoryIfNeeded({ model: "tiny", requestMessages: buildOldBashOverflow(), modelConfig: tinyModel });
+    // stub 把 3000 字符 bash 结果压成单行 → 整体进入预算，无需召摘要
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(res.compaction?.fallback).toBe(false);
+    expect(res.compaction?.removedCount).toBe(0);
+    // 摘要不应出现
+    expect(res.messages.some((m) => m.content.startsWith("【历史对话摘要】"))).toBe(false);
+    // 工具结果已被 stub 成单行
+    const toolMsg = res.messages.find((m) => m.role === "tool");
+    expect(toolMsg?.content.startsWith("[bash ok:")).toBe(true);
+    expect(estimatePromptTokens(res.messages)).toBeLessThanOrEqual(Math.floor(100 * 0.75));
   });
 });
 

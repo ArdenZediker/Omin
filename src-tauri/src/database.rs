@@ -55,7 +55,7 @@ pub(crate) fn migrate_legacy_project_data(connection: &Connection) -> Result<(),
 
 /// 首次打开连接时执行一次：建表 + 旧数据迁移 + 列补齐。幂等，可安全重复调用，
 /// 但用 `Once` 包一层避免 worker 线程每 750ms 重开连接时反复空跑。
-fn init_schema_once(connection: &Connection) -> Result<(), String> {
+fn init_schema_once(connection: &Connection, app: &tauri::AppHandle) -> Result<(), String> {
     migrate_legacy_project_data(connection)?;
     connection
         .execute_batch(
@@ -221,7 +221,7 @@ fn init_schema_once(connection: &Connection) -> Result<(), String> {
         )
         .map_err(|err| err.to_string())?;
     run_database_migrations(connection)?;
-    ensure_storage_migrations(connection)?;
+    ensure_storage_migrations(connection, app)?;
     ensure_knowledge_schema(connection)?;
     ensure_knowledge_defaults(connection)?;
     Ok(())
@@ -252,7 +252,7 @@ pub(crate) fn open_sqlite_connection(app: &tauri::AppHandle) -> Result<Connectio
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     if !*ready {
-        init_schema_once(&connection)?;
+        init_schema_once(&connection, app)?;
         *ready = true;
     }
     drop(ready);
@@ -297,7 +297,7 @@ fn run_database_migrations(connection: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-fn migrate_legacy_chat_kv_to_structured(connection: &Connection) -> Result<(), String> {
+fn migrate_legacy_chat_kv_to_structured(connection: &Connection, app: &tauri::AppHandle) -> Result<(), String> {
     if has_structured_chat_storage(connection)? {
         return Ok(());
     }
@@ -313,6 +313,7 @@ fn migrate_legacy_chat_kv_to_structured(connection: &Connection) -> Result<(), S
         connection,
         projects_json.as_deref().unwrap_or("[]"),
         sessions_json.as_deref().unwrap_or("[]"),
+        &crate::storage_paths::chat_sessions_root(app)?,
     )
 }
 
@@ -344,8 +345,8 @@ fn migrate_legacy_app_kv_to_structured(connection: &Connection) -> Result<(), St
     Ok(())
 }
 
-fn ensure_storage_migrations(connection: &Connection) -> Result<(), String> {
-    migrate_legacy_chat_kv_to_structured(connection)?;
+fn ensure_storage_migrations(connection: &Connection, app: &tauri::AppHandle) -> Result<(), String> {
+    migrate_legacy_chat_kv_to_structured(connection, app)?;
     migrate_legacy_app_kv_to_structured(connection)?;
     Ok(())
 }

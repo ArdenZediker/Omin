@@ -53,6 +53,15 @@ const TOOL_RESULT_PRUNE_LIMIT = 2400;
  * token 比例超过该值时，说明付了一次完整 LLM 调用却只换来几乎等长的摘要，不如直接丢最旧一轮。 */
 const COMPACTION_NO_GAIN_RATIO = 0.85;
 
+/** 三级压缩阶梯第 1 档 stub：历史超长工具结果改写成单行 stub 的字符下限（低于此不 stub）。 */
+const STUB_KEEP_LIMIT = 320;
+/** stub 单行里保留的「首行」前导字符数（供模型回忆该工具大致产出）。 */
+const STUB_FIRST_LINE_KEEP = 80;
+/** stub 豁免的工具：其长输出可能后续仍需引用（如 read_file 返回的文件内容），不压缩。 */
+const STUB_EXEMPT_TOOLS = new Set(["read_file"]);
+/** 工具结果剪枝标记：已带此标记的视为已压缩，prune 保持幂等，避免循环内二次截断死循环。 */
+const TOOL_RESULT_PRUNED_MARKER = "[工具结果已截断";
+
 /**
  * model-free 截断过长的工具结果消息（role:"tool"），保留头部 + 截断注记。
  * 不动 toolCallId/toolCallName；非工具消息或不足上限的原文原样返回。
@@ -60,9 +69,10 @@ const COMPACTION_NO_GAIN_RATIO = 0.85;
 export function pruneToolResultMessages(messages: Message[]): Message[] {
   let changed = false;
   const pruned = messages.map((message) => {
-    if (message.role !== "tool" || !message.content || message.content.length <= TOOL_RESULT_PRUNE_LIMIT) {
-      return message;
-    }
+    if (message.role !== "tool" || !message.content) return message;
+    // 已带截断标记 → 视为已压缩，保持幂等（否则每次循环都二次截断、永不收敛）
+    if (message.content.includes(TOOL_RESULT_PRUNED_MARKER)) return message;
+    if (message.content.length <= TOOL_RESULT_PRUNE_LIMIT) return message;
     changed = true;
     return {
       ...message,
@@ -72,6 +82,36 @@ export function pruneToolResultMessages(messages: Message[]): Message[] {
     };
   });
   return changed ? pruned : messages;
+}
+
+/**
+ * 工具结果 stub 压缩（吸收 atomcode StubCompaction，三级压缩阶梯第 1 档）：
+ * 把「历史中」的超长工具结果就地改写成单行 stub——零 LLM 调用、保留消息位置（单调）、
+ * 不破坏前缀缓存断点，且豁免 read_file 等可能后续仍需引用的长内容。
+ * 仅压缩最近一条 user 之前的历史工具结果，保留 active turn（最近一轮）的原样输出。
+ */
+export function stubToolResultMessages(messages: Message[]): { messages: Message[]; changed: boolean; stubbedCount: number } {
+  const latestUserReverseIdx = [...messages].reverse().findIndex((m) => m.role === "user");
+  const cut = latestUserReverseIdx < 0 ? messages.length : messages.length - 1 - latestUserReverseIdx;
+  let changed = false;
+  let stubbedCount = 0;
+  const out = messages.map((message, idx) => {
+    if (message.role !== "tool" || !message.content) return message;
+    // 仅压缩历史工具结果，保留 active turn（最近一条 user 之后的工具输出）
+    if (idx >= cut) return message;
+    // 豁免 read_file：其返回可能是后续步骤要引用的文件内容
+    if (message.toolCallName && STUB_EXEMPT_TOOLS.has(message.toolCallName)) return message;
+    if (message.content.length <= STUB_KEEP_LIMIT) return message;
+    changed = true;
+    stubbedCount++;
+    const firstLine = message.content.split("\n")[0].slice(0, STUB_FIRST_LINE_KEEP).replace(/\s+/g, " ");
+    const failed = /工具执行失败/.test(message.content) ? "FAILED" : "ok";
+    return {
+      ...message,
+      content: `[${message.toolCallName ?? "tool"} ${failed}: ${message.content.length} 字符, first: ${firstLine}…]`,
+    };
+  });
+  return { messages: changed ? out : messages, changed, stubbedCount };
 }
 
 /** 压缩是否「无收益」：摘要 token 接近被压缩原文 token（超过比例阈值）即视为无收益。 */
@@ -133,7 +173,7 @@ async function compactOnce(options: {
   requestMessages: Message[];
   modelConfig?: ModelConfig;
   signal?: AbortSignal;
-}): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean } }> {
+}): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean; cacheEpoch?: number } }> {
   const { model, requestMessages, modelConfig, signal } = options;
   const contextWindow = resolveContextWindow(modelConfig);
   const budget = Math.floor(contextWindow * CONTEXT_BUDGET_RATIO);
@@ -208,20 +248,47 @@ export async function compactHistoryIfNeeded(options: {
   requestMessages: Message[];
   modelConfig?: ModelConfig;
   signal?: AbortSignal;
-}): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean } }> {
+}): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean; cacheEpoch?: number } }> {
   let current = options.requestMessages;
-  let lastCompaction: { removedCount: number; fallback: boolean } | undefined;
+  let lastCompaction: { removedCount: number; fallback: boolean; cacheEpoch?: number } | undefined;
+  // cache_epoch：历史前缀被改写（stub/truncate/summarize）的次数，标记前缀缓存断点。
+  // 提供方支持前缀缓存时，可据此在断点插入 cache breakpoint，避免每次压缩都打断前缀缓存。
+  let cacheEpoch = 0;
   for (let guard = 0; guard < 16; guard++) {
     const contextWindow = resolveContextWindow(options.modelConfig);
     const budget = Math.floor(contextWindow * CONTEXT_BUDGET_RATIO);
     if (estimatePromptTokens(current) <= budget) {
       return { messages: current, compaction: lastCompaction };
     }
+    // 第 1 档 stub：历史超长工具结果改单行（零 LLM、保前缀缓存、保留 active turn）
+    const stubbed = stubToolResultMessages(current);
+    if (stubbed.changed) {
+      cacheEpoch++;
+      if (estimatePromptTokens(stubbed.messages) <= budget) {
+        return { messages: stubbed.messages, compaction: { removedCount: 0, fallback: false, cacheEpoch } };
+      }
+      current = stubbed.messages;
+      lastCompaction = { removedCount: stubbed.stubbedCount, fallback: false, cacheEpoch };
+      continue;
+    }
+    // 第 2 档 truncate：对（仍超长的）工具结果做 model-free 硬截断（吸 DSH toolResultPruner）
+    const truncated = pruneToolResultMessages(current);
+    if (truncated !== current) {
+      cacheEpoch++;
+      if (estimatePromptTokens(truncated) <= budget) {
+        return { messages: truncated, compaction: { removedCount: 0, fallback: false, cacheEpoch } };
+      }
+      current = truncated;
+      lastCompaction = { removedCount: 0, fallback: false, cacheEpoch };
+      continue;
+    }
+    // 第 3 档 summarize：LLM 摘要最旧可压缩区间（含无收益守卫 + 兜底丢最旧一轮）
     const result = await compactOnce({ ...options, requestMessages: current });
     // 无进展（消息数未减）说明已无可压缩区间，停止避免死循环
     if (result.messages.length >= current.length) {
       return { messages: result.messages, compaction: result.compaction ?? lastCompaction };
     }
+    if (result.compaction && !result.compaction.fallback) cacheEpoch++;
     current = result.messages;
     lastCompaction = result.compaction;
   }

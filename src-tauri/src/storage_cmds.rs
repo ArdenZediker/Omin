@@ -18,10 +18,11 @@ pub(crate) fn load_chat_storage(
     legacy_sessions_json: Option<String>,
 ) -> Result<ChatStoragePayload, String> {
     let connection = open_sqlite_connection(&app)?;
+    let sessions_root = storage_paths::chat_sessions_root(&app)?;
 
     let has_structured = has_structured_chat_storage(&connection)?;
     if has_structured {
-        return load_structured_chat_storage(&connection);
+        return load_structured_chat_storage(&connection, &sessions_root);
     }
 
     let payload = ChatStoragePayload {
@@ -34,8 +35,9 @@ pub(crate) fn load_chat_storage(
             &connection,
             payload.projects_json.as_deref().unwrap_or("[]"),
             payload.sessions_json.as_deref().unwrap_or("[]"),
+            &sessions_root,
         )?;
-        return load_structured_chat_storage(&connection);
+        return load_structured_chat_storage(&connection, &sessions_root);
     }
 
     Ok(payload)
@@ -48,20 +50,25 @@ pub(crate) fn save_chat_storage(
     sessions_json: String,
 ) -> Result<(), String> {
     let connection = open_sqlite_connection(&app)?;
-    save_structured_chat_storage(&connection, &projects_json, &sessions_json)?;
+    save_structured_chat_storage(
+        &connection,
+        &projects_json,
+        &sessions_json,
+        &storage_paths::chat_sessions_root(&app)?,
+    )?;
     Ok(())
 }
 
 #[tauri::command]
 pub(crate) fn delete_chat_session(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let connection = open_sqlite_connection(&app)?;
-    delete_chat_session_by_id(&connection, &id)
+    delete_chat_session_by_id(&connection, &id, &storage_paths::chat_sessions_root(&app)?)
 }
 
 #[tauri::command]
 pub(crate) fn delete_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let connection = open_sqlite_connection(&app)?;
-    delete_project_by_id(&connection, &id)
+    delete_project_by_id(&connection, &id, &storage_paths::chat_sessions_root(&app)?)
 }
 
 #[tauri::command]
