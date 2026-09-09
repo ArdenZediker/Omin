@@ -17,6 +17,7 @@ import type { ChatSendOptions } from "../chat/types";
 import type { PluginManifest } from "../plugins/types";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
+import ContextUsageTrigger, { type ContextUsageSnapshot } from "./ContextUsagePanel";
 import { baseNameOf, isImageFile, readLocalImageAsDataURL, savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
 interface ChatInputProps {
@@ -25,6 +26,7 @@ interface ChatInputProps {
   allowedSkillIds?: string[];
   hasConversation?: boolean;
   usageLabel?: string | null;
+  contextUsage?: ContextUsageSnapshot;
   contextPresetText?: string;
   knowledgeCollections?: KnowledgeCollection[];
   /** 可选专家（@专家 = 本轮对话切换为该专家的角色/工具/技能集） */
@@ -89,10 +91,11 @@ function SuggestionIcon() {
 }
 
 export default function ChatInput({
-  allowedToolIds,
-  allowedSkillIds,
-  usageLabel,
-  contextPresetText,
+    allowedToolIds,
+    allowedSkillIds,
+    usageLabel,
+    contextUsage,
+    contextPresetText,
   onSend,
   knowledgeCollections = [],
   experts = [],
@@ -818,6 +821,9 @@ export default function ChatInput({
           <div className="chat-composer__footer-row">
             <div className="chat-composer__footer-hint">Enter 发送 / Shift + Enter 换行</div>
             <div className="chat-composer__footer-actions">
+              {contextUsage && (
+                <ContextUsageTrigger snapshot={contextUsage} placement="footer" />
+              )}
               {isLoading ? (
                 <button onClick={onStop} className="chat-composer__submit" title="停止生成" type="button">
                   <Square className="chat-composer__submit-icon" size={18} strokeWidth={2} fill="currentColor" />

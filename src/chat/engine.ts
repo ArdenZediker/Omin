@@ -2,7 +2,7 @@ import { modelRegistry } from "../adapters/registry";
 import { pluginRegistry } from "../plugins/registry";
 import { getToolManifestById } from "../config/manifests/tools";
 import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig, ChatOptions } from "../adapters/types";
-import { defaultChatOptions } from "../adapters/chatOptions";
+import { defaultChatOptions, resolveContextWindow } from "../adapters/chatOptions";
 import type { FileDiff } from "./fileDiff";
 import { invoke } from "@tauri-apps/api/core";
 import { getUsagePreferences, loadPersonaConfig } from "./storage";
@@ -12,6 +12,7 @@ import { buildOmniSystemPrompt } from "./promptModules";
 import { parseOmniStructuredOutput } from "./structuredOutput";
 import { getModelPricing } from "../adapters/modelCatalog";
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord } from "./types";
+import { estimateTokens, estimatePromptTokens } from "./tokenEstimator";
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are Omni, a helpful, knowledgeable AI project. Be concise and clear. Use markdown when useful.";
@@ -43,23 +44,40 @@ const CONTEXT_BUDGET_RATIO = 0.75;
 const COMPACTION_PROMPT =
   "你是对话压缩器。把下面这段历史对话压缩成一段简洁的中文摘要，保留：用户的核心诉求、已经完成的工作、关键决策与结论、未完成事项。控制在 300 字以内，直接输出摘要正文，不要任何前缀。";
 
+/** 工具结果超过该字符数则就地截断（model-free 剪枝），保留头部 + 截断注记。
+ * 吸收 DSH 的 toolResultPruner：在 LLM 摘要前先压工具输出——即使摘要失败，
+ * 上下文里的工具结果也已缩短，等于直接减小本请求的 token 占用。 */
+const TOOL_RESULT_PRUNE_LIMIT = 2400;
+
+/** 压缩「无收益」判定阈值（吸收 atomcode 的 committed/refused 守卫）：摘要相对被压缩原文的
+ * token 比例超过该值时，说明付了一次完整 LLM 调用却只换来几乎等长的摘要，不如直接丢最旧一轮。 */
+const COMPACTION_NO_GAIN_RATIO = 0.85;
+
 /**
- * token 估算：CJK 每字符约 1 token，其余按 4 字符 1 token。
- * （原 length/4 对中文低估约 4 倍，导致成本与压缩判断失真。）
+ * model-free 截断过长的工具结果消息（role:"tool"），保留头部 + 截断注记。
+ * 不动 toolCallId/toolCallName；非工具消息或不足上限的原文原样返回。
  */
-function estimateTokens(text: string) {
-  const normalized = text.trim();
-  if (!normalized) return 0;
-  const cjk = (normalized.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
-  const rest = normalized.length - cjk;
-  return Math.max(1, Math.ceil(cjk * 1.1 + rest / 4));
+export function pruneToolResultMessages(messages: Message[]): Message[] {
+  let changed = false;
+  const pruned = messages.map((message) => {
+    if (message.role !== "tool" || !message.content || message.content.length <= TOOL_RESULT_PRUNE_LIMIT) {
+      return message;
+    }
+    changed = true;
+    return {
+      ...message,
+      content:
+        message.content.slice(0, TOOL_RESULT_PRUNE_LIMIT) +
+        `\n…[工具结果已截断，原 ${message.content.length} 字符，保留前 ${TOOL_RESULT_PRUNE_LIMIT} 字符]`,
+    };
+  });
+  return changed ? pruned : messages;
 }
 
-function estimatePromptTokens(messages: Message[]) {
-  return messages.reduce((total, message) => {
-    const imageTokens = (message.images?.length ?? 0) * 256;
-    return total + estimateTokens(message.content) + imageTokens;
-  }, 0);
+/** 压缩是否「无收益」：摘要 token 接近被压缩原文 token（超过比例阈值）即视为无收益。 */
+export function isCompactionNoGain(summary: string, originalSliceTokens: number): boolean {
+  if (originalSliceTokens <= 0) return false;
+  return estimateTokens(summary) >= originalSliceTokens * COMPACTION_NO_GAIN_RATIO;
 }
 
 /** 成本估算：价格目录（USD/1M tokens）→ 本次调用成本；未收录返回 0（未知）。 */
@@ -107,18 +125,17 @@ function accumulateUsage(acc: UsageAccumulator, usage: { promptTokens: number; c
 }
 
 /**
- * 上下文预算压缩：当请求超窗口预算时，把最旧的对话压缩成一条摘要。
- * 摘要在独立的一次小请求里生成（非流式），失败则丢弃最旧轮次兜底。
- * 返回实际发生的压缩信息（供时间线渲染「压缩」动作步骤）。
+ * 单次压缩：当请求超窗口预算时，把最旧的对话压缩成一条摘要（或摘要失败/无收益时丢最旧一轮）。
+ * 纯函数式，不改传入数组。多次压缩与「压一次仍超预算」的溢出重试由 `compactHistoryIfNeeded` 循环驱动。
  */
-async function compactHistoryIfNeeded(options: {
+async function compactOnce(options: {
   model: string;
   requestMessages: Message[];
   modelConfig?: ModelConfig;
   signal?: AbortSignal;
 }): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean } }> {
   const { model, requestMessages, modelConfig, signal } = options;
-  const contextWindow = modelConfig?.maxTokens ?? 128000;
+  const contextWindow = resolveContextWindow(modelConfig);
   const budget = Math.floor(contextWindow * CONTEXT_BUDGET_RATIO);
   const estimated = estimatePromptTokens(requestMessages);
 
@@ -139,38 +156,76 @@ async function compactHistoryIfNeeded(options: {
     return { messages: requestMessages };
   }
 
-  // 只压缩最旧的 60%，保留近端细节
+  // 只压缩最旧的 60%，保留近端细节（sacred_floor：system/最近 user 永压）
   const sliceBudget = Math.floor(slice.length * 0.6);
   const compactSlice = slice.slice(0, Math.max(2, sliceBudget));
-  const retained = requestMessages.slice(compactableStart + compactSlice.length);
+  const leading = requestMessages.slice(0, compactableStart);
+  // 摘要前先 model-free 剪枝工具结果（吸 DSH toolResultPruner）：减小摘要请求体量，
+  // 且即使摘要失败，retained 里的工具输出也已缩短，直接降低本请求上下文占用。
+  const prunedSlice = pruneToolResultMessages(compactSlice);
+  const prunedRetained = pruneToolResultMessages(requestMessages.slice(compactableStart + compactSlice.length));
+  const droppedOldest = pruneToolResultMessages(requestMessages.slice(compactableStart + 2));
 
   try {
     const response = await modelRegistry.chat({
       model,
-      messages: [{ role: "system", content: COMPACTION_PROMPT }, ...compactSlice],
+      messages: [{ role: "system", content: COMPACTION_PROMPT }, ...prunedSlice],
       stream: false,
       signal,
       options: { maxTokens: 600, temperature: 0.2 },
     });
     const summary = response.content.trim();
     if (summary && summary.length > 20) {
-      // 保留前部 system/knowledge 消息 + 摘要 + 近端保留消息
-      const leading = requestMessages.slice(0, compactableStart);
+      // 无收益守卫（吸 atomcode committed/refused）：摘要几乎与原文等长则放弃摘要压缩，
+      // 回退丢最旧一轮而非插入一条等长摘要反而徒增一次 LLM 调用。
+      if (isCompactionNoGain(summary, estimatePromptTokens(compactSlice))) {
+        return { messages: [...leading, ...droppedOldest], compaction: { removedCount: 2, fallback: true } };
+      }
+      // 保留前部 system/knowledge 消息 + 摘要 + 近端保留消息（工具结果已剪枝）
       return {
-        messages: [...leading, { role: "assistant" as const, content: `【历史对话摘要】${summary}` }, ...retained],
+        messages: [...leading, { role: "assistant" as const, content: `【历史对话摘要】${summary}` }, ...prunedRetained],
         compaction: { removedCount: compactSlice.length, fallback: false },
       };
     }
   } catch {
-    // 压缩失败：走丢弃兜底
+    // 摘要失败：走丢弃兜底
   }
 
-  // 兜底：丢掉最旧一轮对话（保留 system/knowledge 与近端）
-  const leading = requestMessages.slice(0, compactableStart);
+  // 兜底：丢掉最旧一轮对话（保留 system/knowledge 与近端；工具结果已剪枝）
   return {
-    messages: [...leading, ...requestMessages.slice(compactableStart + 2)],
+    messages: [...leading, ...droppedOldest],
     compaction: { removedCount: 2, fallback: true },
   };
+}
+
+/**
+ * 上下文预算压缩（带溢出重试）：超窗时循环压缩最旧部分，直到进入预算或无可压缩区间。
+ * 单次压缩见 `compactOnce`；本函数在「压一次仍超预算」的极端长对话下继续升级压缩，
+ * 而非压一次就放行（避免溢出窗口导致模型侧截断/报错）。guard 防极端死循环。
+ */
+export async function compactHistoryIfNeeded(options: {
+  model: string;
+  requestMessages: Message[];
+  modelConfig?: ModelConfig;
+  signal?: AbortSignal;
+}): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean } }> {
+  let current = options.requestMessages;
+  let lastCompaction: { removedCount: number; fallback: boolean } | undefined;
+  for (let guard = 0; guard < 16; guard++) {
+    const contextWindow = resolveContextWindow(options.modelConfig);
+    const budget = Math.floor(contextWindow * CONTEXT_BUDGET_RATIO);
+    if (estimatePromptTokens(current) <= budget) {
+      return { messages: current, compaction: lastCompaction };
+    }
+    const result = await compactOnce({ ...options, requestMessages: current });
+    // 无进展（消息数未减）说明已无可压缩区间，停止避免死循环
+    if (result.messages.length >= current.length) {
+      return { messages: result.messages, compaction: result.compaction ?? lastCompaction };
+    }
+    current = result.messages;
+    lastCompaction = result.compaction;
+  }
+  return { messages: current, compaction: lastCompaction };
 }
 
 /** 工具是否声明了并行安全（concurrencySafe 契约）：MCP 与未声明工具一律视为不安全（保守默认）。 */
@@ -409,6 +464,50 @@ async function runToolLoop(options: {
       toolCallName: toolCall.name,
     }));
     workingMessages = [...workingMessages, assistantMsg, ...toolMessages];
+
+    // 步间压力预检（改造4 触发双保险·二）：工具结果回填后上下文可能再次超预算。
+    // 1) 先 model-free 剪枝本轮（及历史）工具结果——直接砍掉超长工具输出，零 LLM 调用即降占用
+    //    （当前轮工具结果位于「最近 user」之后，受 sacred_floor 保护无法被摘要压缩，只能走剪枝）；
+    // 2) 仍存在可压缩历史（最近 user 之前 ≥2 条）时才交给 compactHistoryIfNeeded 循环再压，
+    //    避免仅当前轮溢出时白白发起一次摘要 LLM 调用（溢出重试由其内部循环保障）。
+    // 仅在确有剪枝/压缩时才上屏动作步骤。
+    const pruned = pruneToolResultMessages(workingMessages);
+    const hasCompletableHistory = (() => {
+      const cs = pruned.findIndex((m) => m.role !== "system");
+      if (cs < 0) return false;
+      const lu = [...pruned].reverse().findIndex((m) => m.role === "user");
+      if (lu < 0) return false;
+      return pruned.slice(cs, pruned.length - 1 - lu).length >= 2;
+    })();
+    const precheck = hasCompletableHistory
+      ? await compactHistoryIfNeeded({ model, requestMessages: pruned, modelConfig, signal })
+      : { messages: pruned };
+    if (precheck.messages.length < workingMessages.length) {
+      workingMessages = precheck.messages;
+      const compactionStep: ChatStep = {
+        type: "action",
+        label: "压缩",
+        title: "Context Compaction",
+        icon: "Archive",
+        detail: precheck.compaction?.fallback
+          ? "工具轮次间上下文再次超出预算，已丢弃最旧历史消息"
+          : `工具轮次间上下文再次超出预算，已压缩 ${precheck.compaction?.removedCount ?? 0} 条最旧消息`,
+      };
+      steps.push(compactionStep);
+      onToolStep?.(compactionStep);
+    } else if (pruned !== workingMessages) {
+      // 仅工具结果被剪枝（未触发摘要压缩），也上屏一条轻量动作
+      workingMessages = pruned;
+      const pruneStep: ChatStep = {
+        type: "action",
+        label: "压缩",
+        title: "Context Prune",
+        icon: "Archive",
+        detail: "工具轮次间上下文再次超出预算，已剪枝超长工具结果",
+      };
+      steps.push(pruneStep);
+      onToolStep?.(pruneStep);
+    }
   }
 
   // 轮数耗尽：降级为「总结进度」的最终请求（不再给工具，避免继续循环）

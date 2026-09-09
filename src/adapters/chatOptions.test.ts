@@ -4,6 +4,8 @@ import {
   ToolChoice,
   reasoningEffortFromConfig,
   resolveRequestOptions,
+  resolveContextWindow,
+  MIN_CONTEXT_WINDOW,
   defaultChatOptions,
   claudeThinkingConfig,
   geminiThinkingConfig,
@@ -128,5 +130,29 @@ describe("toolChoice 映射", () => {
     expect(ollamaToolChoice(ToolChoice.Required)).toBe("required");
     expect(ollamaToolChoice(ToolChoice.None)).toBe("none");
     expect(ollamaToolChoice(ToolChoice.Specific)).toBe("required");
+  });
+});
+
+describe("resolveContextWindow（双字段 + 兜底，对齐 atomcode/codex-main）", () => {
+  it("显式 maxTokens 优先采用", () => {
+    expect(resolveContextWindow({ maxTokens: 8192 })).toBe(8192);
+  });
+  it("maxTokens 缺失时回落 maxContextWindow（即便很小也如实返回，不抬高到 128k）", () => {
+    expect(resolveContextWindow({ maxContextWindow: 4096 })).toBe(4096);
+  });
+  it("两者皆缺失/为 0 ⇒ 兜底 MIN_CONTEXT_WINDOW(128k)", () => {
+    expect(resolveContextWindow()).toBe(MIN_CONTEXT_WINDOW);
+    expect(resolveContextWindow({})).toBe(MIN_CONTEXT_WINDOW);
+    expect(resolveContextWindow({ maxTokens: 0, maxContextWindow: 0 })).toBe(MIN_CONTEXT_WINDOW);
+  });
+  it("maxTokens 为 0 视为缺失 ⇒ 回落 maxContextWindow", () => {
+    expect(resolveContextWindow({ maxTokens: 0, maxContextWindow: 32768 })).toBe(32768);
+  });
+  it("maxTokens 存在时不得越过硬上限（裁剪到 max，对齐 Codex）", () => {
+    expect(resolveContextWindow({ maxTokens: 200000, maxContextWindow: 64000 })).toBe(64000);
+  });
+  it("显式小窗口不被强制抬到下限（保护 Ollama 4k/8k 本地模型）", () => {
+    expect(resolveContextWindow({ maxTokens: 4096 })).toBe(4096);
+    expect(resolveContextWindow({ maxTokens: 8192, maxContextWindow: 8192 })).toBe(8192);
   });
 });

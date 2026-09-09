@@ -103,6 +103,45 @@ export function resolveRequestOptions(request: ChatRequest): {
 }
 
 /**
+ * 上下文窗口下限（token）。
+ * 当模型元数据完全缺失（maxTokens 与 maxContextWindow 都为空/0）时作为兜底默认值——
+ * 对齐 atomcode 的 MIN_CONTEXT_WINDOW，防止「0 窗口」把每次请求都降级成零 token。
+ * 注意：此下限只作用于「两者皆缺失」的未知模型；对显式声明的小窗口本地模型
+ * （如 Ollama 4k/8k）不做强制抬高，避免静默错配（参考 codex-main 的 max_context_window 语义）。
+ */
+export const MIN_CONTEXT_WINDOW = 128_000;
+
+/**
+ * 解析模型上下文窗口（token），吸收 atomcode/codex-main 的「双字段 + 兜底」思路：
+ * - `maxTokens` 为「实际用于预算的窗口」，优先采用；
+ * - 缺失/为 0 时回落 `maxContextWindow`（模型硬上限）；
+ * - 两者皆缺失/为 0 时兜底 {@link MIN_CONTEXT_WINDOW}；
+ * - 当 `maxTokens` 与 `maxContextWindow` 同时存在，`maxTokens` 不得超过硬上限
+ *   （对齐 Codex 的 `resolved_context_window` 裁剪到 max 的逻辑），防止配置越界。
+ * 返回恒为正、可用于历史压缩预算的安全窗口值。
+ */
+export function resolveContextWindow(model?: {
+  maxTokens?: number;
+  maxContextWindow?: number;
+}): number {
+  const explicit =
+    model?.maxTokens && model.maxTokens > 0 ? model.maxTokens : undefined;
+  const hard =
+    model?.maxContextWindow && model.maxContextWindow > 0
+      ? model.maxContextWindow
+      : undefined;
+
+  // 显式窗口优先，但不得越过硬上限（配置越界裁剪）
+  if (explicit !== undefined) {
+    return hard !== undefined ? Math.min(explicit, hard) : explicit;
+  }
+  // 其次用真实硬上限（哪怕很小也如实返回，不强行抬高到 128k）
+  if (hard !== undefined) return hard;
+  // 两者皆缺 ⇒ 兜底下限
+  return MIN_CONTEXT_WINDOW;
+}
+
+/**
  * 由模型能力 + 用户偏好构造默认中性选项。
  * - thinking 模型默认带 Medium 推理力度（可被 explicit.reasoningEffort 覆盖）；
  *   非 thinking 模型不携带推理力度 → 适配器不会发供应商不支持的字段 → 零行为变化。

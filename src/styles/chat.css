@@ -2404,6 +2404,145 @@
   font-weight: 600;
 }
 
+/* 上下文用量浮层 */
+.context-usage {
+  position: relative;
+}
+
+.context-usage__trigger {
+  height: 28px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.context-usage__trigger:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+}
+
+.context-usage__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: 300px;
+  padding: 14px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 14px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+}
+
+/* 在底部 footer 时浮层向上展开，避免被裁切 */
+.context-usage--footer .context-usage__panel {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.context-usage__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.context-usage__title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.context-usage__close {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+}
+
+.context-usage__close:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+}
+
+.context-usage__summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.context-usage__percent {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.context-usage__fraction {
+  color: var(--omni-app-muted);
+  font-size: 12px;
+}
+
+.context-usage__bar-bg {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-app-text) 10%, transparent);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.context-usage__bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.context-usage__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.context-usage__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-usage__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.context-usage__label {
+  flex: 1 1 auto;
+  color: var(--omni-app-text);
+}
+
+.context-usage__value {
+  color: var(--omni-app-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .chat-composer__editor {
   position: relative;
   z-index: 1;

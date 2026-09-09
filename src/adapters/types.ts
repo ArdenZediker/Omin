@@ -173,6 +173,14 @@ export interface ModelConfig {
   provider: string;
   /** 上下文窗口大小（token） */
   maxTokens: number;
+  /**
+   * 模型硬上限（token），即该模型支持的最大上下文窗口。可选。
+   * 与 maxTokens（实际用于预算的窗口）区分：maxContextWindow 是「天花板」，
+   * maxTokens 是「实际取值」。当 maxTokens 缺失/为 0 时回落到本字段；
+   * 当两者都存在时，maxTokens 不得超过本字段（对齐 Codex resolved_context_window）。
+   * 来自 provider 元数据时填此字段，可防止配置越界（参考 atomcode/codex-main）。
+   */
+  maxContextWindow?: number;
   /** 单次输出上限（token）；缺省时按窗口的一半估算 */
   maxOutput?: number;
   supportsVision: boolean;
@@ -252,6 +260,8 @@ export interface CustomModelConfig {
   id: string;
   name: string;
   maxTokens?: number;
+  /** 模型硬上限（token）；可选。缺失 maxTokens 时回落本字段；存在时 maxTokens 不得越界 */
+  maxContextWindow?: number;
   maxOutput?: number;
   supportsVision?: boolean;
   supportsStreaming?: boolean;
@@ -270,6 +280,8 @@ export {
   reasoningEffortFromConfig,
   defaultChatOptions,
   resolveRequestOptions,
+  resolveContextWindow,
+  MIN_CONTEXT_WINDOW,
   reasoningEffortToOpenAI,
   claudeThinkingConfig,
   geminiThinkingConfig,

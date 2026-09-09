@@ -39,8 +39,13 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import type { Message, ChatAttachment, ChatImage } from "../adapters/types";
+import type { Message, ChatAttachment, ChatImage, ChatToolParam } from "../adapters/types";
 import type { ModelConfig } from "../adapters/types";
+import { modelRegistry } from "../adapters/registry";
+import { resolveContextWindow } from "../adapters/chatOptions";
+import { buildChatTools } from "../hooks/chatRuntimeHelpers";
+import { listActiveMcpTools } from "../plugins/mcp";
+import type { ContextUsageSnapshot, ContextUsageItem } from "./ContextUsagePanel";
 import {
   formatUsageLabel,
   DEFAULT_PROJECT_ID,
@@ -809,6 +814,34 @@ export default function MainChatView({
     [activeProject?.allowedToolIds],
   );
   const allowedComposerSkillIds = activeProject?.allowedSkillIds ?? [];
+  const contextUsageSnapshot = useMemo<ContextUsageSnapshot>(() => {
+    const modelConfig = modelRegistry.getModelConfig(executionModel);
+    const contextWindow = resolveContextWindow(modelConfig);
+    const toolItems: ContextUsageItem[] = buildChatTools(activeProject).map((t: ChatToolParam) => ({
+      name: t.name,
+      description: t.description,
+      schema: t.parameters,
+    }));
+    const mcpItems: ContextUsageItem[] = listActiveMcpTools().map((t) => ({
+      name: t.name,
+      description: t.description,
+      schema: t.parameters,
+    }));
+    const skillsPrompt = allowedComposerSkillIds
+      .map((id) => pluginRegistry.getManifest(id)?.promptContribution)
+      .filter((s): s is string => Boolean(s))
+      .join("\n\n");
+    return {
+      contextWindow,
+      systemPrompt: activeProject?.systemPrompt ?? "",
+      tools: toolItems,
+      mcpTools: mcpItems,
+      skillsPrompt,
+      messages,
+      inputText: inputDraft,
+      inputImages: inputDraftImages,
+    };
+  }, [executionModel, activeProject, messages, inputDraft, inputDraftImages, allowedComposerSkillIds]);
   const showContextRecallBanner =
     messages.length === 0 &&
     (relatedContext.memories.length > 0 || relatedContext.summaries.length > 0);
@@ -2519,6 +2552,7 @@ export default function MainChatView({
                         ? formatUsageLabel(activeSession.usage)
                         : null
                     }
+                    contextUsage={contextUsageSnapshot}
                     isLoading={isLoading}
                     isSendBlocked={isSendBlocked}
                     onStop={onStop}

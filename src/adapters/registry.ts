@@ -2,6 +2,7 @@
 // 负责集中管理所有 AI 模型适配器
 
 import type { ModelAdapter, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, ModelConfig, CustomModelConfig } from "./types";
+import { resolveContextWindow } from "./chatOptions";
 import { OpenAIAdapter } from "./openai";
 import { ClaudeAdapter } from "./claude";
 import { GeminiAdapter } from "./gemini";
@@ -106,7 +107,8 @@ class ModelRegistry {
           id: m.id,
           name: m.name,
           provider,
-          maxTokens: m.maxTokens || 128000,
+          maxTokens: resolveContextWindow(m),
+          maxContextWindow: m.maxContextWindow,
           supportsVision: m.supportsVision ?? false,
           supportsStreaming: m.supportsStreaming ?? true,
           requestModelId: m.requestModelId,
@@ -134,7 +136,8 @@ class ModelRegistry {
           id: found.id,
           name: found.name,
           provider,
-          maxTokens: found.maxTokens || 128000,
+          maxTokens: resolveContextWindow(found),
+          maxContextWindow: found.maxContextWindow,
           maxOutput: found.maxOutput,
           supportsVision: found.supportsVision ?? false,
           supportsStreaming: found.supportsStreaming ?? true,
