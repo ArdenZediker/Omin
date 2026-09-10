@@ -29,6 +29,8 @@ import { type ThemeMode } from "../app/settings";
 import { useThemeSync } from "../hooks/useThemeSync";
 import { COMPACT_WINDOW_LABEL } from "../app/constants";
 import { saveSqliteBackedValue } from "../app/sqliteStorage";
+import { applyOpenMainShortcut } from "../app/globalShortcut";
+import { shortcutFromEvent } from "../app/shortcuts";
 import { resolveCurrentModelId } from "../chat/modelSelection";
 import {
   loadBasicSettings,
@@ -120,20 +122,6 @@ function getSafeCurrentWindow() {
   }
 }
 
-function formatShortcutFromEvent(event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">) {
-  if (["Control", "Shift", "Alt", "Meta"].includes(event.key)) {
-    return "";
-  }
-
-  return [
-    event.ctrlKey ? "Ctrl" : "",
-    event.shiftKey ? "Shift" : "",
-    event.altKey ? "Alt" : "",
-    event.metaKey ? "Meta" : "",
-    event.key.length === 1 ? event.key.toUpperCase() : event.key,
-  ].filter(Boolean).join("+");
-}
-
 export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: SettingsPanelProps) {
   const [section, setSection] = useState<SettingsSection>("basic");
   const [modelSection, setModelSection] = useState<ModelConfigSection>("chat");
@@ -153,6 +141,9 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [knowledgeEmbeddingConfig, setKnowledgeEmbeddingConfig] = useState<KnowledgeEmbeddingConfig>(loadKnowledgeEmbeddingConfig);
   const [knowledgeMultimodalConfig, setKnowledgeMultimodalConfig] = useState<KnowledgeMultimodalConfig>(loadKnowledgeMultimodalConfig);
   const [recordingShortcut, setRecordingShortcut] = useState<"openMainShortcut" | "switchPreviousModelShortcut" | null>(null);
+  // 「打开主界面」是 OS 级全局热键，可能因组合键被其它程序占用而注册失败。
+  // 失败必须让用户看见，否则会误以为设置没生效。
+  const [openMainShortcutNotice, setOpenMainShortcutNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [endpointName, setEndpointName] = useState("OpenAI 官方");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
   const [apiKey, setApiKey] = useState("");
@@ -337,20 +328,41 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     setThemeMode(mode);
   };
 
+  // 在设置页也注册一次，让用户改完立刻拿到「是否被占用」的反馈。
+  // 主界面那边的 effect 会注册同一组合键（先解绑再注册，幂等）。
+  const applyOpenMainShortcutFromSettings = async (shortcut: string) => {
+    const result = await applyOpenMainShortcut(shortcut);
+    if (result.ok) {
+      setOpenMainShortcutNotice(
+        shortcut
+          ? { kind: "ok", text: "已注册为全局快捷键，应用未聚焦时同样可用。" }
+          : { kind: "ok", text: "已取消全局快捷键绑定。" }
+      );
+      return;
+    }
+    setOpenMainShortcutNotice({ kind: "error", text: result.error ?? "全局快捷键注册失败" });
+  };
+
   const saveCapturedShortcut = (event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">, keyName: ShortcutSettingKey) => {
     if (event.key === "Backspace" || event.key === "Delete" || event.key === "Escape") {
       updateBasicSettings({ [keyName]: "未设置" });
       setRecordingShortcut(null);
+      if (keyName === "openMainShortcut") {
+        void applyOpenMainShortcutFromSettings("");
+      }
       return;
     }
 
-    const shortcut = formatShortcutFromEvent(event);
+    const shortcut = shortcutFromEvent(event);
     if (!shortcut) {
       return;
     }
 
     updateBasicSettings({ [keyName]: shortcut });
     setRecordingShortcut(null);
+    if (keyName === "openMainShortcut") {
+      void applyOpenMainShortcutFromSettings(shortcut);
+    }
   };
 
   const startShortcutCapture = (keyName: ShortcutSettingKey) => {
@@ -798,6 +810,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                 onUpdateBasicSettings={updateBasicSettings}
                 onStartShortcutCapture={startShortcutCapture}
                 onCancelShortcutCapture={cancelShortcutCapture}
+                openMainShortcutNotice={openMainShortcutNotice}
                 themeMode={themeMode}
                 recordingShortcut={recordingShortcut}
               />

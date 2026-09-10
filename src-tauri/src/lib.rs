@@ -19,6 +19,7 @@ mod knowledge_files;
 mod knowledge_pipeline;
 mod knowledge;
 mod backup;
+mod global_shortcut;
 mod knowledge_schema;
 mod persona;
 mod storage;
@@ -499,6 +500,20 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state != tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        return;
+                    }
+                    // 全局热键在应用未聚焦时同样触发——这正是它相对 DOM keydown 的唯一价值。
+                    // 由 Rust 直接唤起窗口，再广播事件让前端切回聊天视图
+                    // （窗口尺寸随视图切换由前端自行调整）。
+                    show_main_window(app);
+                    let _ = app.emit("omni-open-main-shortcut", ());
+                })
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             greet,
             load_workspace_pet_dir_command,
@@ -565,6 +580,7 @@ pub fn run() {
             export_data_backup,
             import_data_backup,
             restart_app,
+            global_shortcut::register_open_main_shortcut,
             read_persona_files,
             write_persona_file,
             install_skillhub_skill,

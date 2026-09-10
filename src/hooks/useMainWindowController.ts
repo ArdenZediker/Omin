@@ -10,7 +10,6 @@ import {
   CURRENT_MODEL_STORAGE_KEY,
   MAIN_VIEW_STORAGE_KEY,
   THEME_MODE_STORAGE_KEY,
-  UNSET_SHORTCUT,
 } from "../app/constants";
 import type { BasicSettings, ViewMode } from "../app/types";
 import { bootstrapSqliteStorage, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
@@ -27,12 +26,13 @@ import {
   getMainWindowSizeForView,
   getStoredMainPosition,
   isMainPositionVisible,
-  normalizeShortcutKey,
   persistMainPosition,
   resizeWindow,
   restoreMainWindow,
   showCompactWindow,
 } from "../app/window";
+import { applyOpenMainShortcut } from "../app/globalShortcut";
+import { classifyInAppShortcut, shortcutFromEvent } from "../app/shortcuts";
 import type { Message, ChatImage } from "../adapters/types";
 
 function getSafeCurrentWindow() {
@@ -82,6 +82,9 @@ export function useMainWindowController({
   onModelChange,
 }: UseMainWindowControllerArgs) {
   const hasAppliedInitialMainGeometryRef = useRef(false);
+  // 「唤起主界面」的全局热键是否注册成功。成功时 DOM 侧让位，避免一次按键被响应两次；
+  // 失败（如组合键已被其它程序占用）则回落到 DOM 监听，保证窗口聚焦时仍可用。
+  const openMainHandledGloballyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,38 +310,79 @@ export function useMainWindowController({
 
 
 
+  // 全局热键：让「唤起主界面」在应用未聚焦时也能生效——DOM keydown 在窗口失焦时根本不会被派发，
+  // 这也是该快捷键此前形同虚设的原因。注册结果决定 DOM 是否兜底。
+  useEffect(() => {
+    if (isCompactWindow) {
+      return;
+    }
+
+    let cancelled = false;
+    void applyOpenMainShortcut(basicSettings.openMainShortcut).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      openMainHandledGloballyRef.current = result.ok;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [basicSettings.openMainShortcut, isCompactWindow]);
+
+  // 全局热键触发后由 Rust 唤起窗口并广播该事件；这里只负责切回聊天视图
+  // （窗口显示与聚焦已由 Rust 的 show_main_window 完成）。
+  useEffect(() => {
+    if (isCompactWindow || !appWindow) {
+      return;
+    }
+
+    let cleanup: (() => void) | undefined;
+    void appWindow
+      .listen("omni-open-main-shortcut", () => {
+        setView("chat");
+        saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, "chat");
+      })
+      .then((unlisten) => {
+        cleanup = unlisten;
+      });
+
+    return () => cleanup?.();
+  }, [isCompactWindow, setView]);
+
+  // 应用内快捷键（仅窗口聚焦时生效）。按键 → 动作由 classifyInAppShortcut 归约，
+  // 这里只负责派发副作用；新增快捷键改规则表即可，不必再动这个 effect。
   useEffect(() => {
     if (isCompactWindow) {
       return;
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
-      const shortcut = normalizeShortcutKey(event);
-      if (!shortcut) {
+      const action = classifyInAppShortcut(shortcutFromEvent(event), basicSettings, {
+        openMainHandledGlobally: openMainHandledGloballyRef.current,
+        hasPreviousModel: Boolean(previousModel),
+      });
+      if (!action) {
         return;
       }
 
-      if (basicSettings.openMainShortcut !== UNSET_SHORTCUT && shortcut === basicSettings.openMainShortcut) {
-        event.preventDefault();
+      event.preventDefault();
+
+      if (action === "open-main") {
         setView("chat");
         saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, "chat");
         void restoreMainWindow(false);
         return;
       }
 
-      if (
-        basicSettings.switchPreviousModelShortcut !== UNSET_SHORTCUT &&
-        shortcut === basicSettings.switchPreviousModelShortcut &&
-        previousModel
-      ) {
-        event.preventDefault();
+      if (action === "switch-previous-model" && previousModel) {
         onModelChange(previousModel);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [basicSettings.openMainShortcut, basicSettings.switchPreviousModelShortcut, isCompactWindow, onModelChange, previousModel, setView]);
+  }, [basicSettings, isCompactWindow, onModelChange, previousModel, setView]);
 
   const handleOpenCompact = useCallback(async () => {
     if (basicSettings.showCompactBall) {

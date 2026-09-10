@@ -39,6 +39,8 @@ type Props = {
   onStartShortcutCapture: (keyName: keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">) => void;
   onCancelShortcutCapture: () => void;
   recordingShortcut: "openMainShortcut" | "switchPreviousModelShortcut" | null;
+  /** 「打开主界面」全局热键的注册结果反馈（设置页注册后回填）。 */
+  openMainShortcutNotice?: { kind: "ok" | "error"; text: string } | null;
 };
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -76,6 +78,7 @@ export default function BasicSettingsSection({
   onStartShortcutCapture,
   onCancelShortcutCapture,
   recordingShortcut,
+  openMainShortcutNotice,
 }: Props) {
   // Shell 可用性检测结果（点「检测可用性」后展示）。
   const [shellProbe, setShellProbe] = useState<{ ok: boolean; output: string; probing: boolean } | null>(null);
@@ -260,7 +263,19 @@ export default function BasicSettingsSection({
             )}
           </button>
         </Field>
-        <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">点击快捷键框后直接按键设置，Backspace / Delete / Esc 清空。</p>
+        <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
+          「打开主界面」是系统级全局快捷键，应用未聚焦时同样可用；若组合键已被其它程序占用，会自动回落到「仅窗口聚焦时生效」并在下方提示。
+          点击快捷键框后直接按键设置，Backspace / Delete / Esc 清空。
+        </p>
+        {openMainShortcutNotice ? (
+          <p
+            className={`pl-[136px] text-xs ${
+              openMainShortcutNotice.kind === "error" ? "text-red-600" : "text-emerald-600"
+            }`}
+          >
+            {openMainShortcutNotice.text}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-4 border-t border-slate-100 pt-4">

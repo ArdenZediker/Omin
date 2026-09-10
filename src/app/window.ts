@@ -65,17 +65,6 @@ export function clampWindowSize(value: number, fallback: number, min: number, ma
   return Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;
 }
 
-export function normalizeShortcutKey(event: KeyboardEvent) {
-  if (["Control", "Shift", "Alt", "Meta"].includes(event.key)) return "";
-  return [
-    event.ctrlKey ? "Ctrl" : "",
-    event.shiftKey ? "Shift" : "",
-    event.altKey ? "Alt" : "",
-    event.metaKey ? "Meta" : "",
-    event.key.length === 1 ? event.key.toUpperCase() : event.key,
-  ].filter(Boolean).join("+");
-}
-
 export function applyThemeFromStorage() {
   if (typeof window === "undefined") return;
   const saved = readSqliteBackedValue(THEME_MODE_STORAGE_KEY);
