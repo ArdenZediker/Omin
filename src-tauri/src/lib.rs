@@ -564,6 +564,7 @@ pub fn run() {
             reveal_item_in_dir,
             export_data_backup,
             import_data_backup,
+            restart_app,
             read_persona_files,
             write_persona_file,
             install_skillhub_skill,

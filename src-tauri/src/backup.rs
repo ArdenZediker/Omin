@@ -1,8 +1,8 @@
-//! 数据备份 / 恢复：把整个数据目录（数据库 + 知识库文件）打包成带清单的 zip，
+//! 数据备份 / 恢复：把整个数据目录（数据库 + 知识库文件 + 对话消息）打包成带清单的 zip，
 //! 可选 AES-256 加密（secret）。导入时做清单版本校验与 SQLite 完整性校验。
 //!
 //! 数据流：
-//! - 导出：当前数据根 → 校验风险 → 复制数据库（含 WAL/SHM）+ 知识库目录 → 写入 zip（含 manifest）。
+//! - 导出：当前数据根 → 校验风险 → 数据库（含 WAL/SHM）+ 知识库目录 + 对话消息目录 → 写入 zip（含 manifest）。
 //! - 导入：读取 zip → 解析 manifest（校验 app / 版本 / 是否加密）→ 解压到目标目录 → SQLite 完整性校验。
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,7 @@ pub(crate) const BACKUP_FORMAT_VERSION: u32 = 1;
 pub(crate) const MANIFEST_NAME: &str = "omni-backup-manifest.json";
 const DB_FILE_NAME: &str = "omni.sqlite3";
 const KNOWLEDGE_DIR_NAME: &str = "knowledge_files";
+const CHAT_SESSIONS_DIR_NAME: &str = "chat-sessions";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -143,6 +144,12 @@ pub(crate) fn build_backup(
     let knowledge = source_root.join(KNOWLEDGE_DIR_NAME);
     if knowledge.exists() {
         add_dir_to_zip(&mut zip, source_root, &knowledge, secret)?;
+    }
+
+    // 对话消息（权威存储：每个会话一个 session.jsonl，SQLite 仅存元数据，必须随备份带走）
+    let chat_sessions = source_root.join(CHAT_SESSIONS_DIR_NAME);
+    if chat_sessions.exists() {
+        add_dir_to_zip(&mut zip, source_root, &chat_sessions, secret)?;
     }
 
     zip.finish().map_err(|err| format!("写入备份失败：{}", err))?;

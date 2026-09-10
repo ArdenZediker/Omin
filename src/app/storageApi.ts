@@ -81,3 +81,8 @@ export async function importDataBackup(
     secret: secret ?? null,
   });
 }
+
+export async function restartApp(): Promise<void> {
+  if (!canUseTauriInvoke()) return;
+  await invoke("restart_app");
+}
