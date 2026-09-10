@@ -28,7 +28,9 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   minimizeBehavior: "compact",
   mainWindowWidth: EXPANDED_SIZE.width,
   mainWindowHeight: EXPANDED_SIZE.height,
-  mainWindowPositionMode: "remember",
+  // 启动时默认居中：此前的默认值 "remember" 会把「某一时刻的落点」永久固化下来，
+  // 显示器缩放/分辨率变化后那个落点就不再居中，看起来像"窗口跑偏了"。
+  mainWindowPositionMode: "center",
   showCompactBall: true,
   followCursorScreen: false,
   openMainShortcut: DEFAULT_OPEN_MAIN_SHORTCUT,

@@ -1,6 +1,7 @@
 import type { BasicSettings } from "./types";
 import { DEFAULT_USAGE_PREFERENCES, USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
-import { loadAppKvEntries, removeAppKvEntry, readSqliteBackedJson, removeSqliteBackedValue, saveAppKvEntry, saveSqliteBackedValue } from "./sqliteStorage";
+import { loadAppKvEntries, removeAppKvEntry, readSqliteBackedJson, readSqliteBackedValue, removeSqliteBackedValue, saveAppKvEntry, saveSqliteBackedValue } from "./sqliteStorage";
+import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, MAIN_POSITION_STORAGE_KEY } from "./constants";
 
 const MODEL_CONNECTION_STATUS_KEY = "omni_model_connection_status";
 
@@ -79,4 +80,36 @@ export function loadBasicSettings(storageKey: string, defaults: BasicSettings): 
 
 export function saveBasicSettings(storageKey: string, settings: BasicSettings) {
   saveSqliteBackedValue(storageKey, JSON.stringify(settings));
+}
+
+/** 一次性迁移标记：把「打开主窗口」的定位偏好从旧的默认值 remember 迁到 center。 */
+const MAIN_WINDOW_POSITION_MIGRATION_KEY = "omni_main_window_position_migrated_v1";
+
+/**
+ * 一次性迁移「打开主窗口」的定位偏好。
+ *
+ * 早期版本该字段的默认值是 `remember`（记住上次位置），多数用户从未显式改过它；而记忆位置
+ * 只要被写过一次，之后每次启动都会回到那个落点——一旦显示器缩放/分辨率或窗口尺寸变化，
+ * 那个落点就不再居中，表现就是"一启动窗口就偏在屏幕一角"。
+ *
+ * 这里把仍为 `remember` 的存量值迁移为 `center`，并清掉旧记忆位置；用户之后仍可在设置里
+ * 显式选回「记住上次位置」（迁移标记已写，不会再被覆盖）。返回本次是否发生了迁移。
+ */
+export function migrateMainWindowPositionPreference(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  if (readSqliteBackedValue(MAIN_WINDOW_POSITION_MIGRATION_KEY) === "done") {
+    return false;
+  }
+  saveSqliteBackedValue(MAIN_WINDOW_POSITION_MIGRATION_KEY, "done");
+
+  const settings = loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS);
+  if (settings.mainWindowPositionMode !== "remember") {
+    return false;
+  }
+
+  saveBasicSettings(BASIC_SETTINGS_STORAGE_KEY, { ...settings, mainWindowPositionMode: "center" });
+  removeSqliteBackedValue(MAIN_POSITION_STORAGE_KEY);
+  return true;
 }

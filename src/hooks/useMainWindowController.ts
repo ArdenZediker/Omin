@@ -33,6 +33,7 @@ import {
 } from "../app/window";
 import { applyOpenMainShortcut } from "../app/globalShortcut";
 import { classifyInAppShortcut, shortcutFromEvent } from "../app/shortcuts";
+import { migrateMainWindowPositionPreference } from "../app/settingsStore";
 import type { Message, ChatImage } from "../adapters/types";
 
 function getSafeCurrentWindow() {
@@ -43,6 +44,42 @@ function getSafeCurrentWindow() {
   }
 }
 const appWindow = getSafeCurrentWindow();
+
+/** 启动引导涉及的应用存储键：启动时从 SQLite 一次性同步进 localStorage。 */
+const BOOTSTRAP_STORAGE_KEYS = [
+  THEME_MODE_STORAGE_KEY,
+  BASIC_SETTINGS_STORAGE_KEY,
+  MAIN_VIEW_STORAGE_KEY,
+  "omni_compact_appearance",
+  CHARACTER_SCALE_STORAGE_KEY,
+  COMPACT_PET_HIDDEN_STORAGE_KEY,
+  "omni_provider_configs",
+  USAGE_PREFERENCES_STORAGE_KEY,
+  "omni_knowledge_embedding_profile",
+  CURRENT_MODEL_STORAGE_KEY,
+  "omni_model_connection_status",
+  "omni_basic_settings",
+  "omni_compact_position",
+  "omni_main_position",
+  ARTIFACTS_KEY,
+  ARTIFACT_PANEL_STATE_KEY,
+  "omni_output_root_v1",
+  "omni_mirror_sessions_md_v1",
+];
+
+/** 启动引导只做一次；多次调用共享同一个 Promise。 */
+let bootstrapStoragePromise: Promise<void> | null = null;
+
+/**
+ * 保证 SQLite 里的值已经同步进 localStorage 之后再继续。
+ *
+ * 几何定位与设置迁移都必须等这次同步完成：否则读到的还是上一版残留在 localStorage 的值，
+ * 而且随后的同步事件会把刚写回的新值再覆盖一次（典型症状是"改了设置，启动时又变回去"）。
+ */
+function ensureBootstrapStorage() {
+  bootstrapStoragePromise ??= bootstrapSqliteStorage(BOOTSTRAP_STORAGE_KEYS).catch(() => undefined);
+  return bootstrapStoragePromise;
+}
 
 type UseMainWindowControllerArgs = {
   basicSettings: BasicSettings;
@@ -89,26 +126,7 @@ export function useMainWindowController({
   useEffect(() => {
     let cancelled = false;
 
-    void bootstrapSqliteStorage([
-      THEME_MODE_STORAGE_KEY,
-      BASIC_SETTINGS_STORAGE_KEY,
-      MAIN_VIEW_STORAGE_KEY,
-      "omni_compact_appearance",
-      CHARACTER_SCALE_STORAGE_KEY,
-      COMPACT_PET_HIDDEN_STORAGE_KEY,
-      "omni_provider_configs",
-      USAGE_PREFERENCES_STORAGE_KEY,
-      "omni_knowledge_embedding_profile",
-      CURRENT_MODEL_STORAGE_KEY,
-      "omni_model_connection_status",
-      "omni_basic_settings",
-      "omni_compact_position",
-      "omni_main_position",
-      ARTIFACTS_KEY,
-      ARTIFACT_PANEL_STATE_KEY,
-      "omni_output_root_v1",
-      "omni_mirror_sessions_md_v1",
-    ]).then(() => {
+    void ensureBootstrapStorage().then(() => {
       if (cancelled) return;
       applyThemeFromStorage();
       void loadProviderConfigs().then(() => {
@@ -215,17 +233,29 @@ export function useMainWindowController({
 
     const win = appWindow;
     saveSqliteBackedValue(MAIN_VIEW_STORAGE_KEY, view);
-    const targetSize = getMainWindowSizeForView(view);
 
     void (async () => {
+      // 先等 SQLite → localStorage 同步完成：否则这里读到的是上一版残留值，
+      // 随后的同步事件又会把它覆盖回去（表现为"改了窗口尺寸/定位，重启又变回旧值"）。
+      await ensureBootstrapStorage();
+      migrateMainWindowPositionPreference();
+
+      const isFirstApply = !hasAppliedInitialMainGeometryRef.current;
       const isMaximized = await win.isMaximized();
       if (isMaximized) {
-        return;
+        // 进程刚启动时窗口若已是最大化（上次会话遗留 / 系统还原），必须先还原再摆放，
+        // 否则「配置尺寸 + 定位模式」整体失效——窗口会一直铺满屏幕、永远不会居中。
+        // 运行中用户自己点最大化的场景（非首次应用）保持不动。
+        if (!isFirstApply) {
+          return;
+        }
+        await win.unmaximize().catch(() => undefined);
       }
 
+      const targetSize = getMainWindowSizeForView(view);
       await resizeWindow(win, targetSize.width, targetSize.height);
 
-      if (hasAppliedInitialMainGeometryRef.current) {
+      if (!isFirstApply) {
         return;
       }
       hasAppliedInitialMainGeometryRef.current = true;
