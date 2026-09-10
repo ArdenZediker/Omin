@@ -804,7 +804,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
             ) : section === "personalization" ? (
               <PersonalizationSettingsSection />
             ) : section === "storage" ? (
-              <StorageSettingsSection />
+              <StorageSettingsSection basicSettings={basicSettings} onUpdateBasicSettings={updateBasicSettings} />
             ) : (
               <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-6">
                 <aside className="omni-model-section-sidebar min-w-0 self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">

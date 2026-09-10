@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import type { BasicSettings } from "../../app/types";
 import {
   getDataRootInfo,
   setDataRoot,
@@ -14,6 +15,11 @@ import {
   getOutputRootSetting,
   setOutputRootSetting,
 } from "../../app/outputStorage";
+
+type Props = {
+  basicSettings: BasicSettings;
+  onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
+};
 
 const SOURCE_LABEL: Record<DataRootSource, string> = {
   custom: "自定义目录",
@@ -49,7 +55,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function StorageSettingsSection() {
+export default function StorageSettingsSection({ basicSettings, onUpdateBasicSettings }: Props) {
   const [info, setInfo] = useState<DataRootInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -62,6 +68,22 @@ export default function StorageSettingsSection() {
   const [outputRoot, setOutputRoot] = useState(() => getOutputRootSetting());
   // 产出根目录默认不暴露：导出固定落到工作空间下的 Omni-导出。仅当用户主动勾选覆盖时才展开输入框。
   const [useOutputOverride, setUseOutputOverride] = useState(() => getOutputRootSetting() !== "");
+
+  // 兜底工作目录提示：设置页打开时按需拉取当前数据根，拼出 fallback-workspace 真实路径。
+  const [fallbackWorkspaceHint, setFallbackWorkspaceHint] = useState("");
+  useEffect(() => {
+    let active = true;
+    getDataRootInfo()
+      .then((info) => {
+        if (!active || !info?.path) return;
+        const base = info.path.endsWith("/") || info.path.endsWith("\\") ? info.path : `${info.path}/`;
+        setFallbackWorkspaceHint(`${base}fallback-workspace`);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -263,6 +285,43 @@ export default function StorageSettingsSection() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="space-y-4 border-t border-slate-100 pt-4">
+        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">默认工作空间</h3>
+        <div className="grid grid-cols-[120px_1fr] gap-4">
+          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">默认目录</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={basicSettings.defaultWorkspacePath}
+              onChange={(e) => onUpdateBasicSettings({ defaultWorkspacePath: e.target.value })}
+              placeholder="未设置时任务会话不绑定工作目录"
+              className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                const picked = await openDialog({ directory: true, multiple: false, title: "选择默认工作空间" });
+                if (typeof picked === "string" && picked.trim()) {
+                  onUpdateBasicSettings({ defaultWorkspacePath: picked.trim() });
+                }
+              }}
+              className="h-9 shrink-0 rounded-md border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              选择目录
+            </button>
+          </div>
+        </div>
+        <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
+          未单独配置工作目录的项目与任务会话，自动共用此目录作为工作空间；在项目设置里单独填了「工作目录」的会以项目为准。留空时，未绑定会话将使用兜底工作目录：
+          {fallbackWorkspaceHint ? (
+            <code className="ml-1 rounded bg-slate-100 px-1 py-0.5 text-[11px] text-slate-600">{fallbackWorkspaceHint}</code>
+          ) : (
+            <span className="ml-1">（应用数据目录内的 fallback-workspace）</span>
+          )}
+          。
+        </p>
       </div>
 
       <div className="space-y-4 border-t border-slate-100 pt-4">
