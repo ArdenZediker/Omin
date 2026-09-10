@@ -56,25 +56,6 @@ export function isCharacterPointerInHitArea(element: HTMLElement, clientX: numbe
   return relativeX >= 0.38 && relativeX <= 0.66 && relativeY >= 0.04 && relativeY <= 0.98;
 }
 
-export function isCharacterPointerInResizeArea(element: HTMLElement, clientX: number, clientY: number) {
-  const rect = element.getBoundingClientRect();
-  const edgeThickness = Math.max(10, Math.min(18, Math.min(rect.width, rect.height) * 0.14));
-  const offsetX = clientX - rect.left;
-  const offsetY = clientY - rect.top;
-  const isInsideRect = offsetX >= 0 && offsetX <= rect.width && offsetY >= 0 && offsetY <= rect.height;
-
-  if (!isInsideRect) {
-    return false;
-  }
-
-  return (
-    offsetX <= edgeThickness ||
-    offsetX >= rect.width - edgeThickness ||
-    offsetY <= edgeThickness ||
-    offsetY >= rect.height - edgeThickness
-  );
-}
-
 export function getBasicSettings(): BasicSettings {
   if (typeof window === "undefined") return DEFAULT_BASIC_SETTINGS;
   return readSqliteBackedJson("omni_basic_settings", DEFAULT_BASIC_SETTINGS);

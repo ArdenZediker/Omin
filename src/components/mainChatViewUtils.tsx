@@ -1,9 +1,4 @@
-import type {
-  ProjectMemoryScope,
-  ProjectMemorySourceType,
-} from "../chat/types";
 import type { Project } from "../chat/types";
-import type { TaskExecutionResult } from "../chat/taskTypes";
 import { Bot, FolderOpen } from "lucide-react";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 
@@ -49,9 +44,6 @@ export const MIN_MAIN_CHAT_AREA_WIDTH = 220;
 
 /** 对话框（输入区）拖动时的最小高度。 */
 export const MIN_COMPOSER_RESIZE_HEIGHT = 120;
-/** 对话框的理论最大高度上限（仅用于持久化读回兜底，远高于屏幕，
- *  实际拖动由 MIN_MESSAGE_AREA_HEIGHT 动态限制）。 */
-export const MAX_COMPOSER_RESIZE_HEIGHT = 2000;
 /** 消息区保留的最小高度；拖动对话框时，最高可拖到
  *  window.innerHeight - MIN_MESSAGE_AREA_HEIGHT，避免把消息区完全盖住。 */
 export const MIN_MESSAGE_AREA_HEIGHT = 120;
@@ -90,38 +82,6 @@ export function readStoredPanelWidth(
 
 export function normalizeSearchText(value: string) {
   return value.toLocaleLowerCase().replace(/\s+/g, "");
-}
-
-export function getMemorySourceTypeLabel(sourceType?: ProjectMemorySourceType) {
-  if (sourceType === "auto") return "自动沉淀";
-  if (sourceType === "manual") return "手动添加";
-  if (sourceType === "command") return "命令写入";
-  return "旧记录";
-}
-
-export function buildTaskAggregateSummary(task: TaskExecutionResult) {
-  const childCount = task.plan.childTaskIds?.length ?? 0;
-  const lastTrace = task.trace
-    .slice(-2)
-    .map((entry) => entry.message)
-    .join(" · ");
-  if (childCount <= 0 && !lastTrace) return null;
-  return {
-    childCount,
-    text: lastTrace || "已拆分并执行子任务",
-  };
-}
-
-export function formatMemoryScopeLabel(scope: ProjectMemoryScope) {
-  switch (scope) {
-    case "off":
-      return "不启用记忆";
-    case "session":
-      return "仅当前话题";
-    case "project":
-    default:
-      return "当前项目全局";
-  }
 }
 
 export function renderProjectAvatar(project: Project | null) {

@@ -137,7 +137,3 @@ export function getModelPricing(modelId: string): ModelPricing | undefined {
   return MODEL_PRICING[modelId];
 }
 
-/** 按模型 id 查内置元数据（含 catalog 中可能出现的扩展字段）。 */
-export function findBuiltinModel(modelId: string): ModelConfig | undefined {
-  return BUILTIN_MODELS.find((m) => m.id === modelId);
-}

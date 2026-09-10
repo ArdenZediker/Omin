@@ -47,18 +47,3 @@ export type ToolManifest = {
   };
 };
 
-export type SkillManifest = {
-  id: string;
-  command: string;
-  title: string;
-  description: string;
-  promptPrefix?: string;
-  systemPrompt?: string;
-  parameterSchema?: Array<{
-    id: string;
-    label: string;
-    required?: boolean;
-    placeholder?: string;
-  }>;
-  supportedProjectKinds?: Array<"basic" | "custom">;
-};

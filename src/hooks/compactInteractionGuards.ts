@@ -1,7 +1,3 @@
-export function isOutsidePinnedCharacterMenu(target: HTMLElement) {
-  return !target.closest(".compact-menu") && !target.closest(".compact-menu-anchor");
-}
-
 export function shouldCloseCharacterReplyPanel(target: HTMLElement) {
   return !target.closest(".compact-menu-anchor") && !target.closest(".compact-query") && !target.closest(".compact-reply");
 }

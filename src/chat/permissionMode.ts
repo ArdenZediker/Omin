@@ -60,11 +60,6 @@ export function isSessionGranted(source: string): boolean {
   return sessionGrantedSources.has(source);
 }
 
-/** 当前已放行的来源清单（供设置/状态展示）。 */
-export function listSessionGrantedSources(): string[] {
-  return [...sessionGrantedSources];
-}
-
 /** 清空全部会话临时授权。 */
 export function clearSessionPermissions(): void {
   sessionGrantedSources.clear();

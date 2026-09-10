@@ -76,11 +76,6 @@ export function getPendingConfirmation(): (ConfirmationRequest & { id: string })
   return pending ? { ...pending } : null;
 }
 
-/** 是否已有 UI 在监听确认请求（无监听时 requestConfirmation 会直接拒绝）。 */
-export function hasConfirmationListener(): boolean {
-  return listeners.size > 0;
-}
-
 /**
  * 订阅待确认请求的变化。返回取消订阅函数。
  * React 侧用它在根组件弹出确认对话框。

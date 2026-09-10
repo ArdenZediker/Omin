@@ -285,29 +285,3 @@ export function parseSkillMarkdown(content: string): PluginManifest | null {
   };
 }
 
-/** 生成一个 SkillHub 风格的“复制给 AI 安装”提示词。 */
-export function buildPluginInstallPrompt(manifest: PluginManifest, source?: string): string {
-  const lines = [
-    `请在 Omni 中安装以下插件：`,
-    `- ID: ${manifest.id}`,
-    `- 名称: ${manifest.name}`,
-    `- 类型: ${manifest.kind}`,
-    `- 描述: ${manifest.description}`,
-    manifest.author ? `- 作者: ${manifest.author}` : "",
-    manifest.category ? `- 分类: ${manifest.category}` : "",
-    source ? `- 来源: ${source}` : "",
-    "",
-    "插件正文如下（请按 DeepSeek Harness SKILL.md 格式保存并加载）：",
-    "---",
-    `name: ${manifest.id}`,
-    `title: ${manifest.name}`,
-    `description: ${manifest.description}`,
-    `version: ${manifest.version}`,
-    `kind: ${manifest.kind}`,
-    manifest.category ? `category: ${manifest.category}` : "",
-    manifest.command ? `command: ${manifest.command}` : "",
-    "---",
-    manifest.body || manifest.systemPrompt || manifest.templatePrompt || "",
-  ];
-  return lines.filter(Boolean).join("\n");
-}

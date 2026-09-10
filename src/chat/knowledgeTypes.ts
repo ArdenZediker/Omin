@@ -158,84 +158,12 @@ export type KnowledgeDocumentBinaryPayload = {
   bytes: number[];
 };
 
-export type KnowledgeProcessingJob = {
-  id: string;
-  documentId: string;
-  collectionId: string;
-  jobType: "initial_import" | "reparse" | "rechunk" | "revectorize" | "full_rebuild";
-  status: "queued" | "running" | "paused" | "succeeded" | "failed" | "canceled";
-  currentStep?: string | null;
-  progress: number;
-  attempt: number;
-  maxAttempts: number;
-  priority: number;
-  failCount: number;
-  nextRunAt?: number | null;
-  sourceJobId?: string | null;
-  cancelRequested: boolean;
-  pauseRequested: boolean;
-  errorMessage?: string | null;
-  createdAt: number;
-  startedAt?: number | null;
-  finishedAt?: number | null;
-  updatedAt: number;
-};
-
-export type KnowledgeProcessingStep = {
-  id: string;
-  jobId: string;
-  documentId: string;
-  stepName: string;
-  status: "pending" | "running" | "succeeded" | "failed" | "skipped";
-  progress: number;
-  errorMessage?: string | null;
-  startedAt?: number | null;
-  finishedAt?: number | null;
-  updatedAt: number;
-};
-
-export type KnowledgeProcessingLog = {
-  id: string;
-  jobId: string;
-  documentId: string;
-  level: "info" | "warn" | "error";
-  stepName?: string | null;
-  message: string;
-  detailsJson?: string | null;
-  createdAt: number;
-};
-
-export type KnowledgeProcessingJobDetail = {
-  job: KnowledgeProcessingJob;
-  steps: KnowledgeProcessingStep[];
-  logs: KnowledgeProcessingLog[];
-};
-
 export type KnowledgeProcessingStatusSummary = {
   scope: "global" | "collection";
   collectionId?: string | null;
   queued: number;
   running: number;
   failed: number;
-};
-
-export type FailedJobQueryInput = {
-  collectionId?: string | null;
-  limit?: number;
-  offset?: number;
-};
-
-export type FailedJobQueryResult = {
-  scope: "global" | "collection";
-  collectionId?: string | null;
-  total: number;
-  hasMore: boolean;
-  jobs: KnowledgeProcessingJob[];
-};
-
-export type RetryFailedJobsInput = {
-  collectionId?: string | null;
-  limit?: number;
 };
 
 export type RetryFailedJobsResult = {
@@ -286,12 +214,6 @@ export type DeadLetterQueryResult = {
   total: number;
   hasMore: boolean;
   items: KnowledgeProcessingDeadLetter[];
-};
-
-export type ReplayDeadLettersInput = {
-  collectionId?: string | null;
-  status?: string | null;
-  limit?: number;
 };
 
 export type ReplayDeadLettersResult = {

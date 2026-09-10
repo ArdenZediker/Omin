@@ -237,10 +237,6 @@ export function getKnowledgeMultimodalProviderOptions() {
   return KNOWLEDGE_MULTIMODAL_PROVIDER_OPTIONS;
 }
 
-export function getKnowledgeMultimodalModelById(config: KnowledgeMultimodalConfig, modelId: string) {
-  return config.models.find((model) => model.id === modelId) ?? null;
-}
-
 export function getKnowledgeMultimodalModelsByCapability(
   config: KnowledgeMultimodalConfig,
   capability: KnowledgeMultimodalCapability
@@ -248,4 +244,3 @@ export function getKnowledgeMultimodalModelsByCapability(
   return config.models.filter((model) => model.capability === capability);
 }
 
-export const DEFAULT_KNOWLEDGE_MULTIMODAL_CONFIG = getDefaultKnowledgeMultimodalConfig();

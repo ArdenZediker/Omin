@@ -47,21 +47,6 @@ export interface SkillhubSkillSummary {
   verified?: boolean;
 }
 
-export interface SkillhubPluginSummary {
-  fullName: string;
-  name: string;
-  owner: string;
-  description?: string;
-  categoryKey?: string;
-  avatarUrl?: string;
-  stars?: number;
-  forks?: number;
-  openIssues?: number;
-  license?: string;
-  repositoryUrl?: string;
-  installability?: string;
-  topics?: string[];
-}
 
 /** SkillHub 技能分类 key → Omni 中文分类。
  * 数据来自 SkillHub 官方 /api/v1/categories（2026-08-30 共 13 个），
@@ -138,25 +123,6 @@ export async function listSkillhubSkills(opts: {
 /** 从 SkillHub 获取技能分类列表（用于前端 tabs）。 */
 export async function listSkillhubSkillCategories(): Promise<{ key: string; displayName: string }[]> {
   const result = await invoke<{ categories: { key: string; displayName: string }[] }>("list_skillhub_skill_categories");
-  return result.categories ?? [];
-}
-
-export async function listSkillhubPlugins(opts: {
-  query?: string;
-  category?: string;
-  limit?: number;
-} = {}): Promise<SkillhubPluginSummary[]> {
-  const result = await invoke<SkillhubPluginSummary[]>("list_skillhub_plugins", {
-    query: opts.query ?? null,
-    category: opts.category && opts.category !== "全部" ? opts.category : null,
-    limit: opts.limit ?? 60,
-  });
-  return result ?? [];
-}
-
-/** 从 SkillHub 获取 DSH 插件分类列表。 */
-export async function listSkillhubPluginCategories(): Promise<{ key: string; displayName: string }[]> {
-  const result = await invoke<{ categories: { key: string; displayName: string }[] }>("list_skillhub_plugin_categories");
   return result.categories ?? [];
 }
 

@@ -1,12 +1,5 @@
 import type { ToolManifest } from "./types";
 
-export type ToolsetManifest = {
-  id: string;
-  title: string;
-  description: string;
-  toolIds: string[];
-};
-
 export const TOOL_MANIFESTS: ToolManifest[] = [
   {
     id: "search_sessions",
@@ -538,67 +531,6 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
   },
 ];
 
-export const TOOLSET_MANIFESTS: ToolsetManifest[] = [
-  {
-    id: "basic-chat",
-    title: "Omni",
-    description: "适合日常问答和话题管理",
-    toolIds: ["search_sessions", "read_session"],
-  },
-  {
-    id: "content-creation",
-    title: "内容创作",
-    description: "适合写作、改写和内容整理",
-    toolIds: ["search_sessions", "read_session", "read_file"],
-  },
-  {
-    id: "code-analysis",
-    title: "代码分析",
-    description: "适合搜索、阅读和分析工作区文件",
-    toolIds: ["search_sessions", "read_session", "list_files", "read_file", "search_files"],
-  },
-  {
-    id: "file-processing",
-    title: "文件处理",
-    description: "适合浏览目录、读取文件和定位内容",
-    toolIds: ["list_files", "read_file", "search_files"],
-  },
-  {
-    id: "code-authoring",
-    title: "代码编写",
-    description: "适合在本机项目中创建、修改代码文件",
-    toolIds: ["list_files", "read_file", "search_files", "write_file", "edit_file", "bash", "git_commit"],
-  },
-];
-
-export const PROJECT_TOOL_MANIFESTS = TOOL_MANIFESTS.filter((tool) =>
-  [
-    "search_sessions",
-    "read_session",
-    "list_files",
-    "read_file",
-    "search_files",
-    "write_file",
-    "edit_file",
-    "web_search",
-    "web_fetch",
-    "git_info",
-    "git_commit",
-    "git_pr",
-    "export_docx",
-    "export_xlsx",
-    "export_pptx",
-    "export_md",
-    "install_skill",
-    "agent",
-    "bash",
-  ].includes(tool.id)
-);
-export const PROJECT_TOOL_OPTIONS = PROJECT_TOOL_MANIFESTS.map((tool) => ({
-  id: tool.id,
-  label: tool.title,
-  description: tool.description,
-}));
 
 /** 内置工具：所有模型/会话的公用工具，无条件可用（不受项目 allowedToolIds 限制）。 */
 export const BUILTIN_TOOL_IDS = [

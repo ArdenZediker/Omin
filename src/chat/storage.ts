@@ -21,7 +21,6 @@ export const PROJECT_MEMORIES_STORAGE_KEY = "omni_assistant_memories";
 export const SESSION_SUMMARIES_STORAGE_KEY = "omni_session_summaries";
 export const USER_PREFERENCES_STORAGE_KEY = "omni_user_preferences";
 export const SCHEDULED_TASKS_STORAGE_KEY = "omni_scheduled_tasks";
-export const PERSONALIZATION_STORAGE_KEY = "omni_personalization";
 
 export type PersonaFieldKey =
   | "style"
@@ -32,10 +31,6 @@ export type PersonaFieldKey =
   | "longTermMemory"
   | "agentsMd";
 export const DEFAULT_PROJECT_ID = "project-basic-chat";
-
-/** 主会话（Omni）专属会话的固定 id；历史兼容用途，新逻辑不再自动创建、
- *  不再常驻侧栏，且与普通任务会话一样可删除。 */
-export const MAIN_SESSION_ID = "session-omni-main";
 
 /**
  * 兜底工作目录（fallback workspace）路径缓存。
@@ -267,21 +262,6 @@ export function createChatSession(messages: Message[] = [], projectId = DEFAULT_
   };
 }
 
-/** 构造主会话（Omni）专属会话：固定 id，初始标题为「Omni」。
- * @deprecated 主会话不再常驻，新逻辑不再自动创建。 */
-export function createMainSession(): ChatSession {
-  const now = Date.now();
-  return {
-    id: MAIN_SESSION_ID,
-    projectId: DEFAULT_PROJECT_ID,
-    title: "Omni",
-    messages: [],
-    pinned: true,
-    createdAt: now,
-    updatedAt: now,
-    usage: createEmptyUsageStats(),
-  };
-}
 
 export function serializeProjectsSnapshot(projects: Project[]) {
   return JSON.stringify(projects);

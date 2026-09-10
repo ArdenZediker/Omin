@@ -12,13 +12,3 @@ export interface FileDiff {
   diffContent: string;
 }
 
-/** 从 unified-diff 文本解析增删行数（兜底：当后端未直接给 stats 时使用）。 */
-export function parseDiffStats(diffContent: string): { insertions: number; deletions: number } {
-  let insertions = 0;
-  let deletions = 0;
-  for (const line of diffContent.split("\n")) {
-    if (line.startsWith("+") && !line.startsWith("+++")) insertions += 1;
-    else if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
-  }
-  return { insertions, deletions };
-}

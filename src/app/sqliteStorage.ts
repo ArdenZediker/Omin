@@ -4,12 +4,6 @@ type AppStoragePayload = {
   entries: Record<string, string>;
 };
 
-export type ManifestStoragePayload = {
-  projectPresetsJson?: string | null;
-  toolManifestsJson?: string | null;
-  skillManifestsJson?: string | null;
-};
-
 export type MemoryStoragePayload = {
   projectMemoriesJson?: string | null;
   userPreferencesJson?: string | null;
@@ -122,23 +116,6 @@ export function removeSqliteBackedValue(key: string) {
   void invoke("remove_app_kv", { key }).catch(() => {
     // 浏览器或异常环境继续保留 localStorage
   });
-}
-
-export async function loadManifestStorage() {
-  if (!canUseTauriInvoke()) {
-    return {
-      projectPresetsJson: null,
-      toolManifestsJson: null,
-      skillManifestsJson: null,
-    } satisfies ManifestStoragePayload;
-  }
-
-  return invoke<ManifestStoragePayload>("load_manifest_storage_command");
-}
-
-export async function saveManifestStorage(payload: ManifestStoragePayload) {
-  if (!canUseTauriInvoke()) return;
-  await invoke("save_manifest_storage_command", payload);
 }
 
 export async function loadMemoryStorage() {

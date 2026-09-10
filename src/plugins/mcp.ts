@@ -161,10 +161,6 @@ export async function callMcpTool(
   return invoke<McpToolResult>("call_mcp_tool", { id, name, arguments: arguments_ });
 }
 
-export async function readMcpStderr(id: string): Promise<string[]> {
-  return invoke<string[]>("read_mcp_stderr", { id });
-}
-
 // ---------------------------------------------------------------------------
 // 连接器 ↔ MCP 生命周期
 // ---------------------------------------------------------------------------

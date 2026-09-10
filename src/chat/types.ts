@@ -91,23 +91,6 @@ export type Project = {
   updatedAt: number;
 };
 
-export type ProjectPresetRecord = {
-  id: string;
-  title: string;
-  description: string;
-  avatarCode?: string | null;
-  systemPrompt?: string;
-  defaultModelId?: string | null;
-  allowedToolIds: string[];
-  allowedSkillIds: string[];
-};
-
-export type ManifestStorageSnapshot = {
-  projectPresets: ProjectPresetRecord[];
-  toolManifests: Array<Record<string, unknown>>;
-  skillManifests: Array<Record<string, unknown>>;
-};
-
 export type SessionSummaryRecord = {
   sessionId: string;
   projectId: string;

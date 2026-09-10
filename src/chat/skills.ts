@@ -1,4 +1,4 @@
-import { BUILTIN_SKILL_PLUGINS, BUILTIN_TOOL_PLUGINS } from "../plugins/builtins";
+import { BUILTIN_SKILL_PLUGINS } from "../plugins/builtins";
 import { pluginRegistry } from "../plugins/registry";
 import type { PluginSkillContribution, PluginToolContribution } from "../plugins/types";
 
@@ -50,17 +50,6 @@ export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = BUILTIN_SKILL_PLUGINS.m
   })
 );
 
-/** 内置工具命令（保留导出用于兼容旧代码）。 */
-export const LOCAL_TOOL_COMMANDS: LocalSlashCommand[] = BUILTIN_TOOL_PLUGINS.map((manifest) =>
-  toolToLocalCommand({
-    id: manifest.id,
-    command: manifest.command,
-    title: manifest.name,
-    description: manifest.description,
-    promptContribution: manifest.promptContribution,
-  })
-);
-
 /** 全部可用技能命令 = 内置 + 插件市场已安装且启用。 */
 export function getAllSkillCommands(): LocalSlashCommand[] {
   return pluginRegistry.toSkillCommands().map(skillToLocalCommand);
@@ -75,8 +64,6 @@ export function getAllToolCommands(): LocalSlashCommand[] {
 export function getAllLocalCommands(): LocalSlashCommand[] {
   return [...getAllToolCommands(), ...getAllSkillCommands()];
 }
-
-export const ALL_LOCAL_COMMANDS = [...LOCAL_TOOL_COMMANDS, ...LOCAL_SKILL_COMMANDS];
 
 export type SlashSuggestion = {
   kind: "local";
