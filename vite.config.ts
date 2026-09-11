@@ -78,14 +78,18 @@ export default defineConfig(({ mode }) => {
     clearScreen: false,
     // 2. tauri expects a fixed port, fail if that port is not available
     server: {
-      port: 1420,
+      // 端口必须避开 Windows 动态端口范围（本机为 1024-15000）：Hyper-V / WSL / Docker
+      // 会在其中整段预留端口（本机被预留的是 1332-1431，覆盖了旧值 1420），
+      // 落入该段的端口绑定一律失败并报 `EACCES: permission denied`。
+      // 15420 位于动态范围之外，不会被动态预留抢走。
+      port: 15420,
       strictPort: true,
       host: host || false,
       hmr: host
         ? {
             protocol: "ws",
             host,
-            port: 1421,
+            port: 15421,
           }
         : undefined,
       watch: {

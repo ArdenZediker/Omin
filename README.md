@@ -241,7 +241,11 @@ pnpm tauri dev
 
 > 只跑 `pnpm dev` 只会启动 Vite 网页，没有桌面窗口、没有 Tauri 运行时、也没有本地 SQLite，一般只用于纯前端调试。
 
-Vite 开发端口固定为 `1420`，`tauri dev` 复用它作为前端入口。
+Vite 开发端口固定为 `15420`，`tauri dev` 复用它作为前端入口。
+
+> 端口选在 Windows 动态端口范围（默认 `1024-15000`）之外。若落在范围内，可能被 Hyper-V / WSL / Docker
+> 整段预留（`netsh interface ipv4 show excludedportrange protocol=tcp` 可查），绑定时报
+> `EACCES: permission denied`。改动端口时需同步 `vite.config.ts`、`src-tauri/tauri.conf.json`（`devUrl`）与本处。
 
 ### 构建
 
