@@ -57,6 +57,21 @@ body:has(.pet-thought-window),
   --omni-message-code-text: #172033;
   --omni-message-pre-bg: rgba(15, 23, 42, 0.06);
   --omni-message-pre-text: #166534;
+  /* —— 补全「只被引用、从未定义」的 token（浅色侧）——
+     这里只定义取值唯一、或各引用点 fallback 一致的变量，且刻意取成与该 fallback
+     相同的值，保证浅色模式零视觉变化；取值不统一的变量（app-surface-2/3、
+     card-bg、accent-soft 等）只放到 dark 块，避免改动浅色观感。 */
+  --omni-primary: #4f46e5;
+  --omni-input-bg: #ffffff;
+  --omni-app-surface-1: #fafaf7;
+  --omni-app-fg: #0f172a;
+  --omni-accent-strong: #1d4ed8;
+  --omni-app-success: #3b6d11;
+  --omni-app-success-bg: rgba(99, 153, 34, 0.12);
+  --omni-bg: #ffffff;
+  --omni-border: rgba(0, 0, 0, 0.08);
+  --omni-danger-soft: rgba(220, 38, 38, 0.08);
+  --omni-link: #2563eb;
 }
 
 :root[data-omni-theme="dark"] {
@@ -77,6 +92,27 @@ body:has(.pet-thought-window),
   --omni-message-code-text: rgba(255, 255, 255, 0.92);
   --omni-message-pre-bg: rgba(0, 0, 0, 0.4);
   --omni-message-pre-text: rgba(134, 239, 172, 0.9);
+  /* —— 补全「只被引用、从未定义」的 token（暗色侧）——
+     浅色侧未定义的变量（取值不统一的那批）在这里给出暗色值：
+     `var(--x, 浅色fallback)` 在 dark 下就会命中这里，而不是落回浅色 fallback。
+     这是「变更面板在暗色下整块变浅米色」等问题的一处根因修复。 */
+  --omni-primary: #818cf8;
+  --omni-input-bg: #141414;
+  --omni-app-surface-1: #0d0d0d;
+  --omni-app-surface-2: rgba(255, 255, 255, 0.04);
+  --omni-app-surface-3: rgba(255, 255, 255, 0.06);
+  --omni-app-surface: rgba(28, 30, 38, 0.92);
+  --omni-app-border: rgba(255, 255, 255, 0.12);
+  --omni-card-bg: rgba(255, 255, 255, 0.05);
+  --omni-accent-soft: rgba(96, 165, 250, 0.16);
+  --omni-app-fg: rgba(255, 255, 255, 0.9);
+  --omni-accent-strong: #93c5fd;
+  --omni-app-success: #86efac;
+  --omni-app-success-bg: rgba(99, 153, 34, 0.2);
+  --omni-bg: #111111;
+  --omni-border: rgba(255, 255, 255, 0.12);
+  --omni-danger-soft: rgba(248, 81, 73, 0.16);
+  --omni-link: #60a5fa;
 }
 
 .hide-scrollbar {
@@ -486,6 +522,71 @@ body:has(.pet-thought-window),
 
 :root[data-omni-theme="dark"] .chat-history-panel__item--active + .chat-history-panel__more {
   color: rgba(199, 210, 254, 0.9);
+}
+
+/* 顶栏「当前空间」图标：基类 .main-chat-toolbar__project-mark 的底色是写死的浅蓝
+   （radial-gradient(...#fff...) + #edf4ff），而里面的图标色走 var(--omni-app-muted)，
+   暗色下该变量是 rgba(255,255,255,.42) —— 浅底 + 半透明白图标 = 几乎看不见。
+   侧边栏空间行不受影响，因为那里被 `.chat-history-panel__space-head .chat-history-panel__project-folder-icon`
+   覆写成了深色 #475569。这里是唯一漏网的一处，单独给暗色底 + 亮图标。 */
+:root[data-omni-theme="dark"] .main-chat-toolbar__project-mark {
+  background:
+    radial-gradient(
+      circle at 32% 30%,
+      rgba(147, 197, 253, 0.22),
+      rgba(59, 130, 246, 0.14) 46%,
+      rgba(2, 6, 23, 0.5) 100%
+    ),
+    #0e1626;
+  border-color: rgba(96, 165, 250, 0.3);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-omni-theme="dark"] .main-chat-toolbar__project-mark .chat-history-panel__project-folder-icon {
+  color: rgba(191, 219, 254, 0.95);
+}
+
+/* ===== 同类问题排查后的补充（与 project-mark 同源：基类写死颜色，前景跟主题走）=====
+   统一只加暗色覆写，基类与浅色模式完全不动。 */
+
+/* 补全项图标：基类写死浅灰底 #f1f5f9 + #94a3b8 图标，暗色下是刺眼的浅色小块。 */
+:root[data-omni-theme="dark"] .chat-composer__suggestion-icon {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.62);
+}
+
+:root[data-omni-theme="dark"] .chat-composer__suggestion--active .chat-composer__suggestion-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.84);
+}
+
+/* 设置面板开关：轨道写死 #d1d5db、选中 #1f1f1f。暗色下未选中是一条亮灰杠；
+   选中态 #1f1f1f 与深色底几乎同色，只剩白圆点可辨。 */
+
+/* 执行卡徽标：底色是 color-mix(...,14%,transparent) 半透明色，文字却写死深色
+   （#2563eb / #b45309 / #0f6e56）。暗色下底变暗，深字读不出来。 */
+:root[data-omni-theme="dark"] .exec-card__badge--terminal {
+  background: color-mix(in srgb, #378add 26%, transparent);
+  color: #93c5fd;
+}
+
+:root[data-omni-theme="dark"] .exec-card__badge--diff {
+  background: color-mix(in srgb, #ef9f27 28%, transparent);
+  color: #fcd34d;
+}
+
+:root[data-omni-theme="dark"] .exec-card__badge--web {
+  background: color-mix(in srgb, #1d9e75 28%, transparent);
+  color: #6ee7b7;
+}
+
+/* 桌宠紧凑菜单：分组标题与箭头写死 slate 深色（rgba(71,85,105,.68) / .7），
+   而菜单在暗色下是 rgba(45,45,45,.82)。注意已有的暗色覆写只盖住了
+   `.compact-menu__label` / `__meta` / `__arrow`，漏了下面这两个「另一个类名」——
+   典型症状：同一个菜单里大部分文字正常，只有分组标题和箭头看不见。 */
+:root[data-omni-theme="dark"] .compact-menu__group-label,
+:root[data-omni-theme="dark"] .compact-menu__arrow-icon {
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .chat-history-panel__group-dialog-body {

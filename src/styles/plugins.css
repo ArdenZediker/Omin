@@ -1668,7 +1668,7 @@
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
 }
 
-.dark .omni-mcp-seg__btn--active {
+:root[data-omni-theme="dark"] .omni-mcp-seg__btn--active {
   background: var(--omni-input-bg);
 }
 

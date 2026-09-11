@@ -34,13 +34,13 @@
   display: flex;
   align-items: center;
   padding: 10px 14px;
-  border: 1px solid color-mix(in srgb, var(--omni-accent) 36%, var(--omni-panel-border));
+  border: 1px solid color-mix(in srgb, var(--omni-accent, #7c3aed) 36%, var(--omni-panel-border));
   border-radius: 14px;
-  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-panel-bg));
+  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 10%, var(--omni-panel-bg));
   color: var(--omni-app-text);
   font-size: 13px;
   font-weight: 600;
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--omni-accent) 12%, transparent);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--omni-accent, #7c3aed) 12%, transparent);
   pointer-events: none;
 }
 
@@ -961,8 +961,8 @@
 }
 
 .chat-history-panel__session--active {
-  background: color-mix(in srgb, var(--omni-accent) 14%, transparent);
-  box-shadow: inset 2px 0 0 0 var(--omni-accent);
+  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 14%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--omni-accent, #7c3aed);
 }
 
 .chat-history-panel__session-avatar {
@@ -1049,7 +1049,7 @@
 }
 
 .chat-history-panel__space--active > .chat-history-panel__space-head {
-  background: color-mix(in srgb, var(--omni-accent) 11%, transparent);
+  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 11%, transparent);
 }
 
 .chat-history-panel__space-title {
@@ -1068,7 +1068,7 @@
   min-width: 0;
   height: 22px;
   padding: 0 6px;
-  border: 1px solid var(--omni-accent);
+  border: 1px solid var(--omni-accent, #7c3aed);
   border-radius: 6px;
   background: var(--omni-panel-bg);
   color: var(--omni-app-text);
@@ -2374,7 +2374,9 @@
 
 .chat-composer__suggestion-command {
   flex: 0 0 auto;
-  color: #334155;
+  /* 原为写死的 #334155：弹出层底色是 var(--omni-panel-bg)，暗色下变 #0b0b0b，
+     深字压深底几乎不可读。改为跟主题走（浅色下 #1f2329，与 #334155 肉眼无差）。 */
+  color: var(--omni-app-text);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
@@ -4107,8 +4109,8 @@
 }
 
 .message-knowledge-sources__toggle:hover {
-  border-color: color-mix(in srgb, var(--omni-accent) 36%, var(--omni-panel-border));
-  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-panel-bg));
+  border-color: color-mix(in srgb, var(--omni-accent, #7c3aed) 36%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 8%, var(--omni-panel-bg));
   color: var(--omni-app-text);
 }
 
@@ -5910,22 +5912,22 @@ span.exec-web-item__title:hover {
 }
 
 /* 深色主题：覆盖变更 diff 着色（保证可读性） */
-.dark .changes-panel__file-stats-add { color: #56d364; }
-.dark .changes-panel__file-stats-del { color: #f85149; }
-.dark .changes-panel__diff-body {
+:root[data-omni-theme="dark"] .changes-panel__file-stats-add { color: #56d364; }
+:root[data-omni-theme="dark"] .changes-panel__file-stats-del { color: #f85149; }
+:root[data-omni-theme="dark"] .changes-panel__diff-body {
   background: rgba(255, 255, 255, 0.03);
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
-.dark .changes-panel__diff-body::-webkit-scrollbar-thumb {
+:root[data-omni-theme="dark"] .changes-panel__diff-body::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
 }
-.dark .changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line {
+:root[data-omni-theme="dark"] .changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line {
   background: rgba(86, 211, 100, 0.15);
   color: #56d364;
 }
-.dark .changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line-prefix { color: #56d364; }
-.dark .changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line {
+:root[data-omni-theme="dark"] .changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line-prefix { color: #56d364; }
+:root[data-omni-theme="dark"] .changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line {
   background: rgba(248, 81, 73, 0.15);
   color: #f85149;
 }
-.dark .changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line-prefix { color: #f85149; }
+:root[data-omni-theme="dark"] .changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line-prefix { color: #f85149; }
