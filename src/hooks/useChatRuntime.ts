@@ -984,7 +984,7 @@ export function useChatRuntime({
 
         if (!taskResult.finalResult && !taskResult.toolResult?.outputText) {
           setError(taskResult.error || "回复失败");
-          setConversationMessagesForSession(sessionId, conversationMessages);
+          // 注意：不回滚消息列表，保留流式期间已渲染的 partial 内容（对齐 atomcode PRESERVE 语义）
           if (isCurrentPetThought(petThoughtId, sessionId)) {
             const responseCount = resolvePetThoughtResponseCount(sessionId);
             emitPetThought({
@@ -1013,7 +1013,7 @@ export function useChatRuntime({
         if (!projectReply.trim() && !hasStructuredOutput) {
           const emptyMessage = taskResult.error || "模型没有返回任何内容：请检查该模型的接口地址、密钥或额度后重试";
           setError(emptyMessage);
-          setConversationMessagesForSession(sessionId, conversationMessages);
+          // 注意：不回滚消息列表，保留流式期间已渲染的 partial 内容
           if (isCurrentPetThought(petThoughtId, sessionId)) {
             const responseCount = resolvePetThoughtResponseCount(sessionId);
             emitPetThought({
@@ -1059,7 +1059,7 @@ export function useChatRuntime({
         }
 
         setError(runError instanceof Error ? runError.message : "回复失败");
-        setConversationMessagesForSession(sessionId, conversationMessages);
+        // 注意：不回滚消息列表，保留流式期间已渲染的 partial 内容（模型/网络报错时 PRESERVE，而非 UNDO）
         if (isCurrentPetThought(petThoughtId, sessionId)) {
           const errorPreview = runError instanceof Error ? runError.message : "回复失败";
           const responseCount = resolvePetThoughtResponseCount(sessionId);
