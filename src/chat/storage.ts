@@ -270,14 +270,35 @@ export function getChatSessionTitle(messages: Message[]) {
 }
 
 /**
+ * 判断一条消息是否为「未完成的空占位」——即这一轮真的什么都还没有产出。
+ *
+ * 判据：正文、思考链、工具步骤**三者皆空**才算空占位。
+ *
+ * ⚠️ 这是「是否算空占位」的**唯一事实来源**，App.tsx 的 `hasPendingProjectPlaceholder`
+ * 与 storage 的落盘/清理都走这里。历史上这条规则在 App.tsx 与 storage.ts 各写了一份，
+ * 只修了前者，导致「已渲染出工具调用、但正文还没开始」的回合在收尾时被当成空占位整条删除
+ * ——用户看到工具调用一闪而过然后消失（模型报错时尤其明显）。
+ * 任何新字段（如 artifacts / toolCallResults）若也算「有内容」，只改这一处即可。
+ */
+export function isPendingProjectPlaceholder(message: Message | undefined): boolean {
+  if (!message || message.role !== "project") return false;
+  if (typeof message.content === "string" && message.content.trim() !== "") return false;
+  if (message.steps?.length) return false;
+  if (message.reasoning?.trim()) return false;
+  return true;
+}
+
+/**
  * 清理会话末尾残留的空 assistant 占位消息。
  * 当请求在流式阶段异常中断（如进程崩溃、网络挂起）时，`{ role: "project", content: "" }`
  * 可能未被清理；重启后 UI 会把它当成仍在流式中，导致输入框永久禁用。
+ *
+ * 注意：只有**真的什么都还没有**（正文/思考/步骤皆空）才删。已产出工具调用或思考链的
+ * 部分回复必须保留 —— 那正是用户想看到的内容（见 isPendingProjectPlaceholder）。
  */
 export function stripPendingPlaceholder(messages: Message[]): Message[] {
   if (messages.length === 0) return messages;
-  const last = messages[messages.length - 1];
-  if (last.role === "project" && typeof last.content === "string" && last.content.trim() === "") {
+  if (isPendingProjectPlaceholder(messages[messages.length - 1])) {
     return messages.slice(0, -1);
   }
   return messages;

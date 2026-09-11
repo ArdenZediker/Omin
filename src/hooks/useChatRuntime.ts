@@ -13,7 +13,7 @@ import { runSubAgent, type SubAgentRunContext } from "../chat/subAgent";
 import type { ToolCallOutcome } from "../chat/engine";
 import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSelection";
 import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
-import { getChatSessionTitle, getFallbackWorkspacePath, stripPendingPlaceholder } from "../chat/storage";
+import { getChatSessionTitle, getFallbackWorkspacePath, isPendingProjectPlaceholder, stripPendingPlaceholder } from "../chat/storage";
 import { settleInterruptedSteps } from "../chat/stepSettlement";
 import { executeLocalTool } from "../chat/localTools";
 import { pluginRegistry } from "../plugins/registry";
@@ -977,7 +977,12 @@ export function useChatRuntime({
         }
 
         if (!taskResult.finalResult && taskResult.status === "aborted") {
-          setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+          // 保留这一轮已产出的可见内容（正文/思考/工具步骤），只丢掉真正空白的占位。
+          setConversationMessagesForSession(sessionId, (prev) =>
+            prev.filter(
+              (message, index) => index < conversationMessages.length || !isPendingProjectPlaceholder(message)
+            )
+          );
           clearPetThoughtSession(sessionId);
           return;
         }
@@ -1050,7 +1055,14 @@ export function useChatRuntime({
         // 部分 WebView/fetch 实现在 abort 时抛出的是 TypeError 而非 AbortError，
         // 只认类型会把中止误判成失败（乱报错），或反之漏掉清理。
         if (abortController.signal.aborted || (runError instanceof DOMException && runError.name === "AbortError")) {
-          setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+          // 中断（用户点停止 / 看门狗超时）：回到发送前快照，但保留这一轮**已产出的可见内容**。
+          // 判据必须与 finally 的 stripPendingPlaceholder 同源（isPendingProjectPlaceholder）——
+          // 此前只判 message.content，会把「已渲染工具调用、正文还没开始」的部分回复一并丢掉。
+          setConversationMessagesForSession(sessionId, (prev) =>
+            prev.filter(
+              (message, index) => index < conversationMessages.length || !isPendingProjectPlaceholder(message)
+            )
+          );
           clearPetThoughtSession(sessionId);
           if (sessionId && watchdogAbortedSessionIdsRef.current.delete(sessionId)) {
             setError(`任务执行超时（${RUN_WATCHDOG_MINUTES} 分钟），已自动停止`);
@@ -1374,7 +1386,12 @@ export function useChatRuntime({
         const conversationMessages = taskResult.conversationMessages ?? conversationMessagesForTask;
         if (!taskResult.finalResult) {
           if (taskResult.status === "aborted") {
-            setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+            // 保留这一轮已产出的可见内容（正文/思考/工具步骤），只丢掉真正空白的占位。
+            setConversationMessagesForSession(sessionId, (prev) =>
+              prev.filter(
+                (message, index) => index < conversationMessages.length || !isPendingProjectPlaceholder(message)
+              )
+            );
             clearPetThoughtSession(session.id);
             return;
           }
@@ -1677,7 +1694,12 @@ export function useChatRuntime({
         const conversationMessages = taskResult.conversationMessages ?? conversationMessagesForTask;
         if (!taskResult.finalResult) {
           if (taskResult.status === "aborted") {
-            setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
+            // 保留这一轮已产出的可见内容（正文/思考/工具步骤），只丢掉真正空白的占位。
+            setConversationMessagesForSession(sessionId, (prev) =>
+              prev.filter(
+                (message, index) => index < conversationMessages.length || !isPendingProjectPlaceholder(message)
+              )
+            );
             if (hasPetThought) {
               clearPetThoughtSession(sessionId);
             }

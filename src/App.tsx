@@ -53,6 +53,7 @@ import {
 import { initializePluginRegistry } from "./plugins/registry";
 import { useThemeSync } from "./hooks/useThemeSync";
 import { formatMessageClipboardText, writeClipboardWithFiles } from "./chat/messageClipboard";
+import { isPendingProjectPlaceholder } from "./chat/storage";
 import "./App.css";
 
 const KnowledgeBaseView = lazy(() => import("./components/KnowledgeBaseView"));
@@ -619,14 +620,11 @@ function MainApp() {
   ]);
 
   const lastMessage = visibleMessages[visibleMessages.length - 1];
-  // 「占位中」必须严格等价于「这一轮真的什么都还没有」：只有正文、思考链、工具步骤
-  // 三者皆空时才算未完成的流式占位。此前只看 content，会把「已有工具步骤但无正文」的
-  // 正常回复、以及历史上残留的空占位误判为仍在加载，表现为永远「正在思考」。
-  const hasPendingProjectPlaceholder =
-    lastMessage?.role === "project" &&
-    !lastMessage.content.trim() &&
-    !lastMessage.steps?.length &&
-    !lastMessage.reasoning?.trim();
+  // 「占位中」必须严格等价于「这一轮真的什么都还没有」：正文、思考链、工具步骤三者皆空。
+  // 判据抽到 chat/storage 的 isPendingProjectPlaceholder，与落盘清理 stripPendingPlaceholder
+  // 共用同一份实现——历史上这条规则在这里和 storage.ts 各写了一份、只修了这里，
+  // 导致 storage 侧把「已渲染出工具调用、正文还没开始」的回合当成空占位整条删除。
+  const hasPendingProjectPlaceholder = isPendingProjectPlaceholder(lastMessage);
   const isActiveSessionLoading = Boolean((activeChatId && loadingSessionIds.includes(activeChatId)) || hasPendingProjectPlaceholder);
   const isSendBlockedByOtherSession = false;
   const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "project");
