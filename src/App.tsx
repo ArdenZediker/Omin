@@ -35,6 +35,7 @@ import {
   getCompactWindowSize,
   getExpandedCompactViewportSizeForAppearance,
   getPetCompactViewportSize,
+  getPetThoughtAnchorOffset,
   getStoredMainView,
   isCharacterPointerInHitArea,
 } from "./app/window";
@@ -68,6 +69,9 @@ const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
   images: [],
   attachments: [],
 };
+
+/** 等待「窗口几何已应用」的兜底时长：超过它就不再等，直接放行气泡渲染。 */
+const PET_THOUGHT_VIEWPORT_SETTLE_GRACE_MS = 1200;
 
 function formatShareRole(role: Message["role"]) {
   switch (role) {
@@ -233,9 +237,15 @@ function MainApp() {
     () => getCompactWindowSize(compactAppearance, effectiveCompactScale),
     [compactAppearance, effectiveCompactScale]
   );
+  // 只关心「有没有想法气泡」这个布尔，而不是 petThought 对象本身：
+  // 流式期间 preview 每 66ms 就会产生一个新对象，若把对象塞进 compactViewportSize
+  // 的依赖数组，窗口几何 effect 会每秒空转十几次（每次数个 IPC 往返），
+  // 把 setSize 的落地时间从几毫秒拖到几百毫秒——气泡在这段时间里被窗口边界裁切，
+  // 看起来就是「卡了一下只剩一小块」。
+  const hasPetThought = Boolean(petThought);
   const shouldReservePetThoughtSpace =
     compactAppearance === "pet" &&
-    (petThoughtCount > 0 || petThoughtQueue.length > 0 || Boolean(petThought)) &&
+    (petThoughtCount > 0 || petThoughtQueue.length > 0 || hasPetThought) &&
     !arePetThoughtsCollapsed &&
     !isCompactMenuOpen &&
     !isCompactQueryOpen &&
@@ -266,10 +276,10 @@ function MainApp() {
     compactSize.height,
     compactSize.width,
     effectiveCompactScale,
+    hasPetThought,
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
-    petThought,
     petThoughtCount,
     petThoughtQueue.length,
     petThoughtPlacement,
@@ -527,6 +537,44 @@ function MainApp() {
     updateChatSessionMessages,
   });
 
+  // 内联气泡的显示门控：等窗口几何（位置 + 大小）真正落地后再渲染。
+  //
+  // 时序问题是这样的：petThought 数据到达的那一帧，React 就会把气泡挂上去，
+  // 而 Tauri 的 setPosition/setSize 是异步 IPC —— 此时窗口还停在宠物本体尺寸，
+  // 250px 宽的气泡会被窗口边界物理裁成一条残片，几帧后才恢复正常。
+  // committedPetOffset 只在窗口几何更新完成后才追上目标偏移，正好可以作为
+  // 「几何已应用」的信号：两者一致才放行气泡。
+  //
+  // 兜底：拖拽等场景会让几何更新被提前 return 跳过，若一直不自愈就超时放行，
+  // 宁可退回旧行为也不能让气泡永久不显示。
+  const petThoughtViewportOffset = useMemo(
+    () =>
+      shouldReservePetThoughtSpace && compactViewportSize
+        ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
+        : { x: 0, y: 0 },
+    [compactSize, compactViewportSize, shouldReservePetThoughtSpace]
+  );
+  const isPetThoughtViewportSettled =
+    compactController.committedPetOffset.x === petThoughtViewportOffset.x &&
+    compactController.committedPetOffset.y === petThoughtViewportOffset.y;
+  const [isPetThoughtViewportGraceElapsed, setIsPetThoughtViewportGraceElapsed] = useState(false);
+  useEffect(() => {
+    // 只在「确实要为本轮气泡撑大窗口」时才倒计时；收起态（不需要预留空间）直接复位，
+    // 否则倒计时会在收起期间被耗尽，等用户再展开时门控就失效了。
+    if (!shouldReservePetThoughtSpace || isPetThoughtViewportSettled) {
+      setIsPetThoughtViewportGraceElapsed(false);
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setIsPetThoughtViewportGraceElapsed(true),
+      PET_THOUGHT_VIEWPORT_SETTLE_GRACE_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [isPetThoughtViewportSettled, shouldReservePetThoughtSpace]);
+  // 收起态 / 无气泡时不门控：那时气泡靠 max-height 动画收起，挡掉会让动画跳变。
+  const canRenderPetThoughtBubbles =
+    !shouldReservePetThoughtSpace || isPetThoughtViewportSettled || isPetThoughtViewportGraceElapsed;
+
   const displayCompactSize =
     compactAppearance === "pet" && typeof compactController.previewCharacterScale === "number"
       ? getCompactWindowSize(compactAppearance, compactController.previewCharacterScale * CHARACTER_SCALE_BASELINE)
@@ -571,7 +619,14 @@ function MainApp() {
   ]);
 
   const lastMessage = visibleMessages[visibleMessages.length - 1];
-  const hasPendingProjectPlaceholder = lastMessage?.role === "project" && !lastMessage.content.trim();
+  // 「占位中」必须严格等价于「这一轮真的什么都还没有」：只有正文、思考链、工具步骤
+  // 三者皆空时才算未完成的流式占位。此前只看 content，会把「已有工具步骤但无正文」的
+  // 正常回复、以及历史上残留的空占位误判为仍在加载，表现为永远「正在思考」。
+  const hasPendingProjectPlaceholder =
+    lastMessage?.role === "project" &&
+    !lastMessage.content.trim() &&
+    !lastMessage.steps?.length &&
+    !lastMessage.reasoning?.trim();
   const isActiveSessionLoading = Boolean((activeChatId && loadingSessionIds.includes(activeChatId)) || hasPendingProjectPlaceholder);
   const isSendBlockedByOtherSession = false;
   const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "project");
@@ -731,6 +786,7 @@ function MainApp() {
         petThoughtCount={petThoughtCount}
         petThoughtPlacement={petThoughtPlacement}
         arePetThoughtsCollapsed={arePetThoughtsCollapsed}
+        canRenderPetThoughtBubbles={canRenderPetThoughtBubbles}
         compactSize={displayCompactSize}
         compactStyle={compactStyle}
         entries={compactController.entries}
