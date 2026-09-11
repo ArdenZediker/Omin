@@ -83,14 +83,9 @@ fn friendly_git_error(output: &str) -> String {
     }
 }
 
-fn cap_output(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        text.to_string()
-    } else {
-        let cut: String = text.chars().take(max).collect();
-        format!("{cut}\n…[输出已截断]")
-    }
-}
+// 超长 git 输出走通用 spill 管道：截断 + 完整落盘（对齐 deepseek-harness 的 spillPath）。
+// 不再自己实现只截断不落盘的版本——完整文本应可回读。
+use crate::tool_output_spill::cap_and_spill;
 
 // ---------- git_info（只读） ----------
 
@@ -128,7 +123,7 @@ pub(crate) async fn git_info(
         } else {
             String::new()
         };
-        Ok(cap_output(&format!("{output}{empty_hint}"), 20_000))
+        Ok(cap_and_spill(&format!("{output}{empty_hint}"), 20_000, "git"))
     })
     .await
     .map_err(|e| format!("git_info 任务失败: {e}"))?
@@ -438,8 +433,10 @@ mod tests {
     #[test]
     fn cap_output_truncates() {
         let long = "a".repeat(300);
-        assert!(cap_output(&long, 100).contains("已截断"));
-        assert_eq!(cap_output("short", 100), "short");
+        // 经通用 spill 管道：超阈值保留 head/tail 预览并附截断标记（含 `字符已截断]`）。
+        let capped = crate::tool_output_spill::cap_and_spill(&long, 100, "git");
+        assert!(capped.contains("已截断"));
+        assert_eq!(crate::tool_output_spill::cap_and_spill("short", 100, "git"), "short");
     }
 
     #[test]

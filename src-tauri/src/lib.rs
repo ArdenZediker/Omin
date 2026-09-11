@@ -36,6 +36,8 @@ mod clipboard_files;
 mod connectorhub;
 mod mcp;
 mod shellcmd;
+/// 工具结果超长输出的通用 spill 管道（shell / git / MCP 共用）。
+mod tool_output_spill;
 mod sandbox;
 mod shell_session;
 mod filemod;
@@ -628,7 +630,7 @@ pub fn run() {
         .setup(|app| {
             // 工具超长输出落盘目录：截断时完整内容写这里，提示里附路径（对齐 harness spillPath）。
             match crate::storage_paths::tool_output_spill_root(&app.handle()) {
-                Ok(dir) => crate::shellcmd::configure_spill_dir(dir),
+                Ok(dir) => crate::tool_output_spill::configure_spill_dir(dir),
                 Err(err) => eprintln!("[Omni] 初始化工具输出落盘目录失败: {err}"),
             }
 

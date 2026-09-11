@@ -595,9 +595,16 @@ pub fn call_mcp_tool(
             None
         })
         .collect();
+    // 超长 MCP 结果截断 + 完整落盘（此前完全没截断，几 MB 的 JSON 会直接撑爆上下文）。
+    // 文件名带 `mcp:<server>:<tool>` 前缀便于事后定位来源。
+    let text = crate::tool_output_spill::cap_and_spill(
+        &text.join("\n"),
+        crate::tool_output_spill::DEFAULT_TOOL_RESULT_CHARS,
+        &format!("mcp:{id}:{name}"),
+    );
     Ok(McpToolResult {
         ok: !is_error,
-        text: text.join("\n"),
+        text,
         error: if is_error {
             Some("MCP 工具执行返回错误（详见 text 或 stderr 日志）".to_string())
         } else {
