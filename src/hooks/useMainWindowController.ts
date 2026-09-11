@@ -13,7 +13,7 @@ import {
 } from "../app/constants";
 import type { BasicSettings, ViewMode } from "../app/types";
 import { bootstrapSqliteStorage, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
-import { USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
+import { MODEL_USAGE_PREFERENCES_STORAGE_KEY, USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
 import { ARTIFACTS_KEY, ARTIFACT_PANEL_STATE_KEY } from "../chat/artifacts";
 import { resolveCurrentModelId } from "../chat/modelSelection";
 import { getPetWindowScale } from "../app/compactPetScale";
@@ -55,6 +55,7 @@ const BOOTSTRAP_STORAGE_KEYS = [
   COMPACT_PET_HIDDEN_STORAGE_KEY,
   "omni_provider_configs",
   USAGE_PREFERENCES_STORAGE_KEY,
+  MODEL_USAGE_PREFERENCES_STORAGE_KEY,
   "omni_knowledge_embedding_profile",
   CURRENT_MODEL_STORAGE_KEY,
   "omni_model_connection_status",
@@ -150,7 +151,7 @@ export function useMainWindowController({
     const onSystemThemeChange = () => applyThemeFromStorage();
     let usagePreferencesCleanup: (() => void) | undefined;
     void listen("omni-usage-preferences-changed", () => {
-      void bootstrapSqliteStorage([USAGE_PREFERENCES_STORAGE_KEY]);
+      void bootstrapSqliteStorage([USAGE_PREFERENCES_STORAGE_KEY, MODEL_USAGE_PREFERENCES_STORAGE_KEY]);
     }).then((cleanup) => {
       usagePreferencesCleanup = cleanup;
     });

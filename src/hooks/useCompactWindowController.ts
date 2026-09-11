@@ -23,7 +23,7 @@ import {
 } from "../app/window";
 import { bootstrapSqliteStorage, readSqliteBackedValue } from "../app/sqliteStorage";
 import { resolveCurrentModelId } from "../chat/modelSelection";
-import { USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
+import { MODEL_USAGE_PREFERENCES_STORAGE_KEY, USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
 import type { ChatSession } from "../chat/types";
 import {
   resolvePetMenuViewportOffset,
@@ -469,7 +469,7 @@ export function useCompactWindowController({
 
     let unlisten: (() => void) | undefined;
     void listen("omni-usage-preferences-changed", () => {
-      void bootstrapSqliteStorage([USAGE_PREFERENCES_STORAGE_KEY]);
+      void bootstrapSqliteStorage([USAGE_PREFERENCES_STORAGE_KEY, MODEL_USAGE_PREFERENCES_STORAGE_KEY]);
     }).then((cleanup) => {
       unlisten = cleanup;
     });

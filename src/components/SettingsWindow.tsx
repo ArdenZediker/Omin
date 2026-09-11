@@ -5,7 +5,7 @@ import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import { BASIC_SETTINGS_STORAGE_KEY, CURRENT_MODEL_STORAGE_KEY, THEME_MODE_STORAGE_KEY } from "../app/constants";
 import { applyThemeFromStorage, restoreMainWindow } from "../app/window";
 import { bootstrapSqliteStorage, saveSqliteBackedValue } from "../app/sqliteStorage";
-import { USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
+import { MODEL_USAGE_PREFERENCES_STORAGE_KEY, USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
 import SettingsPanel from "./SettingsPanel";
 
 const SETTINGS_BOOTSTRAP_KEYS = [
@@ -13,6 +13,7 @@ const SETTINGS_BOOTSTRAP_KEYS = [
   CURRENT_MODEL_STORAGE_KEY,
   THEME_MODE_STORAGE_KEY,
   USAGE_PREFERENCES_STORAGE_KEY,
+  MODEL_USAGE_PREFERENCES_STORAGE_KEY,
   "omni_provider_configs",
   "omni_knowledge_embedding_profile",
   "omni_model_connection_status",

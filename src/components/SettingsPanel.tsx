@@ -7,7 +7,8 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import { PROVIDER_DEFAULTS } from "../adapters/modelCatalog";
-import type { CustomModelConfig } from "../adapters/types";
+import { MODEL_PARAM_COMPAT_CHANGED_EVENT } from "../adapters/paramCompat";
+import type { CustomModelConfig, UnsupportedParam } from "../adapters/types";
 import type { ChatUsagePreferences } from "../chat/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
 import {
@@ -34,10 +35,8 @@ import { shortcutFromEvent } from "../app/shortcuts";
 import { resolveCurrentModelId } from "../chat/modelSelection";
 import {
   loadBasicSettings,
-  loadUsagePreferences,
   removeModelConnectionStatus,
   saveBasicSettings,
-  saveUsagePreferences,
   saveModelConnectionStatus,
 } from "../app/settingsStore";
 import { loadKnowledgeEmbeddingConfig, saveKnowledgeEmbeddingConfig, type KnowledgeEmbeddingConfig } from "../chat/knowledgeEmbedding";
@@ -46,7 +45,12 @@ import {
   saveKnowledgeMultimodalConfig,
   type KnowledgeMultimodalConfig,
 } from "../chat/knowledgeMultimodal";
-import { DEFAULT_USAGE_PREFERENCES } from "../chat/storage";
+import {
+  DEFAULT_USAGE_PREFERENCES,
+  getUsagePreferencesForModel,
+  removeUsagePreferencesForModel,
+  saveUsagePreferencesForModel,
+} from "../chat/storage";
 import BasicSettingsSection from "./settings/BasicSettingsSection";
 import KnowledgeEmbeddingSection from "./settings/KnowledgeEmbeddingSection";
 import KnowledgeMultimodalSection from "./settings/KnowledgeMultimodalSection";
@@ -89,16 +93,6 @@ function resolveFormApiKey(endpointId: string, apiKeyInput: string) {
   return getRawApiKey(endpointId);
 }
 
-function areUsagePreferencesEqual(a: ChatUsagePreferences, b: ChatUsagePreferences) {
-  return (
-    a.enableStreaming === b.enableStreaming &&
-    a.enableVisionInput === b.enableVisionInput &&
-    a.temperature === b.temperature &&
-    a.maxOutputTokens === b.maxOutputTokens &&
-    Boolean(a.costSaverCompaction) === Boolean(b.costSaverCompaction)
-  );
-}
-
 function normalizeUsagePreferences(prefs: ChatUsagePreferences): ChatUsagePreferences {
   const temperature = Number.isFinite(prefs.temperature) ? prefs.temperature : DEFAULT_USAGE_PREFERENCES.temperature;
   const maxOutputTokens = Number.isFinite(prefs.maxOutputTokens)
@@ -135,9 +129,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [codexPetLibraryState, setCodexPetLibraryState] = useState<CodexPetLibraryState>(DEFAULT_CODEX_PET_LIBRARY_STATE);
   const [codexPetHome, setCodexPetHome] = useState("");
   const [isDesktopPetAwake, setIsDesktopPetAwake] = useState(false);
-  const [prefs, setPrefs] = useState(loadUsagePreferences);
-  const [savedPrefs, setSavedPrefs] = useState(loadUsagePreferences);
-  const [prefsSaveStatus, setPrefsSaveStatus] = useState<"idle" | "dirty" | "saved" | "error">("idle");
+  /** 正在编辑的模型的请求参数草稿：打开「新增/编辑模型」时按该模型载入，随「保存模型」一并落盘 */
+  const [modelPrefs, setModelPrefs] = useState<ChatUsagePreferences>(DEFAULT_USAGE_PREFERENCES);
   const [knowledgeEmbeddingConfig, setKnowledgeEmbeddingConfig] = useState<KnowledgeEmbeddingConfig>(loadKnowledgeEmbeddingConfig);
   const [knowledgeMultimodalConfig, setKnowledgeMultimodalConfig] = useState<KnowledgeMultimodalConfig>(loadKnowledgeMultimodalConfig);
   const [recordingShortcut, setRecordingShortcut] = useState<"openMainShortcut" | "switchPreviousModelShortcut" | null>(null);
@@ -154,6 +147,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
   const [modelName, setModelName] = useState("");
   const [modelVision, setModelVision] = useState(false);
   const [modelStreaming, setModelStreaming] = useState(true);
+  const [modelUnsupportedParams, setModelUnsupportedParams] = useState<UnsupportedParam[]>([]);
   const [isModelFormOpen, setIsModelFormOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<{ endpointId: string; id: string } | null>(null);
 
@@ -428,6 +422,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     setModelName("");
     setModelVision(false);
     setModelStreaming(true);
+    setModelUnsupportedParams([]);
+    setModelPrefs({ ...DEFAULT_USAGE_PREFERENCES });
     setTestResult(null);
     setIsModelFormOpen(true);
   };
@@ -444,6 +440,8 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     setModelName(model.name);
     setModelVision(model.supportsVision ?? false);
     setModelStreaming(model.supportsStreaming ?? true);
+    setModelUnsupportedParams(model.unsupportedParams ?? []);
+    setModelPrefs(getUsagePreferencesForModel(model.id));
     setTestResult(null);
     setIsModelFormOpen(true);
   };
@@ -530,7 +528,15 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       name: modelName.trim() || rawId,
       supportsVision: modelVision,
       supportsStreaming: modelStreaming,
+      unsupportedParams: modelUnsupportedParams.length > 0 ? modelUnsupportedParams : undefined,
     };
+
+    // 请求参数按模型 id 隔离落盘；若编辑时改了接口/模型 ID，先把旧条目的偏好清掉，避免留孤儿。
+    if (editingModel && editingModel.id !== model.id) {
+      removeUsagePreferencesForModel(editingModel.id);
+    }
+    saveUsagePreferencesForModel(model.id, normalizeUsagePreferences(modelPrefs));
+    await emit("omni-usage-preferences-changed", { modelId: model.id });
 
     modelRegistry.addCustomModel(id, model);
     modelRegistry.setCurrentModel(model.id);
@@ -546,8 +552,15 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     setVersion((value) => value + 1);
   };
 
+  const toggleModelUnsupportedParam = (param: UnsupportedParam) => {
+    setModelUnsupportedParams((prev) =>
+      prev.includes(param) ? prev.filter((item) => item !== param) : [...prev, param]
+    );
+  };
+
   const removeModel = (endpointId: string, id: string) => {
     modelRegistry.removeCustomModel(endpointId, id);
+    removeUsagePreferencesForModel(id);
     void removeModelConnectionStatus(id);
     void saveProviderConfigs();
     const nextModel = resolveCurrentModelId({
@@ -571,29 +584,12 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     onModelChange(modelId);
   };
 
-  const updateUsagePrefs = (nextPrefs: ChatUsagePreferences) => {
-    const normalizedPrefs = normalizeUsagePreferences(nextPrefs);
-    setPrefs(normalizedPrefs);
-    setPrefsSaveStatus(areUsagePreferencesEqual(normalizedPrefs, savedPrefs) ? "idle" : "dirty");
+  const updateModelPrefs = (nextPrefs: ChatUsagePreferences) => {
+    setModelPrefs(normalizeUsagePreferences(nextPrefs));
   };
 
-  const resetUsagePrefs = () => {
-    setPrefs(DEFAULT_USAGE_PREFERENCES);
-    setPrefsSaveStatus(areUsagePreferencesEqual(DEFAULT_USAGE_PREFERENCES, savedPrefs) ? "idle" : "dirty");
-  };
-
-  const saveCurrentPrefs = async () => {
-    try {
-      const normalizedPrefs = normalizeUsagePreferences(prefs);
-      saveUsagePreferences(normalizedPrefs);
-      setPrefs(normalizedPrefs);
-      setSavedPrefs(normalizedPrefs);
-      setPrefsSaveStatus("saved");
-      await emit("omni-usage-preferences-changed", { prefs: normalizedPrefs });
-      window.setTimeout(() => setPrefsSaveStatus("idle"), 1600);
-    } catch {
-      setPrefsSaveStatus("error");
-    }
+  const resetModelPrefs = () => {
+    setModelPrefs({ ...DEFAULT_USAGE_PREFERENCES });
   };
 
   const updateKnowledgeEmbeddingConfig = (config: KnowledgeEmbeddingConfig) => {
@@ -614,6 +610,14 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     }
     setModelSection("chat");
   }, [section]);
+
+  // 运行期学到「该模型不支持某参数」后，刷新模型列表上的「已调参」标记。
+  const [, setParamCompatVersion] = useState(0);
+  useEffect(() => {
+    const refresh = () => setParamCompatVersion((version) => version + 1);
+    window.addEventListener(MODEL_PARAM_COMPAT_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(MODEL_PARAM_COMPAT_CHANGED_EVENT, refresh);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -887,6 +891,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                       modelName={modelName}
                       modelStreaming={modelStreaming}
                       modelVision={modelVision}
+                      modelUnsupportedParams={modelUnsupportedParams}
                       onChooseEndpoint={chooseEndpoint}
                       onCloseModelForm={() => setIsModelFormOpen(false)}
                       onModelChange={changeMainModel}
@@ -894,8 +899,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                       onOpenNewModelForm={openNewModelForm}
                       onRemoveModel={removeModel}
                       onSaveModel={saveModel}
-                      onSavePrefs={saveCurrentPrefs}
-                      onResetPrefs={resetUsagePrefs}
+                      onResetModelPrefs={resetModelPrefs}
                       onSetApiKey={setApiKey}
                       onSetBaseUrl={setBaseUrl}
                       onSetEndpointName={setEndpointName}
@@ -904,10 +908,10 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
                       onSetModelName={setModelName}
                       onSetModelStreaming={setModelStreaming}
                       onSetModelVision={setModelVision}
-                      onSetPrefs={updateUsagePrefs}
+                      onToggleModelUnsupportedParam={toggleModelUnsupportedParam}
+                      onSetModelPrefs={updateModelPrefs}
                       onTestConnection={testConnection}
-                      prefs={prefs}
-                      prefsSaveStatus={prefsSaveStatus}
+                      modelPrefs={modelPrefs}
                       testResult={testResult}
                       testingConnection={testingConnection}
                     />
