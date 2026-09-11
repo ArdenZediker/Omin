@@ -277,14 +277,6 @@
   background: var(--omni-app-surface-3, rgba(0, 0, 0, 0.06));
 }
 
-.omni-confirm-dialog--project-settings {
-  width: min(920px, calc(100vw - 36px));
-  max-height: calc(100vh - 32px);
-  padding: 0;
-  overflow: auto;
-  border-radius: 24px;
-}
-
 .omni-confirm-dialog__title {
   color: var(--omni-app-text);
   font-size: 16px;
