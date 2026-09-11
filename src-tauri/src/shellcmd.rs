@@ -10,10 +10,12 @@
 //!   本模块只负责"执行 + 回传输出 + 超时"，不替业务判断风险。
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::storage_paths::fallback_workspace_root;
 
@@ -56,13 +58,80 @@ pub struct ExecuteCommandResult {
     pub timed_out: bool,
 }
 
-pub(crate) fn cap_output(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        text.to_string()
-    } else {
-        let cut: String = text.chars().take(max).collect();
-        format!("{cut}\n…[输出超过 {max} 字符已截断]")
+/// 超长输出落盘目录（应用启动时由 lib.rs 注入；未注入则只截断不落盘）。
+/// 对齐 deepseek-harness 的 spillPath：截断只是「不塞进上下文」，不等于丢弃。
+static SPILL_DIR: OnceLock<PathBuf> = OnceLock::new();
+/// 单次进程内的落盘序号，避免同毫秒并发写入互相覆盖。
+static SPILL_SEQ: AtomicU64 = AtomicU64::new(0);
+/// 落盘目录内保留的最大文件数，超出按修改时间删最旧（best-effort）。
+const SPILL_KEEP_FILES: usize = 200;
+
+/// 注入落盘目录（幂等，首次调用生效）。
+pub(crate) fn configure_spill_dir(dir: PathBuf) {
+    let _ = SPILL_DIR.set(dir);
+}
+
+/// 把完整输出写到 spill 目录并返回绝对路径；任何失败都静默返回 None（截断提示照旧）。
+fn spill_full_output(text: &str) -> Option<String> {
+    let dir = SPILL_DIR.get()?;
+    std::fs::create_dir_all(dir).ok()?;
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    let seq = SPILL_SEQ.fetch_add(1, Ordering::Relaxed);
+    let path = dir.join(format!("output-{millis}-{seq}.log"));
+    std::fs::write(&path, text).ok()?;
+    prune_spill_dir(dir, SPILL_KEEP_FILES);
+    Some(path.to_string_lossy().into_owned())
+}
+
+/// 只保留最近 keep 个文件，避免长跑后无限累积（清理失败不影响主流程）。
+fn prune_spill_dir(dir: &std::path::Path, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<(SystemTime, PathBuf)> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().map(|kind| kind.is_file()).unwrap_or(false))
+        .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
+        .collect();
+    if files.len() <= keep {
+        return;
     }
+    files.sort_by_key(|(modified, _)| *modified);
+    let drop_count = files.len() - keep;
+    for (_, path) in files.into_iter().take(drop_count) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// 截断逻辑本体（spill 回调由调用方注入，便于测试）。
+fn cap_output_with_spill(
+    text: &str,
+    max: usize,
+    spill: impl FnOnce(&str) -> Option<String>,
+) -> String {
+    let total = text.chars().count();
+    if total <= max {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(max).collect();
+    match spill(text) {
+        Some(path) => format!(
+            "{cut}\n…[输出超过 {max} 字符已截断]\n[完整输出共 {total} 字符，已保存到 {path}]"
+        ),
+        None => format!("{cut}\n…[输出超过 {max} 字符已截断]"),
+    }
+}
+
+/// 截断超长输出。截断时把**完整**输出落盘并在提示里附路径，
+/// 让模型按路径回读被砍掉的片段（截断 ≠ 丢弃，对齐 deepseek-harness 的 spillPath）。
+///
+/// 注意：提示里必须保留 `字符已截断]` 这个子串——前端 `localTools.ts::withClipNote`
+/// 靠它识别截断并补 `[clipped-note]` 引导，改文案时别把它拆开。
+pub(crate) fn cap_output(text: &str, max: usize) -> String {
+    cap_output_with_spill(text, max, spill_full_output)
 }
 
 /// 探测 Git for Windows 自带的 bash.exe（结果缓存，进程生命周期内只查一次盘）。
@@ -490,5 +559,77 @@ mod tests {
             assert!(!bash.to_ascii_lowercase().contains("\\system32\\"), "误探测到 WSL bash: {bash}");
             assert!(std::path::Path::new(&bash).is_file());
         }
+    }
+
+    #[test]
+    fn cap_output_leaves_short_text_untouched() {
+        let spill = |_: &str| -> Option<String> { panic!("短文本不应触发落盘") };
+        assert_eq!(cap_output_with_spill("hello", 10, spill), "hello");
+    }
+
+    #[test]
+    fn cap_output_keeps_legacy_hint_when_spill_unavailable() {
+        let long = "a".repeat(20);
+        let out = cap_output_with_spill(&long, 5, |_| None);
+        // 前端 withClipNote 靠「字符已截断]」识别截断并补引导，这个子串不能丢。
+        assert!(out.contains("字符已截断]"), "缺少前端依赖的截断标记：{out}");
+        assert!(out.starts_with("aaaaa"));
+        assert!(!out.contains("已保存到"));
+    }
+
+    #[test]
+    fn cap_output_appends_spill_path_when_available() {
+        let long = "b".repeat(20);
+        let out = cap_output_with_spill(&long, 5, |text| {
+            assert_eq!(text.chars().count(), 20, "落盘的必须是完整输出而非截断片段");
+            Some("C:/tmp/output-1.log".to_string())
+        });
+        assert!(out.contains("字符已截断]"));
+        assert!(out.contains("完整输出共 20 字符"));
+        assert!(out.contains("C:/tmp/output-1.log"));
+    }
+
+    #[test]
+    fn prune_spill_dir_keeps_newest_files() {
+        let dir = std::env::temp_dir().join("omni-spill-prune-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..6u64 {
+            std::fs::write(dir.join(format!("output-{i}.log")), "x").unwrap();
+            // 让 modified 有可分辨的先后（部分文件系统时间戳精度有限）。
+            std::thread::sleep(Duration::from_millis(12));
+        }
+        prune_spill_dir(&dir, 2);
+        for i in 0..4u64 {
+            assert!(!dir.join(format!("output-{i}.log")).exists(), "旧文件 output-{i} 未被清理");
+        }
+        for i in 4..6u64 {
+            assert!(dir.join(format!("output-{i}.log")).exists(), "新文件 output-{i} 被误删");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cap_output_writes_full_text_when_spill_dir_configured() {
+        let dir = std::env::temp_dir().join("omni-spill-io-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        configure_spill_dir(dir.clone());
+
+        let long = "z".repeat(50);
+        let out = cap_output(&long, 10);
+
+        // 前端依赖的截断标记仍在，且提示里带上了落盘路径。
+        assert!(out.contains("字符已截断]"), "缺少截断标记：{out}");
+        assert!(out.contains(dir.to_string_lossy().as_ref()), "提示里应带上落盘路径：{out}");
+
+        // 落盘的必须是完整原文，而不是被截断的片段。
+        let written = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
+            .find(|content| content == &long);
+        assert_eq!(written.as_deref(), Some(long.as_str()), "落盘内容不是完整原文");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
