@@ -2,8 +2,6 @@ import { useCallback, type MutableRefObject } from "react";
 import type * as React from "react";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { cursorPosition } from "@tauri-apps/api/window";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { MAIN_WINDOW_LABEL } from "../app/constants";
 import {
   PET_WINDOW_DECORATION_MARGIN_TOP,
   PET_WINDOW_TOP_OVERSCROLL,
@@ -387,7 +385,7 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     // ⚠️ 必须**同步**落闸（在任何 await 之前）：浏览器的 click 事件紧跟 mouseup
     // 派发，而本函数在第一个 await 之后就被挂起了（等 rAF / IPC 往返，几十到
     // 几百 ms）。若把落闸放在 await 之后，click 早就先执行完了——表现为
-    //「拖动宠物松手也会切换主界面显隐」，这是本次修复的根因。
+    //「拖动宠物松手也会唤起主界面」，这是本次修复的根因。
     if (didDrag) {
       suppressPetClickUntilRef.current = Date.now() + PET_CLICK_SUPPRESS_AFTER_DRAG_MS;
     }
@@ -517,29 +515,17 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     }
     suppressCompactBlur();
 
-    const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
-    if (!mainWindow) {
-      await onRestoreMain(false, { restoreGeometry: false });
-      return;
-    }
-
-    try {
-      const [isVisible, isMinimized] = await Promise.all([
-        mainWindow.isVisible(),
-        mainWindow.isMinimized(),
-      ]);
-
-      if (!isVisible || isMinimized) {
-        await onRestoreMain(false, { restoreGeometry: false });
-        return;
-      }
-
-      await mainWindow.minimize();
-      return;
-
-    } catch {
-      await onRestoreMain(false, { restoreGeometry: false });
-    }
+    // 单击只做一件事：把主界面唤到最前（show + unminimize + focus）。
+    //
+    // 这里原本是「切换」：`isVisible() && !isMinimized()` 时改为 `minimize()`。
+    // 但 Windows 的 isVisible 只表示「窗口没有最小化」，主窗口被别的应用挡住时同样
+    // 为真 → 第一次点击只是把它**悄悄最小化**（用户什么都看不到），要点第二次才真正
+    // 出现，表现为「宠物有时要点两次才能打开主页面」。
+    // 也不能改用「主窗口是否处于前台」来判定：点击小窗会激活小窗，主窗口随即失焦，
+    // 等 click 回调执行时查焦点必然是 false。
+    // 于是不再保留任何不可见的动作——可见 / 最小化 / 被挡住，一律前置。
+    // 收起主界面仍可用主窗口标题栏的收起按钮（`onMinimizeToCompact`）。
+    await onRestoreMain(false, { restoreGeometry: false });
   }, [onRestoreMain, shouldSuppressPetClick, suppressCompactBlur]);
 
   return {

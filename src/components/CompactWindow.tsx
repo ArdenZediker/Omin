@@ -27,6 +27,8 @@ type CompactWindowProps = {
   petThoughtCount: number;
   petThoughtPlacement: PetThoughtPlacement;
   arePetThoughtsCollapsed: boolean;
+  /** 窗口几何是否已撑到气泡所需尺寸；false 时先不渲染气泡，避免被窗口边界裁切。 */
+  canRenderPetThoughtBubbles: boolean;
   compactSize: { width: number; height: number };
   compactStyle: CSSProperties;
   entries: ExternalChatEntry[];
@@ -89,6 +91,7 @@ export default function CompactWindow({
   petThoughtCount,
   petThoughtPlacement,
   arePetThoughtsCollapsed,
+  canRenderPetThoughtBubbles,
   compactSize,
   compactStyle,
   entries,
@@ -151,7 +154,11 @@ export default function CompactWindow({
   const resolvedPetThoughtQueue = petThoughtQueue.length > 0 ? petThoughtQueue : petThought ? [petThought] : [];
   const visiblePetThoughts = petThoughtPlacement === "top" ? [...resolvedPetThoughtQueue].reverse() : resolvedPetThoughtQueue;
   const isInlinePetThoughtStackVisible =
-    isPetThoughtToggleVisible && resolvedPetThoughtQueue.length > 0 && typeof previewCharacterScale !== "number";
+    isPetThoughtToggleVisible &&
+    resolvedPetThoughtQueue.length > 0 &&
+    typeof previewCharacterScale !== "number" &&
+    // 窗口还没撑到气泡所需尺寸时先不渲染：否则 250px 宽的气泡会被窗口边界裁成残片。
+    canRenderPetThoughtBubbles;
   const petViewportSize = getCodexPetViewportSize(compactSize);
   const petRenderHeight = petViewportSize.height;
   const petRenderWidth = petViewportSize.width;
@@ -526,7 +533,7 @@ export default function CompactWindow({
                 void onOpenCompactMenu(rect.left + rect.width / 2, rect.top + rect.height / 2);
               }}
               data-hit-mode={isPetAppearance ? "full" : undefined}
-              aria-label="\u5207\u6362\u4e3b\u754c\u9762"
+              aria-label={isPetAppearance ? "\u6253\u5f00\u4e3b\u754c\u9762" : "\u6253\u5f00\u83dc\u5355"}
             >
               {isPetAppearance ? (
                 <DesktopPet

@@ -117,7 +117,7 @@ describe("useCompactCharacterDrag 拖拽与点击判定", () => {
     mocks.getByLabel.mockClear();
   });
 
-  it("拖动后紧随的 click 被吞掉，不切换主界面", async () => {
+  it("拖动后紧随的 click 被吞掉，不唤起主界面", async () => {
     const { result, onRestoreMain } = setupDrag();
 
     act(() => {
@@ -128,7 +128,7 @@ describe("useCompactCharacterDrag 拖拽与点击判定", () => {
     });
     // 关键：松手后**不 await**。真实浏览器里 click 紧跟 mouseup 派发，此时
     // handleCharacterPointerUp 还挂在 await 上（等 rAF / IPC），抑制标记必须
-    // 在此之前就已经同步写好，否则主界面会被误切换。
+    // 在此之前就已经同步写好，否则主界面会被误唤起。
     act(() => {
       void result.current.drag.handleCharacterPointerUp();
     });
@@ -144,7 +144,7 @@ describe("useCompactCharacterDrag 拖拽与点击判定", () => {
     });
   });
 
-  it("松手收尾先跑完（click 晚到）时同样不切换主界面", async () => {
+  it("松手收尾先跑完（click 晚到）时同样不唤起主界面", async () => {
     const { result, onRestoreMain } = setupDrag();
 
     act(() => {
@@ -166,7 +166,7 @@ describe("useCompactCharacterDrag 拖拽与点击判定", () => {
     expect(onRestoreMain).not.toHaveBeenCalled();
   });
 
-  it("没有位移的纯点击仍然切换主界面", async () => {
+  it("没有位移的纯点击仍然唤起主界面", async () => {
     const { result, onRestoreMain } = setupDrag();
 
     act(() => {
@@ -197,6 +197,33 @@ describe("useCompactCharacterDrag 拖拽与点击判定", () => {
     await act(async () => {
       await result.current.drag.handlePetPrimaryClick();
     });
+    expect(onRestoreMain).toHaveBeenCalledWith(false, { restoreGeometry: false });
+  });
+
+  it("主窗口可见且未最小化时也一律唤起，不再收起", async () => {
+    // 回归「宠物有时要点两次才能打开主页面」：曾经的实现是 isVisible && !isMinimized
+    // 就 minimize()，而主窗口被别的应用挡住时这两个条件依然成立 → 第一次点击只是把它
+    // 悄悄最小化，用户什么都看不到，得点第二次。现在即使能拿到一个「可见且未最小化」
+    // 的主窗口句柄，也必须走唤起路径、绝不调用 minimize()。
+    const minimize = vi.fn(async () => undefined);
+    mocks.getByLabel.mockImplementationOnce(
+      (async () => ({
+        isVisible: async () => true,
+        isMinimized: async () => false,
+        isFocused: async () => false,
+        minimize,
+      })) as never
+    );
+
+    const { result, onRestoreMain } = setupDrag();
+    act(() => {
+      result.current.drag.handlePetPointerDown(makeMouseEvent());
+    });
+    await act(async () => {
+      await result.current.drag.handlePetPrimaryClick();
+    });
+
+    expect(minimize).not.toHaveBeenCalled();
     expect(onRestoreMain).toHaveBeenCalledWith(false, { restoreGeometry: false });
   });
 });
