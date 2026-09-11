@@ -19,6 +19,7 @@ import {
 } from "../chat/storage";
 import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
 import { savePersistedAutomationState } from "../chat/persistence";
+import { clearProjectArtifacts, clearSessionArtifacts } from "../chat/artifacts";
 import type {
   ProjectMemoryRecord,
   Project,
@@ -451,6 +452,10 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       setSessionSummaries(nextSummaries);
       setScheduledTasks(nextTasks);
 
+      // 一并清掉该项目的产物记录。clearProjectArtifacts 此前导出后无人调用，属漏接的一环级联；
+      // 产物文件都在各会话目录内，已随 delete_project 删除的会话目录一并消失。
+      clearProjectArtifacts(projectId);
+
       if (activeProjectId === projectId) {
         activeProjectIdRef.current = DEFAULT_PROJECT_ID;
         setActiveProjectId(DEFAULT_PROJECT_ID);
@@ -570,6 +575,11 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         // eslint-disable-next-line no-console
         console.error("deleteChatSession: delete_chat_session failed", error);
       }
+
+      // 收尾产物记录：会话数据（含附件快照）由上面的 delete_chat_session → remove_dir_all 删除；
+      // 但导出产物落在会话的工作目录里，属于用户的项目文件，删会话时**不**动它（对齐 codex /
+      // atomcode / deepseek-harness 的做法）。这里只清 sqlite 记录，否则「产物」面板会留下死卡。
+      clearSessionArtifacts(session?.projectId, sessionId);
 
       try {
         await savePersistedChatState(projects, nextSessions);

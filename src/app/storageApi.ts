@@ -8,6 +8,8 @@ export interface DataRootInfo {
   writable: boolean;
   databasePath: string;
   knowledgePath: string;
+  /** 会话目录根（<dataRoot>/chat-sessions）。产出与附件快照都落在其下的 <sessionId>/ 内。 */
+  chatSessionsPath: string;
   fallbackReason: string | null;
 }
 

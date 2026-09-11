@@ -76,7 +76,7 @@ export default function StorageSettingsSection({
   const [needsRestart, setNeedsRestart] = useState(false);
 
   const [outputRoot, setOutputRoot] = useState(() => getOutputRootSetting());
-  // 产出根目录默认不暴露：导出固定落到工作空间下的 Omni-导出。仅当用户主动勾选覆盖时才展开输入框。
+  // 产出根目录默认不暴露：导出默认落到会话工作目录下的 Omni-导出。仅当用户主动勾选覆盖时才展开输入框。
   const [useOutputOverride, setUseOutputOverride] = useState(
     () => getOutputRootSetting() !== "",
   );
@@ -272,14 +272,15 @@ export default function StorageSettingsSection({
     <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
       <div className="border-b border-slate-100 pb-3">
         <h3 className="text-sm font-medium text-slate-900 omni-settings-title">
-          生成文档归档
+          产物归档位置
         </h3>
         <p className="mt-1 text-xs text-slate-500 omni-settings-muted">
-          各类生成文件（文档/表格/演示/Markdown）默认存放到「当前工作空间下的{" "}
+          导出的文件（文档/表格/演示/Markdown）默认存放到「会话工作目录下的{" "}
           <code className="rounded bg-slate-100 px-1 text-slate-700">
             Omni-导出
           </code>{" "}
-          文件夹」，并按「项目 / 会话」自动分子目录。通常无需设置。
+          文件夹」，并按「日期 / 项目 / 会话」自动分子目录。产物属于你的项目文件，可随项目一起
+          git 提交、团队共享；因此它不包含在应用备份中，删除会话也不会删除它。通常无需设置。
         </p>
       </div>
 
@@ -302,7 +303,7 @@ export default function StorageSettingsSection({
                   setUseOutputOverride(next);
                 }}
               />
-              固定归档到其它目录（覆盖默认工作空间位置）
+              固定归档到其它目录（覆盖默认的会话工作目录位置）
             </label>
 
             {useOutputOverride && (
@@ -330,14 +331,15 @@ export default function StorageSettingsSection({
                   </button>
                 </div>
                 <p className="text-xs text-slate-400">
-                  设置后，所有导出将固定落到此目录，不再跟随工作空间。
+                  设置后，所有导出将固定落到此目录（按「日期 / 项目 / 会话」分子目录），
+                  不再跟随会话工作目录。注意：该目录不在应用备份范围内。
                 </p>
               </div>
             )}
 
             {!useOutputOverride && (
               <p className="text-xs text-slate-400">
-                默认：导出到工作空间下的{" "}
+                默认：导出到会话工作目录下的{" "}
                 <code className="rounded bg-slate-100 px-1 text-slate-600">
                   Omni-导出
                 </code>
@@ -436,6 +438,7 @@ export default function StorageSettingsSection({
               <InfoRow label="数据根目录" value={info.path} />
               <InfoRow label="数据库" value={info.databasePath} />
               <InfoRow label="知识库" value={info.knowledgePath} />
+              <InfoRow label="会话目录" value={info.chatSessionsPath} />
               {info.fallbackReason && (
                 <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-200">
                   {info.fallbackReason}
