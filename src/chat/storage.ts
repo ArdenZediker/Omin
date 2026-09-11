@@ -12,11 +12,13 @@ import type {
   SessionSummaryRecord,
   UserPreferenceRecord,
 } from "./types";
-import { readSqliteBackedJson, readSqliteBackedValue } from "../app/sqliteStorage";
+import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
 
 export const CHAT_SESSIONS_STORAGE_KEY = "omni_chat_sessions";
 export const CHAT_PROJECTS_STORAGE_KEY = "omni_chat_assistants";
 export const USAGE_PREFERENCES_STORAGE_KEY = "omni_usage_preferences";
+/** 每个模型独立的请求参数偏好（key = 模型 id，见 getUsagePreferencesForModel）。 */
+export const MODEL_USAGE_PREFERENCES_STORAGE_KEY = "omni_model_usage_preferences";
 export const PROJECT_MEMORIES_STORAGE_KEY = "omni_assistant_memories";
 export const SESSION_SUMMARIES_STORAGE_KEY = "omni_session_summaries";
 export const USER_PREFERENCES_STORAGE_KEY = "omni_user_preferences";
@@ -198,6 +200,43 @@ export function getUsagePreferences(): ChatUsagePreferences {
   return readSqliteBackedJson(USAGE_PREFERENCES_STORAGE_KEY, DEFAULT_USAGE_PREFERENCES);
 }
 
+/** 模型 id → 该模型独立的请求参数偏好。 */
+export type ModelUsagePreferencesMap = Record<string, ChatUsagePreferences>;
+
+export function loadModelUsagePreferencesMap(): ModelUsagePreferencesMap {
+  const raw = readSqliteBackedJson<ModelUsagePreferencesMap>(MODEL_USAGE_PREFERENCES_STORAGE_KEY, {});
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+export function saveModelUsagePreferencesMap(map: ModelUsagePreferencesMap): void {
+  saveSqliteBackedValue(MODEL_USAGE_PREFERENCES_STORAGE_KEY, JSON.stringify(map));
+}
+
+/**
+ * 取某个模型实际生效的请求参数偏好：优先用该模型自己的配置；
+ * 从未单独配置过则回落到旧的全局偏好——存量用户此前改过的参数不会因为这次拆分而丢失。
+ */
+export function getUsagePreferencesForModel(modelId: string): ChatUsagePreferences {
+  const stored = loadModelUsagePreferencesMap()[modelId];
+  if (stored) return { ...DEFAULT_USAGE_PREFERENCES, ...stored };
+  return getUsagePreferences();
+}
+
+/** 写入某个模型的请求参数偏好（按模型 id 隔离，互不影响）。 */
+export function saveUsagePreferencesForModel(modelId: string, prefs: ChatUsagePreferences): void {
+  const map = loadModelUsagePreferencesMap();
+  map[modelId] = prefs;
+  saveModelUsagePreferencesMap(map);
+}
+
+/** 移除某个模型的请求参数偏好（删除模型时级联清理，之后回落到全局兜底）。 */
+export function removeUsagePreferencesForModel(modelId: string): void {
+  const map = loadModelUsagePreferencesMap();
+  if (!(modelId in map)) return;
+  delete map[modelId];
+  saveModelUsagePreferencesMap(map);
+}
+
 /** 从 Rust 端的 persona md 文件读取个性化配置（异步）。 */
 export async function loadPersonaConfig(): Promise<PersonaConfig> {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -268,7 +307,15 @@ export function serializeProjectsSnapshot(projects: Project[]) {
 }
 
 export function serializeChatSessionsSnapshot(sessions: ChatSession[]) {
-  return JSON.stringify(sessions);
+  // 落盘前统一剔除末尾残留的空 assistant 占位：它只在流式进行中短暂存在，
+  // 一旦被持久化，重启后 UI 会把它当成仍在流式（输入框锁死 + 永远「正在思考」）。
+  // 读取侧 normalizeSession 另有 stripPendingPlaceholder 兜底，双侧防护。
+  return JSON.stringify(
+    sessions.map((session) => {
+      const messages = stripPendingPlaceholder(session.messages);
+      return messages === session.messages ? session : { ...session, messages };
+    })
+  );
 }
 
 export function serializeProjectMemoriesSnapshot(memories: ProjectMemoryRecord[]) {

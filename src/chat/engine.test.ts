@@ -12,7 +12,7 @@ import { modelRegistry } from "../adapters/registry";
 import { estimatePromptTokens } from "./tokenEstimator";
 
 vi.mock("./storage", () => ({
-  getUsagePreferences: () => ({
+  getUsagePreferencesForModel: () => ({
     temperature: 0.7,
     maxOutputTokens: 2048,
     enableStreaming: true,

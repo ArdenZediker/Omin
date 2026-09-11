@@ -3,6 +3,7 @@
 // 中文动作动词 + 英文标题 + 图标 + 是否产出文件，供 ChatMessage 渲染成
 // 「运行命令 / 写入 / 导出 / 创建」等可读动作行，并在产出文件时附迷你文件卡片。
 import {
+  AlertTriangle,
   Archive,
   Bot,
   Eye,
@@ -14,6 +15,7 @@ import {
   PackagePlus,
   Pencil,
   Plug,
+  RefreshCw,
   Search,
   Terminal as TerminalIcon,
 } from "lucide-react";
@@ -151,6 +153,7 @@ export function iconByName(name?: string): LucideIcon | undefined {
   const map: Record<string, LucideIcon> = {
     Search,
     Archive,
+    AlertTriangle,
     Bot,
     Eye,
     FolderTree,
@@ -160,6 +163,7 @@ export function iconByName(name?: string): LucideIcon | undefined {
     Pencil,
     FileDown,
     FilePen,
+    RefreshCw,
     Terminal: TerminalIcon,
   };
   return map[name];

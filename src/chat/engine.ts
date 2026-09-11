@@ -6,7 +6,7 @@ import { defaultChatOptions, resolveContextWindow } from "../adapters/chatOption
 import type { CompactionStrategy } from "../adapters/chatOptions";
 import type { FileDiff } from "./fileDiff";
 import { invoke } from "@tauri-apps/api/core";
-import { getUsagePreferences, loadPersonaConfig } from "./storage";
+import { getUsagePreferencesForModel, loadPersonaConfig } from "./storage";
 import type { ChatExecutionResult } from "./types";
 import { buildKnowledgeContextBlock } from "./knowledgeContext";
 import { buildOmniSystemPrompt } from "./promptModules";
@@ -18,8 +18,16 @@ import { estimateTokens, estimatePromptTokens } from "./tokenEstimator";
 const DEFAULT_SYSTEM_PROMPT =
   "You are Omni, a helpful, knowledgeable AI project. Be concise and clear. Use markdown when useful.";
 
-/** 单轮对话中模型可发起的最大工具调用轮数（防止死循环）。 */
-const MAX_TOOL_ROUNDS = 6;
+/** 工具轮次预算的「一段」轮数：跑满一段后若模型仍在调用工具，自动追加下一段（软上限续跑）。 */
+export const TOOL_ROUND_SEGMENT = 12;
+
+/** 单轮对话中模型可发起的工具调用轮数硬上限：软上限自动续跑到此处为止，防止无限循环。
+ *  参考 atomcode（主循环 0=不限、子任务 200）与 Codex/Claude Code（无主循环硬顶）：
+ *  6 轮对「探索目录 / 多文件调研」这类任务远远不够，改为高硬顶 + 分段续跑。 */
+export const MAX_TOOL_ROUNDS = 60;
+
+/** 同一工具 + 完全相同的参数在连续轮次中重复出现的次数上限：达到即判定「无进展」并中断循环。 */
+export const REPEAT_CALL_LIMIT = 3;
 
 /**
  * 工具调用的增强执行结果：除回填给模型的文本外，还可携带本次执行落库产物的引用。
@@ -364,8 +372,12 @@ export function partitionToolCallsForExecution(
 
 /**
  * 工具调用循环：流式发起（文本实时回显），模型发起 tool_calls → 并行执行 →
- * 结果回填 → 再次流式请求，直到给出最终回复或轮数耗尽。
- * 轮数耗尽不报错：追加一条「总结当前进度」的最终请求降级收尾。
+ * 结果回填 → 再次流式请求，直到给出最终回复、轮数耗尽或检测到无进展。
+ *
+ * 终止条件有三：① 模型不再发起工具调用（正常收尾）；② 轮数达到硬顶 MAX_TOOL_ROUNDS
+ * （中途每跑满 TOOL_ROUND_SEGMENT 轮自动续跑并上屏一次延长动作）；③ 同一工具 + 同参数
+ * 连续重复 REPEAT_CALL_LIMIT 次（无进展守卫，该轮工具不执行）。
+ * ②③ 均不报错：追加一条说明当前进度的最终请求降级收尾，并提示用户可回复「继续」推进。
  */
 async function runToolLoop(options: {
   model: string;
@@ -399,6 +411,15 @@ async function runToolLoop(options: {
   // 工具内部消耗的额外工具轮数（子 Agent 委派回填，跨轮累计）
   let extraToolRounds = 0;
   const canStream = modelConfig?.supportsStreaming !== false;
+  /** 实际跑满的工具轮数（正常收尾取当轮序号；预算耗尽/无进展中断取已完成的轮数） */
+  let executedRounds = 0;
+  /** 循环退出原因：budget = 轮数硬顶耗尽，repeat = 检测到重复调用无进展 */
+  let stopReason: "budget" | "repeat" = "budget";
+  /** 同一工具 + 同参数签名的连续出现次数；某轮未再出现的签名会被清零，保证「连续」语义
+   *  （隔一轮再重复不算连续，避免正常的分页/重试被误判为死循环）。 */
+  const callStreak = new Map<string, number>();
+  /** 命中无进展守卫时的可读描述（写入中断步骤与收尾提示） */
+  let repeatDetail = "";
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     if (signal?.aborted) {
@@ -471,6 +492,39 @@ async function runToolLoop(options: {
     if (roundReasoning.trim()) {
       steps.push({ type: "reasoning", text: roundReasoning });
       roundReasoning = "";
+    }
+
+    // 无进展守卫：同一工具 + 完全相同参数在连续轮次中重复出现，说明模型在原地打转。
+    // 继续执行既拿不到新信息，又可能重复副作用（写/删除类工具），故达到阈值即中断收尾——
+    // 本轮工具调用一律不执行。放在工具执行之前，避免「第 3 次重复」先落地再被叫停。
+    {
+      const seenSignatures = new Set<string>();
+      for (const toolCall of response.toolCalls) {
+        const signature = `${toolCall.name}\u0000${toolCall.arguments ?? ""}`;
+        seenSignatures.add(signature);
+        const next = (callStreak.get(signature) ?? 0) + 1;
+        callStreak.set(signature, next);
+        if (next >= REPEAT_CALL_LIMIT && !repeatDetail) {
+          repeatDetail = `${toolCall.name} 使用相同参数连续调用 ${next} 次`;
+        }
+      }
+      // 连续语义：本轮未再出现的签名清零
+      for (const key of [...callStreak.keys()]) {
+        if (!seenSignatures.has(key)) callStreak.delete(key);
+      }
+    }
+    if (repeatDetail) {
+      stopReason = "repeat";
+      const repeatStep: ChatStep = {
+        type: "action",
+        label: "中断",
+        title: "No Progress Detected",
+        icon: "AlertTriangle",
+        detail: `检测到重复调用（${repeatDetail}），已停止以避免空转`,
+      };
+      steps.push(repeatStep);
+      onToolStep?.(repeatStep);
+      break;
     }
 
     const assistantMsg: Message = {
@@ -616,12 +670,33 @@ async function runToolLoop(options: {
       steps.push(pruneStep);
       onToolStep?.(pruneStep);
     }
+
+    executedRounds = round + 1;
+    // 软上限续跑：跑满一段预算且仍有后续轮次可走时，上屏一次「延长预算」动作。
+    // 对齐 atomcode goal_cap_stop_note 的语义——预算是可继续推进的额度，不是失败信号；
+    // 长任务里让用户看得见「仍在推进」，而不是突然被告知停下。
+    if (executedRounds % TOOL_ROUND_SEGMENT === 0 && executedRounds < MAX_TOOL_ROUNDS) {
+      const extendStep: ChatStep = {
+        type: "action",
+        label: "延长",
+        title: "Extended Tool Budget",
+        icon: "RefreshCw",
+        detail: `已完成 ${executedRounds} 轮工具调用，任务尚未结束，自动延长 ${TOOL_ROUND_SEGMENT} 轮预算`,
+      };
+      steps.push(extendStep);
+      onToolStep?.(extendStep);
+    }
   }
 
-  // 轮数耗尽：降级为「总结进度」的最终请求（不再给工具，避免继续循环）
+  // 循环退出收尾（不再给工具，避免继续循环）：追加一条系统侧说明，让模型交代真实进度，
+  // 而不是宣告失败。文案对齐 atomcode goal_cap_stop_note：预算用尽只是「额度用完」，不是任务失败。
+  const stopNote =
+    stopReason === "repeat"
+      ? `系统检测到重复调用并已中断（${repeatDetail}）。请基于已获得的信息直接给出当前进度与结论；若确实还需要新信息，请说明卡在哪里、下一步打算换成什么不同的做法，不要再用相同参数重复调用同一工具。`
+      : `本轮工具调用预算已用尽（已执行 ${executedRounds} 轮）。请基于目前已完成的步骤，直接给出当前进度与结论；若有未完成的部分，请明确列出还差什么，用户可以回复「继续」来推进，不要说无法继续或任务失败。`;
   const degradeMessages: Message[] = [
     ...workingMessages,
-    { role: "user", content: "工具调用轮数已达上限。请基于目前已完成的步骤，直接给出当前进度与结果总结，不要再调用任何工具。" },
+    { role: "user", content: stopNote },
   ];
   const response = await modelRegistry.chat({
     messages: degradeMessages,
@@ -634,7 +709,7 @@ async function runToolLoop(options: {
     promptTokens: estimatePromptTokens(degradeMessages),
     completionTokens: estimateTokens(response.content ?? ""),
   });
-  return { content: response.content ?? "", model: response.model, usage, toolRounds: MAX_TOOL_ROUNDS + extraToolRounds, reasoning, toolCallResults: allToolCallResults, steps };
+  return { content: response.content ?? "", model: response.model, usage, toolRounds: executedRounds + extraToolRounds, reasoning, toolCallResults: allToolCallResults, steps };
 }
 
 export async function executeChatTurn(options: {
@@ -704,7 +779,8 @@ export async function executeChatTurn(options: {
   }
 
   const modelConfig = modelRegistry.getModelConfig(model);
-  const preferences = getUsagePreferences();
+  // 请求参数偏好按模型隔离（每个模型可在「模型配置」里单独设定）
+  const preferences = getUsagePreferencesForModel(model);
   // 中性 per-call 选项：由引擎统一构造（thinking 模型默认带 Medium 推理力度；非 thinking 零影响）
   const chatOptions = defaultChatOptions(modelConfig, {
     temperature: preferences.temperature,
