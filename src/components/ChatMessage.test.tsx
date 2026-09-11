@@ -388,3 +388,89 @@ describe("ChatMessage", () => {
     expect(row!.textContent).toContain("命中 3 条知识片段");
   });
 });
+
+describe("ChatMessage · 推理内容区滚动跟随", () => {
+  /** jsdom 不做排版，scrollHeight/clientHeight 恒为 0；手工给出可变的滚动尺寸。 */
+  function stubScrollMetrics(element: HTMLElement, initialScrollHeight: number) {
+    const metrics = { scrollHeight: initialScrollHeight, clientHeight: 420 };
+    Object.defineProperty(element, "scrollHeight", {
+      configurable: true,
+      get: () => metrics.scrollHeight,
+    });
+    Object.defineProperty(element, "clientHeight", {
+      configurable: true,
+      get: () => metrics.clientHeight,
+    });
+    return metrics;
+  }
+
+  const streamingMessage = (text: string): Message => ({
+    role: "project",
+    content: "",
+    steps: [{ type: "reasoning", text }],
+  });
+
+  it("流式期间思考增量增长时，内容区自动贴底到最新一行", () => {
+    const { container, rerender } = render(
+      <ChatMessage message={streamingMessage("第一段思考")} index={20} isStreaming />,
+    );
+    const body = container.querySelector(".message-reasoning__body") as HTMLElement;
+    expect(body).not.toBeNull();
+    const metrics = stubScrollMetrics(body, 600);
+
+    // 思考继续增长 → 重新渲染 → 应贴到新的底部
+    metrics.scrollHeight = 1400;
+    rerender(<ChatMessage message={streamingMessage("第一段思考\n第二段思考\n第三段思考")} index={20} isStreaming />);
+
+    expect(body.scrollTop).toBe(1400);
+    // 跟随时不出现「最新」浮层
+    expect(container.querySelector(".message-reasoning__follow")).toBeNull();
+  });
+
+  it("用户向上滚动后暂停跟随，内容继续增长也不再抢滚动位置", () => {
+    const { container, rerender } = render(
+      <ChatMessage message={streamingMessage("第一段思考")} index={21} isStreaming />,
+    );
+    const body = container.querySelector(".message-reasoning__body") as HTMLElement;
+    const metrics = stubScrollMetrics(body, 600);
+    rerender(<ChatMessage message={streamingMessage("第一段思考\n第二段思考")} index={21} isStreaming />);
+    expect(body.scrollTop).toBe(600);
+
+    // 用户滚轮回看旧思考
+    fireEvent.wheel(body, { deltaY: -120 });
+    expect(container.querySelector(".message-reasoning__follow")).not.toBeNull();
+
+    metrics.scrollHeight = 1800;
+    rerender(<ChatMessage message={streamingMessage("第一段思考\n第二段思考\n第三段思考")} index={21} isStreaming />);
+    expect(body.scrollTop).toBe(600);
+  });
+
+  it("点击「最新」浮层后恢复贴底跟随", () => {
+    const { container } = render(
+      <ChatMessage message={streamingMessage("第一段思考")} index={22} isStreaming />,
+    );
+    const body = container.querySelector(".message-reasoning__body") as HTMLElement;
+    stubScrollMetrics(body, 900);
+
+    fireEvent.wheel(body, { deltaY: -240 });
+    fireEvent.click(container.querySelector(".message-reasoning__follow")!);
+
+    expect(body.scrollTop).toBe(900);
+    expect(container.querySelector(".message-reasoning__follow")).toBeNull();
+  });
+
+  it("非流式（已完成）展开长思考时不强制贴底，保留从头阅读", () => {
+    const { container } = render(
+      <ChatMessage
+        message={{ role: "project", content: "已完成。", steps: [{ type: "reasoning", text: "思考全文" }] }}
+        index={23}
+      />,
+    );
+    fireEvent.click(container.querySelector(".message-reasoning__toggle")!);
+    const body = container.querySelector(".message-reasoning__body") as HTMLElement;
+    stubScrollMetrics(body, 1600);
+
+    expect(body.scrollTop).toBe(0);
+    expect(container.querySelector(".message-reasoning__follow")).toBeNull();
+  });
+});

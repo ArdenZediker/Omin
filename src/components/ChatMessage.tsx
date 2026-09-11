@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  ArrowDown,
   ChevronDown,
   Copy,
   FileDown,
@@ -550,6 +551,22 @@ function ThinkingBlock({
     if (forceExpandSignal && forceExpandSignal > 0) setExpanded(true);
   }, [forceExpandSignal]);
 
+  /** 推理内容区：.message-reasoning__body 是 max-height 420px 的独立滚动容器，
+   *  与消息列表的滚动互相独立，必须单独跟随，否则思考变长时永远停留在顶部。 */
+  const reasoningBodyRef = useRef<HTMLDivElement | null>(null);
+  /** 是否跟随最新思考（贴底）。用户主动向上滚动后置 false，回到底部或新一轮流式开始时恢复。 */
+  const reasoningFollowRef = useRef(true);
+  const [reasoningFollowing, setReasoningFollowing] = useState(true);
+  /** 程序化滚动宽限窗口：窗口内的 scroll 事件不判定为「用户滚走」。 */
+  const reasoningScrollGuardUntilRef = useRef(0);
+
+  // 新一段流式开始：恢复贴底跟随（上一段可能被用户滚走暂停过）。
+  useEffect(() => {
+    if (!isStreaming) return;
+    reasoningFollowRef.current = true;
+    setReasoningFollowing(true);
+  }, [isStreaming]);
+
   const useSteps = Array.isArray(steps) && steps.length > 0;
   const trimmedReasoning = useSteps
     ? (steps as ChatStep[])
@@ -570,6 +587,69 @@ function ThinkingBlock({
   const isThinking = Boolean(isStreaming) && !hasReasoning && actionTotal === 0;
   /** 未完成（running 过渡态或已中断定案）的工具步骤数：>0 说明本轮被中断，收起摘要不谎称「已完成」 */
   const incompleteToolCount = countIncompleteToolSteps(steps as ChatStep[] | undefined);
+
+  // 流式跟随：思考增量落盘后把内容区瞬时拉到底。
+  // 必须用瞬时跳底 + useLayoutEffect：smooth 动画在高频增量下持续滞后，会永远差一屏；
+  // 放在绘制前执行则不会看到「先渲染在旧位置、下一帧才跳」的抖动。
+  useLayoutEffect(() => {
+    if (!isStreaming || !expanded) return;
+    const body = reasoningBodyRef.current;
+    if (!body || !reasoningFollowRef.current) return;
+    reasoningScrollGuardUntilRef.current = Date.now() + 150;
+    body.scrollTop = body.scrollHeight;
+  }, [expanded, isStreaming, trimmedReasoning]);
+
+  // 用户主动滚动时暂停跟随；回到底部附近则恢复。
+  // wheel/touchmove 才代表「用户想离开底部」，内容增长引发的 scroll 只做贴底确认。
+  useEffect(() => {
+    if (!expanded) return;
+    const body = reasoningBodyRef.current;
+    if (!body) return;
+    const distanceToBottom = () => body.scrollHeight - body.scrollTop - body.clientHeight;
+    const updateFollowing = () => {
+      if (distanceToBottom() < 24) {
+        reasoningFollowRef.current = true;
+        setReasoningFollowing(true);
+      } else if (Date.now() > reasoningScrollGuardUntilRef.current) {
+        reasoningFollowRef.current = false;
+        setReasoningFollowing(false);
+      }
+    };
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        reasoningFollowRef.current = false;
+        setReasoningFollowing(false);
+      }
+    };
+    const handleTouchMove = () => {
+      reasoningFollowRef.current = false;
+      setReasoningFollowing(false);
+    };
+    reasoningScrollGuardUntilRef.current = Date.now() + 150;
+    updateFollowing();
+    body.addEventListener("scroll", updateFollowing, { passive: true });
+    body.addEventListener("wheel", handleWheel, { passive: true });
+    body.addEventListener("touchmove", handleTouchMove, { passive: true });
+    return () => {
+      body.removeEventListener("scroll", updateFollowing);
+      body.removeEventListener("wheel", handleWheel);
+      body.removeEventListener("touchmove", handleTouchMove);
+    };
+  }, [expanded]);
+
+  const jumpToLatestReasoning = useCallback(() => {
+    const body = reasoningBodyRef.current;
+    if (!body) return;
+    reasoningScrollGuardUntilRef.current = Date.now() + 600;
+    reasoningFollowRef.current = true;
+    setReasoningFollowing(true);
+    // 平滑滚动；缺少 scrollTo 的环境（老内核 / jsdom）退回瞬时跳底。
+    if (typeof body.scrollTo === "function") {
+      body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+    } else {
+      body.scrollTop = body.scrollHeight;
+    }
+  }, []);
 
   // 收起态摘要行（WorkBuddy 式「已完成 · 思考 + N 个动作」；被中断时前缀改为「已中断」）
   const summaryText = isThinking
@@ -596,7 +676,7 @@ function ThinkingBlock({
         <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
       </button>
       {expanded && (
-        <div className="message-reasoning__body">
+        <div ref={reasoningBodyRef} className="message-reasoning__body">
           {isThinking ? (
             <div className="message-reasoning__thinking">
               <ThinkingIndicator />
@@ -623,6 +703,18 @@ function ThinkingBlock({
           )}
         </div>
       )}
+      {expanded && isStreaming && !reasoningFollowing ? (
+        <button
+          type="button"
+          className="message-reasoning__follow"
+          aria-label="跳到最新思考"
+          title="回到最新思考"
+          onClick={jumpToLatestReasoning}
+        >
+          <ArrowDown size={13} strokeWidth={2.4} />
+          <span>最新</span>
+        </button>
+      ) : null}
     </div>
   );
 }
