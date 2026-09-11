@@ -4424,49 +4424,9 @@
   padding: 4px 0;
 }
 
-/* 「回到最新思考」浮层：仅在流式中、且用户已向上滚离底部时渲染。
-   推理内容区是独立滚动容器，不跟随的话用户滚上去后就只能靠拖那根细滚动条回来。 */
-.message-reasoning__follow {
-  position: absolute;
-  right: 10px;
-  bottom: 16px;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 24px;
-  padding: 0 10px;
-  border: 0;
-  outline: none;
-  border-radius: 999px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--omni-panel-bg) 96%, transparent),
-    color-mix(in srgb, var(--omni-soft-bg) 92%, transparent)
-  );
-  color: var(--omni-app-muted);
-  font-size: 11px;
-  font-weight: 500;
-  box-shadow: 0 8px 20px rgba(148, 163, 184, 0.22);
-  cursor: pointer;
-  animation: omniFollowFadeIn 160ms ease;
-}
-
-.message-reasoning__follow:hover {
-  color: color-mix(in srgb, var(--omni-primary) 82%, var(--omni-app-text));
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--omni-primary) 20%, transparent);
-}
-
-@keyframes omniFollowFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* 「回到最新思考」浮层与 omniFollowFadeIn 动画已移除：
+   推理区不再是独立滚动容器，贴底跟随统一由消息列表（主线唯一滚动容器）负责，
+   「回到最新」按钮也只保留消息列表那一个（.main-chat-scroll-bottom）。 */
 
 /* ===== 独立「执行步骤」面板（方向 B：从「深度思考」面板拆出，与 reasoning 平级） ===== */
 .message-execution {
@@ -4613,6 +4573,8 @@
 }
 
 /* /search_files 命中行列表：path:line 可点击 → 产物面板打开并定位行号 */
+/* 命中行列表不再自设 max-height/overflow：整块随消息向下流动，
+   行内的 ellipsis 已保证不会横向溢出（唯一滚动条归消息列表）。 */
 .exec-search-matches {
   margin: 4px 0 0;
   padding: 6px 8px;
@@ -4622,8 +4584,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 220px;
-  overflow: auto;
 }
 
 .exec-search-match {
@@ -4754,12 +4714,12 @@
   color: rgba(220, 80, 80, 0.92);
 }
 
+/* 卡片内输出不再自设 max-height：高度由内容决定（terminal 卡的超长输出改由
+   ExecutionTimeline 做行数预览 + 「展开全部」），滚动条只归消息列表一个容器。 */
 .exec-card__pre {
   margin: 0;
   padding: 8px 10px;
   border-top: 1px solid color-mix(in srgb, var(--omni-panel-border, #e5e7eb) 70%, transparent);
-  max-height: 220px;
-  overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -4768,16 +4728,36 @@
   color: color-mix(in srgb, var(--omni-message-text, #1f2329) 88%, transparent);
 }
 
+/* diff 保留 overflow-x：unified-diff 用 pre 不折行，超长行仍需横向滚动；
+   去掉 max-height 后纵向不会再有滚动条（高度随内容自然增长）。 */
 .exec-card__diff {
   margin: 0;
   padding: 6px 0;
   border-top: 1px solid color-mix(in srgb, var(--omni-panel-border, #e5e7eb) 70%, transparent);
-  max-height: 260px;
-  overflow: auto;
+  overflow-x: auto;
   white-space: pre;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 11.5px;
   line-height: 1.5;
+}
+
+/* 卡片内长内容的「展开全部 / 收起」开关：默认只铺前若干行，点击后整体内联展开 */
+.exec-more-toggle {
+  width: 100%;
+  margin: 0;
+  padding: 4px 10px;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--omni-panel-border, #e5e7eb) 70%, transparent);
+  background: color-mix(in srgb, var(--omni-panel-bg, #f6f7f9) 55%, transparent);
+  color: var(--omni-accent, #2563eb);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.exec-more-toggle:hover {
+  text-decoration: underline;
 }
 
 .exec-diff-line {
@@ -4808,14 +4788,13 @@
 }
 
 /* web 卡结果列表 */
+/* web 结果列表同样不再自设 max-height：标题行已 ellipsis，整块随消息向下流动 */
 .exec-web-items {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 6px 10px 8px;
   border-top: 1px solid color-mix(in srgb, var(--omni-panel-border, #e5e7eb) 70%, transparent);
-  max-height: 220px;
-  overflow: auto;
 }
 
 .exec-web-item {

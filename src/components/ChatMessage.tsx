@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
-  ArrowDown,
   ChevronDown,
   Copy,
   FileDown,
@@ -529,21 +528,27 @@ function ThinkingBlock({
   onOpenFileLocation?: (path: string, line: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  /** 独立「执行步骤」面板的折叠状态（方向 B：与「深度思考」面板并列，默认展开）。 */
-  const [execExpanded, setExecExpanded] = useState(true);
-  /** 用户手动点过折叠按钮后置位：新一轮开始前不再强制展开，结束后也不强制收起 */
-  const userToggledRef = useRef(false);
+  /** 独立「执行步骤」面板的折叠状态（与「深度思考」面板并列）。 */
+  const [execExpanded, setExecExpanded] = useState(false);
+  /** 各自面板被用户手动点过折叠按钮后置位：本轮结束前不再被自动展开/折叠覆盖 */
+  const reasoningUserToggledRef = useRef(false);
+  const execUserToggledRef = useRef(false);
   const wasStreamingRef = useRef(false);
 
-  // 流式期间自动展开（思考过程实时显示在块内），结束后自动收起为摘要行并保持可再展开。
-  // wasStreamingRef 初始化为 false，确保消息一进入流式状态（即使组件挂载时 isStreaming 已为 true）也会展开。
+  // 流式期间两个面板一起自动展开：思考与执行步骤随消息整体向下流动，
+  // 贴底跟随交给消息列表（MainChatView 的单一滚动容器）统一处理；
+  // 流式结束后自动折叠为一行摘要（对齐 deepseek-harness / codex 的「输出完成即收起」）。
+  // wasStreamingRef 初始为 false，确保组件挂载时已处于流式也会展开。
   useEffect(() => {
     const streaming = Boolean(isStreaming);
     if (streaming && !wasStreamingRef.current) {
-      userToggledRef.current = false;
+      reasoningUserToggledRef.current = false;
+      execUserToggledRef.current = false;
       setExpanded(true);
-    } else if (!streaming && wasStreamingRef.current && !userToggledRef.current) {
-      setExpanded(false);
+      setExecExpanded(true);
+    } else if (!streaming && wasStreamingRef.current) {
+      if (!reasoningUserToggledRef.current) setExpanded(false);
+      if (!execUserToggledRef.current) setExecExpanded(false);
     }
     wasStreamingRef.current = streaming;
   }, [isStreaming]);
@@ -552,22 +557,6 @@ function ThinkingBlock({
   useEffect(() => {
     if (forceExpandSignal && forceExpandSignal > 0) setExpanded(true);
   }, [forceExpandSignal]);
-
-  /** 推理内容区：.message-reasoning__body 是 max-height 420px 的独立滚动容器，
-   *  与消息列表的滚动互相独立，必须单独跟随，否则思考变长时永远停留在顶部。 */
-  const reasoningBodyRef = useRef<HTMLDivElement | null>(null);
-  /** 是否跟随最新思考（贴底）。用户主动向上滚动后置 false，回到底部或新一轮流式开始时恢复。 */
-  const reasoningFollowRef = useRef(true);
-  const [reasoningFollowing, setReasoningFollowing] = useState(true);
-  /** 程序化滚动宽限窗口：窗口内的 scroll 事件不判定为「用户滚走」。 */
-  const reasoningScrollGuardUntilRef = useRef(0);
-
-  // 新一段流式开始：恢复贴底跟随（上一段可能被用户滚走暂停过）。
-  useEffect(() => {
-    if (!isStreaming) return;
-    reasoningFollowRef.current = true;
-    setReasoningFollowing(true);
-  }, [isStreaming]);
 
   const useSteps = Array.isArray(steps) && steps.length > 0;
   const trimmedReasoning = useSteps
@@ -590,68 +579,10 @@ function ThinkingBlock({
   /** 未完成（running 过渡态或已中断定案）的工具步骤数：>0 说明本轮被中断，收起摘要不谎称「已完成」 */
   const incompleteToolCount = countIncompleteToolSteps(steps as ChatStep[] | undefined);
 
-  // 流式跟随：思考增量落盘后把内容区瞬时拉到底。
-  // 必须用瞬时跳底 + useLayoutEffect：smooth 动画在高频增量下持续滞后，会永远差一屏；
-  // 放在绘制前执行则不会看到「先渲染在旧位置、下一帧才跳」的抖动。
-  useLayoutEffect(() => {
-    if (!isStreaming || !expanded) return;
-    const body = reasoningBodyRef.current;
-    if (!body || !reasoningFollowRef.current) return;
-    reasoningScrollGuardUntilRef.current = Date.now() + 150;
-    body.scrollTop = body.scrollHeight;
-  }, [expanded, isStreaming, trimmedReasoning]);
-
-  // 用户主动滚动时暂停跟随；回到底部附近则恢复。
-  // wheel/touchmove 才代表「用户想离开底部」，内容增长引发的 scroll 只做贴底确认。
-  useEffect(() => {
-    if (!expanded) return;
-    const body = reasoningBodyRef.current;
-    if (!body) return;
-    const distanceToBottom = () => body.scrollHeight - body.scrollTop - body.clientHeight;
-    const updateFollowing = () => {
-      if (distanceToBottom() < 24) {
-        reasoningFollowRef.current = true;
-        setReasoningFollowing(true);
-      } else if (Date.now() > reasoningScrollGuardUntilRef.current) {
-        reasoningFollowRef.current = false;
-        setReasoningFollowing(false);
-      }
-    };
-    const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) {
-        reasoningFollowRef.current = false;
-        setReasoningFollowing(false);
-      }
-    };
-    const handleTouchMove = () => {
-      reasoningFollowRef.current = false;
-      setReasoningFollowing(false);
-    };
-    reasoningScrollGuardUntilRef.current = Date.now() + 150;
-    updateFollowing();
-    body.addEventListener("scroll", updateFollowing, { passive: true });
-    body.addEventListener("wheel", handleWheel, { passive: true });
-    body.addEventListener("touchmove", handleTouchMove, { passive: true });
-    return () => {
-      body.removeEventListener("scroll", updateFollowing);
-      body.removeEventListener("wheel", handleWheel);
-      body.removeEventListener("touchmove", handleTouchMove);
-    };
-  }, [expanded]);
-
-  const jumpToLatestReasoning = useCallback(() => {
-    const body = reasoningBodyRef.current;
-    if (!body) return;
-    reasoningScrollGuardUntilRef.current = Date.now() + 600;
-    reasoningFollowRef.current = true;
-    setReasoningFollowing(true);
-    // 平滑滚动；缺少 scrollTo 的环境（老内核 / jsdom）退回瞬时跳底。
-    if (typeof body.scrollTo === "function") {
-      body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
-    } else {
-      body.scrollTop = body.scrollHeight;
-    }
-  }, []);
+  // 提示：推理内容区原先自带 max-height + overflow 与一套独立的贴底跟随
+  //（useLayoutEffect 瞬时跳底 / wheel·touchmove 解除跟随 / 「最新」浮层）。
+  // 现已全部移除——内容随消息列表整体向下流动，全局只有消息列表一个滚动容器，
+  // 贴底跟随由 MainChatView 统一负责，这里不再需要任何局部滚动逻辑。
 
   // 「深度思考」面板收起态摘要：只反映推理（动作数由「执行步骤」面板单独显示）。
   const summaryText = isThinking
@@ -675,7 +606,7 @@ function ThinkingBlock({
           type="button"
           className="message-reasoning__toggle"
           onClick={() => {
-            userToggledRef.current = true;
+            reasoningUserToggledRef.current = true;
             setExpanded((current) => !current);
           }}
           aria-expanded={expanded}
@@ -685,7 +616,7 @@ function ThinkingBlock({
           <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
         </button>
         {expanded && (
-          <div ref={reasoningBodyRef} className="message-reasoning__body">
+          <div className="message-reasoning__body">
             {isThinking ? (
               <div className="message-reasoning__thinking">
                 <ThinkingIndicator />
@@ -712,25 +643,16 @@ function ThinkingBlock({
             )}
           </div>
         )}
-        {expanded && isStreaming && !reasoningFollowing ? (
-          <button
-            type="button"
-            className="message-reasoning__follow"
-            aria-label="跳到最新思考"
-            title="回到最新思考"
-            onClick={jumpToLatestReasoning}
-          >
-            <ArrowDown size={13} strokeWidth={2.4} />
-            <span>最新</span>
-          </button>
-        ) : null}
       </div>
       {actionTotal > 0 ? (
         <div className={`message-execution ${execExpanded ? "message-execution--expanded" : ""}`}>
           <button
             type="button"
             className="message-execution__toggle"
-            onClick={() => setExecExpanded((current) => !current)}
+            onClick={() => {
+              execUserToggledRef.current = true;
+              setExecExpanded((current) => !current);
+            }}
             aria-expanded={execExpanded}
           >
             <span className="message-execution__label">执行步骤</span>

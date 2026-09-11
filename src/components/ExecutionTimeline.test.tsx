@@ -284,3 +284,53 @@ describe("ExecutionTimeline · 展示卡（presentView 分发）", () => {
     expect(container.querySelector(".exec-action__result")!.textContent).toContain("找到 5 个匹配项");
   });
 });
+
+describe("ExecutionTimeline · 单一滚动容器下的「超长内容默认收成预览」", () => {
+  it("terminal 卡超长输出默认只铺前 24 行 + 「展开全部」，点开后完整铺开、可再收起", () => {
+    const output = Array.from({ length: 60 }, (_, index) => `line ${index + 1}`).join("\n");
+    const steps: ChatStep[] = [
+      { type: "tool_call", name: "bash", arguments: JSON.stringify({ command: "seq 60" }), result: output },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+
+    const pre = container.querySelector(".exec-card__pre")!;
+    expect(pre.textContent).toContain("line 24");
+    expect(pre.textContent).not.toContain("line 25");
+
+    const more = container.querySelector(".exec-more-toggle") as HTMLButtonElement;
+    expect(more.textContent).toContain("还有 36 行");
+    fireEvent.click(more);
+    expect(container.querySelector(".exec-card__pre")!.textContent).toContain("line 60");
+
+    // 展开态提供「收起输出」，避免单条消息被一条命令撑满
+    const collapse = container.querySelector(".exec-more-toggle") as HTMLButtonElement;
+    expect(collapse.textContent).toContain("收起输出");
+    fireEvent.click(collapse);
+    expect(container.querySelector(".exec-card__pre")!.textContent).not.toContain("line 25");
+  });
+
+  it("短输出不出现「展开全部」开关（不打扰正常内容）", () => {
+    const steps: ChatStep[] = [
+      {
+        type: "tool_call",
+        name: "bash",
+        arguments: JSON.stringify({ command: "git status" }),
+        result: "On branch main\nnothing to commit",
+      },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} />);
+    expect(container.querySelector(".exec-more-toggle")).toBeNull();
+    expect(container.querySelector(".exec-card__pre")!.textContent).toContain("nothing to commit");
+  });
+
+  it("推理段：流式期间自动展开全文，流式结束后自动收起为一行预览", () => {
+    const steps: ChatStep[] = [{ type: "reasoning", text: "第一行推理\n第二行推理" }];
+    const { container, rerender } = render(<ExecutionTimeline steps={steps} isStreaming />);
+    expect(container.querySelector(".exec-seg__text")!.textContent).toContain("第二行推理");
+    expect(container.querySelector(".exec-seg__preview")).toBeNull();
+
+    rerender(<ExecutionTimeline steps={steps} />);
+    expect(container.querySelector(".exec-seg__text")).toBeNull();
+    expect(container.querySelector(".exec-seg__preview")!.textContent).toBe("第一行推理");
+  });
+});

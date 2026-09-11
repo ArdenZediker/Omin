@@ -2,7 +2,7 @@
 // 把 reasoning / tool_call / action / artifact 步骤按时间顺序渲染为
 // 「可折叠推理段 + 人类可读动作行 + 产物迷你卡片」，供聊天消息（ChatMessage）
 // 与任务面板（MainChatView 回答链路）两处复用。
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronRight,
   File,
@@ -58,6 +58,20 @@ export function formatToolResult(result: string): string {
   if (!trimmed) return "";
   const firstLine = trimmed.split(/\r?\n/).find((line) => line.trim()) ?? "";
   return firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine;
+}
+
+/**
+ * 卡片内联输出的默认行数上限：超出时只铺前 N 行，其余由「展开全部」开关按需铺开。
+ * 存在的理由：卡片自己不再做 max-height/overflow 滚动（滚动只归消息列表一个容器），
+ * 若不设上限，一条 32k 字符的命令输出会把整条消息撑成上千行。
+ */
+const MAX_CARD_PREVIEW_LINES = 24;
+
+/** 按行截断文本，返回预览正文与被省略的行数 */
+function limitLines(text: string, maxLines: number): { text: string; omitted: number } {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return { text, omitted: 0 };
+  return { text: lines.slice(0, maxLines).join("\n"), omitted: lines.length - maxLines };
 }
 
 /**
@@ -182,16 +196,35 @@ export function ExecutionTimeline({
   );
 }
 
-/** 单段推理：可折叠「深度思考」块，收起时显示首行预览，展开显示全文 */
+/** 单段推理：可折叠「深度思考」块，收起时显示首行预览，展开显示全文。
+ *  流式期间自动展开（推理全文随消息向下流动），流式结束后自动收起为一行预览；
+ *  用户在本轮内手动切换过则尊重用户选择（与「深度思考 / 执行步骤」两级面板同规则）。 */
 function ReasoningSegment({ text, isStreaming }: { text: string; isStreaming: boolean }) {
-  const [open, setOpen] = useState(Boolean(isStreaming));
+  const [open, setOpen] = useState(false);
+  const userToggledRef = useRef(false);
+  const wasStreamingRef = useRef(false);
+
+  useEffect(() => {
+    const streaming = Boolean(isStreaming);
+    if (streaming && !wasStreamingRef.current) {
+      userToggledRef.current = false;
+      setOpen(true);
+    } else if (!streaming && wasStreamingRef.current && !userToggledRef.current) {
+      setOpen(false);
+    }
+    wasStreamingRef.current = streaming;
+  }, [isStreaming]);
+
   const preview = text.split(/\r?\n/).find((line) => line.trim()) ?? text.slice(0, 80);
   return (
     <div className="exec-seg">
       <button
         type="button"
         className="exec-seg__toggle"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          userToggledRef.current = true;
+          setOpen((current) => !current);
+        }}
         aria-expanded={open}
       >
         <ChevronRight size={12} strokeWidth={2} className={`exec-seg__chevron ${open ? "exec-seg__chevron--open" : ""}`} />
@@ -332,12 +365,18 @@ function PresentCard({ view }: { view: ToolPresentView }) {
   return <WebCard view={view} />;
 }
 
-/** terminal 卡：命令 + 退出码/超时徽标 + 可滚动输出 + 重置/截断注记 */
+/** terminal 卡：命令 + 退出码/超时徽标 + 内联输出（超长默认只铺前 24 行）+ 重置/截断注记。
+ *  卡片不再自带 max-height 滚动条：内容随消息向下流动，超长输出由「展开全部」按需铺开。 */
 function TerminalCard({
   view,
 }: {
   view: Extract<ToolPresentView, { kind: "terminal" }>;
 }) {
+  const [outputExpanded, setOutputExpanded] = useState(false);
+  /** 内联输出预览：默认只铺前 N 行，展开后铺全量（卡片自身不再做滚动） */
+  const outputPreview = outputExpanded
+    ? { text: view.output, omitted: 0 }
+    : limitLines(view.output, MAX_CARD_PREVIEW_LINES);
   const statusLabel = view.timedOut
     ? "超时"
     : view.exitCode != null && view.exitCode !== 0
@@ -358,7 +397,18 @@ function TerminalCard({
         ) : null}
         <span className={`exec-card__status ${statusClass}`}>{statusLabel}</span>
       </div>
-      {view.output ? <pre className="exec-card__pre">{view.output}</pre> : null}
+      {view.output ? (
+        <pre className="exec-card__pre">{outputPreview.text}</pre>
+      ) : null}
+      {outputPreview.omitted > 0 ? (
+        <button type="button" className="exec-more-toggle" onClick={() => setOutputExpanded(true)}>
+          还有 {outputPreview.omitted} 行 — 展开全部输出
+        </button>
+      ) : outputExpanded ? (
+        <button type="button" className="exec-more-toggle" onClick={() => setOutputExpanded(false)}>
+          收起输出
+        </button>
+      ) : null}
       {view.shellReset ? (
         <div className="exec-card__note">持久 shell 已自动重置，cwd/环境变量回到初始状态</div>
       ) : null}

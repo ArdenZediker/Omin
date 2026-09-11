@@ -106,11 +106,13 @@ describe("ChatMessage", () => {
 
     const { container } = render(<ChatMessage message={message} index={2} />);
 
-    // 折叠态：默认收起，只显示标题与箭头
+    // 折叠态：两个面板默认都收起，只显示标题与摘要行
     expect(screen.getByText("深度思考")).toBeTruthy();
+    expect(screen.getByText("执行步骤")).toBeTruthy();
 
-    // 展开后展示推理文本与三个工具步骤
+    // 推理文本在「深度思考」面板，工具步骤在并列的「执行步骤」面板，各自展开
     fireEvent.click(container.querySelector(".message-reasoning__toggle")!);
+    fireEvent.click(container.querySelector(".message-execution__toggle")!);
 
     expect(screen.getByText("用户想查文件，我先列目录看看有什么。")).toBeTruthy();
     expect(screen.getByText("List Files")).toBeTruthy();
@@ -140,7 +142,7 @@ describe("ChatMessage", () => {
     expect(screen.getByText(/本次回答未使用推理模型或工具调用/)).toBeTruthy();
   });
 
-  it("按 steps 顺序交错渲染（reasoning → tool_call → reasoning），实现 WorkBuddy 式深度思考视图", () => {
+  it("steps 按类型分流到两个面板：推理进「深度思考」、工具进「执行步骤」，各自保持原顺序", () => {
     const message: Message = {
       role: "project",
       content: "已完成查询。",
@@ -165,27 +167,30 @@ describe("ChatMessage", () => {
 
     const { container } = render(<ChatMessage message={message} index={4} />);
 
-    // 点击外层「深度思考」开关展开时间线
+    // 展开两个面板：steps 按 mode 分流，DOM 里出现两个 .exec-timeline
     fireEvent.click(container.querySelector(".message-reasoning__toggle")!);
+    fireEvent.click(container.querySelector(".message-execution__toggle")!);
 
-    const flow = container.querySelector(".exec-timeline");
-    expect(flow).not.toBeNull();
+    const flows = container.querySelectorAll(".exec-timeline");
+    expect(flows.length).toBe(2);
+    const reasoningFlow = flows[0];
+    const execFlow = flows[1];
 
-    const segments = flow!.children;
-    // 4 段：reasoning / tool_call / reasoning / tool_call
-    expect(segments.length).toBe(4);
+    // 「深度思考」面板：只放两段推理，顺序与 steps 一致
+    expect(reasoningFlow.children.length).toBe(2);
+    expect(reasoningFlow.children[0].classList.contains("exec-seg")).toBe(true);
+    expect(reasoningFlow.children[0].textContent).toContain("用户想知道项目里有什么类型的组件");
+    expect(reasoningFlow.children[1].classList.contains("exec-seg")).toBe(true);
+    expect(reasoningFlow.children[1].textContent).toContain("看到了，现在读一下");
 
-    // 顺序与类型断言：第一段是 reasoning 段，第二段是动作行，第三段是 reasoning 段，第四段是动作行
-    expect(segments[0].classList.contains("exec-seg")).toBe(true);
-    expect(segments[0].textContent).toContain("用户想知道项目里有什么类型的组件");
-    expect(segments[1].classList.contains("exec-action")).toBe(true);
-    expect(segments[1].textContent).toContain("List Files");
-    expect(segments[1].textContent).toContain("src/components");
-    expect(segments[2].classList.contains("exec-seg")).toBe(true);
-    expect(segments[2].textContent).toContain("看到了，现在读一下");
-    expect(segments[3].classList.contains("exec-action")).toBe(true);
-    expect(segments[3].textContent).toContain("Read File");
-    expect(segments[3].textContent).toContain("ChatMessage.tsx");
+    // 「执行步骤」面板：只放两条动作行，顺序与 steps 一致
+    expect(execFlow.children.length).toBe(2);
+    expect(execFlow.children[0].classList.contains("exec-action")).toBe(true);
+    expect(execFlow.children[0].textContent).toContain("List Files");
+    expect(execFlow.children[0].textContent).toContain("src/components");
+    expect(execFlow.children[1].classList.contains("exec-action")).toBe(true);
+    expect(execFlow.children[1].textContent).toContain("Read File");
+    expect(execFlow.children[1].textContent).toContain("ChatMessage.tsx");
   });
 
   it("artifact step 渲染为可点击的产物迷你卡片，点击发出「在产物面板打开」事件", () => {
@@ -204,7 +209,8 @@ describe("ChatMessage", () => {
     };
 
     const { container } = render(<ChatMessage message={message} index={5} />);
-    fireEvent.click(container.querySelector(".message-reasoning__toggle")!);
+    // 该消息没有 reasoning，产物步骤在「执行步骤」面板里
+    fireEvent.click(container.querySelector(".message-execution__toggle")!);
 
     const row = container.querySelector(".exec-artifact");
     expect(row).not.toBeNull();
@@ -272,11 +278,13 @@ describe("ChatMessage", () => {
 
     const { container } = render(<ChatMessage message={message} index={6} />);
 
-    // 未展开：收起摘要前缀为「已中断」，不再谎称「已完成」
-    expect(screen.getByText(/已中断/)).toBeTruthy();
+    // 未展开：两个面板的收起摘要都带「已中断」前缀，不再谎称「已完成」
+    //（「深度思考」= 已中断 · 深度思考，「执行步骤」= 已中断 · 1 个动作）
+    expect(screen.getAllByText(/已中断/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/已完成/)).toBeNull();
 
     fireEvent.click(container.querySelector(".message-reasoning__toggle")!);
+    fireEvent.click(container.querySelector(".message-execution__toggle")!);
 
     const row = container.querySelector(".exec-action--interrupted");
     expect(row).not.toBeNull();
@@ -310,8 +318,9 @@ describe("ChatMessage", () => {
     render(<ChatMessage message={message} index={9} />);
 
     // 应显示「已完成」而不是「已中断」——该 running 步骤的 result 是成功结果
+    //（「深度思考」「执行步骤」两个面板各有一条「已完成 · …」摘要行，故用 getAllByText）
     expect(screen.queryByText(/已中断/)).toBeNull();
-    expect(screen.getByText(/已完成/)).toBeTruthy();
+    expect(screen.getAllByText(/已完成/).length).toBeGreaterThan(0);
   });
 
   it("race 兜底：带成功 result 的 running file-producing 步骤让「查看所有变更」按钮仍可见", () => {
@@ -337,7 +346,7 @@ describe("ChatMessage", () => {
     const { container } = render(<ChatMessage message={message} index={10} />);
 
     // 摘要应显示「已完成」（与 stepSettlement.isResolvedAsSuccess 一致）
-    expect(screen.getByText(/已完成/)).toBeTruthy();
+    expect(screen.getAllByText(/已完成/).length).toBeGreaterThan(0);
     // 「查看所有变更 (1)」应可见——不能让 race 兜底只覆盖摘要、不覆盖 footer
     expect(screen.getByText("查看所有变更 (1)")).toBeTruthy();
     expect(container.querySelector(".message-aggregate__link")).not.toBeNull();
@@ -380,7 +389,8 @@ describe("ChatMessage", () => {
     // 有动作步骤时不应显示空态提示
     expect(screen.queryByText(/本次回答未使用推理模型或工具调用/)).toBeNull();
 
-    fireEvent.click(container.querySelector(".message-reasoning__toggle")!);
+    // action 步骤属于「执行步骤」面板（推理面板只放 reasoning）
+    fireEvent.click(container.querySelector(".message-execution__toggle")!);
     const row = container.querySelector(".exec-action");
     expect(row).not.toBeNull();
     expect(row!.textContent).toContain("检索");
@@ -389,88 +399,67 @@ describe("ChatMessage", () => {
   });
 });
 
-describe("ChatMessage · 推理内容区滚动跟随", () => {
-  /** jsdom 不做排版，scrollHeight/clientHeight 恒为 0；手工给出可变的滚动尺寸。 */
-  function stubScrollMetrics(element: HTMLElement, initialScrollHeight: number) {
-    const metrics = { scrollHeight: initialScrollHeight, clientHeight: 420 };
-    Object.defineProperty(element, "scrollHeight", {
-      configurable: true,
-      get: () => metrics.scrollHeight,
-    });
-    Object.defineProperty(element, "clientHeight", {
-      configurable: true,
-      get: () => metrics.clientHeight,
-    });
-    return metrics;
-  }
-
+describe("ChatMessage · 流式展开与结束自动折叠（单一滚动容器）", () => {
   const streamingMessage = (text: string): Message => ({
     role: "project",
     content: "",
-    steps: [{ type: "reasoning", text }],
+    steps: [
+      { type: "reasoning", text },
+      { type: "tool_call", name: "list_files", arguments: JSON.stringify({ path: "src" }), result: "找到 5 个文件" },
+    ],
   });
 
-  it("流式期间思考增量增长时，内容区自动贴底到最新一行", () => {
-    const { container, rerender } = render(
-      <ChatMessage message={streamingMessage("第一段思考")} index={20} isStreaming />,
-    );
-    const body = container.querySelector(".message-reasoning__body") as HTMLElement;
-    expect(body).not.toBeNull();
-    const metrics = stubScrollMetrics(body, 600);
+  /** 面板展开态读取：aria-expanded 由 ChatMessage 的 toggle 按钮维护 */
+  const panelExpanded = (container: HTMLElement, panel: "reasoning" | "execution") =>
+    container.querySelector(`.message-${panel}__toggle`)!.getAttribute("aria-expanded") === "true";
 
-    // 思考继续增长 → 重新渲染 → 应贴到新的底部
-    metrics.scrollHeight = 1400;
-    rerender(<ChatMessage message={streamingMessage("第一段思考\n第二段思考\n第三段思考")} index={20} isStreaming />);
-
-    expect(body.scrollTop).toBe(1400);
-    // 跟随时不出现「最新」浮层
-    expect(container.querySelector(".message-reasoning__follow")).toBeNull();
-  });
-
-  it("用户向上滚动后暂停跟随，内容继续增长也不再抢滚动位置", () => {
-    const { container, rerender } = render(
-      <ChatMessage message={streamingMessage("第一段思考")} index={21} isStreaming />,
-    );
-    const body = container.querySelector(".message-reasoning__body") as HTMLElement;
-    const metrics = stubScrollMetrics(body, 600);
-    rerender(<ChatMessage message={streamingMessage("第一段思考\n第二段思考")} index={21} isStreaming />);
-    expect(body.scrollTop).toBe(600);
-
-    // 用户滚轮回看旧思考
-    fireEvent.wheel(body, { deltaY: -120 });
-    expect(container.querySelector(".message-reasoning__follow")).not.toBeNull();
-
-    metrics.scrollHeight = 1800;
-    rerender(<ChatMessage message={streamingMessage("第一段思考\n第二段思考\n第三段思考")} index={21} isStreaming />);
-    expect(body.scrollTop).toBe(600);
-  });
-
-  it("点击「最新」浮层后恢复贴底跟随", () => {
+  it("推理内容区不再是独立滚动容器：不再渲染内层「最新」浮层", () => {
     const { container } = render(
-      <ChatMessage message={streamingMessage("第一段思考")} index={22} isStreaming />,
+      <ChatMessage message={streamingMessage("第一段思考")} index={30} isStreaming />,
     );
-    const body = container.querySelector(".message-reasoning__body") as HTMLElement;
-    stubScrollMetrics(body, 900);
-
-    fireEvent.wheel(body, { deltaY: -240 });
-    fireEvent.click(container.querySelector(".message-reasoning__follow")!);
-
-    expect(body.scrollTop).toBe(900);
+    expect(container.querySelector(".message-reasoning__body")).not.toBeNull();
+    // 内层跟随 UI 已移除：贴底只由消息列表（MainChatView）负责
     expect(container.querySelector(".message-reasoning__follow")).toBeNull();
   });
 
-  it("非流式（已完成）展开长思考时不强制贴底，保留从头阅读", () => {
+  it("流式进行中：两个面板一起自动展开，推理与工具内容都能看到", () => {
     const { container } = render(
-      <ChatMessage
-        message={{ role: "project", content: "已完成。", steps: [{ type: "reasoning", text: "思考全文" }] }}
-        index={23}
-      />,
+      <ChatMessage message={streamingMessage("第一段思考")} index={31} isStreaming />,
     );
-    fireEvent.click(container.querySelector(".message-reasoning__toggle")!);
-    const body = container.querySelector(".message-reasoning__body") as HTMLElement;
-    stubScrollMetrics(body, 1600);
+    expect(panelExpanded(container, "reasoning")).toBe(true);
+    expect(panelExpanded(container, "execution")).toBe(true);
+    expect(screen.getByText("第一段思考")).toBeTruthy();
+    expect(screen.getByText("List Files")).toBeTruthy();
+  });
 
-    expect(body.scrollTop).toBe(0);
-    expect(container.querySelector(".message-reasoning__follow")).toBeNull();
+  it("流式结束：两个面板自动折叠为一行摘要（对齐参考项目「输出完自动收起」）", () => {
+    const { container, rerender } = render(
+      <ChatMessage message={streamingMessage("第一段思考")} index={32} isStreaming />,
+    );
+    expect(panelExpanded(container, "reasoning")).toBe(true);
+
+    rerender(<ChatMessage message={streamingMessage("第一段思考")} index={32} />);
+
+    expect(panelExpanded(container, "reasoning")).toBe(false);
+    expect(panelExpanded(container, "execution")).toBe(false);
+    expect(container.querySelector(".message-reasoning__body")).toBeNull();
+    expect(container.querySelector(".message-reasoning__summary")).not.toBeNull();
+    expect(container.querySelector(".message-execution__summary")).not.toBeNull();
+  });
+
+  it("已完成的消息：面板默认收起，用户手动展开后不会被再次自动收起", () => {
+    const message = streamingMessage("第一段思考");
+    const { container, rerender } = render(<ChatMessage message={message} index={33} />);
+
+    expect(panelExpanded(container, "reasoning")).toBe(false);
+    expect(panelExpanded(container, "execution")).toBe(false);
+
+    fireEvent.click(container.querySelector(".message-execution__toggle")!);
+    expect(panelExpanded(container, "execution")).toBe(true);
+    expect(screen.getByText("List Files")).toBeTruthy();
+
+    // 非流式状态下的重渲染不应把用户展开的面板收回去
+    rerender(<ChatMessage message={message} index={33} />);
+    expect(panelExpanded(container, "execution")).toBe(true);
   });
 });

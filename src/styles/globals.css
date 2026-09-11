@@ -1625,10 +1625,11 @@ body:has(.pet-thought-window),
   color: rgba(255, 255, 255, 0.55);
 }
 
+/* 推理内容区不再是独立滚动容器（原为 max-height:420px + overflow-y:auto）：
+   全局只保留「消息列表」一个滚动容器，思考/执行内容随消息整体向下流动，
+   流式贴底由 MainChatView 统一负责（对齐 deepseek-harness / codex / atomcode）。 */
 .message-reasoning__body {
   padding: 2px 0 12px;
-  max-height: 420px;
-  overflow-y: auto;
 }
 
 :root[data-omni-theme="dark"] .message-reasoning__toggle {
