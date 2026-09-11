@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { iterateStream, postJsonStream } from "./http";
+import { iterateStream, postJsonStream, FirstByteTimeoutError, isFirstByteTimeoutError } from "./http";
 
 type ReaderChunk = { done: boolean; value?: Uint8Array };
 
@@ -146,6 +146,40 @@ describe("postJsonStream HTTP 状态检查", () => {
       postJsonStream("https://example.com/v1/chat/completions", { model: "m" }, {}, undefined)
     ).resolves.toBe(fakeResponse);
 
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("FirstByteTimeoutError（首包超时类型，对齐 atomcode open_timeout）", () => {
+  it("类型可识别，且保留「请求超时」文案供前端直接展示", () => {
+    const err = new FirstByteTimeoutError(60_000);
+    expect(err).toBeInstanceOf(Error);
+    expect(isFirstByteTimeoutError(err)).toBe(true);
+    expect(err.message).toMatch(/请求超时/);
+  });
+
+  it("非首包错误不被识别为首包超时", () => {
+    expect(isFirstByteTimeoutError(new Error("响应中断"))).toBe(false);
+    expect(isFirstByteTimeoutError(null)).toBe(false);
+    expect(isFirstByteTimeoutError(new DOMException("x", "AbortError"))).toBe(false);
+  });
+
+  it("首包超时（fetch 永久挂起）经 postJsonStream 抛出 FirstByteTimeoutError", async () => {
+    // 模拟「连上后永远不返回响应头」：监听内部 signal 的 abort（超时触发）并 reject，
+    // 才能退出 await fetch（否则 mock 永不 settle 会让测试永久挂起）。
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Request aborted", "AbortError")),
+            { once: true }
+          );
+        })
+    );
+    await expect(
+      postJsonStream("https://example.com/v1/chat/completions", { model: "m" }, {}, undefined, 20)
+    ).rejects.toBeInstanceOf(FirstByteTimeoutError);
     fetchSpy.mockRestore();
   });
 });

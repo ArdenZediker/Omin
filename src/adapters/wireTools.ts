@@ -13,6 +13,7 @@
 
 import type { ChatToolCall, ChatToolParam, Message } from "./types";
 import { toWireRole } from "./types";
+import { EXCLUDE_REASONING, type ReasoningReturnPolicy } from "./reasoningPolicy";
 
 // ---------------------------------------------------------------------------
 // OpenAI 兼容协议（openai / deepseek / openrouter / moonshot / siliconflow /
@@ -32,7 +33,11 @@ export function toOpenAITools(tools?: ChatToolParam[]) {
 }
 
 /** 单条消息转 OpenAI 线格式（图片消息由调用方自行展开）。 */
-export function toOpenAIMessage(msg: Message): Record<string, unknown> {
+export function toOpenAIMessage(msg: Message, policy: ReasoningReturnPolicy = EXCLUDE_REASONING): Record<string, unknown> {
+  // 历史 reasoning 回传（仅受 policy 允许、且为 assistant 消息时）：对齐 atomcode 的
+  // per-model ReasoningPolicy。多数 OpenAI 兼容端点不接受 assistant 消息带 reasoning_content，
+  // 故默认不回传（EXCLUDE），仅命中 include 关键字的模型（deepseek-v4 / kimi / moonshot / mimo）才回传。
+  const reasoningField = reasoningReturnField(msg, policy);
   if (msg.role === "tool") {
     return { role: "tool", tool_call_id: msg.toolCallId ?? "", content: msg.content };
   }
@@ -45,9 +50,19 @@ export function toOpenAIMessage(msg: Message): Record<string, unknown> {
         type: "function" as const,
         function: { name: tc.name, arguments: tc.arguments },
       })),
+      ...reasoningField,
     };
   }
-  return { role: toWireRole(msg.role), content: msg.content };
+  return { role: toWireRole(msg.role), content: msg.content, ...reasoningField };
+}
+
+/** 按 policy 生成回传的 reasoning_content 字段（缺省 / Exclude / 非 assistant 消息返回空对象）。 */
+function reasoningReturnField(msg: Message, policy: ReasoningReturnPolicy): Record<string, unknown> {
+  if (!policy.include || msg.role !== "assistant") return {};
+  const r = (msg.reasoning ?? "").trim();
+  if (r) return { reasoning_content: r };
+  if (policy.placeholder) return { reasoning_content: policy.placeholder };
+  return {};
 }
 
 export function parseOpenAIToolCalls(data: Record<string, unknown>): ChatToolCall[] | undefined {
@@ -191,7 +206,8 @@ export function toOllamaTools(tools?: ChatToolParam[]) {
   return toOpenAITools(tools);
 }
 
-export function toOllamaMessage(msg: Message): Record<string, unknown> {
+export function toOllamaMessage(msg: Message, policy: ReasoningReturnPolicy = EXCLUDE_REASONING): Record<string, unknown> {
+  const reasoningField = reasoningReturnField(msg, policy);
   if (msg.role === "tool") {
     // Ollama 的 tool 消息没有 tool_call_id，按顺序与 assistant.tool_calls 对应
     return { role: "tool", content: msg.content };
@@ -203,9 +219,10 @@ export function toOllamaMessage(msg: Message): Record<string, unknown> {
       tool_calls: msg.toolCalls.map((tc) => ({
         function: { name: tc.name, arguments: tc.arguments },
       })),
+      ...reasoningField,
     };
   }
-  return { role: toWireRole(msg.role), content: msg.content };
+  return { role: toWireRole(msg.role), content: msg.content, ...reasoningField };
 }
 
 export function parseOllamaToolCalls(data: Record<string, unknown>): ChatToolCall[] | undefined {

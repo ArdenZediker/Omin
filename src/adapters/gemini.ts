@@ -91,7 +91,7 @@ export class GeminiAdapter implements ModelAdapter {
       declared: resolveRequestOptions(request).unsupportedParams,
       buildBody: (skip) => this.buildBody(request, skip),
       send: async (body) => {
-        const response = await postJsonWithRetry(url, body, headers, request.signal);
+        const response = await postJsonWithRetry(url, body, headers, request.signal, { timeoutMs: request.timeoutMs });
         return (await response.json()) as any;
       },
     });
@@ -131,7 +131,7 @@ export class GeminiAdapter implements ModelAdapter {
       modelId: request.model,
       declared: resolveRequestOptions(request).unsupportedParams,
       buildBody: (skip) => this.buildBody(request, skip),
-      send: (body) => postJsonStream(url, body, headers, request.signal),
+      send: (body) => postJsonStream(url, body, headers, request.signal, request.timeoutMs),
     });
 
     const reader = response.body?.getReader();

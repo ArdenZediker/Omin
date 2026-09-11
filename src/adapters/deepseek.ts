@@ -1,6 +1,7 @@
 // Omni - DeepSeek 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
+import { resolveReasoningReturnPolicy } from "./reasoningPolicy";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice, ToolChoice } from "./chatOptions";
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
@@ -38,9 +39,11 @@ export class DeepSeekAdapter implements ModelAdapter {
 
   private buildBody(request: ChatRequest, stream: boolean, skip: Set<UnsupportedParam>): Record<string, unknown> {
     const opts = resolveRequestOptions(request);
+    // 历史 reasoning 回传策略：默认不回传；仅命中 include 关键字的模型才回传 reasoning_content。
+    const policy = resolveReasoningReturnPolicy(this.provider, request.model);
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages.map((m) => toOpenAIMessage(m)),
+      messages: request.messages.map((m) => toOpenAIMessage(m, policy)),
       stream,
     };
     // 调用方没意见时不下发，而不是凭空塞一个 0.7——有些模型（如 kimi-k3）直接拒绝 temperature。
@@ -66,7 +69,7 @@ export class DeepSeekAdapter implements ModelAdapter {
       declared: resolveRequestOptions(request).unsupportedParams,
       buildBody: (skip) => this.buildBody(request, false, skip),
       send: async (body) => {
-        const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal);
+        const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal, { timeoutMs: request.timeoutMs });
         return (await response.json()) as any;
       },
     });
@@ -102,7 +105,7 @@ export class DeepSeekAdapter implements ModelAdapter {
       modelId: request.model,
       declared: resolveRequestOptions(request).unsupportedParams,
       buildBody: (skip) => this.buildBody(request, true, skip),
-      send: (body) => postJsonStream(url, body, headers, request.signal),
+      send: (body) => postJsonStream(url, body, headers, request.signal, request.timeoutMs),
     });
 
     const reader = response.body?.getReader();

@@ -3,7 +3,10 @@ import {
   OpenAIStreamToolAccumulator,
   ClaudeStreamToolAccumulator,
   parseGeminiStreamToolCalls,
+  toOpenAIMessage,
+  toOllamaMessage,
 } from "./wireTools";
+import { EXCLUDE_REASONING, type ReasoningReturnPolicy } from "./reasoningPolicy";
 
 describe("OpenAIStreamToolAccumulator", () => {
   it("跨 chunk 累加同一 index 的 id/name/arguments 增量", () => {
@@ -69,5 +72,58 @@ describe("parseGeminiStreamToolCalls", () => {
   it("无 functionCall 返回 undefined", () => {
     expect(parseGeminiStreamToolCalls([{ text: "hi" }])).toBeUndefined();
     expect(parseGeminiStreamToolCalls(undefined)).toBeUndefined();
+  });
+});
+
+describe("历史 reasoning 回传（toOpenAIMessage / toOllamaMessage）", () => {
+  const policyInclude: ReasoningReturnPolicy = { include: true, placeholder: "·" };
+
+  it("默认不回传 reasoning_content（保持现状零 token）", () => {
+    const msg = { role: "assistant", content: "答案", reasoning: "我先想想" } as any;
+    expect(toOpenAIMessage(msg)).not.toHaveProperty("reasoning_content");
+  });
+
+  it("policy.include 且 reasoning 非空 → 回传 reasoning_content", () => {
+    const msg = { role: "assistant", content: "答案", reasoning: "我先想想" } as any;
+    expect(toOpenAIMessage(msg, policyInclude)).toEqual({
+      role: "assistant",
+      content: "答案",
+      reasoning_content: "我先想想",
+    });
+  });
+
+  it("policy.include 且 reasoning 为空 → 用占位符回传（部分端点空串被拒）", () => {
+    const msg = { role: "assistant", content: "答案", reasoning: "" } as any;
+    expect(toOpenAIMessage(msg, policyInclude)).toEqual({
+      role: "assistant",
+      content: "答案",
+      reasoning_content: "·",
+    });
+  });
+
+  it("assistant 带 toolCalls 时 reasoning_content 一并回传", () => {
+    const msg = {
+      role: "assistant",
+      content: "调工具",
+      reasoning: "需要查文件",
+      toolCalls: [{ id: "c1", name: "read_file", arguments: "{}" }],
+    } as any;
+    expect((toOpenAIMessage(msg, policyInclude) as any).reasoning_content).toBe("需要查文件");
+  });
+
+  it("tool 角色消息不回传 reasoning", () => {
+    const msg = { role: "tool", toolCallId: "c1", content: "结果", reasoning: "x" } as any;
+    expect(toOpenAIMessage(msg, policyInclude)).not.toHaveProperty("reasoning_content");
+  });
+
+  it("toOllamaMessage 同样遵循 policy", () => {
+    const msg = { role: "assistant", content: "答案", reasoning: "思考" } as any;
+    expect((toOllamaMessage(msg, policyInclude) as any).reasoning_content).toBe("思考");
+    expect(toOllamaMessage(msg)).not.toHaveProperty("reasoning_content");
+  });
+
+  it("EXCLUDE_REASONING 常量等价于不包含", () => {
+    const msg = { role: "assistant", content: "答案", reasoning: "x" } as any;
+    expect(toOpenAIMessage(msg, EXCLUDE_REASONING)).not.toHaveProperty("reasoning_content");
   });
 });

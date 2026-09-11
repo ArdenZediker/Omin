@@ -14,6 +14,7 @@ import { parseOmniStructuredOutput } from "./structuredOutput";
 import { getModelPricing } from "../adapters/modelCatalog";
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord } from "./types";
 import { estimateTokens, estimatePromptTokens } from "./tokenEstimator";
+import { isFirstByteTimeoutError } from "../adapters/http";
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are Omni, a helpful, knowledgeable AI project. Be concise and clear. Use markdown when useful.";
@@ -28,6 +29,71 @@ export const MAX_TOOL_ROUNDS = 60;
 
 /** 同一工具 + 完全相同的参数在连续轮次中重复出现的次数上限：达到即判定「无进展」并中断循环。 */
 export const REPEAT_CALL_LIMIT = 3;
+
+/** 普通请求首包超时（毫秒）：从请求发出到响应头完整到达。 */
+const DEFAULT_FIRST_BYTE_TIMEOUT_MS = 60_000;
+/** 非流式请求首包超时：服务端通常要等整段生成完才返回响应头，给 5 分钟。 */
+const NON_STREAM_FIRST_BYTE_TIMEOUT_MS = 300_000;
+/** 推理模型首包超时：thinking 期间可能不吐任何 chunk，给 5 分钟避免 60s 误杀。 */
+const THINKING_FIRST_BYTE_TIMEOUT_MS = 300_000;
+
+/** 首包超时自动续跑上限：首次请求之外最多再试 2 次（共 3 次），避免无限重试。 */
+const MAX_FIRST_BYTE_RETRIES = 2;
+
+/**
+ * 首包超时自动续跑：首包超时（请求发出后到响应头到达前）说明服务端/网络此刻无响应，
+ * 但服务端尚未返回任何内容，重新发起一次是安全的——不会重复消费已产出的 token。
+ * 对齐 atomcode 把 open_timeout（首字节看门狗）归类为 retryable，超时即自动重连一轮。
+ *
+ * 注意：仅首包超时重试。流式中「空闲/总超时」（`iterateStream` 抛的「响应中断/响应超时」）
+ * 发生在已产出部分内容之后，重试会重复输出，故不重试；用户取消（AbortError）也不重试。
+ */
+async function withFirstByteRetry<T>(
+  signal: AbortSignal | undefined,
+  attemptFn: () => Promise<T>
+): Promise<T> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await attemptFn();
+    } catch (err) {
+      if (attempt >= MAX_FIRST_BYTE_RETRIES) throw err;
+      // 重试前若用户已取消（首次超时期间点了停止），以 AbortError 退出，不再续跑。
+      if (signal?.aborted) throw new DOMException("Request aborted", "AbortError");
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      if (!isFirstByteTimeoutError(err)) throw err;
+      attempt += 1;
+      // 退避后重试：首包超时多为瞬时（推理模型刚被调度 / 代理缓冲），给一点间隔再试。
+      await sleepWithSignal(Math.min(2 ** attempt * 1000, 8000) + Math.random() * 500, signal);
+    }
+  }
+}
+
+/** 带取消感知的 sleep：signal 中止时立即 reject（AbortError），由上层停止续跑。 */
+function sleepWithSignal(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Request aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Request aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** 根据是否流式 / 是否 thinking 模型，返回合适的 fetchWithTimeout 首包超时。 */
+function resolveFirstByteTimeoutMs(stream: boolean, modelConfig?: ModelConfig): number {
+  if (!stream) return NON_STREAM_FIRST_BYTE_TIMEOUT_MS;
+  if (modelConfig?.thinking) return THINKING_FIRST_BYTE_TIMEOUT_MS;
+  return DEFAULT_FIRST_BYTE_TIMEOUT_MS;
+}
 
 /**
  * 工具调用的增强执行结果：除回填给模型的文本外，还可携带本次执行落库产物的引用。
@@ -216,13 +282,16 @@ async function compactOnce(options: {
   const droppedOldest = pruneToolResultMessages(requestMessages.slice(compactableStart + 2));
 
   try {
-    const response = await modelRegistry.chat({
-      model,
-      messages: [{ role: "system", content: COMPACTION_PROMPT }, ...prunedSlice],
-      stream: false,
-      signal,
-      options: { maxTokens: 600, temperature: 0.2 },
-    });
+    const response = await withFirstByteRetry(signal, () =>
+      modelRegistry.chat({
+        model,
+        messages: [{ role: "system", content: COMPACTION_PROMPT }, ...prunedSlice],
+        stream: false,
+        signal,
+        timeoutMs: resolveFirstByteTimeoutMs(false, modelConfig),
+        options: { maxTokens: 600, temperature: 0.2 },
+      })
+    );
     const summary = response.content.trim();
     if (summary && summary.length > 20) {
       // 无收益守卫（吸 atomcode committed/refused）：摘要几乎与原文等长则放弃摘要压缩，
@@ -387,6 +456,8 @@ async function runToolLoop(options: {
   tools: ChatToolParam[];
   signal?: AbortSignal;
   modelConfig?: ModelConfig;
+  /** 首包超时（毫秒），覆盖默认 60s；thinking/非流式请求通常更长 */
+  timeoutMs?: number;
   onChunk?: (chunk: string) => void;
   onReasoning?: (reasoning: string) => void;
   /** 每个工具调用执行完成时回调（实时上屏 UI 的「思考过程」步骤） */
@@ -401,7 +472,7 @@ async function runToolLoop(options: {
   toolCallResults: ChatToolCallResult[];
   steps: ChatStep[];
 }> {
-  const { model, requestMessages, chatOptions, tools, signal, modelConfig, onChunk, onReasoning, onToolStep, executeToolCall } = options;
+  const { model, requestMessages, chatOptions, tools, signal, modelConfig, timeoutMs, onChunk, onReasoning, onToolStep, executeToolCall } = options;
   let workingMessages = [...requestMessages];
   const usage = emptyUsage();
   let reasoning = "";
@@ -431,36 +502,42 @@ async function runToolLoop(options: {
      * 等本批工具全部执行完成后再一次性输出，避免用户看到「工具还在转，正文已经出来」的错乱顺序。 */
     let roundContentBuffer = "";
     if (canStream) {
-      response = await modelRegistry.chatStream(
-        {
-          messages: workingMessages,
-          model,
-          stream: true,
-          tools,
-          signal,
-          options: chatOptions,
-        },
-        (chunk) => {
-          if (signal?.aborted) return;
-          if (chunk.reasoning) {
-            reasoning += chunk.reasoning;
-            roundReasoning += chunk.reasoning;
-            onReasoning?.(chunk.reasoning);
+      response = await withFirstByteRetry(signal, () =>
+        modelRegistry.chatStream(
+          {
+            messages: workingMessages,
+            model,
+            stream: true,
+            tools,
+            signal,
+            timeoutMs,
+            options: chatOptions,
+          },
+          (chunk) => {
+            if (signal?.aborted) return;
+            if (chunk.reasoning) {
+              reasoning += chunk.reasoning;
+              roundReasoning += chunk.reasoning;
+              onReasoning?.(chunk.reasoning);
+            }
+            if (chunk.content) {
+              roundContentBuffer += chunk.content;
+            }
           }
-          if (chunk.content) {
-            roundContentBuffer += chunk.content;
-          }
-        }
+        )
       );
     } else {
-      response = await modelRegistry.chat({
-        messages: workingMessages,
-        model,
-        stream: false,
-        tools,
-        signal,
-        options: chatOptions,
-      });
+      response = await withFirstByteRetry(signal, () =>
+        modelRegistry.chat({
+          messages: workingMessages,
+          model,
+          stream: false,
+          tools,
+          signal,
+          timeoutMs,
+          options: chatOptions,
+        })
+      );
       // 非流式响应：把模型一次性返回的 reasoning 文本累加到本轮 reasoning（与流式分支语义对齐）
       if (response.reasoning) {
         reasoning += response.reasoning;
@@ -698,13 +775,16 @@ async function runToolLoop(options: {
     ...workingMessages,
     { role: "user", content: stopNote },
   ];
-  const response = await modelRegistry.chat({
-    messages: degradeMessages,
-    model,
-    stream: false,
-    signal,
-    options: chatOptions,
-  });
+  const response = await withFirstByteRetry(signal, () =>
+    modelRegistry.chat({
+      messages: degradeMessages,
+      model,
+      stream: false,
+      signal,
+      timeoutMs: resolveFirstByteTimeoutMs(false, modelConfig),
+      options: chatOptions,
+    })
+  );
   accumulateUsage(usage, response.usage, {
     promptTokens: estimatePromptTokens(degradeMessages),
     completionTokens: estimateTokens(response.content ?? ""),
@@ -880,6 +960,7 @@ export async function executeChatTurn(options: {
       tools: tools!,
       signal,
       modelConfig,
+      timeoutMs: resolveFirstByteTimeoutMs(true, modelConfig),
       onChunk,
       onReasoning,
       onToolStep,
@@ -912,28 +993,31 @@ export async function executeChatTurn(options: {
   if (shouldStream) {
     let streamedContent = "";
     let reasoning = "";
-    const response = await modelRegistry.chatStream(
-      {
-        messages: requestMessages,
-        model,
-        stream: true,
-        signal,
-        options: chatOptions,
-      },
-      (chunk) => {
-        if (signal?.aborted) {
-          return;
+    const response = await withFirstByteRetry(signal, () =>
+      modelRegistry.chatStream(
+        {
+          messages: requestMessages,
+          model,
+          stream: true,
+          signal,
+          timeoutMs: resolveFirstByteTimeoutMs(true, modelConfig),
+          options: chatOptions,
+        },
+        (chunk) => {
+          if (signal?.aborted) {
+            return;
+          }
+          if (chunk.done) return;
+          if (chunk.reasoning) {
+            reasoning += chunk.reasoning;
+            onReasoning?.(chunk.reasoning);
+          }
+          if (chunk.content) {
+            streamedContent += chunk.content;
+            onChunk?.(chunk.content);
+          }
         }
-        if (chunk.done) return;
-        if (chunk.reasoning) {
-          reasoning += chunk.reasoning;
-          onReasoning?.(chunk.reasoning);
-        }
-        if (chunk.content) {
-          streamedContent += chunk.content;
-          onChunk?.(chunk.content);
-        }
-      }
+      )
     );
 
     if (signal?.aborted) {
@@ -960,13 +1044,16 @@ export async function executeChatTurn(options: {
     };
   }
 
-  const response = await modelRegistry.chat({
-    messages: requestMessages,
-    model,
-    stream: false,
-    signal,
-    options: chatOptions,
-  });
+  const response = await withFirstByteRetry(signal, () =>
+    modelRegistry.chat({
+      messages: requestMessages,
+      model,
+      stream: false,
+      signal,
+      timeoutMs: resolveFirstByteTimeoutMs(false, modelConfig),
+      options: chatOptions,
+    })
+  );
 
   if (signal?.aborted) {
     throw new DOMException("Request aborted", "AbortError");

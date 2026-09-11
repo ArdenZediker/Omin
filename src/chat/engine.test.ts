@@ -10,6 +10,7 @@ import {
 import type { ChatResponse, ChatToolCall, ChatStep, Message, ModelConfig, StreamChunk } from "../adapters/types";
 import { modelRegistry } from "../adapters/registry";
 import { estimatePromptTokens } from "./tokenEstimator";
+import { FirstByteTimeoutError } from "../adapters/http";
 
 vi.mock("./storage", () => ({
   getUsagePreferencesForModel: () => ({
@@ -182,6 +183,105 @@ describe("executeChatTurn", () => {
     // 最终答复应来自收尾轮，而非被摘要串覆盖
     expect(res.content).toContain("最终答复");
     void chatSpy;
+  });
+
+  it("普通流式请求首包超时 60s，thinking 模型 / 非流式请求首包超时 300s", async () => {
+    setupRegistry();
+
+    const chatStreamSpy = vi.spyOn(modelRegistry, "chatStream").mockResolvedValue({ content: "ok", model: "gpt-test" } as ChatResponse);
+    const chatSpy = vi.spyOn(modelRegistry, "chat").mockResolvedValue({ content: "ok", model: "gpt-test" } as ChatResponse);
+
+    // 普通模型 + 流式 → 60s
+    await executeChatTurn({ model: "gpt-test", messages: [{ role: "user", content: "hi" }], onChunk: (c) => void c });
+    expect(chatStreamSpy.mock.calls[0]?.[0].timeoutMs).toBe(60_000);
+
+    // thinking 模型 + 流式 → 300s
+    vi.spyOn(modelRegistry, "getModelConfig").mockReturnValue({ ...mockModelConfig, thinking: true });
+    await executeChatTurn({ model: "gpt-test", messages: [{ role: "user", content: "hi" }], onChunk: (c) => void c });
+    expect(chatStreamSpy.mock.calls[1]?.[0].timeoutMs).toBe(300_000);
+
+    // 非流式模型 → chat 而非 chatStream，超时 300s
+    vi.spyOn(modelRegistry, "getModelConfig").mockReturnValue({ ...mockModelConfig, supportsStreaming: false });
+    await executeChatTurn({ model: "gpt-test", messages: [{ role: "user", content: "hi" }] });
+    expect(chatSpy.mock.calls[0]?.[0].timeoutMs).toBe(300_000);
+    expect(chatSpy.mock.calls[0]?.[0].stream).toBe(false);
+  });
+});
+
+describe("首包超时自动续跑（withFirstByteRetry）", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  const cfg: ModelConfig = {
+    id: "gpt-test",
+    name: "GPT Test",
+    provider: "openai",
+    maxTokens: 128000,
+    supportsVision: false,
+    supportsStreaming: true,
+    toolCalling: true,
+  };
+
+  function setup() {
+    vi.spyOn(modelRegistry, "getRegisteredProviders").mockReturnValue(["openai"]);
+    vi.spyOn(modelRegistry, "getAdapterForModel").mockReturnValue({} as ReturnType<typeof modelRegistry.getAdapterForModel>);
+    vi.spyOn(modelRegistry, "getModelConfig").mockReturnValue(cfg);
+  }
+
+  it(
+    "首包超时：首次之外最多再试 2 次，第 3 次成功则正常返回",
+    async () => {
+      setup();
+      const spy = vi
+        .spyOn(modelRegistry, "chatStream")
+        .mockRejectedValueOnce(new FirstByteTimeoutError(60_000))
+        .mockRejectedValueOnce(new FirstByteTimeoutError(60_000))
+        .mockImplementationOnce(async (_req, onChunk) => {
+          onChunk({ content: "最终答复", done: false, model: "gpt-test" });
+          return { content: "最终答复", model: "gpt-test" } as ChatResponse;
+        });
+
+      const received: string[] = [];
+      const res = await executeChatTurn({
+        model: "gpt-test",
+        messages: [{ role: "user", content: "hi" }],
+        onChunk: (c) => received.push(c),
+      });
+
+      // 首包超时不会丢弃任何已产出内容，故安全重连：共发 3 次（1 失败 + 1 失败 + 1 成功）
+      expect(spy).toHaveBeenCalledTimes(3);
+      expect(received.join("")).toContain("最终答复");
+      expect(res.content).toContain("最终答复");
+    },
+    20000
+  );
+
+  it("非首包错误（如 HTTP 401）不重试，直接抛出", async () => {
+    setup();
+    const spy = vi.spyOn(modelRegistry, "chatStream").mockRejectedValue(new Error("HTTP 401 - bad key"));
+    await expect(
+      executeChatTurn({ model: "gpt-test", messages: [{ role: "user", content: "hi" }], onChunk: () => {} })
+    ).rejects.toThrow(/HTTP 401/);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("用户取消（超时期间点了停止）不续跑，直接抛出 AbortError", async () => {
+    setup();
+    const controller = new AbortController();
+    // 模拟「首包超时 + 用户在这个过程中取消」：首次调用时标记取消，并抛首包超时。
+    const spy = vi.spyOn(modelRegistry, "chatStream").mockImplementationOnce(async () => {
+      controller.abort();
+      throw new FirstByteTimeoutError(60_000);
+    });
+    await expect(
+      executeChatTurn({
+        model: "gpt-test",
+        messages: [{ role: "user", content: "hi" }],
+        signal: controller.signal,
+        onChunk: () => {},
+      })
+    ).rejects.toBeInstanceOf(DOMException);
+    // 重试前检测到已取消 → 不再发第 2 次，仅调用 1 次
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
 

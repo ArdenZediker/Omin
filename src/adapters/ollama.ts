@@ -2,6 +2,7 @@
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, ChatToolCall } from "./types";
 import { toWireRole } from "./types";
 import { toOllamaTools, toOllamaMessage, parseOllamaToolCalls } from "./wireTools";
+import { resolveReasoningReturnPolicy } from "./reasoningPolicy";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 import { resolveRequestOptions, ollamaToolChoice } from "./chatOptions";
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
@@ -30,6 +31,8 @@ export class OllamaAdapter implements ModelAdapter {
   }
 
   private buildMessages(request: ChatRequest) {
+    // 历史 reasoning 回传策略：本地模型默认不回传（policy 仅当模型名命中 include 关键字才回传）。
+    const policy = resolveReasoningReturnPolicy(this.provider, request.model);
     return request.messages.map((msg) => {
       if (msg.images && msg.images.length > 0) {
         return {
@@ -38,7 +41,7 @@ export class OllamaAdapter implements ModelAdapter {
           images: msg.images.map((img) => (img.src.startsWith("data:") ? img.src.split(",")[1] : img.src)),
         };
       }
-      return toOllamaMessage(msg);
+      return toOllamaMessage(msg, policy);
     });
   }
 
@@ -69,7 +72,7 @@ export class OllamaAdapter implements ModelAdapter {
       declared: resolveRequestOptions(request).unsupportedParams,
       buildBody: (skip) => this.buildBody(request, false, skip),
       send: async (body) => {
-        const response = await postJsonWithRetry(url, body, headers, request.signal, { retryable: false });
+        const response = await postJsonWithRetry(url, body, headers, request.signal, { retryable: false, timeoutMs: request.timeoutMs });
         return (await response.json()) as any;
       },
     });
@@ -89,7 +92,7 @@ export class OllamaAdapter implements ModelAdapter {
       modelId: request.model,
       declared: resolveRequestOptions(request).unsupportedParams,
       buildBody: (skip) => this.buildBody(request, true, skip),
-      send: (body) => postJsonStream(url, body, headers, request.signal),
+      send: (body) => postJsonStream(url, body, headers, request.signal, request.timeoutMs),
     });
 
     const reader = response.body?.getReader();

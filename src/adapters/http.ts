@@ -6,6 +6,25 @@
 /** 默认请求超时（毫秒） */
 export const DEFAULT_TIMEOUT_MS = 60_000;
 
+/**
+ * 首包超时（请求发出后到响应头完整到达前）：此时服务端尚未返回任何内容，
+ * 重新发起一次是安全的——不会重复消费已产出的 token。
+ * 抽成独立类型，便于上层把「首包超时」与「流式中空闲/总超时」「用户取消」区分开，
+ * 单独归类为可重试（对齐 atomcode 的 open_timeout 首字节看门狗，超时即 retryable）。
+ * 文案保留「请求超时（Ns）」供前端直接展示，不要改动子串。
+ */
+export class FirstByteTimeoutError extends Error {
+  constructor(public readonly ms: number) {
+    super(`请求超时（${Math.round(ms / 1000)}s）`);
+    this.name = "FirstByteTimeoutError";
+  }
+}
+
+/** 判断是否为首包超时（区别于流式中空闲/总超时、用户取消、HTTP 错误） */
+export function isFirstByteTimeoutError(err: unknown): err is FirstByteTimeoutError {
+  return err instanceof FirstByteTimeoutError;
+}
+
 /** 429/5xx/网络错误最多重试次数（指数退避，含抖动） */
 const MAX_RETRIES = 3;
 
@@ -42,7 +61,7 @@ async function fetchWithTimeout(
       if (signal?.aborted) {
         throw error; // 用户取消
       }
-      throw new Error(`请求超时（${Math.round(timeoutMs / 1000)}s）`);
+      throw new FirstByteTimeoutError(timeoutMs);
     }
     throw error;
   } finally {
@@ -83,7 +102,7 @@ export async function postJsonWithRetry(
     } catch (error) {
       // 网络错误 / 超时：非流式场景可重试（超时重试需谨慎，这里只重试网络错误）
       if (retryable && attempt < MAX_RETRIES && !(error instanceof DOMException && error.name === "AbortError")) {
-        const isTimeout = error instanceof Error && error.message.startsWith("请求超时");
+        const isTimeout = isFirstByteTimeoutError(error);
         if (!isTimeout) {
           attempt += 1;
           await sleep(300 * 2 ** attempt + Math.random() * 200);

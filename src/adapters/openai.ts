@@ -4,6 +4,7 @@ import { toWireRole } from "./types";
 import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice, ToolChoice } from "./chatOptions";
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
+import { resolveReasoningReturnPolicy } from "./reasoningPolicy";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
 const OPENAI_MODELS: ModelConfig[] = [
@@ -40,6 +41,10 @@ export class OpenAIAdapter implements ModelAdapter {
   }
 
   private buildMessages(request: ChatRequest) {
+    // 历史 reasoning 回传策略（按 provider + 模型名派生，对齐 atomcode 的 per-model ReasoningPolicy）。
+    // 默认不回传（保持现状零 token），仅 deepseek-v4 / kimi / moonshot / mimo 这类接受
+    // reasoning_content 的端点才回传，避免多数 OpenAI 兼容端点拒绝未知字段而 400。
+    const policy = resolveReasoningReturnPolicy(this.provider, request.model);
     return request.messages.map((msg) => {
       if (msg.images && msg.images.length > 0) {
         return {
@@ -53,7 +58,7 @@ export class OpenAIAdapter implements ModelAdapter {
           ],
         };
       }
-      return toOpenAIMessage(msg);
+      return toOpenAIMessage(msg, policy);
     });
   }
 
@@ -92,7 +97,7 @@ export class OpenAIAdapter implements ModelAdapter {
       declared: resolveRequestOptions(request).unsupportedParams,
       buildBody: (skip) => this.buildBody(request, false, skip),
       send: async (body) => {
-        const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal);
+        const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal, { timeoutMs: request.timeoutMs });
         return (await response.json()) as any;
       },
     });

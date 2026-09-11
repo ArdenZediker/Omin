@@ -217,6 +217,9 @@ export interface ChatRequest {
   tools?: ChatToolParam[];
   /** 取消信号：透传到底层 fetch（立即中断在途请求） */
   signal?: AbortSignal;
+  /** 本次请求首包超时（毫秒）：覆盖 fetchWithTimeout 默认 60s，主要用于思考模型/非流式请求。
+   *  响应头到达后由 iterateStream 的 idle/total 超时接管，不受本字段约束。 */
+  timeoutMs?: number;
   /** 中性 per-call 请求旋钮（推理力度 / 工具选择 / 上限 / 温度）。优先于上面的 flat 字段；缺省时回落。 */
   options?: ChatOptions;
 }

@@ -144,7 +144,7 @@ export class ClaudeAdapter implements ModelAdapter {
       modelId: request.model,
       declared: resolveRequestOptions(request).unsupportedParams,
       buildBody: (skip) => this.buildBody(request, true, skip),
-      send: (body) => postJsonStream(url, body, headers, request.signal),
+      send: (body) => postJsonStream(url, body, headers, request.signal, request.timeoutMs),
     });
 
     const reader = response.body?.getReader();
