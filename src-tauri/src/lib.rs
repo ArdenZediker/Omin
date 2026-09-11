@@ -78,7 +78,8 @@ pub(crate) use storage::{
     delete_project_by_id, delete_chat_session_by_id, has_structured_chat_storage,
     load_automation_storage, load_manifest_storage,
     load_memory_storage, load_structured_chat_storage, read_kv, read_structured_app_value,
-    remove_structured_app_value, save_automation_storage, save_manifest_storage,
+    remove_structured_app_value, resolve_session_dir_for_id, save_automation_storage,
+    save_manifest_storage,
     save_memory_storage, save_structured_chat_storage, write_kv, write_structured_app_value,
     AutomationStoragePayload, ChatStoragePayload, ManifestStoragePayload, MemoryStoragePayload,
     KNOWLEDGE_EMBEDDING_CONFIG_KEY, KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
@@ -571,6 +572,7 @@ pub fn run() {
             write_clipboard_with_files,
             delete_chat_session,
             delete_project,
+            resolve_session_dir,
             get_data_root_info,
             set_data_root,
             reset_data_root,
@@ -624,6 +626,12 @@ pub fn run() {
             undo_file_edit
         ])
         .setup(|app| {
+            // 工具超长输出落盘目录：截断时完整内容写这里，提示里附路径（对齐 harness spillPath）。
+            match crate::storage_paths::tool_output_spill_root(&app.handle()) {
+                Ok(dir) => crate::shellcmd::configure_spill_dir(dir),
+                Err(err) => eprintln!("[Omni] 初始化工具输出落盘目录失败: {err}"),
+            }
+
             // 清理上一会话遗留的剪贴板图片缓存（best-effort，失败不影响启动）
             if let Err(err) = clipboard_files::cleanup_clipboard_cache(&app.handle()) {
                 eprintln!("[Omni] 清理剪贴板缓存失败: {err}");

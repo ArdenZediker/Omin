@@ -6,9 +6,9 @@ use crate::{
     MemoryStoragePayload, backup, delete_chat_session_by_id, delete_project_by_id,
     has_structured_chat_storage, load_automation_storage, load_manifest_storage,
     load_memory_storage, load_structured_chat_storage, open_sqlite_connection,
-    read_structured_app_value, remove_structured_app_value, save_automation_storage,
-    save_manifest_storage, save_memory_storage, save_structured_chat_storage, storage_paths,
-    write_structured_app_value,
+    read_structured_app_value, remove_structured_app_value, resolve_session_dir_for_id,
+    save_automation_storage, save_manifest_storage, save_memory_storage,
+    save_structured_chat_storage, storage_paths, write_structured_app_value,
 };
 
 #[tauri::command]
@@ -71,6 +71,21 @@ pub(crate) fn delete_chat_session(app: tauri::AppHandle, id: String) -> Result<(
 pub(crate) fn delete_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let connection = open_sqlite_connection(&app)?;
     delete_project_by_id(&connection, &id, &storage_paths::chat_sessions_root(&app)?)
+}
+
+/// 解析某会话的实际目录（兼容历史位置）。前端据此定位附件快照目录，
+/// 避免在 TS 侧复制「会话目录如何分桶」这条规则。
+#[tauri::command]
+pub(crate) fn resolve_session_dir(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<String, String> {
+    let connection = open_sqlite_connection(&app)?;
+    Ok(resolve_session_dir_for_id(
+        &connection,
+        &session_id,
+        &storage_paths::chat_sessions_root(&app)?,
+    ))
 }
 
 #[tauri::command]

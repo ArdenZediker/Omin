@@ -136,8 +136,90 @@ const SESSION_LEASE_FILE: &str = ".omni_sessions.lock";
 /// 获取跨进程写锁的最长等待时间。
 const SESSION_LEASE_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn session_file_path(root: &Path, id: &str) -> PathBuf {
-    root.join(id).join("session.jsonl")
+/// 目录名清洗：去路径分隔符与 Windows 非法字符，压缩空白，限长 40，去尾部点/空格。
+/// 与前端 `sanitizeDirName` 同一规则（中文保留）。
+fn sanitize_dir_name(raw: &str) -> String {
+    let replaced: String = raw
+        .chars()
+        .map(|c| match c {
+            '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\r' | '\n' | '\t' => ' ',
+            other => other,
+        })
+        .collect();
+    let collapsed = replaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    let truncated: String = collapsed.chars().take(40).collect();
+    truncated.trim_end_matches(['.', ' ']).to_string()
+}
+
+/// 会话目录分桶名：`<项目标题>_<项目id前8位>`；无项目（project_id 为空）归入 `_no-project`。
+///
+/// 与前端产物目录的 `sessionDirName(标题, id)` 同风格：可读前缀 + 短 id 保唯一。
+/// 目的：同一项目的会话聚进一个可辨识的桶，而不是在 chat-sessions 下平铺成一堆 UUID。
+fn session_bucket_name(project_id: &str, project_title: Option<&str>) -> String {
+    let pid = project_id.trim();
+    if pid.is_empty() {
+        return "_no-project".to_string();
+    }
+    let slug = sanitize_dir_name(project_title.unwrap_or(""));
+    let slug = if slug.is_empty() { "project".to_string() } else { slug };
+    let short: String = pid.chars().take(8).collect();
+    format!("{}_{}", slug, short)
+}
+
+/// 定位某会话的实际目录：优先目标分桶，其次兼容历史位置
+/// （旧版扁平结构 `root/<id>`、以及项目改名后遗留的旧桶）。
+/// 这个兜底同时承担了「存量迁移」与「项目改名」的自愈，无需单独的一次性迁移脚本。
+fn find_existing_session_dir(root: &Path, bucket: &str, id: &str) -> Option<PathBuf> {
+    let preferred = root.join(bucket).join(id);
+    if preferred.is_dir() {
+        return Some(preferred);
+    }
+    let flat = root.join(id);
+    if flat.is_dir() {
+        return Some(flat);
+    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let candidate = path.join(id);
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// 会话 JSONL 文件路径。已存在于别处时返回其真实位置，否则返回目标分桶下的预期位置。
+fn session_file_path(root: &Path, bucket: &str, id: &str) -> PathBuf {
+    find_existing_session_dir(root, bucket, id)
+        .unwrap_or_else(|| root.join(bucket).join(id))
+        .join("session.jsonl")
+}
+
+/// 清理该会话在「非目标分桶」下的历史残留目录（旧扁平结构 / 改名前的旧桶）。
+/// 仅在目标目录原本不存在时调用，保证快路径零扫描开销、且不会误删刚写入的内容。
+fn cleanup_legacy_session_dirs(root: &Path, bucket: &str, id: &str) {
+    let preferred = root.join(bucket).join(id);
+    let flat = root.join(id);
+    if flat.is_dir() {
+        let _ = fs::remove_dir_all(&flat);
+    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let candidate = path.join(id);
+            if candidate.is_dir() && candidate != preferred {
+                let _ = fs::remove_dir_all(&candidate);
+            }
+        }
+    }
 }
 
 /// 构造会话文件头行（JSONL 首行），记录格式版本与压缩方式，供后续迁移识别。
@@ -169,11 +251,17 @@ fn acquire_cross_process_lease(root: &Path) -> Result<fs::File, String> {
     }
 }
 
-fn write_session_messages(root: &Path, id: &str, messages: &JsonValue) -> Result<(), String> {
+fn write_session_messages(
+    root: &Path,
+    bucket: &str,
+    id: &str,
+    messages: &JsonValue,
+) -> Result<(), String> {
     let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     // 进程间互斥：多实例并发写时串行化，避免文件撕裂。
     let _lease = acquire_cross_process_lease(root)?;
-    let dir = root.join(id);
+    let dir = root.join(bucket).join(id);
+    let was_absent = !dir.exists();
     fs::create_dir_all(&dir).map_err(|err| format!("创建会话目录失败 {}: {}", dir.display(), err))?;
     let target = dir.join("session.jsonl");
     let tmp = dir.join("session.jsonl.tmp");
@@ -197,12 +285,21 @@ fn write_session_messages(root: &Path, id: &str, messages: &JsonValue) -> Result
         .map_err(|err| format!("重命名会话文件失败 {}: {}", target.display(), err))?;
     // 释放跨进程写锁（仅本进程持有，Mutex 已保证唯一进入者）。
     let _ = fs::remove_file(root.join(SESSION_LEASE_FILE));
+    // 首次落到该位置时，顺手清掉历史残留（旧扁平结构 / 项目改名前的旧桶），
+    // 避免同一会话留下两份副本。仅在目标原本不存在时执行，快路径零扫描开销。
+    if was_absent {
+        cleanup_legacy_session_dirs(root, bucket, id);
+    }
     Ok(())
 }
 
-fn read_session_messages(root: &Path, id: &str) -> Result<Option<Vec<JsonValue>>, String> {
+fn read_session_messages(
+    root: &Path,
+    bucket: &str,
+    id: &str,
+) -> Result<Option<Vec<JsonValue>>, String> {
     let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let file = session_file_path(root, id);
+    let file = session_file_path(root, bucket, id);
     if !file.exists() {
         return Ok(None);
     }
@@ -242,12 +339,14 @@ fn read_session_messages(root: &Path, id: &str) -> Result<Option<Vec<JsonValue>>
     Ok(Some(out))
 }
 
-fn delete_session_dir(root: &Path, id: &str) {
+/// 删除会话目录。除目标分桶外，一并清理旧扁平结构与改名前的旧桶，保证删干净、不留孤儿。
+fn delete_session_dir(root: &Path, bucket: &str, id: &str) {
     let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let dir = root.join(id);
+    let dir = root.join(bucket).join(id);
     if dir.exists() {
         let _ = fs::remove_dir_all(&dir);
     }
+    cleanup_legacy_session_dirs(root, bucket, id);
 }
 
 pub(crate) fn read_kv(connection: &Connection, key: &str) -> Result<Option<String>, String> {
@@ -633,6 +732,17 @@ pub(crate) fn load_structured_chat_storage(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
 
+    // 项目 id → 会话目录分桶名。读会话文件前据此定位其所在桶（查不到则按无项目兜底）。
+    let bucket_by_project: HashMap<String, String> = projects
+        .iter()
+        .map(|project| {
+            (
+                project.id.clone(),
+                session_bucket_name(&project.id, Some(&project.title)),
+            )
+        })
+        .collect();
+
     let mut session_stmt = connection
         .prepare(
             r#"
@@ -677,14 +787,19 @@ pub(crate) fn load_structured_chat_storage(
         .into_iter()
         .map(
             |(id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path)| {
+                // 会话目录按项目分桶；项目已删等查不到归属时退化为无项目桶。
+                let bucket = bucket_by_project
+                    .get(&project_id)
+                    .cloned()
+                    .unwrap_or_else(|| session_bucket_name(&project_id, None));
                 // 消息优先从 JSONL 文件读取；文件缺失时回退旧 messages_json 列
                 // （首次从旧版本升级时的迁移路径），并写回文件，之后文件成为权威源。
-                let messages = match read_session_messages(sessions_root, &id)? {
+                let messages = match read_session_messages(sessions_root, &bucket, &id)? {
                     Some(items) => JsonValue::Array(items),
                     None => {
                         let parsed: JsonValue = serde_json::from_str(&messages_json)
                             .unwrap_or(JsonValue::Array(Vec::new()));
-                        let _ = write_session_messages(sessions_root, &id, &parsed);
+                        let _ = write_session_messages(sessions_root, &bucket, &id, &parsed);
                         parsed
                     }
                 };
@@ -731,6 +846,17 @@ pub(crate) fn save_structured_chat_storage(
         serde_json::from_str(projects_json).map_err(|err| err.to_string())?;
     let mut sessions: Vec<DbChatSession> =
         serde_json::from_str(sessions_json).map_err(|err| err.to_string())?;
+
+    // 项目 id → 会话目录分桶名。写会话文件与清理幽灵目录都要用它定位所在桶。
+    let bucket_by_project: HashMap<String, String> = projects
+        .iter()
+        .map(|project| {
+            (
+                project.id.clone(),
+                session_bucket_name(&project.id, Some(&project.title)),
+            )
+        })
+        .collect();
 
     let tx = connection
         .unchecked_transaction()
@@ -824,32 +950,94 @@ pub(crate) fn save_structured_chat_storage(
     // helper 内部已持全局锁，这里无需额外加锁。
     let mut incoming: std::collections::HashSet<String> = std::collections::HashSet::new();
     for session in &sessions {
-        write_session_messages(sessions_root, &session.id, &session.messages)?;
+        let bucket = bucket_by_project
+            .get(&session.project_id)
+            .cloned()
+            .unwrap_or_else(|| session_bucket_name(&session.project_id, None));
+        write_session_messages(sessions_root, &bucket, &session.id, &session.messages)?;
         incoming.insert(session.id.clone());
     }
 
     // 清理快照之外的"幽灵"会话：删 SQL 行 + 删其目录。
-    let existing: Vec<String> = {
+    // 一并取出 project_id 用于定位分桶（delete_session_dir 内部还会兜底扫描所有桶）。
+    let existing: Vec<(String, String)> = {
         let mut stmt = connection
-            .prepare("SELECT id FROM chat_sessions")
+            .prepare("SELECT id, project_id FROM chat_sessions")
             .map_err(|err| err.to_string())?;
         let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(|err| err.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err| err.to_string())?;
         rows
     };
-    for id in existing {
+    for (id, project_id) in existing {
         if !incoming.contains(&id) {
             connection
                 .execute("DELETE FROM chat_sessions WHERE id = ?1", params![id])
                 .map_err(|err| err.to_string())?;
-            delete_session_dir(sessions_root, &id);
+            let bucket = bucket_by_project
+                .get(&project_id)
+                .cloned()
+                .unwrap_or_else(|| session_bucket_name(&project_id, None));
+            delete_session_dir(sessions_root, &bucket, &id);
         }
     }
 
     Ok(())
+}
+
+/// 查某项目对应的会话分桶名（项目已删时按 id 兜底）。
+fn session_bucket_for_project(connection: &Connection, project_id: &str) -> String {
+    if project_id.trim().is_empty() {
+        return "_no-project".to_string();
+    }
+    let title: Option<String> = connection
+        .query_row(
+            "SELECT title FROM projects WHERE id = ?1",
+            params![project_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    session_bucket_name(project_id, title.as_deref())
+}
+
+/// 查某会话对应的分桶名（会话不存在时按无项目兜底）。
+fn session_bucket_for_id(connection: &Connection, id: &str) -> String {
+    let project_id: Option<String> = connection
+        .query_row(
+            "SELECT project_id FROM chat_sessions WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    match project_id {
+        Some(pid) => session_bucket_for_project(connection, &pid),
+        None => "_no-project".to_string(),
+    }
+}
+
+/// 解析某会话的实际目录绝对路径（兼容历史位置）。供前端定位附件快照目录等用途，
+/// 使「会话目录长什么样」这一知识只留在 Rust 一侧，前端不自行拼接。
+pub(crate) fn resolve_session_dir_for_id(
+    connection: &Connection,
+    id: &str,
+    sessions_root: &Path,
+) -> String {
+    if id.trim().is_empty() {
+        return String::new();
+    }
+    let bucket = session_bucket_for_id(connection, id);
+    find_existing_session_dir(sessions_root, &bucket, id)
+        .unwrap_or_else(|| sessions_root.join(&bucket).join(id))
+        .to_string_lossy()
+        .into_owned()
 }
 
 pub(crate) fn delete_chat_session_by_id(
@@ -857,10 +1045,12 @@ pub(crate) fn delete_chat_session_by_id(
     id: &str,
     sessions_root: &Path,
 ) -> Result<(), String> {
+    // 先取归属再删行——删行之后就查不到它属于哪个分桶了。
+    let bucket = session_bucket_for_id(connection, id);
     connection
         .execute("DELETE FROM chat_sessions WHERE id = ?1", params![id])
         .map_err(|err| err.to_string())?;
-    delete_session_dir(sessions_root, id);
+    delete_session_dir(sessions_root, &bucket, id);
     Ok(())
 }
 
@@ -869,6 +1059,8 @@ pub(crate) fn delete_project_by_id(
     id: &str,
     sessions_root: &Path,
 ) -> Result<(), String> {
+    // 先取分桶名——项目行删除后标题就查不到了（分桶名含标题 slug）。
+    let bucket = session_bucket_for_project(connection, id);
     // 默认助手不允许删除；同时清理其所属会话，避免孤儿记录。
     connection
         .execute("DELETE FROM projects WHERE id = ?1 AND kind != 'basic'", params![id])
@@ -888,7 +1080,7 @@ pub(crate) fn delete_project_by_id(
         connection
             .execute("DELETE FROM chat_sessions WHERE id = ?1", params![orphan_id])
             .map_err(|err| err.to_string())?;
-        delete_session_dir(sessions_root, &orphan_id);
+        delete_session_dir(sessions_root, &bucket, &orphan_id);
     }
     Ok(())
 }
@@ -995,6 +1187,9 @@ mod session_file_tests {
         dir
     }
 
+    /// 测试统一使用的会话分桶名。
+    const TB: &str = "test_bucket";
+
     fn sample_messages() -> JsonValue {
         JsonValue::Array(vec![
             serde_json::json!({"role":"user","content":"你好"}),
@@ -1006,8 +1201,8 @@ mod session_file_tests {
     fn write_then_read_roundtrip_preserves_order_and_content() {
         let root = temp_root();
         let msgs = sample_messages();
-        write_session_messages(&root, "s1", &msgs).expect("写入应成功");
-        let loaded = read_session_messages(&root, "s1")
+        write_session_messages(&root, TB, "s1", &msgs).expect("写入应成功");
+        let loaded = read_session_messages(&root, TB, "s1")
             .expect("读取应成功")
             .expect("应读到消息");
         assert_eq!(&loaded, msgs.as_array().unwrap());
@@ -1017,22 +1212,22 @@ mod session_file_tests {
     #[test]
     fn read_missing_session_returns_none() {
         let root = temp_root();
-        assert_eq!(read_session_messages(&root, "nope").unwrap(), None);
+        assert_eq!(read_session_messages(&root, TB, "nope").unwrap(), None);
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn read_tolerates_corrupt_lines_and_keeps_valid_ones() {
         let root = temp_root();
-        write_session_messages(&root, "s2", &sample_messages()).expect("写入应成功");
+        write_session_messages(&root, TB, "s2", &sample_messages()).expect("写入应成功");
         // 模拟崩溃撕裂：追加一行半截/损坏数据 + 一行有效数据
-        let path = root.join("s2").join("session.jsonl");
+        let path = root.join(TB).join("s2").join("session.jsonl");
         let mut f = fs::OpenOptions::new().append(true).open(&path).expect("打开文件");
         writeln!(f, "{{this is not valid json").expect("追加损坏行");
         writeln!(f, "{{\"role\":\"user\",\"content\":\"追加的有效行\"}}").expect("追加有效行");
         drop(f);
 
-        let loaded = read_session_messages(&root, "s2")
+        let loaded = read_session_messages(&root, TB, "s2")
             .expect("读取应成功")
             .expect("应读到");
         // 原始 2 行 + 1 行有效追加 = 3；损坏行被跳过
@@ -1044,10 +1239,10 @@ mod session_file_tests {
     #[test]
     fn overwrite_replaces_content_not_append() {
         let root = temp_root();
-        write_session_messages(&root, "s3", &sample_messages()).expect("写入应成功");
+        write_session_messages(&root, TB, "s3", &sample_messages()).expect("写入应成功");
         let replacement = JsonValue::Array(vec![serde_json::json!({"role":"system","content":"只有一条"})]);
-        write_session_messages(&root, "s3", &replacement).expect("重写应成功");
-        let loaded = read_session_messages(&root, "s3")
+        write_session_messages(&root, TB, "s3", &replacement).expect("重写应成功");
+        let loaded = read_session_messages(&root, TB, "s3")
             .expect("读取应成功")
             .expect("应读到");
         assert_eq!(loaded.len(), 1);
@@ -1059,17 +1254,17 @@ mod session_file_tests {
     fn write_includes_format_header_and_read_skips_it() {
         let root = temp_root();
         let msgs = sample_messages();
-        write_session_messages(&root, "s5", &msgs).expect("写入应成功");
+        write_session_messages(&root, TB, "s5", &msgs).expect("写入应成功");
 
         // 首行应为格式头，含魔数键与版本号
-        let raw = fs::read_to_string(root.join("s5").join("session.jsonl")).expect("读原文件");
+        let raw = fs::read_to_string(root.join(TB).join("s5").join("session.jsonl")).expect("读原文件");
         let first_line = raw.lines().next().expect("应有首行");
         let header: serde_json::Map<String, JsonValue> =
             serde_json::from_str(first_line).expect("头行应为合法 JSON");
         assert_eq!(header.get("_omni_session_format").and_then(|v| v.as_u64()), Some(1));
 
         // 读取结果只含消息、不含头行
-        let loaded = read_session_messages(&root, "s5")
+        let loaded = read_session_messages(&root, TB, "s5")
             .expect("读取应成功")
             .expect("应读到消息");
         assert_eq!(&loaded, msgs.as_array().unwrap());
@@ -1079,14 +1274,14 @@ mod session_file_tests {
     #[test]
     fn read_rejects_header_with_future_format_version() {
         let root = temp_root();
-        let dir = root.join("s6");
+        let dir = root.join(TB).join("s6");
         fs::create_dir_all(&dir).expect("创建目录");
         let mut f = fs::File::create(dir.join("session.jsonl")).expect("创建文件");
         writeln!(f, "{{\"_omni_session_format\":999,\"compression\":\"none\"}}").expect("写头行");
         writeln!(f, "{{\"role\":\"user\",\"content\":\"x\"}}").expect("写消息行");
         drop(f);
 
-        let result = read_session_messages(&root, "s6");
+        let result = read_session_messages(&root, TB, "s6");
         assert!(result.is_err(), "未来版本号应被拒绝");
         let _ = fs::remove_dir_all(&root);
     }
@@ -1094,10 +1289,68 @@ mod session_file_tests {
     #[test]
     fn delete_removes_session_dir() {
         let root = temp_root();
-        write_session_messages(&root, "s4", &sample_messages()).expect("写入应成功");
-        assert!(read_session_messages(&root, "s4").unwrap().is_some());
-        delete_session_dir(&root, "s4");
-        assert_eq!(read_session_messages(&root, "s4").unwrap(), None);
+        write_session_messages(&root, TB, "s4", &sample_messages()).expect("写入应成功");
+        assert!(read_session_messages(&root, TB, "s4").unwrap().is_some());
+        delete_session_dir(&root, TB, "s4");
+        assert_eq!(read_session_messages(&root, TB, "s4").unwrap(), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bucket_name_uses_project_title_and_short_id() {
+        // 无项目（默认助手/任务会话）归入统一桶
+        assert_eq!(session_bucket_name("", None), "_no-project");
+        assert_eq!(session_bucket_name("   ", Some("x")), "_no-project");
+        // 有项目：标题 slug + id 前 8 位
+        assert_eq!(
+            session_bucket_name("abc12345-rest-of-id", Some("我的项目")),
+            "我的项目_abc12345"
+        );
+        // 标题为空或含非法字符时退化，且结果不含路径分隔符
+        assert_eq!(session_bucket_name("abcdefgh", Some("")), "project_abcdefgh");
+        assert_eq!(
+            session_bucket_name("abcdefgh", Some("a/b:c")),
+            "a b c_abcdefgh"
+        );
+    }
+
+    #[test]
+    fn legacy_flat_session_dir_is_still_readable() {
+        let root = temp_root();
+        // 模拟旧版扁平结构：chat-sessions/<id>/session.jsonl
+        let legacy = root.join("old1");
+        fs::create_dir_all(&legacy).expect("创建旧目录");
+        fs::write(
+            legacy.join("session.jsonl"),
+            "{\"role\":\"user\",\"content\":\"旧\"}\n",
+        )
+        .expect("写旧文件");
+
+        let loaded = read_session_messages(&root, "proj_abcdefgh", "old1")
+            .expect("读取应成功")
+            .expect("旧扁平结构应仍可读到");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0]["content"], "旧");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_migrates_legacy_flat_dir_into_bucket() {
+        let root = temp_root();
+        let legacy = root.join("old2");
+        fs::create_dir_all(&legacy).expect("创建旧目录");
+        fs::write(legacy.join("session.jsonl"), "{}\n").expect("写旧文件");
+
+        write_session_messages(&root, "proj_abcdefgh", "old2", &sample_messages())
+            .expect("写入应成功");
+
+        // 内容落到分桶目录，旧扁平位置被清理，不留两份副本
+        assert!(root
+            .join("proj_abcdefgh")
+            .join("old2")
+            .join("session.jsonl")
+            .exists());
+        assert!(!legacy.exists(), "旧扁平目录应被清理");
         let _ = fs::remove_dir_all(&root);
     }
 }

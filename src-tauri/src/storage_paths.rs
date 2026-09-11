@@ -13,6 +13,11 @@ const DATA_ROOT_CONFIG_FILE: &str = "data-root.json";
 const PORTABLE_DIR_NAME: &str = "data";
 const DB_FILE_NAME: &str = "omni.sqlite3";
 const KNOWLEDGE_DIR_NAME: &str = "knowledge_files";
+/// 会话目录根名。单一事实来源：chat_sessions_root() 与 DataRootInfo.chat_sessions_path 共用，
+/// 前端据此把产出/附件写进会话目录（勿在别处再写字面量）。
+const CHAT_SESSIONS_DIR_NAME: &str = "chat-sessions";
+/// 工具超长输出的完整副本落盘目录（对齐 deepseek-harness 的 spillPath）。
+const TOOL_OUTPUT_DIR_NAME: &str = "tool-output";
 const PASTED_ATTACHMENTS_DIR_NAME: &str = "pasted-attachments";
 const WRITE_PROBE_NAME: &str = ".omni-write-probe";
 
@@ -61,6 +66,10 @@ pub(crate) struct DataRootInfo {
     pub(crate) writable: bool,
     pub(crate) database_path: String,
     pub(crate) knowledge_path: String,
+    /// 会话目录根（<data_root>/chat-sessions）。前端把该会话的产出与附件快照写进
+    /// `<chat_sessions_path>/<sessionId>/`，实现「一个会话一个自包含目录」——
+    /// 备份天然覆盖、删除会话即一次 remove_dir_all，不会有跨根孤儿。
+    pub(crate) chat_sessions_path: String,
     /// 期望用自定义/便携路径、但实际回退到了默认位置时的原因
     #[serde(default)]
     pub(crate) fallback_reason: Option<String>,
@@ -202,7 +211,7 @@ pub(crate) fn pasted_attachments_root(app: &tauri::AppHandle) -> Result<PathBuf,
 /// 规避「整 blob 重写」的脆弱形态，并实现崩溃隔离与按会话级读写。
 pub(crate) fn chat_sessions_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let root = resolve_data_root(app)?;
-    let dir = root.join("chat-sessions");
+    let dir = root.join(CHAT_SESSIONS_DIR_NAME);
     fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     Ok(dir)
 }
@@ -219,11 +228,21 @@ pub(crate) fn fallback_workspace_root(app: &tauri::AppHandle) -> Result<PathBuf,
     Ok(dir)
 }
 
+/// 工具超长输出的完整副本落盘目录：shell 输出超出上下文预算被截断时，
+/// 完整内容写到这里，截断提示里附上绝对路径供按需回读（截断 ≠ 丢弃）。
+pub(crate) fn tool_output_spill_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let root = resolve_data_root(app)?;
+    let dir = root.join(TOOL_OUTPUT_DIR_NAME);
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    Ok(dir)
+}
+
 pub(crate) fn data_root_info(app: &tauri::AppHandle) -> Result<DataRootInfo, String> {
     let (root, source, fallback_reason) = resolve_with_source(app)?;
     Ok(DataRootInfo {
         database_path: root.join(DB_FILE_NAME).to_string_lossy().to_string(),
         knowledge_path: root.join(KNOWLEDGE_DIR_NAME).to_string_lossy().to_string(),
+        chat_sessions_path: root.join(CHAT_SESSIONS_DIR_NAME).to_string_lossy().to_string(),
         writable: ensure_writable(&root).is_ok(),
         path: root.to_string_lossy().to_string(),
         source,
