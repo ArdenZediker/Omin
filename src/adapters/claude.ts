@@ -5,6 +5,7 @@ import { toWireRole } from "./types";
 import { toClaudeTools, toClaudeMessage, parseClaudeToolCalls, ClaudeStreamToolAccumulator } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 import { resolveRequestOptions, claudeThinkingConfig, claudeToolChoice, ToolChoice } from "./chatOptions";
+import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 
 const CLAUDE_MODELS: ModelConfig[] = [
   { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
@@ -73,37 +74,43 @@ export class ClaudeAdapter implements ModelAdapter {
     return { system, messages };
   }
 
-  private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+  private buildBody(request: ChatRequest, stream: boolean, skip: Set<UnsupportedParam>): Record<string, unknown> {
     const opts = resolveRequestOptions(request);
     const { system, messages } = this.buildMessages(request);
     const maxTokens = opts.maxTokens || 4096;
     const body: Record<string, unknown> = {
       model: request.model,
-      max_tokens: maxTokens,
       system,
       messages,
       stream,
     };
+    // max_tokens 在 Anthropic 是必填项：正常情况下恒发，仅在已被服务端明确拒绝时才省略。
+    if (!skip.has("maxTokens")) body.max_tokens = maxTokens;
     // 中性推理力度 → Anthropic thinking budget（仅 thinking 模型引擎会带；budget 必须 < max_tokens）
-    const thinking = claudeThinkingConfig(opts.reasoningEffort, maxTokens);
+    const thinking = skip.has("reasoningEffort") ? undefined : claudeThinkingConfig(opts.reasoningEffort, maxTokens);
     if (thinking) body.thinking = thinking;
     // 工具选择：Claude 无原生「禁用工具」语义，None 时直接省略 tools 块（等价于不调用）
     if (request.tools && request.tools.length > 0 && opts.toolChoice !== ToolChoice.None) {
       body.tools = toClaudeTools(request.tools);
-      body.tool_choice = claudeToolChoice(opts.toolChoice, opts.toolChoiceName);
+      // ToolChoice.Auto 语义是「无意见」→ 不下发 tool_choice（Anthropic 默认即为 auto）
+      if (opts.toolChoice !== ToolChoice.Auto && !skip.has("toolChoice")) {
+        body.tool_choice = claudeToolChoice(opts.toolChoice, opts.toolChoiceName);
+      }
     }
     return body;
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await postJsonWithRetry(
-      `${this.getBaseUrl()}/v1/messages`,
-      this.buildBody(request, false),
-      this.getHeaders(),
-      request.signal
-    );
-
-    const data = await response.json();
+    const url = `${this.getBaseUrl()}/v1/messages`;
+    const data = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, false, skip),
+      send: async (body) => {
+        const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal);
+        return (await response.json()) as any;
+      },
+    });
     // 聚合思考块：Anthropic extended thinking 模式下 content 数组里会有 type:"thinking" 块
     const thinkingText = Array.isArray(data.content)
       ? data.content
@@ -130,12 +137,15 @@ export class ClaudeAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const response = await postJsonStream(
-      `${this.getBaseUrl()}/v1/messages`,
-      this.buildBody(request, true),
-      this.getHeaders(),
-      request.signal
-    );
+    const url = `${this.getBaseUrl()}/v1/messages`;
+    const headers = this.getHeaders();
+    // 降级重试只发生在响应头阶段（4xx 立即抛出，尚未有任何增量交给 onChunk），不会重复输出。
+    const response = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, true, skip),
+      send: (body) => postJsonStream(url, body, headers, request.signal),
+    });
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");

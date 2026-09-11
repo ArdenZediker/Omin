@@ -3,7 +3,8 @@ import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk,
 import { mimeTypeFromDataUrl } from "./types";
 import { toGeminiTools, toGeminiContent, parseGeminiToolCalls, parseGeminiStreamToolCalls } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
-import { resolveRequestOptions, geminiThinkingConfig, geminiToolConfig } from "./chatOptions";
+import { resolveRequestOptions, geminiThinkingConfig, geminiToolConfig, ToolChoice } from "./chatOptions";
+import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 
 const GEMINI_MODELS: ModelConfig[] = [
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "gemini", maxTokens: 1048576, maxOutput: 65536, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
@@ -51,15 +52,19 @@ export class GeminiAdapter implements ModelAdapter {
       .filter((c): c is { role: "user" | "model"; parts: Array<Record<string, unknown>> } => c !== null);
   }
 
-  private buildBody(request: ChatRequest): Record<string, unknown> {
+  private buildBody(request: ChatRequest, skip: Set<UnsupportedParam>): Record<string, unknown> {
     const opts = resolveRequestOptions(request);
     const systemInstruction = request.messages.find((m) => m.role === "system");
-    const generationConfig: Record<string, unknown> = {
-      temperature: opts.temperature ?? 0.7,
-      maxOutputTokens: opts.maxTokens,
-    };
+    const generationConfig: Record<string, unknown> = {};
+    // 调用方没意见时不下发，而不是凭空塞一个 0.7（有些模型/端点拒绝该字段）。
+    if (opts.temperature !== undefined && !skip.has("temperature")) {
+      generationConfig.temperature = opts.temperature;
+    }
+    if (opts.maxTokens && !skip.has("maxTokens")) {
+      generationConfig.maxOutputTokens = opts.maxTokens;
+    }
     // 中性推理力度 → Gemini thinkingConfig（仅 thinking 模型引擎会带）
-    const thinking = geminiThinkingConfig(opts.reasoningEffort);
+    const thinking = skip.has("reasoningEffort") ? undefined : geminiThinkingConfig(opts.reasoningEffort);
     if (thinking) generationConfig.thinkingConfig = thinking;
     const body: Record<string, unknown> = {
       contents: this.buildContents(request),
@@ -70,20 +75,27 @@ export class GeminiAdapter implements ModelAdapter {
     }
     if (request.tools && request.tools.length > 0) {
       body.tools = toGeminiTools(request.tools);
-      body.toolConfig = geminiToolConfig(opts.toolChoice, opts.toolChoiceName);
+      // ToolChoice.Auto 语义是「无意见」→ 不下发 functionCallingConfig（Gemini 默认即 AUTO）
+      if (opts.toolChoice !== ToolChoice.Auto && !skip.has("toolChoice")) {
+        body.toolConfig = geminiToolConfig(opts.toolChoice, opts.toolChoiceName);
+      }
     }
     return body;
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await postJsonWithRetry(
-      `${this.getBaseUrl()}/v1beta/models/${request.model}:generateContent${this.getKeyUrl()}`,
-      this.buildBody(request),
-      { "Content-Type": "application/json", ...this.config.customHeaders },
-      request.signal
-    );
+    const url = `${this.getBaseUrl()}/v1beta/models/${request.model}:generateContent${this.getKeyUrl()}`;
+    const headers = { "Content-Type": "application/json", ...this.config.customHeaders };
+    const data = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, skip),
+      send: async (body) => {
+        const response = await postJsonWithRetry(url, body, headers, request.signal);
+        return (await response.json()) as any;
+      },
+    });
 
-    const data = await response.json();
     type GeminiPart = { text?: string; thought?: string; functionCall?: unknown };
     const parts: GeminiPart[] = data.candidates?.[0]?.content?.parts || [];
     // Aggregate thought blocks (Gemini thinking mode reasoning, mirrors stream branch)
@@ -112,12 +124,15 @@ export class GeminiAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const response = await postJsonStream(
-      `${this.getBaseUrl()}/v1beta/models/${request.model}:streamGenerateContent?alt=sse&key=${this.config.apiKey}`,
-      this.buildBody(request),
-      { "Content-Type": "application/json", ...this.config.customHeaders },
-      request.signal
-    );
+    const url = `${this.getBaseUrl()}/v1beta/models/${request.model}:streamGenerateContent?alt=sse&key=${this.config.apiKey}`;
+    const headers = { "Content-Type": "application/json", ...this.config.customHeaders };
+    // 降级重试只发生在响应头阶段（4xx 立即抛出，尚未有任何增量交给 onChunk），不会重复输出。
+    const response = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, skip),
+      send: (body) => postJsonStream(url, body, headers, request.signal),
+    });
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");

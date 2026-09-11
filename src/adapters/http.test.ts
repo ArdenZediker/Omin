@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { iterateStream } from "./http";
+import { iterateStream, postJsonStream } from "./http";
 
 type ReaderChunk = { done: boolean; value?: Uint8Array };
 
@@ -118,5 +118,34 @@ describe("iterateStream 超时与取消兜底", () => {
         }
       })()
     ).rejects.toBeInstanceOf(DOMException);
+  });
+});
+
+describe("postJsonStream HTTP 状态检查", () => {
+  it("非 2xx 时抛出带状态码与响应体的错误（不再把错误体当 SSE 静默吞掉）", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => '{"error":{"message":"Incorrect API key provided"}}',
+    } as unknown as Response);
+
+    await expect(
+      postJsonStream("https://example.com/v1/chat/completions", { model: "m" }, {}, undefined)
+    ).rejects.toThrow(/HTTP 401.*Incorrect API key/s);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("2xx 时原样返回响应，交给适配器按流解析", async () => {
+    const fakeResponse = { ok: true, status: 200 } as unknown as Response;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(fakeResponse);
+
+    await expect(
+      postJsonStream("https://example.com/v1/chat/completions", { model: "m" }, {}, undefined)
+    ).resolves.toBe(fakeResponse);
+
+    fetchSpy.mockRestore();
   });
 });

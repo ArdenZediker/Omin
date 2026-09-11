@@ -1,7 +1,8 @@
 // Omni - OpenAI 适配器
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, EmbeddingResponse } from "./types";
 import { toWireRole } from "./types";
-import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice } from "./chatOptions";
+import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice, ToolChoice } from "./chatOptions";
+import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
@@ -56,7 +57,7 @@ export class OpenAIAdapter implements ModelAdapter {
     });
   }
 
-  private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+  private buildBody(request: ChatRequest, stream: boolean, skip: Set<UnsupportedParam>): Record<string, unknown> {
     const opts = resolveRequestOptions(request);
     const body: Record<string, unknown> = {
       model: request.model,
@@ -65,27 +66,37 @@ export class OpenAIAdapter implements ModelAdapter {
     };
     if (isOSeries(request.model)) {
       // o 系列：只认 max_completion_tokens，无 temperature（但支持 reasoning_effort）
-      body.max_completion_tokens = opts.maxTokens ?? 32768;
+      if (!skip.has("maxTokens")) body.max_completion_tokens = opts.maxTokens ?? 32768;
     } else {
-      if (opts.temperature !== undefined) body.temperature = opts.temperature;
-      if (opts.maxTokens) body.max_tokens = opts.maxTokens;
+      if (opts.temperature !== undefined && !skip.has("temperature")) body.temperature = opts.temperature;
+      if (opts.maxTokens && !skip.has("maxTokens")) body.max_tokens = opts.maxTokens;
     }
     // 中性推理力度 → OpenAI 系 reasoning_effort 字符串（仅 thinking 模型会带，由引擎决定）
-    const effort = reasoningEffortToOpenAI(opts.reasoningEffort);
+    const effort = skip.has("reasoningEffort") ? undefined : reasoningEffortToOpenAI(opts.reasoningEffort);
     if (effort) body.reasoning_effort = effort;
     if (request.tools && request.tools.length > 0) {
       body.tools = toOpenAITools(request.tools);
-      body.tool_choice = openAIToolChoice(opts.toolChoice, opts.toolChoiceName);
+      // ToolChoice.Auto 的语义是「无意见」（见 chatOptions 契约）→ 不下发 tool_choice。
+      // 多家中转/兼容端点不认这个字段，无条件下发是「不支持该参数」类 400 的常见来源。
+      if (opts.toolChoice !== ToolChoice.Auto && !skip.has("toolChoice")) {
+        body.tool_choice = openAIToolChoice(opts.toolChoice, opts.toolChoiceName);
+      }
     }
     return body;
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const url = `${this.getBaseUrl()}/chat/completions`;
-    const body = this.buildBody(request, false);
-    const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal);
+    const data = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, false, skip),
+      send: async (body) => {
+        const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal);
+        return (await response.json()) as any;
+      },
+    });
 
-    const data = await response.json();
     if (data.error) {
       const message =
         typeof data.error?.message === "string"
@@ -120,9 +131,15 @@ export class OpenAIAdapter implements ModelAdapter {
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
     const url = `${this.getBaseUrl()}/chat/completions`;
-    const body = this.buildBody(request, true);
     const headers = this.getHeaders();
-    const response = await postJsonStream(url, body, headers, request.signal);
+    // 降级重试只可能发生在「响应头阶段」：4xx 在拿到响应头时就抛出，此时还没有任何增量
+    // 交给 onChunk，因此重发不会重复输出；流中途的 in-band 错误不经过这条重试路径。
+    const response = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, true, skip),
+      send: (body) => postJsonStream(url, body, headers, request.signal),
+    });
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");

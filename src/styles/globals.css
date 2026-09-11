@@ -776,6 +776,23 @@ body:has(.pet-thought-window),
   color: var(--omni-app-text) !important;
 }
 
+/* 编辑模型弹窗：底栏固定在滚动区之外，需要自带面板底色才不会透出滚动内容；
+   区块分隔线同理，浅色的 slate-100 在深色卡片上会变成刺眼的亮线。 */
+:root[data-omni-theme="dark"] .omni-model-section-modal .omni-model-modal-footer {
+  background: var(--omni-panel-bg) !important;
+  border-color: var(--omni-panel-border) !important;
+}
+
+/* 可收起分组的标题行：浅色 hover 底在暗色下会与浅色文字打架，换成主题面板色。 */
+:root[data-omni-theme="dark"] .omni-model-section-modal .omni-collapsible-header:hover {
+  background: var(--omni-panel-border) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-model-section-modal [class*="border-slate-100"],
+:root[data-omni-theme="dark"] .omni-model-section-modal [class*="divide-slate-100"] > * + * {
+  border-color: var(--omni-panel-border) !important;
+}
+
 /* Dark mode: harmonize knowledge embedding/multimodal model sections.
    These sections reuse light Tailwind surfaces that become unreadable in
    dark mode (light bg + light text). */

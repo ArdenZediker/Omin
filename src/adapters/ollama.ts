@@ -4,6 +4,7 @@ import { toWireRole } from "./types";
 import { toOllamaTools, toOllamaMessage, parseOllamaToolCalls } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 import { resolveRequestOptions, ollamaToolChoice } from "./chatOptions";
+import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 
 const OLLAMA_MODELS: ModelConfig[] = [
   { id: "llama3", name: "Llama 3 (Local)", provider: "ollama", maxTokens: 8192, maxOutput: 4096, supportsVision: false, supportsStreaming: true, toolCalling: true },
@@ -41,14 +42,15 @@ export class OllamaAdapter implements ModelAdapter {
     });
   }
 
-  private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+  private buildBody(request: ChatRequest, stream: boolean, skip: Set<UnsupportedParam>): Record<string, unknown> {
     const opts = resolveRequestOptions(request);
-    const options: Record<string, unknown> = {
-      temperature: opts.temperature ?? 0.7,
-      num_predict: opts.maxTokens,
-    };
-    // 中性工具选择 → Ollama tool_choice（仅支持 auto/required/none，Specific 回落 required）
-    const tc = ollamaToolChoice(opts.toolChoice);
+    const options: Record<string, unknown> = {};
+    // 调用方没意见时不下发，而不是凭空塞一个 0.7。
+    if (opts.temperature !== undefined && !skip.has("temperature")) options.temperature = opts.temperature;
+    if (opts.maxTokens && !skip.has("maxTokens")) options.num_predict = opts.maxTokens;
+    // 中性工具选择 → Ollama tool_choice（仅支持 auto/required/none，Specific 回落 required）。
+    // 注：Ollama 原生 /api/chat 并无 tool_choice 字段，此处沿用既有放置位置；Auto（无意见）时不下发。
+    const tc = skip.has("toolChoice") ? undefined : ollamaToolChoice(opts.toolChoice);
     if (tc) options.tool_choice = tc;
     return {
       model: request.model,
@@ -60,15 +62,18 @@ export class OllamaAdapter implements ModelAdapter {
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await postJsonWithRetry(
-      `${this.getBaseUrl()}/api/chat`,
-      this.buildBody(request, false),
-      this.getHeaders(),
-      request.signal,
-      { retryable: false }
-    );
+    const url = `${this.getBaseUrl()}/api/chat`;
+    const headers = this.getHeaders();
+    const data = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, false, skip),
+      send: async (body) => {
+        const response = await postJsonWithRetry(url, body, headers, request.signal, { retryable: false });
+        return (await response.json()) as any;
+      },
+    });
 
-    const data = await response.json();
     return {
       content: data.message?.content || "",
       model: data.model || request.model,
@@ -77,12 +82,15 @@ export class OllamaAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const response = await postJsonStream(
-      `${this.getBaseUrl()}/api/chat`,
-      this.buildBody(request, true),
-      this.getHeaders(),
-      request.signal
-    );
+    const url = `${this.getBaseUrl()}/api/chat`;
+    const headers = this.getHeaders();
+    // 降级重试只发生在响应头阶段（4xx 立即抛出，尚未有任何增量交给 onChunk），不会重复输出。
+    const response = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, true, skip),
+      send: (body) => postJsonStream(url, body, headers, request.signal),
+    });
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");

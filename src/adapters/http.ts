@@ -118,12 +118,24 @@ export async function postJsonStream(
   signal: AbortSignal | undefined,
   timeoutMs = DEFAULT_TIMEOUT_MS
 ): Promise<Response> {
-  return fetchWithTimeout(
+  const response = await fetchWithTimeout(
     url,
     { method: "POST", headers, body: JSON.stringify(body) },
     signal,
     timeoutMs
   );
+
+  // 流式请求同样必须检查 HTTP 状态：否则 4xx/5xx 的错误响应体会被适配器当成 SSE 解析，
+  // 而错误体通常是普通 JSON（`{"error":{"message":"..."}}`），不以 `data: ` 开头，
+  // 会被「跳过非 data: 行」的逻辑静默丢弃 —— 最终表现为：模型"回复"为空、
+  // UI 停在「正在思考」、没有任何报错（实际是鉴权失败/参数错误/限流）。
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    const trimmed = detail.trim().slice(0, 500);
+    throw new Error(`HTTP ${response.status}${trimmed ? ` - ${trimmed}` : ""}`);
+  }
+
+  return response;
 }
 
 /**

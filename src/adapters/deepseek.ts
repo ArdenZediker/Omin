@@ -2,7 +2,8 @@
 import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
 import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
-import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice } from "./chatOptions";
+import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice, ToolChoice } from "./chatOptions";
+import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 
 const DEEPSEEK_MODELS: ModelConfig[] = [
   { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, maxOutput: 8192, supportsVision: false, supportsStreaming: true, toolCalling: true },
@@ -35,34 +36,40 @@ export class DeepSeekAdapter implements ModelAdapter {
     return Boolean(request.tools?.length) && !String(request.model).includes("reasoner");
   }
 
-  private buildBody(request: ChatRequest, stream: boolean): Record<string, unknown> {
+  private buildBody(request: ChatRequest, stream: boolean, skip: Set<UnsupportedParam>): Record<string, unknown> {
     const opts = resolveRequestOptions(request);
     const body: Record<string, unknown> = {
       model: request.model,
       messages: request.messages.map((m) => toOpenAIMessage(m)),
-      temperature: opts.temperature ?? 0.7,
-      max_tokens: opts.maxTokens,
       stream,
     };
+    // 调用方没意见时不下发，而不是凭空塞一个 0.7——有些模型（如 kimi-k3）直接拒绝 temperature。
+    if (opts.temperature !== undefined && !skip.has("temperature")) body.temperature = opts.temperature;
+    if (opts.maxTokens && !skip.has("maxTokens")) body.max_tokens = opts.maxTokens;
     // 中性推理力度 → reasoning_effort（DeepSeek-R1 等支持；非 thinking 模型引擎不带，零影响）
-    const effort = reasoningEffortToOpenAI(opts.reasoningEffort);
+    const effort = skip.has("reasoningEffort") ? undefined : reasoningEffortToOpenAI(opts.reasoningEffort);
     if (effort) body.reasoning_effort = effort;
     if (this.supportsTools(request)) {
       body.tools = toOpenAITools(request.tools);
-      body.tool_choice = openAIToolChoice(opts.toolChoice, opts.toolChoiceName);
+      // ToolChoice.Auto 语义是「无意见」→ 不下发该字段
+      if (opts.toolChoice !== ToolChoice.Auto && !skip.has("toolChoice")) {
+        body.tool_choice = openAIToolChoice(opts.toolChoice, opts.toolChoiceName);
+      }
     }
     return body;
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await postJsonWithRetry(
-      `${this.getBaseUrl()}/chat/completions`,
-      this.buildBody(request, false),
-      this.getHeaders(),
-      request.signal
-    );
-
-    const data = await response.json();
+    const url = `${this.getBaseUrl()}/chat/completions`;
+    const data = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, false, skip),
+      send: async (body) => {
+        const response = await postJsonWithRetry(url, body, this.getHeaders(), request.signal);
+        return (await response.json()) as any;
+      },
+    });
     // 多 provider 兼容：非流式响应同样支持 reasoning_content / reasoning / reasoning_text / thinking_content / thought
     const msg = data.choices?.[0]?.message ?? {};
     const reasoningText =
@@ -88,12 +95,15 @@ export class DeepSeekAdapter implements ModelAdapter {
   }
 
   async chatStream(request: ChatRequest, onChunk: (chunk: StreamChunk) => void): Promise<ChatResponse> {
-    const response = await postJsonStream(
-      `${this.getBaseUrl()}/chat/completions`,
-      this.buildBody(request, true),
-      this.getHeaders(),
-      request.signal
-    );
+    const url = `${this.getBaseUrl()}/chat/completions`;
+    const headers = this.getHeaders();
+    // 降级重试只发生在响应头阶段（4xx 立即抛出，尚未有任何增量交给 onChunk），不会重复输出。
+    const response = await sendWithParamCompat({
+      modelId: request.model,
+      declared: resolveRequestOptions(request).unsupportedParams,
+      buildBody: (skip) => this.buildBody(request, true, skip),
+      send: (body) => postJsonStream(url, body, headers, request.signal),
+    });
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");

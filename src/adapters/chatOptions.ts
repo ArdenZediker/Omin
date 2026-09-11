@@ -14,7 +14,7 @@
 // 这样 Omni 的模型调用就与具体供应商解耦：新增一个支持推理力度的模型，只需在目录里把
 // `thinking: true` 标上，引擎会自动带推理力度，适配器负责落地，业务层零改动。
 
-import type { ChatRequest, ModelConfig } from "./types";
+import type { ChatRequest, ModelConfig, UnsupportedParam } from "./types";
 
 /**
  * 中性推理/思考力度等级。适配器映射到后端 wire 格式：
@@ -86,6 +86,11 @@ export interface ChatOptions {
    *   代价是丢失远端上下文，对齐 codex-main 的 TokenBudget「开新上下文窗口」思路）。
    */
   compactionStrategy?: CompactionStrategy;
+  /**
+   * 该模型不接受的请求参数（能力缺口）。适配器下发请求体前跳过这些槽位；
+   * 运行期从 400 报文学到的缺口由 paramCompat 的缓存另行并入，无需调用方操心。
+   */
+  unsupportedParams?: UnsupportedParam[];
 }
 
 /** 上下文压缩策略。 */
@@ -101,6 +106,7 @@ export function resolveRequestOptions(request: ChatRequest): {
   reasoningEffort?: ReasoningEffort;
   toolChoice: ToolChoice;
   toolChoiceName?: string;
+  unsupportedParams?: UnsupportedParam[];
 } {
   const o = request.options;
   return {
@@ -109,6 +115,7 @@ export function resolveRequestOptions(request: ChatRequest): {
     reasoningEffort: o?.reasoningEffort,
     toolChoice: o?.toolChoice ?? ToolChoice.Auto,
     toolChoiceName: o?.toolChoiceName,
+    unsupportedParams: o?.unsupportedParams,
   };
 }
 
@@ -156,11 +163,18 @@ export function resolveContextWindow(model?: {
  * - thinking 模型默认带 Medium 推理力度（可被 explicit.reasoningEffort 覆盖）；
  *   非 thinking 模型不携带推理力度 → 适配器不会发供应商不支持的字段 → 零行为变化。
  * - 温度/上限来自偏好（与原行为一致）。
+ * - 模型声明的参数缺口（`model.unsupportedParams`）随选项下发给适配器，由其跳过对应字段。
  */
 export function defaultChatOptions(
   model: ModelConfig | undefined,
   prefs: { temperature: number; maxOutputTokens: number },
-  explicit?: { reasoningEffort?: ReasoningEffort; toolChoice?: ToolChoice; toolChoiceName?: string; compactionStrategy?: CompactionStrategy }
+  explicit?: {
+    reasoningEffort?: ReasoningEffort;
+    toolChoice?: ToolChoice;
+    toolChoiceName?: string;
+    compactionStrategy?: CompactionStrategy;
+    unsupportedParams?: UnsupportedParam[];
+  }
 ): ChatOptions {
   const reasoningEffort =
     explicit?.reasoningEffort ?? (model?.thinking ? ReasoningEffort.Medium : undefined);
@@ -171,6 +185,7 @@ export function defaultChatOptions(
     toolChoice: explicit?.toolChoice ?? ToolChoice.Auto,
     toolChoiceName: explicit?.toolChoiceName,
     compactionStrategy: explicit?.compactionStrategy,
+    unsupportedParams: explicit?.unsupportedParams ?? model?.unsupportedParams,
   };
 }
 

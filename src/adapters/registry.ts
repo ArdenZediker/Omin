@@ -143,6 +143,7 @@ class ModelRegistry {
           supportsStreaming: found.supportsStreaming ?? true,
           toolCalling: found.toolCalling,
           thinking: found.thinking,
+          unsupportedParams: found.unsupportedParams,
           requestModelId: found.requestModelId,
         };
       }

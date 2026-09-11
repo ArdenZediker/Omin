@@ -167,6 +167,16 @@ export interface ChatToolParam {
   parameters?: Record<string, unknown>;
 }
 
+/**
+ * 可被跳过的中立请求参数槽位（对应 `ChatOptions` 的旋钮，而非供应商 wire 字段名）。
+ *
+ * 有些模型/端点不接受某些参数（例如 kimi-k3 拒绝 `temperature`），下发即 400。
+ * 用中立名而非 wire 名，才能让「声明的能力缺口」与「运行期从报错中学到的缺口」
+ * 合并进同一集合，也才能让同一份声明同时作用于 OpenAI（`max_tokens`）与
+ * Ollama（`num_predict`）。解析与降级逻辑见 `paramCompat.ts`。
+ */
+export type UnsupportedParam = "temperature" | "maxTokens" | "toolChoice" | "reasoningEffort";
+
 export interface ModelConfig {
   id: string;
   name: string;
@@ -189,6 +199,11 @@ export interface ModelConfig {
   toolCalling?: boolean;
   /** 推理模型（思考链，如 o 系列 / R1 / Gemini 2.5） */
   thinking?: boolean;
+  /**
+   * 该模型/端点**不接受**的请求参数（能力缺口声明）。
+   * 适配器下发请求体前会跳过这些槽位；运行期从 400 报文里学到的缺口也会并入同一集合。
+   */
+  unsupportedParams?: UnsupportedParam[];
   requestModelId?: string;
 }
 
@@ -267,6 +282,8 @@ export interface CustomModelConfig {
   supportsStreaming?: boolean;
   toolCalling?: boolean;
   thinking?: boolean;
+  /** 该模型不接受的请求参数（能力缺口声明）；适配器下发前会跳过，见 paramCompat.ts */
+  unsupportedParams?: UnsupportedParam[];
   requestModelId?: string;
 }
 
