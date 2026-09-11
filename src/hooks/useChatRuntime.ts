@@ -30,7 +30,7 @@ import {
   type SessionLite,
   resolveEnabledToolNames,
   buildChatTools,
-  extractToolCallArgs,
+  extractToolCallArgsDetailed,
   toolCallNameToCommand,
   formatToolCallResult,
   PET_THOUGHT_QUEUE_LIMIT,
@@ -1001,6 +1001,33 @@ export function useChatRuntime({
         }
 
         const projectReply = resolveProjectReply(taskResult.finalResult?.content, streamedProjectReply, taskResult.toolResult?.outputText, streamedReasoning);
+        // 模型「成功返回」但完全没有产出（无正文 / 无工具结果 / 无思考链）时不能静默通过：
+        // 空回复会作为 assistant 占位留在会话里并落盘，重启后 UI 把它当成仍在流式，
+        // 表现为输入框锁死 + 永远「正在思考」。这里显式报错并回滚，让用户看到真正原因。
+        // 但「只有工具步骤 / 只有产物、没有正文」是合法结果，不能误判。
+        const hasStructuredOutput = Boolean(
+          taskResult.finalResult?.steps?.length ||
+            taskResult.finalResult?.toolCallResults?.length ||
+            taskResult.toolResult?.artifact
+        );
+        if (!projectReply.trim() && !hasStructuredOutput) {
+          const emptyMessage = taskResult.error || "模型没有返回任何内容：请检查该模型的接口地址、密钥或额度后重试";
+          setError(emptyMessage);
+          setConversationMessagesForSession(sessionId, conversationMessages);
+          if (isCurrentPetThought(petThoughtId, sessionId)) {
+            const responseCount = resolvePetThoughtResponseCount(sessionId);
+            emitPetThought({
+              thoughtId: petThoughtId,
+              sessionId: sessionId ?? null,
+              sessionTitle: resolvePetThoughtTitle(sessionId, conversationMessages),
+              previewText: emptyMessage,
+              responseCount,
+              status: "error",
+              updatedAt: Date.now(),
+            });
+          }
+          return;
+        }
         updateStreamPreview(true);
         updateThoughtPreview(true);
         completePetThought(
@@ -1013,10 +1040,16 @@ export function useChatRuntime({
         finishTaskResult(applyProjectReplyToTaskResult(taskResult, projectReply), sessionId, conversationMessages);
         return;
       } catch (runError) {
-        if (!isCurrentSessionRun(sessionId, runId, abortController)) {
+        // 这里不能用 isCurrentSessionRun 做守卫：它把「signal 已 abort」也算作「非当前」，
+        // 而用户点停止 / 看门狗超时恰恰就是 abort —— 会导致下面的清理与超时提示分支永远不可达
+        // （空占位不被清、也永远看不到超时提示）。只判断是否已被更晚的 run 取代，是则交给新 run。
+        if (sessionId && sessionRunIdsRef.current.get(sessionId) !== runId) {
           return;
         }
-        if (runError instanceof DOMException && runError.name === "AbortError") {
+        // 以「signal 已中止」为准判断中断，而不是只看异常类型：
+        // 部分 WebView/fetch 实现在 abort 时抛出的是 TypeError 而非 AbortError，
+        // 只认类型会把中止误判成失败（乱报错），或反之漏掉清理。
+        if (abortController.signal.aborted || (runError instanceof DOMException && runError.name === "AbortError")) {
           setConversationMessagesForSession(sessionId, (prev) => prev.filter((message, index) => index < conversationMessages.length || message.content));
           clearPetThoughtSession(sessionId);
           if (sessionId && watchdogAbortedSessionIdsRef.current.delete(sessionId)) {
@@ -1043,8 +1076,10 @@ export function useChatRuntime({
         return;
       } finally {
         finishSessionRun(sessionId, runId, abortController);
-        // 中断收尾：把遗留的 running 过渡态步骤定案为 interrupted，随消息持久化（成功路径已替换为完整步骤、无 running，天然空操作）
-        setConversationMessagesForSession(sessionId, (prev) => settleInterruptedSteps(prev));
+        // 中断收尾：把遗留的 running 过渡态步骤定案为 interrupted，随消息持久化（成功路径已替换为完整步骤、无 running，天然空操作）。
+        // 并统一清理末尾残留的空 assistant 占位（stripPendingPlaceholder）——主发送流程此前漏了这一步，
+        // 而空占位一旦被 260ms 防抖写进磁盘，重启后 App 会把它当成仍在流式（输入框锁死 + 永远「正在思考」）。
+        setConversationMessagesForSession(sessionId, (prev) => settleInterruptedSteps(stripPendingPlaceholder(prev)));
       }
     },
     [
@@ -1075,13 +1110,19 @@ export function useChatRuntime({
   );
 
   const executeTool = useCallback(
-    async (command: { command: string; args: string }): Promise<ToolResultWithArtifact | void> => {
+    async (command: {
+      command: string;
+      args: string;
+      /** 未经变换的原始入参对象（仅 function calling 路径提供），供参数校验使用。 */
+      rawObject?: Record<string, unknown> | null;
+    }): Promise<ToolResultWithArtifact | void> => {
       const result = await executeLocalTool(
         {
           activeProject: resolvedActiveProject,
           activeChatId,
           getChatSessionById,
           searchChatSessions,
+          getWorkspacePathForSession: (sid) => workspacePathResolverRef.current(sid),
         },
         command
       );
@@ -1128,9 +1169,13 @@ export function useChatRuntime({
       if (toolCall.name.startsWith("mcp__")) {
         return executeMcpToolCall(toolCall.name, toolCall.arguments);
       }
+      // 校验用未经变换的原始对象：args 在上游被有意拆过（单字段拆成裸值、manifest 拆包），
+      // 拿它比对 schema 会误判；执行仍用 args，行为完全不变。
+      const { args, rawObject } = extractToolCallArgsDetailed(toolCall.arguments);
       const result = await executeTool({
         command: toolCallNameToCommand(toolCall.name),
-        args: extractToolCallArgs(toolCall.arguments),
+        args,
+        rawObject,
       });
       return { outputText: formatToolCallResult(result), artifact: result?.savedArtifact, path: result?.path, fileDiff: result?.fileDiff };
     },
@@ -1147,6 +1192,10 @@ export function useChatRuntime({
     if (defaultWorkspacePath) return defaultWorkspacePath;
     return getFallbackWorkspacePath();
   };
+  // 上面的解析器每次渲染都重建，而 executeTool 的 useCallback 依赖数组里没有它；
+  // 用 ref 转发，保证工具执行时读到最新 props（改项目工作目录/默认工作空间后不「瞬移」）。
+  const workspacePathResolverRef = useRef(getWorkspacePathForSession);
+  workspacePathResolverRef.current = getWorkspacePathForSession;
 
   // 任务级工具执行器：写类工具按工作区串行化，并在检测到另一并发任务占用同工作区时走确认门。
   const makeTaskToolExecutor = useCallback(
@@ -1361,10 +1410,12 @@ export function useChatRuntime({
         dismissPetThoughtWhenSessionVisible(session.id, petThoughtId);
         finishTaskResult(applyProjectReplyToTaskResult(taskResult, projectReply), session.id, conversationMessages);
       } catch (replyError) {
-        if (!isCurrentSessionRun(session.id, runId, abortController)) {
+        // 同主发送流程：不能用 isCurrentSessionRun 守卫——abort 后它恒为 false，
+        // 会让下面的清理与超时提示分支永远不可达。
+        if (sessionRunIdsRef.current.get(session.id) !== runId) {
           return;
         }
-        if (replyError instanceof DOMException && replyError.name === "AbortError") {
+        if (abortController.signal.aborted || (replyError instanceof DOMException && replyError.name === "AbortError")) {
           clearPetThoughtSession(session.id);
           if (watchdogAbortedSessionIdsRef.current.delete(session.id)) {
             setError(`任务执行超时（${RUN_WATCHDOG_MINUTES} 分钟），已自动停止`);
@@ -1496,13 +1547,7 @@ export function useChatRuntime({
           // 快照目录按「会话」分桶，因此全新会话要先建会话拿到 id（已有会话不会重复创建）。
           // 注意：getChatSessionById 读的是闭包里的 chatSessions，新建会话的同一次 tick 内读不到
           // （ref 要等 effect 才同步），所以新会话直接用 createSessionFromMessages 的返回值。
-          let snapshotProjectTitle = activeProject?.title;
-          if (sessionId) {
-            const existingSession = getChatSessionById(sessionId);
-            if (existingSession?.projectId) {
-              snapshotProjectTitle = getProjectById(existingSession.projectId)?.title ?? snapshotProjectTitle;
-            }
-          } else {
+          if (!sessionId) {
             const draftSession = createSessionFromMessages(
               [...scopedCurrentMessages, { role: "user" as const, content, images, attachments }],
               activeProject?.id ?? undefined
@@ -1511,10 +1556,9 @@ export function useChatRuntime({
             runId = startSessionRun(sessionId, abortController);
             currentTaskIdRef.current.set(sessionId, taskId);
           }
-          attachments = await snapshotAttachments(attachments, {
-            projectTitle: snapshotProjectTitle,
-            sessionId,
-          });
+          // 附件快照落在会话目录内（<chat-sessions>/<sessionId>/attachments）：归属由 sessionId
+          // 决定，不再需要项目名——产出与对话同目录，删除会话时一并被清掉。
+          attachments = await snapshotAttachments(attachments, { sessionId });
           // 上传的附件登记为产物：出现在右侧「产物」面板，点击即可内嵌预览。
           // 按快照路径去重——同一会话重复发送同一文件不重复建卡。
           const existingPaths = new Set(
@@ -1671,10 +1715,12 @@ export function useChatRuntime({
         dismissPetThoughtWhenSessionVisible(sessionId, petThoughtId);
         finishTaskResult(applyProjectReplyToTaskResult(taskResult, projectReply), sessionId, conversationMessages);
       } catch (sendError) {
-        if (!isCurrentSessionRun(sessionId, runId, abortController)) {
+        // 同主发送流程：不能用 isCurrentSessionRun 守卫——abort 后它恒为 false，
+        // 会让下面的清理与超时提示分支永远不可达。
+        if (sessionId && sessionRunIdsRef.current.get(sessionId) !== runId) {
           return;
         }
-        if (sendError instanceof DOMException && sendError.name === "AbortError") {
+        if (abortController.signal.aborted || (sendError instanceof DOMException && sendError.name === "AbortError")) {
           if (hasPetThought) {
             clearPetThoughtSession(sessionId);
           }

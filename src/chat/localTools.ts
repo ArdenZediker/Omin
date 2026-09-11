@@ -1,21 +1,30 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Message } from "../adapters/types";
-import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
+import {
+  ALWAYS_ALLOWED_LOCAL_TOOL_IDS,
+  getToolManifestById,
+} from "../config/manifests/tools";
 import type { PluginManifest } from "../plugins/types";
 import { pluginRegistry, parseSkillMarkdown } from "../plugins/registry";
 import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
+import { validateToolArgs } from "./toolArgsValidation";
 import type { FileDiff } from "./fileDiff";
 import { requestConfirmation } from "./confirmationGate";
 import { scanBashWriteSemantics, findNoGoZoneTarget } from "./bashWriteScan";
-import { buildSessionOutputDir, getEffectiveOutputRoot } from "../app/outputStorage";
+import { resolveSessionOutputDir } from "../app/outputStorage";
 import { loadBasicSettings } from "../app/settings";
-import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
+import {
+  BASIC_SETTINGS_STORAGE_KEY,
+  DEFAULT_BASIC_SETTINGS,
+} from "../app/constants";
 
 export type LocalToolSession = {
   id: string;
   title: string;
   messages: Message[];
+  /** 会话创建时间（ms）。导出/附件归档按它分日期桶；缺省时退化为当前时刻。 */
+  createdAt?: number;
 };
 
 export type LocalToolRuntime = {
@@ -23,9 +32,13 @@ export type LocalToolRuntime = {
   activeChatId: string | null;
   getChatSessionById: (sessionId: string) => LocalToolSession | null;
   searchChatSessions: (query: string) => LocalToolSession[];
+  /** 会话的 effective workspace（会话固化 → 项目 → 默认工作空间 → 兜底目录）。 */
+  getWorkspacePathForSession: (sessionId: string | null) => string;
 };
 
-export const ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET = new Set(ALWAYS_ALLOWED_LOCAL_TOOL_IDS);
+export const ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET = new Set(
+  ALWAYS_ALLOWED_LOCAL_TOOL_IDS,
+);
 
 function requireTool(id: string) {
   const manifest = getToolManifestById(id);
@@ -49,24 +62,80 @@ function getMessageRoleLabel(role: Message["role"]) {
  * 以及 tee/sed(-i)/find(-delete) 等带写入变体的命令一律不在此列，需人工确认。
  */
 const SAFE_READONLY_COMMANDS = new Set<string>([
-  "ls", "dir", "cat", "type", "echo", "pwd", "cd", "wc", "head", "tail",
-  "grep", "rg", "sort", "uniq", "cut", "tr", "nl", "which", "where", "file",
-  "stat", "readlink", "realpath", "date", "whoami", "uname", "hostname", "id",
-  "git", "tree", "less", "more", "basename", "dirname", "xxd", "od", "strings", "diff",
+  "ls",
+  "dir",
+  "cat",
+  "type",
+  "echo",
+  "pwd",
+  "cd",
+  "wc",
+  "head",
+  "tail",
+  "grep",
+  "rg",
+  "sort",
+  "uniq",
+  "cut",
+  "tr",
+  "nl",
+  "which",
+  "where",
+  "file",
+  "stat",
+  "readlink",
+  "realpath",
+  "date",
+  "whoami",
+  "uname",
+  "hostname",
+  "id",
+  "git",
+  "tree",
+  "less",
+  "more",
+  "basename",
+  "dirname",
+  "xxd",
+  "od",
+  "strings",
+  "diff",
 ]);
 const READONLY_GIT_SUBCOMMANDS = new Set<string>([
-  "status", "log", "diff", "branch", "show", "remote", "tag", "stash", "ls-files",
-  "ls-remote", "rev-parse", "rev-list", "blame", "shortlog", "reflog", "cat-file", "grep",
+  "status",
+  "log",
+  "diff",
+  "branch",
+  "show",
+  "remote",
+  "tag",
+  "stash",
+  "ls-files",
+  "ls-remote",
+  "rev-parse",
+  "rev-list",
+  "blame",
+  "shortlog",
+  "reflog",
+  "cat-file",
+  "grep",
 ]);
 
 /** 判定路径是否落在项目工作区之外（决定 write_file/edit_file 是否触发确认门；
  *  相对路径由 Rust 端拼接工作区解析，视为域内；未绑定工作区时绝对路径一律需确认）。 */
-export function isOutsideWorkspace(path: string, workspacePath: string): boolean {
+export function isOutsideWorkspace(
+  path: string,
+  workspacePath: string,
+): boolean {
   const trimmed = path.trim();
-  const isAbsolute = /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith("/") || trimmed.startsWith("\\\\");
+  const isAbsolute =
+    /^[A-Za-z]:[\\/]/.test(trimmed) ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("\\\\");
   if (!isAbsolute) return false;
   if (!workspacePath) return true;
-  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const norm = (p: string) =>
+    p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   const t = norm(trimmed);
   const w = norm(workspacePath);
   return t !== w && !t.startsWith(`${w}/`);
@@ -80,14 +149,19 @@ export function isKnownSafeCommand(command: string): boolean {
   if (tokens.length === 0) return false;
   // 取可执行名：去掉前导 ./ 与路径，再去掉扩展名，小写化
   let exe = tokens[0].replace(/^[./\\]+/, "");
-  exe = exe.includes("/") || exe.includes("\\") ? exe.split(/[\\/]/).pop()! : exe;
+  exe =
+    exe.includes("/") || exe.includes("\\") ? exe.split(/[\\/]/).pop()! : exe;
   exe = exe.replace(/\.(exe|cmd|bat|ps1|sh|bash)$/i, "").toLowerCase();
 
   if (exe === "git") {
     const sub = (tokens[1] || "").toLowerCase().replace(/^-+/, "");
     if (sub === "config") {
       // git config 仅 --get/--list 等只读查询放行，--global/--system 写值需确认
-      return tokens.slice(2).some((t) => /^(--get|--get-all|--get-regexp|--list|-l|-h|--help)$/.test(t));
+      return tokens
+        .slice(2)
+        .some((t) =>
+          /^(--get|--get-all|--get-regexp|--list|-l|-h|--help)$/.test(t),
+        );
     }
     return READONLY_GIT_SUBCOMMANDS.has(sub);
   }
@@ -123,7 +197,10 @@ function buildMissingCommandHint(missing: string): string {
  * 支持：裸 JSON、```json 代码围栏包裹、字符串二次编码、{ manifest: {...} } 包装。
  */
 export function parseExpertManifestFromArgs(raw: string): PluginManifest {
-  let text = (raw ?? "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  let text = (raw ?? "")
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
   const firstBrace = text.indexOf("{");
   const lastBrace = text.lastIndexOf("}");
   if (firstBrace >= 0 && lastBrace > firstBrace) {
@@ -154,22 +231,30 @@ export function normalizeExpertManifest(input: PluginManifest): PluginManifest {
     throw new Error("专家定义格式错误：应为 JSON 对象");
   }
   if (input.kind && input.kind !== "expert") {
-    throw new Error(`install_expert 只接受 kind 为 expert 的专家定义，收到「${input.kind}」`);
+    throw new Error(
+      `install_expert 只接受 kind 为 expert 的专家定义，收到「${input.kind}」`,
+    );
   }
   const id = String(input.id ?? "").trim();
   const name = String(input.name ?? "").trim();
   const description = String(input.description ?? "").trim();
   const templatePrompt = String(input.templatePrompt ?? "").trim();
-  if (!id) throw new Error("缺少必填字段 id（kebab-case 唯一标识，如 dev-expert）");
+  if (!id)
+    throw new Error("缺少必填字段 id（kebab-case 唯一标识，如 dev-expert）");
   if (!/^[a-z][a-z0-9-]*$/.test(id)) {
-    throw new Error(`id「${id}」不是合法 kebab-case：只能小写字母开头，包含小写字母、数字、连字符`);
+    throw new Error(
+      `id「${id}」不是合法 kebab-case：只能小写字母开头，包含小写字母、数字、连字符`,
+    );
   }
   if (pluginRegistry.isBuiltin(id)) {
     throw new Error(`id「${id}」与内置插件冲突，请换一个 id`);
   }
   if (!name) throw new Error("缺少必填字段 name（专家展示名）");
   if (!description) throw new Error("缺少必填字段 description（一句话描述）");
-  if (!templatePrompt) throw new Error("缺少必填字段 templatePrompt（专家系统提示词，应可直接执行、不含占位符）");
+  if (!templatePrompt)
+    throw new Error(
+      "缺少必填字段 templatePrompt（专家系统提示词，应可直接执行、不含占位符）",
+    );
   return {
     ...input,
     id,
@@ -180,7 +265,9 @@ export function normalizeExpertManifest(input: PluginManifest): PluginManifest {
     version: String(input.version ?? "1.0.0"),
     author: input.author ?? "Omni",
     category: input.category ?? "AI Agent",
-    tags: Array.isArray(input.tags) ? input.tags.filter((tag): tag is string => typeof tag === "string") : [],
+    tags: Array.isArray(input.tags)
+      ? input.tags.filter((tag): tag is string => typeof tag === "string")
+      : [],
   };
 }
 
@@ -198,7 +285,10 @@ function parseToolJsonArgs(raw: string): Record<string, unknown> | null {
   }
 }
 
-function strArg(record: Record<string, unknown> | null, ...keys: string[]): string | undefined {
+function strArg(
+  record: Record<string, unknown> | null,
+  ...keys: string[]
+): string | undefined {
   if (!record) return undefined;
   for (const key of keys) {
     const value = record[key];
@@ -207,16 +297,26 @@ function strArg(record: Record<string, unknown> | null, ...keys: string[]): stri
   return undefined;
 }
 
-function numArg(record: Record<string, unknown> | null, key: string): number | undefined {
+function numArg(
+  record: Record<string, unknown> | null,
+  key: string,
+): number | undefined {
   const value = record?.[key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
+  if (
+    typeof value === "string" &&
+    value.trim() &&
+    Number.isFinite(Number(value))
+  ) {
     return Number(value);
   }
   return undefined;
 }
 
-function boolArg(record: Record<string, unknown> | null, key: string): boolean | undefined {
+function boolArg(
+  record: Record<string, unknown> | null,
+  key: string,
+): boolean | undefined {
   const value = record?.[key];
   if (typeof value === "boolean") return value;
   if (value === "true") return true;
@@ -228,7 +328,8 @@ function boolArg(record: Record<string, unknown> | null, key: string): boolean |
 function toGlobArg(raw: string | undefined): string | undefined {
   const text = raw?.trim();
   if (!text) return undefined;
-  const hasGlobMeta = text.includes("*") || text.includes("?") || text.includes("[");
+  const hasGlobMeta =
+    text.includes("*") || text.includes("?") || text.includes("[");
   return hasGlobMeta ? text : `*${text}*`;
 }
 
@@ -268,7 +369,10 @@ function numberLines(content: string, startLine?: number): string {
   const lines = content.split("\n");
   const width = String(startLine + lines.length - 1).length;
   return lines
-    .map((line, index) => `${String(startLine + index).padStart(width, " ")} | ${line.replace(/\r$/, "")}`)
+    .map(
+      (line, index) =>
+        `${String(startLine + index).padStart(width, " ")} | ${line.replace(/\r$/, "")}`,
+    )
     .join("\n");
 }
 
@@ -304,8 +408,14 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
       return {
         ok: true,
-        outputText: [`找到 ${matchedSessions.length} 个相关会话：`, ...lines].join("\n"),
-        data: matchedSessions.map((session) => ({ id: session.id, title: session.title })),
+        outputText: [
+          `找到 ${matchedSessions.length} 个相关会话：`,
+          ...lines,
+        ].join("\n"),
+        data: matchedSessions.map((session) => ({
+          id: session.id,
+          title: session.title,
+        })),
       };
     },
   });
@@ -316,7 +426,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     title: readSessionTool.title,
     execute: async (resolvedCommand) => {
       const sessionId = resolvedCommand.args.trim();
-      if (!sessionId) return { ok: false, error: "用法：/read_session 会话 ID" };
+      if (!sessionId)
+        return { ok: false, error: "用法：/read_session 会话 ID" };
       const session = runtime.getChatSessionById(sessionId);
       if (!session) return { ok: false, error: `未找到会话：${sessionId}` };
 
@@ -324,15 +435,26 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         .slice(-8)
         .map((message, index) => {
           const content = message.content.trim() || "[空内容]";
-          const clipped = content.length > 120 ? `${content.slice(0, 117)}...` : content;
+          const clipped =
+            content.length > 120 ? `${content.slice(0, 117)}...` : content;
           return `${index + 1}. ${getMessageRoleLabel(message.role)}：${clipped}`;
         })
         .join("\n");
 
       return {
         ok: true,
-        outputText: [`会话：${session.title}`, `ID：${session.id}`, `消息数：${session.messages.length}`, "", preview].join("\n"),
-        data: { id: session.id, title: session.title, messageCount: session.messages.length },
+        outputText: [
+          `会话：${session.title}`,
+          `ID：${session.id}`,
+          `消息数：${session.messages.length}`,
+          "",
+          preview,
+        ].join("\n"),
+        data: {
+          id: session.id,
+          title: session.title,
+          messageCount: session.messages.length,
+        },
       };
     },
   });
@@ -344,29 +466,48 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       // JSON 优先用 glob；裸字符串兼容旧用法（含通配符当 glob，否则当「包含」子串 *x*）。
-      const glob = strArg(json, "glob") ?? toGlobArg(resolvedCommand.args.trim());
-      const entries = await invoke<Array<{ path: string; is_dir: boolean }>>("list_workspace_files", {
-        projectPath: runtime.activeProject?.workspacePath || null,
-        glob: glob ?? null,
-        limit: 80,
-      });
+      const glob =
+        strArg(json, "glob") ?? toGlobArg(resolvedCommand.args.trim());
+      const entries = await invoke<Array<{ path: string; is_dir: boolean }>>(
+        "list_workspace_files",
+        {
+          projectPath: runtime.activeProject?.workspacePath || null,
+          glob: glob ?? null,
+          limit: 80,
+        },
+      );
 
       if (entries.length === 0) {
         return {
           ok: true,
-          outputText: glob ? `没有匹配「${glob}」的文件。` : "当前工作区没有文件。",
+          outputText: glob
+            ? `没有匹配「${glob}」的文件。`
+            : "当前工作区没有文件。",
           data: [],
         };
       }
 
       const rendered = entries.slice(0, 20);
       const omitted = entries.length - rendered.length;
-      const lines = rendered.map((entry, index) => `${index + 1}. ${entry.is_dir ? "[目录]" : "[文件]"} ${entry.path}`);
+      const lines = rendered.map(
+        (entry, index) =>
+          `${index + 1}. ${entry.is_dir ? "[目录]" : "[文件]"} ${entry.path}`,
+      );
       // 列表被渲染截断时显式告知省略量并建议收窄 glob（模型不应把「前 20 条」当成全量）。
-      const omittedNote = omitted > 0 ? buildClippedNote(`共 ${entries.length} 个匹配，仅展示前 20 条（其余 ${omitted} 条省略）`, "用更精确的 glob 收窄范围后重查") : "";
+      const omittedNote =
+        omitted > 0
+          ? buildClippedNote(
+              `共 ${entries.length} 个匹配，仅展示前 20 条（其余 ${omitted} 条省略）`,
+              "用更精确的 glob 收窄范围后重查",
+            )
+          : "";
       return {
         ok: true,
-        outputText: [`找到 ${entries.length} 个匹配项（glob=${glob ?? "*"}）：`, ...lines, ...(omittedNote ? ["", omittedNote] : [])].join("\n"),
+        outputText: [
+          `找到 ${entries.length} 个匹配项（glob=${glob ?? "*"}）：`,
+          ...lines,
+          ...(omittedNote ? ["", omittedNote] : []),
+        ].join("\n"),
         data: entries,
       };
     },
@@ -381,9 +522,16 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       // 也兼容旧的「仅路径」用法（如 /read_file C:/Users/...）。
       const json = parseToolJsonArgs(resolvedCommand.args);
       const rawTextPath = resolvedCommand.args.trim();
-      const path = strArg(json, "path") ?? (rawTextPath.startsWith("{") ? null : rawTextPath) ?? "";
+      const path =
+        strArg(json, "path") ??
+        (rawTextPath.startsWith("{") ? null : rawTextPath) ??
+        "";
       if (!path) {
-        return { ok: false, error: "用法：/read_file <path>，或 /read_file {\"path\":\"...\",\"maxChars\":N,\"offsetChars\":N,\"limitChars\":N}" };
+        return {
+          ok: false,
+          error:
+            '用法：/read_file <path>，或 /read_file {"path":"...","maxChars":N,"offsetChars":N,"limitChars":N}',
+        };
       }
       const maxChars = numArg(json, "maxChars");
       const offsetChars = numArg(json, "offsetChars");
@@ -405,11 +553,12 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const clippedNote = result.truncated
         ? buildClippedNote(
             `本次仅返回 ${result.returned_chars}/${result.total_chars} 字符` +
-              (typeof result.start_line === "number" && typeof result.end_line === "number"
+              (typeof result.start_line === "number" &&
+              typeof result.end_line === "number"
                 ? `（第 ${result.start_line}-${result.end_line} 行）`
                 : ""),
             "若目标内容在其他位置，先用 /search_files 在该文件内定位行号再按需读取；" +
-              `否则带 offsetChars=${result.offset_chars + result.returned_chars} 续读剩余部分`
+              `否则带 offsetChars=${result.offset_chars + result.returned_chars} 续读剩余部分`,
           )
         : "";
       return {
@@ -444,12 +593,18 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         return {
           ok: false,
           error:
-            "用法：/search_files <pattern> 或 /search_files {\"pattern\":\"...\",\"glob\":\"**/*.ts\",\"literal\":true,\"ignoreCase\":true,\"context\":2,\"limit\":50}",
+            '用法：/search_files <pattern> 或 /search_files {"pattern":"...","glob":"**/*.ts","literal":true,"ignoreCase":true,"context":2,"limit":50}',
         };
       }
 
       const matches = await invoke<
-        Array<{ path: string; line_number: number; line: string; before: string[]; after: string[] }>
+        Array<{
+          path: string;
+          line_number: number;
+          line: string;
+          before: string[];
+          after: string[];
+        }>
       >("search_workspace_files", {
         projectPath: runtime.activeProject?.workspacePath || null,
         pattern,
@@ -462,7 +617,11 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       });
 
       if (matches.length === 0) {
-        return { ok: true, outputText: `没有文件内容匹配「${pattern}」。`, data: [] };
+        return {
+          ok: true,
+          outputText: `没有文件内容匹配「${pattern}」。`,
+          data: [],
+        };
       }
 
       const rendered = matches.slice(0, 20);
@@ -476,10 +635,20 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         return `${index + 1}.\n${ctx}`;
       });
       // 匹配被渲染截断时显式告知省略量（模型可加大 limit 或收窄 pattern/glob 再查）。
-      const omittedNote = omitted > 0 ? buildClippedNote(`共 ${matches.length} 个匹配，仅展示前 20 个（其余 ${omitted} 个省略）`, "收窄 pattern/glob 或加大 limit 后重查") : "";
+      const omittedNote =
+        omitted > 0
+          ? buildClippedNote(
+              `共 ${matches.length} 个匹配，仅展示前 20 个（其余 ${omitted} 个省略）`,
+              "收窄 pattern/glob 或加大 limit 后重查",
+            )
+          : "";
       return {
         ok: true,
-        outputText: [`找到 ${matches.length} 个相关匹配：`, ...lines, ...(omittedNote ? ["", omittedNote] : [])].join("\n"),
+        outputText: [
+          `找到 ${matches.length} 个相关匹配：`,
+          ...lines,
+          ...(omittedNote ? ["", omittedNote] : []),
+        ].join("\n"),
         data: matches,
       };
     },
@@ -503,7 +672,10 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const key = resolvedCommand.args.trim();
       if (!key) return { ok: false, error: "用法：/read_persona <字段名>" };
       if (!PERSONA_FIELDS.includes(key)) {
-        return { ok: false, error: `未知字段：${key}（可选：${PERSONA_FIELDS.join("、")}）` };
+        return {
+          ok: false,
+          error: `未知字段：${key}（可选：${PERSONA_FIELDS.join("、")}）`,
+        };
       }
       const config = await invoke<PersonaConfig>("read_persona_files");
       const value = (config as unknown as Record<string, string>)[key] ?? "";
@@ -528,7 +700,10 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const key = raw.slice(0, spaceIndex).trim();
       const content = raw.slice(spaceIndex + 1).trim();
       if (!PERSONA_FIELDS.includes(key)) {
-        return { ok: false, error: `未知字段：${key}（可选：${PERSONA_FIELDS.join("、")}）` };
+        return {
+          ok: false,
+          error: `未知字段：${key}（可选：${PERSONA_FIELDS.join("、")}）`,
+        };
       }
       if (!content) {
         return { ok: false, error: "内容不能为空" };
@@ -560,7 +735,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     title: installExpertTool.title,
     execute: async (resolvedCommand) => {
       try {
-        const manifest = normalizeExpertManifest(parseExpertManifestFromArgs(resolvedCommand.args));
+        const manifest = normalizeExpertManifest(
+          parseExpertManifestFromArgs(resolvedCommand.args),
+        );
         const existed = pluginRegistry.isInstalled(manifest.id);
         const approved = await requestConfirmation({
           source: "install_expert",
@@ -572,23 +749,34 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             { label: "操作", value: existed ? "更新已有" : "新安装" },
           ],
           targets: [manifest.id],
-          warning: "专家插件含指令，安装后可在对话中被调用执行。确认来源可信后再安装。",
+          warning:
+            "专家插件含指令，安装后可在对话中被调用执行。确认来源可信后再安装。",
           confirmLabel: "确认安装",
         });
         if (!approved) {
           return { ok: false, error: "已取消：未确认安装专家插件" };
         }
-        pluginRegistry.install(manifest, { type: "local", path: "expert-created" });
+        pluginRegistry.install(manifest, {
+          type: "local",
+          path: "expert-created",
+        });
         return {
           ok: true,
           outputText: existed
             ? `专家「${manifest.name}」（${manifest.id}）已更新，可在「专家分类 → 我的专家」查看。`
             : `专家「${manifest.name}」（${manifest.id}）已安装，可在「专家分类 → 我的专家」查看。`,
           data: { id: manifest.id, name: manifest.name, existed },
-          artifact: { type: "expert", title: `专家：${manifest.name}（${manifest.id}）`, path: null },
+          artifact: {
+            type: "expert",
+            title: `专家：${manifest.name}（${manifest.id}）`,
+            path: null,
+          },
         };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : "专家定义校验失败" };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : "专家定义校验失败",
+        };
       }
     },
   });
@@ -601,28 +789,47 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     title: "Web Search",
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
-      const query = strArg(json, "query", "keyword", "q") ?? resolvedCommand.args.trim();
+      const query =
+        strArg(json, "query", "keyword", "q") ?? resolvedCommand.args.trim();
       if (!query) return { ok: false, error: "用法：/web_search 关键词" };
       try {
-        const results = await invoke<Array<{ title: string; url: string; snippet: string }>>("web_search", {
+        const results = await invoke<
+          Array<{ title: string; url: string; snippet: string }>
+        >("web_search", {
           query,
           limit: numArg(json, "limit") ?? null,
         });
         if (results.length === 0) {
-          return { ok: true, outputText: `没有找到与「${query}」相关的结果。`, data: [] };
+          return {
+            ok: true,
+            outputText: `没有找到与「${query}」相关的结果。`,
+            data: [],
+          };
         }
         const lines = results.map(
-          (r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`,
+          (r, i) =>
+            `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`,
         );
-        const outputText = [`「${query}」搜索结果（${results.length} 条）：`, ...lines].join("\n");
+        const outputText = [
+          `「${query}」搜索结果（${results.length} 条）：`,
+          ...lines,
+        ].join("\n");
         return {
           ok: true,
           outputText,
           data: results,
-          artifact: { type: "web", title: `搜索「${query}」`, url: results[0]?.url ?? null, content: outputText },
+          artifact: {
+            type: "web",
+            title: `搜索「${query}」`,
+            url: results[0]?.url ?? null,
+            content: outputText,
+          },
         };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -636,12 +843,24 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const url = strArg(json, "url", "link") ?? resolvedCommand.args.trim();
       if (!url) return { ok: false, error: "用法：/web_fetch <url>" };
       try {
-        const result = await invoke<{ final_url: string; title: string; text: string; links: Array<{ url: string; text: string }> }>(
-          "web_fetch",
-          { url, maxChars: numArg(json, "max_chars") ?? numArg(json, "maxChars") ?? null },
-        );
+        const result = await invoke<{
+          final_url: string;
+          title: string;
+          text: string;
+          links: Array<{ url: string; text: string }>;
+        }>("web_fetch", {
+          url,
+          maxChars:
+            numArg(json, "max_chars") ?? numArg(json, "maxChars") ?? null,
+        });
         const linkLines = result.links.length
-          ? ["", "页面主要链接：", ...result.links.slice(0, 10).map((l) => `- ${l.text || l.url}：${l.url}`)]
+          ? [
+              "",
+              "页面主要链接：",
+              ...result.links
+                .slice(0, 10)
+                .map((l) => `- ${l.text || l.url}：${l.url}`),
+            ]
           : [];
         const outputText = [
           `标题：${result.title || "（无）"}`,
@@ -653,11 +872,23 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         return {
           ok: true,
           outputText,
-          data: { title: result.title, url: result.final_url, links: result.links },
-          artifact: { type: "web", title: result.title || result.final_url, url: result.final_url, content: outputText },
+          data: {
+            title: result.title,
+            url: result.final_url,
+            links: result.links,
+          },
+          artifact: {
+            type: "web",
+            title: result.title || result.final_url,
+            url: result.final_url,
+            content: outputText,
+          },
         };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -665,7 +896,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   // ---- Git 工作流（Rust：gittools.rs） ----
 
   const resolveGitPath = (json: Record<string, unknown> | null) =>
-    strArg(json, "path", "repo") ?? runtime.activeProject?.workspacePath ?? null;
+    strArg(json, "path", "repo") ??
+    runtime.activeProject?.workspacePath ??
+    null;
 
   registry.register({
     id: "git_info",
@@ -673,8 +906,14 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     title: "Git Info",
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
-      const operation = strArg(json, "operation", "op") ?? resolvedCommand.args.trim().split(/\s+/)[0];
-      if (!operation) return { ok: false, error: "用法：/git_info status|log|diff|diff-staged|branch" };
+      const operation =
+        strArg(json, "operation", "op") ??
+        resolvedCommand.args.trim().split(/\s+/)[0];
+      if (!operation)
+        return {
+          ok: false,
+          error: "用法：/git_info status|log|diff|diff-staged|branch",
+        };
       try {
         const output = await invoke<string>("git_info", {
           projectPath: resolveGitPath(json),
@@ -683,7 +922,10 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         });
         return { ok: true, outputText: output, data: { operation, output } };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -708,13 +950,20 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         : null;
       return {
         title: "提交 Git 改动",
-        summary: addAll === true ? "暂存全部改动后创建一次提交" : "按指定范围创建一次提交",
+        summary:
+          addAll === true
+            ? "暂存全部改动后创建一次提交"
+            : "按指定范围创建一次提交",
         riskLevel: "destructive",
         details: [
           { label: "提交信息", value: message },
           {
             label: "暂存范围",
-            value: paths?.length ? paths.join("、") : addAll === true ? "全部改动（含未跟踪文件）" : "已暂存内容",
+            value: paths?.length
+              ? paths.join("、")
+              : addAll === true
+                ? "全部改动（含未跟踪文件）"
+                : "已暂存内容",
           },
         ],
         targets: [resolveGitPath(json) ?? "当前项目工作区"],
@@ -728,17 +977,32 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const message = strArg(json, "message", "msg");
-      if (!message) return { ok: false, error: "用法：/git_commit <message>（或传 JSON {message, addAll?, paths?}）" };
+      if (!message)
+        return {
+          ok: false,
+          error:
+            "用法：/git_commit <message>（或传 JSON {message, addAll?, paths?}）",
+        };
       try {
         const output = await invoke<string>("git_commit", {
           projectPath: resolveGitPath(json),
           message,
-          addAll: typeof json?.add_all === "boolean" ? json.add_all : typeof json?.addAll === "boolean" ? json.addAll : null,
-          paths: Array.isArray(json?.paths) ? json.paths.filter((p): p is string => typeof p === "string") : null,
+          addAll:
+            typeof json?.add_all === "boolean"
+              ? json.add_all
+              : typeof json?.addAll === "boolean"
+                ? json.addAll
+                : null,
+          paths: Array.isArray(json?.paths)
+            ? json.paths.filter((p): p is string => typeof p === "string")
+            : null,
         });
         return { ok: true, outputText: output };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -776,7 +1040,11 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const title = strArg(json, "title");
-      if (!title) return { ok: false, error: "用法：/git_pr <title>（或传 JSON {title, body?, base?}）" };
+      if (!title)
+        return {
+          ok: false,
+          error: "用法：/git_pr <title>（或传 JSON {title, body?, base?}）",
+        };
       try {
         const output = await invoke<string>("git_pr", {
           projectPath: resolveGitPath(json),
@@ -786,7 +1054,10 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         });
         return { ok: true, outputText: output };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -801,14 +1072,17 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   };
 
   /** 判断字符串是否为绝对路径（Windows 盘符、/ 开头或 UNC）。 */
-  const isAbsolutePath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
+  const isAbsolutePath = (p: string) =>
+    /^[A-Za-z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
 
   /** 拼接目录与文件名（统一 / 分隔符）。 */
-  const joinPath = (dir: string, fileName: string) => `${dir.replace(/[\\/]+$/, "")}/${fileName}`;
+  const joinPath = (dir: string, fileName: string) =>
+    `${dir.replace(/[\\/]+$/, "")}/${fileName}`;
 
   /** child 是否落在 parent 之内（大小写不敏感；Windows 路径统一 / 分隔符）。 */
   const isWithin = (child: string, parent: string): boolean => {
-    const norm = (s: string) => s.replace(/\\/g, "/").toLowerCase().replace(/\/+$/, "");
+    const norm = (s: string) =>
+      s.replace(/\\/g, "/").toLowerCase().replace(/\/+$/, "");
     const c = norm(child);
     const p = norm(parent);
     return c === p || c.startsWith(`${p}/`);
@@ -816,7 +1090,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
 
   /** 确保文件名带正确扩展名（小写后缀判断，不破坏原大小写）。 */
   const ensureExtension = (fileName: string, ext: string) =>
-    fileName.toLowerCase().endsWith(`.${ext}`) ? fileName : `${fileName}.${ext}`;
+    fileName.toLowerCase().endsWith(`.${ext}`)
+      ? fileName
+      : `${fileName}.${ext}`;
 
   /** 清洗文件名中的非法字符并截断，空则用兜底名，保证带扩展名。 */
   const sanitizeFileName = (raw: string, ext: string) =>
@@ -825,25 +1101,47 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         .replace(/[\\/:*?"<>|\r\n\t]+/g, " ")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, 80) || (EXPORT_FALLBACK_NAMES[ext] ?? "导出"),
-      ext
+        .slice(0, 80) ||
+        (EXPORT_FALLBACK_NAMES[ext] ?? "导出"),
+      ext,
     );
 
-  /** 解析产出根目录：项目会话优先用项目工作区；否则用「产出根目录」设置（未设则回退系统文档/Omni）。 */
-  const resolveOutputBase = async (workspacePath: string): Promise<string> => {
-    // 有工作空间时，导出落到其下的 Omni-导出 子目录，避免生成物散落在工作区根目录。
-    if (workspacePath) return joinPath(workspacePath, "Omni-导出");
-    return getEffectiveOutputRoot();
+  /**
+   * 解析导出目录：产物落在会话的工作目录下（`<cwd>/Omni-导出/<日期>/<项目>/<会话>/`）。
+   *
+   * 产物是「交付给用户的文件」——放在用户干活的工作目录里才能被看见、被 git 提交、
+   * 被团队共享（对齐 codex / atomcode / deepseek-harness 的做法）。因此它不进应用备份，
+   * 删会话也不删除它。若用户设了「固定归档目录」，由 resolveSessionOutputDir 覆盖为
+   * `<override>/<日期>/<项目>/<会话>`。返回空串表示无法解析（非 Tauri 环境或无可用工作目录），
+   * 调用方退化为裸文件名。
+   */
+  const resolveOutputDir = async (): Promise<string> => {
+    const session = runtime.activeChatId
+      ? runtime.getChatSessionById(runtime.activeChatId)
+      : null;
+    return resolveSessionOutputDir({
+      sessionId: session?.id ?? runtime.activeChatId ?? "",
+      workspacePath: runtime.getWorkspacePathForSession(runtime.activeChatId),
+      projectTitle: runtime.activeProject?.title,
+      sessionTitle: session?.title ?? "",
+      createdAt: session?.createdAt,
+    });
   };
 
-  /** 解析导出输出路径：显式绝对路径直接用；否则自动落到项目目录或默认产物目录，并避免与已有文件冲突。 */
+  /**
+   * 解析导出输出路径与围栏根。
+   *
+   * fenceRoot 交给 Rust check_path 的工作区边界围栏：自动生成的路径由前端自行决定且已落在
+   * 会话工作目录内，传 null 表示「前端已授权，不必再用工作区边界拦」；
+   * 显式路径落在工作区内时照传工作区，保留原围栏语义。
+   */
   const resolveExportPath = async (options: {
     pathArg?: string;
     ext: "docx" | "xlsx" | "pptx" | "md";
     specRaw: unknown;
     overwrite: boolean;
     workspacePath: string;
-  }): Promise<string> => {
+  }): Promise<{ path: string; fenceRoot: string | null }> => {
     const { pathArg, ext, specRaw, overwrite, workspacePath } = options;
 
     // ① 显式传了绝对路径：原样使用（仅补扩展名）
@@ -868,31 +1166,27 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         if (!approved) {
           throw new Error("已取消：输出路径位于项目工作区之外且未获确认");
         }
+        // 已获用户提权：不能再把工作区边界传给 Rust，否则 check_path 会二次拒绝，提权形同虚设。
+        return { path: ensureExtension(pathArg, ext), fenceRoot: null };
       }
-      return ensureExtension(pathArg, ext);
+      return {
+        path: ensureExtension(pathArg, ext),
+        fenceRoot: workspacePath || null,
+      };
     }
 
-    // 目录：有工作空间时落到「工作空间/Omni-导出」；无工作空间（无活动项目）时回退到
-    // 「固定归档目录」覆盖或默认工作空间/兜底目录下的 Omni-导出。再按「项目 / 会话」分子目录，
-    // 避免不同会话产物平铺混在一起。
-    const base = await resolveOutputBase(workspacePath);
-    let dir = base;
-    if (base) {
-      const session =
-        runtime.activeChatId
-          ? runtime.getChatSessionById(runtime.activeChatId)
-          : null;
-      dir = buildSessionOutputDir(base, runtime.activeProject?.title, session?.title ?? "", session?.id ?? "");
-    }
+    const dir = await resolveOutputDir();
 
     // ② 传了相对路径/纯文件名：拼到默认目录
     if (pathArg) {
       const file = sanitizeFileName(pathArg, ext);
-      return dir ? joinPath(dir, file) : file;
+      return { path: dir ? joinPath(dir, file) : file, fenceRoot: null };
     }
 
     // ③ 未传 path：从 spec 提取标题自动命名
-    const spec = (specRaw && typeof specRaw === "object" ? specRaw : {}) as Record<string, unknown>;
+    const spec = (
+      specRaw && typeof specRaw === "object" ? specRaw : {}
+    ) as Record<string, unknown>;
     let name = "";
     if (ext === "docx") {
       name = String(spec.title ?? "");
@@ -904,7 +1198,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       name = String(spec.title ?? slides?.[0]?.title ?? "");
     }
     let file = sanitizeFileName(name, ext);
-    if (!dir) return file;
+    if (!dir) return { path: file, fenceRoot: null };
 
     // 冲突避免：overwrite=false 且目标已存在时追加 -1、-2……
     if (!overwrite) {
@@ -918,9 +1212,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         candidate = joinPath(dir, file);
         n += 1;
       }
-      return candidate;
+      return { path: candidate, fenceRoot: null };
     }
-    return joinPath(dir, file);
+    return { path: joinPath(dir, file), fenceRoot: null };
   };
 
   const registerExportTool = (
@@ -938,50 +1232,84 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         const pathArg = strArg(json, "path", "output", "file");
         const specRaw = json?.spec ?? json?.document ?? json?.data;
         if (specRaw === undefined || specRaw === null) {
-          return { ok: false, error: `缺少 spec：请按 schema 提供${title}的结构化内容对象` };
+          return {
+            ok: false,
+            error: `缺少 spec：请按 schema 提供${title}的结构化内容对象`,
+          };
         }
         const overwrite =
           typeof json?.overwrite === "boolean"
             ? json.overwrite
             : json?.overwrite === true || json?.overwrite === "true";
         try {
-          const ext = tauriCommand === "export_docx" ? "docx" : tauriCommand === "export_xlsx" ? "xlsx" : "pptx";
-          const ws = runtime.activeProject?.workspacePath ?? "";
-          const path = await resolveExportPath({
+          const ext =
+            tauriCommand === "export_docx"
+              ? "docx"
+              : tauriCommand === "export_xlsx"
+                ? "xlsx"
+                : "pptx";
+          const ws = runtime.getWorkspacePathForSession(runtime.activeChatId);
+          const { path, fenceRoot } = await resolveExportPath({
             pathArg,
             ext,
             specRaw,
             overwrite,
             workspacePath: ws,
           });
-          const outcome = await invoke<{ path: string; size: number }>(tauriCommand, {
-            path,
-            specJson: JSON.stringify(specRaw),
-            overwrite,
-            workspacePath: ws || null,
-          });
+          const outcome = await invoke<{ path: string; size: number }>(
+            tauriCommand,
+            {
+              path,
+              specJson: JSON.stringify(specRaw),
+              overwrite,
+              workspacePath: fenceRoot,
+            },
+          );
           return {
             ok: true,
             outputText: `${title}已生成：${outcome.path}（${(outcome.size / 1024).toFixed(1)} KB）`,
             data: outcome,
             path: outcome.path,
             artifact: {
-              type: tauriCommand === "export_docx" ? "docx" : tauriCommand === "export_xlsx" ? "xlsx" : "pptx",
+              type:
+                tauriCommand === "export_docx"
+                  ? "docx"
+                  : tauriCommand === "export_xlsx"
+                    ? "xlsx"
+                    : "pptx",
               title: outcome.path.split(/[\\/]/).pop() || title,
               path: outcome.path,
               size: outcome.size,
             },
           };
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+          return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
         }
       },
     });
   };
 
-  registerExportTool("export_docx", "Export Word", "/export_docx", "export_docx");
-  registerExportTool("export_xlsx", "Export Excel", "/export_xlsx", "export_xlsx");
-  registerExportTool("export_pptx", "Export PPT", "/export_pptx", "export_pptx");
+  registerExportTool(
+    "export_docx",
+    "Export Word",
+    "/export_docx",
+    "export_docx",
+  );
+  registerExportTool(
+    "export_xlsx",
+    "Export Excel",
+    "/export_xlsx",
+    "export_xlsx",
+  );
+  registerExportTool(
+    "export_pptx",
+    "Export PPT",
+    "/export_pptx",
+    "export_pptx",
+  );
 
   // ---- Markdown 导出：把正文直接落盘为 .md 文件（不渲染 OOXML） ----
   registry.register({
@@ -993,14 +1321,17 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const pathArg = strArg(json, "path", "output", "file");
       const content = strArg(json, "content", "markdown", "md", "text");
       if (!content || !content.trim()) {
-        return { ok: false, error: "缺少 content：请提供要写入文件的 Markdown 正文" };
+        return {
+          ok: false,
+          error: "缺少 content：请提供要写入文件的 Markdown 正文",
+        };
       }
       const overwrite =
         typeof json?.overwrite === "boolean"
           ? json.overwrite
           : json?.overwrite === true || json?.overwrite === "true";
       try {
-        const ws = runtime.activeProject?.workspacePath ?? "";
+        const ws = runtime.getWorkspacePathForSession(runtime.activeChatId);
         // 未给 title 时，用正文首行（去掉 #/标记）作为缺省文件名
         const rawTitle = String(json?.title ?? "");
         let title = rawTitle.trim();
@@ -1010,20 +1341,27 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
               .split(/\r?\n/)
               .map((l) => l.trim())
               .find((l) => l.length > 0) ?? "";
-          title = firstLine.replace(/^#+\s*/, "").replace(/[*_`]/g, "").trim();
+          title = firstLine
+            .replace(/^#+\s*/, "")
+            .replace(/[*_`]/g, "")
+            .trim();
         }
-        const path = await resolveExportPath({
+        const { path, fenceRoot } = await resolveExportPath({
           pathArg,
           ext: "md",
           specRaw: { title },
           overwrite,
           workspacePath: ws,
         });
-        const outcome = await invoke<{ path: string; size: number; diff: FileDiff | null }>("write_text_file", {
+        const outcome = await invoke<{
+          path: string;
+          size: number;
+          diff: FileDiff | null;
+        }>("write_text_file", {
           path,
           content,
           overwrite,
-          workspacePath: ws || null,
+          workspacePath: fenceRoot,
         });
         return {
           ok: true,
@@ -1041,7 +1379,10 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           fileDiff: outcome.diff ?? undefined,
         };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -1069,8 +1410,13 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const path = strArg(json, "path", "file");
       const content = strArg(json, "content", "text", "body");
       const overwrite = json?.overwrite === true || json?.overwrite === "true";
-      if (!path) return { ok: false, error: "用法：/write_file JSON{path, content, overwrite?}" };
-      if (!content) return { ok: false, error: "缺少 content：请提供要写入的完整文件内容" };
+      if (!path)
+        return {
+          ok: false,
+          error: "用法：/write_file JSON{path, content, overwrite?}",
+        };
+      if (!content)
+        return { ok: false, error: "缺少 content：请提供要写入的完整文件内容" };
 
       const ws = runtime.activeProject?.workspacePath || "";
       const outside = isOutsideWorkspace(path, ws);
@@ -1082,7 +1428,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           riskLevel: "write",
           details: [{ label: "路径", value: path }],
           targets: [path],
-          warning: "该路径不在项目工作区内。请确认文件位置符合预期；系统/密钥目录（AppData、.ssh 等）会被无条件拒绝。",
+          warning:
+            "该路径不在项目工作区内。请确认文件位置符合预期；系统/密钥目录（AppData、.ssh 等）会被无条件拒绝。",
           confirmLabel: "确认写入",
         });
         if (!approved) {
@@ -1112,11 +1459,19 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             `。可在「变更」面板查看 diff 并撤销本次修改。`,
           data: outcome,
           path: outcome.path,
-          artifact: { type: "file", title: outcome.path.split(/[\\/]/).pop() || "文件", path: outcome.path, size: outcome.size },
+          artifact: {
+            type: "file",
+            title: outcome.path.split(/[\\/]/).pop() || "文件",
+            path: outcome.path,
+            size: outcome.size,
+          },
           fileDiff: outcome.diff ?? undefined,
         };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -1130,11 +1485,22 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const path = strArg(json, "path", "file");
       const find = strArg(json, "find", "old_string", "search");
       const replace = strArg(json, "replace", "new_string");
-      const replaceAll = json?.replace_all === true || json?.replace_all === "true" || json?.replaceAll === true;
+      const replaceAll =
+        json?.replace_all === true ||
+        json?.replace_all === "true" ||
+        json?.replaceAll === true;
       if (!path || find == null) {
-        return { ok: false, error: "用法：/edit_file JSON{path, find, replace, replace_all?}。find 必须是从文件中精确复制的原文" };
+        return {
+          ok: false,
+          error:
+            "用法：/edit_file JSON{path, find, replace, replace_all?}。find 必须是从文件中精确复制的原文",
+        };
       }
-      if (replace == null) return { ok: false, error: "缺少 replace：请提供替换后的文本（删除内容可传空字符串）" };
+      if (replace == null)
+        return {
+          ok: false,
+          error: "缺少 replace：请提供替换后的文本（删除内容可传空字符串）",
+        };
 
       const ws = runtime.activeProject?.workspacePath || "";
       const outside = isOutsideWorkspace(path, ws);
@@ -1146,10 +1512,14 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           riskLevel: "write",
           details: [
             { label: "路径", value: path },
-            { label: "替换", value: `${truncateForDisplay(find)} → ${truncateForDisplay(replace)}` },
+            {
+              label: "替换",
+              value: `${truncateForDisplay(find)} → ${truncateForDisplay(replace)}`,
+            },
           ],
           targets: [path],
-          warning: "该路径不在项目工作区内。请确认修改目标符合预期；系统/密钥目录会被无条件拒绝。",
+          warning:
+            "该路径不在项目工作区内。请确认修改目标符合预期；系统/密钥目录会被无条件拒绝。",
           confirmLabel: "确认修改",
         });
         if (!approved) {
@@ -1180,11 +1550,19 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             `。可在「变更」面板查看 diff 并撤销本次修改。`,
           data: outcome,
           path: outcome.path,
-          artifact: { type: "file", title: outcome.path.split(/[\\/]/).pop() || "文件", path: outcome.path, size: outcome.size },
+          artifact: {
+            type: "file",
+            title: outcome.path.split(/[\\/]/).pop() || "文件",
+            path: outcome.path,
+            size: outcome.size,
+          },
           fileDiff: outcome.diff ?? undefined,
         };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -1199,10 +1577,18 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const id = strArg(json, "id", "slug");
       const content = strArg(json, "content", "body", "markdown");
-      if (!id) return { ok: false, error: "用法：/install_skill JSON{id, name?, description?, content}" };
-      if (!content) return { ok: false, error: "缺少 content：技能正文（Markdown）" };
+      if (!id)
+        return {
+          ok: false,
+          error: "用法：/install_skill JSON{id, name?, description?, content}",
+        };
+      if (!content)
+        return { ok: false, error: "缺少 content：技能正文（Markdown）" };
       if (!/^[a-z][a-z0-9-_]*$/i.test(id)) {
-        return { ok: false, error: `技能 id「${id}」不合法：仅允许字母、数字、连字符、下划线` };
+        return {
+          ok: false,
+          error: `技能 id「${id}」不合法：仅允许字母、数字、连字符、下划线`,
+        };
       }
       try {
         const approved = await requestConfirmation({
@@ -1211,28 +1597,42 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           summary: "模型请求安装一个技能插件（含可执行指令）。",
           riskLevel: "write",
           details: [
-            { label: "技能", value: `${strArg(json, "name", "title") ?? id}（${id}）` },
+            {
+              label: "技能",
+              value: `${strArg(json, "name", "title") ?? id}（${id}）`,
+            },
           ],
           targets: [id],
-          warning: "技能插件含指令，安装后会被注册并可能被执行。确认来源可信后再安装。",
+          warning:
+            "技能插件含指令，安装后会被注册并可能被执行。确认来源可信后再安装。",
           confirmLabel: "确认安装",
         });
         if (!approved) {
           return { ok: false, error: "已取消：未确认安装技能插件" };
         }
-        const res = await invoke<{ slug: string; path: string; skill_md: string }>("install_local_skill", {
+        const res = await invoke<{
+          slug: string;
+          path: string;
+          skill_md: string;
+        }>("install_local_skill", {
           slug: id,
           name: strArg(json, "name", "title") ?? null,
           description: strArg(json, "description", "desc") ?? null,
           content,
         });
         const parsed = parseSkillMarkdown(res.skill_md);
-        if (!parsed) return { ok: false, error: "SKILL.md 解析失败，技能已写入但未注册，请检查 frontmatter" };
+        if (!parsed)
+          return {
+            ok: false,
+            error: "SKILL.md 解析失败，技能已写入但未注册，请检查 frontmatter",
+          };
         parsed.id = res.slug;
         parsed.kind = "skill";
         parsed.command = parsed.command || `/${res.slug}`;
         if (!parsed.category) parsed.category = "AI Agent";
-        const tags = Array.isArray(json?.tags) ? json.tags.filter((t): t is string => typeof t === "string") : [];
+        const tags = Array.isArray(json?.tags)
+          ? json.tags.filter((t): t is string => typeof t === "string")
+          : [];
         if (tags.length) parsed.tags = tags;
         const existed = pluginRegistry.isInstalled(res.slug);
         pluginRegistry.install(parsed, { type: "local", path: res.path });
@@ -1240,10 +1640,17 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           ok: true,
           outputText: `技能「${parsed.name}」（${res.slug}）已${existed ? "更新" : "安装"}：${res.path}`,
           data: { id: res.slug, path: res.path, existed },
-          artifact: { type: "skill", title: `技能：${parsed.name}（${res.slug}）`, path: res.path },
+          artifact: {
+            type: "skill",
+            title: `技能：${parsed.name}（${res.slug}）`,
+            path: res.path,
+          },
         };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -1255,7 +1662,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     execute: async (resolvedCommand) => {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const command = strArg(json, "command") ?? resolvedCommand.args.trim();
-      if (!command) return { ok: false, error: "用法：/bash JSON{\"command\":\"...\"}" };
+      if (!command)
+        return { ok: false, error: '用法：/bash JSON{"command":"..."}' };
 
       // 危险命令黑名单：直接拦截，不弹确认（对齐「Warn + List + Confirm」铁律）。
       const DANGEROUS_PATTERNS = [
@@ -1274,20 +1682,20 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         /\bcurl\b.*\|\s*(sudo\s+)?(ba)?sh\b/i,
         /\bwget\b.*\|\s*(sudo\s+)?(ba)?sh\b/i,
         // Windows / PowerShell 高危补充：账号/网络配置/注册表/持久化/系统状态破坏。
-        /\bnet\s+(user|localgroup)\b/i,                          // 账号与用户组操作
-        /\bnetsh\b/i,                                            // 防火墙/代理/接口配置
-        /\breg\s+(add|delete|import)\b/i,                        // 注册表写入/删除
-        /\bschtasks\b/i,                                         // 计划任务（持久化惯用）
-        /\bdiskpart\b/i,                                         // 磁盘分区
-        /\bbcdedit\b/i,                                          // 启动配置
-        /\bvssadmin\b[\s\S]*\bdelete\b/i,                        // 删卷影副本（勒索软件惯用）
-        /\bwevtutil\b\s+cl\b/i,                                  // 清空事件日志
-        /\bcipher\b\s+\/w\b/i,                                   // 擦除空闲空间
-        /\bwmic\b[\s\S]*\bdelete\b/i,                            // WMI 对象删除
-        /\bremove-item\b(?=[\s\S]*-recurse)(?=[\s\S]*-force)/i,  // PowerShell 版 rm -rf
-        /\|\s*(iex|invoke-expression)\b/i,                       // 管道注入执行
-        /\biex\b\s*\(|\binvoke-expression\b/i,                   // 直接执行表达式
-        /(^|\s)-enc(odedcommand)?\b/i,                           // 编码命令混淆执行
+        /\bnet\s+(user|localgroup)\b/i, // 账号与用户组操作
+        /\bnetsh\b/i, // 防火墙/代理/接口配置
+        /\breg\s+(add|delete|import)\b/i, // 注册表写入/删除
+        /\bschtasks\b/i, // 计划任务（持久化惯用）
+        /\bdiskpart\b/i, // 磁盘分区
+        /\bbcdedit\b/i, // 启动配置
+        /\bvssadmin\b[\s\S]*\bdelete\b/i, // 删卷影副本（勒索软件惯用）
+        /\bwevtutil\b\s+cl\b/i, // 清空事件日志
+        /\bcipher\b\s+\/w\b/i, // 擦除空闲空间
+        /\bwmic\b[\s\S]*\bdelete\b/i, // WMI 对象删除
+        /\bremove-item\b(?=[\s\S]*-recurse)(?=[\s\S]*-force)/i, // PowerShell 版 rm -rf
+        /\|\s*(iex|invoke-expression)\b/i, // 管道注入执行
+        /\biex\b\s*\(|\binvoke-expression\b/i, // 直接执行表达式
+        /(^|\s)-enc(odedcommand)?\b/i, // 编码命令混淆执行
         /\b(irm|invoke-restmethod|iwr|invoke-webrequest)\b[\s\S]*\|\s*(iex|invoke-expression)\b/i, // PS 下载即执行
       ];
       if (DANGEROUS_PATTERNS.some((re) => re.test(command))) {
@@ -1303,7 +1711,11 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       // 自定义 Shell 路径（设置 → 命令执行）：非空时覆盖 Rust 端的自动探测。
       let shellPath: string | null = null;
       try {
-        shellPath = loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).shellPath?.trim() || null;
+        shellPath =
+          loadBasicSettings(
+            BASIC_SETTINGS_STORAGE_KEY,
+            DEFAULT_BASIC_SETTINGS,
+          ).shellPath?.trim() || null;
       } catch {
         shellPath = null;
       }
@@ -1313,7 +1725,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       // 写语义静态扫描：识别重定向/tee/sed -i/rm/del/安装等落盘动作并提取写目标——
       // bash 是写围栏的旁路（write_file 围栏管不到命令字符串），必须在执行前补上这层。
       const writeScan = scanBashWriteSemantics(command);
-      const autoApproved = isKnownSafeCommand(command) && !writeScan.hasWriteSemantics;
+      const autoApproved =
+        isKnownSafeCommand(command) && !writeScan.hasWriteSemantics;
 
       // 禁区硬拦截：写目标命中 .ssh/AppData/Windows/Program Files → 不提供确认，直接拒绝。
       // 权威判定走 Rust no_go_zone_check（含 TEMP 豁免，与 write 工具围栏同源）；
@@ -1321,7 +1734,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       let noGoTarget = findNoGoZoneTarget(writeScan.targets);
       if (!noGoTarget && writeScan.targets.length > 0) {
         try {
-          noGoTarget = await invoke<string | null>("no_go_zone_check", { paths: writeScan.targets.slice(0, 10) });
+          noGoTarget = await invoke<string | null>("no_go_zone_check", {
+            paths: writeScan.targets.slice(0, 10),
+          });
         } catch {
           // Rust 判定不可用时维持 TS 兜底结果
         }
@@ -1346,19 +1761,29 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         if (!autoApproved) {
           approved = await requestConfirmation({
             source: "bash",
-            title: writeScan.hasWriteSemantics ? "执行会修改文件的命令？" : "执行本地命令？",
+            title: writeScan.hasWriteSemantics
+              ? "执行会修改文件的命令？"
+              : "执行本地命令？",
             summary: writeScan.hasWriteSemantics
               ? "命令含写文件语义（重定向/复制/删除/原地修改/安装等），会改动本机文件。"
-              : "模型请求在本机运行一条 shell 命令（腾讯新闻等 CLI 技能需要）。",
+              : "模型请求在本机运行一条 shell 命令。",
             riskLevel: writeScan.destructive ? "destructive" : "write",
             details: [
               { label: "命令", value: command },
               ...(writeScan.targets.length > 0
-                ? [{ label: "写目标（静态扫描）", value: writeScan.targets.slice(0, 5).join("、") }]
+                ? [
+                    {
+                      label: "写目标（静态扫描）",
+                      value: writeScan.targets.slice(0, 5).join("、"),
+                    },
+                  ]
                 : []),
               ...(cwd ? [{ label: "工作目录", value: cwd }] : []),
             ],
-            targets: writeScan.targets.length > 0 ? writeScan.targets.slice(0, 5) : [command],
+            targets:
+              writeScan.targets.length > 0
+                ? writeScan.targets.slice(0, 5)
+                : [command],
             warning: writeScan.hasWriteSemantics
               ? "静态扫描识别到写文件语义；写目标可能不完整，请核对命令本身。文件写入建议改用 /write_file（可获得 diff 预览与撤销）；系统/密钥目录会被无条件拦截。"
               : "命令将在你的本机执行。请确认来源可信、命令符合预期后再允许；高危命令将被自动拦截。",
@@ -1375,7 +1800,12 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         // ——损失 cwd/env 跨调用持久性，换取 OS 层防提权兜底，由用户在设置中权衡。
         const sandboxEnabled = (() => {
           try {
-            return loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).sandboxEnabled === true;
+            return (
+              loadBasicSettings(
+                BASIC_SETTINGS_STORAGE_KEY,
+                DEFAULT_BASIC_SETTINGS,
+              ).sandboxEnabled === true
+            );
           } catch {
             return false;
           }
@@ -1390,7 +1820,12 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           }
         }
 
-        let result: { exitCode: number; output: string; timedOut: boolean; shellReset?: boolean };
+        let result: {
+          exitCode: number;
+          output: string;
+          timedOut: boolean;
+          shellReset?: boolean;
+        };
         if (sandboxEnabled) {
           result = await invoke<{
             exitCode: number;
@@ -1399,7 +1834,13 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           }>("execute_command", {
             // Rust 端签名为 `execute_command(input: ExecuteCommandInput)`，
             // 参数必须整体包在 input 键下（扁平传参会报 missing required key input）。
-            input: { command, cwd, shellPath, timeoutMs: 120_000, sandbox: true },
+            input: {
+              command,
+              cwd,
+              shellPath,
+              timeoutMs: 120_000,
+              sandbox: true,
+            },
           });
         } else {
           try {
@@ -1420,7 +1861,13 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             }>("execute_command", {
               // Rust 端签名为 `execute_command(input: ExecuteCommandInput)`，
               // 参数必须整体包在 input 键下（扁平传参会报 missing required key input）。
-              input: { command, cwd, shellPath, timeoutMs: 120_000, sandbox: false },
+              input: {
+                command,
+                cwd,
+                shellPath,
+                timeoutMs: 120_000,
+                sandbox: false,
+              },
             });
           }
         }
@@ -1429,13 +1876,18 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           ? "（持久 shell 已自动重置：旧会话已失效，本次在全新会话中执行，cwd/环境变量回到初始状态）\n"
           : "";
         if (result.timedOut) {
-          const note = typeof result.shellReset === "boolean"
-            ? "（命令超时，持久会话仍存活；长命令可在末尾加 \" &\" 转后台，稍后用 echo $! / jobs 查询）"
-            : "（命令超时，已被终止）";
+          const note =
+            typeof result.shellReset === "boolean"
+              ? '（命令超时，持久会话仍存活；长命令可在末尾加 " &" 转后台，稍后用 echo $! / jobs 查询）'
+              : "（命令超时，已被终止）";
           return {
             ok: true,
             outputText: `${resetPrefix}${note}\n${withClipNote(result.output)}`,
-            data: { exitCode: result.exitCode, timedOut: true, shellReset: result.shellReset ?? false },
+            data: {
+              exitCode: result.exitCode,
+              timedOut: true,
+              shellReset: result.shellReset ?? false,
+            },
           };
         }
         if (result.exitCode !== 0) {
@@ -1445,7 +1897,10 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           return {
             ok: true,
             outputText: `${resetPrefix}（退出码 ${result.exitCode}）\n${withClipNote(result.output)}${hint}`,
-            data: { exitCode: result.exitCode, shellReset: result.shellReset ?? false },
+            data: {
+              exitCode: result.exitCode,
+              shellReset: result.shellReset ?? false,
+            },
           };
         }
         return {
@@ -1454,7 +1909,10 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           data: { exitCode: 0, shellReset: result.shellReset ?? false },
         };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   });
@@ -1462,15 +1920,36 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   return registry;
 }
 
-export async function executeLocalTool(runtime: LocalToolRuntime, command: { command: string; args: string }): Promise<ToolExecutionResult | void> {
+export async function executeLocalTool(
+  runtime: LocalToolRuntime,
+  command: {
+    command: string;
+    args: string;
+    /** 未经变换的原始入参对象（仅模型 function calling 路径提供）；缺省表示不做 schema 校验。 */
+    rawObject?: Record<string, unknown> | null;
+  },
+): Promise<ToolExecutionResult | void> {
   const registry = createLocalToolRegistry(runtime);
   const tool = registry.get(command.command);
   if (!tool) {
     return { ok: false, error: `暂不支持命令：${command.command}` };
   }
 
-  if (runtime.activeProject && !ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET.has(tool.id) && !runtime.activeProject.allowedToolIds.includes(tool.id)) {
+  if (
+    runtime.activeProject &&
+    !ALWAYS_ALLOWED_LOCAL_TOOL_ID_SET.has(tool.id) &&
+    !runtime.activeProject.allowedToolIds.includes(tool.id)
+  ) {
     return { ok: false, error: `当前项目未启用工具：${tool.title}` };
+  }
+
+  // 参数校验门：用下发给模型的**同一份** schema 校验入参，
+  // 缺必填 / 类型严重不符时直接回填错误、不进工具（对齐 codex parse_arguments 的失败回填）。
+  // 用的是**未经上游拆包**的 rawObject；斜杠命令路径不传该字段，因此不校验，保持原有友好提示。
+  const manifest = getToolManifestById(tool.id);
+  const argsError = validateToolArgs(manifest?.parameters, command.rawObject);
+  if (argsError) {
+    return { ok: false, error: `${tool.title}：${argsError}` };
   }
 
   return registry.execute(command, {

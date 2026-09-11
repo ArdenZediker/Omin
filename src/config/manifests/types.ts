@@ -37,8 +37,8 @@ export type ToolManifest = {
   concurrencySafe?: boolean;
   /**
    * function calling 的参数 JSON Schema（buildChatTools 直接透传给适配器）。
-   * 字段名必须与 chatRuntimeHelpers.extractToolCallArgs 的 directKeys 对齐，
-   * 否则模型传的对象参数会被兜底拼接成 "key=value" 破坏 execute 解析。
+   * 单参数字段与多参数字段都安全：单个字段由 chatRuntimeHelpers.extractToolCallArgs
+   * 直接取该字段的值作为 args；多字段则原样透传 JSON，由 execute 侧自行解析。
    */
   parameters?: {
     type: "object";

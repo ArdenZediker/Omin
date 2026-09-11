@@ -13,6 +13,8 @@ export type SessionLite = {
   messages: Message[];
   /** 会话固化的工作目录（effective workspace）；空字符串表示未绑定，落盘时由 Rust 补全兜底目录。 */
   workspacePath?: string;
+  /** 会话创建时间（ms）。设了「固定归档目录」时产出按它分日期桶；缺省则退化为当前时刻。 */
+  createdAt?: number;
 };
 
 /** 专家名册上限：避免专家装太多时把 agent 工具描述撑爆（超出部分提示用户去扩展中心看）。 */
@@ -114,8 +116,12 @@ export function buildChatTools(project: Project | null): ChatToolParam[] {
  * 1. 纯字符串直接返回；
  * 2. {manifest:{...}} → 返回 manifest 的 JSON（/install_expert 自行解析）；
  * 3. 多字段或含对象/数组等复杂值 → 保留原始 JSON（多参数工具 execute 自行解析）；
- * 4. 单字段命中 directKeys → 返回该字符串（老工具单参数形态）；
- * 5. 其余对象兜底拼接 key=value。
+ * 4. 单字段 → 该字段的值就是实参本身，直接返回（非字符串值则保留原始 JSON）。
+ *
+ * ⚠️ 单字段**绝不能**拼成 `key=value`：bash 的 `{command:"ls -la ..."}` 会变成
+ * `command=ls -la ...`，shell 把 `command=ls` 读成变量赋值、`-la` 成了命令名，
+ * 表现为「命令首个词被吞掉」——报 `-la: command not found`（退出码 127）；
+ * `cd "/path" && find ...` 被截成 `"/path" && find ...` → `Is a directory`（126）。
  */
 export function extractToolCallArgs(raw: string): string {
   if (!raw || raw === "{}") return "";
@@ -136,29 +142,42 @@ export function extractToolCallArgs(raw: string): string {
       if (Object.keys(record).length > 1 || hasComplexValue) {
         return raw.trim();
       }
-      const directKeys = [
-        "args",
-        "query",
-        "input",
-        "text",
-        "content",
-        "keyword",
-        "path",
-        "sessionId",
-        "field",
-      ];
-      for (const key of directKeys) {
-        if (typeof record[key] === "string") return record[key];
-      }
-      const parts = Object.entries(record)
-        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-        .map(([key, value]) => `${key}=${value}`);
-      return parts.join(" ");
+      // 单字段记录：唯一的值就是实参（bash 的 command、web_fetch 的 url、search 的 query 等）。
+      const only = Object.values(record)[0];
+      return typeof only === "string" ? only : raw.trim();
     }
     return String(parsed);
   } catch {
     return raw;
   }
+}
+
+/**
+ * `extractToolCallArgs` 的详细版：除变换后的实参文本外，额外回传**未经变换**的原始对象。
+ *
+ * 参数校验必须走原始对象——因为 `args` 是被有意变换过的：单字段会被拆成裸值
+ * （字段名丢失）、`{manifest:{...}}` 会被拆包，拿变换后的文本比对 schema 必然误判。
+ * 两条链路各取所需：执行用 `args`（保持既有行为），校验用 `rawObject`（准确）。
+ *
+ * `rawObject` 为 null 表示「原始入参不是 JSON 对象」——模型直接给了一个字符串，
+ * 或用户手敲斜杠命令（args 为空）。这类形态没有字段名可比对，校验层一律放行。
+ */
+export function extractToolCallArgsDetailed(raw: string): {
+  args: string;
+  rawObject: Record<string, unknown> | null;
+} {
+  let rawObject: Record<string, unknown> | null = null;
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        rawObject = parsed as Record<string, unknown>;
+      }
+    } catch {
+      rawObject = null;
+    }
+  }
+  return { args: extractToolCallArgs(raw), rawObject };
 }
 
 /** 工具调用名（如 search_files）还原为本地 slash 命令（/search_files）。 */

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "../adapters/types";
 import type { Project } from "./types";
 import { executeLocalTool, isKnownSafeCommand, isOutsideWorkspace, type LocalToolRuntime, type LocalToolSession } from "./localTools";
+import { extractToolCallArgs } from "../hooks/chatRuntimeHelpers";
 
 const mockedInvoke = vi.hoisted(() => vi.fn());
 
@@ -11,6 +12,19 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("./confirmationGate", () => ({
   requestConfirmation: vi.fn().mockResolvedValue(true),
+}));
+
+/** 产出与附件快照落在会话目录：给 outputStorage 一个固定数据根，避免依赖真实 Tauri 环境。 */
+vi.mock("../app/storageApi", () => ({
+  getDataRootInfo: async () => ({
+    path: "D:/data",
+    source: "custom",
+    writable: true,
+    databasePath: "D:/data/omni.sqlite3",
+    knowledgePath: "D:/data/knowledge_files",
+    chatSessionsPath: "D:/data/chat-sessions",
+    fallbackReason: null,
+  }),
 }));
 
 const baseMessages: Message[] = [
@@ -34,21 +48,29 @@ function createProject(patch: Partial<Project> = {}): Project {
   };
 }
 
+/** 会话创建时间固定，使产物日期桶断言稳定。 */
+const SESSION_CREATED_AT = new Date(2026, 8, 10, 12, 0, 0).getTime();
 function createRuntime(patch: Partial<LocalToolRuntime> = {}): LocalToolRuntime {
   const sessions: LocalToolSession[] = [
-    { id: "session-1", title: "当前会话", messages: baseMessages },
-    { id: "session-2", title: "项目计划", messages: [{ role: "user", content: "项目优化方案" }] },
+    { id: "session-1", title: "当前会话", messages: baseMessages, createdAt: SESSION_CREATED_AT },
+    { id: "session-2", title: "项目计划", messages: [{ role: "user", content: "项目优化方案" }], createdAt: SESSION_CREATED_AT },
   ];
 
-  return {
+  const runtime: LocalToolRuntime = {
     activeProject: createProject(),
     activeChatId: "session-1",
     getChatSessionById: vi.fn((sessionId) => sessions.find((session) => session.id === sessionId) ?? null),
     searchChatSessions: vi.fn((query) =>
       query ? sessions.filter((session) => session.title.includes(query) || session.messages.some((message) => message.content.includes(query))) : sessions
     ),
+    getWorkspacePathForSession: vi.fn(() => ""),
     ...patch,
   };
+  // 缺省跟随当前 activeProject 的工作目录；用例 patch 了 activeProject 时自动生效。
+  if (!patch.getWorkspacePathForSession) {
+    runtime.getWorkspacePathForSession = vi.fn(() => runtime.activeProject?.workspacePath ?? "");
+  }
+  return runtime;
 }
 
 describe("localTools", () => {
@@ -197,11 +219,11 @@ describe("localTools", () => {
     expect(second?.outputText).toContain("已更新");
   });
 
-  it("导出工具未传 path 时自动落到项目目录并用标题命名", async () => {
+  it("导出工具未传 path 时自动落到会话工作目录并用标题命名", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke)
       .mockResolvedValueOnce(false) // path_exists：目标文件不存在
-      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/周报.docx", size: 2048 }); // export_docx 结果
+      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-/周报.docx", size: 2048 }); // export_docx 结果
 
     const runtime = createRuntime({
       activeProject: createProject({ workspacePath: "D:/proj", allowedToolIds: ["export_docx"] }),
@@ -213,10 +235,10 @@ describe("localTools", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("D:/proj/Omni-导出");
+    expect(result?.outputText).toContain("D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-");
     expect(invoke).toHaveBeenCalledWith(
       "export_docx",
-      expect.objectContaining({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/周报.docx" })
+      expect.objectContaining({ path: "D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-/周报.docx" })
     );
   });
 
@@ -225,7 +247,7 @@ describe("localTools", () => {
     vi.mocked(invoke)
       .mockResolvedValueOnce(true) // path_exists：周报.docx 已存在
       .mockResolvedValueOnce(false) // path_exists：周报-1.docx 不存在
-      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/周报-1.docx", size: 1024 }); // export_docx 结果
+      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-/周报-1.docx", size: 1024 }); // export_docx 结果
 
     const runtime = createRuntime({
       activeProject: createProject({ workspacePath: "D:/proj", allowedToolIds: ["export_docx"] }),
@@ -237,10 +259,10 @@ describe("localTools", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("D:/proj/Omni-导出");
+    expect(result?.outputText).toContain("D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-");
     expect(invoke).toHaveBeenCalledWith(
       "export_docx",
-      expect.objectContaining({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/周报-1.docx" })
+      expect.objectContaining({ path: "D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-/周报-1.docx" })
     );
   });
 
@@ -248,7 +270,7 @@ describe("localTools", () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke)
       .mockResolvedValueOnce(false) // path_exists：目标文件不存在
-      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/我的笔记.md", size: 30 }); // write_text_file 结果
+      .mockResolvedValueOnce({ path: "D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-/我的笔记.md", size: 30 }); // write_text_file 结果
 
     const runtime = createRuntime({
       activeProject: createProject({ workspacePath: "D:/proj", allowedToolIds: ["export_md"] }),
@@ -260,23 +282,23 @@ describe("localTools", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("D:/proj/Omni-导出");
+    expect(result?.outputText).toContain("D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-");
     expect(invoke).toHaveBeenCalledWith(
       "write_text_file",
-      expect.objectContaining({ path: "D:/proj/Omni-导出/测试助手/当前会话_session-/我的笔记.md" })
+      expect.objectContaining({ path: "D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-/我的笔记.md" })
     );
     const callArgs = vi.mocked(invoke).mock.calls.find((c) => c[0] === "write_text_file")?.[1] as { content?: string };
     expect(callArgs?.content).toContain("这是正文内容。");
     expect(result?.artifact?.type).toBe("file");
-    expect(result?.artifact?.path).toBe("D:/proj/Omni-导出/测试助手/当前会话_session-/我的笔记.md");
+    expect(result?.artifact?.path).toBe("D:/proj/Omni-导出/2026-09-10/测试助手/当前会话_session-/我的笔记.md");
     expect(result?.artifact?.content).toContain("我的笔记");
   });
 
-  it("导出工具落到工作空间下的 Omni-导出 子目录", async () => {
+  it("导出落到会话工作目录下的 Omni-导出", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke)
       .mockResolvedValueOnce(false) // path_exists：目标文件不存在
-      .mockResolvedValueOnce({ path: "C:/Users/Test/Documents/Omni-导出/数据.xlsx", size: 512 }); // export_xlsx 结果
+      .mockResolvedValueOnce({ path: "C:/Users/Test/Documents/Omni-导出/2026-09-10/测试助手/当前会话_session-/数据.xlsx", size: 512 }); // export_xlsx 结果
 
     const runtime = createRuntime({
       activeProject: createProject({ workspacePath: "C:/Users/Test/Documents", allowedToolIds: ["export_xlsx"] }),
@@ -288,7 +310,15 @@ describe("localTools", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("C:/Users/Test/Documents/Omni-导出/数据.xlsx");
+    expect(result?.outputText).toContain("C:/Users/Test/Documents/Omni-导出/2026-09-10/测试助手/当前会话_session-/数据.xlsx");
+    // 自动路径由前端决定且已落在会话工作目录内，不必再把工作区边界交给 Rust 围栏
+    expect(invoke).toHaveBeenCalledWith(
+      "export_xlsx",
+      expect.objectContaining({
+        path: "C:/Users/Test/Documents/Omni-导出/2026-09-10/测试助手/当前会话_session-/数据.xlsx",
+        workspacePath: null,
+      })
+    );
   });
 });
 
@@ -495,6 +525,31 @@ describe("/bash 危险命令黑名单（Windows/PowerShell 高危补充）", () 
 
     expect(result?.ok).toBe(true);
     expect(mockedInvoke).toHaveBeenCalledTimes(2); // no_go_zone_check + shell_session_exec
+  });
+});
+
+describe("/bash 参数解析链路（回归：命令首个词被吞掉）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("模型只传 command 时，送达 Rust 的命令字符串完整无损", async () => {
+    const runtime = createRuntime({ activeProject: createProject() });
+    mockedInvoke.mockImplementation(async (cmd: string) =>
+      cmd === "no_go_zone_check" ? null : { exitCode: 0, output: "ok", timedOut: false },
+    );
+
+    const command = 'cd "/c/Users/PengY/Documents/Codex" && find . -type f | head -200';
+    // 走真实解析链路：模型 arguments → extractToolCallArgs → 本地工具执行。
+    const args = extractToolCallArgs(JSON.stringify({ command }));
+    const result = await executeLocalTool(runtime, { command: "/bash", args });
+
+    expect(result?.ok).toBe(true);
+    const execCall = mockedInvoke.mock.calls.find(([cmd]) => cmd === "shell_session_exec");
+    expect(execCall?.[1]).toMatchObject({ input: { command } });
+    // 回归：曾被拼成 `command=cd "/c/..." && find ...`，shell 把 command=cd 读成变量赋值，
+    // 转而把引号里的路径当命令执行 → 退出码 126「Is a directory」。
+    expect(JSON.stringify(execCall?.[1])).not.toContain("command=cd");
   });
 });
 

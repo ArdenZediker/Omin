@@ -9,10 +9,18 @@ describe("extractToolCallArgs", () => {
     expect(extractToolCallArgs("非 JSON 文本")).toBe("非 JSON 文本");
   });
 
-  it("单字段命中 directKeys 时返回该字符串（老工具单参数形态）", () => {
+  it("单字段直接返回该字段的值（query / path / sessionId 等单参数工具）", () => {
     expect(extractToolCallArgs(JSON.stringify({ query: "性能优化" }))).toBe("性能优化");
     expect(extractToolCallArgs(JSON.stringify({ path: "src/main.rs" }))).toBe("src/main.rs");
     expect(extractToolCallArgs(JSON.stringify({ sessionId: "chat-1" }))).toBe("chat-1");
+  });
+
+  it("单字段为 command（bash）时原样返回完整命令，绝不拼成 command=...", () => {
+    const command = 'cd "/c/Users/PengY/Documents/Codex" && find . -type f | head -200';
+    // 回归：曾兜底拼成 `command=cd "/c/..." && find ...`——shell 把 `command=cd` 读成
+    // 变量赋值，转而把引号内的路径当命令执行 → 退出码 126「Is a directory」。
+    expect(extractToolCallArgs(JSON.stringify({ command }))).toBe(command);
+    expect(extractToolCallArgs(JSON.stringify({ command: "ls -la /tmp" }))).toBe("ls -la /tmp");
   });
 
   it("{manifest:{...}} 返回 manifest 的 JSON（install_expert）", () => {
@@ -42,8 +50,17 @@ describe("extractToolCallArgs", () => {
     expect(extractToolCallArgs(raw2)).toBe(raw2);
   });
 
-  it("未知单字符串字段兜底拼 key=value", () => {
-    expect(extractToolCallArgs(JSON.stringify({ foo: "bar" }))).toBe("foo=bar");
+  it("未知单字符串字段也直接返回值（不再拼 key=value）", () => {
+    // 回归：拼成 `foo=bar` 会让 shell/CLI 把 key 当变量赋值，吞掉真正的首个词。
+    expect(extractToolCallArgs(JSON.stringify({ foo: "bar" }))).toBe("bar");
+    expect(extractToolCallArgs(JSON.stringify({ url: "https://example.com" }))).toBe(
+      "https://example.com",
+    );
+  });
+
+  it("单字段值为非字符串时保留原始 JSON（交由 execute 侧解析）", () => {
+    const raw = JSON.stringify({ limit: 20 });
+    expect(extractToolCallArgs(raw)).toBe(raw);
   });
 
   it("空对象与空串返回空", () => {
