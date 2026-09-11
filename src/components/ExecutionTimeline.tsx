@@ -69,31 +69,45 @@ export function ExecutionTimeline({
   legacyReasoning,
   legacyTools,
   isStreaming,
+  mode = "all",
   onOpenFileLocation,
 }: {
   steps?: ChatStep[];
   legacyReasoning?: string;
   legacyTools?: ChatToolCallResult[];
   isStreaming?: boolean;
+  /**
+   * 渲染模式（方向 B：把 reasoning 与工具时间线拆成两个独立面板）。
+   * - "all"（默认，任务面板兼容）：reasoning 与 tool 按原顺序交错渲染
+   * - "reasoning"：只渲染推理段（历史 reasoning 或 steps 中的 reasoning）
+   * - "execution"：只渲染工具 / 动作 / 产物段（历史 toolCallResults 或 steps 中非 reasoning）
+   */
+  mode?: "all" | "reasoning" | "execution";
   /** 点击 /search_files 命中行回调：参数为匹配路径（相对工作区或绝对路径）与行号 */
   onOpenFileLocation?: (path: string, line: number) => void;
 }) {
   const items: ChatStep[] =
     steps && steps.length > 0
-      ? steps
+      ? steps.filter((s) => {
+          if (mode === "reasoning") return s.type === "reasoning";
+          if (mode === "execution") return s.type !== "reasoning";
+          return true;
+        })
       : [
-          ...(legacyReasoning?.trim()
+          ...(mode !== "execution" && legacyReasoning?.trim()
             ? [{ type: "reasoning", text: legacyReasoning.trim() } as ChatStep]
             : []),
-          ...(legacyTools ?? []).map(
-            (tool): ChatStep => ({
-              type: "tool_call",
-              name: tool.name,
-              arguments: tool.arguments,
-              result: tool.result,
-              isError: tool.isError,
-            })
-          ),
+          ...(mode !== "reasoning" && (legacyTools ?? []).length > 0
+            ? (legacyTools ?? []).map(
+                (tool): ChatStep => ({
+                  type: "tool_call",
+                  name: tool.name,
+                  arguments: tool.arguments,
+                  result: tool.result,
+                  isError: tool.isError,
+                })
+              )
+            : []),
         ];
 
   return (

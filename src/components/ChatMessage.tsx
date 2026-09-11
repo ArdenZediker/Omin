@@ -529,6 +529,8 @@ function ThinkingBlock({
   onOpenFileLocation?: (path: string, line: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  /** 独立「执行步骤」面板的折叠状态（方向 B：与「深度思考」面板并列，默认展开）。 */
+  const [execExpanded, setExecExpanded] = useState(true);
   /** 用户手动点过折叠按钮后置位：新一轮开始前不再强制展开，结束后也不强制收起 */
   const userToggledRef = useRef(false);
   const wasStreamingRef = useRef(false);
@@ -651,71 +653,104 @@ function ThinkingBlock({
     }
   }, []);
 
-  // 收起态摘要行（WorkBuddy 式「已完成 · 思考 + N 个动作」；被中断时前缀改为「已中断」）
+  // 「深度思考」面板收起态摘要：只反映推理（动作数由「执行步骤」面板单独显示）。
   const summaryText = isThinking
     ? "思考中…"
     : Boolean(isStreaming) && (hasReasoning || actionTotal > 0)
       ? "执行中…"
-      : !isStreaming && (hasReasoning || actionTotal > 0)
-        ? `${incompleteToolCount > 0 ? "已中断" : "已完成"} · ${hasReasoning && actionTotal > 0 ? "思考 + " : hasReasoning ? "深度思考" : ""}${actionTotal > 0 ? `${actionTotal} 个动作` : ""}`
+      : !isStreaming && hasReasoning
+        ? `${incompleteToolCount > 0 ? "已中断" : "已完成"} · 深度思考`
         : "";
+  // 「执行步骤」面板收起态摘要（方向 B：与「深度思考」并列的独立面板）。
+  const execSummaryText = isStreaming && actionTotal > 0
+    ? "执行中…"
+    : actionTotal > 0
+      ? `${incompleteToolCount > 0 ? "已中断" : "已完成"} · ${actionTotal} 个动作`
+      : "";
 
   return (
-    <div className={`message-reasoning ${expanded ? "message-reasoning--expanded" : ""} ${isEmpty ? "message-reasoning--empty" : ""}`}>
-      <button
-        type="button"
-        className="message-reasoning__toggle"
-        onClick={() => {
-          userToggledRef.current = true;
-          setExpanded((current) => !current);
-        }}
-        aria-expanded={expanded}
-      >
-        <span className="message-reasoning__label">深度思考</span>
-        {!expanded && summaryText ? <span className="message-reasoning__summary">{summaryText}</span> : null}
-        <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
-      </button>
-      {expanded && (
-        <div ref={reasoningBodyRef} className="message-reasoning__body">
-          {isThinking ? (
-            <div className="message-reasoning__thinking">
-              <ThinkingIndicator />
-              <p className="message-reasoning__empty-hint">模型正在思考中，推理过程将实时显示在这里。</p>
-            </div>
-          ) : isEmpty ? (
-            <p className="message-reasoning__empty-hint">
-              本次回答未使用推理模型或工具调用，直接给出最终答复。如需查看思考过程：
-            </p>
-          ) : (
-            <ExecutionTimeline
-              steps={useSteps ? (steps as ChatStep[]) : undefined}
-              legacyReasoning={!useSteps ? reasoning : undefined}
-              legacyTools={!useSteps ? toolCallResults : undefined}
-              isStreaming={isStreaming}
-              onOpenFileLocation={onOpenFileLocation}
-            />
-          )}
-          {isEmpty && (
-            <ul className="message-reasoning__empty-tips">
-              <li>在「设置 → 模型」切换到支持 reasoning 的模型（如 DeepSeek-R1、o1、Gemini 2.5 thinking）</li>
-              <li>让 AI 跑实际任务（如搜索文件、读取项目、导出文档），会自动触发工具调用步骤</li>
-            </ul>
-          )}
-        </div>
-      )}
-      {expanded && isStreaming && !reasoningFollowing ? (
+    <>
+      <div className={`message-reasoning ${expanded ? "message-reasoning--expanded" : ""} ${isEmpty ? "message-reasoning--empty" : ""}`}>
         <button
           type="button"
-          className="message-reasoning__follow"
-          aria-label="跳到最新思考"
-          title="回到最新思考"
-          onClick={jumpToLatestReasoning}
+          className="message-reasoning__toggle"
+          onClick={() => {
+            userToggledRef.current = true;
+            setExpanded((current) => !current);
+          }}
+          aria-expanded={expanded}
         >
-          <ArrowDown size={13} strokeWidth={2.4} />
-          <span>最新</span>
+          <span className="message-reasoning__label">深度思考</span>
+          {!expanded && summaryText ? <span className="message-reasoning__summary">{summaryText}</span> : null}
+          <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
         </button>
+        {expanded && (
+          <div ref={reasoningBodyRef} className="message-reasoning__body">
+            {isThinking ? (
+              <div className="message-reasoning__thinking">
+                <ThinkingIndicator />
+                <p className="message-reasoning__empty-hint">模型正在思考中，推理过程将实时显示在这里。</p>
+              </div>
+            ) : isEmpty ? (
+              <p className="message-reasoning__empty-hint">
+                本次回答未使用推理模型或工具调用，直接给出最终答复。如需查看思考过程：
+              </p>
+            ) : (
+              <ExecutionTimeline
+                mode="reasoning"
+                steps={useSteps ? (steps as ChatStep[]) : undefined}
+                legacyReasoning={!useSteps ? reasoning : undefined}
+                isStreaming={isStreaming}
+                onOpenFileLocation={onOpenFileLocation}
+              />
+            )}
+            {isEmpty && (
+              <ul className="message-reasoning__empty-tips">
+                <li>在「设置 → 模型」切换到支持 reasoning 的模型（如 DeepSeek-R1、o1、Gemini 2.5 thinking）</li>
+                <li>让 AI 跑实际任务（如搜索文件、读取项目、导出文档），会自动触发工具调用步骤</li>
+              </ul>
+            )}
+          </div>
+        )}
+        {expanded && isStreaming && !reasoningFollowing ? (
+          <button
+            type="button"
+            className="message-reasoning__follow"
+            aria-label="跳到最新思考"
+            title="回到最新思考"
+            onClick={jumpToLatestReasoning}
+          >
+            <ArrowDown size={13} strokeWidth={2.4} />
+            <span>最新</span>
+          </button>
+        ) : null}
+      </div>
+      {actionTotal > 0 ? (
+        <div className={`message-execution ${execExpanded ? "message-execution--expanded" : ""}`}>
+          <button
+            type="button"
+            className="message-execution__toggle"
+            onClick={() => setExecExpanded((current) => !current)}
+            aria-expanded={execExpanded}
+          >
+            <span className="message-execution__label">执行步骤</span>
+            {!execExpanded && execSummaryText ? <span className="message-execution__summary">{execSummaryText}</span> : null}
+            <ChevronDown size={14} strokeWidth={2} className={`message-execution__chevron ${execExpanded ? "message-execution__chevron--open" : ""}`} />
+          </button>
+          {execExpanded && (
+            <div className="message-execution__body">
+              <ExecutionTimeline
+                mode="execution"
+                steps={useSteps ? (steps as ChatStep[]) : undefined}
+                legacyTools={!useSteps ? toolCallResults : undefined}
+                isStreaming={isStreaming}
+                onOpenFileLocation={onOpenFileLocation}
+              />
+            </div>
+          )}
+        </div>
       ) : null}
-    </div>
+    </>
   );
 }
 

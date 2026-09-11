@@ -4468,6 +4468,55 @@
   }
 }
 
+/* ===== 独立「执行步骤」面板（方向 B：从「深度思考」面板拆出，与 reasoning 平级） ===== */
+.message-execution {
+  position: relative;
+  margin-bottom: 10px;
+  background: transparent;
+}
+
+.message-execution__toggle {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--omni-message-muted, #646a73);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 500;
+}
+
+.message-execution__label {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.message-execution__chevron {
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+  color: var(--omni-message-muted, #646a73);
+}
+
+.message-execution__chevron--open {
+  transform: rotate(180deg);
+}
+
+.message-execution__summary {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 80%, transparent);
+}
+
+.message-execution__body {
+  position: relative;
+  padding-top: 2px;
+}
+
 /* ===== WorkBuddy 式深度思考时间线（ExecutionTimeline） ===== */
 .exec-timeline {
   position: relative;
