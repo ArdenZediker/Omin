@@ -853,7 +853,14 @@
  * 留白只让卡片底部空出一大片，并不换来任何对齐收益，故整个不参与。
  * 底部「配置 / N 工具 / 断开」也不再 flex:1 等分拉满整行 —— 那是 grid 小卡
  * 的做法；连接器卡片往往通栏很宽，等分会把三个块撑成三块大板子，改成按
- * 内容宽度（min-width 88 与列表视图一致）右对齐。 */
+ * 内容宽度（min-width 88 与列表视图一致）**左对齐**。
+ *
+ * 左对齐（而不是右对齐）是必需的：卡片内容全是左基准线（图标 12，标题/描述/
+ * meta 文字列 58），操作行右对齐时左侧会空出一大片，按钮群看着像「悬在中间
+ * 偏右」。三个按钮时行接近占满看不出来，只剩「配置 + 连接」两个按钮时就会
+ * 露出空档（用户 2026-09-12 第二轮截图：「只有两个按钮的时候，错位了」）。
+ * 实测（output/card-layout-preview/align.html，380px 卡片、两按钮）：
+ *   右对齐 → 行内左侧空档 172px / 右侧 0；左对齐 → 0 / 172；对齐文字列(58) → 46 / 126。 */
 .plugin-card--connector {
   padding: 12px;
   gap: 10px;
@@ -864,13 +871,20 @@
 }
 
 .plugin-card--connector .plugin-card__actions {
-  justify-content: flex-end;
+  justify-content: flex-start;
+  /* 不折行：连接器操作行「配置 / N 工具 / 断开」内容宽合计约 252px，而四列网格
+   * 下卡片内容区最窄约 246px（1180px 断点附近）—— 留着 .plugin-card__actions
+   * 的 flex-wrap:wrap，最后一个按钮会被挤到第二行。允许收缩 + 不折行，最紧时
+   * 也只挤出几像素，肉眼无感。 */
+  flex-wrap: nowrap;
 }
 
 .plugin-card--connector .plugin-card__actions > .plugin-card__button,
 .plugin-card--connector .plugin-card__actions > .plugin-card__connected {
-  flex: 0 0 auto;
-  min-width: 88px;
+  /* flex-grow:0 → 不再等分拉满整行（那是 grid 小卡的做法）；flex-shrink:1 →
+   * 窄卡片里留在同一行。宽度按内容走，不再写死 min-width:88px —— 那会在窄卡
+   * 里顶着不缩，直接把行挤折。 */
+  flex: 0 1 auto;
 }
 
 .plugin-card__button {
