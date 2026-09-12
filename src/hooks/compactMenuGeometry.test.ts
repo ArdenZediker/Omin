@@ -176,4 +176,49 @@ describe("compactMenuGeometry", () => {
     expect(bounds.left).toBeGreaterThanOrEqual(COMPACT_MENU_EDGE_PADDING);
     expect(bounds.right).toBeLessThanOrEqual(viewportSize.width - COMPACT_MENU_EDGE_PADDING);
   });
+
+  it("禁止反向展开时，二级菜单空间不足会把整个菜单换到左侧", () => {
+    // 右侧只够主菜单、左侧充裕：普通紧凑外观下不能只翻二级菜单（会盖住悬浮球、
+    // 并撞上窗口左边界被裁切），必须整体换边。
+    expect(resolveCompactMenuSidesFromSpace(240, 220, { allowSplitSides: false })).toEqual({
+      menuSide: "left",
+      submenuSide: "left",
+    });
+  });
+
+  it("禁止反向展开时，任何屏幕空间组合都不会出现菜单与二级菜单异侧", () => {
+    for (const leftSpace of [0, 40, 120, 240, 320, 480, 900]) {
+      for (const rightSpace of [0, 40, 120, 240, 320, 480, 900]) {
+        const sides = resolveCompactMenuSidesFromSpace(leftSpace, rightSpace, { allowSplitSides: false });
+        expect(sides.menuSide).toBe(sides.submenuSide);
+      }
+    }
+  });
+
+  it("普通紧凑外观（展开前窗口很小）按屏幕空间换边，不被退化视口带偏", () => {
+    // 复现真实调用：菜单打开前 compactViewportSize 为 null，调用方不应传视口约束。
+    // 悬浮球贴近屏幕右缘时，必须整体换到左侧。
+    expect(resolveCompactMenuSidesFromSpace(1500, 40, { allowSplitSides: false })).toEqual({
+      menuSide: "left",
+      submenuSide: "left",
+    });
+    // 悬浮球贴近屏幕左缘时保持向右。
+    expect(resolveCompactMenuSidesFromSpace(40, 1500, { allowSplitSides: false })).toEqual({
+      menuSide: "right",
+      submenuSide: "right",
+    });
+  });
+
+  it("两侧都放不下时挑选溢出更小的一侧，而不是固定向右", () => {
+    // 左 340 / 右 120：整体向右溢出更多，应换到左侧。
+    expect(resolveCompactMenuSidesFromSpace(340, 120, { allowSplitSides: false })).toEqual({
+      menuSide: "left",
+      submenuSide: "left",
+    });
+    // 左 120 / 右 340：保持向右。
+    expect(resolveCompactMenuSidesFromSpace(120, 340, { allowSplitSides: false })).toEqual({
+      menuSide: "right",
+      submenuSide: "right",
+    });
+  });
 });

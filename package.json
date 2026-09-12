@@ -9,6 +9,7 @@
     "test": "vitest run",
     "preview": "vite preview",
     "tauri": "tauri",
+    "check:compact-submenu-css": "node scripts/check-compact-submenu-cascade.mjs",
     "pet:v2:plan": "node scripts/pet_v2/plan_pet_v2_run.mjs output/pet-v2/omni-pet-v2",
     "pet:v2:normalize": "node scripts/pet_v2/normalize_pet_v2_row.mjs output/pet-v2/omni-pet-v2",
     "pet:v2:compose": "node scripts/pet_v2/compose_pet_v2_atlas.mjs output/pet-v2/omni-pet-v2",

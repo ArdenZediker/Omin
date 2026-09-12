@@ -20,7 +20,32 @@ type CompactMenuSideSpaceOptions = {
   petViewportSize?: { width: number; height: number };
   preferredMenuSide?: CompactMenuSide;
   preferredSubmenuSide?: CompactMenuSide;
+  /**
+   * 是否允许一级菜单与二级菜单朝**相反**方向展开（split 组合）。
+   *
+   * 宠物外观下允许：宠物本体可以在扩展窗口里被推离锚点，二级菜单反向展开
+   * 仍有窗口空间承接（见 resolvePetMenuViewportOffset）。
+   *
+   * 普通紧凑外观（default/compact/large）下必须禁用：悬浮球固定贴在窗口
+   * 左/右边缘（靠 .compact-shell--menu-left 的 flex-end 切换），二级菜单
+   * 反向展开会直接盖住悬浮球、并越过窗口边界被裁切——这正是「菜单被遮挡」
+   * 的根因，因此只保留同侧组合。
+   */
+  allowSplitSides?: boolean;
 };
+
+const COMPACT_MENU_ALL_SIDES: CompactMenuSides[] = [
+  { menuSide: "right", submenuSide: "right" },
+  { menuSide: "right", submenuSide: "left" },
+  { menuSide: "left", submenuSide: "left" },
+  { menuSide: "left", submenuSide: "right" },
+];
+
+/** 同侧组合：二级菜单永远贴着同侧展开，顺序即偏好顺序（默认偏右）。 */
+const COMPACT_MENU_SAME_SIDE: CompactMenuSides[] = [
+  { menuSide: "right", submenuSide: "right" },
+  { menuSide: "left", submenuSide: "left" },
+];
 
 export function getCompactMenuTotalWidth() {
   return COMPACT_MENU_WIDTH + COMPACT_MENU_GAP + COMPACT_MENU_SUBMENU_WIDTH;
@@ -61,12 +86,8 @@ export function resolveCompactMenuSidesFromSpace(
 ) {
   const preferredMenuSide: CompactMenuSide = options.preferredMenuSide ?? "right";
   const preferredSubmenuSide: CompactMenuSide = options.preferredSubmenuSide ?? preferredMenuSide;
-  const candidates: CompactMenuSides[] = [
-    { menuSide: "right", submenuSide: "right" },
-    { menuSide: "right", submenuSide: "left" },
-    { menuSide: "left", submenuSide: "left" },
-    { menuSide: "left", submenuSide: "right" },
-  ];
+  const candidates =
+    options.allowSplitSides === false ? COMPACT_MENU_SAME_SIDE : COMPACT_MENU_ALL_SIDES;
 
   return candidates
     .map((candidate, index) => {

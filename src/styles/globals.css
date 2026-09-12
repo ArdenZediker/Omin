@@ -1492,15 +1492,10 @@ body:has(.pet-thought-window),
   height: calc(var(--compact-button-icon-size, 17px) - 2px);
 }
 
-.compact-submenu--left {
-  left: auto;
-  right: calc(100% + 4px);
-}
-
-.compact-submenu--right {
-  left: calc(100% + 4px);
-  right: auto;
-}
+/* 二级菜单的 --left/--right 展开方向修饰符定义在 compact.css（必须紧贴
+   .compact-submenu 基础规则之后，否则同权重下会被基础规则的 left 覆盖）。
+   下面两条 --appearance / --fit 同样会被后置的 .compact-submenu 覆盖而失效，
+   且渲染代码里没有任何地方用到它们（属死规则，待随死规则清理一并删除）。 */
 
 .compact-submenu--appearance {
   padding: 3px;

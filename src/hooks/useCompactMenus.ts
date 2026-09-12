@@ -194,15 +194,23 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
     const rightSpace = Math.max(0, (workAreaRight - anchorPhysicalX) / monitorScale);
     const viewportWidth = viewportOverride?.width ?? compactViewportSize?.width ?? currentSize.width / scaleFactor;
     const viewportAnchorX = typeof anchorXOverride === "number" ? anchorXOverride : Number(anchorX);
-    const viewportLeftSpace = Number.isFinite(viewportAnchorX) ? Math.max(0, viewportAnchorX) : undefined;
-    const viewportRightSpace = Number.isFinite(viewportAnchorX)
-      ? Math.max(0, viewportWidth - viewportAnchorX)
-      : undefined;
+    // 只有宠物外观才有「已算好的扩展视口」可依据。普通紧凑外观（default/compact/large）
+    // 走到这里时菜单还没打开，compactViewportSize 必然为 null，viewportWidth 会退化成
+    // **展开前那颗小悬浮球的窗口宽度**；把它当成视口约束会让 viewportOverflow（×1000）
+    // 彻底压过真正决定成败的屏幕空间项（×100），于是永远算成「向右展开」而被屏幕右缘裁切。
+    // 普通外观的窗口会按算出的方向重新贴边扩展（见 useCompactWindowController 的几何 effect），
+    // 所以这里只让屏幕空间与「同侧展开」约束参与决策。
+    const hasMeasuredMenuViewport = Boolean(petCompactSize && viewportOverride);
+    const viewportLeftSpace =
+      hasMeasuredMenuViewport && Number.isFinite(viewportAnchorX) ? Math.max(0, viewportAnchorX) : undefined;
+    const viewportRightSpace =
+      hasMeasuredMenuViewport && Number.isFinite(viewportAnchorX) ? Math.max(0, viewportWidth - viewportAnchorX) : undefined;
     return resolveCompactMenuSidesFromSpace(leftSpace, rightSpace, {
       viewportLeftSpace,
       viewportRightSpace,
       petCompactSize,
       petViewportSize: viewportOverride,
+      allowSplitSides: hasMeasuredMenuViewport,
     });
   }, [compactViewportSize, isCompactWindow]);
 

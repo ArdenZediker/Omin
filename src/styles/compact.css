@@ -879,6 +879,23 @@
   z-index: 24;
 }
 
+/*
+ * 二级菜单的展开方向修饰符必须紧跟在 .compact-submenu 之后声明。
+ * 两者选择器权重相同（0,1,0），谁在后面谁生效：基础规则里的
+ * `left: calc(100% + 4px)` 一旦后置，就会把 --left 的 `left: auto` 覆盖掉，
+ * 同时因 left/right/width 三者都被指定而在 LTR 下丢弃 right——
+ * 结果就是无论算成哪一侧，二级菜单都只会往右展开并被窗口/桌面右缘裁切。
+ */
+.compact-submenu--left {
+  left: auto;
+  right: calc(100% + 4px);
+}
+
+.compact-submenu--right {
+  left: calc(100% + 4px);
+  right: auto;
+}
+
 .compact-menu__section {
   display: flex;
   flex-direction: column;
