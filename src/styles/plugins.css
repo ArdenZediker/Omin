@@ -468,7 +468,11 @@
 
 .plugin-marketplace__grid {
   display: grid;
-  /* 卡片各自按内容撑高，不被同一行其他展开卡同步拉高 */
+  /* 卡片各自按内容撑高，不被同一行其他展开卡同步拉高。
+   * 注意别改成 align-items:stretch 来「统一卡片高度」—— 专家团套件卡片是可展开的，
+   * 一展开就有几百像素高，stretch 会把同行邻居一起拉成大片空白。
+   * 网格里卡片高矮不齐的真正来源是**描述行数**，在下方的
+   * .plugin-card__description min-height 里解决（用户 2026-09-12「卡片大小统一」）。 */
   align-items: start;
   /* 默认宽屏固定 4 列（用户 2026-09-01「表格展示改为一行四列」）。
    * 窄屏按断点降级为 3 / 2 / 1 列。 */
@@ -570,6 +574,9 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* 列表视图是单行紧凑排布（1 行 clamp），显式退出上面的 3 行下限，
+     否则每张列表项都会被撑出 3 行的空白。 */
+  min-height: 0;
 }
 
 /* meta 行随 main 一起在左列：横向贴左一行（⭐ 下载量 @namespace） */
@@ -764,6 +771,12 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* 统一卡片高度：描述区**固定占 3 行**（与上面 line-clamp 的上限对齐）。
+   * 只设上限的话，描述只写一行的卡片会比邻居矮一截，同一行就高矮不齐
+   * （用户 2026-09-12「卡片大小统一」）。给一个下限，短描述用留白补齐。
+   * 对所有卡片生效 —— 我的技能 / SkillHub / 专家团 / 远程技能 / 工具分组
+   * 渲染的都是 .plugin-card，只有列表视图在下方显式关掉它。 */
+  min-height: calc(3 * 1.5em);
 }
 
 .plugin-card__meta {
@@ -1802,6 +1815,8 @@
 
 .plugin-marketplace--embedded .plugin-card__description {
   -webkit-line-clamp: 2;
+  /* 嵌入视图只放 2 行，下限必须跟着改：留着 3 行的下限会在底部空出一行。 */
+  min-height: calc(2 * 1.5em);
 }
 
 .plugin-marketplace--embedded .plugin-marketplace__kind-tabs,
