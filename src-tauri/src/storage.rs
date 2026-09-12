@@ -989,6 +989,81 @@ pub(crate) fn save_structured_chat_storage(
     Ok(())
 }
 
+/// **窄写**：只 upsert 传入的会话（行 + JSONL），**绝不删除**其他会话。
+///
+/// 供「非整快照写者」（紧凑窗 follower）使用。它的内存快照不完整：可能缺少另一窗口
+/// 新建的会话、也可能残留已被删除的会话 —— 整快照覆盖会把这两类错误原样写进数据库
+/// （幽灵复活 / 幽灵清理），所以它只能写自己确实拥有的会话。
+pub(crate) fn upsert_chat_sessions(
+    connection: &Connection,
+    app: &AppHandle,
+    sessions_json: &str,
+    sessions_root: &Path,
+) -> Result<(), String> {
+    let mut sessions: Vec<DbChatSession> =
+        serde_json::from_str(sessions_json).map_err(|err| err.to_string())?;
+    if sessions.is_empty() {
+        return Ok(());
+    }
+
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+
+    {
+        let mut stmt = tx
+            .prepare(
+                r#"
+                INSERT OR REPLACE INTO chat_sessions (
+                  id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                "#,
+            )
+            .map_err(|err| err.to_string())?;
+
+        for session in sessions.iter_mut() {
+            // 与整快照写一致：未绑定工作空间则回退到兜底目录（保证永远有 cwd）。
+            let resolved = if session.workspace_path.trim().is_empty() {
+                fallback_workspace_root(app)?.to_string_lossy().into_owned()
+            } else {
+                session.workspace_path.clone()
+            };
+            session.workspace_path = resolved;
+            stmt.execute(params![
+                session.id,
+                session.project_id,
+                session.title,
+                // 消息实体已迁出到 JSONL 文件，这里仅留占位，避免破坏 NOT NULL 约束。
+                "[]",
+                if session.pinned.unwrap_or(false) {
+                    1_i64
+                } else {
+                    0_i64
+                },
+                if session.favorite.unwrap_or(false) {
+                    1_i64
+                } else {
+                    0_i64
+                },
+                session.created_at,
+                session.updated_at,
+                serde_json::to_string(&session.usage).map_err(|err| err.to_string())?,
+                &session.workspace_path,
+            ])
+            .map_err(|err| err.to_string())?;
+        }
+    }
+
+    tx.commit().map_err(|err| err.to_string())?;
+
+    for session in &sessions {
+        let bucket = session_bucket_for_project(connection, &session.project_id);
+        write_session_messages(sessions_root, &bucket, &session.id, &session.messages)?;
+    }
+
+    Ok(())
+}
+
 /// 查某项目对应的会话分桶名（项目已删时按 id 兜底）。
 fn session_bucket_for_project(connection: &Connection, project_id: &str) -> String {
     if project_id.trim().is_empty() {

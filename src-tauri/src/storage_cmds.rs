@@ -8,7 +8,8 @@ use crate::{
     load_memory_storage, load_structured_chat_storage, open_sqlite_connection,
     read_structured_app_value, remove_structured_app_value, resolve_session_dir_for_id,
     save_automation_storage, save_manifest_storage, save_memory_storage,
-    save_structured_chat_storage, storage_paths, write_structured_app_value,
+    save_structured_chat_storage, storage_paths, upsert_chat_sessions,
+    write_structured_app_value,
 };
 
 #[tauri::command]
@@ -59,6 +60,23 @@ pub(crate) fn save_chat_storage(
         &storage_paths::chat_sessions_root(&app)?,
     )?;
     Ok(())
+}
+
+/// 窄写会话：只 upsert 传入的会话，不触碰其他行（供紧凑窗 follower，见
+/// `chat/crossWindowSync.ts` 的角色说明）。⚠️ 不要用它替代 `save_chat_storage` ——
+/// 它不做幽灵清理，整快照的真相源必须走后者。
+#[tauri::command]
+pub(crate) fn save_chat_sessions(
+    app: tauri::AppHandle,
+    sessions_json: String,
+) -> Result<(), String> {
+    let connection = open_sqlite_connection(&app)?;
+    upsert_chat_sessions(
+        &connection,
+        &app,
+        &sessions_json,
+        &storage_paths::chat_sessions_root(&app)?,
+    )
 }
 
 #[tauri::command]

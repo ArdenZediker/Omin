@@ -82,7 +82,8 @@ pub(crate) use storage::{
     load_memory_storage, load_structured_chat_storage, read_kv, read_structured_app_value,
     remove_structured_app_value, resolve_session_dir_for_id, save_automation_storage,
     save_manifest_storage,
-    save_memory_storage, save_structured_chat_storage, write_kv, write_structured_app_value,
+    save_memory_storage, save_structured_chat_storage, upsert_chat_sessions, write_kv,
+    write_structured_app_value,
     AutomationStoragePayload, ChatStoragePayload, ManifestStoragePayload, MemoryStoragePayload,
     KNOWLEDGE_EMBEDDING_CONFIG_KEY, KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
 };
@@ -562,6 +563,7 @@ pub fn run() {
             search_knowledge_chunks_command,
             load_chat_storage,
             save_chat_storage,
+            save_chat_sessions,
             load_manifest_storage_command,
             save_manifest_storage_command,
             load_memory_storage_command,
@@ -677,7 +679,12 @@ pub fn run() {
                 eprintln!("[Omni] tray disabled in debug mode");
             }
 
-            if !cfg!(debug_assertions) || std::env::var_os("OMNI_ENABLE_KNOWLEDGE_WORKER").is_some() {
+            // 知识库 pipeline worker 默认启动，debug 构建（tauri dev）下同样如此：
+            // 否则导入后文档会静默停在「等待处理」，既无 error 也无 processing log，极难排查。
+            // 需要临时关闭时设 OMNI_DISABLE_KNOWLEDGE_WORKER=1。
+            if std::env::var_os("OMNI_DISABLE_KNOWLEDGE_WORKER").is_some() {
+                eprintln!("[Omni] knowledge pipeline worker disabled by OMNI_DISABLE_KNOWLEDGE_WORKER");
+            } else {
                 let worker_app = app.handle().clone();
                 std::thread::spawn(move || loop {
                     if let Err(err) = knowledge_pipeline::run_pipeline_worker_tick(&worker_app) {
@@ -685,8 +692,7 @@ pub fn run() {
                     }
                     std::thread::sleep(std::time::Duration::from_millis(750));
                 });
-            } else {
-                eprintln!("[Omni] knowledge pipeline worker disabled in debug mode");
+                eprintln!("[Omni] knowledge pipeline worker started");
             }
 
             Ok(())
