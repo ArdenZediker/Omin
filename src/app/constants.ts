@@ -81,9 +81,44 @@ export const EXTERNAL_CHAT_ENTRIES: ExternalChatEntry[] = [
 
 export const CHAT_WINDOW_SIZE = { width: 1200, height: 820 };
 
-export const EMPTY_CHAT_PROMPTS = [
-  "帮我总结这段内容的重点",
-  "把这个问题拆成可执行步骤",
-  "给我一个更专业的表达版本",
-  "对比两个方案的优缺点",
+/**
+ * 空态「推荐起步方式」卡片。
+ *
+ * 标题 / 说明 / 点击后插入输入框的起手句**必须来自同一条记录**。曾经标题取
+ * `RECOMMENDED_PROJECT_PRESETS[index]`、插入文本取 `EMPTY_CHAT_PROMPTS[index]` ——
+ * 两个互不相关的数组按下标 join，4 张卡错了 3 张：「代码排查助手」点下去插入的是
+ * 「把这个问题拆成可执行步骤」，「效率命令助手」插入「对比两个方案的优缺点」。
+ * **跨数组按下标对齐 = 必然分叉**，所以合并成一条记录，从结构上消掉这个 bug 类。
+ *
+ * 与插件模板（`kind:"template"`）无关，别合并：模板产出的是「新建项目的初始条件」
+ * （写进 project.systemPrompt + 工具白名单），这里产出的只是「一句话起手」。
+ */
+export type EmptyChatStarter = {
+  title: string;
+  description: string;
+  /** 点击后写入输入框的内容（不直接发送，用户仍可编辑）。 */
+  prompt: string;
+};
+
+export const EMPTY_CHAT_STARTERS: EmptyChatStarter[] = [
+  {
+    title: "总结要点",
+    description: "把长内容压成几句重点",
+    prompt: "帮我总结这段内容的重点",
+  },
+  {
+    title: "拆解步骤",
+    description: "把问题变成可执行清单",
+    prompt: "把这个问题拆成可执行步骤",
+  },
+  {
+    title: "润色表达",
+    description: "给出更专业的说法",
+    prompt: "给我一个更专业的表达版本",
+  },
+  {
+    title: "方案对比",
+    description: "列优缺点并给出建议",
+    prompt: "对比两个方案的优缺点",
+  },
 ];

@@ -71,7 +71,7 @@ import {
   OPEN_ARTIFACT_EVENT,
   openWorkspaceFileInArtifacts,
 } from "../chat/artifacts";
-import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
+import type { EmptyChatStarter } from "../app/constants";
 
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS } from "../config/manifests/tools";
 import {
@@ -211,7 +211,7 @@ type MainChatViewProps = {
   availableModels: ModelConfig[];
   currentModel: string;
   editingMessageIndex: number | null;
-  emptyChatPrompts: string[];
+  emptyChatStarters: EmptyChatStarter[];
   error: string | null;
   groupedChatSessions: SessionGroup[];
   chatSessions: ChatSession[];
@@ -316,7 +316,7 @@ export default function MainChatView({
   availableModels,
   currentModel,
   editingMessageIndex,
-  emptyChatPrompts,
+  emptyChatStarters,
   error,
   chatSessions,
   hasModels,
@@ -671,7 +671,7 @@ export default function MainChatView({
     startWidth: number;
   } | null>(null);
 
-  const recommendedPrompts = emptyChatPrompts.slice(0, 4);
+  const recommendedStarters = emptyChatStarters.slice(0, 4);
   const [isEmptyGuideCompact, setIsEmptyGuideCompact] = useState(
     () => readSqliteBackedValue(EMPTY_CHAT_GUIDE_COMPACT_STORAGE_KEY) === "1",
   );
@@ -2413,12 +2413,12 @@ export default function MainChatView({
                             <span>推荐起步方式</span>
                           </div>
                           <div className="empty-chat-state__cards">
-                            {recommendedPrompts.map((prompt, index) => (
+                            {recommendedStarters.map((starter, index) => (
                               <button
-                                key={prompt}
+                                key={starter.title}
                                 type="button"
                                 className="empty-chat-state__card"
-                                onClick={() => onUseEmptyPrompt(prompt)}
+                                onClick={() => onUseEmptyPrompt(starter.prompt)}
                               >
                                 <div className="empty-chat-state__card-icon">
                                   {index % 2 === 0 ? (
@@ -2428,14 +2428,8 @@ export default function MainChatView({
                                   )}
                                 </div>
                                 <div className="empty-chat-state__card-copy">
-                                  <strong>
-                                    {RECOMMENDED_PROJECT_PRESETS[index]
-                                      ?.title || "快速开始"}
-                                  </strong>
-                                  <span>
-                                    {RECOMMENDED_PROJECT_PRESETS[index]
-                                      ?.description || prompt}
-                                  </span>
+                                  <strong>{starter.title}</strong>
+                                  <span>{starter.description}</span>
                                 </div>
                                 <ArrowRight size={16} strokeWidth={1.8} />
                               </button>

@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { X, Plus, Puzzle, Bot, Cable, Wand2, ChevronDown, FolderOpen } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { ProjectDraft } from "../chat/types";
-import { RECOMMENDED_PROJECT_PRESETS } from "../config/manifests/projects";
 import { pluginRegistry } from "../plugins/registry";
 import type { PluginManifest } from "../plugins/types";
 import PluginMarketplace from "./plugins/PluginMarketplace";
@@ -39,23 +44,38 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
     }
   }, [open]);
 
+  // 模板选项的**唯一事实来源**就是注册表（`kind:"template"`）。
+  // 曾经这里读 `RECOMMENDED_PROJECT_PRESETS`（另一份同名、同描述的硬编码副本），
+  // 而指令正文却去 `pluginRegistry.listTemplates()` 取 —— 两份定义必须手工同步，
+  // 改一侧就静默失配（下拉还列着，指令悄悄变成一句描述）。现只留注册表这一份。
+  // 订阅理由同 PluginMarketplace：注册表是渲染进程模块级单例，变更可能发生在
+  // 本组件之外，靠自身 handler 刷新必漏。snapshot 是递增数字（原始值），不会
+  // 像返回新数组那样把 React 推进无限重渲染。
+  const templateVersion = useSyncExternalStore(
+    (listener) => pluginRegistry.subscribe(listener),
+    () => pluginRegistry.getVersion(),
+  );
+
   const templateOptions = useMemo(() => {
-    return [{ id: "", title: "无模板" }, ...RECOMMENDED_PROJECT_PRESETS];
-  }, []);
+    // 快照本身不参与计算，只用于把这份列表钉在注册表版本上（否则装了/卸了模板不刷新）。
+    void templateVersion;
+    return [
+      { id: "", title: "无模板" },
+      ...pluginRegistry.listTemplates().map((manifest) => ({
+        id: manifest.id,
+        title: manifest.name,
+      })),
+    ];
+  }, [templateVersion]);
 
   const applyTemplate = useCallback((templateId: string) => {
     setSelectedTemplateId(templateId);
-    if (!templateId) {
-      setInstruction("");
-      return;
-    }
-    const template = pluginRegistry.listTemplates().find((m) => m.id === templateId);
-    if (template?.templatePrompt) {
-      setInstruction(template.templatePrompt);
-    } else {
-      const preset = RECOMMENDED_PROJECT_PRESETS.find((p) => p.id === templateId);
-      setInstruction(preset?.description ?? "");
-    }
+    const template = templateId
+      ? pluginRegistry.listTemplates().find((m) => m.id === templateId)
+      : undefined;
+    // 只写指令正文。模板声明的 defaultToolIds/defaultSkillIds 目前无人消费，
+    // 等项目预设改造定案后再决定是接线还是删掉，此处不臆造行为。
+    setInstruction(template?.templatePrompt ?? "");
   }, []);
 
   const addPicked = useCallback((kind: keyof PickedPlugins, manifest: PluginManifest) => {

@@ -21,7 +21,7 @@ import {
   BASIC_SETTINGS_STORAGE_KEY,
   CODEX_PET_LIBRARY_STATE_STORAGE_KEY,
   CURRENT_MODEL_STORAGE_KEY,
-  EMPTY_CHAT_PROMPTS,
+  EMPTY_CHAT_STARTERS,
   PET_THOUGHT_WINDOW_LABEL,
   omniIconSrc,
   omniSmallIconSrc,
@@ -845,7 +845,7 @@ function MainApp() {
           availableModels={availableModels}
           currentModel={currentModel}
           editingMessageIndex={editingMessageIndex}
-          emptyChatPrompts={EMPTY_CHAT_PROMPTS}
+          emptyChatStarters={EMPTY_CHAT_STARTERS}
           error={error}
           groupedChatSessions={groupedChatSessions}
           chatSessions={chatSessions}
