@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "../adapters/types";
 import type { Project } from "./types";
 import { executeLocalTool, isKnownSafeCommand, isOutsideWorkspace, type LocalToolRuntime, type LocalToolSession } from "./localTools";
+import { clearAllSessionTodos, getSessionTodos } from "./todoWrite";
 import { extractToolCallArgs } from "../hooks/chatRuntimeHelpers";
 import { pluginRegistry } from "../plugins/registry";
 
@@ -1077,5 +1078,62 @@ describe("bash 写语义扫描集成（围栏旁路封堵）", () => {
     expect(mockedInvoke).not.toHaveBeenCalledWith("no_go_zone_check", expect.anything());
     const { requestConfirmation } = await import("./confirmationGate");
     expect(requestConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("todo_write 写入清单并回显进度统计", async () => {
+    clearAllSessionTodos();
+    const runtime = createRuntime();
+
+    const result = await executeLocalTool(runtime, {
+      command: "/todo_write",
+      args: JSON.stringify({
+        todos: [
+          { id: "1", content: "读取现有配置", status: "completed" },
+          { id: "2", content: "改造解析逻辑", status: "in_progress" },
+          { id: "3", content: "补回归测试", status: "pending" },
+        ],
+      }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("任务清单（1/3 已完成 · 进行中 1 · 待办 1）");
+    expect(result?.outputText).toContain("2. [>] 改造解析逻辑");
+    expect(getSessionTodos("session-1")).toHaveLength(3);
+  });
+
+  it("todo_write 按会话隔离，空数组表示清空", async () => {
+    clearAllSessionTodos();
+    await executeLocalTool(createRuntime(), {
+      command: "/todo_write",
+      args: JSON.stringify({ todos: [{ id: "1", content: "A 的事", status: "pending" }] }),
+    });
+
+    const cleared = await executeLocalTool(createRuntime({ activeChatId: "session-2" }), {
+      command: "/todo_write",
+      args: JSON.stringify({ todos: [] }),
+    });
+
+    expect(cleared?.ok).toBe(true);
+    expect(cleared?.outputText).toBe("任务清单已清空。");
+    expect(getSessionTodos("session-1")).toHaveLength(1);
+    expect(getSessionTodos("session-2")).toEqual([]);
+  });
+
+  it("todo_write 参数非法时失败且不改动已有清单", async () => {
+    clearAllSessionTodos();
+    const runtime = createRuntime();
+    await executeLocalTool(runtime, {
+      command: "/todo_write",
+      args: JSON.stringify({ todos: [{ id: "1", content: "保留我", status: "pending" }] }),
+    });
+
+    const bad = await executeLocalTool(runtime, {
+      command: "/todo_write",
+      args: JSON.stringify({ todos: [{ id: "2", content: "坏的", status: "done" }] }),
+    });
+
+    expect(bad?.ok).toBe(false);
+    expect(bad?.error).toContain("status 非法");
+    expect(getSessionTodos("session-1")).toEqual([{ id: "1", content: "保留我", status: "pending" }]);
   });
 });

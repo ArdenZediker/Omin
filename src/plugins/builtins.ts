@@ -66,8 +66,8 @@ export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
 1. 【澄清】目标或约束不明确时，先用最少的问题澄清（一次问齐，不挤牙膏）；明确后不复述废话，直接给计划。
 2. 【拆解】把任务拆为有序步骤，每步包含：做什么、用什么手段（工具/命令/文件）、产出是什么。步骤粒度以"一步可验证"为准——太粗没法执行，太细淹没重点。步骤数量控制在 3-8 步。
 3. 【呈现计划】用编号列表展示计划，标注每步将调用的工具或影响的文件，请用户确认后再动手；用户已明确说"直接做"时跳过确认。
-4. 【执行】按序执行，每完成一步用一行汇报结果（完成/跳过/受阻及原因）。受阻时不硬编：说明卡点，给出替代路径或向用户求助。
-5. 【调整】执行中发现计划与事实不符时，明确说"调整计划"并展示新步骤，不默默改道。
+4. 【执行】开工前先用 /todo_write 把计划登记成任务清单（一步一条，初始状态均为 pending），再按序执行：开始某步时把该条置为 in_progress，完成后立刻置为 completed，同时用一行汇报结果（完成/跳过/受阻及原因）。受阻时不硬编：说明卡点，给出替代路径或向用户求助。
+5. 【调整】执行中发现计划与事实不符时，先更新 /todo_write 的清单再继续（新增/改状态/删步骤），并明确说"调整计划"展示新步骤，不默默改道。
 6. 【收尾】全部完成后给总结：交付物清单、改动/生成的文件路径、未尽事项与后续建议。
 
 【原则】计划服务于执行，不做形式主义文档；能并行说明的步骤合并表述；重要假设显式写出。`,
@@ -438,6 +438,23 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
     command: "/install_skill",
     promptContribution:
       "Call /install_skill to persist a produced skill definition as a local skill (id kebab-case, name, description, content as Markdown body). Only use when the user asks to create/save a skill.",
+  },
+  {
+    id: "todo_write",
+    name: "Todo Write",
+    description:
+      "Call this to track progress on a multi-step task with a session-scoped checklist (pending / in_progress / completed).",
+    version: "1.0.0",
+    author: "Omni",
+    kind: "tool",
+    category: "AI Agent",
+    group: "计划",
+    icon: "ListChecks",
+    command: "/todo_write",
+    promptContribution:
+      "Call /todo_write to track progress on multi-step work. Send the full list each call (it replaces the previous one), " +
+      "keep at most one item in_progress, and flip items to completed as soon as they are done. " +
+      "It tracks execution progress only — to design the plan itself use the /plan skill.",
   },
 ];
 

@@ -133,6 +133,50 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     },
   },
   {
+    id: "todo_write",
+    command: "/todo_write",
+    title: "Todo Write",
+    description:
+      "Replace the session's task checklist with a structured todo list (pending / in_progress / completed) and echo current progress.",
+    promptContribution:
+      "Call /todo_write to track progress on multi-step work: JSON{\"todos\":[{\"id\":\"1\",\"content\":\"...\",\"status\":\"pending\" | \"in_progress\" | \"completed\"}]}. " +
+      "Always send the FULL list (each call replaces the previous one), keep at most one item in_progress, and flip an item to completed as soon as it is done. " +
+      "Use it when a request takes 3 or more steps, or when the user asks to plan, track or break down work; skip it for single-step answers. " +
+      "This tool only tracks execution progress — to design the plan itself, use the /plan skill instead. " +
+      "The checklist is session-scoped and in-memory: it is not written to disk and is cleared when the app restarts. " +
+      "Pass an empty array to clear it.",
+    parameters: {
+      type: "object",
+      properties: {
+        todos: {
+          type: "array",
+          description: "Full replacement checklist in execution order (max 20 items).",
+          items: {
+            type: "object",
+            properties: {
+              id: {
+                type: "string",
+                description:
+                  "Stable short id (e.g. \"1\" or \"step-a\"). Keep the same id across calls so progress stays traceable.",
+              },
+              content: {
+                type: "string",
+                description: "What this step does (max 200 characters), written so completion is verifiable.",
+              },
+              status: {
+                type: "string",
+                enum: ["pending", "in_progress", "completed"],
+                description: "pending = not started; in_progress = working on it now; completed = done.",
+              },
+            },
+            required: ["id", "content", "status"],
+          },
+        },
+      },
+      required: ["todos"],
+    },
+  },
+  {
     id: "write_file",
     command: "/write_file",
     title: "Write File",
@@ -561,6 +605,7 @@ export const BUILTIN_TOOL_IDS = [
   "read_file",
   "search_files",
   "use_skill",
+  "todo_write",
   "write_file",
   "edit_file",
   "read_persona",

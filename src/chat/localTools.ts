@@ -10,6 +10,12 @@ import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
 import { validateToolArgs } from "./toolArgsValidation";
 import type { FileDiff } from "./fileDiff";
+import {
+  TODO_FALLBACK_SESSION_KEY,
+  parseTodos,
+  renderTodoList,
+  setSessionTodos,
+} from "./todoWrite";
 import { requestConfirmation } from "./confirmationGate";
 import { scanBashWriteSemantics, findNoGoZoneTarget } from "./bashWriteScan";
 import { resolveSessionOutputDir } from "../app/outputStorage";
@@ -1604,6 +1610,37 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           .filter(Boolean)
           .join("\n"),
         data: { id: match.id, name: match.name ?? match.id },
+      };
+    },
+  });
+
+  // ---- 会话级任务清单（只跟踪执行进度；计划拆解归 /plan 技能） ----
+
+  const todoWriteTool = requireTool("todo_write");
+
+  registry.register({
+    id: todoWriteTool.id,
+    command: todoWriteTool.command,
+    title: todoWriteTool.title,
+    execute: async (resolvedCommand, context) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      if (!json || !("todos" in json)) {
+        return {
+          ok: false,
+          error:
+            '用法：/todo_write JSON{"todos":[{"id":"1","content":"...","status":"pending"}]}（传空数组可清空）',
+        };
+      }
+      const parsed = parseTodos(json.todos);
+      if (!parsed.ok) return { ok: false, error: parsed.error };
+
+      const sessionKey = context.activeChatId || TODO_FALLBACK_SESSION_KEY;
+      setSessionTodos(sessionKey, parsed.todos);
+
+      return {
+        ok: true,
+        outputText: [renderTodoList(parsed.todos), ...parsed.warnings].filter(Boolean).join("\n"),
+        data: { todos: parsed.todos, warnings: parsed.warnings },
       };
     },
   });
