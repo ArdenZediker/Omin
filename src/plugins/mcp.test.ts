@@ -166,3 +166,95 @@ describe("MCP 连接器信任门", () => {
     expect(config?.env).toEqual({ TOKEN: "abc" });
   });
 });
+
+/**
+ * MCP 工具声明预算。
+ *
+ * 锁定的是一条预算红线：MCP 服务器可以暴露任意多、任意大的工具声明，而这些声明
+ * 会拼进每一条请求 —— 不设上限就等于把上下文窗口交给第三方服务器处置。
+ */
+describe("MCP 工具声明预算（selectMcpToolsWithinBudget）", () => {
+  const BUDGET = { perToolMaxChars: 512, perConnectorMaxChars: 1024 };
+
+  const makeTool = (name: string, schemaChars = 0) => ({
+    name,
+    description: name,
+    input_schema: {
+      type: "object",
+      properties: { blob: { type: "string", description: "x".repeat(schemaChars) } },
+    },
+  });
+
+  it("预算内全部保留，前缀与描述按连接器拼装", async () => {
+    const { selectMcpToolsWithinBudget } = await import("./mcp");
+
+    const selection = selectMcpToolsWithinBudget(
+      [{ serverId: "srv", connectorName: "测试连接器", tools: [makeTool("a"), makeTool("b")] }],
+      BUDGET,
+    );
+
+    expect(selection.hidden).toHaveLength(0);
+    expect(selection.tools.map((t) => t.name)).toEqual(["mcp__srv__a", "mcp__srv__b"]);
+    expect(selection.tools[0].description).toBe("测试连接器 · a");
+  });
+
+  it("单个工具超预算：隐藏该工具并记录原因，其余照常保留", async () => {
+    const { selectMcpToolsWithinBudget } = await import("./mcp");
+
+    const selection = selectMcpToolsWithinBudget(
+      [{ serverId: "srv", connectorName: "测试连接器", tools: [makeTool("small"), makeTool("huge", 2000), makeTool("small2")] }],
+      BUDGET,
+    );
+
+    expect(selection.tools.map((t) => t.name)).toEqual(["mcp__srv__small", "mcp__srv__small2"]);
+    expect(selection.hidden).toHaveLength(1);
+    expect(selection.hidden[0]).toMatchObject({ toolName: "huge", reason: "tool-too-large" });
+    expect(selection.hidden[0].chars).toBeGreaterThan(BUDGET.perToolMaxChars);
+  });
+
+  it("单连接器累计超预算：后续工具被隐藏，累加不越过上限", async () => {
+    const { selectMcpToolsWithinBudget } = await import("./mcp");
+
+    // 每个工具约 300+ 字符，4 个即超过 1024 的累计预算。
+    const tools = [makeTool("t1", 250), makeTool("t2", 250), makeTool("t3", 250), makeTool("t4", 250)];
+    const selection = selectMcpToolsWithinBudget([{ serverId: "srv", connectorName: "测试连接器", tools }], BUDGET);
+
+    expect(selection.tools.length).toBeLessThan(tools.length);
+    expect(selection.hidden.some((item) => item.reason === "connector-budget-exceeded")).toBe(true);
+    const total = selection.tools.reduce((sum, tool) => sum + JSON.stringify(tool).length, 0);
+    expect(total).toBeLessThanOrEqual(BUDGET.perConnectorMaxChars);
+  });
+
+  it("预算按连接器独立计算，一个连接器超限不影响另一个", async () => {
+    const { selectMcpToolsWithinBudget } = await import("./mcp");
+
+    const selection = selectMcpToolsWithinBudget(
+      [
+        { serverId: "srv-a", connectorName: "A", tools: [makeTool("t1", 250), makeTool("t2", 250), makeTool("t3", 250), makeTool("t4", 250)] },
+        { serverId: "srv-b", connectorName: "B", tools: [makeTool("only")] },
+      ],
+      BUDGET,
+    );
+
+    expect(selection.tools.some((tool) => tool.name === "mcp__srv-b__only")).toBe(true);
+    expect(selection.hidden.every((item) => item.connectorName === "A")).toBe(true);
+  });
+
+  it("默认预算为单工具 8KB / 单连接器 64KB", async () => {
+    const { MCP_TOOL_SCHEMA_BUDGET } = await import("./mcp");
+    expect(MCP_TOOL_SCHEMA_BUDGET.perToolMaxChars).toBe(8 * 1024);
+    expect(MCP_TOOL_SCHEMA_BUDGET.perConnectorMaxChars).toBe(64 * 1024);
+  });
+
+  it("缺省 input_schema 时回落到空对象结构，不丢工具", async () => {
+    const { selectMcpToolsWithinBudget } = await import("./mcp");
+
+    const selection = selectMcpToolsWithinBudget(
+      [{ serverId: "srv", connectorName: "测试连接器", tools: [{ name: "bare", description: "", input_schema: undefined as never }] }],
+      BUDGET,
+    );
+
+    expect(selection.tools).toHaveLength(1);
+    expect(selection.tools[0].parameters).toEqual({ type: "object", properties: {} });
+  });
+});

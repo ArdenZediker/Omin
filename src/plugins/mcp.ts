@@ -305,22 +305,107 @@ export async function syncMcpConnectors(): Promise<void> {
 // 对话注入
 // ---------------------------------------------------------------------------
 
-/** 已连接 MCP 服务器暴露的工具 → function calling 工具声明（mcp__ 前缀）。 */
-export function listActiveMcpTools(): ChatToolParam[] {
+// ---------------------------------------------------------------------------
+// 工具声明预算
+//
+// MCP 服务器能暴露任意数量的工具、任意大的 JSON Schema，而这些声明会被原样拼进
+// **每一条**请求的 tools 字段：既不过 buildChatTools 的 SAFE/OFFERED 白名单，也不受
+// 项目 allowedToolIds 约束，更没有体积上限。一个暴露两百个工具、或单个 schema 上百
+// KB 的服务器就足以吃掉整窗预算，甚至让上游直接拒收请求。
+//
+// 这里对齐 Codex 的披露预算：单个工具 8KB、单连接器累计 64KB，超出的**隐藏**而不是
+// 截断——被截断的 JSON Schema 是坏数据，模型会照着残缺结构瞎传参，比看不到更糟。
+// ---------------------------------------------------------------------------
+
+export interface McpToolSchemaBudget {
+  /** 单个工具声明序列化后的字符上限。 */
+  perToolMaxChars: number;
+  /** 单个连接器下所有工具声明的累计字符上限。 */
+  perConnectorMaxChars: number;
+}
+
+export const MCP_TOOL_SCHEMA_BUDGET: McpToolSchemaBudget = {
+  perToolMaxChars: 8 * 1024,
+  perConnectorMaxChars: 64 * 1024,
+};
+
+export interface McpHiddenTool {
+  serverId: string;
+  connectorName: string;
+  toolName: string;
+  reason: "tool-too-large" | "connector-budget-exceeded";
+  /** 该工具声明的实际字符数，便于排查「为什么它没出现」。 */
+  chars: number;
+}
+
+export interface McpToolSelection {
+  tools: ChatToolParam[];
+  hidden: McpHiddenTool[];
+}
+
+/**
+ * 纯函数：把候选 MCP 工具按预算裁成可注入的声明列表。
+ * 保持输入顺序，一旦某工具超出预算就隐藏并记录原因，便于向用户解释。
+ */
+export function selectMcpToolsWithinBudget(
+  servers: Array<{ serverId: string; connectorName: string; tools?: McpToolInfo[] }>,
+  budget: McpToolSchemaBudget = MCP_TOOL_SCHEMA_BUDGET,
+): McpToolSelection {
   const tools: ChatToolParam[] = [];
-  for (const server of connectedServers.values()) {
-    // 纵深防御：即便连接态残留（如信任被撤销后进程未退出），未信任的
-    // 连接器也不向模型暴露任何工具。
-    if (!isTrustedById(server.connectorId)) continue;
-    for (const tool of server.info.tools ?? []) {
-      tools.push({
+  const hidden: McpHiddenTool[] = [];
+  for (const server of servers) {
+    let used = 0;
+    for (const tool of server.tools ?? []) {
+      const param: ChatToolParam = {
         name: `mcp__${server.serverId}__${tool.name}`,
         description: `${server.connectorName} · ${tool.description || tool.name}`,
         parameters: tool.input_schema ?? { type: "object", properties: {} },
-      });
+      };
+      const chars = JSON.stringify(param).length;
+      if (chars > budget.perToolMaxChars) {
+        hidden.push({ serverId: server.serverId, connectorName: server.connectorName, toolName: tool.name, reason: "tool-too-large", chars });
+        continue;
+      }
+      if (used + chars > budget.perConnectorMaxChars) {
+        hidden.push({ serverId: server.serverId, connectorName: server.connectorName, toolName: tool.name, reason: "connector-budget-exceeded", chars });
+        continue;
+      }
+      used += chars;
+      tools.push(param);
     }
   }
-  return tools;
+  return { tools, hidden };
+}
+
+/** 上一次注入时因超预算被隐藏的工具（进程内记忆，供 UI 说明用）。 */
+let lastMcpToolOverflow: McpHiddenTool[] = [];
+
+/** 已连接 MCP 服务器暴露的工具 → function calling 工具声明（mcp__ 前缀，受预算裁剪）。 */
+export function listActiveMcpTools(): ChatToolParam[] {
+  // 纵深防御：即便连接态残留（如信任被撤销后进程未退出），未信任的
+  // 连接器也不向模型暴露任何工具。
+  const trusted = Array.from(connectedServers.values()).filter((server) => isTrustedById(server.connectorId));
+  const selection = selectMcpToolsWithinBudget(
+    trusted.map((server) => ({
+      serverId: server.serverId,
+      connectorName: server.connectorName,
+      tools: server.info.tools,
+    })),
+  );
+  lastMcpToolOverflow = selection.hidden;
+  return selection.tools;
+}
+
+/**
+ * 上次注入时被隐藏的工具说明；没有隐藏则返回 null。
+ *
+ * 没有这个提示，「连接器连上了、协议也通了，但工具列表里看不到它」就无从解释——
+ * 用户只会以为连接器坏了。
+ */
+export function getMcpToolOverflowNotice(): string | null {
+  if (lastMcpToolOverflow.length === 0) return null;
+  const names = lastMcpToolOverflow.map((item) => `${item.connectorName}/${item.toolName}`).join("、");
+  return `已隐藏 ${lastMcpToolOverflow.length} 个超出声明预算的 MCP 工具（${names}）：单个工具上限 ${MCP_TOOL_SCHEMA_BUDGET.perToolMaxChars} 字符、单连接器累计上限 ${MCP_TOOL_SCHEMA_BUDGET.perConnectorMaxChars} 字符。`;
 }
 
 /** 当前已连接状态（供 UI 展示）。 */
