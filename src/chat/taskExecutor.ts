@@ -3,6 +3,7 @@ import { executeChatTurn } from "./engine";
 import { runTaskPlan } from "./taskRunner";
 import type { ResolvedLocalSlashCommand } from "./skills";
 import { resolveLocalSlashCommand } from "./skills";
+import { pluginRegistry } from "../plugins/registry";
 import type { TaskExecutionResult, TaskIntent, TaskPlan, TaskStep } from "./taskTypes";
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord, ChatStep } from "./types";
 
@@ -268,7 +269,18 @@ export async function executeInputTask(options: {
 
   if (localCommand) {
     if (localCommand.kind === "skill") {
-      if (project && !project.allowedSkillIds.includes(localCommand.id)) {
+      // 项目白名单只约束内置技能（助手能力策展）。用户自行安装的技能
+      // （SkillHub / 插件市场 / 本地导入 / 技能创作）以「我的技能」全局开关
+      // 为授权入口：安装即对所有助手可用，否则会出现装完即被所有项目拒绝、
+      // 又没有 UI 能给已有项目补勾的死局（与普通对话的技能注入行为对齐——
+      // 那条路径本来就注入全部已启用技能，不受白名单限制）。
+      const isUserInstalledSkill =
+        pluginRegistry.isInstalled(localCommand.id) && !pluginRegistry.isBuiltin(localCommand.id);
+      if (
+        project &&
+        !project.allowedSkillIds.includes(localCommand.id) &&
+        !isUserInstalledSkill
+      ) {
         throw new Error(`当前助手未启用技能：${localCommand.title}`);
       }
       const skillMessages = buildSkillMessages(localCommand, currentMessages);

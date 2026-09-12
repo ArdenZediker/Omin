@@ -97,6 +97,21 @@ class PluginRegistry {
     return this.list({ kind: "skill", enabled: true });
   }
 
+  /**
+   * 用户显式安装（SkillHub / 插件市场 / 本地导入 / 技能创作）且已启用的技能。
+   *
+   * 这些技能**不走项目 allowedSkillIds 白名单**：安装动作本身就是授权，
+   * 「我的技能」页的全局开关是唯一入口。若把它们也要求逐项目勾选，会出现
+   * 「装完永远无法用斜杠调用、且没有任何 UI 可以给已有项目补勾」的死局
+   * （项目白名单目前只能在新建项目时挑选，装完后无入口）。
+   * 内置技能仍受项目白名单约束（那是助手能力策展的一部分）。
+   */
+  listEnabledUserSkills(): PluginManifest[] {
+    return this.list({ kind: "skill", enabled: true }).filter(
+      (manifest) => !this.builtins.has(manifest.id) && this.installed.has(manifest.id)
+    );
+  }
+
   /** 列出所有已安装插件的原始 entry（包含 source、config 等元数据）。
    *  用于数据迁移 / 升级场景 —— list() 只丢出 manifest，不够。 */
   listInstalled(): Array<{ id: string; entry: InstalledPlugin }> {
