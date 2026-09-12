@@ -15,11 +15,43 @@ class PluginRegistry {
   private builtins: Map<string, PluginManifest> = new Map();
   private installed: Map<string, InstalledPlugin> = new Map();
   private loaded = false;
+  /**
+   * 内容版本号：每次写入（安装/卸载/开关/配置/更新 manifest）自增。
+   * 供 `useSyncExternalStore` 做快照比较 —— 必须是「变了才变」的原始值，
+   * 不能拿 `list()` 返回的新数组当快照（每次调用都是新引用，会无限重渲染）。
+   */
+  private version = 0;
+  /** 变更订阅者（渲染进程内）。 */
+  private listeners = new Set<() => void>();
 
   constructor() {
     for (const manifest of BUILTIN_PLUGINS) {
       this.builtins.set(manifest.id, manifest);
     }
+  }
+
+  /** 当前内容版本号（配 `subscribe` 做 React 订阅）。 */
+  getVersion(): number {
+    return this.version;
+  }
+
+  /**
+   * 订阅注册表变更，返回取消订阅函数。
+   *
+   * 为什么必须有这个通道：插件状态是**渲染进程模块级单例**，组件只在自己触发
+   * 的安装路径上手动 bump 刷新键；一旦安装发生在组件之外（SkillHub 子面板、
+   * 技能创作、对话里模型调用 /install_skill），列表不会重算 —— 表现为
+   * 「装好了但「我的技能」里看不见」。这里把「谁改了注册表」变成可订阅事实，
+   * 消费方无需知道变更从哪来。
+   *
+   * 注意：紧凑窗是独立 webview、各持一份模块单例，本订阅**不跨窗口**；
+   * 但插件列表只在主窗渲染（紧凑窗无工具、不展示插件），故不做跨窗口广播。
+   */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   load(): void {
@@ -33,12 +65,28 @@ class PluginRegistry {
     this.loaded = true;
   }
 
+  /**
+   * 持久化快照，并广播一次「注册表已变更」。
+   *
+   * 所有写路径（install / uninstall / setEnabled / setConnectorConfig /
+   * updateManifest / flush）都汇聚到这里，因此**通知点只需要一个** ——
+   * 新增写接口时不会漏发通知。
+   */
   private save(): void {
     const snapshot: Record<string, InstalledPlugin> = {};
     for (const [id, entry] of this.installed.entries()) {
       snapshot[id] = entry;
     }
     saveSqliteBackedValue(INSTALLED_PLUGINS_STORAGE_KEY, JSON.stringify(snapshot));
+    this.version += 1;
+    for (const listener of Array.from(this.listeners)) {
+      // 单个订阅者抛错不应打断其它订阅者，也不应影响安装主流程
+      try {
+        listener();
+      } catch {
+        /* 忽略订阅者自身的异常 */
+      }
+    }
   }
 
   /** 公开持久化（供模块级的一次性数据迁移等场景调用）。 */

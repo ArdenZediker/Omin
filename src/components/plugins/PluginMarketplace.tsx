@@ -431,6 +431,15 @@ export default function PluginMarketplace({
     [isSourceControlled, onSourceChange],
   );
   const [refreshKey, setRefreshKey] = useState(0);
+  // 注册表一变更就重算：安装/卸载可能发生在**本组件之外**（SkillHub 子面板、
+  // 远程技能子面板、技能创作、对话里模型调用 /install_skill），这些路径收不到
+  // 本组件的任何回调 —— 只靠自身 handler bump 刷新键会漏，表现为「已安装
+  // 但「我的技能」里看不见」（切 tab 也不会重算：source 不在各 useMemo 的依赖里）。
+  // 订阅注册表是唯一不漏的口径。
+  useEffect(
+    () => pluginRegistry.subscribe(() => setRefreshKey((current) => current + 1)),
+    [],
+  );
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
   // 详情抽屉选中（点击整卡打开）。onPick 模式下用 onPick 选择，不打开详情。

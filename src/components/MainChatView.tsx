@@ -8,7 +8,7 @@ import type {
   RefObject,
   SetStateAction,
 } from "react";
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
 import {
   ArrowDown,
   ArrowRight,
@@ -815,11 +815,21 @@ export default function MainChatView({
   // 斜杠补全的技能列表 = 项目白名单 + 用户自行安装且启用的技能
   // （与 taskExecutor 的调用许可、普通对话的技能注入保持同一口径：
   //  安装即授权，全局开关是唯一入口；项目白名单只策展内置技能）。
-  // 刻意不用 useMemo：注册表的安装/开关状态不在依赖里，memo 会拿到过期列表。
-  const allowedComposerSkillIds = [
-    ...(activeProject?.allowedSkillIds ?? []),
-    ...pluginRegistry.listEnabledUserSkills().map((manifest) => manifest.id),
-  ];
+  // 注册表版本号作为失效信号：安装/卸载/开关技能可能发生在本组件之外
+  // （扩展中心、SkillHub 面板、对话里模型调用 /install_skill），不订阅的话
+  // 斜杠列表会停留在旧快照上（装完却补全不出来）。
+  const pluginVersion = useSyncExternalStore(
+    (onStoreChange) => pluginRegistry.subscribe(onStoreChange),
+    () => pluginRegistry.getVersion(),
+  );
+  const allowedComposerSkillIds = useMemo(
+    () => [
+      ...(activeProject?.allowedSkillIds ?? []),
+      ...pluginRegistry.listEnabledUserSkills().map((manifest) => manifest.id),
+    ],
+    // pluginVersion 不参与计算，只作为「注册表已变更」的失效信号
+    [activeProject?.allowedSkillIds, pluginVersion],
+  );
   const contextUsageSnapshot = useMemo<ContextUsageSnapshot>(() => {
     const modelConfig = modelRegistry.getModelConfig(executionModel);
     const contextWindow = resolveContextWindow(modelConfig);
