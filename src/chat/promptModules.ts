@@ -40,8 +40,17 @@ export type EnabledSkillPrompt = {
   command?: string;
   /** 技能适用场景（frontmatter 的 description），模型据此判断请求是否匹配。 */
   description?: string;
-  /** 技能正文（SKILL.md 去掉 frontmatter 后的 body）。 */
-  prompt: string;
+  /** 技能正文（SKILL.md 去掉 frontmatter 后的 body）；catalogOnly 为 true 时可省略。 */
+  prompt?: string;
+  /**
+   * 渐进式披露：true = 本次只注入「目录条目」（名 / 适用场景 / 命令），正文改由模型
+   * 调用 /use_skill 按需载入。
+   *
+   * 为什么需要这个开关：具备工具的运行（有 /use_skill）走「目录常驻 + 正文按需」，
+   * 上下文才不随技能数量线性增长；而紧凑窗快速问答那条链**不传任何工具**，
+   * 没有 /use_skill 可用，只能退回内联正文，否则技能在那边彻底不可用。
+   */
+  catalogOnly?: boolean;
 };
 
 export const OMNI_STRUCTURED_MEMORY_TAG = "omni_memory";
@@ -282,28 +291,45 @@ export const SYSTEM_PROMPT_FRAGMENTS: PromptFragment[] = [
   {
     id: "enabledSkills",
     build: (o) => {
-      const skills = (o.enabledSkillPrompts ?? []).filter((skill) => skill?.prompt?.trim());
+      const skills = (o.enabledSkillPrompts ?? []).filter(
+        (skill) => skill?.catalogOnly || skill?.prompt?.trim(),
+      );
       if (skills.length === 0) return null;
+
+      // 只要有任一技能是「正文未载入」，就按渐进式披露的口径写规则。
+      const anyOnDemand = skills.some((skill) => skill.catalogOnly && !skill.prompt?.trim());
       const blocks = skills.map((skill) => {
         const name = skill.name?.trim() || skill.id;
         const command = skill.command?.trim();
         const heading = command && command !== name ? `${name}（${command}）` : name;
         const description = skill.description?.trim();
+        const body = skill.prompt?.trim() ?? "";
         return [
           `### 技能：${heading}`,
           description ? `适用场景：${description}` : "",
-          skill.prompt.trim(),
+          body || `正文：需先调用 /use_skill ${skill.id} 载入`,
         ]
           .filter(Boolean)
           .join("\n");
       });
-      return [
-        "已启用技能（用户为本工作台安装的专用能力，命中时**优先于通用工具**）：",
-        "- 当用户请求与某个技能的「适用场景」匹配时，**必须按该技能正文给出的方法与命令执行**（例如用 /bash 运行它写明的命令行）。",
-        "- **不要用 /web_search、/web_fetch 这类通用工具替代已经覆盖该请求的技能**——即使通用工具的描述里也提到了同一主题；技能是针对该任务专门配置的，结果更准。",
-        "- 只有当没有任何已启用技能覆盖该请求时，才使用通用工具。",
-        ...blocks,
-      ].join("\n\n");
+
+      const header = anyOnDemand
+        ? [
+            "已启用技能（用户为本工作台安装的专用能力，命中时**优先于通用工具**）：",
+            "- 这里只列出技能的名称、适用场景与命令，**技能正文没有预先载入**。",
+            "- 当用户请求与某个技能的「适用场景」匹配时，**必须先调用 /use_skill <技能 id> 载入该技能正文，再严格按正文给出的方法与命令执行**（例如用 /bash 运行它写明的命令行）。不要凭猜测执行。",
+            "- 同一个技能本轮载入一次即可，不要重复调用 /use_skill。",
+            "- **不要用 /web_search、/web_fetch 这类通用工具替代已经覆盖该请求的技能**——即使通用工具的描述里也提到了同一主题；技能是针对该任务专门配置的，结果更准。",
+            "- 只有当没有任何已启用技能覆盖该请求时，才使用通用工具。",
+          ]
+        : [
+            "已启用技能（用户为本工作台安装的专用能力，命中时**优先于通用工具**）：",
+            "- 当用户请求与某个技能的「适用场景」匹配时，**必须按该技能正文给出的方法与命令执行**（例如用 /bash 运行它写明的命令行）。",
+            "- **不要用 /web_search、/web_fetch 这类通用工具替代已经覆盖该请求的技能**——即使通用工具的描述里也提到了同一主题；技能是针对该任务专门配置的，结果更准。",
+            "- 只有当没有任何已启用技能覆盖该请求时，才使用通用工具。",
+          ];
+
+      return [...header, ...blocks].join("\n\n");
     },
     maxChars: 12_000,
   },

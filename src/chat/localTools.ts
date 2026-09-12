@@ -1567,6 +1567,47 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     },
   });
 
+  // ---- 技能正文按需加载（渐进式披露：系统提示只放目录，正文由模型主动取） ----
+
+  const useSkillTool = requireTool("use_skill");
+
+  registry.register({
+    id: useSkillTool.id,
+    command: useSkillTool.command,
+    title: useSkillTool.title,
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const raw = (strArg(json, "name", "id", "skill") ?? resolvedCommand.args.trim()).replace(/^\//, "").trim();
+      if (!raw) return { ok: false, error: "用法：/use_skill 技能 id 或 /命令（如 weather 或 /weather）" };
+
+      const enabled = pluginRegistry.listEnabledSkills();
+      const match =
+        enabled.find((skill) => skill.id === raw) ||
+        enabled.find((skill) => (skill.command ?? "").replace(/^\//, "") === raw) ||
+        enabled.find((skill) => skill.name === raw);
+      if (!match) {
+        const available = enabled.map((skill) => skill.id).join("、") || "（无已启用技能）";
+        return { ok: false, error: `未找到已启用技能：${raw}。当前可用：${available}` };
+      }
+
+      const body = (match.systemPrompt ?? "").trim();
+      if (!body) return { ok: false, error: `技能「${match.name ?? match.id}」没有正文内容。` };
+
+      return {
+        ok: true,
+        outputText: [
+          `技能：${match.name ?? match.id}（${match.command ?? match.id}）`,
+          match.description ? `适用场景：${match.description}` : "",
+          "",
+          body,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        data: { id: match.id, name: match.name ?? match.id },
+      };
+    },
+  });
+
   // ---- 自造技能安装（Rust：skillhub.rs install_local_skill） ----
 
   registry.register({

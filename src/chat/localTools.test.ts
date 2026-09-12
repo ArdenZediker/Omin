@@ -3,6 +3,7 @@ import type { Message } from "../adapters/types";
 import type { Project } from "./types";
 import { executeLocalTool, isKnownSafeCommand, isOutsideWorkspace, type LocalToolRuntime, type LocalToolSession } from "./localTools";
 import { extractToolCallArgs } from "../hooks/chatRuntimeHelpers";
+import { pluginRegistry } from "../plugins/registry";
 
 const mockedInvoke = vi.hoisted(() => vi.fn());
 
@@ -915,6 +916,92 @@ describe("localTools 截断提示（clipped-note，对齐 harness NOTE 风格）
     expect(result?.ok).toBe(true);
     expect(result?.outputText).toContain("[clipped-note]");
     expect(result?.outputText).toContain("head/tail/grep");
+  });
+});
+
+describe("/use_skill（渐进式披露：按需载入技能正文）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
+
+  const weatherSkill = {
+    id: "weather",
+    name: "weather",
+    command: "/weather",
+    description: "查询天气预报，无需 API 密钥",
+    kind: "skill" as const,
+    systemPrompt: "curl -s \"wttr.in/Yibin?format=3\"",
+  };
+
+  function mockSkills(skills: Array<Record<string, unknown>>) {
+    vi.spyOn(pluginRegistry, "listEnabledSkills").mockReturnValue(skills as never);
+  }
+
+  it("按技能 id 载入正文，返回名 / 适用场景 / 正文", async () => {
+    mockSkills([weatherSkill]);
+    const runtime = createRuntime();
+
+    const result = await executeLocalTool(runtime, {
+      command: "/use_skill",
+      args: JSON.stringify({ name: "weather" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("技能：weather（/weather）");
+    expect(result?.outputText).toContain("适用场景：查询天气预报，无需 API 密钥");
+    expect(result?.outputText).toContain("wttr.in/Yibin");
+    expect(result?.data).toMatchObject({ id: "weather" });
+  });
+
+  it("也接受斜杠命令形式（/weather）与裸文本参数", async () => {
+    mockSkills([weatherSkill]);
+    const runtime = createRuntime();
+
+    const byCommand = await executeLocalTool(runtime, { command: "/use_skill", args: "/weather" });
+    expect(byCommand?.ok).toBe(true);
+    expect(byCommand?.outputText).toContain("wttr.in/Yibin");
+
+    const byName = await executeLocalTool(runtime, { command: "/use_skill", args: "weather" });
+    expect(byName?.ok).toBe(true);
+    expect(byName?.outputText).toContain("wttr.in/Yibin");
+  });
+
+  it("未找到技能时报错并列出当前可用技能", async () => {
+    mockSkills([weatherSkill]);
+    const runtime = createRuntime();
+
+    const result = await executeLocalTool(runtime, {
+      command: "/use_skill",
+      args: JSON.stringify({ name: "nope" }),
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("未找到已启用技能：nope");
+    expect(result?.error).toContain("weather");
+  });
+
+  it("缺 name 时返回用法错误", async () => {
+    mockSkills([weatherSkill]);
+    const runtime = createRuntime();
+
+    const result = await executeLocalTool(runtime, { command: "/use_skill", args: "" });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("用法：/use_skill");
+  });
+
+  it("技能无正文时明确报错，不返回空内容", async () => {
+    mockSkills([{ ...weatherSkill, systemPrompt: "" }]);
+    const runtime = createRuntime();
+
+    const result = await executeLocalTool(runtime, {
+      command: "/use_skill",
+      args: JSON.stringify({ name: "weather" }),
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("没有正文内容");
   });
 });
 

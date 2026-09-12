@@ -907,6 +907,10 @@ export async function executeChatTurn(options: {
     ? await invoke<string>("read_project_agents_md", { projectPath: project.workspacePath }).catch(() => "")
     : "";
 
+  // 本轮是否具备工具能力：决定技能走「目录 + 按需载入正文」还是退回内联正文。
+  // （提前到提示装配之前 —— 原先在工具循环前才计算，装配时取不到。）
+  const hasTools = Boolean(tools?.length && executeToolCall && modelConfig?.toolCalling !== false);
+
   const composedSystemPrompt = buildOmniSystemPrompt({
     project,
     baseSystemPrompt: systemPrompt,
@@ -923,6 +927,8 @@ export async function executeChatTurn(options: {
     enabledSkillPrompts: pluginRegistry
       .listEnabledSkills()
       .filter((s) => !enabledSkillIds || enabledSkillIds.includes(s.id))
+      // 没有正文的技能不列进目录（否则目录会推荐一个 /use_skill 必然报错的技能）。
+      .filter((s) => Boolean((s.systemPrompt ?? "").trim()))
       // 带上 name/command/description：技能的 frontmatter 在 parseSkillMarkdown 里
       // 被剥离，只传 body 会让模型收到一段无触发条件的参考文档，无法把请求路由到技能。
       .map((s) => ({
@@ -930,9 +936,11 @@ export async function executeChatTurn(options: {
         name: s.name,
         command: s.command,
         description: s.description,
-        prompt: s.systemPrompt ?? "",
-      }))
-      .filter((s) => Boolean(s.prompt.trim())),
+        // 渐进式披露：有工具时正文不预载，由模型按需调用 /use_skill 取；
+        // 无工具的运行（紧凑窗快速问答）没有该通道，只能内联正文。
+        prompt: hasTools ? "" : s.systemPrompt ?? "",
+        catalogOnly: hasTools,
+      })),
   });
   const systemMessage: Message = { role: "system", content: composedSystemPrompt };
   const knowledgeMessages: Message[] = knowledgeContext
@@ -956,8 +964,6 @@ export async function executeChatTurn(options: {
       });
     }
   }
-
-  const hasTools = Boolean(tools?.length && executeToolCall && modelConfig?.toolCalling !== false);
 
   // 工具循环（function calling）：流式发起，模型可多轮调用工具。
   if (hasTools) {

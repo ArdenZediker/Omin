@@ -94,6 +94,51 @@ describe("promptModules", () => {
     expect(prompt).toContain("不要用 /web_search");
   });
 
+  // 渐进式披露：具备工具的运行只注入「目录条目」，正文改由 /use_skill 按需载入。
+  it("catalogOnly 技能只注入目录并指明 /use_skill 载入路径", () => {
+    const prompt = buildOmniSystemPrompt({
+      messages,
+      enabledSkillPrompts: [
+        {
+          id: "weather",
+          name: "weather",
+          command: "/weather",
+          description: "查询天气预报，无需 API 密钥",
+          prompt: "",
+          catalogOnly: true,
+        },
+      ],
+    });
+
+    // 目录信息仍在：名 / 命令 / 适用场景——模型据此判断要不要载入。
+    expect(prompt).toContain("### 技能：weather（/weather）");
+    expect(prompt).toContain("适用场景：查询天气预报，无需 API 密钥");
+    // 正文未预载，改为显式指路。
+    expect(prompt).toContain("正文：需先调用 /use_skill weather 载入");
+    expect(prompt).toContain("必须先调用 /use_skill <技能 id> 载入该技能正文");
+    expect(prompt).toContain("同一个技能本轮载入一次即可");
+  });
+
+  // 紧凑窗快速问答那条链不传工具，没有 /use_skill 可用，必须退回内联正文。
+  it("非 catalogOnly 技能仍内联正文，且不出现按需载入的措辞", () => {
+    const prompt = buildOmniSystemPrompt({
+      messages,
+      enabledSkillPrompts: [
+        {
+          id: "weather",
+          name: "weather",
+          command: "/weather",
+          description: "查询天气预报，无需 API 密钥",
+          prompt: "curl -s \"wttr.in/London?format=3\"",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("wttr.in/London");
+    expect(prompt).not.toContain("/use_skill");
+    expect(prompt).toContain("必须按该技能正文给出的方法与命令执行");
+  });
+
   it("没有启用技能时不注入技能分片", () => {
     const prompt = buildOmniSystemPrompt({ messages });
     expect(prompt).not.toContain("已启用技能");

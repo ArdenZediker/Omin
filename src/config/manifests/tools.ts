@@ -113,6 +113,26 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     },
   },
   {
+    id: "use_skill",
+    command: "/use_skill",
+    title: "Use Skill",
+    description: "Load the full instructions (body) of an installed skill by id or slash command.",
+    concurrencySafe: true,
+    promptContribution:
+      "Call /use_skill to load a skill's full instructions before doing a task that skill covers. " +
+      "The system prompt only lists each enabled skill's name, purpose and slash command — the body is NOT loaded up front. " +
+      "Pass name as the skill id (e.g. \"weather\") or its slash command (e.g. \"/weather\"). " +
+      "After loading, follow the returned instructions exactly (run the commands it specifies with the tools it names). " +
+      "Load a skill at most once per task; do not call /use_skill for one whose body is already in your context.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Skill id (e.g. \"weather\") or slash command (e.g. \"/weather\")." },
+      },
+      required: ["name"],
+    },
+  },
+  {
     id: "write_file",
     command: "/write_file",
     title: "Write File",
@@ -540,6 +560,7 @@ export const BUILTIN_TOOL_IDS = [
   "list_files",
   "read_file",
   "search_files",
+  "use_skill",
   "write_file",
   "edit_file",
   "read_persona",

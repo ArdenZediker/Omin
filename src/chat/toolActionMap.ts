@@ -5,6 +5,7 @@
 import {
   AlertTriangle,
   Archive,
+  BookOpen,
   Bot,
   Eye,
   FileDown,
@@ -67,6 +68,7 @@ const VERB_MAP: Record<string, ToolActionMeta> = {
   update_persona: { verb: "更新", title: "Update Persona", icon: Pencil, producesFile: true },
   install_expert: { verb: "安装", title: "Install Expert", icon: PackagePlus, producesFile: false },
   install_skill: { verb: "安装", title: "Install Skill", icon: PackagePlus, producesFile: false },
+  use_skill: { verb: "载入", title: "Use Skill", icon: BookOpen, producesFile: false },
   web_search: { verb: "搜索", title: "Web Search", icon: Search, producesFile: false },
   web_fetch: { verb: "抓取", title: "Web Fetch", icon: Globe, producesFile: false },
   git_info: { verb: "查看", title: "Git Info", icon: GitBranch, producesFile: false },
