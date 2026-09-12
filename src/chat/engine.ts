@@ -15,6 +15,7 @@ import { getModelPricing } from "../adapters/modelCatalog";
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord } from "./types";
 import { estimateTokens, estimatePromptTokens } from "./tokenEstimator";
 import { isFirstByteTimeoutError } from "../adapters/http";
+import { headTailClip } from "./textClip";
 
 const DEFAULT_SYSTEM_PROMPT =
   "You are Omni, a helpful, knowledgeable AI project. Be concise and clear. Use markdown when useful.";
@@ -119,7 +120,7 @@ const CONTEXT_BUDGET_RATIO = 0.75;
 const COMPACTION_PROMPT =
   "你是对话压缩器。把下面这段历史对话压缩成一段简洁的中文摘要，保留：用户的核心诉求、已经完成的工作、关键决策与结论、未完成事项。控制在 300 字以内，直接输出摘要正文，不要任何前缀。";
 
-/** 工具结果超过该字符数则就地截断（model-free 剪枝），保留头部 + 截断注记。
+/** 工具结果超过该字符数则就地截断（model-free 剪枝），保留开头 + 结尾 + 截断注记。
  * 吸收 DSH 的 toolResultPruner：在 LLM 摘要前先压工具输出——即使摘要失败，
  * 上下文里的工具结果也已缩短，等于直接减小本请求的 token 占用。 */
 const TOOL_RESULT_PRUNE_LIMIT = 2400;
@@ -138,8 +139,12 @@ const STUB_EXEMPT_TOOLS = new Set(["read_file"]);
 const TOOL_RESULT_PRUNED_MARKER = "[工具结果已截断";
 
 /**
- * model-free 截断过长的工具结果消息（role:"tool"），保留头部 + 截断注记。
+ * model-free 截断过长的工具结果消息（role:"tool"），保留**开头 + 结尾**并附截断注记。
  * 不动 toolCallId/toolCallName；非工具消息或不足上限的原文原样返回。
+ *
+ * 为什么两头留：工具输出里最有诊断价值的是尾部——报错栈末行、`N failed`、退出提示；
+ * 只留头部会让模型拿着一份「中途截胡」的输出推因。顺带把 read_file 的 `[file-meta]` /
+ * `[clipped-note]` 尾注也保住（它们本就在末行，原先一并被砍掉）。
  */
 export function pruneToolResultMessages(messages: Message[]): Message[] {
   let changed = false;
@@ -149,11 +154,10 @@ export function pruneToolResultMessages(messages: Message[]): Message[] {
     if (message.content.includes(TOOL_RESULT_PRUNED_MARKER)) return message;
     if (message.content.length <= TOOL_RESULT_PRUNE_LIMIT) return message;
     changed = true;
+    const { text, omitted } = headTailClip(message.content, TOOL_RESULT_PRUNE_LIMIT);
     return {
       ...message,
-      content:
-        message.content.slice(0, TOOL_RESULT_PRUNE_LIMIT) +
-        `\n…[工具结果已截断，原 ${message.content.length} 字符，保留前 ${TOOL_RESULT_PRUNE_LIMIT} 字符]`,
+      content: `${text}\n${TOOL_RESULT_PRUNED_MARKER}：原 ${message.content.length} 字符，已省略中间 ${omitted} 字符，保留开头与结尾]`,
     };
   });
   return changed ? pruned : messages;

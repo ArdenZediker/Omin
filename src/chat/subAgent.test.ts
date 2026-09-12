@@ -157,8 +157,21 @@ describe("truncateSubAgentOutput", () => {
   it("超长时截断并附提示", () => {
     const long = "x".repeat(MAX_SUB_AGENT_OUTPUT_CHARS + 100);
     const truncated = truncateSubAgentOutput(long);
-    expect(truncated.length).toBeLessThanOrEqual(MAX_SUB_AGENT_OUTPUT_CHARS + 40);
-    expect(truncated).toContain("已截断");
+    expect(truncated.length).toBeLessThanOrEqual(MAX_SUB_AGENT_OUTPUT_CHARS + 120);
+    expect(truncated).toContain("已省略中间");
+  });
+
+  // 回归：只留开头会把「结论与建议」这段最有价值的内容砍掉 —— 报告结构是过程在前、结论在后。
+  it("超长时保留开头与结尾，结论不被砍掉", () => {
+    const head = "调研过程：";
+    const tail = "结论：建议采用方案 B。";
+    const long = head + "过".repeat(MAX_SUB_AGENT_OUTPUT_CHARS) + tail;
+
+    const truncated = truncateSubAgentOutput(long);
+
+    expect(truncated.startsWith(head)).toBe(true);
+    expect(truncated).toContain(tail);
+    expect(truncated).toContain("中间省略");
   });
 });
 

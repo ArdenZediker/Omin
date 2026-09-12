@@ -325,6 +325,28 @@ describe("pruneToolResultMessages（model-free 工具结果剪枝，吸 DSH tool
     expect(result[0].toolCallName).toBe("read_file");
   });
 
+  // 回归：工具输出里最有诊断价值的是尾部（报错栈末行 / N failed / 退出提示），只留头部会把结论砍掉。
+  it("超长工具结果保留结尾（尾部错误不被砍掉）", () => {
+    const head = "编译开始\n";
+    const tail = "error TS2345: 参数类型不匹配";
+    const messages: Message[] = [
+      { role: "tool", content: head + "编译日志行\n".repeat(500) + tail, toolCallId: "t9" },
+    ];
+
+    const result = pruneToolResultMessages(messages);
+
+    expect(result[0].content.startsWith(head)).toBe(true);
+    expect(result[0].content).toContain(tail);
+    expect(result[0].content).toContain("中间省略");
+  });
+
+  it("已带截断标记的结果保持幂等（不二次截断）", () => {
+    const already = `${"Y".repeat(2000)}\n[工具结果已截断：原 3000 字符，已省略中间 600 字符，保留开头与结尾]`;
+    const messages: Message[] = [{ role: "tool", content: already, toolCallId: "t10" }];
+
+    expect(pruneToolResultMessages(messages)[0].content).toBe(already);
+  });
+
   it("未超长工具结果原样返回", () => {
     const messages: Message[] = [{ role: "tool", content: "短结果", toolCallId: "t2" }];
     const result = pruneToolResultMessages(messages);

@@ -4,6 +4,7 @@ import type { ChatStep, Project } from "./types";
 import type { PluginManifest } from "../plugins/types";
 import { canDelegateExpert } from "./expertDelegation";
 import { selectExpertTools } from "./expertTools";
+import { headTailClip } from "./textClip";
 
 /**
  * 子 Agent 调度（对齐 Codex/Claude Code 的 Task 工具形态）：
@@ -167,10 +168,16 @@ export function filterSubAgentTools(parentTools: ChatToolParam[]): ChatToolParam
   return parentTools.filter((tool) => whitelist.has(tool.name));
 }
 
-/** 报告超长截断（保护主循环上下文预算）。 */
+/**
+ * 报告超长截断（保护主循环上下文预算）。
+ *
+ * 采用 head + tail 而不是只留开头：子 Agent 的报告结构是「过程在前、**结论与建议在后**」，
+ * 只留 head 恰好把主 Agent 最需要的结论砍掉，回填的是一份没有答案的调研过程。
+ */
 export function truncateSubAgentOutput(text: string): string {
-  if (text.length <= MAX_SUB_AGENT_OUTPUT_CHARS) return text;
-  return `${text.slice(0, MAX_SUB_AGENT_OUTPUT_CHARS)}\n\n（报告过长，已截断至 ${MAX_SUB_AGENT_OUTPUT_CHARS} 字符）`;
+  const { text: clipped, clipped: didClip, omitted } = headTailClip(text, MAX_SUB_AGENT_OUTPUT_CHARS);
+  if (!didClip) return text;
+  return `${clipped}\n\n（报告过长，已省略中间 ${omitted} 字符，保留开头与结尾；如需完整内容请让子 Agent 分节输出）`;
 }
 
 /**
