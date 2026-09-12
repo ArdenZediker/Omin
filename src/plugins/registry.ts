@@ -129,8 +129,15 @@ class PluginRegistry {
     return this.list({ kind: "connector", enabled: true });
   }
 
+  /**
+   * 列出**已启用**的专家（内置 + 已安装）。
+   *
+   * 必须带 `enabled: true`：`list()` 在 `enabled` 缺省时不过滤开关状态，
+   * 曾在「我的插件」里关掉的专家仍会进 agent 工具名册、仍能被委派，
+   * 也会出现在 `@专家` 选择器里 —— 与「开启才可用」的口径矛盾。
+   */
   listExperts(): PluginManifest[] {
-    return this.list({ kind: "expert" });
+    return this.list({ kind: "expert", enabled: true });
   }
 
   listTemplates(): PluginManifest[] {

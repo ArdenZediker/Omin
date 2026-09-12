@@ -3,6 +3,9 @@ import { BUILTIN_TOOL_IDS, getToolManifestById } from "../config/manifests/tools
 import type { ChatToolParam, Message } from "../adapters/types";
 import type { Project } from "../chat/types";
 import { buildShellEnvHint } from "../chat/shellEnv";
+import { resolveDelegatableExperts } from "../chat/expertDelegation";
+import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
+import { loadBasicSettings } from "../app/settings";
 import { pluginRegistry } from "../plugins/registry";
 import type { PetThoughtState } from "../app/types";
 
@@ -20,20 +23,35 @@ export type SessionLite = {
 /** 专家名册上限：避免专家装太多时把 agent 工具描述撑爆（超出部分提示用户去扩展中心看）。 */
 const EXPERT_ROSTER_LIMIT = 12;
 
+/** 读取全局「允许模型指派任意专家」开关；读取失败按默认（关闭 = 只允许项目绑定）处理。 */
+function resolveAllowAnyExpertDelegation(): boolean {
+  try {
+    return loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS).allowAnyExpertDelegation === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * agent 工具的动态专家名册（仿 bash 的 buildShellEnvHint 动态描述模式）：
  * 列出可委派的专家（id + 名称 + 一句话描述），主模型据此决定是否带 expertId 派发。
- * 项目绑定专家（boundExpertIds 非空）时只暴露绑定集；无可用专家时给出兜底说明。
+ *
+ * 口径**刻意区别于技能/MCP**：技能与 MCP「安装 + 开启」即对模型直接可用，而专家代表
+ * 「本项目可指派的工作角色」，默认只暴露**当前项目绑定**的那批（`boundExpertIds`）；
+ * 未绑定 ⇒ 名册为空 ⇒ 模型无从委派。设置里打开「允许模型指派任意专家」后放宽为全部已启用专家。
+ * 用户在输入框手动 `@专家` 不受此约束（见 `chat/expertDelegation.ts`）。
  */
 export function buildExpertAgentHint(project: Project | null): string {
   const allExperts = pluginRegistry
     .listExperts()
     .filter((manifest) => manifest.templatePrompt?.trim());
-  const bound = (project?.boundExpertIds ?? []).filter(Boolean);
-  const experts = bound.length > 0 ? allExperts.filter((m) => bound.includes(m.id)) : allExperts;
+  const allowAnyExpert = resolveAllowAnyExpertDelegation();
+  const experts = resolveDelegatableExperts(allExperts, project, allowAnyExpert);
   if (experts.length === 0) {
-    return "\nEXPERTS: none available right now — delegate generic read-only research (omit expertId)." +
-      (bound.length > 0 ? " (This project has bound experts that are not installed/enabled.)" : "");
+    const reason = allowAnyExpert
+      ? " (No enabled expert is installed.)"
+      : " (Experts are project-scoped: only experts bound in the project settings can be delegated.)";
+    return "\nEXPERTS: none available right now — delegate generic read-only research (omit expertId)." + reason;
   }
   const lines = experts.slice(0, EXPERT_ROSTER_LIMIT).map((m) => {
     const desc = (m.description ?? "").trim();

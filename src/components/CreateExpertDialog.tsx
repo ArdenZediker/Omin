@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { X, Bot, Wand2, Cable, Check } from "lucide-react";
+import { X, Bot, Wand2, Cable, Plug, Check } from "lucide-react";
 import { TOOL_MANIFESTS } from "../config/manifests/tools";
 import { pluginRegistry } from "../plugins/registry";
 import type { PluginManifest } from "../plugins/types";
@@ -28,8 +28,8 @@ const EXPERT_CATEGORIES = [
 
 /**
  * 创建/编辑专家对话框：表单化生成或更新 PluginManifest(kind: "expert")。
- * 专家 = 子 Agent 档案：templatePrompt 为角色提示词，defaultToolIds/defaultSkillIds
- * 决定该专家被 agent 委派或 @ 指定时的能力边界。
+ * 专家 = 子 Agent 档案：templatePrompt 为角色提示词，defaultToolIds / defaultSkillIds /
+ * defaultMcpConnectorIds 三者共同决定该专家被 agent 委派或 @ 指定时的能力边界。
  * 编辑模式（editing 非空）预填表单，保存走 pluginRegistry.updateManifest（保留启用状态）。
  */
 export default function CreateExpertDialog({ open, editing = null, onClose, onCreated }: CreateExpertDialogProps) {
@@ -39,6 +39,7 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
   const [templatePrompt, setTemplatePrompt] = useState("");
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [selectedMcpConnectorIds, setSelectedMcpConnectorIds] = useState<string[]>([]);
 
   const isEditing = Boolean(editing);
 
@@ -52,6 +53,7 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
       setTemplatePrompt(editing.templatePrompt ?? "");
       setSelectedToolIds([...(editing.defaultToolIds ?? [])]);
       setSelectedSkillIds([...(editing.defaultSkillIds ?? [])]);
+      setSelectedMcpConnectorIds([...(editing.defaultMcpConnectorIds ?? [])]);
     } else {
       setName("");
       setDescription("");
@@ -59,6 +61,7 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
       setTemplatePrompt("");
       setSelectedToolIds([]);
       setSelectedSkillIds([]);
+      setSelectedMcpConnectorIds([]);
     }
   }, [open, editing]);
 
@@ -70,6 +73,17 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
   // 可绑定技能：注册表中的全部技能（含未启用——声明后由项目/会话启用逻辑决定是否生效）。
   const skillOptions = useMemo(
     () => pluginRegistry.list({ kind: "skill" }).map((skill) => ({ id: skill.id, title: skill.name })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [open]
+  );
+  // 可绑定 MCP：kind=connector 且无 provider 的连接器（有 provider 的是模型连接器，在「模型设置」里配）。
+  // 只按 id 绑定连接器，不逐个勾工具——连接器暴露的工具会随其版本变化，绑定连接器更稳。
+  const mcpOptions = useMemo(
+    () =>
+      pluginRegistry
+        .list({ kind: "connector" })
+        .filter((connector) => !connector.provider)
+        .map((connector) => ({ id: connector.id, title: connector.name })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open]
   );
@@ -97,6 +111,7 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
       templatePrompt: templatePrompt.trim(),
       defaultToolIds: [...selectedToolIds],
       defaultSkillIds: [...selectedSkillIds],
+      defaultMcpConnectorIds: [...selectedMcpConnectorIds],
     };
     let manifest: PluginManifest;
     if (editing) {
@@ -205,6 +220,36 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
                 );
               })}
             </div>
+          </div>
+
+          <div className="omni-dialog__plugin-row">
+            <div className="omni-dialog__plugin-row-header">
+              <div className="omni-dialog__plugin-row-title">
+                <Plug size={16} strokeWidth={1.8} />
+                <span>绑定 MCP</span>
+                <span className="omni-dialog__plugin-row-hint">（可多选；绑定后该专家可用这个连接器暴露的全部工具）</span>
+              </div>
+            </div>
+            {mcpOptions.length > 0 ? (
+              <div className="omni-dialog__plugin-chips">
+                {mcpOptions.map((connector) => {
+                  const active = selectedMcpConnectorIds.includes(connector.id);
+                  return (
+                    <button
+                      key={connector.id}
+                      type="button"
+                      className={`omni-dialog__plugin-chip${active ? " omni-dialog__plugin-chip--active" : ""}`}
+                      onClick={() => setSelectedMcpConnectorIds((current) => toggle(current, connector.id))}
+                    >
+                      {active ? <Check size={12} strokeWidth={2} /> : <Plug size={12} strokeWidth={1.8} />}
+                      <span>{connector.title}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="omni-dialog__hint">暂无已安装的 MCP 连接器（可在扩展中心「连接器」中添加）</p>
+            )}
           </div>
 
           <div className="omni-dialog__plugin-row">

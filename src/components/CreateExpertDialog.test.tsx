@@ -105,4 +105,54 @@ describe("CreateExpertDialog", () => {
     expect(installedAfter?.installedAt).toBe(installedBefore?.installedAt);
     expect(installedAfter?.enabled).toBe(true);
   });
+
+  it("绑定 MCP：只列出无 provider 的连接器，选中后写入 defaultMcpConnectorIds", () => {
+    pluginRegistry.load();
+    // 无 provider = MCP 连接器；有 provider 的是模型连接器（走「模型设置」），不该出现在这里
+    pluginRegistry.install(
+      {
+        id: "mcp-test-connector",
+        name: "测试 MCP 连接器",
+        description: "仅用于测试的 MCP 连接器",
+        version: "1.0.0",
+        author: "测试",
+        kind: "connector",
+      },
+      { type: "local", path: "user" }
+    );
+    pluginRegistry.install(
+      {
+        id: "model-test-connector",
+        name: "测试模型连接器",
+        description: "带 provider，属模型连接器",
+        version: "1.0.0",
+        author: "测试",
+        kind: "connector",
+        provider: "openai",
+      },
+      { type: "local", path: "user" }
+    );
+
+    const onCreated = vi.fn();
+    render(<CreateExpertDialog open onClose={vi.fn()} onCreated={onCreated} />);
+
+    // MCP 连接器进入候选，模型连接器被排除
+    expect(screen.getByText("测试 MCP 连接器")).toBeTruthy();
+    expect(screen.queryByText("测试模型连接器")).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("如：周报专家、代码评审专家"), {
+      target: { value: "数据专家" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/专家的系统提示词/), {
+      target: { value: "你负责数据检索。" },
+    });
+
+    const chip = screen.getByText("测试 MCP 连接器").closest("button") as HTMLButtonElement;
+    expect(chip).toBeTruthy();
+    fireEvent.click(chip);
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+
+    const created = onCreated.mock.calls[0][0];
+    expect(created.defaultMcpConnectorIds).toEqual(["mcp-test-connector"]);
+  });
 });

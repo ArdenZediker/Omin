@@ -2,6 +2,8 @@ import type { ChatToolCall, ChatToolParam, Message } from "../adapters/types";
 import { executeChatTurn, type ToolCallOutcome } from "./engine";
 import type { ChatStep, Project } from "./types";
 import type { PluginManifest } from "../plugins/types";
+import { canDelegateExpert } from "./expertDelegation";
+import { selectExpertTools } from "./expertTools";
 
 /**
  * 子 Agent 调度（对齐 Codex/Claude Code 的 Task 工具形态）：
@@ -216,6 +218,12 @@ export type SubAgentRunContext = {
   executeToolCall: (toolCall: ChatToolCall) => Promise<string | ToolCallOutcome>;
   /** 按 id 解析专家 manifest（非专家 kind 返回 null）；由运行时注入以隔离 pluginRegistry */
   resolveExpert?: (id: string) => PluginManifest | null;
+  /**
+   * 全局放宽开关（设置 → 子 Agent 模型 → 允许模型指派任意专家）。
+   * 缺省 false = 只允许委派**当前项目绑定**的专家 —— 专家是项目级工作角色，
+   * 与技能/MCP 的「安装 + 开启即可用」口径刻意不同（见 chat/expertDelegation.ts）。
+   */
+  allowAnyExpertDelegation?: boolean;
   signal?: AbortSignal;
   onToolStep?: (step: ChatStep) => void;
 };
@@ -244,6 +252,21 @@ async function runSingleSubAgent(spec: SubAgentTaskSpec, context: SubAgentRunCon
     if (!resolved || resolved.kind !== "expert") {
       return { outputText: `专家「${expertId}」不存在或不是有效的专家定义，请改用通用只读调研（省略 expertId）。` };
     }
+    // 委派准入：默认只放行**当前项目绑定**的专家（手动 @专家 不走这条路径）。
+    // 拒绝时把原因说清楚，避免模型换个 id 反复重试。
+    if (
+      !canDelegateExpert({
+        expertId: resolved.id,
+        project: context.project,
+        allowAnyExpert: context.allowAnyExpertDelegation === true,
+      })
+    ) {
+      return {
+        outputText:
+          `专家「${expertId}」未绑定到当前项目，无法委派。` +
+          "请改用通用只读调研（省略 expertId），或让用户在项目设置里绑定该专家。",
+      };
+    }
     expert = resolved;
   }
 
@@ -251,9 +274,9 @@ async function runSingleSubAgent(spec: SubAgentTaskSpec, context: SubAgentRunCon
   let systemPrompt: string;
   let skillIds: string[] | undefined;
   if (expert) {
-    // 工具按专家声明给（写类工具允许，HITL 确认门在执行器里照常生效）；声明为空 = 纯文本专家。
-    const declared = new Set(expert.defaultToolIds ?? []);
-    tools = declared.size > 0 ? context.tools.filter((tool) => declared.has(tool.name)) : [];
+    // 工具按专家声明给：本地工具按 id 精确匹配 + 绑定连接器暴露的 mcp__* 工具
+    //（写类工具允许，HITL 确认门在执行器里照常生效）；两类声明皆空 = 纯文本专家。
+    tools = selectExpertTools(context.tools, expert);
     systemPrompt = [expert.templatePrompt?.trim() || `你是「${expert.name}」专家。`, SUB_AGENT_EXPERT_RULES].join("\n");
     skillIds = expert.defaultSkillIds;
   } else {

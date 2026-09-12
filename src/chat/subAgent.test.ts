@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PluginManifest } from "../plugins/types";
+import type { Project } from "./types";
 import {
   SUB_AGENT_TOOL_IDS,
   MAX_SUB_AGENT_DEPTH,
@@ -229,8 +230,10 @@ describe("runSubAgent", () => {
     defaultSkillIds: ["weekly-report"],
   };
 
+  /** 专家委派默认受「项目绑定」约束：给一个绑定了 writer-expert 的项目 = 生产默认口径。 */
   function makeExpertContext(expert: PluginManifest | null, overrides?: Partial<SubAgentRunContext>): SubAgentRunContext {
     return makeContext({
+      project: { id: "project-1", boundExpertIds: ["writer-expert"] } as unknown as Project,
       resolveExpert: (id) => (expert && id === expert.id ? expert : null),
       ...overrides,
     });
@@ -260,6 +263,39 @@ describe("runSubAgent", () => {
     });
     expect(outputText).toContain("不存在");
     expect(mockedExecuteChatTurn).not.toHaveBeenCalled();
+  });
+
+  // 专家是「本项目可指派的工作角色」：未绑定即不可被模型委派（技能/MCP 不适用此口径）。
+  it("未绑定到当前项目的专家被拒绝委派，且明确说明原因", async () => {
+    const { outputText } = await runSubAgent({
+      args: JSON.stringify({ task: "写周报", expertId: "writer-expert" }),
+      context: makeExpertContext(expertManifest, {
+        project: { id: "project-2", boundExpertIds: ["dev-expert"] } as unknown as Project,
+      }),
+    });
+    expect(outputText).toContain("未绑定到当前项目");
+    expect(mockedExecuteChatTurn).not.toHaveBeenCalled();
+  });
+
+  it("无项目（临时会话）默认不放行；打开「允许指派任意专家」后放行", async () => {
+    const rejected = await runSubAgent({
+      args: JSON.stringify({ task: "写周报", expertId: "writer-expert" }),
+      context: makeExpertContext(expertManifest, { project: null }),
+    });
+    expect(rejected.outputText).toContain("未绑定到当前项目");
+    expect(mockedExecuteChatTurn).not.toHaveBeenCalled();
+
+    mockedExecuteChatTurn.mockResolvedValue({
+      content: "专家报告",
+      toolRounds: 1,
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      estimated: false,
+    } as never);
+    const allowed = await runSubAgent({
+      args: JSON.stringify({ task: "写周报", expertId: "writer-expert" }),
+      context: makeExpertContext(expertManifest, { project: null, allowAnyExpertDelegation: true }),
+    });
+    expect(allowed.outputText).toContain("专家报告");
   });
 
   it("专家未声明工具时以纯文本专家运行（不报错）", async () => {

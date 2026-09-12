@@ -399,6 +399,25 @@ export default function BasicSettingsSection({
             ]}
           />
         </Field>
+        <Field label="专家委派">
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={basicSettings.allowAnyExpertDelegation === true}
+                onChange={(e) => onUpdateBasicSettings({ allowAnyExpertDelegation: e.target.checked })}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              允许模型指派任意已启用专家
+            </label>
+            <p className="text-xs text-slate-500 omni-settings-muted">
+              默认关闭。专家与技能/MCP 的口径不同：技能和 MCP「安装 + 开启」即对模型直接可用，
+              而专家是「本项目可指派的工作角色」，只有项目设置里绑定过的专家才会进入模型的可委派名册，
+              未绑定的专家即使已安装并开启也不会被模型自动指派。打开后放宽为任意已启用专家都可委派。
+              手动 @专家 不受此开关影响，始终可用。
+            </p>
+          </div>
+        </Field>
       </div>
 
       <div className="border-t border-slate-100 pt-4">

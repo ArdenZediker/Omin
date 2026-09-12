@@ -66,6 +66,14 @@ export type PluginManifest = {
   defaultToolIds?: string[];
   /** 项目模板推荐默认 allowedSkillIds */
   defaultSkillIds?: string[];
+  /**
+   * 专家绑定的 MCP 连接器 id（连接器 manifest id 即 MCP 的 serverId，
+   * 其工具名形如 `mcp__{连接器id}__{工具}`）。
+   *
+   * 为什么 MCP 要单独声明：`buildChatTools()` 只产出内置 + 项目工具，**永远不含 `mcp__*`**，
+   * 所以专家的 `defaultToolIds` 勾不到任何 MCP 工具。不单列这一项，专家在场时 MCP 只能被整体摘掉。
+   */
+  defaultMcpConnectorIds?: string[];
 };
 
 export type InstalledPlugin = {

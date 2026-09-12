@@ -40,6 +40,8 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   sandboxEnabled: false,
   subAgentModel: "",
   subAgentFastModel: "",
+  // 默认关闭：专家只在「项目显式绑定」后才可被模型自动委派（技能/MCP 不受此口径约束）。
+  allowAnyExpertDelegation: false,
 };
 
 export const COMPACT_APPEARANCE_PRESETS: Record<CompactAppearance, { width: number; height: number }> = {

@@ -20,6 +20,7 @@ import { pluginRegistry } from "../plugins/registry";
 import { requestConfirmation } from "../chat/confirmationGate";
 import { appendArtifact, loadArtifacts, notifyArtifactsChanged, NO_PROJECT_ARTIFACT_KEY, type Artifact } from "../chat/artifacts";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
+import { selectExpertTools } from "../chat/expertTools";
 import type { TaskExecutionResult, TaskRuntimeState } from "../chat/taskTypes";
 import type { Project, ChatExecutionResult, ChatSendOptions, ChatStep, ChatSession } from "../chat/types";
 import type { ProjectMemoryRecord, SessionSummaryRecord } from "../chat/types";
@@ -203,8 +204,16 @@ export function useChatRuntime({
   /** 子 Agent 调度上下文：每轮任务开始时注入（模型/项目/信号/工具/执行器/步骤回调），
    *  executeToolCall 拦截 `agent` 调用时读取；运行结束在 finishSessionRun 中清除。 */
   const subAgentContextRef = useRef<SubAgentRunContext | null>(null);
-  /** 按 id 解析专家 manifest（专家委派用）；kind 非 expert 一律视为无效。 */
+  /**
+   * 按 id 解析专家 manifest；kind 非 expert 或已被停用一律视为无效。
+   *
+   * 停用即不可用：`listExperts()` 已按 enabled 过滤，若这里不判，被关掉的专家仍能通过
+   * `@专家` 手动激活，与「开启才可用」的口径矛盾。
+   * 注意：**委派准入（项目绑定）不在这里** —— 手动 `@专家` 是用户本人显式选择，应当放行；
+   * 项目绑定只约束模型自动委派，那一道闸在 `chat/subAgent.ts` + `chat/expertDelegation.ts`。
+   */
   const resolveExpertForSubAgent = useCallback((id: string) => {
+    if (!pluginRegistry.isEnabled(id)) return null;
     const manifest = pluginRegistry.getManifest(id);
     return manifest && manifest.kind === "expert" ? manifest : null;
   }, []);
@@ -931,6 +940,7 @@ export function useChatRuntime({
           model: executionModel,
           capableModel: subAgentSettings.subAgentModel?.trim() || undefined,
           fastModel: subAgentSettings.subAgentFastModel?.trim() || undefined,
+          allowAnyExpertDelegation: subAgentSettings.allowAnyExpertDelegation === true,
           project: executionProject,
           signal: abortController.signal,
           tools: runTools,
@@ -1334,6 +1344,7 @@ export function useChatRuntime({
           model: resolvedModelId,
           capableModel: subAgentSettings.subAgentModel?.trim() || undefined,
           fastModel: subAgentSettings.subAgentFastModel?.trim() || undefined,
+          allowAnyExpertDelegation: subAgentSettings.allowAnyExpertDelegation === true,
           project: targetProject,
           signal: abortController.signal,
           tools: runTools,
@@ -1600,13 +1611,15 @@ export function useChatRuntime({
           if (artifactsDirty) notifyArtifactsChanged();
         }
         const attachmentContext = buildAttachmentContext(attachments);
-        // @专家角色切换：本轮对话用专家的提示词/工具/技能集驱动（MCP 工具不并入，按专家声明给）
+        // @专家角色切换：本轮对话用专家的提示词/工具/技能集驱动。
+        // 工具集 = 专家声明的本地工具 id ∪ **绑定 MCP 连接器**的 mcp__* 工具。
+        // 此前走 `buildChatTools().filter(...)`，而 buildChatTools 永不产出 mcp__*，
+        // 于是专家在场时 MCP 被整体摘掉 —— 现在由 defaultMcpConnectorIds 显式声明接入。
         const selectedExpertId = options.expertId?.trim() || null;
         const activeExpert = selectedExpertId ? resolveExpertForSubAgent(selectedExpertId) : null;
-        const expertToolIds = activeExpert ? new Set<string>(activeExpert.defaultToolIds ?? []) : null;
         // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
-        const runTools = expertToolIds
-          ? buildChatTools(activeProject).filter((tool) => expertToolIds.has(tool.name))
+        const runTools = activeExpert
+          ? selectExpertTools([...buildChatTools(activeProject), ...listActiveMcpTools()], activeExpert)
           : [...buildChatTools(activeProject), ...listActiveMcpTools()];
         const handleToolStep = (step: ChatStep) => {
           if (!isCurrentSessionRun(sessionId, runId, abortController)) {
@@ -1619,6 +1632,7 @@ export function useChatRuntime({
           model: executionModel,
           capableModel: subAgentSettings.subAgentModel?.trim() || undefined,
           fastModel: subAgentSettings.subAgentFastModel?.trim() || undefined,
+          allowAnyExpertDelegation: subAgentSettings.allowAnyExpertDelegation === true,
           project: activeProject,
           signal: abortController.signal,
           tools: runTools,

@@ -28,6 +28,15 @@ export type BasicSettings = {
    * 留空则回落到 subAgentModel（再回落主运行模型）。对应 atomcode SubagentProvider 的 fast 层。
    */
   subAgentFastModel: string;
+  /**
+   * 是否允许模型把任务委派给「任意」已启用专家。
+   *
+   * 默认关闭 —— 专家的口径与技能/MCP 不同：技能与 MCP「安装 + 开启」即对模型直接可用，
+   * 而专家代表「本项目可指派的工作角色」，只有项目显式绑定的专家（`boundExpertIds`）
+   * 才允许被模型自动委派。打开此开关则放宽为任意已启用专家都可委派。
+   * 注：用户在输入框手动 `@专家` 属本人显式选择，始终放行，不受本开关影响。
+   */
+  allowAnyExpertDelegation: boolean;
 };
 
 export type ExternalChatEntry = {

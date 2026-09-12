@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { buildChatTools, buildExpertAgentHint, createStructuredOutputFilter, extractToolCallArgs, resolveEnabledToolNames } from "./chatRuntimeHelpers";
 import { BUILTIN_TOOL_IDS } from "../config/manifests/tools";
 import type { Project } from "../chat/types";
+import { BASIC_SETTINGS_STORAGE_KEY } from "../app/constants";
+import { pluginRegistry } from "../plugins/registry";
+import type { PluginManifest } from "../plugins/types";
 
 describe("extractToolCallArgs", () => {
   it("纯字符串原样返回", () => {
@@ -125,25 +128,62 @@ describe("内置工具对所有模型/会话公用", () => {
 });
 
 describe("buildExpertAgentHint（agent 工具的动态专家名册）", () => {
-  it("无项目绑定时列出全部可用专家（含内置）", () => {
-    const hint = buildExpertAgentHint(null);
-    expect(hint).toContain("AVAILABLE EXPERTS");
-    expect(hint).toContain("dev-expert");
+  afterEach(() => {
+    localStorage.removeItem(BASIC_SETTINGS_STORAGE_KEY);
   });
 
-  it("agent 工具描述自动追加专家名册", () => {
-    const agentTool = buildChatTools(null).find((t) => t.name === "agent");
-    expect(agentTool).toBeDefined();
-    expect(agentTool!.description).toContain("AVAILABLE EXPERTS");
+  // 口径：专家是「本项目可指派的工作角色」，与技能/MCP 的「安装 + 开启即可用」刻意不同 ——
+  // 默认只有项目绑定过的专家才进模型的可委派名册。
+  it("没绑定专家时名册为空，并说明专家是项目级的", () => {
+    expect(buildExpertAgentHint(null)).toContain("none available");
+    expect(buildExpertAgentHint(null)).toContain("project-scoped");
+    expect(buildExpertAgentHint(null)).not.toContain("AVAILABLE EXPERTS");
+
+    const unbound = { boundExpertIds: [] } as unknown as Project;
+    expect(buildExpertAgentHint(unbound)).not.toContain("AVAILABLE EXPERTS");
   });
 
   it("项目绑定专家时只暴露绑定集；绑定的专家不存在则回退到无专家提示", () => {
     const bound = { boundExpertIds: ["dev-expert"] } as unknown as Project;
     const hint = buildExpertAgentHint(bound);
+    expect(hint).toContain("AVAILABLE EXPERTS");
     expect(hint).toContain("dev-expert");
     expect(hint).not.toContain("writer-expert");
 
     const boundMissing = { boundExpertIds: ["ghost-expert"] } as unknown as Project;
     expect(buildExpertAgentHint(boundMissing)).toContain("none available");
+  });
+
+  it("打开「允许模型指派任意专家」后，未绑定项目也能看到全部已启用专家", () => {
+    localStorage.setItem(BASIC_SETTINGS_STORAGE_KEY, JSON.stringify({ allowAnyExpertDelegation: true }));
+    const hint = buildExpertAgentHint(null);
+    expect(hint).toContain("AVAILABLE EXPERTS");
+    expect(hint).toContain("dev-expert");
+    expect(hint).toContain("writer-expert");
+  });
+
+  it("已停用的专家不进名册（listExperts 按 enabled 过滤）", () => {
+    const manifest = {
+      id: "tmp-expert",
+      name: "临时专家",
+      description: "",
+      version: "0.0.1",
+      kind: "expert",
+      templatePrompt: "你是临时专家。",
+    } as PluginManifest;
+    pluginRegistry.install(manifest, { type: "local", path: "tmp" });
+    try {
+      expect(pluginRegistry.listExperts().some((m) => m.id === "tmp-expert")).toBe(true);
+      pluginRegistry.setEnabled("tmp-expert", false);
+      expect(pluginRegistry.listExperts().some((m) => m.id === "tmp-expert")).toBe(false);
+    } finally {
+      pluginRegistry.uninstall("tmp-expert");
+    }
+  });
+
+  it("agent 工具描述自动追加专家名册（未绑定项目时为兜底文案）", () => {
+    const agentTool = buildChatTools(null).find((t) => t.name === "agent");
+    expect(agentTool).toBeDefined();
+    expect(agentTool!.description).toContain("none available");
   });
 });
