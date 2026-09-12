@@ -19,8 +19,29 @@ export type PromptBuildOptions = {
   persona?: PersonaConfig | null;
   /** 来自项目工作目录下 AGENTS.md / AGENTS.override.md 的自由格式指令（仿 codex / deepseek-harness）。 */
   projectAgentsMd?: string | null;
-  /** 已启用技能正文的集合（普通对话时把技能能力注入系统提示，使模型知道可用技能）。 */
-  enabledSkillPrompts?: string[];
+  /**
+   * 已启用的技能（普通对话/任务对话时把技能能力注入系统提示，使模型知道可用技能）。
+   *
+   * 必须带上「身份 + 适用场景」而不只是正文：SKILL.md 的 frontmatter 在
+   * parseSkillMarkdown 里被剥离（systemPrompt = body），如果这里再只传正文，
+   * 模型看到的就只是一段无标题、无触发条件的参考文档，无法把用户请求路由到它——
+   * 于是「今天宜宾天气」会被 /web_search 抢走（它的工具描述里明确写了 weather）。
+   */
+  enabledSkillPrompts?: EnabledSkillPrompt[];
+};
+
+/** 注入系统提示的单个技能条目。 */
+export type EnabledSkillPrompt = {
+  /** 技能 id（如 weather）。 */
+  id: string;
+  /** 展示名（缺省回退 id）。 */
+  name?: string;
+  /** 斜杠命令（如 /weather）。 */
+  command?: string;
+  /** 技能适用场景（frontmatter 的 description），模型据此判断请求是否匹配。 */
+  description?: string;
+  /** 技能正文（SKILL.md 去掉 frontmatter 后的 body）。 */
+  prompt: string;
 };
 
 export const OMNI_STRUCTURED_MEMORY_TAG = "omni_memory";
@@ -261,13 +282,27 @@ export const SYSTEM_PROMPT_FRAGMENTS: PromptFragment[] = [
   {
     id: "enabledSkills",
     build: (o) => {
-      const prompts = (o.enabledSkillPrompts ?? [])
-        .map((text) => text?.trim())
-        .filter((text): text is string => Boolean(text));
-      if (prompts.length === 0) return null;
+      const skills = (o.enabledSkillPrompts ?? []).filter((skill) => skill?.prompt?.trim());
+      if (skills.length === 0) return null;
+      const blocks = skills.map((skill) => {
+        const name = skill.name?.trim() || skill.id;
+        const command = skill.command?.trim();
+        const heading = command && command !== name ? `${name}（${command}）` : name;
+        const description = skill.description?.trim();
+        return [
+          `### 技能：${heading}`,
+          description ? `适用场景：${description}` : "",
+          skill.prompt.trim(),
+        ]
+          .filter(Boolean)
+          .join("\n");
+      });
       return [
-        "已启用技能（你拥有以下技能，当用户请求匹配其能力时应主动使用）：",
-        ...prompts.map((text, index) => `### 技能 ${index + 1}\n${text}`),
+        "已启用技能（用户为本工作台安装的专用能力，命中时**优先于通用工具**）：",
+        "- 当用户请求与某个技能的「适用场景」匹配时，**必须按该技能正文给出的方法与命令执行**（例如用 /bash 运行它写明的命令行）。",
+        "- **不要用 /web_search、/web_fetch 这类通用工具替代已经覆盖该请求的技能**——即使通用工具的描述里也提到了同一主题；技能是针对该任务专门配置的，结果更准。",
+        "- 只有当没有任何已启用技能覆盖该请求时，才使用通用工具。",
+        ...blocks,
       ].join("\n\n");
     },
     maxChars: 12_000,

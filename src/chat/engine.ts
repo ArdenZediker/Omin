@@ -923,8 +923,16 @@ export async function executeChatTurn(options: {
     enabledSkillPrompts: pluginRegistry
       .listEnabledSkills()
       .filter((s) => !enabledSkillIds || enabledSkillIds.includes(s.id))
-      .map((s) => s.systemPrompt)
-      .filter((t): t is string => Boolean(t)),
+      // 带上 name/command/description：技能的 frontmatter 在 parseSkillMarkdown 里
+      // 被剥离，只传 body 会让模型收到一段无触发条件的参考文档，无法把请求路由到技能。
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        command: s.command,
+        description: s.description,
+        prompt: s.systemPrompt ?? "",
+      }))
+      .filter((s) => Boolean(s.prompt.trim())),
   });
   const systemMessage: Message = { role: "system", content: composedSystemPrompt };
   const knowledgeMessages: Message[] = knowledgeContext

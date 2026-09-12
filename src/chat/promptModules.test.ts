@@ -69,4 +69,33 @@ describe("promptModules", () => {
     expect(prompt).not.toContain("<omni_memory>");
     expect(prompt).not.toContain("<omni_summary>");
   });
+
+  // 回归：技能只注入正文时，模型看不到「这个技能什么时候用」，
+  // 「今天宜宾天气」这类请求会被 /web_search 抢走。
+  it("已启用技能注入身份、适用场景与「优先于通用工具」的路由规则", () => {
+    const prompt = buildOmniSystemPrompt({
+      messages,
+      enabledSkillPrompts: [
+        {
+          id: "weather",
+          name: "weather",
+          command: "/weather",
+          description: "查询天气预报，无需 API 密钥",
+          prompt: "# Weather\n\ncurl -s \"wttr.in/London?format=3\"",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("### 技能：weather（/weather）");
+    expect(prompt).toContain("适用场景：查询天气预报，无需 API 密钥");
+    expect(prompt).toContain("wttr.in/London");
+    // 路由优先级：必须显式声明技能胜过通用工具，否则模型会继续选 /web_search。
+    expect(prompt).toContain("优先于通用工具");
+    expect(prompt).toContain("不要用 /web_search");
+  });
+
+  it("没有启用技能时不注入技能分片", () => {
+    const prompt = buildOmniSystemPrompt({ messages });
+    expect(prompt).not.toContain("已启用技能");
+  });
 });

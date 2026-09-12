@@ -211,7 +211,8 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     description: "Search the web via DuckDuckGo; returns titles, links, and snippets",
     concurrencySafe: true,
     promptContribution:
-      "Call /web_search to fetch real-time information from the web; proactively use it when the user asks about news, prices, versions, weather, match results, or other time-sensitive topics.",
+      "Call /web_search to fetch real-time information from the web; proactively use it when the user asks about news, prices, versions, match results, or other time-sensitive topics. " +
+      "If an enabled skill already covers the request (a dedicated weather / news / data skill, etc.), follow that skill's own method instead.",
     parameters: {
       type: "object",
       properties: {
