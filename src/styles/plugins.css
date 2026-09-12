@@ -1054,6 +1054,26 @@
   border-color: rgba(245, 158, 11, 0.6);
 }
 
+/* 连接中：MCP 拉起要 spawn 子进程或走完整 HTTP 握手，慢的时候数秒无反馈，
+   按钮必须锁住并给出等待光标，否则会被反复点击。
+   只在 primary/trust 两个连接按钮上生效 —— 不写通用 `.plugin-card__button:disabled`，
+   那会连同「已安装」等语义不同的禁用态一起改掉。 */
+.plugin-card__button--primary:disabled,
+.plugin-card__button--trust:disabled {
+  opacity: 0.72;
+  cursor: progress;
+}
+
+/* disabled 时 :hover 仍会命中，这里显式压掉变色，避免看起来还能点 */
+.plugin-card__button--primary:disabled:hover {
+  background: #3b82f6;
+}
+
+.plugin-card__button--trust:disabled:hover {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.42);
+}
+
 .connectorhub-browser__hint {
   display: flex;
   align-items: center;

@@ -1,7 +1,16 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import PluginMarketplace from "./PluginMarketplace";
 import { pluginRegistry } from "../../plugins/registry";
+
+// ensureMcpConnector 的真实实现会 invoke Tauri 命令；这里只关心「连接中」这段 UI，
+// 用手动 resolve 的 promise 把连接悬停在飞行中，才能断言中间态。
+const mcpMocks = vi.hoisted(() => ({ ensureMcpConnector: vi.fn() }));
+
+vi.mock("../../plugins/mcp", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../plugins/mcp")>();
+  return { ...actual, ensureMcpConnector: mcpMocks.ensureMcpConnector };
+});
 
 /**
  * 回归：「我的技能」列表必须随注册表变更实时刷新。
@@ -127,6 +136,74 @@ describe("PluginMarketplace「我的技能」按专家团归组", () => {
 
     act(() => {
       pluginRegistry.uninstall(childId);
+    });
+  });
+});
+
+/**
+ * 「连接」按钮必须有中间态。
+ *
+ * MCP 拉起要 spawn 子进程或走完整 HTTP 握手（initialize + tools/list），
+ * 慢的时候数秒没有任何反馈，用户会以为按钮没点上而反复点 —— 按钮必须锁住
+ * 并显示「连接中…」。这条用例把连接悬停在飞行中，断言按钮确实被锁住。
+ */
+describe("PluginMarketplace MCP 连接中间态", () => {
+  it("点击连接后按钮显示「连接中…」并禁用，完成后恢复", async () => {
+    pluginRegistry.load();
+    const id = "test-mcp-connecting";
+    act(() => {
+      pluginRegistry.install(
+        {
+          id,
+          name: "连接中间态测试连接器",
+          description: "用于验证连接中间态的测试连接器",
+          version: "1.0.0",
+          kind: "connector",
+        },
+        { type: "local", path: "user" },
+      );
+      pluginRegistry.setConnectorConfig(id, {
+        url: "https://example.invalid/mcp",
+        trusted: true,
+      });
+    });
+
+    let release: () => void = () => {};
+    mcpMocks.ensureMcpConnector.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = () => resolve();
+        }),
+    );
+
+    render(
+      <PluginMarketplace
+        mainView
+        embedded
+        source="my"
+        initialFilter={{ kind: "connector" }}
+        onSourceChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const button = (await screen.findByText("连接")).closest("button");
+    expect(button).toBeTruthy();
+
+    fireEvent.click(button!);
+
+    await waitFor(() => expect(screen.getByText("连接中…")).toBeTruthy());
+    expect(button!.disabled).toBe(true);
+    // 飞行中不能被重复触发
+    expect(mcpMocks.ensureMcpConnector).toHaveBeenCalledTimes(1);
+
+    act(() => release());
+
+    await waitFor(() => expect(screen.getByText("连接")).toBeTruthy());
+    expect(button!.disabled).toBe(false);
+
+    act(() => {
+      pluginRegistry.uninstall(id);
     });
   });
 });

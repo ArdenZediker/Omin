@@ -11,6 +11,7 @@ import {
   Wand2,
   LayoutTemplate,
   Settings,
+  Loader2,
   Package,
   PlugZap,
   Unplug,
@@ -463,6 +464,12 @@ export default function PluginMarketplace({
     connectorId: string;
     message: string;
   } | null>(null);
+  // 正在拉起中的连接器 id。
+  // 拉起要 spawn 子进程 / 走完整 HTTP 握手（initialize + tools/list），慢的时候数秒无反馈，
+  // 用户会以为按钮没点上而反复点 —— 因此必须有「连接中」中间态把按钮锁住。
+  // 用 id 而不是布尔值：列表里同时只可能有一个连接在飞，但卡片是复用的，
+  // 布尔值会让所有卡片一起变灰。
+  const [mcpConnectingId, setMcpConnectingId] = useState<string | null>(null);
   // 信任门：待用户确认信任的 MCP 连接器（WorkBuddy 式「配置完不自动激活」）
   const [trustPromptId, setTrustPromptId] = useState<string | null>(null);
   // 一级分类切换时联动来源：技能 → SkillHub，连接器 → 远程连接器，专家 → 我的专家，其他 → 本地。
@@ -1016,6 +1023,7 @@ export default function PluginMarketplace({
         setTrustPromptId(manifest.id);
         return;
       }
+      setMcpConnectingId(manifest.id);
       try {
         await ensureMcpConnector(manifest);
       } catch (error) {
@@ -1024,6 +1032,7 @@ export default function PluginMarketplace({
           message: error instanceof Error ? error.message : String(error),
         });
       } finally {
+        setMcpConnectingId(null);
         refreshConnected();
       }
     },
@@ -1037,6 +1046,8 @@ export default function PluginMarketplace({
       setTrustPromptId(null);
       setMcpError(null);
       setRefreshKey((current) => current + 1);
+      // 弹窗一关就没有任何反馈了，这里同样要进「连接中」态。
+      setMcpConnectingId(manifest.id);
       try {
         await ensureMcpConnector(manifest);
       } catch (error) {
@@ -1045,6 +1056,7 @@ export default function PluginMarketplace({
           message: error instanceof Error ? error.message : String(error),
         });
       } finally {
+        setMcpConnectingId(null);
         refreshConnected();
       }
     },
@@ -1319,19 +1331,29 @@ export default function PluginMarketplace({
                             : "plugin-card__button plugin-card__button--trust"
                         }
                         onClick={() => void handleConnect(manifest)}
+                        disabled={mcpConnectingId === manifest.id}
+                        aria-busy={mcpConnectingId === manifest.id}
                         title={
-                          isConnectorTrusted(manifest)
-                            ? "启动该 MCP 服务器，并将其工具注入 AI 对话"
-                            : "该连接器尚未获得信任，点击后需确认信任才会启动"
+                          mcpConnectingId === manifest.id
+                            ? "正在连接，请稍候…"
+                            : isConnectorTrusted(manifest)
+                              ? "启动该 MCP 服务器，并将其工具注入 AI 对话"
+                              : "该连接器尚未获得信任，点击后需确认信任才会启动"
                         }
                       >
-                        {isConnectorTrusted(manifest) ? (
+                        {mcpConnectingId === manifest.id ? (
+                          <Loader2 size={14} strokeWidth={1.8} className="spin" />
+                        ) : isConnectorTrusted(manifest) ? (
                           <PlugZap size={14} strokeWidth={1.8} />
                         ) : (
                           <ShieldAlert size={14} strokeWidth={1.8} />
                         )}
                         <span>
-                          {isConnectorTrusted(manifest) ? "连接" : "信任并连接"}
+                          {mcpConnectingId === manifest.id
+                            ? "连接中…"
+                            : isConnectorTrusted(manifest)
+                              ? "连接"
+                              : "信任并连接"}
                         </span>
                       </button>
                     )
