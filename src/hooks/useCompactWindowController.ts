@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type * as React from "react";
 import { listen } from "@tauri-apps/api/event";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
@@ -29,6 +29,8 @@ import {
   resolvePetMenuViewportOffset,
 } from "./compactMenuGeometry";
 import {
+  resolveAnchoredCompactWindowX,
+  resolveCompactBallEdge,
   toNativePetWindowY,
   toVisualPetWindowY,
   type CharacterDragPosition,
@@ -153,6 +155,14 @@ export function useCompactWindowController({
   // 避免 "CSS offset 已同步应用、但 Tauri setPosition 还是异步" 导致的那一帧跳变
   // （菜单展开/收起时宠物闪烁移动的根因）。
   const [committedPetOffset, setCommittedPetOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // 窗口几何「重新同步」令牌：系统原生拖拽结束后递增，让几何 effect 用最新位置重跑
+  // 一次。拖拽期间（appWindow.startDragging）窗口位置归 OS 管，而在途的几何写入是
+  // 用拖拽前的读数算出来的——写下去就会把窗口拽回拖拽前的位置，表现出来就是
+  // 「拖动悬浮球时球直接瞬移很长一段距离」。
+  const [compactGeometryRevision, setCompactGeometryRevision] = useState(0);
+  const requestCompactGeometrySync = useCallback(() => {
+    setCompactGeometryRevision((value) => value + 1);
+  }, []);
   const hasPetThought = Boolean(petThought);
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
@@ -172,6 +182,7 @@ export function useCompactWindowController({
     cursorY: number;
     scaleFactor: number;
     petViewportOffsetY: number;
+    petViewportOffsetX: number;
   } | null>(null);
   const characterDragRafRef = useRef<number | null>(null);
   const characterDragPendingRef = useRef<CharacterDragPosition | null>(null);
@@ -306,6 +317,7 @@ export function useCompactWindowController({
     compactInternalMoveRef,
     suppressPetClickUntilRef,
     lastAppliedPetViewportOffsetRef,
+    lastAppliedPetSizeRef,
   });
 
   const menus = useCompactMenus({
@@ -320,6 +332,8 @@ export function useCompactWindowController({
     isCompactQueryOpen,
     onRestoreMain,
     closeCompactMenus,
+    // 原生拖拽（handleCompactDrag）结束后重新对齐一次窗口几何。
+    requestCompactGeometrySync,
     activeProjectId,
     createSessionFromMessages,
     updateChatSessionMessages,
@@ -763,7 +777,6 @@ export function useCompactWindowController({
         : compactAppearance === "pet"
         ? compactViewportSize ?? previewCompactSize
         : compactViewportSize ?? compactSize;
-    const isCompactSubmenuOpen = isCompactMenuOpen && (isCompactModelOpen || isCompactAppearanceOpen);
     const shouldReservePetThoughtSpace =
       compactAppearance === "pet" &&
       !previewCharacterScale &&
@@ -785,10 +798,17 @@ export function useCompactWindowController({
             ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
             : { x: 0, y: 0 }
         : { x: 0, y: 0 };
+    // 本 effect 的 deps 很多，body 里又是一串 await（scaleFactor / outerPosition /
+    // outerSize / setPosition）。没有令牌时，先起的那次运行可能在后起的那次之后才落笔，
+    // 用过期读数把窗口写回旧位置——视觉上就是窗口「跳一下」。cancelled 让新的运行胜过旧的。
+    let cancelled = false;
     void (async () => {
       const scaleFactor = await appWindow.scaleFactor();
       const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
       const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
+      if (cancelled) {
+        return;
+      }
       suppressCompactBlur();
       if (compactAppearance === "pet") {
         const hasSizeChanged =
@@ -830,19 +850,34 @@ export function useCompactWindowController({
         return;
       }
 
-      if (compactMenuSide === "left" || (isCompactSubmenuOpen && compactSubmenuSide === "left")) {
-        const nextX = Math.round(currentPosition.x + currentSize.width - targetSize.width);
-        if (nextX !== Math.round(currentPosition.x)) {
-          compactInternalMoveRef.current = true;
-          await appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y)));
-          window.setTimeout(() => {
-            compactInternalMoveRef.current = false;
-          }, 120);
-        }
+      // 尺寸变化时保持「球贴着的那条边」不动：贴边判据与组件共用 resolveCompactBallEdge
+      // （菜单在左 → 球贴窗口右 → 窗口向左长大、右边缘不动；菜单在右 → 球贴窗口左 →
+      // 左边缘不动，直接 setSize）。这样「窗口长大/缩小」对球的屏幕位置是恒等变换，
+      // 展开/收起菜单时球一动不动。
+      //
+      // ⚠️ 判据里绝不能掺「菜单是否展开」：贴边用的 CSS 类在 React 提交那一帧就生效，
+      // 而这里的位置写入要晚数个 IPC 往返，两者不同边时中间那几帧球会被画到窗口的另一侧，
+      // 展开态窗口宽达 812 → 视觉上就是「球瞬移一个窗口宽」。
+      const currentX = Math.round(currentPosition.x);
+      const nextX = resolveAnchoredCompactWindowX(
+        currentX,
+        Math.round(currentSize.width),
+        Math.round(targetSize.width),
+        resolveCompactBallEdge(compactMenuSide)
+      );
+      if (nextX !== currentX) {
+        compactInternalMoveRef.current = true;
+        await appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y)));
+        window.setTimeout(() => {
+          compactInternalMoveRef.current = false;
+        }, 120);
       }
       await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
       await appWindow.setAlwaysOnTop(true);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [
     compactReply,
     compactSize,
@@ -863,6 +898,8 @@ export function useCompactWindowController({
     petThoughtQueue.length,
     petThoughtPlacement,
     scaleGestureVersion,
+    // 系统原生拖拽结束后的重新同步令牌（见 requestCompactGeometrySync）。
+    compactGeometryRevision,
     suppressCompactBlur,
     updatePetThoughtWindowForCurrentPositionAndSize,
   ]);

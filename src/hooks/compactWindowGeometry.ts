@@ -24,8 +24,110 @@ const PET_THOUGHT_WINDOW_SAFE_INSET = 12;
 
 export type CharacterDragPosition = { x: number; y: number };
 
+/** 竖直的一条窗口边（也是悬浮球在窗口内的贴边）。 */
+export type CompactWindowEdge = "left" | "right";
+
+/**
+ * 悬浮球贴窗口的哪一条竖边 —— 组件（CSS 的 justify-content）与窗口几何
+ * （尺寸变化时保留哪条边）**必须共用这一个判据**。
+ *
+ * ⚠️ 只允许依赖**持久**的菜单方向 `compactMenuSide`，绝不能掺入「菜单是否展开」：
+ * 贴边用的 CSS 类在 React 提交那一帧就改变，而窗口 x 的补偿要等 setPosition
+ * 落地（数个 IPC 往返）。两者取不同的边时，中间那几帧球会被画在窗口的另一侧，
+ * 而展开态窗口宽达 812（见 getExpandedCompactViewportSize），于是视觉上就是
+ * 「展开 / 收起菜单时悬浮球瞬移一整个窗口宽」——「悬浮球在最边上把菜单展开时
+ * 拖动悬浮球，球直接瞬移很长一段距离」的根因。
+ *
+ * 判据（单测锁死）：本函数与窗口锚边取的是同一个值，所以「窗口长大 / 缩小」对
+ * 球的屏幕位置是恒等变换；反过来，只要有人把开关态写进这里，立刻会漏一个
+ * 「窗口宽 - 球宽」的平移。
+ */
+export function resolveCompactBallEdge(menuSide: "left" | "right"): CompactWindowEdge {
+  // 菜单在左边 → 球贴窗口右边（窗口朝左长）；菜单在右边 → 球贴窗口左边（朝右长）。
+  return menuSide === "left" ? "right" : "left";
+}
+
+/**
+ * 求「保持 anchoredEdge 不动」的新窗口 x。
+ *
+ * right：右边缘不动，窗口向左长大（球贴右边时球不动）；
+ * left：左边缘不动，窗口向右长大（球贴左边时球不动）。
+ */
+export function resolveAnchoredCompactWindowX(
+  currentX: number,
+  currentWidth: number,
+  targetWidth: number,
+  anchoredEdge: CompactWindowEdge
+): number {
+  return anchoredEdge === "right"
+    ? Math.round(currentX + currentWidth - targetWidth)
+    : Math.round(currentX);
+}
+
+/**
+ * 显示器工作区矩形（物理像素，虚拟桌面坐标系，与 cursorPosition() /
+ * outerPosition() 同一空间）。
+ */
+export type DragScreenBounds = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
 export function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * 把拖拽目标位置钳制在光标所在显示器的工作区内。
+ *
+ * 为什么必须有这一步：拖拽循环的原始目标是「按下时的窗口位置 + 光标位移」，
+ * 它没有任何屏幕边界概念。多屏拼出的虚拟桌面上存在「没有显示器的死区」
+ * （两台显示器分辨率/摆放不对齐时尤其明显），窗口一旦被拖进去就整块不可见，
+ * 表现就是「悬浮窗移着移着自动消失在桌面」；单屏下往屏幕边缘外拖同样会把
+ * 它推出可见区域。
+ *
+ * 钳制基于**宠物本体的可视矩形**而不是窗口矩形：想法气泡/菜单展开时窗口被
+ * 撑大、宠物被 --pet-viewport-offset-* 推离窗口左上角，若按窗口矩形钳制，
+ * 宠物会被误判成越界而拖不到屏幕边缘。
+ */
+export function clampDragTargetToWorkArea(
+  target: CharacterDragPosition,
+  bounds: DragScreenBounds | null | undefined,
+  options: {
+    scaleFactor: number;
+    /** 宠物本体尺寸（逻辑像素）；取不到时不钳制。 */
+    petSize: { width: number; height: number } | null;
+    /** 宠物本体相对窗口左上角的偏移（逻辑像素，即 --pet-viewport-offset-*）。 */
+    petViewportOffset: { x: number; y: number };
+    /** 允许宠物视觉顶边越过工作区顶边的量（沿用原有贴顶手感）。 */
+    topOverscroll: number;
+  }
+): CharacterDragPosition {
+  if (!bounds || !options.petSize) {
+    return target;
+  }
+
+  const scale = options.scaleFactor || 1;
+  const petWidth = Math.max(1, Math.round(options.petSize.width * scale));
+  const petHeight = Math.max(1, Math.round(options.petSize.height * scale));
+  const offsetX = options.petViewportOffset.x * scale;
+  const offsetY = options.petViewportOffset.y * scale;
+
+  // 宠物本体左边缘 = 窗口 x + offsetX，所以窗口 x 的可行区间要整体减掉 offsetX。
+  const boundX = [bounds.left - offsetX, bounds.right - petWidth - offsetX];
+  // 上边界沿用拖拽原始公式的手感（允许贴顶多出一个 overscroll），只是把
+  // 「屏幕顶 = 0」换成工作区顶 —— 多屏上下排列时工作区 top ≠ 0，写死 0 会算错。
+  const boundY = [
+    bounds.top - (options.topOverscroll + options.petViewportOffset.y) * scale,
+    bounds.bottom - petHeight - offsetY,
+  ];
+
+  return {
+    x: Math.round(clampNumber(target.x, Math.min(...boundX), Math.max(...boundX))),
+    y: Math.round(clampNumber(target.y, Math.min(...boundY), Math.max(...boundY))),
+  };
 }
 
 export function toNativePetWindowY(visualY: number) {

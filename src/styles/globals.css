@@ -1153,6 +1153,11 @@ body:has(.pet-thought-window),
   justify-content: flex-end;
 }
 
+/* 球贴窗口右边：菜单在左侧展开，窗口整体向左长大（右边缘不动）。
+   ⚠️ 这个类由 CompactWindow 依据**持久的** compactMenuSide 挂载，**不随菜单开关切换**：
+   窗口 x 的补偿（保右边缘）要晚数个 IPC 往返，若本类随开关态一起翻转，中间那几帧球
+   会被画到窗口左边 —— 展开态窗口宽达 812，视觉上就是「展开/收起菜单时球瞬移一整个
+   窗口宽」。贴边判据与几何补偿共用 resolveCompactBallEdge（compactWindowGeometry.ts）。 */
 .compact-shell--menu-left {
   justify-content: flex-end;
 }

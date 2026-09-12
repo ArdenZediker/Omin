@@ -78,6 +78,8 @@ type UseCompactMenusArgs = {
   markCompactInteraction: () => void;
   suppressCompactBlur: (durationMs?: number) => void;
   raiseCompactWindow: () => Promise<void>;
+  /** 原生拖拽结束后让窗口几何 effect 用最新位置重跑一次（防止过期写入把窗口拽回去）。 */
+  requestCompactGeometrySync: () => void;
   updatePetThoughtWindowForCurrentPositionAndSize: (size: { width: number; height: number }) => Promise<void>;
   compactMenuCloseTimerRef: MutableRefObject<number | null>;
   compactMenuOpeningRef: MutableRefObject<boolean>;
@@ -138,6 +140,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
     markCompactInteraction,
     suppressCompactBlur,
     raiseCompactWindow,
+    requestCompactGeometrySync,
     updatePetThoughtWindowForCurrentPositionAndSize,
     compactMenuCloseTimerRef,
     compactMenuOpeningRef,
@@ -435,13 +438,19 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
         return;
       }
       if (event.button === 0) {
+        // 系统原生拖拽：拖拽期间窗口位置归 OS 管，而几何 effect 里在途的 setPosition
+        // 是用**拖拽前**的读数算出来的。拖拽结束后立刻重新同步一次，让几何用最新位置
+        // 重新对齐——否则那笔过期写入会把窗口拽回拖拽前的位置，表现出来就是
+        // 「拖动悬浮球时球直接瞬移很长一段距离」。
         await appWindow.startDragging();
+        requestCompactGeometrySync();
       }
     },
     [
       compactAppearance,
       markCompactInteraction,
       raiseCompactWindow,
+      requestCompactGeometrySync,
       setCompactReply,
       setIsCompactQueryOpen,
     ]

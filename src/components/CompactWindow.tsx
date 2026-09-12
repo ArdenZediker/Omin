@@ -7,6 +7,7 @@ import { getPetThoughtKey } from "../app/petThoughts";
 import type { PetThoughtState } from "../app/types";
 import type { PetThoughtPlacement } from "../app/window";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
+import { resolveCompactBallEdge } from "../hooks/compactWindowGeometry";
 import { getCodexPetViewportSize } from "../app/pets/codexPetSizing";
 import type { CodexPetPackage } from "../app/pets/codexPetTypes";
 import DesktopPet, { type DesktopPetState } from "./DesktopPet";
@@ -287,12 +288,16 @@ export default function CompactWindow({
     );
   };
 
+  // 悬浮球贴窗口哪一边。判据与窗口几何共用 resolveCompactBallEdge —— 只认**持久**的
+  // 菜单方向，绝不能掺 isCompactMenuOpen：这个 class 在 React 提交那一帧就换边，而窗口
+  // x 的补偿要晚数个 IPC 往返；掺了开关态就会在展开/收起的那几帧把球画到窗口另一侧，
+  // 展开态窗口宽达 812，于是看起来就是「球瞬移一整个窗口宽」。
+  const isBallRightAnchored = !isAnimatedAppearance && resolveCompactBallEdge(compactMenuSide) === "right";
+
   return (
     <div
       className={`compact-shell drag-region ${
-        !isAnimatedAppearance && isCompactMenuOpen && compactMenuSide === "left"
-          ? "compact-shell--menu-left"
-          : ""
+        isBallRightAnchored ? "compact-shell--menu-left" : ""
       } ${
         isPetAppearance && (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply)
           ? "compact-shell--pet-expanded"

@@ -1,7 +1,7 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useRef, type MutableRefObject } from "react";
 import type * as React from "react";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
-import { cursorPosition } from "@tauri-apps/api/window";
+import { cursorPosition, monitorFromPoint } from "@tauri-apps/api/window";
 import {
   PET_WINDOW_DECORATION_MARGIN_TOP,
   PET_WINDOW_TOP_OVERSCROLL,
@@ -9,10 +9,12 @@ import {
 import { clearPendingDragTimer } from "./compactInteractionGuards";
 import { isCharacterPointerInHitArea, persistCompactPosition } from "../app/window";
 import {
+  clampDragTargetToWorkArea,
   resolveCharacterDragMotion,
   toVisualPetWindowY,
   waitForNextAnimationFrame,
   type CharacterDragPosition,
+  type DragScreenBounds,
 } from "./compactWindowGeometry";
 import { appWindow } from "./compactWindowRuntime";
 
@@ -48,6 +50,7 @@ type UseCompactCharacterDragArgs = {
     cursorY: number;
     scaleFactor: number;
     petViewportOffsetY: number;
+    petViewportOffsetX: number;
   } | null>;
   characterDragRafRef: MutableRefObject<number | null>;
   characterDragPendingRef: MutableRefObject<CharacterDragPosition | null>;
@@ -64,6 +67,9 @@ type UseCompactCharacterDragArgs = {
   compactInternalMoveRef: MutableRefObject<boolean>;
   suppressPetClickUntilRef: MutableRefObject<number>;
   lastAppliedPetViewportOffsetRef: MutableRefObject<{ x: number; y: number }>;
+  // 宠物本体尺寸（逻辑像素）。拖拽钳制必须按宠物本体算而不是按窗口算：
+  // 想法气泡/菜单展开时窗口被撑大，用窗口尺寸会把宠物误判成越界。
+  lastAppliedPetSizeRef: MutableRefObject<{ width: number; height: number } | null>;
 };
 
 /**
@@ -79,6 +85,7 @@ function resolveDragTarget(
     cursorY: number;
     scaleFactor: number;
     petViewportOffsetY: number;
+    petViewportOffsetX: number;
   },
   cursorX: number,
   cursorY: number,
@@ -129,7 +136,16 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     compactInternalMoveRef,
     suppressPetClickUntilRef,
     lastAppliedPetViewportOffsetRef,
+    lastAppliedPetSizeRef,
   } = args;
+
+  // 光标所在显示器的工作区（物理像素）。拖拽循环每帧用它把窗口钳制在可见
+  // 区域内，避免被拖进「虚拟桌面上没有显示器的死区」后整块消失。
+  const characterDragWorkAreaRef = useRef<DragScreenBounds | null>(null);
+  const characterDragWorkAreaRefreshingRef = useRef(false);
+  // 显示器查询失败/平台不支持时置位：此后放弃钳制，退回「无边界」的旧行为——
+  // 宁可少一层保护，也不能让宠物完全拖不动。
+  const characterDragWorkAreaUnavailableRef = useRef(false);
 
   const PET_CLICK_DRAG_THRESHOLD_PX = 4;
   const PET_CLICK_SUPPRESS_AFTER_DRAG_MS = 320;
@@ -175,6 +191,67 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     []
   );
 
+  /**
+   * 查询光标所在显示器的工作区（物理像素）并记下，供拖拽循环做边界钳制。
+   */
+  const resolveDragWorkArea = useCallback(async (cursorX: number, cursorY: number) => {
+    const monitor = await monitorFromPoint(Math.round(cursorX), Math.round(cursorY)).catch(() => null);
+    if (!monitor) {
+      return;
+    }
+    characterDragWorkAreaRef.current = {
+      left: monitor.workArea.position.x,
+      top: monitor.workArea.position.y,
+      right: monitor.workArea.position.x + monitor.workArea.size.width,
+      bottom: monitor.workArea.position.y + monitor.workArea.size.height,
+    };
+  }, []);
+
+  /**
+   * 每帧检查光标是否还在已知工作区内：一旦离开就异步刷新一次。
+   *
+   * 两种情况会离开：① 跨屏，需要换成新显示器的工作区；② 被拖向「虚拟桌面上
+   * 没有显示器的死区」——此时 monitorFromPoint 会返回**最近的**显示器，所以
+   * 刷新后窗口会被重新钳制回屏幕，而不是跟着光标一起消失。
+   */
+  const syncDragWorkArea = useCallback(
+    (cursorX: number, cursorY: number) => {
+      const bounds = characterDragWorkAreaRef.current;
+      const isInsideBounds =
+        bounds != null &&
+        cursorX >= bounds.left &&
+        cursorX <= bounds.right &&
+        cursorY >= bounds.top &&
+        cursorY <= bounds.bottom;
+      if (isInsideBounds || characterDragWorkAreaRefreshingRef.current) {
+        return;
+      }
+      characterDragWorkAreaRefreshingRef.current = true;
+      void resolveDragWorkArea(cursorX, cursorY).finally(() => {
+        characterDragWorkAreaRefreshingRef.current = false;
+      });
+    },
+    [resolveDragWorkArea]
+  );
+
+  /**
+   * 把拖拽目标钳制在可见区域内。**这是「悬浮窗移着移着自动消失」的修复点**：
+   * 原始目标只是「按下时的位置 + 光标位移」，没有任何边界概念，拖进多屏死区
+   * 或屏幕外侧就会整块不可见。
+   */
+  const clampCharacterDragTarget = useCallback(
+    (target: CharacterDragPosition, origin: { scaleFactor: number; petViewportOffsetX: number; petViewportOffsetY: number }) =>
+      clampDragTargetToWorkArea(target, characterDragWorkAreaRef.current, {
+        scaleFactor: origin.scaleFactor,
+        // 非宠物外观没有「宠物本体尺寸」的概念（lastAppliedPetSizeRef 只在宠物外观下
+        // 被赋值），退回窗口尺寸——那几种外观本来就是窗口即本体。
+        petSize: lastAppliedPetSizeRef.current ?? compactSize,
+        petViewportOffset: { x: origin.petViewportOffsetX, y: origin.petViewportOffsetY },
+        topOverscroll: PET_WINDOW_TOP_OVERSCROLL,
+      }),
+    [compactSize, lastAppliedPetSizeRef]
+  );
+
   const flushCharacterDragPosition = useCallback(() => {
     if (characterDragMoveDrainRef.current) {
       return characterDragMoveDrainRef.current;
@@ -203,7 +280,16 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
             await waitForNextAnimationFrame();
             continue;
           }
-          const target = resolveDragTarget(origin, cursor.x, cursor.y);
+          // 边界未知时先取一次（首帧的边界查询与校准是并发的，很可能还没回来）：
+          // 拿到边界之前绝不放行未钳制的目标，否则第一帧就会把宠物甩到屏幕外。
+          if (!characterDragWorkAreaRef.current && !characterDragWorkAreaUnavailableRef.current) {
+            await resolveDragWorkArea(cursor.x, cursor.y);
+            if (!characterDragWorkAreaRef.current) {
+              characterDragWorkAreaUnavailableRef.current = true;
+            }
+          }
+          syncDragWorkArea(cursor.x, cursor.y);
+          const target = clampCharacterDragTarget(resolveDragTarget(origin, cursor.x, cursor.y), origin);
           characterDragLastTargetRef.current = target;
           // 物理像素写入：跨 DPI 屏时 PhysicalPosition 不经过 scale 换算，
           // 窗口物理位置直接落在目标物理坐标上，避免 LogicalPosition 抖动。
@@ -231,7 +317,7 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
     })();
     characterDragMoveDrainRef.current = drain;
     return drain;
-  }, [releaseCharacterDragWindowMove]);
+  }, [clampCharacterDragTarget, releaseCharacterDragWindowMove, syncDragWorkArea]);
 
   const continueCharacterDrag = useCallback(
     (pointerScreenX: number, pointerScreenY: number) => {
@@ -282,9 +368,10 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
           cursorY: pointerScreenY,
           scaleFactor: 1,
           petViewportOffsetY: lastAppliedPetViewportOffsetRef.current.y,
+          petViewportOffsetX: lastAppliedPetViewportOffsetRef.current.x,
         };
         void Promise.all([appWindow.outerPosition(), cursorPosition(), appWindow.scaleFactor()])
-          .then(([position, cursor, scale]) => {
+          .then(async ([position, cursor, scale]) => {
             const origin = characterDragOriginRef.current;
             if (!origin || origin.screenX !== pointerDown.screenX) {
               return;
@@ -294,9 +381,12 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
             origin.cursorX = cursor.x;
             origin.cursorY = cursor.y;
             origin.scaleFactor = scale;
+            // 先把光标所在显示器的工作区拿回来，再做第一次落位——否则首帧
+            // 会因为「还没有边界」把窗口放到可见区域之外。
+            await resolveDragWorkArea(cursor.x, cursor.y);
             // 校准完成：立即用可靠基准算一次当前位置，把第一帧基于占位基准
             // 的偏差拉回来。
-            const calibratedTarget = resolveDragTarget(origin, cursor.x, cursor.y);
+            const calibratedTarget = clampCharacterDragTarget(resolveDragTarget(origin, cursor.x, cursor.y), origin);
             characterDragLastTargetRef.current = calibratedTarget;
             appWindow
               .setPosition(new PhysicalPosition(calibratedTarget.x, calibratedTarget.y))
@@ -311,7 +401,14 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
       void flushCharacterDragPosition();
       return true;
     },
-    [flushCharacterDragPosition, hidePetThoughtWindowForDrag, markCompactInteraction, setCharacterDragMotionFromPointer]
+    [
+      clampCharacterDragTarget,
+      flushCharacterDragPosition,
+      hidePetThoughtWindowForDrag,
+      markCompactInteraction,
+      resolveDragWorkArea,
+      setCharacterDragMotionFromPointer,
+    ]
   );
 
   const handleCharacterPointerDown = useCallback(
@@ -365,6 +462,9 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
       setCharacterDragMotion(null);
       characterPointerDownRef.current = { screenX: event.screenX, screenY: event.screenY };
       characterDragOriginRef.current = null;
+      // 丢弃上一次拖动残留的显示器工作区，避免用别的屏幕的边界去钳制本次拖动。
+      characterDragWorkAreaRef.current = null;
+      characterDragWorkAreaUnavailableRef.current = false;
       characterPointerMovedRef.current = false;
     },
     [markCompactInteraction, resetCompactFloatingUi]
@@ -469,6 +569,9 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
       // pet body should start a drag.
       characterPointerDownRef.current = { screenX: event.screenX, screenY: event.screenY };
       characterDragOriginRef.current = null;
+      // 丢弃上一次拖动残留的显示器工作区，避免用别的屏幕的边界去钳制本次拖动。
+      characterDragWorkAreaRef.current = null;
+      characterDragWorkAreaUnavailableRef.current = false;
       characterPointerMovedRef.current = false;
       characterDragLastTargetRef.current = null;
       characterDragLastHandledPointerRef.current = null;
