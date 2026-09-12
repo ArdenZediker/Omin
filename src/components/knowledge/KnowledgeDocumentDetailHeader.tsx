@@ -36,6 +36,19 @@ const DETAIL_VIEW_OPTIONS: DetailViewOption[] = [
   { id: "chunks", label: "知识结果", icon: Layers3 },
 ];
 
+/**
+ * 文档详情页顶部栏。
+ *
+ * **布局契约（改这里之前先读 knowledge.css 的 .omni-knowledge-detail-* 注释）**：
+ * 标题块、切页药丸、处理信息、文档操作、窗口控制是 header 的**直接子元素**，
+ * 由 header 的 `flex-wrap` 统一排布。绝对不要把它们再套进一个"右侧工具组"容器里
+ * —— 工具组的 hypothetical main size 等于它内部所有控件的 max-content（实测约
+ * 736px），会整块换行，把标题挤到只剩几十像素，并让工具组内部自己折行后与标题
+ * 视觉重叠。
+ *
+ * 另外副标题与状态徽标同占一行：状态徽标是 76px 高度预算下的"多出来的一行"，
+ * 独立成行会把标题块撑到 76px 以上，header 就再也压不回与聊天顶栏齐平的 76px。
+ */
 export default function KnowledgeDocumentDetailHeader({
   document,
   fallbackDocumentName,
@@ -52,116 +65,94 @@ export default function KnowledgeDocumentDetailHeader({
   const vectorizationLabel = getVectorizationLabel(document?.vectorizationState ?? null);
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="omni-knowledge-detail-header px-4 py-3 md:px-6">
+      <div className="omni-knowledge-detail-header__identity">
         <button
           type="button"
           onClick={onBackToList}
-          className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+          className="omni-knowledge-detail-back no-drag"
           title="返回列表"
         >
           <ArrowLeft size={16} strokeWidth={2} />
         </button>
         <div className="min-w-0">
-          <div className="truncate text-base font-semibold text-slate-950">
+          <div className="truncate text-base font-semibold text-[var(--omni-app-text)]">
             {document?.sourceName ?? fallbackDocumentName ?? "文档详情"}
           </div>
-          <div className="mt-1 truncate text-xs text-slate-500">
-            {collectionName}
-            {document ? ` · ${getDocumentTypeLabel(document)} · ${document.chunkCount} 个分片` : ""}
-          </div>
-          {document ? (
-            <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600">
-              <span>{getProcessingStatusLabel(document.processingStatus)}</span>
-              <span>·</span>
-              <span>{vectorizationLabel}</span>
-              {document.vectorizedChunkCount !== undefined ? (
-                <span>· {document.vectorizedChunkCount}/{document.chunkCount}</span>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="no-drag inline-flex items-center gap-1 rounded-[20px] border border-slate-200/90 bg-white/90 p-1 shadow-sm shadow-slate-200/60 backdrop-blur">
-          {DETAIL_VIEW_OPTIONS.map((option) => {
-            const Icon = option.icon;
-            const isActive = activeView === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => onChangeView(option.id)}
-                className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-2xl px-3 text-xs font-medium transition ${
-                  isActive
-                    ? "bg-slate-950 text-white shadow-sm shadow-slate-300/60"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }`}
-                title={option.label}
-                aria-pressed={isActive}
-              >
-                <Icon size={14} strokeWidth={2} />
-                <span>{option.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onChangeView("processing")}
-          className={`no-drag inline-flex h-10 items-center justify-center gap-1.5 rounded-[20px] border px-3 text-xs font-medium shadow-sm shadow-slate-200/40 transition ${
-            activeView === "processing"
-              ? "border-slate-950 bg-slate-950 text-white"
-              : "border-slate-200/90 bg-white/90 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-          }`}
-          title="处理信息"
-          aria-pressed={activeView === "processing"}
-        >
-          <Settings size={14} strokeWidth={2} />
-          <span>处理信息</span>
-        </button>
-
-        {document ? (
-          <div className="no-drag inline-flex items-center gap-1 rounded-[20px] border border-slate-200/90 bg-white/90 p-1 shadow-sm shadow-slate-200/50 backdrop-blur">
-            {document.activeJobId ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onCancelActiveJob}
-                  className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={onRetryActiveJob}
-                  className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                >
-                  重试
-                </button>
-              </>
+          <div className="omni-knowledge-detail-meta">
+            <span className="omni-knowledge-detail-meta__text">
+              {collectionName}
+              {document ? ` · ${getDocumentTypeLabel(document)} · ${document.chunkCount} 个分片` : ""}
+            </span>
+            {document ? (
+              <span className="omni-knowledge-detail-status">
+                <span>{getProcessingStatusLabel(document.processingStatus)}</span>
+                <span>·</span>
+                <span>{vectorizationLabel}</span>
+                {document.vectorizedChunkCount !== undefined ? (
+                  <span>· {document.vectorizedChunkCount}/{document.chunkCount}</span>
+                ) : null}
+              </span>
             ) : null}
-            <button
-              type="button"
-              onClick={onReparse}
-              className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              重解析
-            </button>
-            <button
-              type="button"
-              onClick={onRevectorize}
-              className="inline-flex h-8 items-center justify-center rounded-2xl px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              重向量化
-            </button>
           </div>
-        ) : null}
-
-        <div className="no-drag">{windowControls}</div>
+        </div>
       </div>
+
+      <div className="omni-knowledge-detail-tabs no-drag">
+        {DETAIL_VIEW_OPTIONS.map((option) => {
+          const Icon = option.icon;
+          const isActive = activeView === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => onChangeView(option.id)}
+              className={`omni-knowledge-detail-tab ${isActive ? "omni-knowledge-detail-tab--active" : ""}`}
+              title={option.label}
+              aria-pressed={isActive}
+            >
+              <Icon size={14} strokeWidth={2} />
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onChangeView("processing")}
+        className={`omni-knowledge-detail-pill no-drag ${
+          activeView === "processing" ? "omni-knowledge-detail-pill--active" : ""
+        }`}
+        title="处理信息"
+        aria-pressed={activeView === "processing"}
+      >
+        <Settings size={14} strokeWidth={2} />
+        <span>处理信息</span>
+      </button>
+
+      {document ? (
+        <div className="omni-knowledge-detail-actions no-drag">
+          {document.activeJobId ? (
+            <>
+              <button type="button" onClick={onCancelActiveJob} className="omni-knowledge-detail-actions__button">
+                取消
+              </button>
+              <button type="button" onClick={onRetryActiveJob} className="omni-knowledge-detail-actions__button">
+                重试
+              </button>
+            </>
+          ) : null}
+          <button type="button" onClick={onReparse} className="omni-knowledge-detail-actions__button">
+            重解析
+          </button>
+          <button type="button" onClick={onRevectorize} className="omni-knowledge-detail-actions__button">
+            重向量化
+          </button>
+        </div>
+      ) : null}
+
+      <div className="omni-knowledge-detail-header__controls no-drag omni-window-control-slot">{windowControls}</div>
     </div>
   );
 }

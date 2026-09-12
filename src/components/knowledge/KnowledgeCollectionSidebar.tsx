@@ -2,6 +2,11 @@ import { EllipsisVertical, PanelLeftOpen, Plus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { KnowledgeCollection } from "../../chat/knowledgeTypes";
 
+// 颜色一律走 --omni-* token。浅色模式下这些 token 的取值与原先的 slate-*/white
+// 基本一致（panel-bg #ffffff、panel-border #e5e6eb、soft-bg #f7f8fa、
+// app-text #1f2329、app-muted #646a73），所以浅色零视觉变化；暗色下自动跟随，
+// 不再出现「侧栏是暗的、里面的分类卡还是白底」的浅色岛。
+
 export type KnowledgeSidebarCategory = {
   id: string;
   title: string;
@@ -80,7 +85,7 @@ export default function KnowledgeCollectionSidebar({
         <button
           type="button"
           onClick={onToggleCollapsed}
-          className="no-drag flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+          className="no-drag flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
           title="展开侧栏"
           aria-label="展开侧栏"
         >
@@ -91,11 +96,11 @@ export default function KnowledgeCollectionSidebar({
   }
 
   return (
-    <aside className="omni-knowledge-sidebar flex min-h-0 shrink-0 flex-col border-r border-slate-200 bg-slate-50">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-3">
+    <aside className="omni-knowledge-sidebar flex min-h-0 shrink-0 flex-col">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--omni-panel-border)] px-3 py-3">
         <div className="min-w-0">
-          <div className="truncate text-base font-semibold tracking-[-0.02em] text-slate-950">文件</div>
-          <div className="mt-0.5 text-xs text-slate-500">知识库与分类</div>
+          <div className="truncate text-base font-semibold tracking-[-0.02em] text-[var(--omni-app-text)]">文件</div>
+          <div className="mt-0.5 text-xs text-[var(--omni-app-muted)]">知识库与分类</div>
         </div>
       </div>
 
@@ -113,27 +118,31 @@ export default function KnowledgeCollectionSidebar({
                 onClick={() => onSelectCategory(category.id)}
                 className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition ${
                   isActive
-                    ? "border-slate-950 bg-white text-slate-950 shadow-sm"
-                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                    ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
+                    : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                 }`}
                 title={category.title}
               >
-                <span className={`flex h-5 w-5 items-center justify-center rounded-lg ${isActive ? "text-slate-950" : "text-slate-500"}`}>
+                <span
+                  className={`flex h-5 w-5 items-center justify-center rounded-lg ${
+                    isActive ? "text-[var(--omni-app-text)]" : "text-[var(--omni-app-muted)]"
+                  }`}
+                >
                   <Icon size={13} strokeWidth={1.8} stroke={categoryIconColor} color={categoryIconColor} />
                 </span>
                 <span className="flex-1">{category.title}</span>
-                <span className="text-[11px] text-slate-400">{category.count}</span>
+                <span className="text-[11px] text-[var(--omni-app-muted)]">{category.count}</span>
               </button>
             );
           })}
         </div>
 
-        <div className="mt-2 border-t border-slate-200 px-4 pt-3">
-          <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+        <div className="mt-2 border-t border-[var(--omni-panel-border)] px-4 pt-3">
+          <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-[var(--omni-app-muted)]">
             <span>知识库</span>
             <button
               type="button"
-              className="no-drag rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700"
+              className="no-drag rounded-lg p-1 text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
               title="新建知识库"
               onClick={onCreateCollection}
             >
@@ -205,10 +214,10 @@ export default function KnowledgeCollectionSidebar({
         </div>
       </div>
 
-      <div className="mt-auto border-t border-slate-200 p-3">
+      <div className="mt-auto border-t border-[var(--omni-panel-border)] p-3">
         <button
           type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-4 py-2.5 text-sm font-medium text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
           onClick={onCreateCollection}
         >
           <Plus size={14} strokeWidth={2} />

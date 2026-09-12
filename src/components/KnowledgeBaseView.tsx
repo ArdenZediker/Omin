@@ -1292,7 +1292,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
   );
 
   return (
-    <div className="omni-knowledge-root flex h-full min-h-0 flex-col bg-white text-slate-900">
+    <div className="omni-knowledge-root flex h-full min-h-0 flex-col bg-white text-[var(--omni-app-text)]">
       <div className="omni-knowledge-layout flex min-h-0 flex-1">
         <aside className="main-chat-nav">
           <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
@@ -1341,7 +1341,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
         />
 
         <main className="omni-knowledge-main relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <header className="drag-region relative z-40 flex min-h-20 shrink-0 flex-col overflow-visible bg-white">
+          <header className="drag-region relative z-40 flex shrink-0 flex-col overflow-visible">
             {detailView ? (
               <KnowledgeDocumentDetailHeader
                 document={selectedDocument}
@@ -1463,26 +1463,26 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                               >
                                 <button
                                   type="button"
-                                  className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                  className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
                                   onPointerDown={(event) => event.stopPropagation()}
                                   onClick={() => {
                                     openFilePicker(fileInputRef.current);
                                     setIsUploadMenuOpen(false);
                                   }}
                                 >
-                                  <LucideFileText size={15} strokeWidth={1.8} className="text-slate-500" />
+                                  <LucideFileText size={15} strokeWidth={1.8} className="text-[var(--omni-app-muted)]" />
                                   上传文件
                                 </button>
                                 <button
                                   type="button"
-                                  className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                  className="no-drag flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
                                   onPointerDown={(event) => event.stopPropagation()}
                                   onClick={() => {
                                     openFilePicker(folderInputRef.current);
                                     setIsUploadMenuOpen(false);
                                   }}
                                 >
-                                  <FolderOpen size={15} strokeWidth={1.8} className="text-slate-500" />
+                                  <FolderOpen size={15} strokeWidth={1.8} className="text-[var(--omni-app-muted)]" />
                                   上传文件夹
                                 </button>
                               </div>,
@@ -1523,7 +1523,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                 <button
                   type="button"
                   onClick={() => setUploadNotice(null)}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-none border border-current/15 bg-white/60 text-current hover:bg-white"
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-none border border-current/15 bg-[var(--omni-panel-bg)]/60 text-current hover:bg-[var(--omni-panel-bg)]"
                   title="关闭提示"
                 >
                   <X size={14} strokeWidth={2} />
@@ -1702,17 +1702,17 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
           <div className="omni-knowledge-collection-settings">
             <div className="omni-knowledge-collection-settings__header">
               <div className="min-w-0">
-                <div className="text-base font-semibold text-slate-950">
+                <div className="text-base font-semibold text-[var(--omni-app-text)]">
                   {editingCollection?.name ?? collectionSettingsDraft.name} · 知识库设置
                 </div>
-                <div className="mt-1 text-sm text-slate-500">
+                <div className="mt-1 text-sm text-[var(--omni-app-muted)]">
                   配置当前知识库的基础信息，以及图片 / 音频多模态分析策略。
                 </div>
               </div>
               <button
                 type="button"
                 onClick={closeCollectionSettings}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                 title="关闭"
               >
                 <X size={16} strokeWidth={2} />
@@ -1727,7 +1727,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                   <input
                     value={collectionSettingsDraft.name}
                     onChange={(event) => updateCollectionDraft({ name: event.target.value })}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-input-bg)] px-3 py-2 text-sm text-[var(--omni-app-text)]"
                     placeholder="请输入知识库名称"
                   />
 
@@ -1735,7 +1735,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                   <textarea
                     value={collectionSettingsDraft.description}
                     onChange={(event) => updateCollectionDraft({ description: event.target.value })}
-                    className="min-h-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="min-h-24 rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-input-bg)] px-3 py-2 text-sm text-[var(--omni-app-text)]"
                     placeholder="用于组织上传文件"
                   />
                 </div>
@@ -1745,7 +1745,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="omni-knowledge-collection-settings__section-title">多模态</div>
-                    <div className="mt-1 text-sm text-slate-500">分析结果会并入知识内容，继续沿用当前的检索和问答链路。</div>
+                    <div className="mt-1 text-sm text-[var(--omni-app-muted)]">分析结果会并入知识内容，继续沿用当前的检索和问答链路。</div>
                   </div>
                   <label className="omni-knowledge-collection-settings__switch">
                     <OmniSwitch
@@ -1769,7 +1769,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <LucideFileImage size={16} strokeWidth={1.9} className="text-amber-600" />
-                        <strong className="text-sm text-slate-900">图片分析</strong>
+                        <strong className="text-sm text-[var(--omni-app-text)]">图片分析</strong>
                       </div>
                       <label className="omni-knowledge-collection-settings__switch">
                         <OmniSwitch
@@ -1783,7 +1783,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                     </div>
 
                     <div className="mt-3 space-y-3">
-                      <label className="block text-xs font-medium text-slate-500">模型</label>
+                      <label className="block text-xs font-medium text-[var(--omni-app-muted)]">模型</label>
                       <OmniSelect
                         value={collectionSettingsDraft.multimodalConfig.image.modelId}
                         onChange={(value) => updateCollectionImageConfig({ modelId: value })}
@@ -1820,7 +1820,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <Mic size={16} strokeWidth={1.9} className="text-sky-600" />
-                        <strong className="text-sm text-slate-900">音频分析</strong>
+                        <strong className="text-sm text-[var(--omni-app-text)]">音频分析</strong>
                       </div>
                       <label className="omni-knowledge-collection-settings__switch">
                         <OmniSwitch
@@ -1834,7 +1834,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                     </div>
 
                     <div className="mt-3 space-y-3">
-                      <label className="block text-xs font-medium text-slate-500">模型</label>
+                      <label className="block text-xs font-medium text-[var(--omni-app-muted)]">模型</label>
                       <OmniSelect
                         value={collectionSettingsDraft.multimodalConfig.audio.modelId}
                         onChange={(value) => updateCollectionAudioConfig({ modelId: value })}
@@ -1868,8 +1868,8 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  <div className="flex items-center gap-2 font-medium text-slate-900">
+                <div className="mt-4 rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-soft-bg)] px-4 py-3 text-sm text-[var(--omni-app-muted)]">
+                  <div className="flex items-center gap-2 font-medium text-[var(--omni-app-text)]">
                     <Sparkles size={15} strokeWidth={1.9} className="text-amber-600" />
                     <span>当前入库策略</span>
                   </div>
@@ -1891,7 +1891,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                 type="button"
                 onClick={closeCollectionSettings}
                 disabled={isSavingCollectionSettings}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-4 py-2 text-sm text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 取消
               </button>
@@ -1899,7 +1899,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                 type="button"
                 onClick={() => void saveCollectionSettings()}
                 disabled={isSavingCollectionSettings}
-                className="rounded-lg border border-slate-950 bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg border border-[var(--omni-app-text)] bg-[var(--omni-app-text)] px-4 py-2 text-sm font-medium text-[var(--omni-panel-bg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSavingCollectionSettings ? "保存中..." : "保存设置"}
               </button>

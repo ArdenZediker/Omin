@@ -3358,14 +3358,15 @@
 
 .omni-knowledge-main > header {
   /* 与 .main-chat-toolbar 视觉平级：圆角 + 1px border + 阴影 + 半透明渐变背景。
-   * **高度统一到 76px** 与 chat toolbar 完全一致。JSX 里 <header min-h-20>
-   * 之前让 KB header 高度 ≧80px，比 chat toolbar 的 76px 高出 4-8px，用户感觉
-   * "知识库的顶部栏明显比聊天顶部栏高一点"。三条 height/min/max 一起写是
-   * 为了压过 Tailwind .min-h-20 (80px) 的 specificity，让 KB header 严格
-   * 76px（chat toolbar 也是 height:76px + min/max-height:76px）。
-   * **关键**：header 是 `flex flex-col`，固定 76px 后必须 `justify-content:center`
-   * 让唯一子 div 垂直居中，否则 flex-col 默认从顶部排列，造成「文字按钮明显
-   * 往底部下沉」视觉。inner div 的 Tailwind `py-3` (24px) 与本 padding 12px
+   * **高度基准 76px**，与 chat toolbar 一致。但**不能写死 height**：
+   * 详情页顶部栏在窄窗下需要折成两行（标题一行、药丸与文档操作一行），写死
+   * 76px 时内容盒只有 52px，超出的部分被 overflow:hidden 上下对半裁掉，表现为
+   * 「顶部 tab 被挤压、和标题叠在一起」。故改为 min-height:76px + height:auto：
+   * 单行内容（列表页，以及宽窗下的详情页）自然等于 76px，零回归；只有真正需要
+   * 两行时才长高。
+   * **关键**：header 是 `flex flex-col`，靠 justify-content:center 让唯一子 div
+   * 垂直居中，否则 flex-col 默认从顶部排列，造成「文字按钮明显往底部下沉」视觉。
+   * inner div 的 Tailwind `py-3` (24px) 与本 padding 12px
    * * 2 (24px) 会重复，所以下方再覆写 inner div 垂直 padding 为 0，由 header
    * 的 12px 统一控制上下留白。 */
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
@@ -3375,9 +3376,9 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-panel-bg) 86%, transparent)),
     var(--omni-panel-bg) !important;
-  height: 76px;
   min-height: 76px;
-  max-height: 76px;
+  max-height: none;
+  height: auto;
   padding: 12px 14px;
   justify-content: center;
 }

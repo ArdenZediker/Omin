@@ -4,6 +4,9 @@
 // - text/markdown → 数据库里的 content 直显（无需读二进制）
 // 旧方案（docx-preview + <object>/pdfjs 首页兜底）已移除；pdfjs-dist 仍由
 // knowledgeFileConversion.ts 在摄取链路使用，不能卸载。
+//
+// 颜色统一走 --omni-* token：暗色主题下原本是 bg-slate-50 / text-slate-700 的浅色岛，
+// 而外层 .omni-knowledge-content-panel 已经是 var(--omni-app-bg)，两者对撞很刺眼。
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KnowledgeDocumentBinaryPayload, KnowledgeDocumentDetail } from "../../chat/knowledgeTypes";
 import { renderMarkdown } from "../../app/renderMarkdown";
@@ -15,6 +18,14 @@ type KnowledgeDocumentPreviewProps = {
   onOpenExternal: () => Promise<void> | void;
   loadDocumentBinary: (documentId: string) => Promise<KnowledgeDocumentBinaryPayload>;
 };
+
+const OPEN_EXTERNAL_BUTTON_CLASS =
+  "absolute right-3 top-3 z-10 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-3 py-1.5 text-xs text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]";
+
+const TEXT_PANEL_BASE_CLASS =
+  "overflow-auto whitespace-pre-wrap rounded-none bg-[var(--omni-soft-bg)] p-4 text-sm leading-6 text-[var(--omni-app-text)]";
+
+const TEXT_PREVIEW_CLASS = `h-full ${TEXT_PANEL_BASE_CLASS}`;
 
 export default function KnowledgeDocumentPreview({
   document,
@@ -108,16 +119,12 @@ export default function KnowledgeDocumentPreview({
   if (error) {
     return (
       <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden p-4">
-        <button
-          type="button"
-          onClick={() => void onOpenExternal()}
-          className="absolute right-3 top-3 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-        >
+        <button type="button" onClick={() => void onOpenExternal()} className={OPEN_EXTERNAL_BUTTON_CLASS}>
           打开原文文件
         </button>
         <div className="space-y-3 pt-8">
-          <div className="text-sm font-medium text-slate-950">预览失败</div>
-          <div className="text-sm text-slate-500">{error}</div>
+          <div className="text-sm font-medium text-[var(--omni-app-text)]">预览失败</div>
+          <div className="text-sm text-[var(--omni-app-muted)]">{error}</div>
         </div>
       </div>
     );
@@ -126,7 +133,11 @@ export default function KnowledgeDocumentPreview({
   function renderPreviewContent() {
     if (useViewer) {
       if (isLoading || !viewerBlob) {
-        return <div className="flex h-full items-center justify-center text-sm text-slate-500">正在加载文档预览...</div>;
+        return (
+          <div className="flex h-full items-center justify-center text-sm text-[var(--omni-app-muted)]">
+            正在加载文档预览...
+          </div>
+        );
       }
       return <ViewerFrame blob={viewerBlob} filename={viewerFilename} />;
     }
@@ -135,22 +146,18 @@ export default function KnowledgeDocumentPreview({
       case "markdown":
         return (
           <div className="h-full overflow-auto pr-1">
-            <div className="markdown-body text-sm text-slate-700">{renderMarkdown(fallbackText)}</div>
+            <div className="markdown-body text-sm text-[var(--omni-app-text)]">{renderMarkdown(fallbackText)}</div>
           </div>
         );
       case "text":
-        return (
-          <pre className="h-full overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-            {fallbackText}
-          </pre>
-        );
+        return <pre className={TEXT_PREVIEW_CLASS}>{fallbackText}</pre>;
       case "image":
         return imageUrl ? (
           <div className="flex h-full w-full items-center justify-center overflow-auto">
             <img
               src={imageUrl}
               alt={document.sourceName}
-              className="max-h-full max-w-full rounded-none border border-slate-200 object-contain"
+              className="max-h-full max-w-full rounded-none border border-[var(--omni-panel-border)] object-contain"
             />
           </div>
         ) : null;
@@ -162,15 +169,13 @@ export default function KnowledgeDocumentPreview({
                 <source src={audioUrl} type={document.mimeType ?? "audio/mpeg"} />
               </audio>
             ) : null}
-            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap rounded-none bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-              {fallbackText}
-            </pre>
+            <pre className={`min-h-0 flex-1 ${TEXT_PANEL_BASE_CLASS}`}>{fallbackText}</pre>
           </div>
         );
       case "unsupported":
       default:
         return (
-          <div className="space-y-3 text-sm text-slate-500">
+          <div className="space-y-3 text-sm text-[var(--omni-app-muted)]">
             <div>{fallbackText || "该格式不支持内嵌预览，可以打开原文文件查看。"}</div>
           </div>
         );
@@ -179,11 +184,7 @@ export default function KnowledgeDocumentPreview({
 
   return (
     <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
-      <button
-        type="button"
-        onClick={() => void onOpenExternal()}
-        className="absolute right-3 top-3 z-10 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-      >
+      <button type="button" onClick={() => void onOpenExternal()} className={OPEN_EXTERNAL_BUTTON_CLASS}>
         打开原文文件
       </button>
 

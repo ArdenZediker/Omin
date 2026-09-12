@@ -66,7 +66,7 @@ export default class KnowledgeBaseDetailBoundary extends Component<
             <button
               type="button"
               onClick={this.props.onBackToList}
-              className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+              className="rounded-lg border border-[var(--omni-app-text)] bg-[var(--omni-app-text)] px-3 py-1.5 text-sm text-[var(--omni-panel-bg)] hover:opacity-90"
             >
               返回列表
             </button>

@@ -13,6 +13,7 @@ type KnowledgeDocumentListProps = {
   onDeleteDocument: (documentId: string) => void;
 };
 
+// 卡片颜色统一走 --omni-* token（此前是 slate-*/white 硬编码，暗色主题下整块亮岛）。
 export default function KnowledgeDocumentList({
   documents,
   selectedDocumentId,
@@ -42,7 +43,9 @@ export default function KnowledgeDocumentList({
               <div
                 key={document.id}
                 className={`group relative flex h-[170px] min-w-0 flex-col rounded-lg border p-2 text-left transition ${
-                  isActive ? "border-slate-950 bg-white text-slate-950 shadow-sm" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+                  isActive
+                    ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
+                    : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
                 }`}
                 onContextMenu={(event) => {
                   event.preventDefault();
@@ -54,15 +57,19 @@ export default function KnowledgeDocumentList({
                   onClick={() => onOpenDocument(document.id)}
                   className="flex min-w-0 flex-1 flex-col items-stretch gap-1.5 text-left"
                 >
-                  <div className="h-[86px] w-full overflow-hidden rounded-md bg-slate-100">{fileBadge}</div>
+                  <div className="h-[86px] w-full overflow-hidden rounded-md bg-[var(--omni-soft-bg)]">{fileBadge}</div>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="line-clamp-2 text-[12px] font-medium leading-4">{document.sourceName}</div>
-                    {document.errorMessage ? <div className="mt-1 line-clamp-1 text-xs text-red-500">{document.errorMessage}</div> : null}
+                    {document.errorMessage ? (
+                      <div className="mt-1 line-clamp-1 text-xs text-[var(--omni-danger,#ef4444)]">
+                        {document.errorMessage}
+                      </div>
+                    ) : null}
                     <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                      <span className="shrink-0 rounded-none border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                      <span className="shrink-0 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2 py-0.5 text-[11px] font-medium text-[var(--omni-app-muted)]">
                         {getProcessingStatusLabel(document.processingStatus)}
                       </span>
-                      <span className="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
+                      <span className="shrink-0 rounded-full border border-[var(--omni-panel-border)] px-2 py-0.5 text-[10px] text-[var(--omni-app-muted)]">
                         {getVectorizationLabel(document.vectorizationState ?? null)}
                       </span>
                     </div>
@@ -93,7 +100,7 @@ export default function KnowledgeDocumentList({
           })}
 
           {documents.length === 0 ? (
-            <div className="col-span-full rounded-none border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+            <div className="col-span-full rounded-none border border-dashed border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-4 py-8 text-center text-sm text-[var(--omni-app-muted)]">
               没有符合当前筛选条件的文档。你可以先上传文件，或者切换分类。
             </div>
           ) : null}

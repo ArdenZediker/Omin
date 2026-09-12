@@ -810,3 +810,234 @@
 :root[data-omni-theme="dark"] .omni-knowledge-collection-settings__capability-card {
   background: var(--omni-input-bg);
 }
+
+/* ===== 文档详情页顶部栏（KnowledgeDocumentDetailHeader）=====
+   症状：窗口一收窄，顶部 tab 就被挤压、并和标题叠在一起。
+   根因有两层，缺一不可：
+
+   ① 排布层：JSX 原先是「左侧标题块 + 右侧工具组」两块，外层 nowrap、工具组
+      内部 flex-wrap。工具组的 hypothetical main size 等于组内控件 max-content
+      之和（药丸组 247 + 处理信息 108 + 文档操作 365 + 窗口控制 77 + 间隙 ≈ 736px，
+      实测自 1393px 宽截图，缩放 1.2），而知识库主区只有 ~500-570px —— 于是
+      收缩预算按 base 比例分配后被工具组吃掉大半，标题被压到几十像素；工具组
+      自己折成两行后又在视觉上压住标题。
+      现在把五个控件全部摊成 header 的**直接子元素**，由 header 的 flex-wrap
+      统一做「行内装箱」，浏览器自己会把能同行的塞进同一行：
+        行 1 = 标题块 + 切页药丸，行 2 = 处理信息 + 文档操作 + 窗口控制。
+      标题块 flex-grow:1 会吃光本行剩余空间，右侧控件自然贴右；换行后没有
+      growing 元素，靠 .omni-knowledge-detail-tabs / --pill 的 margin-left:auto
+      把该行整体推到右边（auto margin 吸收本行剩余空间）。
+
+   ② 尺寸层：chat.css 的 `.omni-knowledge-main > header` 把高度写死成 76px
+      （对齐聊天顶栏）且 overflow:hidden。内容一旦需要两行，超出 52px 内容盒的
+      部分被上下对半裁掉 —— 这才是「被挤压」观感的真身。已改为
+      min-height:76px + height:auto：单行时仍恰好 76px，需要两行时才长高。
+
+   颜色全部走主题 token，浅色取值与原先的 slate/white 基本一致。 */
+.omni-knowledge-detail-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px 12px;
+}
+
+.omni-knowledge-detail-header__identity {
+  display: flex;
+  flex: 1 1 260px;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.omni-knowledge-detail-back {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--omni-radius-md);
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.omni-knowledge-detail-back:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+/* 副标题 + 状态徽标同行：徽标若独立成行会把标题块撑到 48px 以上，
+   header 就压不回 76px（内容盒 52px）预算。 */
+.omni-knowledge-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--omni-app-muted);
+}
+
+.omni-knowledge-detail-meta__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.omni-knowledge-detail-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 90%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 90%, transparent);
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.omni-knowledge-detail-tabs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 90%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 90%, transparent);
+  backdrop-filter: blur(10px) saturate(1.02);
+  -webkit-backdrop-filter: blur(10px) saturate(1.02);
+  /* 换行后它就是新行的第一个元素：auto margin 吸收本行剩余空间 → 整行贴右。
+     单行时标题块的 flex-grow 已吃光剩余空间，这里等价于 0。 */
+  margin-left: auto;
+}
+
+.omni-knowledge-detail-tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.omni-knowledge-detail-tab:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+}
+
+.omni-knowledge-detail-tab--active,
+.omni-knowledge-detail-tab--active:hover {
+  background: var(--omni-app-text);
+  color: var(--omni-panel-bg);
+}
+
+.omni-knowledge-detail-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 90%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 90%, transparent);
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+  /* 与 --tabs 同理：它可能成为「处理信息 + 文档操作 + 窗口控制」那一行的
+     第一个元素，auto margin 让整行贴右。 */
+  margin-left: auto;
+}
+
+.omni-knowledge-detail-header__controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.omni-knowledge-detail-pill:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.omni-knowledge-detail-pill--active,
+.omni-knowledge-detail-pill--active:hover {
+  border-color: var(--omni-app-text);
+  background: var(--omni-app-text);
+  color: var(--omni-panel-bg);
+}
+
+.omni-knowledge-detail-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 90%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 90%, transparent);
+  backdrop-filter: blur(10px) saturate(1.02);
+  -webkit-backdrop-filter: blur(10px) saturate(1.02);
+}
+
+.omni-knowledge-detail-actions__button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.omni-knowledge-detail-actions__button:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+}
+
+/* 琥珀色强语义徽标（多模态标记）。浅色下沿用 amber-50/amber-700，
+   暗色下换成低饱和透明底 + 亮琥珀前景，避免「亮岛」。 */
+.omni-knowledge-warn-chip {
+  border-color: color-mix(in srgb, #f59e0b 38%, transparent);
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  color: #b45309;
+}
+
+:root[data-omni-theme="dark"] .omni-knowledge-warn-chip {
+  border-color: color-mix(in srgb, #f59e0b 34%, transparent);
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #fbbf24;
+}

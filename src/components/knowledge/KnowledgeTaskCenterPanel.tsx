@@ -124,7 +124,7 @@ export default function KnowledgeTaskCenterPanel({
                 <span>运行 {currentCounts.running}</span>
                 <span>死信 {currentDeadLetterCount}</span>
               </div>
-              <div className="mt-3 rounded-none border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+              <div className="mt-3 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-soft-bg)] px-3 py-2 text-[11px] text-[var(--omni-app-muted)]">
                 全局失败 {counts.global.failed} · 当前库失败 {counts.activeCollection.failed} · 当前展示 {scope === "activeCollection" ? "当前知识库" : "全局范围"}
               </div>
             </div>
@@ -175,7 +175,7 @@ export default function KnowledgeTaskCenterPanel({
               </div>
               <div className="chat-topic-panel__task chat-topic-panel__task--form">
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                  <label className="flex items-center justify-between gap-2 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2 py-1.5">
                     <span>总并发</span>
                     <input
                       type="number"
@@ -183,10 +183,10 @@ export default function KnowledgeTaskCenterPanel({
                       max={4}
                       value={pipelineSettings.maxConcurrentJobs}
                       onChange={(event) => onUpdatePipelineSettings({ maxConcurrentJobs: Number(event.target.value || 1) })}
-                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                      className="w-14 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-input-bg)] px-1 py-0.5 text-right text-[11px] text-[var(--omni-app-text)] outline-none"
                     />
                   </label>
-                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                  <label className="flex items-center justify-between gap-2 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2 py-1.5">
                     <span>单库并发</span>
                     <input
                       type="number"
@@ -194,10 +194,10 @@ export default function KnowledgeTaskCenterPanel({
                       max={4}
                       value={pipelineSettings.perCollectionMaxRunning}
                       onChange={(event) => onUpdatePipelineSettings({ perCollectionMaxRunning: Number(event.target.value || 1) })}
-                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                      className="w-14 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-input-bg)] px-1 py-0.5 text-right text-[11px] text-[var(--omni-app-text)] outline-none"
                     />
                   </label>
-                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                  <label className="flex items-center justify-between gap-2 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2 py-1.5">
                     <span>自动重试</span>
                     <input
                       type="number"
@@ -205,10 +205,10 @@ export default function KnowledgeTaskCenterPanel({
                       max={10}
                       value={pipelineSettings.maxAutoRetries}
                       onChange={(event) => onUpdatePipelineSettings({ maxAutoRetries: Number(event.target.value || 0) })}
-                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                      className="w-14 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-input-bg)] px-1 py-0.5 text-right text-[11px] text-[var(--omni-app-text)] outline-none"
                     />
                   </label>
-                  <label className="flex items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-2 py-1.5">
+                  <label className="flex items-center justify-between gap-2 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2 py-1.5">
                     <span>任务超时(s)</span>
                     <input
                       type="number"
@@ -220,7 +220,7 @@ export default function KnowledgeTaskCenterPanel({
                           jobTimeoutMs: Number(event.target.value || 10) * 1000,
                         })
                       }
-                      className="w-14 rounded-none border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none"
+                      className="w-14 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-input-bg)] px-1 py-0.5 text-right text-[11px] text-[var(--omni-app-text)] outline-none"
                     />
                   </label>
                 </div>
@@ -246,7 +246,7 @@ export default function KnowledgeTaskCenterPanel({
                   { value: "all", label: "全部状态" },
                 ]}
               />
-              <div className="rounded-none border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+              <div className="rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-soft-bg)] px-3 py-2 text-[11px] text-[var(--omni-app-muted)]">
                 优先处理失败文档，再看详情排查原因
               </div>
             </div>
@@ -272,9 +272,9 @@ export default function KnowledgeTaskCenterPanel({
                         <span>{item.jobTypeLabel}</span>
                         <span>{formatTimestamp(item.lastFailedAt)}</span>
                       </div>
-                      <div className="mt-2 text-sm font-medium leading-6 text-slate-900">{item.userMessage}</div>
-                      {item.userAction ? <div className="mt-1 text-xs leading-5 text-slate-500">{item.userAction}</div> : null}
-                      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                      <div className="mt-2 text-sm font-medium leading-6 text-[var(--omni-app-text)]">{item.userMessage}</div>
+                      {item.userAction ? <div className="mt-1 text-xs leading-5 text-[var(--omni-app-muted)]">{item.userAction}</div> : null}
+                      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-[var(--omni-app-muted)]">
                         <span>{formatDeadLetterAttempts(item)}</span>
                         <span>{item.documentName ? "已识别文档" : `文档 ID ${item.documentId.slice(0, 8)}`}</span>
                       </div>
@@ -296,11 +296,11 @@ export default function KnowledgeTaskCenterPanel({
                         </button>
                       </div>
                       {isExpanded ? (
-                        <div className="mt-3 space-y-2 rounded-none border border-slate-200 bg-slate-50 px-3 py-3 text-[11px] leading-5 text-slate-600">
-                          <div><strong className="text-slate-900">原始错误：</strong>{item.errorMessage ?? "无原始错误详情"}</div>
-                          <div><strong className="text-slate-900">文档 ID：</strong>{item.documentId}</div>
-                          <div><strong className="text-slate-900">任务 ID：</strong>{item.jobId}</div>
-                          <div><strong className="text-slate-900">知识库 ID：</strong>{item.collectionId}</div>
+                        <div className="mt-3 space-y-2 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-soft-bg)] px-3 py-3 text-[11px] leading-5 text-[var(--omni-app-muted)]">
+                          <div><strong className="text-[var(--omni-app-text)]">原始错误：</strong>{item.errorMessage ?? "无原始错误详情"}</div>
+                          <div><strong className="text-[var(--omni-app-text)]">文档 ID：</strong>{item.documentId}</div>
+                          <div><strong className="text-[var(--omni-app-text)]">任务 ID：</strong>{item.jobId}</div>
+                          <div><strong className="text-[var(--omni-app-text)]">知识库 ID：</strong>{item.collectionId}</div>
                         </div>
                       ) : null}
                     </div>
