@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, beforeEach } from "vitest";
 import { buildChatTools, buildExpertAgentHint, createStructuredOutputFilter, extractToolCallArgs, resolveEnabledToolNames } from "./chatRuntimeHelpers";
 import { BUILTIN_TOOL_IDS } from "../config/manifests/tools";
 import type { Project } from "../chat/types";
@@ -128,8 +128,38 @@ describe("内置工具对所有模型/会话公用", () => {
 });
 
 describe("buildExpertAgentHint（agent 工具的动态专家名册）", () => {
+  // 专家自 2026-09-13 起不再内置（全部移除，只能用户自建），故此处自备 fixture。
+  // 名册逻辑只关心「注册表里有已启用专家」，与来源（内置/自建）无关。
+  const fixtures = [
+    {
+      id: "dev-expert",
+      name: "编程专家",
+      description: "代码类子任务首选。",
+      version: "1.0.0",
+      kind: "expert",
+      templatePrompt: "你是资深软件工程师。",
+    },
+    {
+      id: "writer-expert",
+      name: "写作专家",
+      description: "文稿类子任务首选。",
+      version: "1.0.0",
+      kind: "expert",
+      templatePrompt: "你是专业文字编辑。",
+    },
+  ] as PluginManifest[];
+
+  beforeEach(() => {
+    for (const manifest of fixtures) {
+      pluginRegistry.install(manifest, { type: "local", path: "test" });
+    }
+  });
+
   afterEach(() => {
     localStorage.removeItem(BASIC_SETTINGS_STORAGE_KEY);
+    for (const manifest of fixtures) {
+      pluginRegistry.uninstall(manifest.id);
+    }
   });
 
   // 口径：专家是「本项目可指派的工作角色」，与技能/MCP 的「安装 + 开启即可用」刻意不同 ——

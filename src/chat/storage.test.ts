@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  createCustomProject,
   createEmptyUsageStats,
   isPendingProjectPlaceholder,
   parseChatSessionsSnapshot,
+  parseProjectsSnapshot,
   serializeChatSessionsSnapshot,
+  serializeProjectsSnapshot,
   stripPendingPlaceholder,
 } from "./storage";
 import type { ChatSession } from "./types";
@@ -90,5 +93,49 @@ describe("空 assistant 占位消息的清理", () => {
     const raw = serializeChatSessionsSnapshot([sessionWith([userMessage, realReply])]);
     const parsed = JSON.parse(raw) as Array<{ messages: Message[] }>;
     expect(parsed[0].messages).toEqual([userMessage, realReply]);
+  });
+});
+
+/**
+ * 项目级连接器白名单（`allowedConnectorIds`）的落盘 / 读回。
+ *
+ * 这条链路比「技能白名单」更要紧：它是**收窄**权限的字段，丢掉不会回到「默认」，
+ * 而是**放开** —— 空 = 不限 ⇒ 重启后这个项目突然能看见全部已信任连接器。
+ */
+describe("项目连接器白名单的持久化", () => {
+  it("serialize → parse 之后白名单仍在", () => {
+    const project = {
+      ...createCustomProject({ title: "带连接器的项目" }),
+      allowedConnectorIds: ["mcp-a", "mcp-b"],
+    };
+
+    const parsed = parseProjectsSnapshot(serializeProjectsSnapshot([project]));
+    // ⚠️ 不能按下标取：parseProjectsSnapshot 发现快照里没有 `DEFAULT_PROJECT_ID` 时
+    // 会**补一个默认项目到最前面**，于是 index 0 根本不是我们塞进去的这个项目。
+    const restored = parsed.find((item) => item.title === "带连接器的项目");
+
+    expect(restored?.allowedConnectorIds).toEqual(["mcp-a", "mcp-b"]);
+  });
+
+  it("空数组归一化为 undefined，让「未设置」只有一种表示", () => {
+    const project = { ...createCustomProject({ title: "无限制项目" }), allowedConnectorIds: [] };
+
+    const parsed = parseProjectsSnapshot(serializeProjectsSnapshot([project]));
+    const restored = parsed.find((item) => item.title === "无限制项目");
+
+    // 先确认真的找到了这个项目 —— 否则「读不到字段」和「根本没这个项目」都是 undefined，
+    // 断言会假通过（这一版最初就踩了）。
+    expect(restored).toBeTruthy();
+    expect(restored?.allowedConnectorIds).toBeUndefined();
+  });
+
+  it("新建项目不预设连接器白名单（留空 = 不限制）", () => {
+    expect(createCustomProject({ title: "新项目" }).allowedConnectorIds).toBeUndefined();
+  });
+
+  it("createCustomProject 透传白名单", () => {
+    expect(createCustomProject({ title: "x", allowedConnectorIds: ["mcp-a"] }).allowedConnectorIds).toEqual([
+      "mcp-a",
+    ]);
   });
 });

@@ -252,7 +252,7 @@ function expertActionDetail(expert: PluginManifest, task: string): string {
 async function runSingleSubAgent(spec: SubAgentTaskSpec, context: SubAgentRunContext): Promise<SubAgentResult> {
   const { task, expertId } = spec;
 
-  // 专家模式：expertId 指向已安装/内置专家时，用专家的提示词/工具/技能驱动子 Agent。
+  // 专家模式：expertId 指向已安装的专家（用户自建）时，用专家的提示词/工具/技能驱动子 Agent。
   let expert: PluginManifest | null = null;
   if (expertId && context.resolveExpert) {
     const resolved = context.resolveExpert(expertId);

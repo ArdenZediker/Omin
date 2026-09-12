@@ -17,8 +17,26 @@ import {
   searchProjectMemories,
   searchSessionSummaries,
 } from "../chat/storage";
-import { loadPersistedChatState, savePersistedChatState, savePersistedMemoryState } from "../chat/persistence";
+import {
+  loadPersistedChatState,
+  savePersistedChatSessions,
+  savePersistedChatState,
+  savePersistedMemoryState,
+} from "../chat/persistence";
 import { savePersistedAutomationState } from "../chat/persistence";
+import {
+  broadcastChatStorageSync,
+  collectOwnedSessionUpdates,
+  diffSyncCollection,
+  getChatSyncSource,
+  isProjectSynced,
+  isSessionSynced,
+  mergeRemoteCollection,
+  shouldAdoptRemoteProject,
+  shouldAdoptRemoteSession,
+  subscribeToChatStorageSync,
+  type ChatStorageSyncRole,
+} from "../chat/crossWindowSync";
 import { clearProjectArtifacts, clearSessionArtifacts } from "../chat/artifacts";
 import type {
   ProjectMemoryRecord,
@@ -65,9 +83,17 @@ function extractProjectMemories(messages: Message[]) {
 
 type UseChatSessionsOptions = {
   persist: boolean;
+  /**
+   * 持久化角色（详见 `chat/crossWindowSync.ts`）：
+   * - `owner`（默认，主窗）：唯一持有**整快照写权**，负责幽灵清理；
+   * - `follower`（紧凑窗）：只**窄写**自己创建的会话，其余状态只跟随 owner 广播。
+   *
+   * ⚠️ 两个窗口都用 `owner` 会互相整快照覆盖 ⇒ 会话「删了又自己回来」。
+   */
+  role?: ChatStorageSyncRole;
 };
 
-export function useChatSessions({ persist }: UseChatSessionsOptions) {
+export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOptions) {
   const [initialState] = useState(() => {
     const initialProjects = getInitialProjects();
     const initialSessions = getInitialChatSessions();
@@ -107,6 +133,13 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const hydratedWithDataRef = useRef(false);
   const projectsRef = useRef<Project[]>(projects);
   const chatSessionsRef = useRef<ChatSession[]>(chatSessions);
+  /** 本窗口创建的会话 id —— follower 只窄写这些（其余会话都是 owner 的副本）。 */
+  const ownedSessionIdsRef = useRef<Set<string>>(new Set());
+  /** 跨窗口增量同步的游标：上一轮广播出去的状态（只在 owner 侧使用）。 */
+  const syncCursorRef = useRef<{ sessions: ChatSession[]; projects: Project[] } | null>(null);
+  /** follower 侧：上一轮广播过的「自己拥有的会话」，用于避免重复广播。 */
+  const lastBroadcastOwnedRef = useRef<Map<string, ChatSession>>(new Map());
+  const [syncSource] = useState(() => getChatSyncSource());
 
   useEffect(() => {
     activeProjectIdRef.current = activeProjectId;
@@ -187,6 +220,10 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         setActiveChatId(nextActiveSession?.id ?? null);
         setMessages(nextActiveSession?.messages ?? []);
         setIsStorageHydrated(true);
+
+        // 以「刚加载到的状态」作为跨窗口增量同步的基线：另一个窗口此刻持有同一份
+        // 基线，所以此后只需要广播变化量，不必每次广播整份快照。
+        syncCursorRef.current = { sessions: nextSessions, projects: nextProjects };
       })
       .catch(() => {
         if (!cancelled) {
@@ -202,6 +239,90 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     };
   }, [persist]);
 
+  /**
+   * 一次「本地状态 → 磁盘」的落盘。
+   * owner：整快照（含幽灵清理）；follower：只窄写自己拥有的会话。
+   */
+  const persistLocalState = useCallback(
+    (state: {
+      projects: Project[];
+      sessions: ChatSession[];
+      memories: ProjectMemoryRecord[];
+      summaries: SessionSummaryRecord[];
+      preferences: UserPreferenceRecord[];
+      tasks: ScheduledTaskRecord[];
+    }) => {
+      if (role === "follower") {
+        // 紧凑窗内存里的快照不完整：可能缺少主窗新建的会话，也可能残留已被删除的会话。
+        // 整快照落盘会把这两类错误原样写回数据库（幽灵复活 / 幽灵清理）—— 只写自己创建的。
+        const owned = state.sessions.filter((session) => ownedSessionIdsRef.current.has(session.id));
+        if (owned.length > 0) {
+          void savePersistedChatSessions(owned);
+        }
+        // 记忆 / 自动化同理：真相源在主窗，紧凑窗手里的是启动时加载的陈旧副本，
+        // 写回去只会把主窗刚提交的摘要、记忆、偏好整批覆盖掉。
+        return;
+      }
+
+      void savePersistedChatState(state.projects, state.sessions);
+      void savePersistedMemoryState(state.memories, state.summaries, state.preferences);
+      void savePersistedAutomationState(state.tasks);
+    },
+    [role]
+  );
+
+  /**
+   * 把本地变化广播给另一个窗口（详见 `chat/crossWindowSync.ts`）。
+   * owner 广播「会话/项目的增量 + 删除」；follower 只广播自己拥有的会话。
+   * 关键是让**对方知道某会话已被删除** —— 否则对方内存里的陈旧副本还会被写回数据库。
+   */
+  const broadcastLocalChanges = useCallback(
+    (projectsArg: Project[], sessionsArg: ChatSession[]) => {
+      if (role === "follower") {
+        const upserts = collectOwnedSessionUpdates(
+          ownedSessionIdsRef.current,
+          sessionsArg,
+          lastBroadcastOwnedRef.current
+        );
+        if (upserts.length === 0) return;
+        broadcastChatStorageSync({
+          source: syncSource,
+          role,
+          sessionUpserts: upserts,
+          sessionDeletes: [],
+          projectUpserts: [],
+          projectDeletes: [],
+        });
+        return;
+      }
+
+      const previous = syncCursorRef.current;
+      syncCursorRef.current = { sessions: sessionsArg, projects: projectsArg };
+      if (!previous) return;
+
+      const sessionDelta = diffSyncCollection(previous.sessions, sessionsArg, isSessionSynced);
+      const projectDelta = diffSyncCollection(previous.projects, projectsArg, isProjectSynced);
+      if (
+        sessionDelta.upserts.length === 0 &&
+        sessionDelta.deletes.length === 0 &&
+        projectDelta.upserts.length === 0 &&
+        projectDelta.deletes.length === 0
+      ) {
+        return;
+      }
+
+      broadcastChatStorageSync({
+        source: syncSource,
+        role,
+        sessionUpserts: sessionDelta.upserts,
+        sessionDeletes: sessionDelta.deletes,
+        projectUpserts: projectDelta.upserts,
+        projectDeletes: projectDelta.deletes,
+      });
+    },
+    [role, syncSource]
+  );
+
   useEffect(() => {
     if (!persist || !isStorageHydrated || !hydratedWithDataRef.current) return;
 
@@ -214,19 +335,42 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
     // to avoid high-frequency IPC/storage writes that cause UI and drag stutter.
     persistTimerRef.current = window.setTimeout(() => {
       persistTimerRef.current = null;
-      void savePersistedChatState(projects, chatSessions);
-      void savePersistedMemoryState(projectMemories, sessionSummaries, userPreferences);
-      void savePersistedAutomationState(scheduledTasks);
+      persistLocalState({
+        projects,
+        sessions: chatSessions,
+        memories: projectMemories,
+        summaries: sessionSummaries,
+        preferences: userPreferences,
+        tasks: scheduledTasks,
+      });
+      broadcastLocalChanges(projects, chatSessions);
     }, 260);
-  }, [projects, chatSessions, projectMemories, sessionSummaries, scheduledTasks, userPreferences, isStorageHydrated, persist]);
+  }, [
+    projects,
+    chatSessions,
+    projectMemories,
+    sessionSummaries,
+    scheduledTasks,
+    userPreferences,
+    isStorageHydrated,
+    persist,
+    persistLocalState,
+    broadcastLocalChanges,
+  ]);
 
   // 关闭窗口时尽力把最新状态写回，避免 260ms 防抖窗口内退出导致丢数据。
   useEffect(() => {
     const flush = () => {
       if (!hydratedWithDataRef.current) return;
-      void savePersistedChatState(projects, chatSessions);
-      void savePersistedMemoryState(projectMemories, sessionSummaries, userPreferences);
-      void savePersistedAutomationState(scheduledTasks);
+      persistLocalState({
+        projects,
+        sessions: chatSessions,
+        memories: projectMemories,
+        summaries: sessionSummaries,
+        preferences: userPreferences,
+        tasks: scheduledTasks,
+      });
+      broadcastLocalChanges(projects, chatSessions);
     };
     window.addEventListener("pagehide", flush);
     window.addEventListener("beforeunload", flush);
@@ -234,7 +378,78 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       window.removeEventListener("pagehide", flush);
       window.removeEventListener("beforeunload", flush);
     };
-  }, [projects, chatSessions, projectMemories, sessionSummaries, scheduledTasks, userPreferences]);
+  }, [
+    projects,
+    chatSessions,
+    projectMemories,
+    sessionSummaries,
+    scheduledTasks,
+    userPreferences,
+    persistLocalState,
+    broadcastLocalChanges,
+  ]);
+
+  // 接收另一个窗口的增量并并入内存，使两窗快照收敛。
+  // 合并走 functional updater（永远基于最新 state），无变化时返回原数组，
+  // 避免「相同数据反复 setState → 再广播 → 回声」的死循环。
+  useEffect(() => {
+    if (!persist) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void subscribeToChatStorageSync((payload) => {
+      if (disposed || payload.source === syncSource) return;
+
+      const remoteSessions = {
+        upserts: payload.sessionUpserts ?? [],
+        deletes: payload.sessionDeletes ?? [],
+      };
+      const remoteProjects = {
+        upserts: payload.projectUpserts ?? [],
+        deletes: payload.projectDeletes ?? [],
+      };
+
+      // 被远端删除的会话要同步从「本窗口拥有的会话」里摘掉，
+      // 否则 follower 的窄写会在下一轮把它重新 upsert 回数据库（复活路径之一）。
+      for (const id of remoteSessions.deletes) {
+        ownedSessionIdsRef.current.delete(id);
+      }
+
+      if (remoteSessions.upserts.length > 0 || remoteSessions.deletes.length > 0) {
+        setChatSessions(
+          (current) => mergeRemoteCollection(current, remoteSessions, shouldAdoptRemoteSession) ?? current
+        );
+      }
+      if (remoteProjects.upserts.length > 0 || remoteProjects.deletes.length > 0) {
+        // 远端删掉的项目若正好是本窗口的活动项目，把活动项目让回一个仍然存在的项目：
+        // 否则紧凑窗后续新建的宠物会话会挂到一个已不存在的项目上（孤儿会话）。
+        if (remoteProjects.deletes.includes(activeProjectIdRef.current)) {
+          const fallbackProjectId =
+            projectsRef.current.find((project) => !remoteProjects.deletes.includes(project.id))?.id ??
+            DEFAULT_PROJECT_ID;
+          activeProjectIdRef.current = fallbackProjectId;
+          setActiveProjectId(fallbackProjectId);
+        }
+        setProjects(
+          (current) => mergeRemoteCollection(current, remoteProjects, shouldAdoptRemoteProject) ?? current
+        );
+      }
+    })
+      .then((fn) => {
+        if (disposed) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [persist, syncSource]);
 
   useEffect(
     () => () => {
@@ -321,6 +536,8 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
   const createSessionFromMessages = useCallback(
     (conversationMessages: Message[], projectId = activeProjectIdRef.current) => {
       const nextSession = createChatSession(conversationMessages, projectId);
+      // 记下「本窗口创建的会话」：follower 只窄写这些，其余会话是 owner 的副本。
+      ownedSessionIdsRef.current.add(nextSession.id);
       activeChatIdRef.current = nextSession.id;
       setActiveChatId(nextSession.id);
       setChatSessions((sessions) => [nextSession, ...sessions]);
@@ -336,12 +553,20 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
 
     setChatSessions((sessions) => {
       const current = sessions.find((session) => session.id === sessionId);
-      const currentMessages = current?.messages ?? [];
-      const messagesForSession = typeof nextMessages === "function" ? nextMessages(currentMessages) : nextMessages;
+      // 会话不存在就**什么都不做**。此前这里会顺手用同一个 id 重建会话：已删会话若还有
+      // 在飞的流式回调（停止 / 删除竞态），会被悄悄塞回内存并随快照落盘 —— 复活路径之一。
+      // 会话的创建只应经 `createSessionFromMessages`。
+      if (!current) {
+        return sessions;
+      }
 
-      const updated: ChatSession = current
-        ? { ...current, title: getChatSessionTitle(messagesForSession), messages: messagesForSession, updatedAt: now }
-        : { ...createChatSession(messagesForSession), id: sessionId };
+      const messagesForSession = typeof nextMessages === "function" ? nextMessages(current.messages) : nextMessages;
+      const updated: ChatSession = {
+        ...current,
+        title: getChatSessionTitle(messagesForSession),
+        messages: messagesForSession,
+        updatedAt: now,
+      };
 
       const nextSessions = sessions.map((session) => (session.id === sessionId ? updated : session));
 
@@ -451,6 +676,10 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       setProjectMemories(nextMemories);
       setSessionSummaries(nextSummaries);
       setScheduledTasks(nextTasks);
+      // 这些会话连同项目一起消失，本窗口不再拥有它们（否则 follower 的窄写会写回已删会话）。
+      for (const id of relatedSessionIds) {
+        ownedSessionIdsRef.current.delete(id);
+      }
 
       // 一并清掉该项目的产物记录。clearProjectArtifacts 此前导出后无人调用，属漏接的一环级联；
       // 产物文件都在各会话目录内，已随 delete_project 删除的会话目录一并消失。
@@ -479,18 +708,31 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
         // 借助 save_structured_chat_storage 现在会清理旧记录，避免"幽灵"助手复活。
       }
 
-      try {
-        await savePersistedChatState(nextProjects, nextSessions);
-        await savePersistedMemoryState(nextMemories, nextSummaries, userPreferences);
-        await savePersistedAutomationState(nextTasks);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("deleteProjectProfile: flush failed", error);
-      }
+      persistLocalState({
+        projects: nextProjects,
+        sessions: nextSessions,
+        memories: nextMemories,
+        summaries: nextSummaries,
+        preferences: userPreferences,
+        tasks: nextTasks,
+      });
+      // 广播删除（项目 + 它的全部会话）：否则另一个窗口的陈旧快照会把它们带回来。
+      broadcastLocalChanges(nextProjects, nextSessions);
 
       return true;
     },
-    [activeProjectId, activeChatId, projects, chatSessions, projectMemories, sessionSummaries, scheduledTasks, userPreferences]
+    [
+      activeProjectId,
+      activeChatId,
+      projects,
+      chatSessions,
+      projectMemories,
+      sessionSummaries,
+      scheduledTasks,
+      userPreferences,
+      persistLocalState,
+      broadcastLocalChanges,
+    ]
   );
 
   const resetActiveChat = useCallback(() => {
@@ -562,7 +804,16 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       if (!approved) return;
 
       const nextSessions = chatSessions.filter((session) => session.id !== sessionId);
+      // 一并清掉该会话的摘要记录：否则它会一直留在 sessionSummaries 里，继续被
+      // `getRelatedContextForProject` 当作上下文喂回模型（deleteProjectProfile 早已这么做，
+      // 这里此前漏了 —— 实证：app_kv 的摘要快照里残留着已不存在的会话 id）。
+      const nextSummaries = sessionSummaries.filter((summary) => summary.sessionId !== sessionId);
       setChatSessions(nextSessions);
+      if (nextSummaries.length !== sessionSummaries.length) {
+        setSessionSummaries(nextSummaries);
+      }
+      // 本窗口不再拥有它：follower 的窄写必须就此停手，否则会把已删会话写回数据库。
+      ownedSessionIdsRef.current.delete(sessionId);
       if (sessionId === activeChatId) {
         activeChatIdRef.current = null;
         setActiveChatId(null);
@@ -581,14 +832,29 @@ export function useChatSessions({ persist }: UseChatSessionsOptions) {
       // atomcode / deepseek-harness 的做法）。这里只清 sqlite 记录，否则「产物」面板会留下死卡。
       clearSessionArtifacts(session?.projectId, sessionId);
 
-      try {
-        await savePersistedChatState(projects, nextSessions);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("deleteChatSession: flush failed", error);
-      }
+      persistLocalState({
+        projects,
+        sessions: nextSessions,
+        memories: projectMemories,
+        summaries: nextSummaries,
+        preferences: userPreferences,
+        tasks: scheduledTasks,
+      });
+      // 把删除事件广播出去 —— 这是「删除」能真正生效的关键：另一个窗口内存里的陈旧副本
+      // 只要不知道这条会话已删，就会在它下一次整快照/窄写时把它带回来。
+      broadcastLocalChanges(projects, nextSessions);
     },
-    [activeChatId, projects, chatSessions]
+    [
+      activeChatId,
+      projects,
+      chatSessions,
+      projectMemories,
+      sessionSummaries,
+      scheduledTasks,
+      userPreferences,
+      persistLocalState,
+      broadcastLocalChanges,
+    ]
   );
 
   const groupedChatSessions = useMemo(() => {

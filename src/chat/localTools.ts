@@ -2046,6 +2046,39 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   return registry;
 }
 
+/**
+ * 有哪些 `/命令` **真的有本地执行器**（用户手敲斜杠命令能直接执行的那些）。
+ *
+ * 判据不写死清单，而是拿一份「空 runtime」真把注册表建一遍再问它 —— 注册只把 runtime
+ * 捕获进 execute / confirm 闭包，**构建期不读它**（已逐处核对）。万一将来有人在构建期读，
+ * 下面的 Proxy 会当场抛错，而不是静默给出一份错的清单。
+ *
+ * 为什么需要这个判据：斜杠补全的数据源是「全部工具 manifest」（25 个），而其中 `agent`
+ * 没有本地执行器 —— 它由模型 function calling 触发（`useChatRuntime` 对
+ * `toolCall.name === "agent"` 特判走 `runSubAgent`）。把它放进补全，用户敲出来的是一句
+ * 「暂不支持命令：/agent」；所以补全与解析都必须过这道判据。
+ */
+let localSlashCommandNames: Set<string> | null = null;
+
+const INTROSPECTION_RUNTIME = new Proxy({} as LocalToolRuntime, {
+  get(_target, property) {
+    throw new Error(
+      `构建本地命令清单时不应读取 runtime.${String(property)}：注册只允许把 runtime 捕获进 execute 闭包。`
+    );
+  },
+});
+
+export function isLocalSlashCommand(command: string): boolean {
+  if (!localSlashCommandNames) {
+    localSlashCommandNames = new Set(
+      createLocalToolRegistry(INTROSPECTION_RUNTIME)
+        .list()
+        .map((tool) => tool.command)
+    );
+  }
+  return localSlashCommandNames.has(command);
+}
+
 export async function executeLocalTool(
   runtime: LocalToolRuntime,
   command: {

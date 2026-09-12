@@ -927,7 +927,7 @@ export function useChatRuntime({
           resolveEnabledToolNames(executionProject);
 
         // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
-        const runTools = [...buildChatTools(executionProject), ...listActiveMcpTools()];
+        const runTools = [...buildChatTools(executionProject), ...listActiveMcpTools(executionProject?.allowedConnectorIds)];
         const handleToolStep = (step: ChatStep) => {
           if (!isCurrentSessionRun(sessionId, runId, abortController)) {
             return;
@@ -1178,7 +1178,16 @@ export function useChatRuntime({
    * 映射回本地 slash 命令或 MCP 工具执行，结果转成文本回填给模型继续推理。
    */
   const executeToolCall = useCallback(
-    async (toolCall: ChatToolCall): Promise<string | ToolCallOutcome> => {
+    async (
+      toolCall: ChatToolCall,
+      /**
+       * 调用发生时所处项目的连接器白名单。**必须由调用方传入**，不能在这里读
+       * `resolvedActiveProject`：定时任务可以带着 `targetProject` 在后台跑，此刻 UI 的
+       * 活动项目可能是另一个 —— 读全局会拿错项目的白名单，把该项目本已放行的连接器
+       * 误判成「未启用」而拒掉一次合法调用。
+       */
+      allowedConnectorIds?: string[],
+    ): Promise<string | ToolCallOutcome> => {
       // 子 Agent 调度：主模型发起 agent 调用 → 独立上下文 + 只读白名单跑一轮子任务
       if (toolCall.name === "agent") {
         const context = subAgentContextRef.current;
@@ -1189,7 +1198,7 @@ export function useChatRuntime({
       }
       // MCP 连接器工具：mcp__{serverId}__{toolName}
       if (toolCall.name.startsWith("mcp__")) {
-        return executeMcpToolCall(toolCall.name, toolCall.arguments);
+        return executeMcpToolCall(toolCall.name, toolCall.arguments, allowedConnectorIds);
       }
       // 校验用未经变换的原始对象：args 在上游被有意拆过（单字段拆成裸值、manifest 拆包），
       // 拿它比对 schema 会误判；执行仍用 args，行为完全不变。
@@ -1221,7 +1230,13 @@ export function useChatRuntime({
 
   // 任务级工具执行器：写类工具按工作区串行化，并在检测到另一并发任务占用同工作区时走确认门。
   const makeTaskToolExecutor = useCallback(
-    (sessionId: string | null, taskId: string, workspacePath: string) =>
+    (
+      sessionId: string | null,
+      taskId: string,
+      workspacePath: string,
+      /** 该次运行所属项目的连接器白名单，原样透传给 executeToolCall 的 MCP 校验。 */
+      allowedConnectorIds?: string[],
+    ) =>
       async (toolCall: ChatToolCall): Promise<string | ToolCallOutcome> => {
         const command = toolCallNameToCommand(toolCall.name);
         if (WRITE_TOOL_IDS.has(command)) {
@@ -1251,7 +1266,7 @@ export function useChatRuntime({
           workspaceWriteOwnerRef.current.set(wsKey, liveTaskId);
           const prev = workspaceWriteQueueRef.current.get(wsKey) ?? Promise.resolve();
           const run = prev
-            .then(() => executeToolCall(toolCall))
+            .then(() => executeToolCall(toolCall, allowedConnectorIds))
             .finally(() => {
               if (workspaceWriteOwnerRef.current.get(wsKey) === liveTaskId) {
                 workspaceWriteOwnerRef.current.delete(wsKey);
@@ -1260,7 +1275,7 @@ export function useChatRuntime({
           workspaceWriteQueueRef.current.set(wsKey, run);
           return run;
         }
-        return executeToolCall(toolCall);
+        return executeToolCall(toolCall, allowedConnectorIds);
       },
     [executeToolCall, requestConfirmation]
   );
@@ -1332,7 +1347,7 @@ export function useChatRuntime({
 
       try {
         // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
-        const runTools = [...buildChatTools(targetProject), ...listActiveMcpTools()];
+        const runTools = [...buildChatTools(targetProject), ...listActiveMcpTools(targetProject?.allowedConnectorIds)];
         const handleToolStep = (step: ChatStep) => {
           if (!isCurrentSessionRun(session.id, runId, abortController)) {
             return;
@@ -1348,7 +1363,7 @@ export function useChatRuntime({
           project: targetProject,
           signal: abortController.signal,
           tools: runTools,
-          executeToolCall: makeTaskToolExecutor(session.id, taskId, taskWs),
+          executeToolCall: makeTaskToolExecutor(session.id, taskId, taskWs, targetProject?.allowedConnectorIds),
           resolveExpert: resolveExpertForSubAgent,
           onToolStep: handleToolStep,
         };
@@ -1387,10 +1402,35 @@ export function useChatRuntime({
           onToolStep: handleToolStep,
           executeTool,
           tools: runTools,
-          executeToolCall: makeTaskToolExecutor(session.id, taskId, taskWs),
+          executeToolCall: makeTaskToolExecutor(session.id, taskId, taskWs, targetProject?.allowedConnectorIds),
         });
 
         if (!isCurrentSessionRun(session.id, runId, abortController)) {
+          return;
+        }
+
+        // 斜杠工具命令：本地确定性执行，没有模型回复，工具输出就是这一轮的答复。
+        // 必须与主发送流程同构地处理它 —— 否则会掉进下面的 `!finalResult` 分支，
+        // 把一次**成功**的工具执行误报成「任务执行失败」，输出也上不了屏。
+        if (taskResult.intent === "local_command") {
+          const outputText = taskResult.toolResult?.outputText ?? "";
+          setTaskRuntimeState((current) => ({
+            activeTask: taskResult,
+            history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
+          }));
+          if (taskResult.status === "failed") {
+            setError(taskResult.error || "工具执行失败");
+          }
+          if (outputText) {
+            setConversationMessagesForSession(sessionId, [
+              ...conversationMessagesForTask,
+              { role: "project", content: outputText },
+            ]);
+          }
+          if (isCurrentPetThought(petThoughtId, session.id)) {
+            completePetThought(petThoughtId, session.id, conversationMessagesForTask, outputText);
+          }
+          dismissPetThoughtWhenSessionVisible(session.id, petThoughtId);
           return;
         }
 
@@ -1618,9 +1658,11 @@ export function useChatRuntime({
         const selectedExpertId = options.expertId?.trim() || null;
         const activeExpert = selectedExpertId ? resolveExpertForSubAgent(selectedExpertId) : null;
         // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
+        // @专家分支：项目白名单是**外层边界**，专家的 defaultMcpConnectorIds 在其内再收窄
+        // （selectExpertTools 从传入列表里挑该专家声明的那些 ⇒ 天然取交集）。
         const runTools = activeExpert
-          ? selectExpertTools([...buildChatTools(activeProject), ...listActiveMcpTools()], activeExpert)
-          : [...buildChatTools(activeProject), ...listActiveMcpTools()];
+          ? selectExpertTools([...buildChatTools(activeProject), ...listActiveMcpTools(activeProject?.allowedConnectorIds)], activeExpert)
+          : [...buildChatTools(activeProject), ...listActiveMcpTools(activeProject?.allowedConnectorIds)];
         const handleToolStep = (step: ChatStep) => {
           if (!isCurrentSessionRun(sessionId, runId, abortController)) {
             return;
@@ -1636,7 +1678,7 @@ export function useChatRuntime({
           project: activeProject,
           signal: abortController.signal,
           tools: runTools,
-          executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs),
+          executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs, activeProject?.allowedConnectorIds),
           resolveExpert: resolveExpertForSubAgent,
           onToolStep: handleToolStep,
         };
@@ -1683,7 +1725,7 @@ export function useChatRuntime({
           onToolStep: handleToolStep,
           executeTool,
           tools: runTools,
-          executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs),
+          executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs, activeProject?.allowedConnectorIds),
           enabledSkillIds: activeExpert ? activeExpert.defaultSkillIds ?? [] : undefined,
         });
 
@@ -1700,8 +1742,25 @@ export function useChatRuntime({
             setError(taskResult.error || "工具执行失败");
           }
           if (taskResult.toolResult?.outputText) {
-            setConversationMessagesForSession(sessionId, [...scopedCurrentMessages, { role: "project", content: taskResult.toolResult.outputText }]);
+            // 基底必须是 `conversationMessagesForTask`（onPrepareConversation 里准备的、
+            // 已含用户刚敲下的 `/xxx args`），不能用 scopedCurrentMessages —— 那是**发送前**
+            // 的快照，会把用户这一条整条丢掉（「发出去的消息不上屏」的根因之一）。
+            setConversationMessagesForSession(sessionId, [
+              ...conversationMessagesForTask,
+              { role: "project", content: taskResult.toolResult.outputText },
+            ]);
           }
+          // onPrepareConversation 已经起了宠物气泡（hasPetThought），而工具命令没有模型
+          // 回复流去收尾它 —— 不在这里 complete，桌面宠物的气泡会一直转圈。
+          if (hasPetThought && isCurrentPetThought(petThoughtId, sessionId)) {
+            completePetThought(
+              petThoughtId,
+              sessionId,
+              conversationMessagesForTask,
+              taskResult.toolResult?.outputText ?? ""
+            );
+          }
+          dismissPetThoughtWhenSessionVisible(sessionId, petThoughtId);
           return;
         }
 

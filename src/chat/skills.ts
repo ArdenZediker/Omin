@@ -1,6 +1,7 @@
 import { BUILTIN_SKILL_PLUGINS } from "../plugins/builtins";
 import { pluginRegistry } from "../plugins/registry";
 import type { PluginSkillContribution, PluginToolContribution } from "../plugins/types";
+import { isLocalSlashCommand } from "./localTools";
 
 export type LocalSlashCommand = {
   id: string;
@@ -65,6 +66,22 @@ export function getAllLocalCommands(): LocalSlashCommand[] {
   return [...getAllToolCommands(), ...getAllSkillCommands()];
 }
 
+/**
+ * 这条命令能不能被用户手敲执行？**补全与解析必须共用这一个判据。**
+ *
+ * - 技能：能 —— `taskExecutor` 的技能分支直接用它的 systemPrompt 驱动一轮对话。
+ * - 工具：只有 `localTools` 里真有执行器的才行。`agent` 是例外 —— 它由模型
+ *   function calling 触发（`useChatRuntime` 对 `toolCall.name === "agent"` 特判走
+ *   `runSubAgent`），没有本地执行器，手敲只会得到「暂不支持命令」。
+ *
+ * 曾经这里只按 `getAllSkillCommands()` 找，把**工具那半个斜杠体系整体掐断**：
+ * 21 个带 `/命令` 的执行器（`/bash`、`/write_file`、`/git_commit`…）全都不再可达，
+ * 而 `taskExecutor` 里处理工具命令的分支成了死代码。所以判据只允许有一处。
+ */
+export function isRunnableLocalCommand(item: Pick<LocalSlashCommand, "kind" | "command">): boolean {
+  return item.kind === "skill" || isLocalSlashCommand(item.command);
+}
+
 export type SlashSuggestion = {
   kind: "local";
   commandKind: "tool" | "skill";
@@ -88,16 +105,20 @@ export function getMatchingSlashSuggestions(
   const allowedToolIdSet = allowedToolIds ? new Set(allowedToolIds) : null;
   const allowedSkillIdSet = allowedSkillIds ? new Set(allowedSkillIds) : null;
 
-  const toolSuggestions = getAllToolCommands().filter((item) => {
-    if (allowedToolIdSet && !allowedToolIdSet.has(item.id)) {
-      return false;
-    }
-    return (
-      item.command.startsWith(normalized) ||
-      item.title.toLowerCase().includes(query) ||
-      item.description.toLowerCase().includes(query)
-    );
-  });
+  // 无本地执行器的工具（`agent`）不进补全：敲出来只会是「暂不支持命令」，
+  // 而它真正的用法是由模型自己 function calling 触发。
+  const toolSuggestions = getAllToolCommands()
+    .filter((item) => isRunnableLocalCommand(item))
+    .filter((item) => {
+      if (allowedToolIdSet && !allowedToolIdSet.has(item.id)) {
+        return false;
+      }
+      return (
+        item.command.startsWith(normalized) ||
+        item.title.toLowerCase().includes(query) ||
+        item.description.toLowerCase().includes(query)
+      );
+    });
 
   const skillSuggestions = getAllSkillCommands().filter((item) => {
     if (allowedSkillIdSet && !allowedSkillIdSet.has(item.id)) {
@@ -127,7 +148,11 @@ export function resolveLocalSlashCommand(input: string): ResolvedLocalSlashComma
   }
 
   const [command, ...rest] = trimmed.split(/\s+/);
-  const definition = getAllSkillCommands().find((item) => item.command === command.toLowerCase());
+  // 与补全共用同一个判据：技能与有本地执行器的工具都可手敲执行；
+  // 无本地执行器的（`agent`）返回 null，让这句话照常走模型那一轮。
+  const definition = getAllLocalCommands().find(
+    (item) => item.command === command.toLowerCase() && isRunnableLocalCommand(item)
+  );
   if (!definition) return null;
 
   return {

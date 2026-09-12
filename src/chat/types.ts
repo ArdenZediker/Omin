@@ -65,7 +65,27 @@ export type ProjectDraft = {
   knowledgeCollectionId?: string | null;
   allowedToolIds?: string[];
   allowedSkillIds?: string[];
-  /** 项目绑定的专家（子 Agent 委派白名单）；空/缺省 = 不限，暴露全部已装专家 */
+  /**
+   * 项目可用的 MCP 连接器白名单（存连接器 manifest id）。
+   *
+   * **空 / 缺省 = 不限**（放行全部已信任连接器），只有填了才是收窄。这样定有两个理由：
+   * ①存量项目没有这个字段，若把「空」读成「一个都不启用」，升级后会静默丢掉全部 MCP 工具；
+   * ②「不限」恰好等于本字段引入前的行为，所以老数据不需要迁移。
+   *
+   * ⚠️ 别跟 `boundExpertIds` 混为一谈 —— 那个字段**空 = 一个都不派**，与这里相反。
+   * 旧注释写的「语义与 boundExpertIds 一致」是错的，也是 UI 那句「留空则不限制」的源头。
+   */
+  allowedConnectorIds?: string[];
+  /**
+   * 项目绑定的专家（子 Agent 委派白名单）。
+   *
+   * **空 / 缺省 = 一个都不派**，不是「不限」：`expertDelegation.ts::isExpertBound`
+   * 对空列表一律返回 false，`chatRuntimeHelpers.ts::buildExpertAgentHint` 于是给出空名册
+   * （提示词里直接写 `EXPERTS: none available right now`）。要放宽须在
+   * 「设置 → 子 Agent 模型」打开 `allowAnyExpertDelegation`。
+   *
+   * 另注：用户在输入框手动 `@专家` 属于本人显式选择，**不受**该白名单约束。
+   */
   boundExpertIds?: string[];
   memoryScope?: ProjectMemoryScope;
 };
@@ -84,7 +104,9 @@ export type Project = {
   knowledgeCollectionId?: string | null;
   allowedToolIds: string[];
   allowedSkillIds: string[];
-  /** 项目绑定的专家（子 Agent 委派白名单）；空/缺省 = 不限 */
+  /** 项目可用的 MCP 连接器白名单；空 / 缺省 = 不限（口径同 `ProjectDraft.allowedConnectorIds`） */
+  allowedConnectorIds?: string[];
+  /** 项目绑定的专家（子 Agent 委派白名单）；**空 / 缺省 = 不派任何专家**（非「不限」，见 `ProjectDraft.boundExpertIds`） */
   boundExpertIds?: string[];
   memoryScope: ProjectMemoryScope;
   createdAt: number;

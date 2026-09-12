@@ -265,6 +265,18 @@ export async function executeInputTask(options: {
     onPrepareConversation,
     executeTool,
   } = options;
+  // 「上屏 + 落库」共用的消息基底，必须在斜杠分支之前算好。
+  //
+  // 会话的创建与用户消息的写入**只发生在 `onPrepareConversation` 里** —— 它是整条发送
+  // 链路上唯一的会话创建口（`createSessionFromMessages` 的调用方）。早期版本只在普通
+  // 对话分支调用它，于是斜杠命令（技能与工具）在新会话下既不建会话、用户消息也不上屏；
+  // 工具结果又写回「发送前」的数组，两条路都把用户刚发的那句丢了 —— 表现就是
+  // 「/命令发出去没反应，窗口里什么都没有」。
+  const preparedMessages: Message[] = preparedMessagesOverride ?? [
+    ...currentMessages,
+    { role: "user", content: input, images, attachments },
+  ];
+
   const localCommand = !images || images.length === 0 ? resolveLocalSlashCommand(input) : null;
 
   if (localCommand) {
@@ -284,6 +296,13 @@ export async function executeInputTask(options: {
         throw new Error(`当前助手未启用技能：${localCommand.title}`);
       }
       const skillMessages = buildSkillMessages(localCommand, currentMessages);
+      // 交给调用方的数组既是送给模型的消息，也是上屏/落库的内容（口径见
+      // docs/superpowers/plans/2026-05-16-hide-linked-context-from-chat-ui.md：
+      // «task execution continues to use the same preparedMessages array for display and storage»）。
+      // 漏了这一步，技能命令在新会话下就没有任何可见产出。
+      if (!preparedMessagesOverride) {
+        onPrepareConversation?.(skillMessages);
+      }
       const skillSystemPrompt = [systemPrompt, localCommand.systemPrompt?.trim()].filter(Boolean).join("\n\n") || undefined;
       return executeTask({
         model,
@@ -291,19 +310,29 @@ export async function executeInputTask(options: {
         signal,
         systemPrompt: skillSystemPrompt,
         project,
-    relatedContext,
-    enabledToolNames,
-    onChunk,
-    onReasoning: options.onReasoning,
-    onToolStep: options.onToolStep,
-    knowledgeCollectionId,
-    intent: "chat",
-    tools: options.tools,
-    executeToolCall: options.executeToolCall,
-    enabledSkillIds: options.enabledSkillIds,
-  });
-}
+        relatedContext,
+        enabledToolNames,
+        onChunk,
+        onReasoning: options.onReasoning,
+        onToolStep: options.onToolStep,
+        knowledgeCollectionId,
+        intent: "chat",
+        tools: options.tools,
+        executeToolCall: options.executeToolCall,
+        enabledSkillIds: options.enabledSkillIds,
+      });
+    }
 
+    // 工具命令：本地确定性执行。危险操作照样先过确认门 —— `confirm` 声明在
+    // toolRegistry 的 ToolDefinition 上，function calling 与手敲斜杠共用同一道门
+    //（见 toolRegistry.ts:36-42），不存在绕过口子。
+    // 可达性由 `resolveLocalSlashCommand` 的判据保证：它只会返回技能，
+    // 或 `localTools` 里真有执行器的工具（`agent` 不在其列，早已返回 null 走模型）。
+    // 同样先准备会话：工具命令没有模型回复，用户敲下的 `/xxx args` 本身就是这一轮的
+    // 用户消息，调用方随后把工具输出追加在它后面。
+    if (!preparedMessagesOverride) {
+      onPrepareConversation?.(preparedMessages);
+    }
     return executeLocalCommandTask({
       model,
       command: localCommand,
@@ -311,7 +340,6 @@ export async function executeInputTask(options: {
     });
   }
 
-  const preparedMessages: Message[] = preparedMessagesOverride ?? [...currentMessages, { role: "user", content: input, images, attachments }];
   if (!preparedMessagesOverride) {
     onPrepareConversation?.(preparedMessages);
   }

@@ -168,10 +168,7 @@ function MarketplaceSourceTabs({
       ];
     }
     if (kind === "expert") {
-      return [
-        { value: "my", label: "我的专家", Icon: Bot },
-        { value: "local", label: "本地内置", Icon: LayoutTemplate },
-      ];
+      return [{ value: "my", label: "我的专家", Icon: Bot }];
     }
     return [];
   }, [kind]);
@@ -306,9 +303,15 @@ type MainChatViewProps = {
   onMarketplaceChange?: (open: boolean) => void;
   /** 跳转到对话框并预填草稿（如「创建专家」入口）。 */
   onJumpToChat?: (text: string) => void;
+  /**
+   * 仍在输出的会话 id（来自 useChatRuntime 的 loadingSessionIds）。
+   * 侧栏据此在对应会话行挂加载标识 —— 切到别的会话时，也能看出哪些会话还在跑。
+   */
+  loadingSessionIds: string[];
 };
 
 export default function MainChatView({
+  loadingSessionIds,
   activeProject,
   activeProjectId,
   activeChatId,
@@ -574,7 +577,13 @@ export default function MainChatView({
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
-    const id = `mcp-${slug || "user"}-${Date.now().toString(36)}`;
+    // id 必须唯一：install() 按 id 覆盖，而 slug 会把中文名整体抹成 "user"
+    // （两个中文名连接器 slug 完全相同），时间戳又只到毫秒 —— 撞上就静默覆盖。
+    const base = `mcp-${slug || "user"}-${Date.now().toString(36)}`;
+    let id = base;
+    for (let n = 2; pluginRegistry.getManifest(id); n += 1) {
+      id = `${base}-${n}`;
+    }
     const manifest: PluginManifest = {
       id,
       name,
@@ -843,7 +852,9 @@ export default function MainChatView({
       description: t.description,
       schema: t.parameters,
     }));
-    const mcpItems: ContextUsageItem[] = listActiveMcpTools().map((t) => ({
+    // 与注入侧同一份白名单：面板要如实反映「这个项目的模型实际能看见哪些 MCP 工具」，
+    // 少传这个参数就会把被项目排除的连接器也算进上下文占用。
+    const mcpItems: ContextUsageItem[] = listActiveMcpTools(activeProject?.allowedConnectorIds).map((t) => ({
       name: t.name,
       description: t.description,
       schema: t.parameters,
@@ -1579,6 +1590,14 @@ export default function MainChatView({
                           <span className="chat-history-panel__session-title">
                             {session.title || "未命名会话"}
                           </span>
+                          {loadingSessionIds.includes(session.id) && (
+                            <span
+                              className="chat-history-panel__session-spinner"
+                              role="img"
+                              aria-label="正在输出"
+                              title="正在输出"
+                            />
+                          )}
                           <span className="chat-history-panel__session-time">
                             {formatSessionTime(session.updatedAt)}
                           </span>
@@ -1980,6 +1999,14 @@ export default function MainChatView({
                                       <span className="chat-history-panel__session-title">
                                         {session.title || "未命名会话"}
                                       </span>
+                                      {loadingSessionIds.includes(session.id) && (
+                                        <span
+                                          className="chat-history-panel__session-spinner"
+                                          role="img"
+                                          aria-label="正在输出"
+                                          title="正在输出"
+                                        />
+                                      )}
                                       <span className="chat-history-panel__session-time">
                                         {formatSessionTime(session.updatedAt)}
                                       </span>

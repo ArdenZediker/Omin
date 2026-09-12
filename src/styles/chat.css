@@ -990,6 +990,26 @@
   white-space: nowrap;
 }
 
+/* 该会话仍在输出：标题与时间之间挂一个小转圈（时间保留，两者并存）。
+   复用本文件已有的 exec-spin 关键帧，不再重复定义旋转动画。 */
+.chat-history-panel__session-spinner {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--omni-accent, #7c3aed) 24%, transparent);
+  border-top-color: var(--omni-accent, #7c3aed);
+  animation: exec-spin 0.82s linear infinite;
+}
+
+/* 与项目既有口径一致（见下方 exec 系列）：减弱动效时直接停掉动画，
+   静态圆环 + 强调色缺口仍能表达「进行中」。 */
+@media (prefers-reduced-motion: reduce) {
+  .chat-history-panel__session-spinner {
+    animation: none;
+  }
+}
+
 .chat-history-panel__session-delete {
   width: 22px;
   height: 22px;

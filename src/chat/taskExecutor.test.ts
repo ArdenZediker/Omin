@@ -145,4 +145,110 @@ describe("executeInputTask 斜杠技能许可", () => {
     const options = mockedTurn.mock.calls[0][0];
     expect(String(options.systemPrompt ?? "")).not.toContain("curl wttr.in");
   });
+
+  it("工具命令走本地执行，不发起模型对话（这段分支曾经不可达）", async () => {
+    // resolveLocalSlashCommand 一度只找技能 → 本分支永不可达，工具那半个斜杠体系
+    // （22 个内置工具的 /命令）整体失效。这条测试钉住「工具命令确实落到 executeTool」。
+    const executeTool = vi.fn(async () => ({ ok: true, outputText: "文件内容" }));
+
+    const result = await executeInputTask({
+      input: "/read_file src/App.tsx",
+      images: [],
+      currentMessages: [{ role: "user", content: "/read_file src/App.tsx" }],
+      model: "gpt-test",
+      project: null,
+      onChunk: () => {},
+      executeTool,
+    });
+
+    expect(executeTool).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "read_file", command: "/read_file", args: "src/App.tsx" })
+    );
+    // 本地确定性执行，不该再走一轮模型
+    expect(mockedTurn).not.toHaveBeenCalled();
+    expect(result.intent).toBe("local_command");
+  });
+});
+
+/**
+ * `onPrepareConversation` 是整条发送链路上**唯一的会话创建口**（调用方在回调里
+ * `createSessionFromMessages` + 写入用户消息）。斜杠命令的两个分支曾经都绕过它，
+ * 于是 `/命令` 在新会话下既不建会话、用户消息也不上屏，工具输出还被写回「发送前」
+ * 的数组 —— 看上去就是「发出去没反应，窗口里什么都没有」。
+ */
+describe("executeInputTask 斜杠命令必须先准备会话", () => {
+  beforeEach(() => {
+    mockedTurn.mockClear();
+  });
+
+  afterEach(() => {
+    pluginRegistry.uninstall("weather");
+  });
+
+  it("技能命令：把「送给模型的同一份数组」交给调用方上屏/落库", async () => {
+    installUserSkill();
+    const onPrepareConversation = vi.fn();
+
+    await executeInputTask({
+      input: "/weather 北京",
+      images: [],
+      currentMessages: [{ role: "user", content: "之前的消息" }],
+      model: "gpt-test",
+      project: null,
+      onChunk: () => {},
+      onPrepareConversation,
+      executeTool: vi.fn(async () => undefined),
+    });
+
+    expect(onPrepareConversation).toHaveBeenCalledTimes(1);
+    const prepared = onPrepareConversation.mock.calls[0][0];
+    // 必须是同一份数组（上屏/落库 与 送给模型 共用一个基底，改动其一即失效）
+    expect(prepared).toBe(mockedTurn.mock.calls[0][0].messages);
+    // 末条是技能展开后的用户消息，含参数
+    const last = prepared[prepared.length - 1];
+    expect(last.role).toBe("user");
+    expect(String(last.content)).toContain("北京");
+  });
+
+  it("工具命令：用户敲下的 /命令 原样成为这一轮的用户消息", async () => {
+    const onPrepareConversation = vi.fn();
+
+    await executeInputTask({
+      input: "/read_file src/App.tsx",
+      images: [],
+      currentMessages: [{ role: "user", content: "之前的消息" }],
+      model: "gpt-test",
+      project: null,
+      onChunk: () => {},
+      onPrepareConversation,
+      executeTool: vi.fn(async () => ({ ok: true, outputText: "文件内容" })),
+    });
+
+    expect(onPrepareConversation).toHaveBeenCalledTimes(1);
+    const prepared = onPrepareConversation.mock.calls[0][0];
+    expect(prepared).toHaveLength(2);
+    expect(prepared[0]).toMatchObject({ role: "user", content: "之前的消息" });
+    // 缺了这条，「发送的聊天信息在窗口不显示」
+    expect(prepared[1]).toMatchObject({ role: "user", content: "/read_file src/App.tsx" });
+  });
+
+  it("调用方自带 preparedMessages 时不再重复准备（约定：调用方已经准备好了）", async () => {
+    installUserSkill();
+    const onPrepareConversation = vi.fn();
+    const preparedMessages = [{ role: "user" as const, content: "调用方准备的消息" }];
+
+    await executeInputTask({
+      input: "/weather 北京",
+      images: [],
+      currentMessages: preparedMessages,
+      preparedMessages,
+      model: "gpt-test",
+      project: null,
+      onChunk: () => {},
+      onPrepareConversation,
+      executeTool: vi.fn(async () => undefined),
+    });
+
+    expect(onPrepareConversation).not.toHaveBeenCalled();
+  });
 });

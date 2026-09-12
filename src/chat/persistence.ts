@@ -173,6 +173,31 @@ export async function savePersistedChatState(projects: Project[], sessions: Chat
   }
 }
 
+/**
+ * **窄写**：只 upsert 传入的会话，不删除任何其他会话。
+ *
+ * 专供「非整快照写者」（紧凑窗 follower）使用。它内存里的快照不完整 ——
+ * 可能缺少另一窗口新建的会话，也可能残留已被删除的会话；整快照落盘会把这两类
+ * 错误原样写进数据库（幽灵复活 / 幽灵清理），所以它只能写自己确实拥有的会话。
+ */
+export async function savePersistedChatSessions(sessions: ChatSession[]) {
+  const sessionsJson = serializeChatSessionsSnapshot(sessions);
+
+  if (typeof window !== "undefined" && !canUseTauriStorage()) {
+    localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, sessionsJson);
+    return;
+  }
+
+  if (canUseTauriStorage()) {
+    try {
+      await invoke("save_chat_sessions", { sessionsJson });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("savePersistedChatSessions: save_chat_sessions failed", error);
+    }
+  }
+}
+
 export async function savePersistedMemoryState(
   projectMemories: ProjectMemoryRecord[],
   sessionSummaries: SessionSummaryRecord[],

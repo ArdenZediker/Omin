@@ -181,7 +181,7 @@ function MainApp() {
     updateChatSessionMessages,
     updateProjectMemory,
     updateProjectProfile,
-  } = useChatSessions({ persist: true });
+  } = useChatSessions({ persist: true, role: isCompactWindow ? "follower" : "owner" });
 
   const {
     characterMenuPosition,
@@ -858,6 +858,7 @@ function MainApp() {
           inputDraftScopeKey={activeProjectId}
           inputFocusKey={inputFocusKey}
           isLoading={isActiveSessionLoading}
+          loadingSessionIds={loadingSessionIds}
           isSendBlocked={isSendBlockedByOtherSession || !hasModels}
           isStreaming={isStreaming}
           relatedContext={relatedContext}

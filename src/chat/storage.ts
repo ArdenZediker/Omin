@@ -63,7 +63,15 @@ export const DEFAULT_PROJECT_TOOL_IDS = [
   "search_files",
   "read_persona",
   "update_persona",
-  // 内置基础盘：联网 + Git 工作流 + Office 导出（用户可在项目设置中关闭）。
+  // 内置基础盘：联网 + Git 工作流 + Office 导出。
+  //
+  // ⚠️ 这一组**目前在哪儿都关不掉，也不需要关**：16 个 id 全在 `BUILTIN_TOOL_IDS` 里，
+  // 而 `ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [...BUILTIN_TOOL_IDS]` —— 执行期那道闸门
+  // （`localTools.ts`：`!ALWAYS_ALLOWED.has(id) && !project.allowedToolIds.includes(id)`）
+  // 永远拦不下任何东西，`localTools` 注册的 10 个工具也全在内。因此
+  // **`allowedToolIds` 目前是个空操作字段**，这里曾挂着的那句「用户可在项目设置中关闭」
+  // 是假的（那个入口从来没有过）。真正可改的能力集是下面那份**技能**白名单。
+  // 要收紧工具，得先让闸门有意义（例如引入不默认放行的项目工具），别只加 UI。
   "web_search",
   "web_fetch",
   "git_info",
@@ -75,6 +83,9 @@ export const DEFAULT_PROJECT_TOOL_IDS = [
   "export_md",
 ];
 // 内置技能默认启用（纯提示词技能，无副作用）。
+// 与工具不同，这份白名单是**真生效且可改**的：`allowedSkillIds` 决定内置技能能否被
+// 斜杠调用 / 被定时任务执行（`chat/skills.ts`、`chat/taskExecutor.ts`），
+// 入口在「项目设置 → 技能」（可增可删）。
 export const DEFAULT_PROJECT_SKILL_IDS: string[] = ["plan", "code-review", "skill-creator"];
 export const DEFAULT_PROJECT_MEMORY_SCOPE: ProjectMemoryScope = "project";
 
@@ -189,6 +200,10 @@ export function createCustomProject(input?: ProjectDraft): Project {
     knowledgeCollectionId: input?.knowledgeCollectionId?.trim() || null,
     allowedToolIds: input?.allowedToolIds?.length ? [...input.allowedToolIds] : [...DEFAULT_PROJECT_TOOL_IDS],
     allowedSkillIds: input?.allowedSkillIds?.length ? [...input.allowedSkillIds] : [...DEFAULT_PROJECT_SKILL_IDS],
+    // 连接器白名单：空 = 不限（放行全部已信任连接器）。这里刻意**不**补默认值 ——
+    // 与工具/技能不同，连接器的「全选」不是一份固定清单，而是运行时已连接的那些，
+    // 所以只能靠「空 = 不限」来表达，写死一份默认值反而会把它变成白名单。
+    allowedConnectorIds: input?.allowedConnectorIds?.length ? [...input.allowedConnectorIds] : undefined,
     boundExpertIds: input?.boundExpertIds?.length ? [...input.boundExpertIds] : undefined,
     memoryScope: input?.memoryScope ?? DEFAULT_PROJECT_MEMORY_SCOPE,
     createdAt: now,
@@ -412,6 +427,12 @@ function normalizeProject(input: Partial<Project> & Pick<Project, "id" | "title"
     // 项目绑定专家：从存储恢复时必须保留，否则重启后绑定丢失
     boundExpertIds: Array.isArray(input.boundExpertIds) && input.boundExpertIds.length
       ? [...new Set(input.boundExpertIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0))]
+      : undefined,
+    // MCP 连接器白名单：也必须从存储恢复 —— 丢掉它不是「回到默认」，而是**放开**权限
+    // （空 = 不限 ⇒ 重启后该项目突然能看见全部已信任连接器）。空数组归一化为 undefined，
+    // 与「空 = 不限」的口径对齐，避免 [] 与 undefined 两种写法表达同一件事。
+    allowedConnectorIds: Array.isArray(input.allowedConnectorIds) && input.allowedConnectorIds.length
+      ? [...new Set(input.allowedConnectorIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0))]
       : undefined,
     memoryScope:
       input.memoryScope === "off" || input.memoryScope === "session" || input.memoryScope === "project"
