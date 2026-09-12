@@ -97,7 +97,10 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
       "Call /search_files to find code/text by pattern. " +
       "pattern is a regex; set literal=true to match a plain string; ignoreCase=true for case-insensitive. " +
       "Use glob to restrict file types (e.g. \"**/*.ts\"), path to scope a subdir, context for N lines before/after. " +
-      "Results are snippets only — call /read_file to read the full file or a line range.",
+      "Results are snippets only — call /read_file to read the full file or a line range. " +
+      "Symbol references are NOT indexed anywhere: before renaming, deleting or changing the signature of a function/type/constant, " +
+      "search its plain name across the whole repo (no glob) to collect every call site, then read each hit before editing — " +
+      "this is the only way to see all usages, since there is no find-references tool.",
     parameters: {
       type: "object",
       properties: {
