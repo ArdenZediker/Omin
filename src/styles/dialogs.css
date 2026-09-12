@@ -184,6 +184,37 @@
   flex: 0 0 172px;
 }
 
+/* 「新建项目」对话框里嵌在「指令」标签行右侧的**项目预设**下拉。
+   定宽而非撑满：它跟标签共处一行，撑满会把标签挤走；固定 148px 同时决定了
+   菜单宽度（OmniSelect 用触发器 width 当菜单 width），够放下「命令与脚本」这种 5 字预设名。
+   形态沿用原来的小胶囊（透明底、次要色），但因为改成点击开合，它现在真的是可点的，
+   需要给出 hover / 展开态反馈。 */
+.omni-select--preset {
+  width: 148px;
+  flex: 0 0 148px;
+}
+
+.omni-select--preset .omni-select__trigger {
+  width: 148px;
+  min-height: 28px;
+  border-radius: 8px;
+  padding: 0 8px 0 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--omni-app-muted);
+}
+
+.omni-select--preset .omni-select__trigger:hover,
+.omni-select--preset[data-open="true"] .omni-select__trigger {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+/* 已选中某个预设时不再是「占位」灰字，与标签同一视觉层级 */
+.omni-select--preset .omni-select__value:not(.omni-select__value--placeholder) {
+  color: var(--omni-app-text);
+}
+
 .omni-confirm-dialog {
   width: min(380px, calc(100vw - 32px));
   border: 1px solid var(--omni-panel-border);
@@ -588,6 +619,16 @@
   justify-content: space-between;
 }
 
+/* 标签行右侧的**一组**动作（项目设置里「选择预设」+「另存为预设」两个）。
+   用一个 flex 容器而不是让它们各自成为 label-row 的子项：label-row 是
+   `space-between`，直接把两个控件挂上去会把它们分别推到两端，中间裂开一大段。 */
+.omni-dialog__label-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .omni-dialog__field input,
 .omni-dialog__field textarea,
 .omni-dialog__field select {
@@ -620,68 +661,6 @@
   bottom: 10px;
   font-size: 11px;
   color: var(--omni-app-muted);
-}
-
-.omni-dialog__template-dropdown {
-  position: relative;
-}
-
-.omni-dialog__template-trigger {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--omni-app-muted);
-  border: 1px solid var(--omni-panel-border);
-  border-radius: 8px;
-  padding: 5px 10px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.omni-dialog__template-trigger:hover {
-  background: var(--omni-soft-bg);
-}
-
-.omni-dialog__template-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 10;
-  min-width: 140px;
-  border: 1px solid var(--omni-panel-border);
-  border-radius: 10px;
-  background: var(--omni-panel-bg);
-  box-shadow: var(--omni-surface-shadow);
-  padding: 6px;
-  display: none;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.omni-dialog__template-dropdown:hover .omni-dialog__template-menu,
-.omni-dialog__template-menu:hover {
-  display: flex;
-}
-
-.omni-dialog__template-item--active {
-  background: var(--omni-soft-bg);
-  color: #3b82f6;
-}
-
-.omni-dialog__template-menu button {
-  text-align: left;
-  border: none;
-  background: transparent;
-  padding: 7px 10px;
-  border-radius: 7px;
-  font-size: 12px;
-  color: var(--omni-app-text);
-  cursor: pointer;
-}
-
-.omni-dialog__template-menu button:hover {
-  background: var(--omni-soft-bg);
 }
 
 .omni-dialog__workspace-row {
@@ -739,19 +718,32 @@
   color: var(--omni-app-muted);
 }
 
-.omni-dialog__plugin-add {
-  display: flex;
+/* 「另存为预设」（项目设置 →「指令」标签行右侧）。
+   形态刻意对齐新建项目对话框里同位置的「选择预设」小胶囊：两个对话框的「指令」行
+   长得像一对兄弟，区别只在于那边是**选**、这边是**存**。 */
+.omni-dialog__preset-save {
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
-  color: #3b82f6;
-  border: none;
+  min-height: 28px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 8px;
   background: transparent;
+  color: var(--omni-app-muted);
+  font-size: 12px;
   cursor: pointer;
 }
 
-.omni-dialog__plugin-add:hover {
-  opacity: 0.85;
+.omni-dialog__preset-save:hover:not(:disabled) {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+/* 指令为空时禁用：没有内容的预设套用后等于什么都没做，不让点比点了报错好。 */
+.omni-dialog__preset-save:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .omni-dialog__plugin-chips {

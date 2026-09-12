@@ -6,12 +6,13 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { X, Plus, Puzzle, Bot, Cable, Wand2, ChevronDown, FolderOpen } from "lucide-react";
+import { X, Bot, Wand2, FolderOpen } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { ProjectDraft } from "../chat/types";
 import { pluginRegistry } from "../plugins/registry";
-import type { PluginManifest } from "../plugins/types";
-import PluginMarketplace from "./plugins/PluginMarketplace";
+import OmniSelect, { type OmniSelectOption } from "./ui/OmniSelect";
+import PluginToggleRow from "./ui/PluginToggleRow";
+import McpConnectorRow from "./ui/McpConnectorRow";
 
 export type CreateProjectDialogProps = {
   open: boolean;
@@ -24,12 +25,6 @@ export type CreateProjectDialogProps = {
   initialTemplateId?: string | null;
 };
 
-type PickedPlugins = {
-  connectors: PluginManifest[];
-  experts: PluginManifest[];
-  skills: PluginManifest[];
-};
-
 export default function CreateProjectDialog({
   open,
   onClose,
@@ -40,9 +35,12 @@ export default function CreateProjectDialog({
   const [instruction, setInstruction] = useState("");
   const [workspacePath, setWorkspacePath] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [picked, setPicked] = useState<PickedPlugins>({ connectors: [], experts: [], skills: [] });
-  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
-  const [marketplaceKind, setMarketplaceKind] = useState<"connector" | "expert" | "skill" | null>(null);
+  // 绑定专家（agent 委派白名单）与内置技能白名单。都是 id 数组 —— 行为与
+  // ProjectSettingsDialog 完全一致，两处必须同步改（见该文件头部注释）。
+  const [boundExpertIds, setBoundExpertIds] = useState<string[]>([]);
+  const [allowedSkillIds, setAllowedSkillIds] = useState<string[]>([]);
+  // 项目级连接器白名单。**空 = 不限制**（放行全部已信任连接器），勾了才收窄 —— 见 McpConnectorRow。
+  const [connectorIds, setConnectorIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -50,7 +48,9 @@ export default function CreateProjectDialog({
       setInstruction("");
       setWorkspacePath("");
       setSelectedTemplateId("");
-      setPicked({ connectors: [], experts: [], skills: [] });
+      setBoundExpertIds([]);
+      setAllowedSkillIds([]);
+      setConnectorIds([]);
     }
   }, [open]);
 
@@ -66,14 +66,14 @@ export default function CreateProjectDialog({
     () => pluginRegistry.getVersion(),
   );
 
-  const templateOptions = useMemo(() => {
+  const templateOptions = useMemo<OmniSelectOption[]>(() => {
     // 快照本身不参与计算，只用于把这份列表钉在注册表版本上（否则装了/卸了预设不刷新）。
     void templateVersion;
     return [
-      { id: "", title: "无预设" },
+      { value: "", label: "无预设" },
       ...pluginRegistry.listTemplates().map((manifest) => ({
-        id: manifest.id,
-        title: manifest.name,
+        value: manifest.id,
+        label: manifest.name,
       })),
     ];
   }, [templateVersion]);
@@ -95,58 +95,80 @@ export default function CreateProjectDialog({
     if (open && initialTemplateId) applyTemplate(initialTemplateId);
   }, [open, initialTemplateId, applyTemplate]);
 
-  const addPicked = useCallback((kind: keyof PickedPlugins, manifest: PluginManifest) => {
-    setPicked((current) => {
-      if (current[kind].some((item) => item.id === manifest.id)) return current;
-      return { ...current, [kind]: [...current[kind], manifest] };
-    });
-  }, []);
-
-  const removePicked = useCallback((kind: keyof PickedPlugins, id: string) => {
-    setPicked((current) => ({
-      ...current,
-      [kind]: current[kind].filter((item) => item.id !== id),
+  /**
+   * 三行的候选集。与 `ProjectSettingsDialog` 逐字同源，改一处必须改两处。
+   *
+   * - 专家 = 已启用专家（现在全部由用户自建）；
+   * - 技能 = **仅内置技能** —— `allowedSkillIds` 管不到用户自装技能（那些走
+   *   `listEnabledUserSkills()` 绕过白名单，见 `registry.ts:158-171`）；
+   * - 连接器由 `McpConnectorRow` 自己订阅注册表算（要滤掉模型连接器）。
+   *
+   * 专家/技能这两份依赖 `templateVersion`，把它钉在注册表版本上：插件可能在别处装、卸、改。
+   */
+  const expertOptions = useMemo(() => {
+    void templateVersion;
+    return pluginRegistry.listExperts().map((manifest) => ({
+      id: manifest.id,
+      name: manifest.name,
     }));
+  }, [templateVersion]);
+
+  const skillOptions = useMemo(() => {
+    void templateVersion;
+    return pluginRegistry
+      .list({ kind: "skill" })
+      .filter((manifest) => pluginRegistry.isBuiltin(manifest.id))
+      .map((manifest) => ({ id: manifest.id, name: manifest.name }));
+  }, [templateVersion]);
+
+  const toggleBoundExpert = useCallback((id: string) => {
+    setBoundExpertIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
   }, []);
 
-  const handleAddClick = (kind: "connector" | "expert" | "skill") => {
-    setMarketplaceKind(kind);
-    setMarketplaceOpen(true);
-  };
+  const toggleAllowedSkill = useCallback((id: string) => {
+    setAllowedSkillIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  }, []);
 
-  const handleMarketplacePick = (manifest: PluginManifest) => {
-    if (marketplaceKind) {
-      const kindMap: Record<NonNullable<typeof marketplaceKind>, keyof PickedPlugins> = {
-        connector: "connectors",
-        expert: "experts",
-        skill: "skills",
-      };
-      addPicked(kindMap[marketplaceKind], manifest);
-    }
-    setMarketplaceOpen(false);
-    setMarketplaceKind(null);
-  };
+  const toggleConnector = useCallback((id: string) => {
+    setConnectorIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  }, []);
 
   const handleConfirm = () => {
     const draft: ProjectDraft = {
       title: title.trim() || "新项目",
       systemPrompt: instruction.trim(),
       workspacePath: workspacePath.trim() || undefined,
-      allowedToolIds: [
-        ...new Set([
-          ...picked.connectors.flatMap((m) => m.defaultToolIds ?? []),
-          ...picked.experts.flatMap((m) => m.defaultToolIds ?? []),
-          ...picked.skills.flatMap((m) => m.defaultToolIds ?? []),
-        ]),
-      ],
-      allowedSkillIds: [
-        ...new Set([
-          ...picked.experts.flatMap((m) => m.defaultSkillIds ?? []),
-          ...picked.skills.map((m) => m.id),
-        ]),
-      ],
+      // 能力集只写**真正生效**的两项：内置技能白名单（`allowedSkillIds` 决定内置技能能否
+      // 被斜杠调用 / 被定时任务执行，见 `chat/skills.ts`、`chat/taskExecutor.ts`）与
+      // MCP 连接器白名单（`allowedConnectorIds`，见 `plugins/mcp.ts::listActiveMcpTools`）。
+      //
+      // 曾经这里还把每个已选插件的 `defaultToolIds`、专家的 `defaultSkillIds` 一并并进来，
+      // 那是三条空转路径（2026-09-13 实测）：
+      // - **`allowedToolIds` 是彻底的死数据**：`ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [...BUILTIN_TOOL_IDS]`
+      //   （25 个），`DEFAULT_PROJECT_TOOL_IDS` 的 16 个全在其中，`localTools` 注册的 10 个也全在其中，
+      //   于是执行期那道闸门 `!ALWAYS_ALLOWED.has(id) && !project.allowedToolIds.includes(id)`
+      //   永远拦不下任何东西。所以这里不再写它 —— 字段缺省时由 `chat/storage.ts` 补
+      //   `DEFAULT_PROJECT_TOOL_IDS`，行为不变。
+      //   ⚠️ 但**连接器不能走这条路**：MCP 工具名是运行时算出来的 `mcp__{连接器id}__{工具}`，
+      //   不在工具 manifest 表里，`buildChatTools` 会直接跳过（`chatRuntimeHelpers.ts:113`），
+      //   所以连接器 manifest 也从不声明 `defaultToolIds`（全仓 0 处）—— 它必须单列一项。
+      // - 专家的 `defaultSkillIds` 有自己的运行时消费方（`chat/subAgent.ts` 委派子 Agent、
+      //   `useChatRuntime.ts` @ 专家时启用），不必再借项目白名单重述一遍；
+      //   而专家（自建）声明的 `defaultSkillIds` 多为 `[]`，并进来也只是空转。
+      // 顺带：专家真正的工具边界由 `chat/expertTools.ts::selectExpertTools` 在委派时按
+      // 专家自己的声明挑，与项目白名单无关。
+      allowedSkillIds: [...allowedSkillIds],
+      // 项目可用的 MCP 连接器白名单：**空 = 不限制**。写 undefined 而非 []，让「未设置」
+      // 只有一种表示（`normalizeProject` 读回时也会把 [] 归一成 undefined）。
+      allowedConnectorIds: connectorIds.length > 0 ? [...connectorIds] : undefined,
       // 选中的专家记为项目绑定专家：该项目会话里 agent 工具只委派给这些专家
-      boundExpertIds: picked.experts.map((m) => m.id),
+      boundExpertIds: [...boundExpertIds],
     };
     onCreate(draft);
     onClose();
@@ -186,36 +208,36 @@ export default function CreateProjectDialog({
             <span className="omni-dialog__counter">{title.length}/15</span>
           </label>
 
-          <label className="omni-dialog__field">
+          <div className="omni-dialog__field">
             <div className="omni-dialog__label-row">
-              <span className="omni-dialog__label">指令</span>
-              <div className="omni-dialog__template-dropdown">
-                <button type="button" className="omni-dialog__template-trigger">
-                  <span>选择预设</span>
-                  <ChevronDown size={14} strokeWidth={1.8} />
-                </button>
-                <div className="omni-dialog__template-menu">
-                  {templateOptions.map((option) => (
-                    <button
-                      key={option.id || "none"}
-                      type="button"
-                      className={selectedTemplateId === option.id ? "omni-dialog__template-item--active" : ""}
-                      onClick={() => applyTemplate(option.id)}
-                    >
-                      {option.title}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <label className="omni-dialog__label" htmlFor="create-project-instruction">
+                指令
+              </label>
+              {/* 预设下拉改走 OmniSelect，不再用自绘的 :hover 弹出层。
+                  旧实现的触发器与菜单之间隔着 6px（`top: calc(100% + 6px)`），
+                  鼠标从触发器移向菜单时穿过这段死区，两边都不处于 :hover，
+                  菜单当场 display:none —— 表现出来就是「鼠标一脱焦，下拉框就消失」，
+                  压根选不中。OmniSelect 是点击开合 + 外部 pointerdown 关闭，
+                  菜单还 portal 到 body（`.omni-dialog` 是 overflow:hidden，
+                  `__body` 还是 overflow-y:auto，留在对话框内部的浮层会被裁或被卷走）。 */}
+              <OmniSelect
+                className="omni-select--preset"
+                ariaLabel="选择项目预设"
+                placeholder="无预设"
+                value={selectedTemplateId}
+                options={templateOptions}
+                onChange={applyTemplate}
+              />
             </div>
             <textarea
+              id="create-project-instruction"
               value={instruction}
               onChange={(event) => setInstruction(event.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="提供当前项目的背景信息和规范，让 Omni 的回复更精准、更符合要求。比如：项目目标、团队习惯、风格偏好、输出约束等"
               rows={5}
             />
-          </label>
+          </div>
 
           <div className="omni-dialog__field omni-dialog__field--workspace">
             <span className="omni-dialog__label">工作目录</span>
@@ -244,34 +266,42 @@ export default function CreateProjectDialog({
             </div>
           </div>
 
-          <PickedPluginRow
-            icon={<Cable size={16} strokeWidth={1.8} />}
-            label="连接器"
-            hint="可选"
-            items={picked.connectors}
-            onAdd={() => handleAddClick("connector")}
-            onRemove={(id) => removePicked("connectors", id)}
-          />
+          {/* 连接器行的候选集换成**已安装的 MCP 连接器**多选（`McpConnectorRow`）。
+              旧的「添加 → 扩展中心挑一个」有两个问题：①扩展中心的连接器 tab 混着
+              **模型连接器**（`provider` 非空，在「模型设置」里配），它们不暴露任何
+              `mcp__*` 工具，勾进来只是写下一个永不生效的 id；②旧实现把它记进
+              `allowedToolIds` —— 而 MCP 工具名是运行时算的 `mcp__{id}__{tool}`，
+              不在工具 manifest 表里，那条路必然空转（见 handleConfirm 的注释）。
+              现在按 id 记进 `allowedConnectorIds`，真正参与 mcp.ts 的白名单过滤。 */}
+          <McpConnectorRow selectedIds={connectorIds} onToggle={toggleConnector} />
 
-          <PickedPluginRow
+          {/* 专家/技能两行的文案与 ProjectSettingsDialog **必须逐字一致**。
+              此前新建写「专家（可选）」、编辑写「绑定专家（绑定后 agent 委派只派给这些专家；
+              留空则不限制）」——同一个 `boundExpertIds` 字段，一个不说、一个才说，
+              而这个字段的真实含义（委派白名单）相当反直觉，新建时不说等于埋坑。 */}
+          <PluginToggleRow
             icon={<Bot size={16} strokeWidth={1.8} />}
-            label="专家"
-            hint="可选"
-            items={picked.experts}
-            onAdd={() => handleAddClick("expert")}
-            onRemove={(id) => removePicked("experts", id)}
+            label="绑定专家"
+            hint="agent 委派白名单：只派给这些专家；留空 = 模型不自动委派任何专家（手动 @专家 不受限）"
+            options={expertOptions}
+            selectedIds={boundExpertIds}
+            onToggle={toggleBoundExpert}
+            emptyText="暂无专家（可在扩展中心「专家 → 我的专家」里创建）"
+            idleIcon={<Bot size={12} strokeWidth={1.8} />}
           />
 
-          <PickedPluginRow
+          <PluginToggleRow
             icon={<Wand2 size={16} strokeWidth={1.8} />}
             label="技能"
-            hint="可选"
-            items={picked.skills}
-            onAdd={() => handleAddClick("skill")}
-            onRemove={(id) => removePicked("skills", id)}
+            hint="内置技能：勾选后可用斜杠调用"
+            options={skillOptions}
+            selectedIds={allowedSkillIds}
+            onToggle={toggleAllowedSkill}
+            emptyText="暂无内置技能"
+            idleIcon={<Wand2 size={12} strokeWidth={1.8} />}
           />
 
-          <p className="omni-dialog__hint">切换模版会覆盖当前编辑内容</p>
+          <p className="omni-dialog__hint">切换预设会覆盖「指令」中已编辑的内容</p>
         </div>
 
         <div className="omni-dialog__footer">
@@ -288,57 +318,6 @@ export default function CreateProjectDialog({
           </button>
         </div>
       </div>
-
-      {marketplaceOpen && marketplaceKind && (
-        <PluginMarketplace
-          initialFilter={{ kind: marketplaceKind }}
-          onPick={handleMarketplacePick}
-          onClose={() => {
-            setMarketplaceOpen(false);
-            setMarketplaceKind(null);
-          }}
-        />
-      )}
     </>
-  );
-}
-
-type PickedPluginRowProps = {
-  icon: React.ReactNode;
-  label: string;
-  hint: string;
-  items: PluginManifest[];
-  onAdd: () => void;
-  onRemove: (id: string) => void;
-};
-
-function PickedPluginRow({ icon, label, hint, items, onAdd, onRemove }: PickedPluginRowProps) {
-  return (
-    <div className="omni-dialog__plugin-row">
-      <div className="omni-dialog__plugin-row-header">
-        <div className="omni-dialog__plugin-row-title">
-          {icon}
-          <span>{label}</span>
-          <span className="omni-dialog__plugin-row-hint">（{hint}）</span>
-        </div>
-        <button type="button" className="omni-dialog__plugin-add" onClick={onAdd}>
-          <Plus size={14} strokeWidth={1.9} />
-          <span>添加</span>
-        </button>
-      </div>
-      {items.length > 0 && (
-        <div className="omni-dialog__plugin-chips">
-          {items.map((item) => (
-            <span key={item.id} className="omni-dialog__plugin-chip">
-              <Puzzle size={12} strokeWidth={1.8} />
-              <span>{item.name}</span>
-              <button type="button" onClick={() => onRemove(item.id)} aria-label={`移除 ${item.name}`}>
-                <X size={12} strokeWidth={1.8} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
