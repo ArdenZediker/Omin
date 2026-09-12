@@ -159,11 +159,15 @@ export interface SkillhubInstallOutcome {
  *
  *  可选 summary 是 SkillHub 列表/详情返回的元数据，用于补全 SKILL.md frontmatter
  *  里缺失的视觉信息（尤其是 `iconUrl` —— SKILL.md 里通常没有这一行，
- *  不补的话已安装技能的图标会走 kind 兜底，显示成所有技能同款的占位 Wand2）。 */
+ *  不补的话已安装技能的图标会走 kind 兜底，显示成所有技能同款的占位 Wand2）。
+ *
+ *  可选 options.skillsetSlug 表示「这次安装是跟着某个专家团进来的」，会被写进
+ *  `source.skillsetSlug`，让「我的技能」能把这些子技能收进套件卡片而不平铺。 */
 export async function installSkillhubSkill(
   slug: string,
   namespace?: string,
   summary?: SkillhubSkillSummary,
+  options?: { skillsetSlug?: string },
 ): Promise<SkillhubInstallOutcome> {
   const res = await invoke<{ slug: string; path: string; skill_md: string }>(
     "install_skillhub_skill",
@@ -191,6 +195,7 @@ export async function installSkillhubSkill(
   pluginRegistry.install(parsed, {
     type: "marketplace",
     repository: `skillhub/${id}`,
+    ...(options?.skillsetSlug ? { skillsetSlug: options.skillsetSlug } : {}),
   });
   return { slug: res.slug, path: res.path, manifest: parsed };
 }

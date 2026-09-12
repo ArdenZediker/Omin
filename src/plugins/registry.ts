@@ -205,6 +205,24 @@ class PluginRegistry {
     return entry;
   }
 
+  /**
+   * 记录「这个已安装的子技能属于哪个专家团」，供「我的技能」把子技能收进套件卡片。
+   *
+   * 为什么不复用 `install()`：`install()` 会把 entry 整个换掉 —— `enabled` 被重置为
+   * true、`installedAt` 也被刷新。对「已经装好、只是补一条归属关系」的场景这是破坏性的
+   * （用户手工关掉的技能会被悄悄打开）。这里只动 `source.skillsetSlug`。
+   *
+   * 返回是否真的变更：无变化时**不广播**，避免回填逻辑把订阅者推进无限重渲染。
+   */
+  linkSkillset(id: string, skillsetSlug: string): boolean {
+    const entry = this.installed.get(id);
+    if (!entry || entry.source.type !== "marketplace") return false;
+    if (entry.source.skillsetSlug === skillsetSlug) return false;
+    entry.source = { ...entry.source, skillsetSlug };
+    this.save();
+    return true;
+  }
+
   /** 更新已安装插件的 manifest（保留 enabled/installedAt/source，仅替换定义）。用于专家编辑。 */
   updateManifest(manifest: PluginManifest): boolean {
     const entry = this.installed.get(manifest.id);

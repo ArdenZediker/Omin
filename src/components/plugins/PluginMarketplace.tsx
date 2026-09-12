@@ -54,11 +54,13 @@ import type {
 import SkillhubBrowser from "./SkillhubBrowser";
 import SkillsetsBrowser from "./SkillsetsBrowser";
 import InstalledSkillsetCard, {
+  collectSkillsetChildIds,
   collectSkillsetSlugs,
 } from "./InstalledSkillsetCard";
 import ConnectorhubBrowser from "./ConnectorhubBrowser";
 import { getMcpCommandTemplate } from "../../plugins/connectorhub";
 import { uninstallSkillhubSkill } from "../../plugins/skillhub";
+import { repairSkillsetChildLinks } from "../../plugins/skillhubSkillsets";
 import OmniSwitch from "../ui/OmniSwitch";
 
 type PluginMarketplaceProps = {
@@ -532,12 +534,43 @@ export default function PluginMarketplace({
     if (mainView && showMySkills && !searchExpanded) setSearchExpanded(true);
   }, [mainView, showMySkills, searchExpanded]);
 
+  // 已安装的专家团（id → skillset slug）；列表里渲染成套件卡片，子技能收进卡片内。
+  const skillsetSlugs = useMemo(() => collectSkillsetSlugs(), [refreshKey]);
+
+  // 属于这些已安装专家团的子技能 id：在「我的技能」里不单独平铺。
+  // 批量模式与技能选择器（onPick）不过滤 —— 那两个场景要逐项勾选/卸载，
+  // 隐藏项会让用户以为技能不见了。
+  const skillsetChildIds = useMemo(
+    () => collectSkillsetChildIds(skillsetSlugs.values()),
+    [skillsetSlugs],
+  );
+  const hideSkillsetChildren = showMySkills && !onPick && !batchMode;
+
+  // 历史回填：本字段引入之前装的子技能没有归属记录，会一直散在平铺列表里。
+  // 这里对已安装的套件各拉一次详情，把已装的子技能补上归属（best-effort，
+  // 每个套件每会话只试一次，见 repairSkillsetChildLinks）。只有真的补上了才刷新，
+  // 否则会把订阅者推进无限重渲染。
+  useEffect(() => {
+    let cancelled = false;
+    void repairSkillsetChildLinks([...skillsetSlugs.values()]).then((changed) => {
+      if (changed && !cancelled) setRefreshKey((current) => current + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [skillsetSlugs]);
+
   const filteredPlugins = useMemo(() => {
     // 「我的技能」按用户要求不分类、一栏通览，跳过 category 过滤。
-    if (showMySkills) return allPlugins;
-    if (category === "全部") return allPlugins;
-    return allPlugins.filter((m) => m.category === category);
-  }, [allPlugins, category, showMySkills]);
+    const list =
+      showMySkills || category === "全部"
+        ? allPlugins
+        : allPlugins.filter((m) => m.category === category);
+    // 子技能只在套件卡片内出现 —— 用户要的「按专家团一套展示，不散开」。
+    return hideSkillsetChildren
+      ? list.filter((m) => !skillsetChildIds.has(m.id))
+      : list;
+  }, [allPlugins, category, showMySkills, hideSkillsetChildren, skillsetChildIds]);
 
   /** 工具按功能分组（用于「工具」tab 下按会话/文件/Git/导出等分块展示）。 */
   const groupedTools = useMemo(() => {
@@ -559,9 +592,6 @@ export default function PluginMarketplace({
     });
     return entries;
   }, [filteredPlugins, kind]);
-
-  // 已安装的专家团（id → skillset slug）：「我的技能」里渲染为可展开套件卡片。
-  const skillsetSlugs = useMemo(() => collectSkillsetSlugs(), [refreshKey]);
 
   const stats = useMemo(() => pluginRegistry.stats(), [refreshKey]);
   const myExperts = useMemo(

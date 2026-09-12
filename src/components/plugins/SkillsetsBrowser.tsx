@@ -5,8 +5,9 @@
  * 原文 content），详情接口额外给出子技能的精确 {slug, namespace} 映射，
  * 再由 batch 接口补齐子技能的图标/简介/下载量/安全扫描状态。
  *
- * 安装语义：默认只装专家团本体（一条 meta-skill，含完整编排工作流）；
- * 子技能作为可选增强，可在详情抽屉里一键补齐。
+ * 安装语义：卡片上的主按钮是**一键安装**（本体 meta-skill + 它引用的全部子技能，
+ * 已装的不重复装）；详情抽屉里额外保留「仅装本体」与「补装引用技能」，供只想装
+ * 编排包、或事后按需补子技能的人用。
  */
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -25,14 +26,16 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
-import { installSkillhubSkill } from "../../plugins/skillhub";
 import {
   listSkillhubSkillsets,
   getSkillhubSkillset,
   fetchSkillsetChildren,
   installSkillhubSkillset,
+  installSkillsetChildren,
+  loadSkillsetChildren,
   uninstallSkillhubSkillset,
   mapSkillsetScene,
+  skillsetChildId,
   type SkillhubSkillset,
   type SkillsetChildDetail,
 } from "../../plugins/skillhubSkillsets";
@@ -49,7 +52,8 @@ type SkillsetCardProps = {
   isInstalled: boolean;
   isInstalling: boolean;
   isUninstalling: boolean;
-  onInstall: (set: SkillhubSkillset) => void;
+  /** 一键安装：套件本体 + 全部引用子技能。 */
+  onInstallAll: (set: SkillhubSkillset) => void;
   onUninstall: (set: SkillhubSkillset) => void;
   onOpenDetail: (set: SkillhubSkillset) => void;
 };
@@ -59,7 +63,7 @@ const SkillsetCard = memo(function SkillsetCard({
   isInstalled,
   isInstalling,
   isUninstalling,
-  onInstall,
+  onInstallAll,
   onUninstall,
   onOpenDetail,
 }: SkillsetCardProps) {
@@ -118,11 +122,12 @@ const SkillsetCard = memo(function SkillsetCard({
         ) : (
           <button
             className="plugin-card__button plugin-card__button--primary"
-            onClick={() => onInstall(set)}
+            title="安装专家团本体与它引用的全部子技能（已装的不重复装）"
+            onClick={() => onInstallAll(set)}
             disabled={isInstalling}
           >
             {isInstalling ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
-            {isInstalling ? "安装中…" : "安装"}
+            {isInstalling ? "安装中…" : "一键安装"}
           </button>
         )}
       </div>
@@ -166,10 +171,8 @@ function ChildRow({ child }: { child: SkillsetChildDetail }) {
   );
 }
 
-/** 子技能唯一键：与 installSkillhubSkill 注册的 `namespace/slug` 对齐。 */
-function childKey(c: SkillsetChildDetail): string {
-  return c.namespace ? `${c.namespace}/${c.slug}` : c.slug;
-}
+/** 子技能唯一键（`namespace/slug`）—— 共用 skillhubSkillsets 的实现，勿在此另写一份。 */
+const childKey = skillsetChildId;
 
 type SkillsetDetailDrawerProps = {
   detail: SkillsetDetailState | null;
@@ -181,7 +184,10 @@ type SkillsetDetailDrawerProps = {
   isUninstalling: boolean;
   installingChildren: boolean;
   installedChildKeys: Set<string>;
-  onInstall: (set: SkillhubSkillset) => void;
+  /** 一键安装：套件本体 + 全部引用子技能。 */
+  onInstallAll: (set: SkillhubSkillset) => void;
+  /** 仅装本体：只落地 meta-skill，子技能留给以后按需补。 */
+  onInstallBodyOnly: (set: SkillhubSkillset) => void;
   onUninstall: (set: SkillhubSkillset) => void;
   onInstallChildren: (children: SkillsetChildDetail[]) => void;
 };
@@ -197,7 +203,8 @@ function SkillsetDetailDrawer({
   isUninstalling,
   installingChildren,
   installedChildKeys,
-  onInstall,
+  onInstallAll,
+  onInstallBodyOnly,
   onUninstall,
   onInstallChildren,
 }: SkillsetDetailDrawerProps) {
@@ -334,14 +341,29 @@ function SkillsetDetailDrawer({
               </button>
             </>
           ) : (
-            <button
-              className="plugin-card__button plugin-card__button--primary"
-              onClick={() => onInstall(set)}
-              disabled={isInstalling}
-            >
-              {isInstalling ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
-              {isInstalling ? "安装中…" : "安装专家团"}
-            </button>
+            <>
+              <button
+                className="plugin-card__button plugin-card__button--primary"
+                title="安装专家团本体与它引用的全部子技能（已装的不重复装）"
+                onClick={() => onInstallAll(set)}
+                disabled={isInstalling}
+              >
+                {isInstalling ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+                {isInstalling
+                  ? "安装中…"
+                  : children.length > 0
+                    ? `一键安装（含 ${children.length} 个子技能）`
+                    : "一键安装"}
+              </button>
+              <button
+                className="plugin-card__button plugin-card__button--secondary"
+                title="只装专家团本体（一条 meta-skill），子技能以后按需再补"
+                onClick={() => onInstallBodyOnly(set)}
+                disabled={isInstalling}
+              >
+                仅装本体
+              </button>
+            </>
           )}
           {pendingChildren.length > 0 && (
             <button
@@ -452,12 +474,41 @@ export default function SkillsetsBrowser() {
     }
   }, []);
 
-  const handleInstall = useCallback(async (set: SkillhubSkillset) => {
+  /** 仅装本体：只落地 meta-skill（一条 SKILL.md），子技能留给以后按需补。 */
+  const handleInstallBodyOnly = useCallback(async (set: SkillhubSkillset) => {
     setInstalling(set.slug);
     setError(null);
     try {
       await installSkillhubSkillset(set);
       setInstalledSlugs((prev) => new Set(prev).add(set.slug));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstalling(null);
+    }
+  }, []);
+
+  /**
+   * 一键安装：专家团本体 + 全部引用子技能。
+   *
+   * 必须先取一次详情再装子技能 —— 列表接口只给 skillSlugs，子技能的精确
+   * `{slug, namespace}` 映射只在详情接口里，这一步请求省不掉。
+   *
+   * 子技能中已经装过的**只补归属关系、不重装**（见 installSkillsetChildren），
+   * 所以重复点「一键安装」是安全的，也能把历史上散落在「我的技能」里的子技能
+   * 就地收编回套件卡片。
+   */
+  const handleInstallAll = useCallback(async (set: SkillhubSkillset) => {
+    setInstalling(set.slug);
+    setError(null);
+    try {
+      await installSkillhubSkillset(set);
+      setInstalledSlugs((prev) => new Set(prev).add(set.slug));
+      const res = await loadSkillsetChildren(set.slug);
+      const { failed } = await installSkillsetChildren(res.items, set.slug);
+      if (failed > 0) {
+        setError(`专家团已安装；${failed} 个子技能安装失败，其余已完成`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -482,35 +533,20 @@ export default function SkillsetsBrowser() {
     }
   }, []);
 
-  /** 一键补齐引用的子技能：走既有单技能安装闭环，失败不阻断其余项。 */
+  /** 补装引用的子技能（详情抽屉里的次要入口）；失败不阻断其余项。 */
   const handleInstallChildren = useCallback(
     async (children: SkillsetChildDetail[]) => {
+      const slug = detail?.set.slug;
+      if (!slug) return;
       setInstallingChildren(true);
       setError(null);
-      let failed = 0;
-      for (const child of children) {
-        try {
-          await installSkillhubSkill(child.slug, child.namespace, {
-            slug: child.slug,
-            name: child.displayName ?? child.slug,
-            description: child.summary ?? "",
-            iconUrl: child.iconUrl,
-            ownerName: child.ownerName,
-            category: child.category,
-            namespace: child.canonicalName
-              ? { canonicalName: child.canonicalName, displayName: child.namespace }
-              : undefined,
-          });
-        } catch {
-          failed += 1;
-        }
-      }
+      const { failed } = await installSkillsetChildren(children, slug);
       if (failed > 0) {
         setError(`${failed} 个引用技能安装失败，其余已完成`);
       }
       setInstallingChildren(false);
     },
-    [],
+    [detail?.set.slug],
   );
 
   // 子技能安装态：installSkillhubSkill 注册为 `namespace/slug`，老数据可能只有
@@ -615,7 +651,7 @@ export default function SkillsetsBrowser() {
             isInstalled={installedSlugs.has(s.slug)}
             isInstalling={installing === s.slug}
             isUninstalling={uninstalling === s.slug}
-            onInstall={(set) => void handleInstall(set)}
+            onInstallAll={(set) => void handleInstallAll(set)}
             onUninstall={(set) => void handleUninstall(set)}
             onOpenDetail={(set) => void handleOpenDetail(set)}
           />
@@ -632,7 +668,8 @@ export default function SkillsetsBrowser() {
         isUninstalling={detail ? uninstalling === detail.set.slug : false}
         installingChildren={installingChildren}
         installedChildKeys={installedChildKeys}
-        onInstall={(set) => void handleInstall(set)}
+        onInstallAll={(set) => void handleInstallAll(set)}
+        onInstallBodyOnly={(set) => void handleInstallBodyOnly(set)}
         onUninstall={(set) => void handleUninstall(set)}
         onInstallChildren={(children) => void handleInstallChildren(children)}
       />

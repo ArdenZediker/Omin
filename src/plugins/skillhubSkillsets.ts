@@ -14,13 +14,17 @@
  * 统一经 Rust 命令转发。
  *
  * 安装形态：content 直接落地为 skills_dir/<slug>/SKILL.md 并注册为**一条** skill
- * 插件（不是把子技能全部展开），保持「一个专家团 = 一个包」的心智。子技能可在详情
- * 抽屉里逐个或一键安装（走既有 installSkillhubSkill 闭环）。
+ * 插件（不是把子技能逐个展开成顶层技能），保持「一个专家团 = 一个包」的心智。
+ * 支持两种口径：**一键安装**（本体 + 全部引用子技能，走 installSkillsetChildren）
+ * 与**仅装本体**（子技能事后在详情抽屉里按需补）。
+ *
+ * 子技能被装进来时会带上 `source.skillsetSlug`（见 installSkillsetChildren），
+ * 「我的技能」据此把它们收进套件卡片内、不在平铺列表里散开。
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { pluginRegistry, parseSkillMarkdown } from "./registry";
-import { uninstallSkillhubSkill } from "./skillhub";
+import { installSkillhubSkill, uninstallSkillhubSkill } from "./skillhub";
 import type { PluginManifest } from "./types";
 
 /** 专家团场景分类 key → 中文展示名（与 /api/v1/skillsets 的 scene 字段对应）。 */
@@ -168,6 +172,117 @@ export async function installSkillhubSkillset(
 /** 卸载专家团：与单个技能共用同一目录与卸载命令。 */
 export async function uninstallSkillhubSkillset(slug: string): Promise<void> {
   await uninstallSkillhubSkill(slug);
+}
+
+/** 子技能唯一键：与 installSkillhubSkill 注册的 `namespace/slug` 对齐。 */
+export function skillsetChildId(c: SkillsetChildDetail): string {
+  return c.namespace ? `${c.namespace}/${c.slug}` : c.slug;
+}
+
+/** 详情接口取一次，顺便批量取子技能元数据（一键安装与历史回填共用）。 */
+export async function loadSkillsetChildren(
+  slug: string,
+): Promise<SkillsetChildrenResult> {
+  const detail = await getSkillhubSkillset(slug);
+  const pairs = detail.skills ?? [];
+  if (pairs.length === 0) return { items: [], missing: [] };
+  return fetchSkillsetChildren(pairs);
+}
+
+/** 把 SkillsetChildDetail 折成 installSkillhubSkill 需要的 summary 形状。 */
+function childSummary(c: SkillsetChildDetail) {
+  return {
+    slug: c.slug,
+    name: c.displayName ?? c.slug,
+    description: c.summary ?? "",
+    iconUrl: c.iconUrl,
+    ownerName: c.ownerName,
+    category: c.category,
+    namespace: c.canonicalName
+      ? { canonicalName: c.canonicalName, displayName: c.namespace }
+      : undefined,
+  };
+}
+
+/** 在已安装的技能里找子技能（老数据可能只注册了 slug，没有 namespace 前缀）。 */
+function findInstalledChildId(c: SkillsetChildDetail): string | null {
+  const key = skillsetChildId(c);
+  if (pluginRegistry.isInstalled(key)) return key;
+  if (pluginRegistry.isInstalled(c.slug)) return c.slug;
+  return null;
+}
+
+/**
+ * 安装（或认领）一个专家团的全部子技能，并记录归属关系。
+ *
+ * **已装的不重装**，只补 `source.skillsetSlug`：`registry.install()` 会把 entry
+ * 整个换掉、`enabled` 重置为 true，用户手工关掉的子技能会被悄悄打开。
+ * 这样「一键安装」重复点也是安全的，且能把历史遗留、散落在「我的技能」里的
+ * 子技能就地收编回套件卡片。
+ */
+export async function installSkillsetChildren(
+  children: SkillsetChildDetail[],
+  skillsetSlug: string,
+): Promise<{ claimed: number; installed: number; failed: number }> {
+  let claimed = 0;
+  let installed = 0;
+  let failed = 0;
+  for (const child of children) {
+    const existingId = findInstalledChildId(child);
+    if (existingId) {
+      pluginRegistry.linkSkillset(existingId, skillsetSlug);
+      claimed += 1;
+      continue;
+    }
+    try {
+      await installSkillhubSkill(child.slug, child.namespace, childSummary(child), {
+        skillsetSlug,
+      });
+      installed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { claimed, installed, failed };
+}
+
+/** 已经尝试过回填的专家团 slug（每个套件每会话只试一次）。 */
+const repairedSkillsetSlugs = new Set<string>();
+
+/**
+ * 回填历史数据的子技能归属。
+ *
+ * `skillsetSlug` 是本轮才引入的字段，在那之前装的子技能没有它，会一直平铺在
+ * 「我的技能」里。这里对**已安装**的专家团各拉一次详情，把已装的子技能补上归属。
+ *
+ * best-effort：离线、套件下架等失败一律静默跳过（这只是展示归组，不该打扰用户）；
+ * 且每个 slug 每会话最多尝试一次，避免网络抖动时反复请求。
+ *
+ * @returns 是否发生了实际变更 —— 调用方据此决定要不要刷新列表。
+ */
+export async function repairSkillsetChildLinks(
+  skillsetSlugs: string[],
+): Promise<boolean> {
+  let changed = false;
+  for (const slug of skillsetSlugs) {
+    if (repairedSkillsetSlugs.has(slug)) continue;
+    repairedSkillsetSlugs.add(slug);
+    try {
+      const res = await loadSkillsetChildren(slug);
+      for (const child of res.items) {
+        const existingId = findInstalledChildId(child);
+        if (existingId && pluginRegistry.linkSkillset(existingId, slug)) changed = true;
+      }
+    } catch {
+      /* best-effort：离线或已下架，跳过 */
+    }
+  }
+  return changed;
+}
+
+/** 测试用：清空「已回填」记忆（生产代码不调用）。 */
+export function resetSkillsetLinkRepairCache(): void {
+  repairedSkillsetSlugs.clear();
 }
 
 function setSourceUrl(slug: string): string {

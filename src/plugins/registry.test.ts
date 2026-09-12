@@ -102,3 +102,54 @@ describe("pluginRegistry 变更订阅", () => {
     pluginRegistry.uninstall(id);
   });
 });
+
+describe("pluginRegistry.linkSkillset（专家团子技能归属）", () => {
+  const sourceOf = (id: string) =>
+    pluginRegistry.listInstalled().find((e) => e.id === id)?.entry.source;
+
+  it("补归属不重装：保留开关状态，重复写不广播", () => {
+    pluginRegistry.load();
+    const id = "test-link-child";
+    pluginRegistry.install(makeSkill(id), {
+      type: "marketplace",
+      repository: `skillhub/${id}`,
+    });
+    pluginRegistry.setEnabled(id, false);
+
+    const listener = vi.fn();
+    const unsubscribe = pluginRegistry.subscribe(listener);
+
+    expect(pluginRegistry.linkSkillset(id, "suite-a")).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    const source = sourceOf(id);
+    expect(source && source.type === "marketplace" ? source.skillsetSlug : undefined).toBe(
+      "suite-a",
+    );
+    // 归组不能是破坏性操作：用户手工关掉的开关必须原样保留
+    expect(pluginRegistry.isEnabled(id)).toBe(false);
+
+    // 重复写同一归属 = 无变化 → 不广播（历史回填才不会把订阅者推进无限重渲染）
+    expect(pluginRegistry.linkSkillset(id, "suite-a")).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    pluginRegistry.uninstall(id);
+  });
+
+  it("非 marketplace 来源（本地导入）没有归属概念", () => {
+    pluginRegistry.load();
+    const id = "test-link-local";
+    pluginRegistry.install(makeSkill(id), { type: "local", path: "user" });
+
+    expect(pluginRegistry.linkSkillset(id, "suite-a")).toBe(false);
+    expect(sourceOf(id)).toEqual({ type: "local", path: "user" });
+
+    pluginRegistry.uninstall(id);
+  });
+
+  it("未安装的 id 直接返回 false（不抛错、不落盘）", () => {
+    pluginRegistry.load();
+    expect(pluginRegistry.linkSkillset("no-such-plugin", "suite-a")).toBe(false);
+  });
+});

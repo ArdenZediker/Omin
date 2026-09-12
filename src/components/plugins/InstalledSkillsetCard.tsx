@@ -8,6 +8,10 @@
  *   - 启用开关沿用普通技能的 OmniSwitch 行为。
  *
  * 识别依据：installSkillhubSkillset 注册时 source.repository = `skillset/<slug>`。
+ *
+ * 本卡片同时是子技能在「我的技能」里的**唯一落点**：凡 `source.skillsetSlug`
+ * 指向本套件的子技能，都会被父级从平铺列表摘掉（见 collectSkillsetChildIds），
+ * 只在展开态的子技能列表里出现 —— 用户要的「按专家团一套展示，不散开」。
  */
 import { memo, useCallback, useState } from "react";
 import {
@@ -21,11 +25,12 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
-import { installSkillhubSkill } from "../../plugins/skillhub";
 import {
   uninstallSkillhubSkillset,
   getSkillhubSkillset,
   fetchSkillsetChildren,
+  installSkillsetChildren,
+  skillsetChildId,
   type SkillsetChildDetail,
 } from "../../plugins/skillhubSkillsets";
 import type { PluginManifest } from "../../plugins/types";
@@ -49,10 +54,31 @@ export function collectSkillsetSlugs(): Map<string, string> {
   return map;
 }
 
-/** 子技能唯一键：与 installSkillhubSkill 注册的 `namespace/slug` 对齐。 */
-function childKey(c: SkillsetChildDetail): string {
-  return c.namespace ? `${c.namespace}/${c.slug}` : c.slug;
+/**
+ * 收集「属于这些已安装专家团」的子技能 id，供「我的技能」把它们从平铺列表里摘掉。
+ *
+ * 依据是子技能自己 `source.skillsetSlug`（由 installSkillsetChildren 写入），
+ * 因此完全同步、不需要再请求 skillset 详情接口。
+ *
+ * **只认仍然安装着的套件**：套件一旦卸载，它的子技能要重新作为独立卡片出现，
+ * 否则这些技能会在 UI 上凭空消失 —— 文件还在磁盘上、斜杠命令也还能用，却哪儿都看不到。
+ */
+export function collectSkillsetChildIds(
+  installedSkillsetSlugs: Iterable<string>,
+): Set<string> {
+  const ids = new Set<string>();
+  const parents = new Set(installedSkillsetSlugs);
+  if (parents.size === 0) return ids;
+  for (const { id, entry } of pluginRegistry.listInstalled()) {
+    const slug =
+      entry.source.type === "marketplace" ? entry.source.skillsetSlug : undefined;
+    if (slug && parents.has(slug)) ids.add(id);
+  }
+  return ids;
 }
+
+/** 子技能唯一键（`namespace/slug`）—— 共用 skillhubSkillsets 的实现，勿在此另写一份。 */
+const childKey = skillsetChildId;
 
 type InstalledSkillsetCardProps = {
   manifest: PluginManifest;
@@ -119,17 +145,7 @@ function InstalledSkillsetCardImpl({
       setInstallingChild(childKey(child));
       setError(null);
       try {
-        await installSkillhubSkill(child.slug, child.namespace, {
-          slug: child.slug,
-          name: child.displayName ?? child.slug,
-          description: child.summary ?? "",
-          iconUrl: child.iconUrl,
-          ownerName: child.ownerName,
-          category: child.category,
-          namespace: child.canonicalName
-            ? { canonicalName: child.canonicalName, displayName: child.namespace }
-            : undefined,
-        });
+        await installSkillsetChildren([child], slug);
         onChanged();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -137,38 +153,22 @@ function InstalledSkillsetCardImpl({
         setInstallingChild(null);
       }
     },
-    [onChanged],
+    [slug, onChanged],
   );
 
   const installPendingChildren = useCallback(async () => {
     setInstallingAll(true);
     setError(null);
-    let failed = 0;
-    for (const child of children) {
-      const key = childKey(child);
-      if (pluginRegistry.isInstalled(key) || pluginRegistry.isInstalled(child.slug)) {
-        continue;
-      }
-      try {
-        await installSkillhubSkill(child.slug, child.namespace, {
-          slug: child.slug,
-          name: child.displayName ?? child.slug,
-          description: child.summary ?? "",
-          iconUrl: child.iconUrl,
-          ownerName: child.ownerName,
-          category: child.category,
-          namespace: child.canonicalName
-            ? { canonicalName: child.canonicalName, displayName: child.namespace }
-            : undefined,
-        });
-      } catch {
-        failed += 1;
-      }
-    }
+    const pending = children.filter(
+      (c) =>
+        !pluginRegistry.isInstalled(childKey(c)) &&
+        !pluginRegistry.isInstalled(c.slug),
+    );
+    const { failed } = await installSkillsetChildren(pending, slug);
     if (failed > 0) setError(`${failed} 个引用技能安装失败，其余已完成`);
     setInstallingAll(false);
     onChanged();
-  }, [children, onChanged]);
+  }, [children, slug, onChanged]);
 
   const handleUninstall = useCallback(async () => {
     setUninstalling(true);

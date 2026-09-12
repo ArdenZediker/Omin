@@ -8,7 +8,22 @@ export type PluginKind = "skill" | "tool" | "connector" | "expert" | "template";
 export type PluginSource =
   | { type: "builtin" }
   | { type: "local"; path: string }
-  | { type: "marketplace"; repository: string; commit?: string };
+  | {
+      type: "marketplace";
+      repository: string;
+      commit?: string;
+      /**
+       * 该技能是从哪个专家团（skillset）里装进来的，值为 skillset slug。
+       *
+       * 为什么记在子技能自己身上：「我的技能」要求子技能收在套件卡片内、不平铺，
+       * 而 Grouping 必须能在**离线、同步**的渲染里完成 —— 反查「哪些技能属于这个套件」
+       * 若靠再请求一次 skillset 详情接口，每次渲染都要发网络请求，装了什么就得看到什么
+       * 的语义也会被网络抖动破坏。记在 source 里则随注册表一起持久化，读一次即可。
+       *
+       * 只有 installSkillhubSkill 带上 skillsetSlug 时才会写入；单独安装的技能没有它。
+       */
+      skillsetSlug?: string;
+    };
 
 export type PluginConfigFieldType = "string" | "password" | "number" | "boolean" | "select";
 
