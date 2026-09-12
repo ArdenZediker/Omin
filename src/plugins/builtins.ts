@@ -456,6 +456,22 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
       "keep at most one item in_progress, and flip items to completed as soon as they are done. " +
       "It tracks execution progress only — to design the plan itself use the /plan skill.",
   },
+  {
+    id: "code_outline",
+    name: "Code Outline",
+    description:
+      "Call this to see a file's declarations (classes / functions / methods) with line numbers before reading it in full.",
+    version: "1.0.0",
+    author: "Omni",
+    kind: "tool",
+    category: "开发编程",
+    group: "文件",
+    icon: "ListTree",
+    command: "/code_outline",
+    promptContribution:
+      "Call /code_outline <path> to skim a large or unfamiliar file's structure before reading it. " +
+      "Heuristic only (no symbol index) — use /search_files to find where a symbol is used.",
+  },
 ];
 
 /**

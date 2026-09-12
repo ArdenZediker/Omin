@@ -1136,4 +1136,47 @@ describe("bash 写语义扫描集成（围栏旁路封堵）", () => {
     expect(bad?.error).toContain("status 非法");
     expect(getSessionTodos("session-1")).toEqual([{ id: "1", content: "保留我", status: "pending" }]);
   });
+
+  it("code_outline 复用 read_workspace_file 管道并输出声明与行号", async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      content: [
+        "export class Repo {",
+        "  async load(id: string) {}",
+        "}",
+        "",
+        "export function helper() {}",
+      ].join("\n"),
+      total_chars: 90,
+      returned_chars: 90,
+      offset_chars: 0,
+      start_line: 1,
+      end_line: 5,
+      truncated: false,
+    });
+    const runtime = createRuntime();
+
+    const result = await executeLocalTool(runtime, {
+      command: "/code_outline",
+      args: JSON.stringify({ path: "src/repo.ts" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("class Repo");
+    expect(result?.outputText).toContain("method load");
+    expect(result?.outputText).toContain("fn helper");
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "read_workspace_file",
+      expect.objectContaining({ path: "src/repo.ts" }),
+    );
+  });
+
+  it("code_outline 缺 path 时给出用法而不是抛错", async () => {
+    const result = await executeLocalTool(createRuntime(), {
+      command: "/code_outline",
+      args: "",
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("用法：/code_outline");
+  });
 });

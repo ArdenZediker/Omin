@@ -16,6 +16,7 @@ import {
   renderTodoList,
   setSessionTodos,
 } from "./todoWrite";
+import { DEFAULT_MAX_DEPTH, buildOutline, renderOutline } from "./codeOutline";
 import { requestConfirmation } from "./confirmationGate";
 import { scanBashWriteSemantics, findNoGoZoneTarget } from "./bashWriteScan";
 import { resolveSessionOutputDir } from "../app/outputStorage";
@@ -583,6 +584,53 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           returnedChars: result.returned_chars,
           offsetChars: result.offset_chars,
           truncated: result.truncated,
+        },
+      };
+    },
+  });
+
+  // ---- 代码大纲（读全文之前先看结构；启发式，不是符号索引） ----
+
+  const codeOutlineTool = requireTool("code_outline");
+
+  registry.register({
+    id: codeOutlineTool.id,
+    command: codeOutlineTool.command,
+    title: codeOutlineTool.title,
+    execute: async (resolvedCommand) => {
+      const json = parseToolJsonArgs(resolvedCommand.args);
+      const rawTextPath = resolvedCommand.args.trim();
+      const path =
+        strArg(json, "path") ?? (rawTextPath.startsWith("{") ? null : rawTextPath) ?? "";
+      if (!path) {
+        return {
+          ok: false,
+          error: '用法：/code_outline <path>，或 /code_outline {"path":"...","maxDepth":4}',
+        };
+      }
+      const maxDepth = numArg(json, "maxDepth") ?? DEFAULT_MAX_DEPTH;
+      const ws = runtime.activeProject?.workspacePath ?? "";
+      // 复用 /read_file 的读取管道：工作区解析、绝对路径直读、截断策略全部一致，
+      // 大纲只是把读到的内容换一种更省上下文的呈现方式。
+      const result = await invoke<ReadFileResult>("read_workspace_file", {
+        projectPath: ws || null,
+        path,
+        maxChars: null,
+        offsetChars: null,
+        limitChars: null,
+      });
+      const outline = buildOutline(result.content, {
+        startLine: result.start_line ?? 1,
+        maxDepth,
+      });
+      return {
+        ok: true,
+        outputText: renderOutline(path, outline),
+        data: {
+          path,
+          totalLines: outline.totalLines,
+          symbols: outline.symbols,
+          folded: outline.folded,
         },
       };
     },

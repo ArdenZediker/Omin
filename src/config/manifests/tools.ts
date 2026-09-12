@@ -116,6 +116,33 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     },
   },
   {
+    id: "code_outline",
+    command: "/code_outline",
+    title: "Code Outline",
+    description:
+      "List a file's declarations (classes, functions, methods) with line numbers, without reading the whole file.",
+    concurrencySafe: true,
+    promptContribution:
+      "Call /code_outline <path> to see a file's structure (container/function/method declarations with line numbers) before reading it. " +
+      "Use it when you are about to open a large or unfamiliar file: skim the outline first, then /read_file only the line ranges you need. " +
+      "It is a regex-and-indentation heuristic, NOT a symbol index: it can miss unusual declarations and it reports no references. " +
+      "To find where a symbol is USED, call /search_files instead — this tool only shows what a file declares.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "File path (relative to the workspace, or absolute).",
+        },
+        maxDepth: {
+          type: "number",
+          description: "Max nesting level to list (default 4). Deeper declarations are folded and counted.",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
     id: "use_skill",
     command: "/use_skill",
     title: "Use Skill",
@@ -607,6 +634,7 @@ export const BUILTIN_TOOL_IDS = [
   "list_files",
   "read_file",
   "search_files",
+  "code_outline",
   "use_skill",
   "todo_write",
   "write_file",
