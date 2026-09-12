@@ -846,6 +846,33 @@
   flex-shrink: 0;
 }
 
+/* 连接器卡片：紧凑布局（用户 2026-09-12「卡片大小排版调整」）。
+ * 与技能 / SkillHub 卡片不同，连接器卡片**不进**「统一高度」策略 ——
+ * 后者靠 .plugin-card__description 的 min-height:calc(3*1.5em) 给短描述补
+ * 留白来对齐同行卡片（8b29f15）。连接器数量少、描述基本只有一行，那两行
+ * 留白只让卡片底部空出一大片，并不换来任何对齐收益，故整个不参与。
+ * 底部「配置 / N 工具 / 断开」也不再 flex:1 等分拉满整行 —— 那是 grid 小卡
+ * 的做法；连接器卡片往往通栏很宽，等分会把三个块撑成三块大板子，改成按
+ * 内容宽度（min-width 88 与列表视图一致）右对齐。 */
+.plugin-card--connector {
+  padding: 12px;
+  gap: 10px;
+}
+
+.plugin-card--connector .plugin-card__description {
+  min-height: 0;
+}
+
+.plugin-card--connector .plugin-card__actions {
+  justify-content: flex-end;
+}
+
+.plugin-card--connector .plugin-card__actions > .plugin-card__button,
+.plugin-card--connector .plugin-card__actions > .plugin-card__connected {
+  flex: 0 0 auto;
+  min-width: 88px;
+}
+
 .plugin-card__button {
   flex: 1 1 auto;
   min-width: 0;
@@ -1103,9 +1130,15 @@
   display: none;
 }
 
+/* icon 与标题顶部对齐（用户 2026-09-12「卡片大小排版」）。
+ * 原来这里是 align-items:center —— header 的高度由 main（标题 + 描述 + meta）
+ * 决定，图标被垂直居中后就会「悬」在标题下方，而标题又缩进到图标右侧，
+ * 看起来像整块排版错位（截图中「高德」下方孤零零一个图标即此）。
+ * 改成 flex-start 后图标与标题在同一行，缩进才读得通。
+ * 列表视图有自己的 align-items:center 覆盖，不受影响。 */
 .plugin-card__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
 }
 

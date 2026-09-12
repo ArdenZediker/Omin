@@ -1133,11 +1133,18 @@ export default function PluginMarketplace({
       }
       const isSelected = inBatch && selectedIds.has(manifest.id);
       const enabled = pluginRegistry.isEnabled(manifest.id);
-      const cardClass = inBatch
-        ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()
-        : onPick
-          ? `plugin-card plugin-card--pickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()
-          : `plugin-card plugin-card--clickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim();
+      // 连接器卡片走紧凑布局（见 plugins.css `.plugin-card--connector`）：
+      // 描述区不参与「统一高度」的预留行，底部按钮按内容宽度右对齐。
+      // 技能 / SkillHub 卡片仍保持 8b29f15 的同行等高策略，不受影响。
+      const connectorClass =
+        manifest.kind === "connector" ? " plugin-card--connector" : "";
+      const cardClass =
+        (inBatch
+          ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
+          : onPick
+            ? `plugin-card plugin-card--pickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
+            : `plugin-card plugin-card--clickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
+        ).trim() + connectorClass;
       const cardRole: "button" | "checkbox" = inBatch ? "checkbox" : "button";
       return (
         <div

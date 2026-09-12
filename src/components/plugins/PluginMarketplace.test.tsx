@@ -207,3 +207,79 @@ describe("PluginMarketplace MCP 连接中间态", () => {
     });
   });
 });
+
+/**
+ * 回归：连接器卡片必须带 `plugin-card--connector` 修饰类。
+ *
+ * 该类在 plugins.css 里承载「连接器卡片的紧凑布局」：不参与描述区 3 行预留
+ * （卡片底部不再空一大片）、底部按钮按内容宽度右对齐（不再 flex:1 等分拉满
+ * 整行）、内边距 12px。少了它，连接器卡片会静默退回 8b29f15 的统一高度预留，
+ * 而这正是用户 2026-09-12「卡片大小排版调整」要修掉的表现。
+ * 技能卡片必须**不带**这个类 —— 它们仍需要预留行来保证同行等高。
+ */
+describe("PluginMarketplace 连接器卡片紧凑布局", () => {
+  it("连接器卡片带 plugin-card--connector，技能卡片不带", async () => {
+    pluginRegistry.load();
+    const connectorId = "test-compact-connector";
+    const skillId = "test-compact-skill";
+    act(() => {
+      pluginRegistry.install(
+        {
+          id: connectorId,
+          name: "紧凑布局测试连接器",
+          description: "位置信息",
+          version: "1.0.0",
+          kind: "connector",
+        },
+        { type: "local", path: "user" },
+      );
+      pluginRegistry.install(
+        {
+          id: skillId,
+          name: "紧凑布局测试技能",
+          description: "审阅改动",
+          version: "1.0.0",
+          kind: "skill",
+          systemPrompt: "echo compact-layout",
+        },
+        { type: "local", path: "user" },
+      );
+    });
+
+    const connectorView = render(
+      <PluginMarketplace
+        mainView
+        embedded
+        source="my"
+        initialFilter={{ kind: "connector" }}
+        onSourceChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const connectorCard = (await screen.findByText("紧凑布局测试连接器")).closest(
+      ".plugin-card",
+    );
+    expect(connectorCard?.className ?? "").toContain("plugin-card--connector");
+    connectorView.unmount();
+
+    render(
+      <PluginMarketplace
+        mainView
+        embedded
+        source="local"
+        initialFilter={{ kind: "skill" }}
+        onSourceChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const skillCard = (await screen.findByText("紧凑布局测试技能")).closest(
+      ".plugin-card",
+    );
+    expect(skillCard?.className ?? "").not.toContain("plugin-card--connector");
+
+    act(() => {
+      pluginRegistry.uninstall(connectorId);
+      pluginRegistry.uninstall(skillId);
+    });
+  });
+});
