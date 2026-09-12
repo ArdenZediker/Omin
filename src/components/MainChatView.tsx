@@ -299,7 +299,8 @@ type MainChatViewProps = {
   ) => void | Promise<void>;
   onToggleFavoriteChat: (session: ChatSession) => void;
   onTogglePinChat: (session: ChatSession) => void;
-  onUseEmptyPrompt: (prompt: string) => void;
+  /** 把一段文本放进输入框草稿（不直接发送）。空态起步卡与项目预设「插入输入框」共用。 */
+  onUsePromptDraft: (prompt: string) => void;
   onOpenKnowledge: () => void;
   openMarketplace?: boolean;
   onMarketplaceChange?: (open: boolean) => void;
@@ -355,7 +356,7 @@ export default function MainChatView({
   onShareChat,
   onStop,
   onSubmitEditedUserMessage,
-  onUseEmptyPrompt,
+  onUsePromptDraft,
   onOpenKnowledge,
   openMarketplace,
   onMarketplaceChange,
@@ -623,6 +624,10 @@ export default function MainChatView({
   const [spaceSectionCollapsed, setSpaceSectionCollapsed] = useState(false);
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set());
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
+  // 从扩展中心「用它新建项目」带过来的项目预设 id。非空即表示这次新建项目不是
+  // 用户手点侧栏按钮进来的，打开对话框时要把该预设的指令套上。
+  // 关闭对话框必须清空 —— 否则下次普通「新建项目」会莫名带上上次的预设。
+  const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
   const [projectGroupManagerOpen, setProjectGroupManagerOpen] = useState(false);
   const [projectGroupCreateMode, setProjectGroupCreateMode] = useState(false);
   const [projectGroupDraft, setProjectGroupDraft] = useState("");
@@ -935,8 +940,24 @@ export default function MainChatView({
     [],
   );
   const handleCreateProject = useCallback(() => {
+    setPendingTemplateId(null);
     setCreateProjectDialogOpen(true);
   }, []);
+
+  /**
+   * 扩展中心「用它新建项目」：把预设带进新建项目对话框。
+   *
+   * 顺带关掉扩展中心（它是主舞台里的一个视图，不是弹窗）—— 项目创建完就该看到
+   * 新项目的主界面，而不是还停在预设列表上。
+   */
+  const handleUseProjectPreset = useCallback(
+    (manifest: PluginManifest) => {
+      setPendingTemplateId(manifest.id);
+      closeMarketplace();
+      setCreateProjectDialogOpen(true);
+    },
+    [closeMarketplace],
+  );
 
   const handleCreateProjectFromDialog = useCallback(
     (draft: ProjectDraft) => {
@@ -1462,7 +1483,7 @@ export default function MainChatView({
                 { kind: "expert" as const, label: "专家", icon: Bot },
                 {
                   kind: "template" as const,
-                  label: "模板",
+                  label: "项目预设",
                   icon: LayoutTemplate,
                 },
               ].map((item) => (
@@ -2025,6 +2046,8 @@ export default function MainChatView({
             source={marketplaceSource}
             onSourceChange={setMarketplaceSource}
             omitTopTabs
+            onUseTemplate={handleUseProjectPreset}
+            onInsertPrompt={onUsePromptDraft}
           />
         )}
         {creatingMcp && (
@@ -2391,7 +2414,7 @@ export default function MainChatView({
                         <h2>从当前项目开始</h2>
                         <p>
                           {isEmptyGuideCompact
-                            ? "直接输入问题开始对话。需要推荐模板时可展开引导。"
+                            ? "直接输入问题开始对话。需要推荐起步方式时可展开引导。"
                             : "你可以直接输入问题，也可以从下方选择一个起点。后续任务、工具和技能会默认归属当前项目。"}
                         </p>
                       </div>
@@ -2418,7 +2441,7 @@ export default function MainChatView({
                                 key={starter.title}
                                 type="button"
                                 className="empty-chat-state__card"
-                                onClick={() => onUseEmptyPrompt(starter.prompt)}
+                                onClick={() => onUsePromptDraft(starter.prompt)}
                               >
                                 <div className="empty-chat-state__card-icon">
                                   {index % 2 === 0 ? (
@@ -2703,7 +2726,11 @@ export default function MainChatView({
 
       <CreateProjectDialog
         open={createProjectDialogOpen}
-        onClose={() => setCreateProjectDialogOpen(false)}
+        initialTemplateId={pendingTemplateId}
+        onClose={() => {
+          setCreateProjectDialogOpen(false);
+          setPendingTemplateId(null);
+        }}
         onCreate={handleCreateProjectFromDialog}
       />
 

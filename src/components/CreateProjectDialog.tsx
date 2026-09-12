@@ -17,6 +17,11 @@ export type CreateProjectDialogProps = {
   open: boolean;
   onClose: () => void;
   onCreate: (draft: ProjectDraft) => void;
+  /**
+   * 打开时预选的**项目预设** id（来自扩展中心「用它新建项目」）。
+   * 不传 / 传 null 即普通新建项目，用户自行从下拉里选。
+   */
+  initialTemplateId?: string | null;
 };
 
 type PickedPlugins = {
@@ -25,7 +30,12 @@ type PickedPlugins = {
   skills: PluginManifest[];
 };
 
-export default function CreateProjectDialog({ open, onClose, onCreate }: CreateProjectDialogProps) {
+export default function CreateProjectDialog({
+  open,
+  onClose,
+  onCreate,
+  initialTemplateId,
+}: CreateProjectDialogProps) {
   const [title, setTitle] = useState("");
   const [instruction, setInstruction] = useState("");
   const [workspacePath, setWorkspacePath] = useState("");
@@ -44,7 +54,7 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
     }
   }, [open]);
 
-  // 模板选项的**唯一事实来源**就是注册表（`kind:"template"`）。
+  // 预设选项的**唯一事实来源**就是注册表（`kind:"template"`）。
   // 曾经这里读 `RECOMMENDED_PROJECT_PRESETS`（另一份同名、同描述的硬编码副本），
   // 而指令正文却去 `pluginRegistry.listTemplates()` 取 —— 两份定义必须手工同步，
   // 改一侧就静默失配（下拉还列着，指令悄悄变成一句描述）。现只留注册表这一份。
@@ -57,10 +67,10 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
   );
 
   const templateOptions = useMemo(() => {
-    // 快照本身不参与计算，只用于把这份列表钉在注册表版本上（否则装了/卸了模板不刷新）。
+    // 快照本身不参与计算，只用于把这份列表钉在注册表版本上（否则装了/卸了预设不刷新）。
     void templateVersion;
     return [
-      { id: "", title: "无模板" },
+      { id: "", title: "无预设" },
       ...pluginRegistry.listTemplates().map((manifest) => ({
         id: manifest.id,
         title: manifest.name,
@@ -73,10 +83,17 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
     const template = templateId
       ? pluginRegistry.listTemplates().find((m) => m.id === templateId)
       : undefined;
-    // 只写指令正文。模板声明的 defaultToolIds/defaultSkillIds 目前无人消费，
-    // 等项目预设改造定案后再决定是接线还是删掉，此处不臆造行为。
-    setInstruction(template?.templatePrompt ?? "");
+    // 写的是**持久项目指令** `instruction`，不是起手句 —— 后者（`starterPrompt`）
+    // 是一次性的「这次想问什么」，由扩展中心卡片的「插入输入框」消费。
+    setInstruction(template?.instruction ?? "");
   }, []);
+
+  // 从扩展中心「用它新建项目」进来时预设已选定：打开即套用。
+  // 必须声明在上面那条重置 effect **之后** —— 同一次提交里两个 effect 按声明顺序执行，
+  // 先清空再套用；顺序反了套用的结果会被重置覆盖掉。
+  useEffect(() => {
+    if (open && initialTemplateId) applyTemplate(initialTemplateId);
+  }, [open, initialTemplateId, applyTemplate]);
 
   const addPicked = useCallback((kind: keyof PickedPlugins, manifest: PluginManifest) => {
     setPicked((current) => {
@@ -174,7 +191,7 @@ export default function CreateProjectDialog({ open, onClose, onCreate }: CreateP
               <span className="omni-dialog__label">指令</span>
               <div className="omni-dialog__template-dropdown">
                 <button type="button" className="omni-dialog__template-trigger">
-                  <span>选择模板</span>
+                  <span>选择预设</span>
                   <ChevronDown size={14} strokeWidth={1.8} />
                 </button>
                 <div className="omni-dialog__template-menu">

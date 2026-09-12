@@ -209,16 +209,15 @@ describe("PluginMarketplace MCP 连接中间态", () => {
 });
 
 /**
- * 回归：连接器卡片必须带 `plugin-card--connector` 修饰类。
+ * 回归：连接器 / 项目预设卡片必须带 `plugin-card--compact` 修饰类。
  *
- * 该类在 plugins.css 里承载「连接器卡片的紧凑布局」：不参与描述区 3 行预留
- * （卡片底部不再空一大片）、底部按钮按内容宽度右对齐（不再 flex:1 等分拉满
- * 整行）、内边距 12px。少了它，连接器卡片会静默退回 8b29f15 的统一高度预留，
- * 而这正是用户 2026-09-12「卡片大小排版调整」要修掉的表现。
- * 技能卡片必须**不带**这个类 —— 它们仍需要预留行来保证同行等高。
+ * 该类在 plugins.css 里承载「紧凑卡片的布局」：不参与描述区 3 行预留
+ * （卡片底部不再空一大片）、底部操作行撑满整行、内边距 12px。少了它，这两类卡片
+ * 会静默退回 8b29f15 的统一高度预留，而这正是用户 2026-09-12「卡片大小排版调整」
+ * 要修掉的表现。技能卡片必须**不带**这个类 —— 它们仍需要预留行来保证同行等高。
  */
-describe("PluginMarketplace 连接器卡片紧凑布局", () => {
-  it("连接器卡片带 plugin-card--connector，技能卡片不带", async () => {
+describe("PluginMarketplace 紧凑卡片布局", () => {
+  it("连接器卡片带 plugin-card--compact，技能卡片不带", async () => {
     pluginRegistry.load();
     const connectorId = "test-compact-connector";
     const skillId = "test-compact-skill";
@@ -259,7 +258,7 @@ describe("PluginMarketplace 连接器卡片紧凑布局", () => {
     const connectorCard = (await screen.findByText("紧凑布局测试连接器")).closest(
       ".plugin-card",
     );
-    expect(connectorCard?.className ?? "").toContain("plugin-card--connector");
+    expect(connectorCard?.className ?? "").toContain("plugin-card--compact");
     connectorView.unmount();
 
     render(
@@ -275,11 +274,97 @@ describe("PluginMarketplace 连接器卡片紧凑布局", () => {
     const skillCard = (await screen.findByText("紧凑布局测试技能")).closest(
       ".plugin-card",
     );
-    expect(skillCard?.className ?? "").not.toContain("plugin-card--connector");
+    expect(skillCard?.className ?? "").not.toContain("plugin-card--compact");
+
+    // 项目预设（内置，无需安装）同样走紧凑布局：描述也只有一行，
+    // 且底部现在有「新建项目 / 插入输入框」两个真实操作。
+    const template = pluginRegistry.listTemplates()[0];
+    expect(template).toBeTruthy();
+    render(
+      <PluginMarketplace
+        mainView
+        embedded
+        source="local"
+        initialFilter={{ kind: "template" }}
+        onSourceChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const presetCard = (await screen.findByText(template.name)).closest(
+      ".plugin-card",
+    );
+    expect(presetCard?.className ?? "").toContain("plugin-card--compact");
 
     act(() => {
       pluginRegistry.uninstall(connectorId);
       pluginRegistry.uninstall(skillId);
     });
+  });
+});
+
+/**
+ * 项目预设的「真实操作」。
+ *
+ * 在此之前 `kind:"template"` 在扩展中心是条死路：操作行只在
+ * `onPick || kind === "connector"` 时渲染 ⇒ 卡片一个按钮都没有；点开详情抽屉，
+ * footer 只有「已安装（内置）」灰按钮，还显示无意义的「命令 /」—— 用户看得到、用不了。
+ * 现在预设卡片/抽屉有主操作「新建项目」（把 instruction 写进新项目）与次操作
+ * 「插入输入框」（把 starterPrompt 放进输入框草稿）。两者都**必须由宿主提供回调
+ * 才渲染**：没传就退回纯浏览态，而不是渲染一排点了没反应的按钮。
+ */
+describe("PluginMarketplace 项目预设的真实操作", () => {
+  const listTemplates = () => pluginRegistry.listTemplates();
+
+  const renderPresets = (props: Record<string, unknown> = {}) =>
+    render(
+      <PluginMarketplace
+        mainView
+        embedded
+        source="local"
+        initialFilter={{ kind: "template" }}
+        onSourceChange={vi.fn()}
+        onClose={vi.fn()}
+        {...props}
+      />,
+    );
+
+  it("未传回调时不渲染操作行（纯浏览态）", async () => {
+    pluginRegistry.load();
+    const target = listTemplates()[0];
+    expect(target).toBeTruthy();
+
+    renderPresets();
+
+    expect(await screen.findByText(target.name)).toBeTruthy();
+    expect(screen.queryByText("新建项目")).toBeNull();
+    expect(screen.queryByText("插入输入框")).toBeNull();
+  });
+
+  it("传了回调：每条预设各一个操作，且回调拿到该预设 / 它的起手句", async () => {
+    pluginRegistry.load();
+    const list = listTemplates();
+    expect(list.length).toBeGreaterThan(0);
+    const onUseTemplate = vi.fn();
+    const onInsertPrompt = vi.fn();
+
+    renderPresets({ onUseTemplate, onInsertPrompt });
+
+    const newProjectButtons = await screen.findAllByText("新建项目");
+    expect(newProjectButtons.length).toBe(list.length);
+
+    fireEvent.click(newProjectButtons[0].closest("button")!);
+    expect(onUseTemplate).toHaveBeenCalledTimes(1);
+    const picked = onUseTemplate.mock.calls[0][0];
+    expect(picked.kind).toBe("template");
+    expect(list.some((m) => m.id === picked.id)).toBe(true);
+
+    // 次操作交出去的必须是**起手句**（starterPrompt），不是持久指令（instruction）
+    const insertButtons = screen.getAllByText("插入输入框");
+    expect(insertButtons.length).toBe(list.length);
+    fireEvent.click(insertButtons[0].closest("button")!);
+    expect(onInsertPrompt).toHaveBeenCalledTimes(1);
+    const text = onInsertPrompt.mock.calls[0][0];
+    expect(list.some((m) => m.starterPrompt === text)).toBe(true);
+    expect(list.some((m) => m.instruction === text)).toBe(false);
   });
 });

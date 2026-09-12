@@ -86,6 +86,17 @@ type PluginMarketplaceProps = {
    *  不渲染自己的 source-tabs 块，由调用方（如 MainChatView）负责顶部渲染。
    *  第三方用（CreateProjectDialog 等）保持默认 false，自身渲染。 */
   omitTopTabs?: boolean;
+  /**
+   * 「项目预设」（`kind:"template"`）卡片 / 详情抽屉的主操作：点「用它新建项目」时回调。
+   * 由宿主负责真正打开新建项目对话框（预设 id 会带过去当初始值）。
+   * 不传则不渲染该操作 —— 预设卡片退回纯浏览态，和其它 kind 一致。
+   */
+  onUseTemplate?: (manifest: PluginManifest) => void;
+  /**
+   * 「项目预设」的次操作：点「插入输入框」时把预设的**起手一句**交给宿主写入输入框草稿。
+   * 传的是文本而非 manifest，宿主无需知道预设结构。不传则不渲染该按钮。
+   */
+  onInsertPrompt?: (text: string) => void;
 };
 
 /** Marketplace 二级数据源（在「一级 kind」之下的二级切换）。
@@ -109,7 +120,7 @@ const KIND_TABS: {
   { kind: "tool", label: "工具", icon: Puzzle },
   { kind: "connector", label: "连接器", icon: Cable },
   { kind: "expert", label: "专家", icon: Bot },
-  { kind: "template", label: "模板", icon: LayoutTemplate },
+  { kind: "template", label: "项目预设", icon: LayoutTemplate },
 ];
 
 const ICON_MAP: Record<string, typeof Puzzle> = {
@@ -175,6 +186,8 @@ function PluginDetailDrawer({
   onClose,
   onInstall,
   onUninstall,
+  onUseTemplate,
+  onInsertPrompt,
 }: {
   manifest: PluginManifest | null;
   isInstalled: boolean;
@@ -182,6 +195,10 @@ function PluginDetailDrawer({
   onClose: () => void;
   onInstall: (m: PluginManifest) => void;
   onUninstall: (m: PluginManifest) => void;
+  /** 「项目预设」的主操作（同 PluginMarketplaceProps.onUseTemplate）。 */
+  onUseTemplate?: (m: PluginManifest) => void;
+  /** 「项目预设」的次操作：把起手一句交给宿主写进输入框草稿。 */
+  onInsertPrompt?: (text: string) => void;
 }) {
   useEffect(() => {
     if (!manifest) return;
@@ -220,7 +237,12 @@ function PluginDetailDrawer({
             <div className="skillhub-detail__title-wrap">
               <h2>{manifest.name}</h2>
               <div className="skillhub-detail__title-row">
-                <span className="plugin-card__badge">{manifest.kind}</span>
+                {/* 徽标用中文类名（KIND_TABS 是唯一口径）；直接打印 manifest.kind 会在
+                    中文界面里露出 "template" 这种内部标识，与左侧导航「项目预设」对不上。 */}
+                <span className="plugin-card__badge">
+                  {KIND_TABS.find((item) => item.kind === manifest.kind)?.label ??
+                    manifest.kind}
+                </span>
                 {manifest.category && (
                   <span className="skillhub-detail__source">
                     {manifest.category}
@@ -275,12 +297,15 @@ function PluginDetailDrawer({
               <span className="skillhub-detail__meta-label">ID</span>
               <span className="skillhub-detail__meta-value">{manifest.id}</span>
             </div>
-            <div className="skillhub-detail__meta-item">
-              <span className="skillhub-detail__meta-label">命令</span>
-              <span className="skillhub-detail__meta-value">
-                <code>{manifest.command ?? "/"}</code>
-              </span>
-            </div>
+            {/* 「命令」对项目预设没有意义（它没有斜杠命令），显示成「命令 /」只会让人困惑。 */}
+            {manifest.kind !== "template" && (
+              <div className="skillhub-detail__meta-item">
+                <span className="skillhub-detail__meta-label">命令</span>
+                <span className="skillhub-detail__meta-value">
+                  <code>{manifest.command ?? "/"}</code>
+                </span>
+              </div>
+            )}
             <div className="skillhub-detail__meta-item">
               <span className="skillhub-detail__meta-label">来源</span>
               <span className="skillhub-detail__meta-value">
@@ -328,10 +353,68 @@ function PluginDetailDrawer({
               </pre>
             </details>
           )}
+
+          {/* 项目预设：把两个字段摊开给用户看 —— 它到底会往项目里写什么、起手句是什么。
+              这一页原先对预设是条死路（footer 只有「已安装（内置）」灰按钮），
+              至少要做到「看得懂它能干什么、怎么用」。 */}
+          {manifest.kind === "template" && manifest.instruction && (
+            <details className="skillhub-detail__description-en" open>
+              <summary>项目指令（用它新建项目时写入，之后每轮生效）</summary>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  fontFamily: "inherit",
+                  fontSize: "12px",
+                  lineHeight: 1.55,
+                }}
+              >
+                {manifest.instruction}
+              </pre>
+            </details>
+          )}
+
+          {manifest.kind === "template" && manifest.starterPrompt && (
+            <details className="skillhub-detail__description-en">
+              <summary>起手句（「插入输入框」用，一次性）</summary>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  fontFamily: "inherit",
+                  fontSize: "12px",
+                  lineHeight: 1.55,
+                }}
+              >
+                {manifest.starterPrompt}
+              </pre>
+            </details>
+          )}
         </div>
 
         <footer className="skillhub-detail__footer">
-          {isInstalled && !isBuiltin ? (
+          {manifest.kind === "template" ? (
+            <>
+              {onUseTemplate && (
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--primary"
+                  onClick={() => onUseTemplate(manifest)}
+                >
+                  <Plus size={14} strokeWidth={1.8} />
+                  <span>用它新建项目</span>
+                </button>
+              )}
+              {onInsertPrompt && manifest.starterPrompt && (
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--secondary"
+                  onClick={() => onInsertPrompt(manifest.starterPrompt ?? "")}
+                >
+                  <Wand2 size={14} strokeWidth={1.8} />
+                  <span>插入输入框</span>
+                </button>
+              )}
+            </>
+          ) : isInstalled && !isBuiltin ? (
             <>
               <button
                 type="button"
@@ -392,6 +475,8 @@ export default function PluginMarketplace({
   source: controlledSource,
   onSourceChange,
   omitTopTabs = false,
+  onUseTemplate,
+  onInsertPrompt,
 }: PluginMarketplaceProps) {
   const [query, setQuery] = useState(initialFilter.query ?? "");
   // 搜索框以「开关」形式展开/收起：mainView 顶部为折叠图标，点击展开全宽单行搜索框。
@@ -637,7 +722,7 @@ export default function PluginMarketplace({
       case "template":
         return {
           icon: LayoutTemplate,
-          title: "没有找到匹配的模板",
+          title: "没有找到匹配的项目预设",
           hint: "试试其他关键词",
         };
       default:
@@ -1133,18 +1218,20 @@ export default function PluginMarketplace({
       }
       const isSelected = inBatch && selectedIds.has(manifest.id);
       const enabled = pluginRegistry.isEnabled(manifest.id);
-      // 连接器卡片走紧凑布局（见 plugins.css `.plugin-card--connector`）：
-      // 描述区不参与「统一高度」的预留行，底部按钮按内容宽度右对齐。
-      // 技能 / SkillHub 卡片仍保持 8b29f15 的同行等高策略，不受影响。
-      const connectorClass =
-        manifest.kind === "connector" ? " plugin-card--connector" : "";
+      // 连接器 / 项目预设卡片走紧凑布局（见 plugins.css `.plugin-card--compact`）：
+      // 描述区不参与「统一高度」的预留行，操作行撑满整行。这两类的描述基本只有一行、
+      // 且底部有真实操作按钮；技能 / SkillHub 卡片仍保持 8b29f15 的同行等高策略。
+      const compactClass =
+        manifest.kind === "connector" || manifest.kind === "template"
+          ? " plugin-card--compact"
+          : "";
       const cardClass =
         (inBatch
           ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
           : onPick
             ? `plugin-card plugin-card--pickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
             : `plugin-card plugin-card--clickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
-        ).trim() + connectorClass;
+        ).trim() + compactClass;
       const cardRole: "button" | "checkbox" = inBatch ? "checkbox" : "button";
       return (
         <div
@@ -1247,7 +1334,9 @@ export default function PluginMarketplace({
               都不再在卡片底部展示按钮行——卡片可整体点击打开详情抽屉，所有
               安装 / 卸载 / 已安装 等单卡操作统一入口。避免在 4 列
               grid 下视觉拥挤 + 防止误触「删除」按钮。 */}
-          {(onPick || manifest.kind === "connector") && (
+          {(onPick ||
+            manifest.kind === "connector" ||
+            (manifest.kind === "template" && Boolean(onUseTemplate))) && (
             <div
               className="plugin-card__actions"
               onClick={(e) => e.stopPropagation()}
@@ -1364,6 +1453,35 @@ export default function PluginMarketplace({
                         </span>
                       </button>
                     )
+                  ) : null}
+                </>
+              ) : manifest.kind === "template" && onUseTemplate ? (
+                <>
+                  <button
+                    type="button"
+                    className="plugin-card__button plugin-card__button--primary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUseTemplate(manifest);
+                    }}
+                    title="用这个预设新建项目（指令已按预设填好，仍可编辑）"
+                  >
+                    <Plus size={14} strokeWidth={1.8} />
+                    <span>新建项目</span>
+                  </button>
+                  {onInsertPrompt && manifest.starterPrompt ? (
+                    <button
+                      type="button"
+                      className="plugin-card__button plugin-card__button--secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onInsertPrompt(manifest.starterPrompt ?? "");
+                      }}
+                      title="把预设的起手一句放进输入框，可自行修改后再发送"
+                    >
+                      <Wand2 size={14} strokeWidth={1.8} />
+                      <span>插入输入框</span>
+                    </button>
                   ) : null}
                 </>
               ) : installed && !pluginRegistry.isBuiltin(manifest.id) ? (
@@ -2026,7 +2144,7 @@ export default function PluginMarketplace({
                     if (targets.length === 0) return;
                     setConfirmDialog({
                       title: "确认批量卸载",
-                      message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 专家团 / 工具 / 连接器 / 专家 / 模板）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
+                      message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 专家团 / 工具 / 连接器 / 专家 / 项目预设）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
                       danger: true,
                       onConfirm: () => handleBatchAllUninstall(),
                     });
@@ -2204,7 +2322,7 @@ export default function PluginMarketplace({
             <span>{stats.tool} 工具</span>
             <span>{stats.connector} 连接器</span>
             <span>{stats.expert} 专家</span>
-            <span>{stats.template} 模板</span>
+            <span>{stats.template} 项目预设</span>
           </div>
         </div>
 
@@ -2217,6 +2335,8 @@ export default function PluginMarketplace({
           onClose={() => setDetailManifest(null)}
           onInstall={(m) => void handleInstall(m)}
           onUninstall={(m) => void handleUninstall(m)}
+          onUseTemplate={onUseTemplate}
+          onInsertPrompt={onInsertPrompt}
         />
 
         {/* 危险操作二次确认 dialog（参考 .omni-confirm-overlay / .omni-confirm-dialog

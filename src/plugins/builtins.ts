@@ -553,59 +553,89 @@ export const BUILTIN_EXPERT_PLUGINS: PluginManifest[] = [
   },
 ];
 
+/**
+ * 内置项目预设（`kind:"template"`）。
+ *
+ * 定位是**新建项目时的起点**，不是「可安装的插件」、也不是「角色」——所以：
+ * - `instruction` 写进 `project.systemPrompt`（持久项目指令，每轮都生效）；
+ * - `starterPrompt` 是点「插入输入框」时放进草稿的**起手一句**（一次性）。
+ *   两者曾经挤在 `templatePrompt` 一个字段里，结果一句「请帮我梳理…」的用户问句
+ *   被当成持久项目系统指令写进了项目，语义是反的。
+ * - **不声明 `defaultToolIds`**：它们只会是空操作。这里原本给每条预设列了
+ *   `list_files/read_file/search_files` 之类的工具，但这些都是 `BUILTIN_TOOL_IDS`
+ *   ——内置工具**无条件可用、不受项目 allowedToolIds 限制**（见 `config/manifests/tools.ts`），
+ *   所以既没人读（`CreateProjectDialog` 只把 selectedTemplateId 写进指令），
+ *   真接上也不产生任何约束。要表达「能力边界」得用别的机制，别在这里留假数据。
+ */
 export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
   {
     id: "solution-planner",
-    name: "方案梳理助手",
-    description: "帮你拆解需求、整理方案并规划执行步骤。",
-    version: "1.0.0",
+    name: "方案梳理",
+    description: "以方案梳理起手：拆解目标与约束，给出可选方案与对比维度。",
+    version: "2.0.0",
     author: "Omni",
     kind: "template",
     category: "商业运营",
     icon: "Map",
-    templatePrompt: "请帮我梳理当前问题的背景、目标、约束、可选方案和下一步执行计划。",
-    defaultToolIds: ["search_sessions", "read_session"],
-    defaultSkillIds: [],
+    tags: ["planning", "decision", "steps"],
+    instruction: [
+      "本项目以方案梳理为主。",
+      "收到需求后先拆解背景、目标与约束，再给出至少两个可选方案及其对比维度（成本 / 风险 / 收益），",
+      "最后附下一步执行清单（做什么 / 验收标准）。结论先行，信息不足处明确标注所做假设，不写空泛的正确的废话。",
+    ].join(""),
+    starterPrompt: "请帮我梳理当前问题的背景、目标、约束、可选方案和下一步执行计划。",
   },
   {
     id: "code-debugger",
-    name: "代码排查助手",
-    description: "适合定位报错、梳理链路和修复方向。",
-    version: "1.0.0",
+    name: "代码排查",
+    description: "以排查起手：从报错与堆栈定位根因，给出最小复现与修复方案。",
+    version: "2.0.0",
     author: "Omni",
     kind: "template",
     category: "开发编程",
     icon: "Bug",
-    templatePrompt:
-      "请帮我定位问题根因。优先查看报错堆栈和相关代码，给出最小复现步骤和修复方案。",
-    defaultToolIds: ["list_files", "read_file", "search_files"],
-    defaultSkillIds: [],
+    tags: ["debug", "rootcause", "repro"],
+    instruction: [
+      "本项目以代码排查为主。",
+      "先查证再下结论：结论必须附「文件路径 + 行号」证据，不凭空猜测；",
+      "按 现象 → 直接原因 → 根本原因 → 修复方案 的顺序讲透，一次讲完；",
+      "给出的代码要完整可运行，标明改动文件与插入位置，无法确定的部分列出明确的验证步骤。",
+    ].join(""),
+    starterPrompt: "请帮我定位问题根因。优先查看报错堆栈和相关代码，给出最小复现步骤和修复方案。",
   },
   {
     id: "copy-polisher",
-    name: "文案润色助手",
-    description: "用于改写说明文档、PR 描述和提示词。",
-    version: "1.0.0",
+    name: "文案润色",
+    description: "以改稿起手：保持原意，优化结构与语气，交付可直接使用的成稿。",
+    version: "2.0.0",
     author: "Omni",
     kind: "template",
     category: "内容创作",
     icon: "Highlighter",
-    templatePrompt: "请润色下面这段文字，使其表达清晰、自然、可直接使用，并保持原意不变。",
-    defaultToolIds: ["read_file"],
-    defaultSkillIds: [],
+    tags: ["writing", "polish", "docs"],
+    instruction: [
+      "本项目以文稿润色与撰写为主。",
+      "改写必须保持原意不变，只优化结构、语气与可读性，直接交付可使用的成稿，并逐条说明重要改动的理由；",
+      "动笔前先确认文体与受众，涉及事实与数据时先查证，不编造数字与引用。",
+    ].join(""),
+    starterPrompt: "请润色下面这段文字，使其表达清晰、自然、可直接使用，并保持原意不变。",
   },
   {
     id: "command-helper",
-    name: "效率命令助手",
-    description: "快速生成常用命令、脚本和操作建议。",
-    version: "1.0.0",
+    name: "命令与脚本",
+    description: "以命令起手：生成可执行的命令或脚本，说明关键参数与风险。",
+    version: "2.0.0",
     author: "Omni",
     kind: "template",
     category: "开发编程",
     icon: "Terminal",
-    templatePrompt: "请根据我的需求生成对应的命令或脚本，并说明每个关键参数的含义和风险。",
-    defaultToolIds: ["search_sessions"],
-    defaultSkillIds: [],
+    tags: ["shell", "script", "risk"],
+    instruction: [
+      "本项目以命令与脚本产出为主。",
+      "给出的命令必须可直接执行，逐项说明关键参数的含义与风险；",
+      "涉及删除、覆盖、递归等破坏性操作时，先提示风险并给出确认步骤，不要默认用户已授权。",
+    ].join(""),
+    starterPrompt: "请根据我的需求生成对应的命令或脚本，并说明每个关键参数的含义和风险。",
   },
 ];
 

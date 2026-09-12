@@ -894,7 +894,7 @@ function MainApp() {
           onSubmitEditedUserMessage={handleSubmitEditedUserMessage}
           onToggleFavoriteChat={handleToggleFavoriteChat}
           onTogglePinChat={handleTogglePinChat}
-          onUseEmptyPrompt={handleUseEmptyPrompt}
+          onUsePromptDraft={handleUseEmptyPrompt}
           onDraftChange={handleComposerDraftChange}
           onJumpToChat={handleJumpToChat}
           onOpenKnowledge={() => setView("knowledge")}

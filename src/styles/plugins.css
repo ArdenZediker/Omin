@@ -846,36 +846,39 @@
   flex-shrink: 0;
 }
 
-/* 连接器卡片：紧凑布局（用户 2026-09-12「卡片大小排版调整」）。
- * 与技能 / SkillHub 卡片不同，连接器卡片**不进**「统一高度」策略 ——
- * 后者靠 .plugin-card__description 的 min-height:calc(3*1.5em) 给短描述补
- * 留白来对齐同行卡片（8b29f15）。连接器数量少、描述基本只有一行，那两行
- * 留白只让卡片底部空出一大片，并不换来任何对齐收益，故整个不参与。
+/* 紧凑卡片：连接器 + 项目预设（`PluginMarketplace.renderPluginCard` 按 kind 加类）。
+ * 用户 2026-09-12「卡片大小排版调整」提出，当天三轮收敛到现在的形态。
  *
- * 底部「配置 / N 工具 / 断开」**撑满整行、行内零空档**。这一行来回改过三轮，
- * 落点很明确：「按内容宽度不拉满」必然在行的某一端留下空档 —— 贴左把空档留在
- * 行尾（用户第三轮「下边按钮还是有空处」），贴右留在行首（第二轮「只有两个
- * 按钮的时候，错位了」）。用户三轮反馈指向的都是「没有空处」，所以定在撑满。
+ * 与技能 / SkillHub 卡片不同，这两类**不进**「统一高度」策略 —— 后者靠
+ * .plugin-card__description 的 min-height:calc(3*1.5em) 给短描述补留白来对齐同行卡片
+ * （8b29f15）。连接器与项目预设数量少、描述基本只有一行，那两行留白只让卡片底部
+ * 空出一大片，并不换来任何对齐收益，故整个不参与。
+ *
+ * 底部操作行（连接器「配置 / N 工具 / 断开」、项目预设「新建项目 / 插入输入框」）
+ * **撑满整行、行内零空档**。这一行来回改过三轮，落点很明确：「按内容宽度不拉满」
+ * 必然在行的某一端留下空档 —— 贴左把空档留在行尾（用户第三轮「下边按钮还是有空处」），
+ * 贴右留在行首（第二轮「只有两个按钮的时候，错位了」）。用户三轮反馈指向的都是
+ * 「没有空处」，所以定在撑满。
  * 实测（output/card-layout-preview/align.html，380px 卡片、两按钮）：
  *   右对齐 → 行首空档 172px；左对齐 → 行尾空档 172px；撑满 → 0 / 0。 */
-.plugin-card--connector {
+.plugin-card--compact {
   padding: 12px;
   gap: 10px;
 }
 
-.plugin-card--connector .plugin-card__description {
+.plugin-card--compact .plugin-card__description {
   min-height: 0;
 }
 
-.plugin-card--connector .plugin-card__actions {
-  /* 不折行：行内最多三块（配置 / N 工具 / 断开），四列网格下卡片内容区最窄约
-   * 246px，留着 .plugin-card__actions 基类的 flex-wrap:wrap，最后一块会被挤到
-   * 第二行。允许收缩 + 不折行最稳（最紧时也只挤出几像素）。 */
+.plugin-card--compact .plugin-card__actions {
+  /* 不折行：行内最多三块，四列网格下卡片内容区最窄约 246px，留着
+   * .plugin-card__actions 基类的 flex-wrap:wrap，最后一块会被挤到第二行。
+   * 允许收缩 + 不折行最稳（最紧时也只挤出几像素）。 */
   flex-wrap: nowrap;
 }
 
-.plugin-card--connector .plugin-card__actions > .plugin-card__button,
-.plugin-card--connector .plugin-card__actions > .plugin-card__connected {
+.plugin-card--compact .plugin-card__actions > .plugin-card__button,
+.plugin-card--compact .plugin-card__actions > .plugin-card__connected {
   /* 按内容宽做基准 + 均分剩余空间 → 撑满整行、行内不留空档。
    * .plugin-card__connected 的基类是 flex:1（即 flex-basis:0），窄行里会被压到
    * 比「12 工具」还窄、文字溢出，所以一并写死 1 1 auto。

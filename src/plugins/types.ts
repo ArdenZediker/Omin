@@ -1,6 +1,6 @@
 /**
  * Omni 统一插件系统（受 SkillHub / DeepSeek Harness 启发）
- * 「一切皆插件」：技能、工具、连接器、专家、项目模板都走同一套 manifest + registry。
+ * 「一切皆插件」：技能、工具、连接器、专家、项目预设都走同一套 manifest + registry。
  */
 
 export type PluginKind = "skill" | "tool" | "connector" | "expert" | "template";
@@ -75,11 +75,24 @@ export type PluginManifest = {
   configFields?: PluginConfigField[];
 
   // ---- expert / template ----
-  /** 专家系统提示词或项目模板完整指令 */
+  /** 专家系统提示词（角色定义，长文；子 Agent 运行规则由 `chat/subAgent.ts` 运行时追加）。 */
   templatePrompt?: string;
-  /** 项目模板推荐默认 allowedToolIds */
+  /**
+   * `kind:"template"` 专用：**持久项目指令**，新建项目时写进 `project.systemPrompt`。
+   *
+   * 与 `starterPrompt` 必须分开 —— 两者曾经挤在 `templatePrompt` 一个字段里，
+   * 结果那句「请帮我梳理当前问题的背景…」这种**一次性用户问句**被当成**每轮都生效的
+   * 项目系统指令**写进了项目。这里放的是"这个项目该怎么干活"，不是"这次想问什么"。
+   */
+  instruction?: string;
+  /**
+   * `kind:"template"` 专用：**起手一句**，点「插入输入框」时写进输入框草稿（不直接发送）。
+   * 语义等同空态推荐卡（`app/constants.ts::EMPTY_CHAT_STARTERS.prompt`），只是来源不同。
+   */
+  starterPrompt?: string;
+  /** 项目预设推荐默认 allowedToolIds */
   defaultToolIds?: string[];
-  /** 项目模板推荐默认 allowedSkillIds */
+  /** 项目预设推荐默认 allowedSkillIds */
   defaultSkillIds?: string[];
   /**
    * 专家绑定的 MCP 连接器 id（连接器 manifest id 即 MCP 的 serverId，
