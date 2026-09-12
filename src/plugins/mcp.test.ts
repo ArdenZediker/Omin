@@ -258,3 +258,74 @@ describe("MCP 工具声明预算（selectMcpToolsWithinBudget）", () => {
     expect(selection.tools[0].parameters).toEqual({ type: "object", properties: {} });
   });
 });
+
+/**
+ * 项目级连接器白名单（`Project.allowedConnectorIds`）。
+ *
+ * 锁三件事：
+ * 1. **注入侧**：`listActiveMcpTools(ids)` 只放行列出的连接器；
+ * 2. **兼容线**：空数组与缺省**同义**，都表示「不限制」。存量项目没有这个字段，
+ *    若把「空」读成「一个都不启用」，升级后所有项目会静默丢掉全部 MCP 工具；
+ * 3. **执行侧**：被项目排除的连接器即便已信任、已连接，也要拒绝执行其工具 ——
+ *    模型可以自行编造 `mcp__` 名字，这与信任校验是同一类风险。两侧必须共用同一判据，
+ *    否则会出现「工具列表里没有它、却调得通」这种自相矛盾的行为。
+ */
+describe("项目级连接器白名单（allowedConnectorIds）", () => {
+  const SCOPE_IDS = ["proj-a", "proj-b", "proj-c"];
+
+  beforeEach(async () => {
+    state.enabled.clear();
+    // 清 configs 等于清掉全部信任（isTrustedById 读的就是它），因此上一个 describe
+    // 遗留在 connectedServers 里的连接不会被本组用例看见。
+    state.configs.clear();
+    startedServers.length = 0;
+    stoppedServers.length = 0;
+    for (const id of SCOPE_IDS) {
+      await disconnectMcpConnector(id);
+    }
+  });
+
+  /** 建立「已启用 + 已信任 + 已连接」的连接器（每个暴露一个 read_file）。 */
+  const connectTrusted = async (id: string) => {
+    const { ensureMcpConnector, setConnectorTrusted } = await import("./mcp");
+    const manifest = setupConnector(id);
+    setConnectorTrusted(manifest, true);
+    await ensureMcpConnector(manifest);
+  };
+
+  it("空数组与缺省同义：都表示不限制（存量项目兼容线）", async () => {
+    const { listActiveMcpTools } = await import("./mcp");
+    await connectTrusted("proj-a");
+    await connectTrusted("proj-b");
+
+    const unlimited = listActiveMcpTools(undefined).map((t) => t.name).sort();
+    expect(unlimited).toEqual(["mcp__proj-a__read_file", "mcp__proj-b__read_file"]);
+    // 关键：空数组**不能**等于「谁都不给」
+    expect(listActiveMcpTools([]).map((t) => t.name).sort()).toEqual(unlimited);
+  });
+
+  it("给了非空白名单就只放行列出的连接器", async () => {
+    const { listActiveMcpTools } = await import("./mcp");
+    await connectTrusted("proj-a");
+    await connectTrusted("proj-b");
+
+    expect(listActiveMcpTools(["proj-b"]).map((t) => t.name)).toEqual(["mcp__proj-b__read_file"]);
+  });
+
+  it("白名单里写不存在的连接器 id：不放行任何东西，也不抛异常", async () => {
+    const { listActiveMcpTools } = await import("./mcp");
+    await connectTrusted("proj-a");
+
+    expect(listActiveMcpTools(["不存在的连接器"])).toHaveLength(0);
+  });
+
+  it("被项目排除的连接器：即便已信任、已连接，也拒绝执行其工具", async () => {
+    const { executeMcpToolCall } = await import("./mcp");
+    await connectTrusted("proj-c");
+
+    const denied = await executeMcpToolCall("mcp__proj-c__read_file", "{}", ["proj-other"]);
+
+    expect(denied).toContain("未在本项目中启用");
+    expect(denied).toContain("已拒绝调用");
+  });
+});

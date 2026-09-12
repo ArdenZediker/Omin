@@ -2,7 +2,7 @@ import type { PluginManifest } from "./types";
 
 /**
  * 内置插件目录。
- * 把原来散落各处的 skill / tool / connector preset / project preset / expert 统一收敛到 manifest，
+ * 把原来散落各处的 skill / tool / connector preset / project preset 统一收敛到 manifest，
  * 新增能力只需新增一条 manifest，无需改业务代码。
  */
 
@@ -20,7 +20,7 @@ export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
     command: "/expert-manager",
     systemPrompt: `你是 Omni 的专家包管理器，帮助用户按 Omni 插件规范创建和维护专家（kind: "expert" 的插件条目）。
 
-【Omni 专家是什么】在 Omni 中，专家是一条 PluginManifest(kind: "expert")，定位是「子 Agent 的配置档案」：templatePrompt 是角色提示词，defaultToolIds/defaultSkillIds 决定其能力边界。运行期两种生效方式：①主模型通过 agent 工具委派子任务（按档案驱动子 Agent）；②用户 @ 指定切换主对话角色。内置专家定义在 src/plugins/builtins.ts 的 BUILTIN_EXPERT_PLUGINS，安装的专家由 pluginRegistry 存入本地存储。本技能产出结构化的专家定义（可 JSON 展示），而不是 WorkBuddy 式 plugin.json + agents/*.md + marketplace.json 文件包。提示：用户也可以不经过对话，直接在「扩展中心 → 专家 → 创建专家」用表单创建。
+【Omni 专家是什么】在 Omni 中，专家是一条 PluginManifest(kind: "expert")，定位是「子 Agent 的配置档案」：templatePrompt 是角色提示词，defaultToolIds/defaultSkillIds 决定其能力边界。运行期两种生效方式：①主模型通过 agent 工具委派子任务（按档案驱动子 Agent）；②用户 @ 指定切换主对话角色。Omni 不内置任何专家（内置专家已于 2026-09-13 全部移除），所有专家都由用户自建、或由本技能生成后安装，pluginRegistry 存入本地存储。本技能产出结构化的专家定义（可 JSON 展示），而不是 WorkBuddy 式 plugin.json + agents/*.md + marketplace.json 文件包。提示：用户也可以不经过对话，直接在「扩展中心 → 专家 → 创建专家」用表单创建。
 
 【字段规范】生成专家时必须严格遵循以下字段：
 - id：kebab-case 唯一标识（如 dev-expert），创建后不可改
@@ -42,11 +42,11 @@ export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
 
 【场景 B：资料转化】用户提供文档/提示词/流程时：①读取并提取角色定义、核心能力、SOP、输出规范、约束、参考材料、角色分工；②推断 expertType 与 category 并向用户说明理由；③确认后按字段规范生成。
 
-【场景 C：修改已有专家】定位目标专家（内置或已安装）→ 确认修改范围 → 仅修改用户要求的部分，保持风格一致 → 重新校验。严禁修改 id（唯一标识，改名需新建）。
+【场景 C：修改已有专家】定位目标专家（已安装的专家）→ 确认修改范围 → 仅修改用户要求的部分，保持风格一致 → 重新校验。严禁修改 id（唯一标识，改名需新建）。
 
 【校验自检清单】生成后逐项检查：id 为 kebab-case；tags 恰好 3 个；description 简洁准确；templatePrompt 不含 [TODO]/占位符且可执行；category 与能力匹配；defaultToolIds/defaultSkillIds 引用的 id 真实存在；无同名（id 冲突）专家。
 
-【交付】输出完整专家定义（JSON）供用户核对；用户确认后，调用 install_expert 工具把该定义注册进本地插件库（工具参数为完整专家 manifest JSON）。注册成功后如实告知用户：专家已安装，可在「专家分类 → 我的专家」查看与使用；若用户希望成为所有用户可见的内置专家，才说明需要写入 builtins.ts 的 BUILTIN_EXPERT_PLUGINS（需开发者操作）。注册返回失败（如 id 冲突、字段校验不过）时，按错误提示修正后重试。`,
+【交付】输出完整专家定义（JSON）供用户核对；用户确认后，调用 install_expert 工具把该定义注册进本地插件库（工具参数为完整专家 manifest JSON）。注册成功后如实告知用户：专家已安装，可在「专家分类 → 我的专家」查看与使用。Omni 不再内置专家，无需（也无法）把专家写进 builtins.ts —— 不要向用户承诺「变成内置专家」这件事。注册返回失败（如 id 冲突、字段校验不过）时，按错误提示修正后重试。`,
   },
   {
     id: "plan",
@@ -475,83 +475,18 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
 ];
 
 /**
- * 内置专家 = 子 Agent 档案（新模型，2026-09-08 定稿）：
- * description 面向「委派匹配」撰写（主模型据此决定派谁）；
- * templatePrompt 为可直接执行的角色定义（角色定位 + 工作方式 + 输出偏好，
- * 子 Agent 运行规则由 subAgent.ts 运行时统一追加，此处不重复）；
- * defaultToolIds/defaultSkillIds 决定该专家被委派或 @ 指定时的能力边界。
+ * 内置专家：**已彻底移除**（2026-09-13），Omni 不再内置任何专家。
+ *
+ * 原因：原 dev-expert / writer-expert / pm-expert 三条在「能力」维度上并不比通用
+ * 只读调研子 Agent 强 —— `defaultToolIds` 全是 `subAgent.ts::SUB_AGENT_TOOL_IDS`
+ * 的真子集（只会缩权）、`defaultSkillIds` 为空、也不声明 `defaultMcpConnectorIds`，
+ * 净效果只是把通用调研提示词换成人设（外加默认走 capable 档模型，那与专家内容无关）。
+ * 现在专家一律由用户在「扩展中心 → 专家 → 我的专家 → 创建专家」自建，
+ * 或由内置技能「专家管理」生成后经 `install_expert` 安装。
+ *
+ * ⚠️ 勿再往这里加内置专家：内置项不可编辑、不可卸载（`registry.isBuiltin`），
+ * 一旦加进来就是撤不掉的死条目；且「替用户预设工作角色」与专家的定位冲突。
  */
-export const BUILTIN_EXPERT_PLUGINS: PluginManifest[] = [
-  {
-    id: "dev-expert",
-    name: "编程专家",
-    description:
-      "代码类子任务首选：读代码定位问题、审查改动、评估技术方案、产出可运行的修复代码或排查报告。",
-    version: "2.0.0",
-    author: "Omni",
-    kind: "expert",
-    category: "开发编程",
-    icon: "Code2",
-    tags: ["coding", "review", "architecture"],
-    templatePrompt: [
-      "你是资深软件工程师（主攻 TypeScript/React 前端与 Rust 后端）。",
-      "",
-      "工作方式：",
-      "- 先查证再下结论：用工具读取代码、搜索历史会话，结论必须附「文件路径+行号」证据，不凭空猜测。",
-      "- 定位问题按根因链展开：现象 → 直接原因 → 根本原因 → 修复方案，一次讲透。",
-      "- 给出的代码必须完整可运行，标明改动文件与插入位置；无法确定的部分列出明确验证步骤。",
-      "- 输出紧凑：结论先行、方案分点，不写与任务无关的铺垫和寒暄。",
-    ].join("\n"),
-    defaultToolIds: ["list_files", "read_file", "search_files", "git_info", "search_sessions"],
-    defaultSkillIds: [],
-  },
-  {
-    id: "writer-expert",
-    name: "写作专家",
-    description:
-      "文稿产出与润色类子任务首选：说明文档、公告、PR 描述、提示词优化，交付可直接使用的成稿。",
-    version: "2.0.0",
-    author: "Omni",
-    kind: "expert",
-    category: "内容创作",
-    icon: "PenTool",
-    tags: ["writing", "polish", "docs"],
-    templatePrompt: [
-      "你是专业文字编辑与撰稿人。",
-      "",
-      "工作方式：",
-      "- 动笔前先确认文体与受众：说明文、公告、PR 描述、提示词各有固定结构，按文体套对应框架。",
-      "- 润色保持原意不变：优化结构、语气与可读性，直接给出可使用的成稿版本，重要改动逐条说明理由。",
-      "- 涉及事实与数据时先用工具查证（读文件、搜历史会话），不编造数字与引用。",
-      "- 交付格式：直接给成稿 + 简短修改说明；长文先给大纲确认结构再展开正文。",
-    ].join("\n"),
-    defaultToolIds: ["read_file", "search_files", "search_sessions", "read_session"],
-    defaultSkillIds: [],
-  },
-  {
-    id: "pm-expert",
-    name: "产品方案专家",
-    description:
-      "需求拆解与决策类子任务首选：方案比较、执行规划、风险评估，交付结论明确的建议书。",
-    version: "2.0.0",
-    author: "Omni",
-    kind: "expert",
-    category: "商业运营",
-    icon: "LayoutTemplate",
-    tags: ["planning", "decision", "prd"],
-    templatePrompt: [
-      "你是资深产品经理，擅长把模糊诉求变成可执行方案。",
-      "",
-      "工作方式：",
-      "- 结构化拆解：目标 → 约束 → 可选方案（至少 2 个）→ 对比维度（成本/风险/收益）→ 推荐与依据。",
-      "- 主动用会话检索工具查找相关背景与既有决策，避免重复讨论或与历史结论冲突。",
-      "- 结论先行：先给推荐项，再展开对比分析；信息不足处明确标注所做假设。",
-      "- 每个方案附下一步行动清单（做什么 / 验收标准），不输出空泛的正确的废话。",
-    ].join("\n"),
-    defaultToolIds: ["search_sessions", "read_session", "read_file", "web_search"],
-    defaultSkillIds: [],
-  },
-];
 
 /**
  * 内置项目预设（`kind:"template"`）。
@@ -642,7 +577,6 @@ export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
 export const BUILTIN_PLUGINS: PluginManifest[] = [
   ...BUILTIN_SKILL_PLUGINS,
   ...BUILTIN_TOOL_PLUGINS,
-  ...BUILTIN_EXPERT_PLUGINS,
   ...BUILTIN_TEMPLATE_PLUGINS,
 ];
 

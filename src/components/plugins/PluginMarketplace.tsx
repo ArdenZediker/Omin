@@ -66,7 +66,6 @@ import OmniSwitch from "../ui/OmniSwitch";
 
 type PluginMarketplaceProps = {
   initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind };
-  onPick?: (manifest: PluginManifest) => void;
   onClose: () => void;
   embedded?: boolean;
   mainView?: boolean;
@@ -102,7 +101,7 @@ type PluginMarketplaceProps = {
 /** Marketplace 二级数据源（在「一级 kind」之下的二级切换）。
  *  - skill     → local = "我的技能"，skillhub = "SkillHub 实时"，suites = "专家团"，connectors = "远程技能"
  *  - connector → local = "我的连接器"（仅 MCP；原远程接入市场已并入「我的技能」的「远程技能」tab）
- *  - expert    → my = "我的专家"，local = "本地内置"
+ *  - expert    → my = "我的专家"（专家不再内置，已无 local 视图）
  *  - tool/template → 只能 local */
 export type MarketplaceSource =
   | "local"
@@ -413,6 +412,21 @@ function PluginDetailDrawer({
                   <span>插入输入框</span>
                 </button>
               )}
+              {/* 自建预设必须能删。template 分支原本直接抢在
+                  `isInstalled && !isBuiltin`（下面的卸载分支）之前，于是**任何**非内置预设
+                  都拿不到卸载入口 —— 项目设置「另存为预设」一上线，用户存下的预设就成了
+                  只能进不能出的死胡同。内置预设仍不可删（不受影响，它们走不到这里）。 */}
+              {isInstalled && !isBuiltin && (
+                <button
+                  type="button"
+                  className="plugin-card__button plugin-card__button--danger"
+                  onClick={() => onUninstall(manifest)}
+                  title="删除这个自建预设（不影响已用它的项目）"
+                >
+                  <Trash2 size={14} strokeWidth={1.8} />
+                  <span>删除</span>
+                </button>
+              )}
             </>
           ) : isInstalled && !isBuiltin ? (
             <>
@@ -465,7 +479,6 @@ function PluginDetailDrawer({
 
 export default function PluginMarketplace({
   initialFilter = {},
-  onPick,
   onClose,
   embedded = false,
   mainView = false,
@@ -530,7 +543,7 @@ export default function PluginMarketplace({
   );
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
-  // 详情抽屉选中（点击整卡打开）。onPick 模式下用 onPick 选择，不打开详情。
+  // 详情抽屉选中（点击整卡打开）。
   const [detailManifest, setDetailManifest] = useState<PluginManifest | null>(
     null,
   );
@@ -585,14 +598,13 @@ export default function PluginMarketplace({
   }, [kind, query, refreshKey]);
 
   // SkillHub / 专家团浏览界面只在「技能」一级分类下出现；远程连接器只在「连接器」下出现。
-  const showSkillhub = !onPick && source === "skillhub" && kind === "skill";
-  const showSuites = !onPick && source === "suites" && kind === "skill";
-  const showConnectorhub =
-    !onPick && source === "connectors" && kind === "skill";
+  const showSkillhub = source === "skillhub" && kind === "skill";
+  const showSuites = source === "suites" && kind === "skill";
+  const showConnectorhub = source === "connectors" && kind === "skill";
   // 「我的专家」：用户自己创建/安装的专家（非内置）。
-  const showMyExperts = !onPick && source === "my" && kind === "expert";
+  const showMyExperts = source === "my" && kind === "expert";
   // 「我的技能」：用户已安装/内置的本地技能（不混入 SkillHub/专家团），按用户要求不分类、一栏通览。
-  const showMySkills = !onPick && source === "local" && kind === "skill";
+  const showMySkills = source === "local" && kind === "skill";
 
   // 「我的技能」tab 下的批量管理模式：toggle 切换，多选删除已安装技能（2026-09-01）
   const [batchMode, setBatchMode] = useState(false);
@@ -630,13 +642,13 @@ export default function PluginMarketplace({
   const skillsetSlugs = useMemo(() => collectSkillsetSlugs(), [refreshKey]);
 
   // 属于这些已安装专家团的子技能 id：在「我的技能」里不单独平铺。
-  // 批量模式与技能选择器（onPick）不过滤 —— 那两个场景要逐项勾选/卸载，
+  // 「我的技能」在批量模式下不过滤 —— 那个场景要逐项勾选/卸载，
   // 隐藏项会让用户以为技能不见了。
   const skillsetChildIds = useMemo(
     () => collectSkillsetChildIds(skillsetSlugs.values()),
     [skillsetSlugs],
   );
-  const hideSkillsetChildren = showMySkills && !onPick && !batchMode;
+  const hideSkillsetChildren = showMySkills && !batchMode;
 
   // 历史回填：本字段引入之前装的子技能没有归属记录，会一直散在平铺列表里。
   // 这里对已安装的套件各拉一次详情，把已装的子技能补上归属（best-effort，
@@ -1198,9 +1210,9 @@ export default function PluginMarketplace({
       const isBuiltin = pluginRegistry.isBuiltin(manifest.id);
       const inBatch = batchMode && showMySkills && !isBuiltin;
       // 已安装的专家团在「我的技能」里渲染为可展开的套件卡片
-      // （批量模式与技能选择器仍用普通卡片，避免干扰选择逻辑）。
+      // （批量模式仍用普通卡片，避免干扰选择逻辑）。
       const skillsetSlug =
-        showMySkills && !onPick && !inBatch
+        showMySkills && !inBatch
           ? (skillsetSlugs.get(manifest.id) ?? null)
           : null;
       if (skillsetSlug) {
@@ -1228,9 +1240,7 @@ export default function PluginMarketplace({
       const cardClass =
         (inBatch
           ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
-          : onPick
-            ? `plugin-card plugin-card--pickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
-            : `plugin-card plugin-card--clickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
+          : `plugin-card plugin-card--clickable ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
         ).trim() + compactClass;
       const cardRole: "button" | "checkbox" = inBatch ? "checkbox" : "button";
       return (
@@ -1241,26 +1251,19 @@ export default function PluginMarketplace({
           aria-checked={inBatch ? isSelected : undefined}
           tabIndex={0}
           onClick={
-            inBatch
-              ? () => toggleSelected(manifest.id)
-              : onPick
-                ? () => onPick(manifest)
-                : () => setDetailManifest(manifest)
+            inBatch ? () => toggleSelected(manifest.id) : () => setDetailManifest(manifest)
           }
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               if (inBatch) toggleSelected(manifest.id);
-              else if (onPick) onPick(manifest);
               else setDetailManifest(manifest);
             }
           }}
           aria-label={
             inBatch
               ? `${isSelected ? "取消选中" : "选中"} ${manifest.name}`
-              : onPick
-                ? `选择 ${manifest.name}`
-                : `${manifest.name} 详情`
+              : `${manifest.name} 详情`
           }
         >
           <div className="plugin-card__header">
@@ -1279,7 +1282,7 @@ export default function PluginMarketplace({
             <div className="plugin-card__main">
               <div className="plugin-card__title-row">
                 <h3 title={manifest.name}>{manifest.name}</h3>
-                {showMySkills && !onPick && (
+                {showMySkills && (
                   <div
                     className="plugin-card__enable"
                     onClick={(e) => e.stopPropagation()}
@@ -1328,14 +1331,12 @@ export default function PluginMarketplace({
               </div>
             </div>
           </div>
-          {/* 卡片底部 actions 区：只在「选择模式」（onPick，CreateProjectDialog
-              弹窗中选插件）和「连接器」（套件管理：连接 / 断开 / 配置）两种
-              场景保留。其余场景（我的技能 / 我的专家 / 批量管理 / 通用浏览）
-              都不再在卡片底部展示按钮行——卡片可整体点击打开详情抽屉，所有
-              安装 / 卸载 / 已安装 等单卡操作统一入口。避免在 4 列
-              grid 下视觉拥挤 + 防止误触「删除」按钮。 */}
-          {(onPick ||
-            manifest.kind === "connector" ||
+          {/* 卡片底部 actions 区：只在「连接器」（套件管理：连接 / 断开 / 配置）和
+              「项目预设」（用它新建项目 / 插入输入框）两种场景保留。其余场景
+              （我的技能 / 我的专家 / 批量管理 / 通用浏览）都不再在卡片底部展示
+              按钮行——卡片可整体点击打开详情抽屉，所有 安装 / 卸载 / 已安装 等
+              单卡操作统一入口。避免在 4 列 grid 下视觉拥挤 + 防止误触「删除」按钮。 */}
+          {(manifest.kind === "connector" ||
             (manifest.kind === "template" && Boolean(onUseTemplate))) && (
             <div
               className="plugin-card__actions"
@@ -1366,15 +1367,6 @@ export default function PluginMarketplace({
                     <span>{isSelected ? "已选中" : "选择"}</span>
                   </button>
                 )
-              ) : onPick ? (
-                <button
-                  type="button"
-                  className="plugin-card__button plugin-card__button--primary"
-                  onClick={() => onPick(manifest)}
-                >
-                  <Check size={14} strokeWidth={2} />
-                  <span>选择</span>
-                </button>
               ) : manifest.kind === "connector" ? (
                 <>
                   <button
@@ -1777,7 +1769,7 @@ export default function PluginMarketplace({
             </>
           )}
 
-          {!omitTopTabs && !onPick && kind === "skill" && (
+          {!omitTopTabs && kind === "skill" && (
             <div
               className="plugin-marketplace__source-tabs"
               role="tablist"
@@ -1826,7 +1818,7 @@ export default function PluginMarketplace({
             </div>
           )}
 
-          {!omitTopTabs && !onPick && kind === "connector" && (
+          {!omitTopTabs && kind === "connector" && (
             <div
               className="plugin-marketplace__source-tabs"
               role="tablist"
@@ -1845,7 +1837,7 @@ export default function PluginMarketplace({
             </div>
           )}
 
-          {!omitTopTabs && !onPick && kind === "expert" && (
+          {!omitTopTabs && kind === "expert" && (
             <div
               className="plugin-marketplace__source-tabs"
               role="tablist"
@@ -1860,16 +1852,6 @@ export default function PluginMarketplace({
               >
                 <Bot size={14} strokeWidth={1.8} />
                 <span>我的专家</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={source === "local"}
-                className={`plugin-marketplace__source-tab ${source === "local" ? "plugin-marketplace__source-tab--active" : ""}`}
-                onClick={() => setSource("local")}
-              >
-                <LayoutTemplate size={14} strokeWidth={1.8} />
-                <span>本地内置</span>
               </button>
             </div>
           )}

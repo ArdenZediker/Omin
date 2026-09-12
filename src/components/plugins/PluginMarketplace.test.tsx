@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import PluginMarketplace from "./PluginMarketplace";
 import { pluginRegistry } from "../../plugins/registry";
+import { saveProjectPreset } from "../../plugins/projectPresets";
 
 // ensureMcpConnector 的真实实现会 invoke Tauri 命令；这里只关心「连接中」这段 UI，
 // 用手动 resolve 的 promise 把连接悬停在飞行中，才能断言中间态。
@@ -305,8 +306,9 @@ describe("PluginMarketplace 紧凑卡片布局", () => {
 /**
  * 项目预设的「真实操作」。
  *
- * 在此之前 `kind:"template"` 在扩展中心是条死路：操作行只在
- * `onPick || kind === "connector"` 时渲染 ⇒ 卡片一个按钮都没有；点开详情抽屉，
+ * 在此之前 `kind:"template"` 在扩展中心是条死路：操作行当年只在「选择模式或连接器」
+ * 时渲染（那个「选择模式」`onPick` 已于 2026-09-13 随项目对话框三行统一而删除）
+ * ⇒ 卡片一个按钮都没有；点开详情抽屉，
  * footer 只有「已安装（内置）」灰按钮，还显示无意义的「命令 /」—— 用户看得到、用不了。
  * 现在预设卡片/抽屉有主操作「新建项目」（把 instruction 写进新项目）与次操作
  * 「插入输入框」（把 starterPrompt 放进输入框草稿）。两者都**必须由宿主提供回调
@@ -366,5 +368,70 @@ describe("PluginMarketplace 项目预设的真实操作", () => {
     const text = onInsertPrompt.mock.calls[0][0];
     expect(list.some((m) => m.starterPrompt === text)).toBe(true);
     expect(list.some((m) => m.instruction === text)).toBe(false);
+  });
+});
+
+/**
+ * 自建预设必须能删。
+ *
+ * 「另存为预设」上线后，用户存的预设会落在注册表里。而详情抽屉 footer 原本是
+ * `kind === "template" ? (只有「用它新建项目 / 插入输入框」) : (isInstalled && !isBuiltin ? 卸载 : …)`
+ * —— template 分支直接抢在前面，于是**任何**非内置预设都拿不到卸载入口：
+ * 存进去就再也删不掉。这里锁住：自建预设给「删除」且点了真的从注册表消失；
+ * 内置预设不给（它本来也不可卸载）。
+ */
+describe("PluginMarketplace 自建预设的删除入口", () => {
+  const createdIds: string[] = [];
+
+  afterEach(() => {
+    while (createdIds.length > 0) {
+      const id = createdIds.pop();
+      if (id) pluginRegistry.uninstall(id);
+    }
+  });
+
+  const renderPresets = () =>
+    render(
+      <PluginMarketplace
+        mainView
+        embedded
+        source="local"
+        initialFilter={{ kind: "template" }}
+        onSourceChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+  it("自建预设的详情抽屉给出「删除」并能删掉；内置预设不给", async () => {
+    pluginRegistry.load();
+    const saved = saveProjectPreset({
+      name: "抽屉删除用例",
+      instruction: "本项目只输出结论，不写过程。",
+    });
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    createdIds.push(saved.manifest.id);
+
+    const builtin = pluginRegistry
+      .listTemplates()
+      .find((manifest) => pluginRegistry.isBuiltin(manifest.id));
+    expect(builtin).toBeTruthy();
+
+    renderPresets();
+
+    // 内置预设：抽屉里没有删除
+    fireEvent.click(await screen.findByRole("button", { name: `${builtin!.name} 详情` }));
+    await screen.findByRole("dialog", { name: `${builtin!.name} 详情` });
+    expect(screen.queryByText("删除")).toBeNull();
+    fireEvent.click(screen.getByLabelText("关闭详情"));
+
+    // 自建预设：有删除，且点了真的从注册表消失
+    fireEvent.click(await screen.findByRole("button", { name: `${saved.manifest.name} 详情` }));
+    const removeButton = await screen.findByText("删除");
+    fireEvent.click(removeButton.closest("button")!);
+
+    await waitFor(() => {
+      expect(pluginRegistry.isInstalled(saved.manifest.id)).toBe(false);
+    });
   });
 });

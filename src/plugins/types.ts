@@ -8,6 +8,14 @@ export type PluginKind = "skill" | "tool" | "connector" | "expert" | "template";
 export type PluginSource =
   | { type: "builtin" }
   | { type: "local"; path: string }
+  /**
+   * 应用内自建、**不对应任何磁盘目录或外部来源**的项。
+   *
+   * 目前只有 `kind:"template"` 用它：项目设置里的「另存为预设」把当前项目指令
+   * 存成一条预设，它只活在注册表（SQLite 快照）里 —— 卸载时不该去删目录，
+   * 所以不能复用 `local`（那个的语义是「磁盘上有个目录」，技能卸载要连目录一起删）。
+   */
+  | { type: "user" }
   | {
       type: "marketplace";
       repository: string;

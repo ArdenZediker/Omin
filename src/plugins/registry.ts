@@ -108,6 +108,16 @@ class PluginRegistry {
     return this.installed.has(id);
   }
 
+  /**
+   * 是否为「应用内自建」项（`source.type === "user"`）。
+   *
+   * 与 `isBuiltin` 的区别：内置项不可卸载，自建项可以。目前只有项目预设会以
+   * 这个来源落库（项目设置「另存为预设」），详情抽屉靠它决定要不要给「删除」。
+   */
+  isUserCreated(id: string): boolean {
+    return this.installed.get(id)?.source?.type === "user";
+  }
+
   isEnabled(id: string): boolean {
     if (this.builtins.has(id)) return true;
     return this.installed.get(id)?.enabled ?? false;
@@ -178,7 +188,7 @@ class PluginRegistry {
   }
 
   /**
-   * 列出**已启用**的专家（内置 + 已安装）。
+   * 列出**已启用**的专家（全部为已安装项 —— Omni 不内置专家）。
    *
    * 必须带 `enabled: true`：`list()` 在 `enabled` 缺省时不过滤开关状态，
    * 曾在「我的插件」里关掉的专家仍会进 agent 工具名册、仍能被委派，
@@ -363,7 +373,12 @@ export function parseSkillMarkdown(content: string): PluginManifest | null {
     description: meta.description || "",
     version: meta.version || "0.0.1",
     author: meta.author,
-    kind: (meta.kind as PluginManifest["kind"]) || "skill",
+    // 恒为 "skill"：从前透传 frontmatter 的 kind，但 4 个调用方
+    // （localTools / connectorhub / skillhub / skillhubSkillsets）解析后都立刻覆写为
+    // "skill"，透传值从未被读取过 —— 去掉以消除「SKILL.md 可产出 template 预设」的假象。
+    // 项目预设（kind:"template"）另有三处手写来源：builtins.ts / projectPresets.ts /
+    // MainChatView.tsx，与本函数无关。
+    kind: "skill",
     category: meta.category,
     icon: meta.icon,
     body,

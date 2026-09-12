@@ -29,13 +29,50 @@ describe("CreateExpertDialog", () => {
     expect(created.kind).toBe("expert");
     expect(created.name).toBe("周报专家");
     expect(created.templatePrompt).toContain("周报");
-    expect(created.id).not.toBe("dev-expert");
 
-    // 注册表可见且非内置（进入「我的专家」）
+    // 注册表可见且非内置（进入「我的专家」）—— 这一条同时覆盖了「不是内置专家」
     const experts = pluginRegistry.list({ kind: "expert" });
     expect(experts.length).toBe(before + 1);
     expect(experts.some((m) => m.id === created.id)).toBe(true);
     expect(pluginRegistry.isBuiltin(created.id)).toBe(false);
+  });
+
+  it("同名专家可重复创建：id 不撞车，后建的不会静默覆盖先建的", () => {
+    pluginRegistry.load();
+    const before = pluginRegistry.list({ kind: "expert" }).length;
+    const onCreated = vi.fn();
+
+    const createOnce = () => {
+      const { unmount } = render(<CreateExpertDialog open onClose={vi.fn()} onCreated={onCreated} />);
+      fireEvent.change(screen.getByPlaceholderText("如：周报专家、代码评审专家"), {
+        target: { value: "周报专家" },
+      });
+      fireEvent.change(screen.getByPlaceholderText(/专家的系统提示词/), {
+        target: { value: "你负责收集本周进展并输出周报。" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "创建" }));
+      unmount();
+    };
+
+    // 冻住时钟：两次创建必须落在同一毫秒 —— 这是 id 撞车的唯一触发条件。
+    // 不冻的话两次 render+填表天然跨毫秒，断言会「因为错误的理由」通过。
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      createOnce();
+      createOnce();
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const [first, second] = onCreated.mock.calls.map((call) => call[0]);
+    expect(first.name).toBe("周报专家");
+    expect(second.name).toBe("周报专家");
+    expect(second.id).not.toBe(first.id);
+
+    // 关键：是两份档案，而不是后者把前者覆盖掉
+    expect(pluginRegistry.list({ kind: "expert" }).length).toBe(before + 2);
+    expect(pluginRegistry.getManifest(first.id)?.name).toBe("周报专家");
+    expect(pluginRegistry.getManifest(second.id)?.name).toBe("周报专家");
   });
 
   it("选择工具与技能后写入 defaultToolIds/defaultSkillIds", () => {

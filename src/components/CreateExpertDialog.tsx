@@ -123,8 +123,16 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
           .toLowerCase()
           .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
           .replace(/^-+|-+$/g, "") || "expert";
+      // id 必须唯一：install() 是「按 id 覆盖」而不是追加，同名专家若撞上同一 id
+      // 会**静默覆盖**先建的那份档案（时间戳只到毫秒，批量创建时极易撞）。
+      // 撞上已有 manifest 就追加序号 —— id 丑一点也不能丢用户刚建的档案。
+      const base = `expert-${slug}-${Date.now().toString(36)}`;
+      let id = base;
+      for (let n = 2; pluginRegistry.getManifest(id); n += 1) {
+        id = `${base}-${n}`;
+      }
       manifest = {
-        id: `expert-${slug}-${Date.now().toString(36)}`,
+        id,
         version: "1.0.0",
         author: "用户",
         kind: "expert",

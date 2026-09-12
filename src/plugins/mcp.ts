@@ -380,11 +380,35 @@ export function selectMcpToolsWithinBudget(
 /** 上一次注入时因超预算被隐藏的工具（进程内记忆，供 UI 说明用）。 */
 let lastMcpToolOverflow: McpHiddenTool[] = [];
 
-/** 已连接 MCP 服务器暴露的工具 → function calling 工具声明（mcp__ 前缀，受预算裁剪）。 */
-export function listActiveMcpTools(): ChatToolParam[] {
+/**
+ * 项目级连接器白名单判据：**空 / 缺省 = 不限制**（口径同 `Project.boundExpertIds`）。
+ *
+ * 判据只写这一份，注入侧（`listActiveMcpTools`）与执行侧（`executeMcpToolCall`）共用。
+ * 两处各写一份的话，一旦漂移就会出现「工具列表里有它、一调却被拒」这种自相矛盾的行为。
+ */
+function isOutsideProjectConnectorScope(
+  connectorId: string,
+  allowedConnectorIds?: string[],
+): boolean {
+  if (!allowedConnectorIds || allowedConnectorIds.length === 0) return false;
+  return !allowedConnectorIds.includes(connectorId);
+}
+
+/**
+ * 已连接 MCP 服务器暴露的工具 → function calling 工具声明（mcp__ 前缀，受预算裁剪）。
+ *
+ * `allowedConnectorIds` 是**当前项目**的连接器白名单（`Project.allowedConnectorIds`）。
+ * 不传 / 传空 = 放行全部已信任连接器，即本参数引入前的行为。
+ *
+ * ⚠️ 收窄的只是「这个项目的模型能不能**看见**某个连接器的工具」。连接器自身仍是全局的
+ * （安装 + 开启 + 信任那套口径不变），项目选择不会去连或断开任何 MCP 服务器。
+ */
+export function listActiveMcpTools(allowedConnectorIds?: string[]): ChatToolParam[] {
   // 纵深防御：即便连接态残留（如信任被撤销后进程未退出），未信任的
   // 连接器也不向模型暴露任何工具。
-  const trusted = Array.from(connectedServers.values()).filter((server) => isTrustedById(server.connectorId));
+  const trusted = Array.from(connectedServers.values())
+    .filter((server) => isTrustedById(server.connectorId))
+    .filter((server) => !isOutsideProjectConnectorScope(server.connectorId, allowedConnectorIds));
   const selection = selectMcpToolsWithinBudget(
     trusted.map((server) => ({
       serverId: server.serverId,
@@ -426,10 +450,15 @@ export function listConnectedMcpServers(): Array<{
 /**
  * 执行一次模型发起的 MCP 工具调用。
  * name 形如 `mcp__{serverId}__{toolName}`；arguments 为 JSON 字符串。
+ *
+ * `allowedConnectorIds` 是**调用发生时所处项目**的连接器白名单（空/缺省 = 不限），
+ * 用与注入侧 `listActiveMcpTools` 完全相同的判据。同信任校验的理由：模型可以自行
+ * 编造 `mcp__` 名字发起调用，若这里不校验，被项目排除的连接器仍会被间接驱动。
  */
 export async function executeMcpToolCall(
   name: string,
   argumentsJson: string,
+  allowedConnectorIds?: string[],
 ): Promise<string> {
   const parts = name.split("__");
   if (parts.length < 3 || parts[0] !== "mcp") {
@@ -446,6 +475,10 @@ export async function executeMcpToolCall(
   // 处于连接态而此处不校验，未受信任的连接器就会被间接驱动。
   if (!isTrustedById(serverId)) {
     return `连接器「${server.connectorName}」尚未获得信任，已拒绝调用其工具 ${toolName}。请在扩展中心「连接器」中确认信任后再试。`;
+  }
+  // 项目级白名单：按 `connectorId` 判定（与注入侧同一函数、同一口径）。
+  if (isOutsideProjectConnectorScope(server.connectorId, allowedConnectorIds)) {
+    return `连接器「${server.connectorName}」未在本项目中启用，已拒绝调用其工具 ${toolName}。可在项目设置 →「连接器」中勾选后重试。`;
   }
   let parsed: Record<string, unknown> = {};
   if (argumentsJson && argumentsJson !== "{}") {
