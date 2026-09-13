@@ -122,8 +122,14 @@ const COMPACTION_PROMPT =
 
 /** 工具结果超过该字符数则就地截断（model-free 剪枝），保留开头 + 结尾 + 截断注记。
  * 吸收 DSH 的 toolResultPruner：在 LLM 摘要前先压工具输出——即使摘要失败，
- * 上下文里的工具结果也已缩短，等于直接减小本请求的 token 占用。 */
-const TOOL_RESULT_PRUNE_LIMIT = 2400;
+ * 上下文里的工具结果也已缩短，等于直接减小本请求的 token 占用。
+ *
+ * 阈值对齐 DSH 默认（thresholdChars 8192 / head 4096 / tail 1024）。此前的 2400 太小：
+ * 一次 `read_file`（上限 80000）、一条 `execute_command`（截断上限 32768）常态就超，
+ * 于是「压缩」步骤在离窗口还很远时反复上屏，还把模型后续可能仍需引用的内容
+ * 无谓地砍掉中间（本函数**不豁免** read_file，而 stub 那一档豁免）。
+ * 注意：决定「要不要剪」的不是本阈值，而是 {@link shouldPruneToolResults} 的会话级预算门。 */
+const TOOL_RESULT_PRUNE_LIMIT = 8192;
 
 /** 压缩「无收益」判定阈值（吸收 atomcode 的 committed/refused 守卫）：摘要相对被压缩原文的
  * token 比例超过该值时，说明付了一次完整 LLM 调用却只换来几乎等长的摘要，不如直接丢最旧一轮。 */
@@ -161,6 +167,21 @@ export function pruneToolResultMessages(messages: Message[]): Message[] {
     };
   });
   return changed ? pruned : messages;
+}
+
+/**
+ * 工具结果剪枝的会话级门槛：只有估算占用**真的**接近窗口预算时才值得剪。
+ *
+ * 对齐 DSH 的触发语义——`compaction-basic` 的 pressure 路径先比 `measurement.totalTokens`
+ * 与窗口压力阈值，未到阈值直接 `return null`，根本不调用 pruner。
+ * 此前 Omni 把 pruner 提到了工具循环里**每轮无条件调用**，于是那条「压缩 / Context Prune」
+ * 步骤的文案写着「上下文再次超出预算」，代码里却没有任何预算判断——只要本轮新产出一个
+ * 超过阈值的工具结果就会剪一次并上屏：既刷屏，又在上下文宽裕时白白损失工具输出
+ * （模型随后可能还要引用它，只能重读一次）。
+ */
+export function shouldPruneToolResults(messages: Message[], modelConfig?: ModelConfig): boolean {
+  const budget = Math.floor(resolveContextWindow(modelConfig) * CONTEXT_BUDGET_RATIO);
+  return estimatePromptTokens(messages) > budget;
 }
 
 /**
@@ -709,12 +730,16 @@ async function runToolLoop(options: {
     workingMessages = [...workingMessages, assistantMsg, ...toolMessages];
 
     // 步间压力预检（改造4 触发双保险·二）：工具结果回填后上下文可能再次超预算。
-    // 1) 先 model-free 剪枝本轮（及历史）工具结果——直接砍掉超长工具输出，零 LLM 调用即降占用
+    // 1) **先过会话级预算门**（shouldPruneToolResults）：没接近超窗就不剪——既避免「压缩」步骤
+    //    无谓刷屏，也避免在上下文宽裕时把模型后续仍需引用的工具输出砍掉中间。
+    //    真超窗时才 model-free 剪枝本轮（及历史）工具结果，零 LLM 调用即降占用
     //    （当前轮工具结果位于「最近 user」之后，受 sacred_floor 保护无法被摘要压缩，只能走剪枝）；
     // 2) 仍存在可压缩历史（最近 user 之前 ≥2 条）时才交给 compactHistoryIfNeeded 循环再压，
     //    避免仅当前轮溢出时白白发起一次摘要 LLM 调用（溢出重试由其内部循环保障）。
     // 仅在确有剪枝/压缩时才上屏动作步骤。
-    const pruned = pruneToolResultMessages(workingMessages);
+    const pruned = shouldPruneToolResults(workingMessages, modelConfig)
+      ? pruneToolResultMessages(workingMessages)
+      : workingMessages;
     const hasCompletableHistory = (() => {
       const cs = pruned.findIndex((m) => m.role !== "system");
       if (cs < 0) return false;

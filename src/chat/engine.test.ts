@@ -5,6 +5,7 @@ import {
   compactHistoryIfNeeded,
   pruneToolResultMessages,
   stubToolResultMessages,
+  shouldPruneToolResults,
   isCompactionNoGain,
 } from "./engine";
 import type { ChatResponse, ChatToolCall, ChatStep, Message, ModelConfig, StreamChunk } from "../adapters/types";
@@ -150,7 +151,7 @@ describe("executeChatTurn", () => {
       { role: "system", content: "system" },
       { role: "user", content: "用户需求".repeat(40) },
       { role: "assistant", content: "助手回复".repeat(40) },
-      { role: "tool", content: "Z".repeat(3000), toolCallId: "t0", toolCallName: "read_file" },
+      { role: "tool", content: "Z".repeat(9000), toolCallId: "t0", toolCallName: "read_file" },
       { role: "user", content: "继续" },
     ];
     const toolCall = { id: "call-1", name: "read_file", arguments: JSON.stringify({ path: "doc.md" }) };
@@ -173,16 +174,57 @@ describe("executeChatTurn", () => {
       model: "tiny",
       messages: initial,
       tools: [{ name: "read_file", description: "读文件" }],
-      executeToolCall: async () => "W".repeat(4000), // 巨大工具结果 → 步间再次超预算
+      executeToolCall: async () => "W".repeat(9000), // 超剪枝阈值(8192) 且超窗口预算 → 步间剪枝
       onToolStep: (step) => steps.push(step),
     });
 
-    // 前置压缩贡献 1 条「压缩」动作步骤；步间压缩再贡献 1 条 → 至少 2 条
+    // 前置压缩贡献 1 条「Context Compaction」；步间预算门放行后剪掉超阈值工具结果，
+    // 再贡献 1 条「Context Prune」→ 至少 2 条
     const compactionSteps = steps.filter((s) => s.type === "action" && s.label === "压缩");
     expect(compactionSteps.length).toBeGreaterThanOrEqual(2);
     // 最终答复应来自收尾轮，而非被摘要串覆盖
     expect(res.content).toContain("最终答复");
     void chatSpy;
+  });
+
+  // 回归：用户实测「压缩 / Context Prune 触发太频繁」。根因是剪枝被无条件每轮调用，
+  // 而它的文案却写「上下文再次超出预算」。128k 窗口下预算 96k token，一次 9000 字符的
+  // 工具结果连 1% 都占不到，本就不该剪 —— 更不该上屏。
+  it("窗口宽裕时不做步间剪枝，也不上屏「压缩」（不再刷屏）", async () => {
+    setupRegistry();
+    vi.spyOn(modelRegistry, "getModelConfig").mockReturnValue({
+      id: "big",
+      name: "Big",
+      provider: "openai",
+      maxTokens: 128_000,
+      supportsVision: false,
+      supportsStreaming: false,
+      toolCalling: true,
+    } as ModelConfig);
+
+    const toolCall = { id: "call-1", name: "read_file", arguments: JSON.stringify({ path: "doc.md" }) };
+    vi.spyOn(modelRegistry, "chat").mockImplementation(async (req) => {
+      const hasToolMsg = req.messages?.some((m) => m.role === "tool");
+      if (!hasToolMsg) {
+        return { content: "读取中", model: "big", toolCalls: [toolCall] } as ChatResponse;
+      }
+      return { content: "最终答复", model: "big" } as ChatResponse;
+    });
+
+    const steps: ChatStep[] = [];
+    const res = await executeChatTurn({
+      model: "big",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "读一下这个文件" },
+      ],
+      tools: [{ name: "read_file", description: "读文件" }],
+      executeToolCall: async () => "W".repeat(9000), // 远超剪枝阈值，但仍远低于 128k 窗口预算
+      onToolStep: (step) => steps.push(step),
+    });
+
+    expect(steps.filter((s) => s.type === "action" && s.label === "压缩")).toHaveLength(0);
+    expect(res.content).toContain("最终答复");
   });
 
   it("普通流式请求首包超时 60s，thinking 模型 / 非流式请求首包超时 300s", async () => {
@@ -314,12 +356,13 @@ describe("partitionToolCallsForExecution（concurrencySafe 并行分块契约）
 });
 
 describe("pruneToolResultMessages（model-free 工具结果剪枝，吸 DSH toolResultPruner）", () => {
+  // 阈值 = 8192（对齐 DSH 的 thresholdChars 默认）；9000 保证确实越过阈值。
   it("超长工具结果被截断并保留 toolCallId", () => {
     const messages: Message[] = [
-      { role: "tool", content: "X".repeat(3000), toolCallId: "t1", toolCallName: "read_file" },
+      { role: "tool", content: "X".repeat(9000), toolCallId: "t1", toolCallName: "read_file" },
     ];
     const result = pruneToolResultMessages(messages);
-    expect(result[0].content.length).toBeLessThan(3000);
+    expect(result[0].content.length).toBeLessThan(9000);
     expect(result[0].content).toContain("工具结果已截断");
     expect(result[0].toolCallId).toBe("t1");
     expect(result[0].toolCallName).toBe("read_file");
@@ -330,7 +373,7 @@ describe("pruneToolResultMessages（model-free 工具结果剪枝，吸 DSH tool
     const head = "编译开始\n";
     const tail = "error TS2345: 参数类型不匹配";
     const messages: Message[] = [
-      { role: "tool", content: head + "编译日志行\n".repeat(500) + tail, toolCallId: "t9" },
+      { role: "tool", content: head + "编译日志行\n".repeat(1600) + tail, toolCallId: "t9" },
     ];
 
     const result = pruneToolResultMessages(messages);
@@ -354,6 +397,23 @@ describe("pruneToolResultMessages（model-free 工具结果剪枝，吸 DSH tool
     expect(result[0].toolCallId).toBe("t2");
   });
 
+  // 回归：阈值必须是「一次常规工具输出撞不到」的量级。旧值 2400 会让一次普通 read_file /
+  // bash 输出也被剪掉中间 —— 既是无谓的信息损失，也让「压缩」步骤频繁上屏。
+  it("阈值内的长结果不被剪（8000 字符保留原文）", () => {
+    const content = "L".repeat(8000);
+    const messages: Message[] = [{ role: "tool", content, toolCallId: "t3" }];
+    expect(pruneToolResultMessages(messages)[0].content).toBe(content);
+  });
+
+  it("恰超阈值即剪（8193 字符被截断）", () => {
+    const messages: Message[] = [{ role: "tool", content: "M".repeat(8193), toolCallId: "t4" }];
+    const out = pruneToolResultMessages(messages)[0].content;
+    expect(out).toContain("工具结果已截断");
+    expect(out).toContain("中间省略");
+    // 保留量受阈值约束（截断注记本身占几十字符，故略高于阈值），远小于原文规模
+    expect(out.length).toBeLessThan(8300);
+  });
+
   it("非工具消息（即便很长）不被剪枝", () => {
     const messages: Message[] = [{ role: "user", content: "Y".repeat(5000) }];
     expect(pruneToolResultMessages(messages)[0].content.length).toBe(5000);
@@ -362,6 +422,38 @@ describe("pruneToolResultMessages（model-free 工具结果剪枝，吸 DSH tool
   it("全部未超长时返回原数组引用（不变更）", () => {
     const messages: Message[] = [{ role: "user", content: "hi" }];
     expect(pruneToolResultMessages(messages)).toBe(messages);
+  });
+});
+
+// 剪枝的**会话级预算门**：DSH 的 pruner 只在 compaction 流程里跑，pressure 路径还要先比
+// 「总占用 vs 窗口压力阈值」，未到阈值直接 return（根本不调用 pruner）。此前 Omni 把这个
+// pruner 提到工具循环里每轮无条件调用，导致「压缩 / Context Prune」步骤的文案说
+// 「上下文再次超出预算」而代码里没有任何预算判断 —— 这就是用户实测到的刷屏。
+describe("shouldPruneToolResults（剪枝的会话级预算门）", () => {
+  /** 极小窗口：预算 = 100 × 0.75 = 75 token，便于稳定触发 */
+  const tinyModel = { id: "tiny", name: "Tiny", provider: "openai", maxTokens: 100 } as ModelConfig;
+
+  it("窗口宽裕 ⇒ 不剪（9000 字符的工具结果也不剪）", () => {
+    const messages: Message[] = [{ role: "tool", content: "X".repeat(9000), toolCallId: "t1" }];
+    expect(shouldPruneToolResults(messages)).toBe(false);
+  });
+
+  it("超过 0.75 × 窗口预算 ⇒ 剪", () => {
+    const messages: Message[] = [{ role: "tool", content: "X".repeat(9000), toolCallId: "t1" }];
+    expect(shouldPruneToolResults(messages, tinyModel)).toBe(true);
+  });
+
+  it("小窗口模型下普通内容也会触发（预算被窗口而非内容决定）", () => {
+    const messages: Message[] = [{ role: "user", content: "字".repeat(200) }];
+    expect(shouldPruneToolResults(messages, tinyModel)).toBe(true);
+  });
+
+  it("无模型信息时回落 128k 窗口 ⇒ 常规对话不触发", () => {
+    const messages: Message[] = [
+      { role: "user", content: "帮我改一下这个功能" },
+      { role: "assistant", content: "好的，我先看一下代码" },
+    ];
+    expect(shouldPruneToolResults(messages)).toBe(false);
   });
 });
 
