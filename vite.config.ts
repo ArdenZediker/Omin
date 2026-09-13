@@ -12,6 +12,18 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         output: {
+          // 默认命名 `assets/[name]-[hash].[ext]` 对「无扩展名」的资源（依赖包自带的
+          // LICENSE / NOTICE 等）会生成以点结尾的文件名，如 `LICENSE-CRnx3_A4.`。
+          // Node 走 `\\?\` 前缀能创建它，但 Windows 的 Win32 API 在读取时会剥离尾部点，
+          // 于是 Rust 侧 `tauri::generate_context!()` 找不到该文件、打包在最后一步失败：
+          //   error: failed to read asset at ...\dist\assets\LICENSE-CRnx3_A4.
+          // 这里按有无扩展名分别命名，保证不产生尾点文件名。
+          assetFileNames: (assetInfo) => {
+            const original = assetInfo.names?.[0] ?? assetInfo.name ?? "";
+            const dot = original.lastIndexOf(".");
+            const ext = dot > 0 ? original.slice(dot) : "";
+            return `assets/[name]-[hash]${ext}`;
+          },
           manualChunks(id) {
             if (!id.includes("node_modules")) {
               return undefined;
