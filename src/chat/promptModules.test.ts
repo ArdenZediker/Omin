@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "../adapters/types";
 import type { Project } from "./types";
-import { buildOmniSystemPrompt } from "./promptModules";
+import { buildOmniSystemPrompt, TOOL_PROTOCOL_MAX_CHARS } from "./promptModules";
 
 const messages: Message[] = [{ role: "user", content: "帮我优化这个项目" }];
 
@@ -68,6 +68,18 @@ describe("promptModules", () => {
     expect(prompt).toContain("工具协议");
     expect(prompt).not.toContain("<omni_memory>");
     expect(prompt).not.toContain("<omni_summary>");
+  });
+
+  // 回归：记忆协议原本只指向隐藏结构块，而那个块落在**项目级**存储、无项目时还会被静默丢弃，
+  // 于是 persona 长期记忆文件（截图里那 4 张卡片）永远没人写。协议里必须写明分流。
+  it("记忆协议把跨项目的长期偏好分流到 /update_persona", () => {
+    const prompt = buildOmniSystemPrompt({ messages });
+
+    expect(prompt).toContain("记忆协议");
+    expect(prompt).toContain("/update_persona");
+    expect(prompt).toContain("跨项目");
+    // 隐藏结构块仍然保留（项目内事实的落点）
+    expect(prompt).toContain("<omni_memory>");
   });
 
   // 回归：技能只注入正文时，模型看不到「这个技能什么时候用」，
@@ -142,5 +154,90 @@ describe("promptModules", () => {
   it("没有启用技能时不注入技能分片", () => {
     const prompt = buildOmniSystemPrompt({ messages });
     expect(prompt).not.toContain("已启用技能");
+  });
+
+  /** 从整份系统提示里取回「工具清单」那一个分片（装配器用 `\n\n---\n\n` 分隔）。 */
+  function findToolFragment(prompt: string) {
+    const fragment = prompt.split("\n\n---\n\n").find((part) => part.includes("当前助手已启用工具："));
+    expect(fragment).toBeTruthy();
+    return fragment as string;
+  }
+
+  // 回归：旧实现是 `compactList(..., 16)` 先把清单砍到 16 条、再由 capFragment 硬切 4000 字符。
+  // 实测 25 个内置工具的完整描述合计 13627 字符 ⇒ 模型只拿到前 8 个工具加半条，
+  // Sub Agent / Shell / 4 个导出工具等 17 个**整条丢失**，而清单看起来还是完整的。
+  // 修法：超预算时逐级收紧「单条描述」，工具条目一个都不丢。
+  it("工具清单超预算时逐级缩短描述，不丢任何工具条目", () => {
+    const enabledToolNames = Array.from({ length: 30 }, (_, index) => `Tool-${String(index + 1).padStart(2, "0")}`);
+    const enabledToolDescriptions = Object.fromEntries(
+      enabledToolNames.map((name) => [name, `使用说明：${"细节".repeat(600)}`]),
+    );
+
+    const prompt = buildOmniSystemPrompt({
+      messages,
+      includeToolProtocol: true,
+      enabledToolNames,
+      enabledToolDescriptions,
+    });
+    const toolFragment = findToolFragment(prompt);
+
+    // 要害：每一个工具名都必须在场
+    for (const name of enabledToolNames) {
+      expect(toolFragment).toContain(name);
+    }
+    // 描述被压缩（head+tail），而不是整条工具被丢掉
+    expect(toolFragment).toContain("中间省略");
+    // 既没走到「点名省略工具」的兜底，也没触发分片的硬截断
+    expect(toolFragment).not.toContain("个工具未列出");
+    expect(toolFragment).not.toContain("字符上限");
+    // 「保持上下文有界」的不变式仍然成立
+    expect(toolFragment.length).toBeLessThanOrEqual(TOOL_PROTOCOL_MAX_CHARS);
+  });
+
+  // 工具数极端多（连「只列名字」都放不下）时的兜底：按序保住前若干条，并**显式点名**省略了谁。
+  // 绝不允许出现「清单看起来完整、其实少了工具」——那正是这次要修的缺陷。
+  it("工具数极端多时点名被省略的工具，且提示本身也有界", () => {
+    const enabledToolNames = Array.from(
+      { length: 1200 },
+      (_, index) => `Tool-${String(index + 1).padStart(4, "0")}-long`,
+    );
+
+    const prompt = buildOmniSystemPrompt({ messages, includeToolProtocol: true, enabledToolNames });
+    const toolFragment = findToolFragment(prompt);
+
+    expect(toolFragment).toContain("Tool-0001-long");
+    expect(toolFragment).toContain("个工具未列出");
+    // 被省略的工具不在 10 条点名预览里 ⇒ 不出现
+    expect(toolFragment).not.toContain("Tool-1200-long");
+    // 兜底分支同样不能把分片顶穿
+    expect(toolFragment.length).toBeLessThanOrEqual(TOOL_PROTOCOL_MAX_CHARS);
+  });
+
+  // 模板字符串里直接写 Windows 绝对路径时，单反斜杠会被当转义序列吃掉（`\n` → 真换行），
+  // 模型看到的示例路径会变成「C:UsersPengYDesktop 换行 otes.md」。必须写双反斜杠。
+  it("本地能力提示里的 Windows 示例路径原样保留", () => {
+    const prompt = buildOmniSystemPrompt({ messages });
+
+    expect(prompt).toContain("C:\\Users\\PengY\\Desktop\\notes.md");
+  });
+
+  // 分片截断一律 head+tail：只留开头会把「尾部才是结论」的内容（人设的长期记忆、AGENTS.md 收尾约定）砍掉。
+  it("分片超预算时保留尾部内容，且不截出半个代理项", () => {
+    const prompt = buildOmniSystemPrompt({
+      messages,
+      persona: {
+        style: "default",
+        customInstruction: "",
+        userName: "",
+        assistantName: "",
+        personaDescription: "",
+        longTermMemory: `🦊${"头".repeat(7000)}尾巴标记END`,
+        agentsMd: "",
+      },
+    });
+
+    expect(prompt).toContain("尾巴标记END");
+    expect(prompt).toContain("已省略中间");
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(prompt)).toBe(false);
   });
 });

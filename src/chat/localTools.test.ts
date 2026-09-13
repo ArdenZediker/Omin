@@ -3,7 +3,7 @@ import type { Message } from "../adapters/types";
 import type { Project } from "./types";
 import { executeLocalTool, isKnownSafeCommand, isOutsideWorkspace, type LocalToolRuntime, type LocalToolSession } from "./localTools";
 import { clearAllSessionTodos, getSessionTodos } from "./todoWrite";
-import { extractToolCallArgs } from "../hooks/chatRuntimeHelpers";
+import { extractToolCallArgs, extractToolCallArgsDetailed } from "../hooks/chatRuntimeHelpers";
 import { pluginRegistry } from "../plugins/registry";
 
 const mockedInvoke = vi.hoisted(() => vi.fn());
@@ -1178,5 +1178,99 @@ describe("bash 写语义扫描集成（围栏旁路封堵）", () => {
 
     expect(result?.ok).toBe(false);
     expect(result?.error).toContain("用法：/code_outline");
+  });
+});
+
+/**
+ * /update_persona 是「模型自主写长期记忆」的唯一落点，而它此前**从没被调用成功过**：
+ * manifest 没声明 parameters（模型拿到空 schema，只能瞎猜或传 {}），执行器又只认
+ * 「字段 内容」纯文本，于是任何一次模型调用都会撞上「用法」或「未知字段」。
+ * 这组用例同时锁住两条入参形态与两条拒绝分支。
+ */
+describe("/update_persona（长期记忆写入：JSON 与文本两形态都要接住）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("function calling 的 JSON 入参能落盘（现实链路：raw → extractToolCallArgsDetailed）", async () => {
+    const raw = JSON.stringify({ field: "longTermMemory", content: "用户偏好 React + TypeScript" });
+    const { args, rawObject } = extractToolCallArgsDetailed(raw);
+    mockedInvoke.mockResolvedValueOnce(undefined);
+
+    const result = await executeLocalTool(createRuntime(), {
+      command: "/update_persona",
+      args,
+      rawObject,
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith("write_persona_file", {
+      key: "longTermMemory",
+      content: "用户偏好 React + TypeScript",
+    });
+  });
+
+  it("手敲的「字段 内容」文本形态仍然可用（回归保护）", async () => {
+    mockedInvoke.mockResolvedValueOnce(undefined);
+
+    const result = await executeLocalTool(createRuntime(), {
+      command: "/update_persona",
+      args: "userName 小明",
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith("write_persona_file", {
+      key: "userName",
+      content: "小明",
+    });
+  });
+
+  it("未知字段被拒绝且不写盘", async () => {
+    const { args, rawObject } = extractToolCallArgsDetailed(
+      JSON.stringify({ field: "unknownField", content: "x" }),
+    );
+
+    const result = await executeLocalTool(createRuntime(), {
+      command: "/update_persona",
+      args,
+      rawObject,
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("未知字段");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("内容为空时拒绝且不写盘", async () => {
+    const { args, rawObject } = extractToolCallArgsDetailed(
+      JSON.stringify({ field: "longTermMemory", content: "   " }),
+    );
+
+    const result = await executeLocalTool(createRuntime(), {
+      command: "/update_persona",
+      args,
+      rawObject,
+    });
+
+    expect(result?.ok).toBe(false);
+    // 纯空白先被 schema 校验门判为「缺必填」拦下（更好），执行器的「内容不能为空」是兜底。
+    expect(result?.error).toContain("content");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("模型漏传 field 时被 schema 校验挡下（不进工具）", async () => {
+    const { args, rawObject } = extractToolCallArgsDetailed(
+      JSON.stringify({ content: "只给了内容" }),
+    );
+
+    const result = await executeLocalTool(createRuntime(), {
+      command: "/update_persona",
+      args,
+      rawObject,
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("field");
+    expect(mockedInvoke).not.toHaveBeenCalled();
   });
 });

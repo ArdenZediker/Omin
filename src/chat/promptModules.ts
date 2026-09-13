@@ -1,6 +1,7 @@
 import type { Message } from "../adapters/types";
 import type { ProjectMemoryRecord, Project, PersonaConfig, PersonaStyle, SessionSummaryRecord } from "./types";
 import type { KnowledgeContextResult } from "./knowledgeTypes";
+import { headTailClip } from "./textClip";
 
 export type PromptBuildOptions = {
   project?: Project | null;
@@ -67,7 +68,7 @@ const LOCAL_CAPABILITY_PROMPT = `本地能力（重要，易踩坑）：
 - 当用户给出明确的本地路径并要求你读/理解/总结/修改时，**你必须先调用 /read_file 读取内容，再根据读取结果回答**。这是你的默认行为，不是可选项。
 - 读取文件用 /read_file：
   · 路径在工作区（项目根目录）之内：用相对路径，例如 /read_file docs/notes.md。
-  · 路径在工作区之外：直接用绝对路径，例如 /read_file C:\Users\PengY\Desktop\notes.md；Omni 会直接读取，不会弹确认框，也无需用户粘贴。
+  · 路径在工作区之外：直接用绝对路径，例如 /read_file C:\\Users\\PengY\\Desktop\\notes.md；Omni 会直接读取，不会弹确认框，也无需用户粘贴。
   · 支持可选的分页参数：maxChars=N（单次返回上限，默认 16000，硬上限 80000）、offset=N（跳过前 N 字符）、limit=N（限定本次窗口）。例如「/read_file <path> maxChars=40000」一次性读完较大文件，「/read_file <path> offset=16000 limit=16000」续读。
   · **绝对不要替用户拒绝读取，也不要说「我无法直接读取」「请粘贴内容」「请上传文件」——只有工具调用真正失败（如文件不存在）后，才在回复里说明具体原因。**
 - /read_file 返回内容每行带「行号 | 内容」前缀（行号与 /search_files 的 line_number 同一坐标系，可直接引用行号），末尾附带形如 "[file-meta total=8500 offset=0 returned=6000 lines=1-120 truncated=true]" 的一行元数据。**这是真实的字符预算**：truncated=true 时还有未读部分，必须（a）主动追加 /read_file <path> offset=<returned> 续读，或（b）如果是因为文件确实超大或读不动，**在给用户的最终回复里显式说明「本次只读到 X/Y 字符」，不要隐瞒**。
@@ -96,6 +97,8 @@ const MEMORY_EXTRACTION_PROMPT = `记忆协议：
 - 每轮回复时，判断用户是否表达了可长期复用的信息。
 - 只记录稳定偏好、长期约束、身份/项目习惯、固定工作方式、明确的以后/默认/不要/优先要求。
 - 不记录一次性任务、临时情绪、含糊目标、普通问题、敏感隐私细节。
+- **先分流再落库**：跨项目、跨会话都成立的稳定偏好 / 称呼 / 人设 / 工作规则，改用 /update_persona 写进长期记忆文件（那才是每次对话都会注入的档位）；只有**本项目内**才成立的事实（代码结构、约定、进度）才写进下面的隐藏结构块。
+- 同一条信息只写一处：已经交给 /update_persona 的，隐藏结构块里不再重复。
 - 如果有值得记录的内容，在回复末尾追加一个隐藏结构块：
 <${OMNI_STRUCTURED_MEMORY_TAG}>
 [
@@ -149,16 +152,79 @@ function buildContextRecallPrompt(memories: ProjectMemoryRecord[] = [], summarie
   ].filter(Boolean).join("\n\n");
 }
 
-function buildToolPrompt(enabledToolNames: string[] = [], descriptions?: Record<string, string>) {
-  const tools = compactList(enabledToolNames, 16);
+/**
+ * 工具清单分片的字符预算。
+ *
+ * 25 个内置工具的完整 promptContribution 实测合计约 13.6k 字符（含 /bash 的 Shell 环境提示
+ * 与 /agent 的专家名册还会再多）。预算必须留足：旧实现是「先 `compactList(...,16)` 砍到 16 个、
+ * 再由 `capFragment` 硬切 4000 字符」，实测模型只拿到前 8 个工具加半条，**Sub Agent、Shell、
+ * 4 个导出工具等 17 个整条丢失**，却没有任何「这里少了东西」的迹象。
+ */
+export const TOOL_PROTOCOL_MAX_CHARS = 16_000;
+
+/**
+ * 逐级收紧的「单条工具描述」预算。
+ *
+ * 超预算时**降的是描述，不是工具条目**：对模型而言「知道总共有哪些工具」比「读到某几个工具的
+ * 完整说明」更重要 —— 少了工具条目，它会以为自己没有那个能力，转而编替代方案或用 bash 硬凑。
+ * 最后一档 0 = 只列名字（仍然完整）。
+ */
+const TOOL_DESC_LIMITS = [Number.POSITIVE_INFINITY, 600, 400, 240, 160, 120, 80, 40, 0];
+
+/** 兜底分支里为「另有 N 个工具未列出：…」这句提示预留的字符数。 */
+const OMITTED_NOTE_RESERVE = 320;
+
+/** 兜底分支最多点名几个被省略的工具（其余只报总数，保证提示本身有界）。 */
+const OMITTED_NAME_PREVIEW = 10;
+
+function buildToolEntries(
+  tools: string[],
+  descriptions: Record<string, string> | undefined,
+  descLimit: number,
+) {
+  return tools.map((name) => {
+    const description = (descriptions?.[name] ?? "").trim();
+    if (!description || descLimit <= 0) return name;
+    const clipped = description.length > descLimit ? headTailClip(description, descLimit).text : description;
+    return `${name}（${clipped}）`;
+  });
+}
+
+function buildToolPrompt(
+  enabledToolNames: string[] = [],
+  descriptions?: Record<string, string>,
+  maxChars = TOOL_PROTOCOL_MAX_CHARS,
+) {
+  // 去重 + 去空，但**不设条数上限**：截断只允许发生在「描述」这一维。
+  const tools = Array.from(new Set(enabledToolNames.map((name) => name.trim()).filter(Boolean)));
   if (tools.length === 0) {
     return TOOL_REASONING_PROMPT;
   }
-  const listed = tools.map((name) => {
-    const description = descriptions?.[name];
-    return description ? `${name}（${description}）` : name;
-  });
-  return [TOOL_REASONING_PROMPT, `当前助手已启用工具：${listed.join("、")}`].join("\n\n");
+  const header = `${TOOL_REASONING_PROMPT}\n\n当前助手已启用工具：`;
+  const budget = Math.max(maxChars - header.length, 200);
+  for (const descLimit of TOOL_DESC_LIMITS) {
+    const joined = buildToolEntries(tools, descriptions, descLimit).join("、");
+    if (joined.length <= budget) return `${header}${joined}`;
+  }
+  // 兜底：连「只列名字」都放不下（工具数异常多）→ 按序保住前若干条，并**显式点名**省略了谁。
+  // 省略名单自身也必须是有界的：只点名前若干条 + 给出总数，且为它预留固定空间，
+  // 否则「提示省略」这件事本身就会把分片顶穿（预算形同虚设）。
+  const kept: string[] = [];
+  const dropped: string[] = [];
+  let used = 0;
+  const nameBudget = Math.max(budget - OMITTED_NOTE_RESERVE, 200);
+  for (const name of tools) {
+    const cost = name.length + 1;
+    if (kept.length > 0 && used + cost > nameBudget) {
+      dropped.push(name);
+      continue;
+    }
+    kept.push(name);
+    used += cost;
+  }
+  const preview = dropped.slice(0, OMITTED_NAME_PREVIEW).join("、");
+  const previewSuffix = dropped.length > OMITTED_NAME_PREVIEW ? " 等" : "";
+  return `${header}${kept.join("、")}（预算所限，另有 ${dropped.length} 个工具未列出：${preview}${previewSuffix}）`;
 }
 
 const PERSONA_STYLE_DESCRIPTIONS: Record<PersonaStyle, string> = {
@@ -229,11 +295,17 @@ export type PromptFragment = {
   maxChars?: number;
 };
 
-/** 截断超出预算的分片，并附上提示，保持“有界”的不变式。 */
+/**
+ * 截断超出预算的分片，并附上提示，保持“有界”的不变式。
+ *
+ * 用 head+tail 而不是只留开头：分片的**尾部常常才是结论**（人设的额外要求/长期记忆、
+ * AGENTS.md 的收尾约定），只留 head 等于把这些砍掉。同时 `headTailClip` 按**码点**计数，
+ * 不会把中文/emoji 截成半个代理对（旧实现 `text.slice` 会）。
+ */
 function capFragment(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  const truncated = text.slice(0, maxChars);
-  return `${truncated}\n\n[该部分超出 ${maxChars} 字符上限已被截断，以保持上下文有界]`;
+  const { text: clipped, clipped: didClip, omitted } = headTailClip(text, maxChars);
+  if (!didClip) return text;
+  return `${clipped}\n\n[该部分超出 ${maxChars} 字符上限，已省略中间 ${omitted} 字符，以保持上下文有界]`;
 }
 
 export const SYSTEM_PROMPT_FRAGMENTS: PromptFragment[] = [
@@ -278,7 +350,7 @@ export const SYSTEM_PROMPT_FRAGMENTS: PromptFragment[] = [
   {
     id: "toolProtocol",
     build: (o) => (o.includeToolProtocol ? buildToolPrompt(o.enabledToolNames, o.enabledToolDescriptions) : null),
-    maxChars: 4_000,
+    maxChars: TOOL_PROTOCOL_MAX_CHARS,
   },
   {
     id: "memoryExtraction",

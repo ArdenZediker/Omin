@@ -193,7 +193,10 @@ export default function PersonalizationSettingsSection() {
         <div>
           <h3 className="text-sm font-medium text-slate-900 omni-settings-title">本地长期记忆文件</h3>
           <p className="mt-1 text-xs text-slate-500 omni-settings-muted">
-            以下内容保存在数据目录的 persona 文件夹（多个 .md 文件），你可直接编辑，Omni 也会在对话中自动更新。
+            以下内容保存在数据目录的 persona 文件夹（多个 .md 文件），每次对话都会注入，你可直接编辑。
+          </p>
+          <p className="mt-1 text-xs text-slate-500 omni-settings-muted">
+            Omni 不会在后台静默改写它们：只有当你在对话里明确说出「以后都…」这类长期要求时，它才会主动提议写入，并在写入前弹窗征求你同意。
           </p>
         </div>
 

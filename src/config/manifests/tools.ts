@@ -274,9 +274,30 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/update_persona",
     title: "Update Persona",
     description:
-      "Write a long-term preference, name, or persona into the corresponding persona markdown file (same fields as above). Usage: /update_persona <field> <content>",
+      "Persist a durable preference, name or persona into the matching persona markdown file (it is injected into every future conversation). content REPLACES the whole field, so read the current value first. Usage: /update_persona <field> <content>",
     promptContribution:
-      "Call /update_persona <field> <content> to persist stable preferences, names, or persona into the corresponding persona markdown file (including AGENTS.md). Usage: /update_persona <field> <content>.",
+      "Call /update_persona <field> <content> to persist something the user wants you to keep permanently. " +
+      "field: userName (how to address the user) | assistantName (your name) | personaDescription (your persona) | customInstruction (a standing instruction) | longTermMemory (stable preferences and working habits) | style | agentsMd (free-form rules). " +
+      "Call it PROACTIVELY, without being asked, when the user states a lasting rule about how you should behave from now on — \"以后都…/记住/默认/不要/我希望你…\" used as a general rule rather than a one-off request — or when they tell you their name / ask you to adopt one. " +
+      "Do NOT use it for one-off task details, or for facts that only hold inside a single project: those belong to the hidden <omni_memory> block instead. If the fact should survive across projects, prefer this tool. " +
+      "content REPLACES that field entirely (it is not appended): before adding to a field that may already have text, call /read_persona <field> first, merge the old text with the new, and pass the COMPLETE merged result — never send only the delta. " +
+      "Every call pops a confirmation dialog for the user, so make at most one call per field per turn, and tell the user in your reply what you are saving and why.",
+    parameters: {
+      type: "object",
+      properties: {
+        field: {
+          type: "string",
+          description:
+            "Profile field to write: style / userName / assistantName / personaDescription / customInstruction / longTermMemory / agentsMd",
+        },
+        content: {
+          type: "string",
+          description:
+            "The COMPLETE new text for that field (replaces the previous value — merge with the existing text first).",
+        },
+      },
+      required: ["field", "content"],
+    },
   },
   {
     id: "install_expert",

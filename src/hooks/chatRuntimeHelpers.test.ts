@@ -127,6 +127,38 @@ describe("内置工具对所有模型/会话公用", () => {
   });
 });
 
+/**
+ * 回归：`update_persona` 曾是唯一没有 parameters 声明的内置工具 —— 模型拿到的是空 schema
+ * （`buildChatTools` 回落到 `{type:"object",properties:{}}`），而它的执行器只认「字段 内容」纯文本，
+ * 于是「模型自主写长期记忆」这条能力从未真正跑通过。这里锁住下发给模型的那一份 schema 与说明文案。
+ */
+describe("update_persona 下发给模型的 schema 与触发条件", () => {
+  function updatePersonaTool() {
+    const tool = buildChatTools(null).find((t) => t.name === "update_persona");
+    expect(tool).toBeDefined();
+    return tool!;
+  }
+
+  it("声明 field / content 为必填，模型才有办法传参", () => {
+    const params = updatePersonaTool().parameters as {
+      properties?: Record<string, unknown>;
+      required?: string[];
+    };
+    expect(Object.keys(params.properties ?? {}).sort()).toEqual(["content", "field"]);
+    expect(params.required).toEqual(["field", "content"]);
+  });
+
+  it("说明里回答了「何时主动调用」与「覆盖而非追加」", () => {
+    const description = updatePersonaTool().description ?? "";
+    expect(description).toContain("PROACTIVELY");
+    expect(description).toContain("REPLACES");
+    // 追加前必须先读旧值，否则会把既有长期记忆冲掉
+    expect(description).toContain("/read_persona");
+    // 与项目级记忆（隐藏结构块）的分流判据
+    expect(description).toContain("omni_memory");
+  });
+});
+
 describe("buildExpertAgentHint（agent 工具的动态专家名册）", () => {
   // 专家自 2026-09-13 起不再内置（全部移除，只能用户自建），故此处自备 fixture。
   // 名册逻辑只关心「注册表里有已启用专家」，与来源（内置/自建）无关。

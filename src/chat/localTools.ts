@@ -747,16 +747,26 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     title: updatePersonaTool.title,
     execute: async (resolvedCommand) => {
       const raw = resolvedCommand.args.trim();
-      const spaceIndex = raw.indexOf(" ");
-      if (spaceIndex < 0) {
-        return { ok: false, error: "用法：/update_persona <字段名> <内容>" };
+      // 两种入参形态都要接住，否则这个工具形同虚设：
+      // - function calling：模型按 manifest.parameters 传 {field, content}，args 是**原始 JSON**
+      //   （`extractToolCallArgs` 的多字段分支保留 JSON，单字段才拆成裸值）；
+      // - 用户手敲斜杠命令：`<字段名> <内容>` 纯文本（校验层见 rawObject 为 null 一律放行）。
+      // 曾经只认后一种，于是模型即使调用也必然撞上「用法」或「未知字段」。
+      const json = parseToolJsonArgs(raw);
+      let key = strArg(json, "field", "key") ?? "";
+      let content = strArg(json, "content", "value", "text") ?? "";
+      if (!json) {
+        const spaceIndex = raw.indexOf(" ");
+        if (spaceIndex < 0) {
+          return { ok: false, error: "用法：/update_persona <字段名> <内容>" };
+        }
+        key = raw.slice(0, spaceIndex).trim();
+        content = raw.slice(spaceIndex + 1).trim();
       }
-      const key = raw.slice(0, spaceIndex).trim();
-      const content = raw.slice(spaceIndex + 1).trim();
       if (!PERSONA_FIELDS.includes(key)) {
         return {
           ok: false,
-          error: `未知字段：${key}（可选：${PERSONA_FIELDS.join("、")}）`,
+          error: `未知字段：${key || "(空)"}（可选：${PERSONA_FIELDS.join("、")}）`,
         };
       }
       if (!content) {
