@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
   const host = loadEnv(mode, process.cwd(), "").TAURI_DEV_HOST;
 
   return {
-    plugins: [react(), tailwindcss(), fileViewerRenderers({ copyAssets: true })],
+    plugins: [react(), tailwindcss(), fileViewerRenderers({ copyAssets: { mode: "dev" } })],
     build: {
       rollupOptions: {
         output: {
