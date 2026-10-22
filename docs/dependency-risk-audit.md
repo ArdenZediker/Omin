@@ -2,26 +2,24 @@
 
 ## 1. 技术栈与依赖结构
 
-> 清单核对时间：2026-09-05，与 `package.json` / `src-tauri/Cargo.toml` 对齐。
+> 清单核对时间：2026-10-22，与 `package.json` / `src-tauri/Cargo.toml` 对齐。
 
 前端（运行时）：
 - React 19.1 / react-dom
 - TypeScript 5.8（严格模式）
 - Vite 7 + `@vitejs/plugin-react`
 - Tailwind CSS 4（`@tailwindcss/vite` 插件）
-- Zustand 5（仅 `src/store/uiStore.ts` 一处）
 - `@tauri-apps/api` 2
-- react-markdown 10 + remark-gfm + rehype-sanitize（Markdown 渲染，带 sanitize）
+- react-markdown 10 + remark-gfm（Markdown 渲染，不启用原始 HTML）
 - `@file-viewer/react` 3 + `@file-viewer/preset-office` 3（PDF / Office 内嵌预览，懒加载约 7.7MB）
 - `pdfjs-dist` 5（知识库摄取链路在用）
 - `mammoth`（docx 转 HTML）
 - lucide-react、`@lobehub/icons-static-svg`（图标）
-- `@tanstack/react-virtual`（长列表虚拟滚动）
 - `@fontsource-variable/noto-sans-sc`（PDF CJK 字体兜底，构建期必需）
 
 前端（开发时）：
-- Vitest 4 + jsdom + Testing Library（207 个用例）
-- `@tauri-apps/cli` 2、`iconv-lite`
+- Vitest 4 + jsdom + Testing Library（当前 64 个文件、720 个用例）
+- `@tauri-apps/cli` 2
 
 桌面端：
 - Tauri 2（features：`protocol-asset`、`tray-icon`）

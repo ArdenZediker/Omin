@@ -7,7 +7,6 @@ import {
   MAX_SUB_AGENT_OUTPUT_CHARS,
   MAX_SUB_AGENT_BATCH,
   filterSubAgentTools,
-  parseSubAgentArgs,
   parseSubAgentBatchArgs,
   parseSubAgentTier,
   resolveSubAgentModel,
@@ -41,40 +40,6 @@ function makeContext(overrides?: Partial<SubAgentRunContext>): SubAgentRunContex
     ...overrides,
   };
 }
-
-describe("parseSubAgentArgs", () => {
-  it("解析 {task} JSON 入参", () => {
-    expect(parseSubAgentArgs(JSON.stringify({ task: "调研 src/chat 目录" }))).toEqual({
-      task: "调研 src/chat 目录",
-    });
-  });
-
-  it("纯 JSON 字符串整段作为任务", () => {
-    expect(parseSubAgentArgs(JSON.stringify("梳理架构"))).toEqual({ task: "梳理架构" });
-  });
-
-  it("非 JSON 文本宽容当作任务描述", () => {
-    expect(parseSubAgentArgs("统计仓库里 TODO 的数量")).toEqual({ task: "统计仓库里 TODO 的数量" });
-  });
-
-  it("携带 expertId 时一并解析", () => {
-    expect(parseSubAgentArgs(JSON.stringify({ task: "写周报", expertId: "writer-expert" }))).toEqual({
-      task: "写周报",
-      expertId: "writer-expert",
-    });
-  });
-
-  it("携带 tier 时一并解析（fast / capable）", () => {
-    expect(parseSubAgentArgs(JSON.stringify({ task: "快查", tier: "fast" }))).toEqual({ task: "快查", tier: "fast" });
-    expect(parseSubAgentArgs(JSON.stringify({ task: "深研", tier: "capable" }))).toEqual({ task: "深研", tier: "capable" });
-  });
-
-  it("空入参 / 缺 task 字段返回 error", () => {
-    expect(parseSubAgentArgs("")).toHaveProperty("error");
-    expect(parseSubAgentArgs(JSON.stringify({ goal: "x" }))).toHaveProperty("error");
-    expect(parseSubAgentArgs(JSON.stringify({ task: "   " }))).toHaveProperty("error");
-  });
-});
 
 describe("parseSubAgentBatchArgs", () => {
   it("批量形态：tasks 数组解析为多个子任务（对象/字符串混排 + expertId）", () => {

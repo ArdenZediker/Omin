@@ -33,28 +33,6 @@ export enum ReasoningEffort {
   Max = "max",
 }
 
-/**
- * 把配置字符串（"low"|"medium"|"high"|"xhigh"|"max"，大小写不敏感）解析为力度等级。
- * `None` / 空 / "off" / 未知值 ⇒ `undefined`（无意见，回落适配器默认）。
- * 力度是非关键优化项，未知值降级而非报错。
- */
-export function reasoningEffortFromConfig(value?: string | null): ReasoningEffort | undefined {
-  switch ((value ?? "").trim().toLowerCase()) {
-    case "low":
-      return ReasoningEffort.Low;
-    case "medium":
-      return ReasoningEffort.Medium;
-    case "high":
-      return ReasoningEffort.High;
-    case "xhigh":
-      return ReasoningEffort.XHigh;
-    case "max":
-      return ReasoningEffort.Max;
-    default:
-      return undefined;
-  }
-}
-
 /** 中性工具使用指令。适配器映射到后端 tool_choice：OpenAI/Claude/Ollama 的 tool_choice，Gemini 的 functionCallingConfig.mode。 */
 export enum ToolChoice {
   /** 无意见，模型自行决定是否调用工具（中性默认） */

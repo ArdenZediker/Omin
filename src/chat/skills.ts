@@ -1,4 +1,3 @@
-import { BUILTIN_SKILL_PLUGINS } from "../plugins/builtins";
 import { pluginRegistry } from "../plugins/registry";
 import type { PluginSkillContribution, PluginToolContribution } from "../plugins/types";
 import { isLocalSlashCommand } from "./localTools";
@@ -38,18 +37,6 @@ function toolToLocalCommand(tool: PluginToolContribution): LocalSlashCommand {
     kind: "tool",
   };
 }
-
-/** 内置技能命令（保留导出用于兼容旧代码与测试）。 */
-export const LOCAL_SKILL_COMMANDS: LocalSlashCommand[] = BUILTIN_SKILL_PLUGINS.map((manifest) =>
-  skillToLocalCommand({
-    id: manifest.id,
-    command: manifest.command ?? `/${manifest.id}`,
-    title: manifest.name,
-    description: manifest.description,
-    systemPrompt: manifest.systemPrompt,
-    promptPrefix: manifest.promptPrefix,
-  })
-);
 
 /** 全部可用技能命令 = 内置 + 插件市场已安装且启用。 */
 export function getAllSkillCommands(): LocalSlashCommand[] {

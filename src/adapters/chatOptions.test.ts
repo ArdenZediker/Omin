@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   ReasoningEffort,
   ToolChoice,
-  reasoningEffortFromConfig,
   resolveRequestOptions,
   resolveContextWindow,
   MIN_CONTEXT_WINDOW,
@@ -26,22 +25,6 @@ const thinkingModel = (over: Partial<ModelConfig> = {}): ModelConfig => ({
   supportsStreaming: true,
   thinking: true,
   ...over,
-});
-
-describe("reasoningEffortFromConfig", () => {
-  it("解析标准等级（大小写不敏感）", () => {
-    expect(reasoningEffortFromConfig("low")).toBe(ReasoningEffort.Low);
-    expect(reasoningEffortFromConfig("MEDIUM")).toBe(ReasoningEffort.Medium);
-    expect(reasoningEffortFromConfig("High")).toBe(ReasoningEffort.High);
-    expect(reasoningEffortFromConfig("xhigh")).toBe(ReasoningEffort.XHigh);
-    expect(reasoningEffortFromConfig("MAX")).toBe(ReasoningEffort.Max);
-  });
-  it("off / 空 / 未知 ⇒ 无意见（undefined），不抛错", () => {
-    expect(reasoningEffortFromConfig("off")).toBeUndefined();
-    expect(reasoningEffortFromConfig("")).toBeUndefined();
-    expect(reasoningEffortFromConfig(null)).toBeUndefined();
-    expect(reasoningEffortFromConfig("bogus")).toBeUndefined();
-  });
 });
 
 describe("resolveRequestOptions", () => {

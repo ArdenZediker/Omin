@@ -46,19 +46,6 @@ export function settleInterruptedSteps(messages: Message[]): Message[] {
   return changed ? next : messages;
 }
 
-/** 是否存在未完成（running 过渡态或已中断定案）的工具步骤——摘要/汇总据此避开「已完成」措辞。
- *  已经是「成功 result」的 running 步骤不算未完成（settlement / 渲染层双侧一致）。 */
-export function hasIncompleteToolStep(steps: ChatStep[] | undefined): boolean {
-  return (
-    steps?.some(
-      (s) =>
-        s.type === "tool_call" &&
-        (s.status === "running" || s.status === "interrupted") &&
-        !isResolvedAsSuccess(s)
-    ) ?? false
-  );
-}
-
 /** 未完成（running / interrupted）工具步骤的数量（成功完成的 running 不计） */
 export function countIncompleteToolSteps(steps: ChatStep[] | undefined): number {
   if (!steps) return 0;

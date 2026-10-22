@@ -26,10 +26,6 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  revealItemInDir: vi.fn(),
-}));
-
 vi.mock("@tauri-apps/plugin-shell", () => ({
   open: vi.fn(),
 }));

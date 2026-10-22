@@ -22,7 +22,6 @@ vi.mock("../app/sqliteStorage", () => ({
 import {
   ARTIFACT_TYPE_LABEL,
   appendArtifact,
-  artifactsForProject,
   clearProjectArtifacts,
   consumePendingOpenArtifactId,
   loadArtifacts,
@@ -32,6 +31,8 @@ import {
   requestOpenArtifactInPanel,
   saveArtifacts,
 } from "./artifacts";
+
+const artifactsForProject = (projectId: string) => loadArtifacts().filter((artifact) => artifact.projectId === projectId);
 
 describe("artifacts 产物模型", () => {
   beforeEach(() => {

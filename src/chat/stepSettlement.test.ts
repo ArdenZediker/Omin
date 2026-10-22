@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Message } from "../adapters/types";
 import {
   countIncompleteToolSteps,
-  hasIncompleteToolStep,
   isResolvedAsSuccess,
   settleInterruptedSteps,
   settleMessageSteps,
@@ -87,11 +86,10 @@ describe("stepSettlement", () => {
     expect((twice[1].steps?.[0] as { status?: string }).status).toBe("interrupted");
   });
 
-  it("hasIncompleteToolStep / countIncompleteToolSteps：识别 running 与 interrupted，忽略完成步骤", () => {
-    expect(hasIncompleteToolStep([runningStep])).toBe(true);
-    expect(hasIncompleteToolStep([{ ...runningStep, status: "interrupted" as const }])).toBe(true);
-    expect(hasIncompleteToolStep([completedStep])).toBe(false);
-    expect(hasIncompleteToolStep(undefined)).toBe(false);
+  it("countIncompleteToolSteps：识别 running 与 interrupted，忽略完成步骤", () => {
+    expect(countIncompleteToolSteps([runningStep])).toBe(1);
+    expect(countIncompleteToolSteps([{ ...runningStep, status: "interrupted" as const }])).toBe(1);
+    expect(countIncompleteToolSteps(undefined)).toBe(0);
     expect(
       countIncompleteToolSteps([runningStep, { ...runningStep, status: "interrupted" as const }, completedStep])
     ).toBe(2);
@@ -115,9 +113,8 @@ describe("stepSettlement", () => {
     expect(settled?.[2]).toBe(completedStep);
   });
 
-  it("hasIncompleteToolStep / countIncompleteToolSteps：running 但 result 已带回不算未完成", () => {
+  it("countIncompleteToolSteps：running 但 result 已带回不算未完成", () => {
     // 不应把带回成功 result 的 running 步骤算入「未完成」——渲染层据此避免显示「已中断」
-    expect(hasIncompleteToolStep([runningButResolved])).toBe(false);
     expect(countIncompleteToolSteps([runningButResolved])).toBe(0);
     expect(countIncompleteToolSteps([runningButResolved, runningStep])).toBe(1);
     // 即使被打上 status="interrupted" 的留底步骤，只要 result 非空 + ！isError，依然按完成态渲染

@@ -114,10 +114,6 @@ export function appendArtifact(spec: ArtifactSpec & { projectId: string; session
   return artifact;
 }
 
-export function artifactsForProject(projectId: string): Artifact[] {
-  return loadArtifacts().filter((a) => a.projectId === projectId);
-}
-
 /**
  * 按「项目 + 会话」双重维度过滤产物。
  * 项目为空时回退到 NO_PROJECT_ARTIFACT_KEY；sessionId 为空时返回空数组（避免全量泄露）。

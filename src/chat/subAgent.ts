@@ -88,19 +88,6 @@ export function isSubAgentActive(): boolean {
 }
 
 /**
- * 宽容解析 agent 工具入参（单任务形态）：
- * 1. {"task":"...","expertId":"..."} → 取 task / expertId；
- * 2. 纯 JSON 字符串 / 非 JSON 文本 → 整段作为任务（无专家）；
- * 缺失有效任务时返回 error。
- */
-export function parseSubAgentArgs(raw: string): { task: string; expertId?: string; tier?: SubAgentTier } | { error: string } {
-  const parsed = parseSubAgentBatchArgs(raw);
-  if ("error" in parsed) return parsed;
-  const first = parsed.tasks[0];
-  return { task: first.task, expertId: first.expertId, tier: first.tier };
-}
-
-/**
  * 宽容解析 agent 工具入参（支持并行批量形态）：
  * 1. {"tasks":[{task, expertId?}, ...]} → 并行派发多个子任务（上限 MAX_SUB_AGENT_BATCH）；
  * 2. {"task":"...","expertId":"..."} / 纯 JSON 字符串 / 非 JSON 文本 → 包装为单任务。

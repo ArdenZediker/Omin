@@ -297,7 +297,6 @@ export { BUILTIN_MODELS } from "./modelCatalog";
 export {
   ReasoningEffort,
   ToolChoice,
-  reasoningEffortFromConfig,
   defaultChatOptions,
   resolveRequestOptions,
   resolveContextWindow,
