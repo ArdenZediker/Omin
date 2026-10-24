@@ -1,6 +1,6 @@
 # Omni 项目交接文档
 
-> 更新：2026-10-22 ｜ 依据：工作区实况（不是设计愿景）
+> 更新：2026-10-25 ｜ 依据：工作区实况（不是设计愿景）
 > 本文档只写**代码里能取证的事**与**接手后一定会遇到的坑**。功能清单见 `README.md`。
 
 ---
@@ -11,8 +11,8 @@
 |---|---|
 | 这是什么 | Tauri 2 + React 19 + Rust 的本地优先 AI 桌面工作台，数据全在本机 SQLite |
 | 现在能跑吗 | Windows：能（dev / build / 打包都验证过） |
-| 能打 Mac 包吗 | **不能**，两处 Rust 编译阻塞，见 §6.1 |
-| 测试能跑吗 | 能：64 个文件、720 个用例全部通过，见 §6.4 |
+| 能打 Mac 包吗 | **代码已完成 macOS 双架构适配**；Intel/Apple Silicon 的 DMG 由 `.github/workflows/macos-build.yml` 在 macOS runner 实构 |
+| 测试能跑吗 | 能：66 个文件、729 个用例全部通过，见 §6.4 |
 | 工作区干净吗 | **不干净**，有 5 个主题的未提交改动，见 §7。**先看 §7 再动手** |
 | 最该先做什么 | 把 §7 的改动按主题提交，否则下一轮改动会和它们混在一起 |
 
@@ -177,34 +177,20 @@ Windows 上 tao 用**窗口当前所在屏**的 scale 换算，跨 DPI 屏会把
 
 ## 6. 当前已知问题（按严重度）
 
-### 6.1 🔴 macOS 无法构建（两处硬阻塞）
+### 6.1 ✅ macOS 编译阻塞已修复，已补双架构 CI
 
-1. **通用依赖被误放进 Windows 专属段**
-   `src-tauri/Cargo.toml:31` 起 `[target."cfg(windows)".dependencies]` 里塞了
-   `serde` / `serde_json` / `reqwest` / `tokio` / `rusqlite` / `uuid` / `regex` / `image` /
-   `zip` / `lopdf` / `similar` 等。
-   macOS 目标下这些 crate 根本不被引入，而 `src-tauri/src/lib.rs:1-2` 无条件 `use serde` / `use rusqlite`
-   ⇒ 一片 "unresolved crate"。
-   修法：只留 `clipboard-win`、`windows-sys` 在 Windows 段，其余移回 `[dependencies]`。
+通用依赖已恢复到 `[dependencies]`；仅 `clipboard-win`、`windows-sys` 留在 Windows 专属段。
+`shellcmd.rs` 已给 Windows 受限 token 调用加平台边界，非 Windows 请求沙箱时明确拒绝。
+一次性命令与持久 Shell 在 macOS 使用用户默认 Shell，应用启动时恢复登录 Shell 的 PATH。
+`.github/workflows/macos-build.yml` 分别在 Apple Silicon 和 Intel runner 上构建并上传 DMG。
 
-2. **非 Windows 引用了 Windows-only 函数**
-   `src-tauri/src/sandbox.rs:278` 的 `execute_restricted` 带 `#[cfg(target_os = "windows")]`，
-   而 `src-tauri/src/shellcmd.rs:283` 无条件调用。
-   注意 `SandboxType::WindowsRestrictedToken` 枚举变体**没有** cfg（`sandbox.rs:62-67`），
-   所以 `:281` 那句判断能编过，真正报错的只有 `:283`。
-   修法：调用处加 `#[cfg(windows)]`，或给非 Windows 提供返回 `Err` 的 stub。
+本机 Windows 无法完成 macOS SDK/Objective-C 编译与 UI 实测。首次推送后要查看 GitHub Actions 两个 DMG job 是否都成功。
 
-### 6.2 🟠 macOS 上"沙箱已启用"是空转
+### 6.2 🟡 macOS 沙箱与路径围栏
 
-`src-tauri/src/sandbox.rs:78-82`：非 Windows 直接返回 `SandboxType::None`，
-命令走普通 `sh -c`。UI 上的「沙箱模式」开关在 macOS 没有任何隔离效果。
-
-同源的跨平台语义问题：
-
-- `office_export.rs:89` / `filemod.rs:98` 的 `is_within` 无条件 `to_lowercase()`
-  ⇒ 在**大小写敏感 APFS** 上会把 `/a/Project` 与 `/a/project` 当作同一目录。
-- 禁写目录规则是 `C:\Windows` / `Program Files` 模型（`office_export.rs:42-83`），
-  macOS 的 `/System`、`/Library`、`/Applications` 未覆盖。
+macOS 尚未提供 OS 级沙箱。设置页禁用新开关；旧配置开启时可关闭，关闭前后端拒绝命令而非静默普通执行。
+路径包含判断在非 Windows 平台按大小写敏感语义比较；macOS 另对系统目录、`~/Library`、`.ssh` 做保守禁写保护，临时目录仍放行。
+若未来需要 macOS OS 级隔离，应单独实现平台沙箱后端。
 
 ### 6.3 🟠 `loadBasicSettings` 有两份实现，同名不同义
 
@@ -217,7 +203,7 @@ Windows 上 tao 用**窗口当前所在屏**的 scale 换算，跨 DPI 屏会把
 
 ### 6.4 ✅ 测试已可运行
 
-`pnpm test` 当前通过 **64 个测试文件、720 个用例**。此前记录的 runner/config
+`pnpm test` 当前通过 **66 个测试文件、729 个用例**。此前记录的 runner/config
 初始化失败已无法复现；后续改动应把全量测试纳入回归，而不是只依赖 `tsc` / `vite build`。
 
 ### 6.5 🟡 发布链路未完成
@@ -248,6 +234,9 @@ Windows 上 tao 用**窗口当前所在屏**的 scale 换算，跨 DPI 屏会把
 | C. 第一轮死代码清理 | `src/App.tsx`、`adapters/paramCompat.ts`、`app/settings.ts`、`app/settingsStore.ts`、`chat/types.ts`、`plugins/mcp.ts`、`plugins/skillhubSkillsets.ts`、`src-tauri/src/gittools.rs`、`src/styles/*.css` | 删 7 处死导出 + 250 条死 CSS 规则（1597 行） | tsc ✅、vite build ✅、CSS 复扫 0 ✅ |
 | D. 用户既有改动（**不是本轮做的**） | `src/components/plugins/InstalledSkillsetCard.tsx`、`src/styles/plugins.css` | 「插件卡片尺寸统一」，注释注明 2026-09-12 | 未验证 |
 | E. 全局清理 | `index.html`、`package.json`、`pnpm-lock.yaml`、`src/adapters/*`、`src/chat/*`、`src/components/ArtifactsPanel.test.tsx`、模板图标与一次性脚本 | 删 5 个无效导出、3 个无引用 SVG、1 个一次性迁移脚本、3 个无用依赖 | tsc ✅、vite build ✅、cargo check ✅、vitest 720 ✅ |
+| F. macOS 适配（本轮） | `src-tauri/Cargo.toml`、`main.rs`、`shellcmd.rs`、`shell_session.rs`、`sandbox.rs`、`office_export.rs`、`filemod.rs`、`workspace_files.rs`、设置 UI、`bashWriteScan.ts`、`.github/workflows/macos-build.yml` | 修复非 Windows 编译阻塞，适配用户 Shell/PATH，补系统路径护栏及 Intel/Apple Silicon DMG CI | Windows cargo check ✅、cargo test 136 ✅、pnpm test 729 ✅、pnpm build ✅；Mac Actions 待首次运行 |
+
+F 批次与早先未提交的 A-E 修改共用 `Cargo.toml` 等文件，提交时需按主题暂存对应 hunk；本轮未提交其他主题，也未触碰既有构建缓存。
 
 提交前注意：
 

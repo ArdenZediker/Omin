@@ -146,18 +146,22 @@ export function scanBashWriteSemantics(command: string): BashWriteScan {
 
 /**
  * TS 侧禁区路径静态启发（前端拿不到环境变量，保守正则）：
- * 任意盘符的 Windows 目录、Program Files(×86)、ProgramData、路径中出现 .ssh。
+ * Windows 系统目录、macOS 系统目录 / 用户 Library、路径中出现 .ssh。
  * AppData（含 TEMP 豁免）的权威判定在 Rust 端 `no_go_zone_check` 命令
  * （复用 office_export.rs::no_go_zone，单一事实来源），本函数仅作 invoke 失败兜底。
  */
 export function isNoGoZonePath(path: string): boolean {
-  const lower = (path ?? "").replace(/\\/g, "/").toLowerCase().trim();
-  if (!lower) return false;
+  const normalized = (path ?? "").replace(/\\/g, "/").trim();
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
   return (
     /^[a-z]:\/windows(\/|$)/.test(lower) ||
     /^[a-z]:\/program files( \(x86\))?(\/|$)/.test(lower) ||
     /^[a-z]:\/programdata(\/|$)/.test(lower) ||
-    /\/\.ssh(\/|$)/.test(lower)
+    /^\/(System|Library|Applications|bin|sbin|usr|etc|var)(\/|$)/.test(normalized) ||
+    /^\/private\/(etc|var)(\/|$)/.test(normalized) ||
+    /^\/Users\/[^/]+\/Library(\/|$)/.test(normalized) ||
+    /\/\.ssh(\/|$)/i.test(normalized)
   );
 }
 

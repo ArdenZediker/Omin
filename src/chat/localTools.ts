@@ -1864,7 +1864,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const autoApproved =
         isKnownSafeCommand(command) && !writeScan.hasWriteSemantics;
 
-      // 禁区硬拦截：写目标命中 .ssh/AppData/Windows/Program Files → 不提供确认，直接拒绝。
+      // 禁区硬拦截：写目标命中系统目录或密钥目录 → 不提供确认，直接拒绝。
       // 权威判定走 Rust no_go_zone_check（含 TEMP 豁免，与 write 工具围栏同源）；
       // TS 静态启发先兜底筛一轮，invoke 异常时仍能拦住最明显的禁区。
       let noGoTarget = findNoGoZoneTarget(writeScan.targets);
@@ -1881,7 +1881,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         return {
           ok: false,
           error:
-            `已拦截：命令试图写入受保护目录「${noGoTarget}」（.ssh / AppData / Windows / Program Files 等系统与密钥目录）。` +
+            `已拦截：命令试图写入受保护目录「${noGoTarget}」（系统目录或密钥目录）。` +
             "请在项目工作区内选择输出路径。",
         };
       }

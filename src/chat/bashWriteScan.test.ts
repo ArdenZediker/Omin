@@ -105,10 +105,19 @@ describe("isNoGoZonePath（静态启发兜底；AppData/TEMP 权威判定在 Rus
     expect(isNoGoZonePath("C:/Users/me/.ssh/authorized_keys")).toBe(true);
   });
 
+  it("命中 macOS 系统目录、用户 Library 和 .ssh", () => {
+    expect(isNoGoZonePath("/System/Library/Preferences/example.plist")).toBe(true);
+    expect(isNoGoZonePath("/Applications/Omni.app/Contents/Info.plist")).toBe(true);
+    expect(isNoGoZonePath("/Users/me/Library/Keychains/login.keychain-db")).toBe(true);
+    expect(isNoGoZonePath("/Users/me/.ssh/id_ed25519")).toBe(true);
+    expect(isNoGoZonePath("/users/me/library/Keychains/login.keychain-db")).toBe(false);
+  });
+
   it("项目工作区常规路径不命中", () => {
     expect(isNoGoZonePath("src/app.ts")).toBe(false);
     expect(isNoGoZonePath("D:/repo/build/out.txt")).toBe(false);
     expect(isNoGoZonePath("D:/repo/AppDataBackup/notes.txt")).toBe(false); // 仅命中真实 AppData 目录才算
+    expect(isNoGoZonePath("/Users/me/Projects/omni/src/main.rs")).toBe(false);
     expect(isNoGoZonePath("")).toBe(false);
   });
 

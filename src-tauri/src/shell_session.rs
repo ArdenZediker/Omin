@@ -336,7 +336,7 @@ fn scrub_pty_env(cmd: &mut CommandBuilder) {
 }
 
 /// 持久会话仅支持 bash 族（标记协议与 `eval --` 依赖 POSIX 语义）。
-/// 优先自定义路径（须为 bash/zsh），否则 Windows 自动探测 Git Bash、其他平台用系统 bash。
+/// 优先自定义路径（须为 bash/zsh），否则 Windows 自动探测 Git Bash、Unix 使用用户 bash/zsh。
 fn resolve_persistent_shell(shell_path: Option<&str>) -> Result<(String, Vec<&'static str>), String> {
     if let Some(p) = shell_path.map(str::trim).filter(|s| !s.is_empty()) {
         let path = std::path::Path::new(p);
@@ -361,7 +361,25 @@ fn resolve_persistent_shell(shell_path: Option<&str>) -> Result<(String, Vec<&'s
     }
     #[cfg(not(windows))]
     {
-        Ok(("bash".to_string(), vec!["-l", "-i"]))
+        let fallback = if cfg!(target_os = "macos") {
+            "/bin/zsh"
+        } else {
+            "bash"
+        };
+        let shell = std::env::var("SHELL")
+            .ok()
+            .filter(|path| {
+                let path = std::path::Path::new(path);
+                let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("");
+                path.is_file() && (stem.contains("bash") || stem.contains("zsh"))
+            })
+            .unwrap_or_else(|| fallback.to_string());
+        let args = if shell.ends_with("zsh") {
+            vec!["-f", "-i"]
+        } else {
+            vec!["-l", "-i"]
+        };
+        Ok((shell, args))
     }
 }
 

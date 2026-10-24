@@ -1,7 +1,7 @@
 //! 沙箱：统一策略模型 + Windows 受限 token 后端。
 //!
 //! 分层对齐 codex（codex-rs/sandboxing）：上层（execute_command）只面对
-//! [`SandboxPolicy`] 与 [`get_platform_sandbox`] 后端选择器，平台后端把策略
+//! [`SandboxPolicy`] 与平台支持判定，平台后端把策略
 //! 编译成原语。v1 实现 Windows 受限 token（CreateRestrictedToken）：
 //! - 剥离全部特权（DISABLE_MAX_PRIVILEGE）→ 无法提权（SeDebug/SeBackup 等全部消失）；
 //! - 子进程继承用户身份但不可执行管理操作；
@@ -57,29 +57,9 @@ impl SandboxPolicy {
     }
 }
 
-/// 平台后端类型（对齐 codex SandboxType）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SandboxType {
-    /// 不启用沙箱
-    None,
-    /// Windows 受限 token（本 v1 唯一实装后端）
-    WindowsRestrictedToken,
-}
-
-/// 按平台与开关选择后端；非 Windows 平台 v1 回落 None（策略模型已就位，后端后续补）。
-pub fn get_platform_sandbox(enabled: bool) -> SandboxType {
-    if !enabled {
-        return SandboxType::None;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        SandboxType::WindowsRestrictedToken
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = enabled;
-        SandboxType::None
-    }
+/// 当前平台是否实现了受限 token 沙箱。
+pub(crate) const fn is_platform_sandbox_supported() -> bool {
+    cfg!(target_os = "windows")
 }
 
 #[cfg(target_os = "windows")]
@@ -300,13 +280,11 @@ mod tests {
     }
 
     #[test]
-    fn platform_selector_respects_switch() {
-        assert_eq!(get_platform_sandbox(false), SandboxType::None);
-        // Windows 上启用 → 受限 token；其他平台 v1 回落 None
+    fn platform_sandbox_support_matches_compiled_backend() {
         #[cfg(target_os = "windows")]
-        assert_eq!(get_platform_sandbox(true), SandboxType::WindowsRestrictedToken);
+        assert!(is_platform_sandbox_supported());
         #[cfg(not(target_os = "windows"))]
-        assert_eq!(get_platform_sandbox(true), SandboxType::None);
+        assert!(!is_platform_sandbox_supported());
     }
 
     #[cfg(target_os = "windows")]

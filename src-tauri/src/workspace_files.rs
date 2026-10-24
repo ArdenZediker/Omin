@@ -73,7 +73,12 @@ fn sensitive_read_reason(path: &Path, home: Option<&str>) -> Option<String> {
             .to_lowercase()
             .trim_end_matches('/')
             .to_string();
-        for dir in [".ssh", ".gnupg", ".aws", ".kube"] {
+        let dirs: &[&str] = if cfg!(target_os = "macos") {
+            &[".ssh", ".gnupg", ".aws", ".kube", "library/keychains"]
+        } else {
+            &[".ssh", ".gnupg", ".aws", ".kube"]
+        };
+        for dir in dirs {
             let prefix = format!("{home}/{dir}");
             if text == prefix || text.starts_with(&format!("{prefix}/")) {
                 return Some(format!("~/{dir}（凭据目录）"));
@@ -720,6 +725,18 @@ mod tests {
         assert!(sensitive_read_reason(Path::new("/etc/sudoers.d/extra"), None).is_some());
         assert!(sensitive_read_reason(Path::new("/etc/shadow.d/extra"), None).is_none());
         assert!(sensitive_read_reason(Path::new("/etc/passwd"), None).is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sensitive_classifier_blocks_macos_keychain() {
+        let home = Some("/Users/tester");
+        assert!(sensitive_read_reason(
+            Path::new("/Users/tester/Library/Keychains/login.keychain-db"),
+            home
+        )
+        .is_some());
+        assert!(sensitive_read_reason(Path::new("/Users/tester/Library/Notes/notes.txt"), home).is_none());
     }
 
     // ---------- copy_file_to_store（会话附件快照） ----------

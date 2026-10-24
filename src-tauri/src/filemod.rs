@@ -3,14 +3,14 @@
 //! 设计定位：
 //! - `write_file` / `edit_file` 是模型的原子粒度文件修改入口，替代「全量覆盖靠 export_*」
 //!   和「绕过变更面板靠 /bash 写文件」两条旧路。
-//! - **围栏**：No-Go Zone（.ssh/AppData/Windows/Program Files）无条件拒绝；项目工作区外
+//! - **围栏**：No-Go Zone（密钥与系统目录）无条件拒绝；项目工作区外
 //!   的写入必须由前端 HITL 确认（`confirmed_outside=true`）才放行——安全模型与 export_* 一致。
 //! - **快照回滚**：每个路径在进程生命周期内的首次修改前，把磁盘基线存入内存快照表
 //!   （None = 该文件是 agent 新建的，撤销即删除）。`undo_file_edit` 恢复基线，不依赖 git。
 //! - **diff**：复用 office_export::compute_file_diff（similar crate，内存 unified-diff），
 //!   结果经前端 fileDiff 透传进变更面板。
 
-use crate::office_export::{no_go_zone, DiffResult};
+use crate::office_export::{is_within, no_go_zone, DiffResult};
 use crate::storage_paths::fallback_workspace_root;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -93,18 +93,6 @@ fn resolve_target(
         }
     }
     Ok(target)
-}
-
-/// child 是否落在 parent 之内（与 office_export::is_within 同规则）。
-fn is_within(child: &Path, parent: &Path) -> bool {
-    let c = child.to_string_lossy().replace('\\', "/").to_lowercase();
-    let p = parent
-        .to_string_lossy()
-        .replace('\\', "/")
-        .to_lowercase()
-        .trim_end_matches('/')
-        .to_string();
-    c == p || c.starts_with(&format!("{p}/"))
 }
 
 /// 首次修改前记录磁盘基线快照（同一进程内同一路径只记一次）。
@@ -360,13 +348,27 @@ mod tests {
 
     #[test]
     fn resolve_target_rejects_outside_workspace_without_confirm() {
-        let err = resolve_target("D:/somewhere/else/a.rs", Some("D:/Code/ws"), false).unwrap_err();
+        let workspace = temp_dir("workspace");
+        let outside = temp_dir("outside").join("a.rs");
+        let err = resolve_target(
+            outside.to_str().unwrap(),
+            workspace.to_str(),
+            false,
+        )
+        .unwrap_err();
         assert!(err.contains("确认"));
     }
 
     #[test]
     fn resolve_target_allows_relative_with_workspace() {
-        let target = resolve_target("src/a.rs", Some("D:/Code/ws"), false).unwrap();
-        assert!(is_within(&target, Path::new("D:/Code/ws")));
+        let workspace = temp_dir("relative");
+        let target = resolve_target("src/a.rs", workspace.to_str(), false).unwrap();
+        assert!(is_within(&target, &workspace));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn workspace_paths_respect_case_sensitive_filesystems() {
+        assert!(!is_within(Path::new("/a/project/file.txt"), Path::new("/a/Project")));
     }
 }

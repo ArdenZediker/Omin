@@ -25,13 +25,11 @@ tauri-plugin-clipboard-manager = "2"
 arboard = "3"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
+# 单实例：第二次点 exe / 再次唤起时，把已有实例的主窗提到前台，而不是再起一个进程。
+# 必须注册为**第一个** plugin（见 lib.rs），否则第二个实例会先初始化其它插件。
+tauri-plugin-single-instance = "2"
 # 持久 shell 会话（shell_session.rs）：真 PTY——Windows 走 ConPTY，Unix 走 openpty（codex 同款）。
 portable-pty = "0.9"
-
-[target."cfg(windows)".dependencies]
-clipboard-win = { version = "5", features = ["std"] }
-# 沙箱（sandbox.rs）：Windows 受限 token（对齐 codex windows-sandbox 思路）
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "stream"] }
@@ -49,3 +47,8 @@ quick-xml = "0.37.2"
 lopdf = "0.35.0"
 image = "0.25.5"
 similar = "2"
+
+[target."cfg(windows)".dependencies]
+clipboard-win = { version = "5", features = ["std"] }
+# 沙箱（sandbox.rs）：Windows 受限 token（对齐 codex windows-sandbox 思路）
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }

@@ -500,6 +500,16 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        // ⚠️ 单实例必须是**第一个**注册的 plugin：它要在其它插件初始化之前就判定
+        // 「本次进程是不是已有实例的第二次启动」。是新实例就在这里直接退出，
+        // 回调转而在**已有实例**里执行——所以这里只做「把主窗唤到前台」。
+        //
+        // 没有它时的实际后果（实测/审计）：连续点 exe 会开出多个完整进程，
+        // 每个进程各注册一个托盘图标（TrayIconBuilder::with_id 的 id 只在进程内唯一）、
+        // 各起一个知识库轮询线程，并且并发读写同一份 session.jsonl / SQLite kv。
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())

@@ -10,6 +10,8 @@
 use serde_json::Value;
 use std::io::{BufWriter, Write};
 use std::path::Path;
+#[cfg(not(windows))]
+use std::path::PathBuf;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
@@ -39,63 +41,129 @@ fn col_name(mut idx: usize) -> String {
     String::from_utf8(out).expect("ASCII 列名")
 }
 
-/// AI 禁止写入的系统/密钥目录：.ssh、AppData、Windows/System32、Program Files、ProgramData。
-/// 系统临时目录（TEMP/TMP，含单测所在 AppData\Local\Temp）放行，避免误伤中转与测试。
+/// AI 禁止写入的系统/密钥目录。
+/// 系统临时目录（TEMP/TMP/TMPDIR，含单测临时目录）放行，避免误伤中转与测试。
 pub(crate) fn no_go_zone(path: &Path) -> Option<&'static str> {
-    let lower = path.to_string_lossy().replace('\\', "/").to_lowercase();
     for var in ["TEMP", "TMP", "TMPDIR"] {
         if let Ok(t) = std::env::var(var) {
-            let t = t.replace('\\', "/").to_lowercase().trim_end_matches('/').to_string();
-            if !t.is_empty() && (lower == t || lower.starts_with(&format!("{t}/"))) {
+            let temp = Path::new(&t);
+            if !t.is_empty() && is_within(path, temp) {
                 return None;
             }
         }
     }
-    let windir = std::env::var("WINDIR")
-        .unwrap_or_else(|_| "C:\\Windows".into())
-        .replace('\\', "/")
-        .to_lowercase();
-    let systemroot = std::env::var("SYSTEMROOT")
-        .unwrap_or_else(|_| windir.clone())
-        .replace('\\', "/")
-        .to_lowercase();
-    let systemdrive = std::env::var("SYSTEMDRIVE")
-        .unwrap_or_else(|_| "C:".into())
-        .to_lowercase();
-    let mut forbidden: Vec<String> = vec![
-        format!("{windir}/"),
-        format!("{systemroot}/"),
-        format!("{systemdrive}/program files/"),
-        format!("{systemdrive}/program files (x86)/"),
-        format!("{systemdrive}/programdata/"),
-    ];
-    if let Ok(up) = std::env::var("USERPROFILE") {
-        let up = up.replace('\\', "/").to_lowercase();
-        forbidden.push(format!("{up}/.ssh/"));
-        forbidden.push(format!("{up}/appdata/"));
+
+    #[cfg(windows)]
+    {
+        let windir = std::env::var("WINDIR")
+            .unwrap_or_else(|_| "C:\\Windows".into())
+            .replace('\\', "/")
+            .to_lowercase();
+        let systemroot = std::env::var("SYSTEMROOT")
+            .unwrap_or_else(|_| windir.clone())
+            .replace('\\', "/")
+            .to_lowercase();
+        let systemdrive = std::env::var("SYSTEMDRIVE")
+            .unwrap_or_else(|_| "C:".into())
+            .to_lowercase();
+        let mut forbidden: Vec<String> = vec![
+            format!("{windir}/"),
+            format!("{systemroot}/"),
+            format!("{systemdrive}/program files/"),
+            format!("{systemdrive}/program files (x86)/"),
+            format!("{systemdrive}/programdata/"),
+        ];
+        if let Ok(up) = std::env::var("USERPROFILE") {
+            let up = up.replace('\\', "/").to_lowercase();
+            forbidden.push(format!("{up}/.ssh/"));
+            forbidden.push(format!("{up}/appdata/"));
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            let home = home.replace('\\', "/").to_lowercase();
+            forbidden.push(format!("{home}/.ssh/"));
+        }
+        let lower = path.to_string_lossy().replace('\\', "/").to_lowercase();
+        for f in &forbidden {
+            let root = f.trim_end_matches('/');
+            if lower == root || lower.starts_with(f) {
+                return Some("系统目录或密钥目录（.ssh / AppData / Windows / Program Files）");
+            }
+        }
     }
-    if let Ok(home) = std::env::var("HOME") {
-        let home = home.replace('\\', "/").to_lowercase();
-        forbidden.push(format!("{home}/.ssh/"));
+
+    #[cfg(target_os = "macos")]
+    {
+        let forbidden = [
+            "/System",
+            "/Library",
+            "/Applications",
+            "/bin",
+            "/sbin",
+            "/usr",
+            "/etc",
+            "/var",
+            "/private/etc",
+            "/private/var",
+        ];
+        if forbidden.iter().any(|root| is_within_macos_protected(path, Path::new(root))) {
+            return Some("系统目录或密钥目录（macOS 系统目录 / ~/Library / .ssh）");
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            let home = PathBuf::from(home);
+            if is_within_macos_protected(path, &home.join(".ssh"))
+                || is_within_macos_protected(path, &home.join("Library"))
+            {
+                return Some("系统目录或密钥目录（macOS 系统目录 / ~/Library / .ssh）");
+            }
+        }
     }
-    for f in &forbidden {
-        if lower.starts_with(f) {
-            return Some("系统目录或密钥目录（.ssh / AppData / Windows / Program Files）");
+
+    #[cfg(not(windows))]
+    if let Some(home) = std::env::var_os("HOME") {
+        if is_within(path, &PathBuf::from(home).join(".ssh")) {
+            return Some("密钥目录（.ssh）");
         }
     }
     None
 }
 
-/// child 是否落在 parent 之内（大小写不敏感，统一 / 分隔符，避免对不存在路径 canonicalize 失败）。
-fn is_within(child: &Path, parent: &Path) -> bool {
-    let c = child.to_string_lossy().replace('\\', "/").to_lowercase();
-    let p = parent
-        .to_string_lossy()
-        .replace('\\', "/")
-        .to_lowercase()
-        .trim_end_matches('/')
-        .to_string();
-    c == p || c.starts_with(&format!("{p}/"))
+/// child 是否落在 parent 之内；按平台文件系统语义比较，且不要求目标已存在。
+#[cfg(not(windows))]
+fn normalize_unix_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        if component == std::path::Component::ParentDir {
+            normalized.pop();
+        } else if component != std::path::Component::CurDir {
+            normalized.push(component.as_os_str());
+        }
+    }
+    normalized
+}
+
+#[cfg(target_os = "macos")]
+fn is_within_macos_protected(child: &Path, parent: &Path) -> bool {
+    let child = normalize_unix_path(child).to_string_lossy().to_lowercase();
+    let parent = normalize_unix_path(parent).to_string_lossy().to_lowercase();
+    child == parent || child.starts_with(&format!("{parent}/"))
+}
+
+pub(crate) fn is_within(child: &Path, parent: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let c = child.to_string_lossy().replace('\\', "/").to_lowercase();
+        let p = parent
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_lowercase()
+            .trim_end_matches('/')
+            .to_string();
+        c == p || c.starts_with(&format!("{p}/"))
+    }
+    #[cfg(not(windows))]
+    {
+        normalize_unix_path(child).starts_with(normalize_unix_path(parent))
+    }
 }
 
 fn check_path(
@@ -111,7 +179,7 @@ fn check_path(
     let p = Path::new(trimmed);
     if !p.is_absolute() {
         return Err(format!(
-            "输出路径必须是绝对路径（收到「{trimmed}」）。请使用如 C:/Users/<name>/Documents/xxx.docx 的真实本机路径，不要使用 sandbox:/ 等虚拟路径"
+            "输出路径必须是绝对路径（收到「{trimmed}」）。请使用如用户文档目录下 xxx.docx 的真实本机绝对路径，不要使用 sandbox:/ 等虚拟路径"
         ));
     }
     // 兜底 No-Go Zones：AI 绝不应写入系统/密钥目录（即使前端已放行也拒绝）。
@@ -1055,6 +1123,7 @@ mod tests {
         assert!(err.contains("已存在"));
     }
 
+    #[cfg(windows)]
     #[test]
     fn refuses_no_go_zone_write() {
         // 系统/密钥目录应被兜底拒绝（不依赖前端拦截）。
@@ -1072,6 +1141,27 @@ mod tests {
         assert!(err.contains("禁止写入"), "实际报错：{err}");
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn refuses_macos_system_directory_write() {
+        assert!(no_go_zone(Path::new("/System/Library/omni-test.docx")).is_some());
+        assert!(no_go_zone(Path::new("/Applications/omni-test.docx")).is_some());
+        assert!(no_go_zone(Path::new("/system/Library/omni-test.docx")).is_some());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn path_containment_respects_case_sensitive_filesystems() {
+        assert!(!is_within(
+            Path::new("/a/project/file.docx"),
+            Path::new("/a/Project")
+        ));
+        assert!(!is_within(
+            Path::new("/a/Project/../other/file.docx"),
+            Path::new("/a/Project")
+        ));
+    }
+
     #[test]
     fn refuses_out_of_workspace_write() {
         // 项目会话下，越界绝对路径应被兜底拒绝。
@@ -1084,7 +1174,7 @@ mod tests {
             Some(true),
             &["docx"],
             build_docx,
-            Some("D:/nonexistent-workspace-root"),
+            std::env::temp_dir().join("omni-unrelated-workspace-root").to_str(),
         )
         .unwrap_err();
         assert!(err.contains("项目工作区内"), "实际报错：{err}");
@@ -1169,11 +1259,25 @@ mod tests {
         assert!(check_path(path.to_str().unwrap(), &["md", "markdown"], true, ws.to_str()).is_ok());
     }
 
+    #[cfg(windows)]
     #[test]
     fn write_text_file_refuses_no_go_zone() {
         let no_go = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
         let path = format!("{no_go}\\System32\\omni-evil.md");
         let err = check_path(&path, &["md", "markdown"], true, None).unwrap_err();
+        assert!(err.contains("禁止写入"), "实际报错：{err}");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn write_text_file_refuses_macos_system_directory() {
+        let err = check_path(
+            "/System/Library/omni-test.md",
+            &["md", "markdown"],
+            true,
+            None,
+        )
+        .unwrap_err();
         assert!(err.contains("禁止写入"), "实际报错：{err}");
     }
 }

@@ -9,8 +9,10 @@ import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
 import CodexPetSection from "./CodexPetSection";
 
-// 常见 Shell 可执行文件路径示例（Windows 为主）：点按回填到 Shell 路径输入框。
-const SHELL_EXAMPLES: Array<{ label: string; path: string }> = [
+const IS_WINDOWS = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+
+// 常见 Shell 可执行文件路径示例：点按回填到 Shell 路径输入框。
+const WINDOWS_SHELL_EXAMPLES: Array<{ label: string; path: string }> = [
   { label: "Git-Bash", path: "C:\\Program Files\\Git\\bin\\bash.exe" },
   { label: "MSYS2", path: "C:\\msys64\\usr\\bin\\bash.exe" },
   { label: "Cygwin", path: "C:\\cygwin64\\bin\\bash.exe" },
@@ -18,6 +20,12 @@ const SHELL_EXAMPLES: Array<{ label: string; path: string }> = [
   { label: "busybox", path: "C:\\tools\\busybox.exe" },
   { label: "PowerShell 7", path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe" },
 ];
+const UNIX_SHELL_EXAMPLES: Array<{ label: string; path: string }> = [
+  { label: "zsh", path: "/bin/zsh" },
+  { label: "bash", path: "/bin/bash" },
+  { label: "sh", path: "/bin/sh" },
+];
+const SHELL_EXAMPLES = IS_WINDOWS ? WINDOWS_SHELL_EXAMPLES : UNIX_SHELL_EXAMPLES;
 
 type Props = {
   basicSettings: BasicSettings;
@@ -290,7 +298,7 @@ export default function BasicSettingsSection({
                 onUpdateBasicSettings({ shellPath: e.target.value });
                 setShellProbe(null);
               }}
-              placeholder="留空自动探测（Git-Bash → cmd /C）"
+              placeholder={IS_WINDOWS ? "留空自动探测（Git-Bash → cmd /C）" : "留空使用默认 bash/zsh"}
               className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
             />
             <button
@@ -308,7 +316,9 @@ export default function BasicSettingsSection({
                   directory: false,
                   multiple: false,
                   title: "选择 Shell 可执行文件",
-                  filters: [{ name: "Shell", extensions: ["exe", "bat", "cmd", "sh", "bash"] }],
+                  ...(IS_WINDOWS
+                    ? { filters: [{ name: "Shell", extensions: ["exe", "bat", "cmd", "sh", "bash"] }] }
+                    : {}),
                 });
                 if (typeof picked === "string" && picked.trim()) {
                   onUpdateBasicSettings({ shellPath: picked.trim() });
@@ -338,7 +348,7 @@ export default function BasicSettingsSection({
           ))}
         </div>
         <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
-          「运行 Shell 命令」工具使用的 Shell。留空时 Windows 自动探测 Git-Bash（未命中回落 cmd），macOS/Linux 用系统 sh；
+          「运行 Shell 命令」工具使用的 Shell。留空时 Windows 自动探测 Git-Bash（未命中回落 cmd），macOS/Linux 优先使用用户默认 Shell；
           指定后按可执行名匹配参数（bash/zsh → -lc，cmd → /C，pwsh → -Command，wsl → --，busybox → sh -c，其余 → -c），
           可指向 Git-Bash、WSL、MSYS2、Cygwin 或任意自定义 Shell。⚠️ 切换自定义 Shell 不会关闭命令安全校验，
           高危命令依旧被拦截、修改类操作依旧需要确认。
@@ -359,14 +369,18 @@ export default function BasicSettingsSection({
               <input
                 type="checkbox"
                 checked={basicSettings.sandboxEnabled === true}
+                disabled={!IS_WINDOWS && basicSettings.sandboxEnabled !== true}
                 onChange={(e) => onUpdateBasicSettings({ sandboxEnabled: e.target.checked })}
-                className="h-4 w-4 rounded border-slate-300"
+                className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              在受限 token 沙箱中执行命令（剥离全部特权，防止提权）
+              {IS_WINDOWS ? "在受限 token 沙箱中执行命令（剥离全部特权，防止提权）" : "受限 token 沙箱（仅 Windows 可用）"}
             </label>
             <p className="text-xs text-slate-500 omni-settings-muted">
-              实验特性，默认关闭。启用后命令在 Windows 受限令牌下执行（无法提权、密钥类环境变量不注入），
-              但会关闭持久 bash 会话（每次一次性执行，cwd 环境变量不再跨调用保留）；非 Windows 平台自动回落普通执行。
+              {IS_WINDOWS
+                ? "实验特性，默认关闭。启用后命令在 Windows 受限令牌下执行（无法提权、密钥类环境变量不注入），但会关闭持久 bash 会话（每次一次性执行，cwd 环境变量不再跨调用保留）。"
+                : basicSettings.sandboxEnabled
+                  ? "当前平台尚未实现受限 token 沙箱。请关闭这个旧设置以恢复命令执行；在关闭前，后端会拒绝命令而不会静默改为普通执行。"
+                  : "当前平台尚未实现受限 token 沙箱，此选项不可用。"}
             </p>
           </div>
         </div>

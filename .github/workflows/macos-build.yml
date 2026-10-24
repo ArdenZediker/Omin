@@ -1,0 +1,47 @@
+name: macOS build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            arch: apple-silicon
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            arch: intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build macOS DMG
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: pnpm tauri build --ci --target ${{ matrix.target }} --bundles dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omni-macos-${{ matrix.arch }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error

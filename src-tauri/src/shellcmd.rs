@@ -2,7 +2,7 @@
 //!
 //! 设计定位（对齐本地工作台安全模型）：
 //! - 仅执行 shell 命令，不做任何"解释"`;命令字符串原样交给系统 shell。
-//! - Windows 默认走 `cmd /C`，其他平台走 `sh -c`；统一用 shell 包装，方便 `bun`、`npm`、
+//! - Windows 默认走 `cmd /C`，Unix 优先使用用户默认 Shell；统一用 shell 包装，方便 `bun`、`npm`、
 //!   管道、重定向等 CLI 技能包使用。
 //! - 工作目录（cwd）由前端传入（锁定在项目工作区），为空时回落到应用当前目录。
 //! - 内置超时（默认 120s），超时杀掉整个子进程树，避免长命令/卡死耗尽线程。
@@ -41,7 +41,7 @@ pub struct ExecuteCommandInput {
     /// 自定义超时（毫秒），可选；超出用默认。
     #[serde(default)]
     pub timeout_ms: Option<u64>,
-    /// 是否在受限 token 沙箱中执行（设置 → 命令执行）。默认关闭；非 Windows 平台自动回落普通执行。
+    /// 是否在受限 token 沙箱中执行（设置 → 命令执行）。默认关闭；非 Windows 平台拒绝执行。
     #[serde(default)]
     pub sandbox: Option<bool>,
 }
@@ -204,7 +204,7 @@ fn resolve_custom_shell(shell_path: Option<&str>) -> Result<Option<(String, Stri
 /// 空格时整体加引号变成 `cmd /C "整个命令"`，触发 cmd 特殊的外层引号剥离规则，
 /// 导致含空格路径、嵌套双引号的命令解析错乱（手动 cmd 能跑、程序调用就失败的
 /// 典型根因）。原样传递等价于手敲 `cmd /C <命令>`。
-/// 其他平台：`sh -c <命令>`。
+/// Unix 平台优先使用环境中配置且存在的用户默认 Shell，保证登录环境中的 PATH 可用。
 #[cfg(windows)]
 fn build_shell_command(command: &str, shell_path: Option<&str>) -> Result<Command, String> {
     if let Some((path, stem)) = resolve_custom_shell(shell_path)? {
@@ -230,8 +230,22 @@ fn build_shell_command(command: &str, shell_path: Option<&str>) -> Result<Comman
         apply_shell_args(&mut c, &stem, command);
         return Ok(c);
     }
-    let mut c = Command::new("sh");
-    c.arg("-c").arg(command);
+    let default_shell = std::env::var("SHELL")
+        .ok()
+        .filter(|shell| std::path::Path::new(shell).is_file())
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "macos") {
+                "/bin/zsh".to_string()
+            } else {
+                "sh".to_string()
+            }
+        });
+    let stem = std::path::Path::new(&default_shell)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("sh");
+    let mut c = Command::new(&default_shell);
+    apply_shell_args(&mut c, stem, command);
     Ok(c)
 }
 
@@ -276,16 +290,19 @@ fn run_shell(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String>
     let cwd = input.cwd.clone();
 
     // 沙箱模式（设置开关，默认关）：Windows 受限 token 执行，剥离全部特权防提权。
-    // 非 Windows 或未启用时回落普通路径（策略模型已就位，后端按平台补齐）。
-    if input.sandbox.unwrap_or(false)
-        && crate::sandbox::get_platform_sandbox(true) == crate::sandbox::SandboxType::WindowsRestrictedToken
-    {
-        let exec = crate::sandbox::execute_restricted(&input.command, cwd.as_deref(), timeout)?;
-        return Ok(ExecuteCommandResult {
-            exit_code: exec.exit_code,
-            output: exec.output,
-            timed_out: exec.timed_out,
-        });
+    if input.sandbox.unwrap_or(false) {
+        if !crate::sandbox::is_platform_sandbox_supported() {
+            return Err("当前平台尚不支持受限 token 沙箱，请在设置中关闭沙箱模式后重试；命令未执行。".into());
+        }
+        #[cfg(windows)]
+        {
+            let exec = crate::sandbox::execute_restricted(&input.command, cwd.as_deref(), timeout)?;
+            return Ok(ExecuteCommandResult {
+                exit_code: exec.exit_code,
+                output: exec.output,
+                timed_out: exec.timed_out,
+            });
+        }
     }
 
     let mut cmd = build_shell_command(&input.command, input.shell_path.as_deref())?;
@@ -477,6 +494,22 @@ pub(crate) async fn detect_shell(path: String) -> Result<DetectShellResult, Stri
 mod tests {
     use super::*;
 
+    #[cfg(not(windows))]
+    #[test]
+    fn sandbox_request_is_rejected_before_running_a_command() {
+        let error = run_shell(ExecuteCommandInput {
+            command: "this-command-must-not-run".into(),
+            cwd: None,
+            shell_path: None,
+            timeout_ms: None,
+            sandbox: Some(true),
+        })
+        .unwrap_err();
+        assert!(error.contains("尚不支持受限 token 沙箱"));
+        assert!(error.contains("命令未执行"));
+    }
+
+    #[cfg(windows)]
     #[test]
     fn where_on_path_finds_where_itself_and_rejects_unknown() {
         // where.exe 必然在 System32（PATH 上）——能找到自己说明解析逻辑可用。
