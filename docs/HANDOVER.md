@@ -183,9 +183,12 @@ Windows 上 tao 用**窗口当前所在屏**的 scale 换算，跨 DPI 屏会把
 `shellcmd.rs` 已给 Windows 受限 token 调用加平台边界，非 Windows 请求沙箱时明确拒绝。
 一次性命令与持久 Shell 在 macOS 使用用户默认 Shell，应用启动时恢复登录 Shell 的 PATH。
 `.github/workflows/macos-build.yml` 分别在 Apple Silicon 和 Intel runner 上构建并上传 DMG。
+主窗口使用透明无边框样式；当前 Tauri 2.10.3 在 macOS 需要
+`tauri.conf.json` 的 `app.macOSPrivateApi = true` 与 `Cargo.toml` 的 `macos-private-api` feature。
 
-GitHub Actions 双架构构建已实跑成功：run `40135570009`（2026-10-25，验证分支 `PENGY/macos-build-verification`）。
+GitHub Actions 双架构构建已实跑成功：run `40135570009`（2026-10-25，验证分支 `PENGY/macos-build-verification`，透明窗口配置修正前）。
 `macos-15` Apple Silicon 与 `macos-15-intel` 两个 job 均通过，`.dmg` 构建和 artifact 上传都成功；artifact 分别为 53.1 MB / 53.7 MB。
+透明窗口修正后需重新跑双架构 CI，旧 run 不代表最终配置。
 本机 Windows 仍无法实测 macOS UI。CI 使用 ad-hoc 签名用于构建验证，不等同 Developer ID 签名或公证，公开分发仍需单独配置。
 
 ### 6.2 🟡 macOS 沙箱与路径围栏
