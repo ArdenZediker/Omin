@@ -186,8 +186,8 @@ Windows 上 tao 用**窗口当前所在屏**的 scale 换算，跨 DPI 屏会把
 主窗口使用透明无边框样式；当前 Tauri 2.10.3 在 macOS 需要
 `tauri.conf.json` 的 `app.macOSPrivateApi = true` 与 `Cargo.toml` 的 `macos-private-api` feature。
 
-GitHub Actions 透明窗口配置修正后的双架构构建已实跑成功：run `40137421597`（2026-10-25，验证分支 `PENGY/macos-build-verification`）。
-`macos-15` Apple Silicon 与 `macos-15-intel` 两个 job 均通过并上传 DMG（53.1 MiB / 53.7 MiB）。随后加入 DMG 挂载、架构和签名校验，需以包含该校验步骤的下一次 run 作为最终 CI 验收。
+GitHub Actions 最终双架构验收已通过：run `40138777648`（2026-10-25，验证分支 `PENGY/macos-build-verification`）。
+`macos-15` Apple Silicon 与 `macos-15-intel` 两个 job 均成功构建 DMG、挂载检查 `.app`、验证二进制架构和代码签名，并上传 artifact（53.1 MiB / 53.7 MiB）。
 本机 Windows 仍无法实测 macOS UI。CI 使用 ad-hoc 签名用于构建验证，不等同 Developer ID 签名或公证，公开分发仍需单独配置。
 
 ### 6.2 🟡 macOS 沙箱与路径围栏
