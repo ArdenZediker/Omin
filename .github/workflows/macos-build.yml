@@ -40,6 +40,25 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: "-"
         run: pnpm tauri build --ci --target ${{ matrix.target }} --bundles dmg
+      - name: Verify packaged app
+        run: |
+          set -euo pipefail
+          dmg=(src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
+          test "${#dmg[@]}" -eq 1
+          mountpoint="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$mountpoint" -quiet || true
+            rmdir "$mountpoint" || true
+          }
+          trap cleanup EXIT
+          hdiutil attach -nobrowse -readonly -mountpoint "$mountpoint" "${dmg[0]}" -quiet
+          app=("$mountpoint"/*.app)
+          test "${#app[@]}" -eq 1
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${app[0]}/Contents/Info.plist")"
+          archs="$(lipo -archs "${app[0]}/Contents/MacOS/$executable")"
+          if [[ "${{ matrix.target }}" == aarch64-* ]]; then expected=arm64; else expected=x86_64; fi
+          test "$archs" = "$expected"
+          codesign --verify --deep --strict --verbose=2 "${app[0]}"
       - uses: actions/upload-artifact@v4
         with:
           name: omni-macos-${{ matrix.arch }}
