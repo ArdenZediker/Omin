@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  BookOpen,
+  Bot,
   ChevronDown,
   Copy,
   FileDown,
+  Paperclip,
   Pencil,
   RefreshCw,
 } from "lucide-react";
 import type { ChatAttachment, ChatImage, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { FileDiff } from "../chat/fileDiff";
-import type { KnowledgeContextSource } from "../chat/knowledgeTypes";
+import KnowledgeSourceCard from "./knowledge/KnowledgeSourceCard";
 import { renderMarkdown } from "../app/renderMarkdown";
 import { getToolActionMeta, isFileProducingTool, getFileBadgeLabel, extractToolFilePath, type ChangeEntry } from "../chat/toolActionMap";
 import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettlement";
@@ -98,6 +101,7 @@ export default function ChatMessage({
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const knowledgeSources = message.knowledgeContext?.sources ?? [];
+  const documentInventory = message.knowledgeContext?.documentInventory;
   const visibleKnowledgeSources = sourcesExpanded ? knowledgeSources : knowledgeSources.slice(0, 3);
   const hiddenKnowledgeSourceCount = Math.max(0, knowledgeSources.length - visibleKnowledgeSources.length);
   const artifactSectionRef = useRef<HTMLDivElement>(null);
@@ -360,36 +364,81 @@ export default function ChatMessage({
           </div>
         </div>
       ) : isUser ? (
-        <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-gradient-to-br from-violet-500/80 to-indigo-600/80 text-white/95 text-sm">
-          {userSegments.map((segment, segmentIndex) =>
-            segment.kind === "text" ? (
-              <span key={`text-${segmentIndex}`} className="whitespace-pre-wrap break-words">
-                {segment.text}
+        <div className="message-user-bubble max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-gradient-to-br from-violet-500/80 to-indigo-600/80 text-white/95 text-sm">
+          {userSegments.some((segment) => segment.kind !== "text") && (
+            <div className="message-user-attachments">
+              <span className="message-user-media-label">
+                <Paperclip size={13} strokeWidth={1.9} />
+                <span>附件</span>
               </span>
-            ) : segment.kind === "attachment" ? (
-              <span key={`attachment-${segment.attachment.path}-${segmentIndex}`} className="mx-1 inline-flex align-middle">
-                <AttachmentChip
-                  src={segment.attachment.path}
-                  name={segment.attachment.name}
-                  index={segmentIndex}
-                  size={segment.attachment.size}
-                  onClick={
-                    onOpenAttachment && !segment.attachment.path.startsWith("data:")
-                      ? () => onOpenAttachment(segment.attachment.path)
-                      : undefined
-                  }
-                />
-              </span>
-            ) : (
-              <span key={`image-${segmentIndex}`} className="mx-1 inline-flex align-middle">
-                <AttachmentChip
-                  src={segment.image.src}
-                  name={segment.image.name ?? `image_${segmentIndex + 1}.png`}
-                  index={segmentIndex}
-                />
-              </span>
-            ),
+              {userSegments.map((segment, segmentIndex) => {
+                if (segment.kind === "text") return null;
+                if (segment.kind === "attachment") {
+                  return (
+                    <AttachmentChip
+                      key={`attachment-${segment.attachment.path}-${segmentIndex}`}
+                      src={segment.attachment.path}
+                      name={segment.attachment.name}
+                      index={segmentIndex}
+                      size={segment.attachment.size}
+                      onClick={
+                        onOpenAttachment && !segment.attachment.path.startsWith("data:")
+                          ? () => onOpenAttachment(segment.attachment.path)
+                          : undefined
+                      }
+                    />
+                  );
+                }
+                return (
+                  <AttachmentChip
+                    key={`image-${segmentIndex}`}
+                    src={segment.image.src}
+                    name={segment.image.name ?? `image_${segmentIndex + 1}.png`}
+                    index={segmentIndex}
+                  />
+                );
+              })}
+            </div>
           )}
+          {(message.selectedKnowledgeCollection || message.selectedExpert || message.selectedMode) && (
+            <div className="message-user-context-list">
+              {message.selectedKnowledgeCollection && (
+                <div
+                  className="message-user-context message-user-context--knowledge"
+                  title={`本轮使用知识库：${message.selectedKnowledgeCollection.name}`}
+                >
+                  <BookOpen className="message-user-context__icon" size={14} strokeWidth={1.9} />
+                  <span className="message-user-context__label">知识库</span>
+                  <span className="message-user-context__name">{message.selectedKnowledgeCollection.name}</span>
+                </div>
+              )}
+              {message.selectedExpert && (
+                <div
+                  className="message-user-context message-user-context--expert"
+                  title={`本轮使用专家：${message.selectedExpert.name}`}
+                >
+                  <Bot className="message-user-context__icon" size={14} strokeWidth={1.9} />
+                  <span className="message-user-context__label">专家</span>
+                  <span className="message-user-context__name">{message.selectedExpert.name}</span>
+                </div>
+              )}
+              {message.selectedMode && (
+                <div
+                  className="message-user-context message-user-context--mode"
+                  title={`本轮使用${message.selectedMode.kind === "skill" ? "技能" : "工具"}：${message.selectedMode.name}`}
+                >
+                  <span className="message-user-context__icon message-user-context__command">/</span>
+                  <span className="message-user-context__label">{message.selectedMode.kind === "skill" ? "技能" : "工具"}</span>
+                  <span className="message-user-context__name">{message.selectedMode.name}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {userSegments.map((segment, segmentIndex) => segment.kind === "text" ? (
+            <div key={`text-${segmentIndex}`} className="message-user-text whitespace-pre-wrap break-words">
+              {segment.text}
+            </div>
+          ) : null)}
         </div>
       ) : (
         <div className="message-project max-w-[95%] text-sm markdown-body">
@@ -404,17 +453,36 @@ export default function ChatMessage({
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
             {renderMarkdown(message.content)}
           </div>
-          {knowledgeSources.length ? (
+          {knowledgeSources.length || documentInventory ? (
             <div className="message-knowledge-sources">
               <div className="message-knowledge-sources__header">
-                <span>知识来源</span>
-                <span>{knowledgeSources.length} 条命中</span>
+                <span>{documentInventory ? `知识库文件 · ${documentInventory.collectionName}` : "知识来源"}</span>
+                <span>{documentInventory ? `${documentInventory.documents.length} 个文件` : `${knowledgeSources.length} 条命中`}</span>
               </div>
-              <div className="message-knowledge-sources__list">
-                {visibleKnowledgeSources.map((source, index) => (
-                  <KnowledgeSourceCard key={`${source.chunkId}-${index}`} source={source} />
-                ))}
-              </div>
+              {documentInventory ? (
+                documentInventory.documents.length > 0 ? (
+                  <div className="message-knowledge-inventory" role="list">
+                    {documentInventory.documents.map((document) => (
+                      <div className="message-knowledge-inventory__item" role="listitem" key={document.id}>
+                        <span className="message-knowledge-inventory__name">{document.name}</span>
+                        <span className="message-knowledge-inventory__meta">
+                          {document.processingStatus && document.processingStatus !== "searchable"
+                            ? document.processingStatus
+                            : `${document.chunkCount} 个片段`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="message-knowledge-inventory__empty">该知识库当前没有已导入的文件</div>
+                )
+              ) : (
+                <div className="message-knowledge-sources__list">
+                  {visibleKnowledgeSources.map((source, index) => (
+                    <KnowledgeSourceCard key={`${source.documentId}-${source.chunkId}-${index}`} source={source} />
+                  ))}
+                </div>
+              )}
               {hiddenKnowledgeSourceCount > 0 && (
                 <button type="button" className="message-knowledge-sources__toggle" onClick={() => setSourcesExpanded(true)}>
                   查看全部 {knowledgeSources.length} 条来源
@@ -457,7 +525,7 @@ export default function ChatMessage({
         </div>
       )}
       {!isStreaming && !isEditing && (
-        <div className={`mt-1.5 flex items-center gap-1.5 ${isUser ? "justify-end" : "justify-start"}`}>
+        <div className={`message-actions mt-1.5 flex items-center gap-1.5 ${isUser ? "justify-end" : "justify-start"}`}>
           <MessageActionButton label="复制" onClick={() => onCopy?.(message)}>
             <Copy size={16} strokeWidth={1.8} />
           </MessageActionButton>
@@ -673,25 +741,5 @@ function ThinkingBlock({
         </div>
       ) : null}
     </>
-  );
-}
-
-function KnowledgeSourceCard({ source }: { source: KnowledgeContextSource }) {
-  return (
-    <div className="message-knowledge-source">
-      <div className="message-knowledge-source__top">
-        <div className="message-knowledge-source__title-block">
-          <div className="message-knowledge-source__title">{source.chunkTitle || source.sourceName}</div>
-          <div className="message-knowledge-source__collection">{source.collectionName}</div>
-        </div>
-        <div className="message-knowledge-source__score">score {source.score.toFixed(2)}</div>
-      </div>
-      <div className="message-knowledge-source__meta">
-        {source.sourcePath ? <span>{source.sourcePath}</span> : null}
-        {source.favorite ? <span>收藏</span> : null}
-        {source.accessCount > 0 ? <span>访问 {source.accessCount}</span> : null}
-      </div>
-      <div className="message-knowledge-source__excerpt">{source.excerpt}</div>
-    </div>
   );
 }

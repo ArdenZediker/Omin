@@ -66,6 +66,67 @@ describe("buildUserMessageSegments（统一前方：附件/图片一律排在正
 });
 
 describe("ChatMessage", () => {
+  it("在回答下展示直接读取到的知识库文件目录", () => {
+    render(
+      <ChatMessage
+        message={{
+          role: "project",
+          content: "新知识库里有 2 个文件。",
+          knowledgeContext: {
+            query: "有什么文件",
+            block: "文件清单",
+            sources: [],
+            documentInventory: {
+              collectionName: "新知识库",
+              documents: [
+                { id: "doc-1", name: "说明书.pdf", processingStatus: "searchable", chunkCount: 4 },
+                { id: "doc-2", name: "项目计划.docx", processingStatus: "processing", chunkCount: 0 },
+              ],
+            },
+          },
+        }}
+        index={0}
+      />,
+    );
+
+    expect(screen.getByText("知识库文件 · 新知识库")).toBeInTheDocument();
+    expect(screen.getByText("说明书.pdf")).toBeInTheDocument();
+    expect(screen.getByText("项目计划.docx")).toBeInTheDocument();
+    expect(screen.getByText("processing")).toBeInTheDocument();
+  });
+
+  it("用户消息把附件和截图独立放在正文上方", () => {
+    const { container } = render(
+      <ChatMessage
+        message={{
+          role: "user",
+          content: "UI UX Pro Max GitHub 你好",
+          attachments: [{ path: "D:/docs/spec.pdf", name: "spec.pdf", size: 1024 }],
+          images: [{ src: "data:image/png;base64,AAAA", name: "screen.png" }],
+          selectedKnowledgeCollection: { id: "collection-product", name: "产品知识库" },
+          selectedExpert: { id: "writer-expert", name: "写作专家" },
+          selectedMode: { kind: "skill", command: "/summarize", name: "内容总结" },
+        }}
+        index={0}
+      />,
+    );
+    const bubble = container.querySelector(".message-user-bubble")!;
+    const attachmentRow = bubble.querySelector(".message-user-attachments")!;
+    const contextRow = bubble.querySelector(".message-user-context")!;
+    const messageText = bubble.querySelector(".message-user-text")!;
+
+    expect(attachmentRow.querySelectorAll(".attachment-chip")).toHaveLength(2);
+    expect(attachmentRow.compareDocumentPosition(messageText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(contextRow).toHaveTextContent("知识库");
+    expect(contextRow).toHaveTextContent("产品知识库");
+    expect(contextRow.compareDocumentPosition(messageText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(messageText.querySelector(".message-user-context")).toBeNull();
+    expect(bubble.querySelector(".message-user-context--expert")).toHaveTextContent("写作专家");
+    expect(bubble.querySelector(".message-user-context--mode")).toHaveTextContent("内容总结");
+    expect(bubble.querySelector(".message-user-media-label")).toHaveTextContent("附件");
+    expect(messageText).toHaveTextContent("UI UX Pro Max GitHub 你好");
+  });
+
   it("工具结果消息不单独渲染（已合并到 assistant 的思考块）", () => {
     const { container } = render(
       <ChatMessage

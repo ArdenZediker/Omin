@@ -42,11 +42,6 @@ export const MAX_TOPIC_PANEL_WIDTH = 2000;
  *  window.innerWidth - MIN_MAIN_CHAT_AREA_WIDTH，避免把聊天区完全盖住。 */
 export const MIN_MAIN_CHAT_AREA_WIDTH = 220;
 
-/** 对话框（输入区）拖动时的最小高度。 */
-export const MIN_COMPOSER_RESIZE_HEIGHT = 120;
-/** 消息区保留的最小高度；拖动对话框时，最高可拖到
- *  window.innerHeight - MIN_MESSAGE_AREA_HEIGHT，避免把消息区完全盖住。 */
-export const MIN_MESSAGE_AREA_HEIGHT = 120;
 export const PROJECT_GROUPS_STORAGE_KEY = "project_groups";
 export const DEFAULT_PROJECT_GROUP_LABEL = "项目空间";
 export const QUESTION_PREVIEW_MAX_LENGTH = 48;

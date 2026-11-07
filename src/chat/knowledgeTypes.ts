@@ -249,4 +249,13 @@ export type KnowledgeContextResult = {
   query: string;
   block: string;
   sources: KnowledgeContextSource[];
+  documentInventory?: {
+    collectionName: string;
+    documents: Array<{
+      id: string;
+      name: string;
+      processingStatus?: string | null;
+      chunkCount: number;
+    }>;
+  };
 };

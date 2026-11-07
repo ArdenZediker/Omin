@@ -7,6 +7,7 @@ import {
   stubToolResultMessages,
   shouldPruneToolResults,
   isCompactionNoGain,
+  shouldSkipKnowledgeContext,
 } from "./engine";
 import type { ChatResponse, ChatToolCall, ChatStep, Message, ModelConfig, StreamChunk } from "../adapters/types";
 import { modelRegistry } from "../adapters/registry";
@@ -247,6 +248,20 @@ describe("executeChatTurn", () => {
     await executeChatTurn({ model: "gpt-test", messages: [{ role: "user", content: "hi" }] });
     expect(chatSpy.mock.calls[0]?.[0].timeoutMs).toBe(300_000);
     expect(chatSpy.mock.calls[0]?.[0].stream).toBe(false);
+  });
+});
+
+describe("知识库检索短问题过滤", () => {
+  it("显式选择知识库时，短问题也必须检索", () => {
+    const messages: Message[] = [{ role: "user", content: "都有那些文件" }];
+
+    expect(shouldSkipKnowledgeContext(messages, "collection-new")).toBe(false);
+  });
+
+  it("没有显式选择知识库时，仍跳过短问题", () => {
+    const messages: Message[] = [{ role: "user", content: "都有那些文件" }];
+
+    expect(shouldSkipKnowledgeContext(messages)).toBe(true);
   });
 });
 

@@ -1,0 +1,82 @@
+.knowledge-citation {
+  min-width: 0;
+}
+
+.knowledge-citation__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-top: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 6px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.knowledge-citation__button:hover {
+  background: var(--omni-soft-bg);
+}
+
+.knowledge-citation__button:focus-visible,
+.knowledge-citation__location:focus-visible {
+  outline: 2px solid var(--omni-app-text);
+  outline-offset: 2px;
+}
+
+.knowledge-citation__archive {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--omni-panel-border);
+  color: var(--omni-app-text);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-citation__location {
+  min-width: 0;
+  padding: 12px;
+  border-inline-start: 3px solid var(--omni-app-text);
+  background: var(--omni-soft-bg);
+}
+
+.knowledge-citation__label {
+  font-weight: 600;
+}
+
+.knowledge-citation__hint {
+  color: var(--omni-app-muted);
+  font-size: 12px;
+}
+
+.knowledge-citation .knowledge-citation__chunk {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+.knowledge-citation__preview {
+  display: flex;
+  min-width: 0;
+  height: 360px;
+  max-height: 60vh;
+  overflow: hidden;
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+}
+
+.knowledge-citation__feedback {
+  color: var(--omni-app-text);
+  overflow-wrap: anywhere;
+}

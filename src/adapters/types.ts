@@ -63,6 +63,12 @@ export interface Message {
   content: string;
   images?: ChatImage[]; // base64 编码图片（带插入位置 offset）
   knowledgeContext?: KnowledgeContextResult | null;
+  /** 用户本轮显式选择的知识库，用于在历史消息中显示所选上下文 */
+  selectedKnowledgeCollection?: { id: string; name: string };
+  /** 用户本轮显式选择的专家角色，用于在历史消息中显示所选上下文 */
+  selectedExpert?: { id: string; name: string };
+  /** 用户本轮使用的技能/工具模式，用于将命令上下文与普通正文区分 */
+  selectedMode?: { kind: "skill" | "tool"; command: string; name: string };
   /** role === "tool" 时：对应当前轮次 assistant.toolCalls 里某次调用的 id */
   toolCallId?: string;
   /** role === "tool" 时：对应工具名（Gemini functionResponse 必须回传 name） */

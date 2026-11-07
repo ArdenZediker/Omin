@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Bot,
+  Check,
   CirclePlus,
-  Paperclip,
+  Plus,
   Send,
   Square,
   X,
@@ -18,12 +19,15 @@ import type { PluginManifest } from "../plugins/types";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
 import ContextUsageTrigger, { type ContextUsageSnapshot } from "./ContextUsagePanel";
+import ModelSelector from "./ModelSelector";
 import { baseNameOf, isImageFile, readLocalImageAsDataURL, savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
 interface ChatInputProps {
   canStartNewTopic?: boolean;
   allowedToolIds?: string[];
   allowedSkillIds?: string[];
+  currentModel?: string | null;
+  modelTitle?: string;
   hasConversation?: boolean;
   usageLabel?: string | null;
   contextUsage?: ContextUsageSnapshot;
@@ -32,6 +36,7 @@ interface ChatInputProps {
   /** 可选专家（@专家 = 本轮对话切换为该专家的角色/工具/技能集） */
   experts?: PluginManifest[];
   onStartNewTopic?: () => void;
+  onModelChange?: (modelId: string) => void;
   onSend: (content: string, images?: ChatImage[], options?: ChatSendOptions) => void | Promise<void>;
   isLoading: boolean;
   isSendBlocked?: boolean;
@@ -43,8 +48,6 @@ interface ChatInputProps {
   draftAttachments?: ChatAttachment[];
   draftSignal?: number;
   onDraftChange?: (text: string, images: ChatImage[], attachments: ChatAttachment[]) => void;
-  fixedHeight?: number | null;
-  onSubmit?: () => void;
 }
 
 type KnowledgeMentionTrigger = {
@@ -93,6 +96,9 @@ function SuggestionIcon() {
 export default function ChatInput({
     allowedToolIds,
     allowedSkillIds,
+    currentModel,
+    modelTitle,
+    onModelChange,
     usageLabel,
     contextUsage,
     contextPresetText,
@@ -109,8 +115,6 @@ export default function ChatInput({
   draftAttachments,
   draftSignal,
   onDraftChange,
-  fixedHeight,
-  onSubmit,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [images, setImages] = useState<ChatImage[]>([]);
@@ -120,23 +124,43 @@ export default function ChatInput({
   const [dismissedSlashInput, setDismissedSlashInput] = useState("");
   const [selectedKnowledgeCollection, setSelectedKnowledgeCollection] = useState<KnowledgeCollection | null>(null);
   const [selectedExpert, setSelectedExpert] = useState<PluginManifest | null>(null);
+  const [openToolbarPicker, setOpenToolbarPicker] = useState<"knowledge" | "expert" | null>(null);
   const [selectedKnowledgeIndex, setSelectedKnowledgeIndex] = useState(0);
   const [dismissedMentionInput, setDismissedMentionInput] = useState("");
   const [caretIndex, setCaretIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const toolbarPickerRef = useRef<HTMLDivElement>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const knowledgeSuggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const lastDraftScopeRef = useRef<string | undefined>(undefined);
   const lastDraftSignalRef = useRef<number | undefined>(undefined);
   const suppressNextDraftReportRef = useRef(false);
 
+  useEffect(() => {
+    if (!openToolbarPicker) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!toolbarPickerRef.current?.contains(event.target as Node)) {
+        setOpenToolbarPicker(null);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenToolbarPicker(null);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [openToolbarPicker]);
+
   const syncTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (!textarea) {
-      return;
-    }
-    // 固定高度模式下由外层容器高度控制，textarea 内部滚动，不再自动撑开。
-    if (fixedHeight) {
       return;
     }
     if (input.length === 0) {
@@ -453,7 +477,12 @@ export default function ChatInput({
   const buildSendOptions = (): ChatSendOptions => ({
     hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
     knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
+    knowledgeCollectionName: selectedKnowledgeCollection?.name ?? null,
     expertId: selectedExpert?.id ?? null,
+    expertName: selectedExpert?.name ?? null,
+    selectedMode: activeLocalCommand
+      ? { kind: activeLocalCommand.kind, command: activeSlashCommand, name: activeModeLabel ?? activeSlashCommand }
+      : null,
     attachments: attachments.length > 0 ? orderedAttachments : undefined,
   });
 
@@ -471,7 +500,6 @@ export default function ChatInput({
     setCaretIndex(0);
     clearSuggestionDismissal();
     clearMentionDismissal();
-    onSubmit?.();
   };
 
   const sendDisabledTitle = isSendBlocked ? "请先配置可用模型或等待当前会话完成" : "发送消息";
@@ -689,113 +717,94 @@ export default function ChatInput({
   };
 
   return (
-    <div className={`chat-composer${fixedHeight ? " chat-composer--fixed-height" : ""}`}>
-      {hasComposerStatus && (
-        <div className="chat-composer__status">
-          {activeModeLabel && activeModeTypeLabel && (
-            <button
-              type="button"
-              className="chat-composer__status-chip"
-              onClick={() => {
-                setInput((current) => current.replace(/^\/\S+\s*/, ""));
-                clearSuggestionDismissal();
-                textareaRef.current?.focus();
-              }}
-              title="清除当前模式"
-            >
-              <Bot size={13} strokeWidth={1.9} />
-              <span>
-                {activeModeTypeLabel}: {activeModeLabel}
-              </span>
-              <X size={12} strokeWidth={2} />
-            </button>
-          )}
-
-          {selectedKnowledgeCollection && (
-            <button
-              type="button"
-              className="chat-composer__status-chip chat-composer__status-chip--knowledge"
-              onClick={() => {
-                setSelectedKnowledgeCollection(null);
-                textareaRef.current?.focus();
-              }}
-              title="取消本次知识库选择"
-            >
-              <BookOpen size={13} strokeWidth={1.9} />
-              <span>@ {selectedKnowledgeCollection.name}</span>
-              <X size={12} strokeWidth={2} />
-            </button>
-          )}
-
-          {selectedExpert && (
-            <button
-              type="button"
-              className="chat-composer__status-chip chat-composer__status-chip--expert"
-              onClick={() => {
-                setSelectedExpert(null);
-                textareaRef.current?.focus();
-              }}
-              title="取消本次专家对话（恢复默认角色）"
-            >
-              <Bot size={13} strokeWidth={1.9} />
-              <span>专家: {selectedExpert.name}</span>
-              <X size={12} strokeWidth={2} />
-            </button>
-          )}
-
-        </div>
-      )}
-
+    <div className="chat-composer">
       <div className="chat-composer__panel">
-        <div className="chat-composer__toolbar">
-          <PermissionModeSelector />
-
-          <div className="chat-composer__toolbar-group">
-            <button
-              type="button"
-              className="chat-composer__tool-button"
-              title="上传图片或文件（随消息让模型读取）"
-              onClick={() => void handleAddFiles()}
-            >
-              <Paperclip size={16} strokeWidth={1.8} />
-            </button>
-          </div>
-
-          <div className="chat-composer__toolbar-badge">{usageLabel ?? "--"}</div>
-
-        </div>
-
         <div className="chat-composer__body">
           {composedMedia.length > 0 && (
-            <div className="chat-composer__attachments">
-              {composedMedia.map((media, index) =>
-                media.kind === "image" ? (
-                  <AttachmentChip
-                    key={media.key}
-                    src={media.image!.src}
-                    name={media.image!.name ?? `image_${index + 1}.png`}
-                    index={index}
-                    removable
-                    onRemove={() => {
-                      setImages((prev) => prev.filter((item) => item !== media.image!));
-                    }}
-                  />
-                ) : (
-                  <AttachmentChip
-                    key={media.key}
-                    src={media.attachment!.path}
-                    name={media.attachment!.name}
-                    index={index}
-                    size={media.attachment!.size}
-                    removable
-                    onRemove={() => setAttachments((prev) => prev.filter((item) => item !== media.attachment!))}
-                  />
-                ),
-              )}
+            <div className="chat-composer__context chat-composer__context--attachments">
+              <div className="chat-composer__attachments">
+                {composedMedia.map((media, index) =>
+                  media.kind === "image" ? (
+                    <AttachmentChip
+                      key={media.key}
+                      src={media.image!.src}
+                      name={media.image!.name ?? `image_${index + 1}.png`}
+                      index={index}
+                      removable
+                      onRemove={() => {
+                        setImages((prev) => prev.filter((item) => item !== media.image!));
+                      }}
+                    />
+                  ) : (
+                    <AttachmentChip
+                      key={media.key}
+                      src={media.attachment!.path}
+                      name={media.attachment!.name}
+                      index={index}
+                      size={media.attachment!.size}
+                      removable
+                      onRemove={() => setAttachments((prev) => prev.filter((item) => item !== media.attachment!))}
+                    />
+                  ),
+                )}
+              </div>
             </div>
           )}
+
           <div className="chat-composer__editor-wrap">
             <div className="chat-composer__editor">
+              {hasComposerStatus && (
+                <div className="chat-composer__status">
+                  {activeModeLabel && activeModeTypeLabel && (
+                    <button
+                      type="button"
+                      className="chat-composer__status-chip"
+                      onClick={() => {
+                        setInput((current) => current.replace(/^\/\S+\s*/, ""));
+                        clearSuggestionDismissal();
+                        textareaRef.current?.focus();
+                      }}
+                      title="清除当前模式"
+                    >
+                      <Bot size={13} strokeWidth={1.9} />
+                      <span>{activeModeTypeLabel}: {activeModeLabel}</span>
+                      <X size={12} strokeWidth={2} />
+                    </button>
+                  )}
+
+                  {selectedKnowledgeCollection && (
+                    <button
+                      type="button"
+                      className="chat-composer__status-chip chat-composer__status-chip--knowledge"
+                      onClick={() => {
+                        setSelectedKnowledgeCollection(null);
+                        textareaRef.current?.focus();
+                      }}
+                      title="取消本次知识库选择"
+                    >
+                      <BookOpen size={13} strokeWidth={1.9} />
+                      <span>@ {selectedKnowledgeCollection.name}</span>
+                      <X size={12} strokeWidth={2} />
+                    </button>
+                  )}
+
+                  {selectedExpert && (
+                    <button
+                      type="button"
+                      className="chat-composer__status-chip chat-composer__status-chip--expert"
+                      onClick={() => {
+                        setSelectedExpert(null);
+                        textareaRef.current?.focus();
+                      }}
+                      title="取消本次专家对话（恢复默认角色）"
+                    >
+                      <Bot size={13} strokeWidth={1.9} />
+                      <span>专家: {selectedExpert.name}</span>
+                      <X size={12} strokeWidth={2} />
+                    </button>
+                  )}
+                </div>
+              )}
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -811,7 +820,6 @@ export default function ChatInput({
                 placeholder="输入聊天内容..."
                 className="chat-composer__textarea hide-scrollbar"
                 rows={1}
-                disabled={isLoading}
               />
             </div>
           </div>
@@ -819,10 +827,121 @@ export default function ChatInput({
 
         <div className="chat-composer__footer">
           <div className="chat-composer__footer-row">
-            <div className="chat-composer__footer-hint">Enter 发送 / Shift + Enter 换行</div>
-            <div className="chat-composer__footer-actions">
+            <div className="chat-composer__footer-tools">
+              <button
+                type="button"
+                className="chat-composer__tool-button chat-composer__tool-button--add"
+                title="上传图片或文件（随消息让模型读取）"
+                aria-label="上传图片或文件"
+                onClick={() => void handleAddFiles()}
+              >
+                <Plus size={20} strokeWidth={1.7} />
+              </button>
+              <PermissionModeSelector />
+              <div className="chat-composer__pickers" ref={toolbarPickerRef}>
+                <button
+                  type="button"
+                  className={`chat-composer__tool-button chat-composer__tool-button--labeled${selectedExpert ? " chat-composer__tool-button--active" : ""}`}
+                  title="选择本轮专家"
+                  aria-label="选择专家"
+                  aria-expanded={openToolbarPicker === "expert"}
+                  onClick={() => setOpenToolbarPicker((current) => current === "expert" ? null : "expert")}
+                >
+                  <Bot size={17} strokeWidth={1.8} />
+                </button>
+                {openToolbarPicker === "expert" && (
+                  <div className="chat-composer__picker" aria-label="选择专家">
+                    <div className="chat-composer__picker-heading">本轮使用专家</div>
+                    <button
+                      type="button"
+                      className={`chat-composer__picker-option${selectedExpert ? "" : " chat-composer__picker-option--selected"}`}
+                      onClick={() => {
+                        setSelectedExpert(null);
+                        setOpenToolbarPicker(null);
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      <span>默认助手</span>
+                      {!selectedExpert && <Check size={15} />}
+                    </button>
+                    {experts.map((expert) => (
+                      <button
+                        key={expert.id}
+                        type="button"
+                        className={`chat-composer__picker-option${selectedExpert?.id === expert.id ? " chat-composer__picker-option--selected" : ""}`}
+                        onClick={() => {
+                          setSelectedExpert(expert);
+                          setOpenToolbarPicker(null);
+                          textareaRef.current?.focus();
+                        }}
+                      >
+                        <span className="chat-composer__picker-option-copy">
+                          <strong>{expert.name}</strong>
+                          {expert.description && <small>{expert.description}</small>}
+                        </span>
+                        {selectedExpert?.id === expert.id && <Check size={15} />}
+                      </button>
+                    ))}
+                    {experts.length === 0 && <div className="chat-composer__picker-empty">暂无可用专家</div>}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`chat-composer__tool-button chat-composer__tool-button--labeled${selectedKnowledgeCollection ? " chat-composer__tool-button--active" : ""}`}
+                  title="指定本轮检索的知识库"
+                  aria-label="选择知识库"
+                  aria-expanded={openToolbarPicker === "knowledge"}
+                  onClick={() => setOpenToolbarPicker((current) => current === "knowledge" ? null : "knowledge")}
+                >
+                  <BookOpen size={18} strokeWidth={1.8} />
+                </button>
+                {openToolbarPicker === "knowledge" && (
+                  <div className="chat-composer__picker" aria-label="选择知识库">
+                    <div className="chat-composer__picker-heading">本轮检索范围</div>
+                    <button
+                      type="button"
+                      className={`chat-composer__picker-option${selectedKnowledgeCollection ? "" : " chat-composer__picker-option--selected"}`}
+                      onClick={() => {
+                        setSelectedKnowledgeCollection(null);
+                        setOpenToolbarPicker(null);
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      <span>不指定知识库</span>
+                      {!selectedKnowledgeCollection && <Check size={15} />}
+                    </button>
+                    {knowledgeCollections.map((collection) => (
+                      <button
+                        key={collection.id}
+                        type="button"
+                        className={`chat-composer__picker-option${selectedKnowledgeCollection?.id === collection.id ? " chat-composer__picker-option--selected" : ""}`}
+                        onClick={() => {
+                          setSelectedKnowledgeCollection(collection);
+                          setOpenToolbarPicker(null);
+                          textareaRef.current?.focus();
+                        }}
+                      >
+                        <span className="chat-composer__picker-option-copy">
+                          <strong>{collection.name}</strong>
+                          {collection.description && <small>{collection.description}</small>}
+                        </span>
+                        {selectedKnowledgeCollection?.id === collection.id && <Check size={15} />}
+                      </button>
+                    ))}
+                    {knowledgeCollections.length === 0 && <div className="chat-composer__picker-empty">暂无可用知识库</div>}
+                  </div>
+                )}
+              </div>
               {contextUsage && (
                 <ContextUsageTrigger snapshot={contextUsage} placement="footer" />
+              )}
+            </div>
+            <div className="chat-composer__footer-actions">
+              {usageLabel && <span className="chat-composer__usage">{usageLabel}</span>}
+              {typeof currentModel === "string" && (
+                <div className="chat-composer__model">
+                  <ModelSelector currentModel={currentModel} onModelChange={onModelChange ?? (() => undefined)} title={modelTitle} />
+                </div>
               )}
               {isLoading ? (
                 <button onClick={onStop} className="chat-composer__submit" title="停止生成" type="button">
@@ -831,7 +950,7 @@ export default function ChatInput({
               ) : (
                 <button
                   onClick={handleSubmit}
-                  disabled={isSendBlocked || (!trimmedInput && images.length === 0)}
+                  disabled={isSendBlocked || (!trimmedInput && images.length === 0 && attachments.length === 0)}
                   className="chat-composer__submit"
                   title={sendDisabledTitle}
                   type="button"

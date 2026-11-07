@@ -34,6 +34,26 @@ function renderChatInput(onSend = vi.fn(), experts: Parameters<typeof ChatInput>
 }
 
 describe("ChatInput", () => {
+  it("生成过程中仍可继续编辑草稿，但不会误发或覆盖正在生成的回答", () => {
+    const onSend = vi.fn();
+    render(
+      <ChatInput
+        onSend={onSend}
+        isLoading
+        onStop={vi.fn()}
+      />
+    );
+    const textarea = screen.getByPlaceholderText("输入聊天内容...");
+
+    expect(textarea).toBeEnabled();
+    fireEvent.change(textarea, { target: { value: "补充一点背景" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(textarea).toHaveValue("补充一点背景");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByTitle("停止生成")).toBeInTheDocument();
+  });
+
   it("selects a knowledge collection with @ and sends the collection id without the mention text", () => {
     const onSend = renderChatInput();
     const textarea = screen.getByPlaceholderText("输入聊天内容...");
@@ -46,6 +66,11 @@ describe("ChatInput", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: /@ 产品知识库/ }));
+    expect(screen.getByTitle("取消本次知识库选择").parentElement).toHaveClass("chat-composer__status");
+    const status = screen.getByTitle("取消本次知识库选择").parentElement!;
+    const editor = screen.getByPlaceholderText("输入聊天内容...").parentElement!;
+    expect(status.parentElement).toBe(editor);
+    expect(editor.querySelector("textarea")).toBe(screen.getByPlaceholderText("输入聊天内容..."));
     fireEvent.change(textarea, {
       target: {
         value: "帮我查一下 定价策略",
@@ -57,9 +82,21 @@ describe("ChatInput", () => {
     expect(onSend).toHaveBeenCalledWith("帮我查一下 定价策略", undefined, {
       hiddenContext: undefined,
       knowledgeCollectionId: "collection-product",
+      knowledgeCollectionName: "产品知识库",
       expertId: null,
+      expertName: null,
+      selectedMode: null,
       attachments: undefined,
     });
+  });
+
+  it("allows choosing the knowledge collection directly from the composer toolbar", () => {
+    renderChatInput();
+
+    fireEvent.click(screen.getByRole("button", { name: "选择知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: /产品知识库/ }));
+
+    expect(screen.getByTitle("取消本次知识库选择")).toHaveTextContent("@ 产品知识库");
   });
 
   it("selects an expert with @ and sends the expert id for role switch", () => {
@@ -94,7 +131,10 @@ describe("ChatInput", () => {
     expect(onSend).toHaveBeenCalledWith("帮我润色这段话", undefined, {
       hiddenContext: undefined,
       knowledgeCollectionId: null,
+      knowledgeCollectionName: null,
       expertId: "writer-expert",
+      expertName: "写作专家",
+      selectedMode: null,
       attachments: undefined,
     });
   });

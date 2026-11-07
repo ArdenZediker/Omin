@@ -203,17 +203,12 @@ export type ChatExecutionResult = {
 export type ChatSendOptions = {
   hiddenContext?: string;
   knowledgeCollectionId?: string | null;
+  knowledgeCollectionName?: string | null;
   /** 本次对话指定专家（@专家角色切换）：用专家提示词/工具/技能集驱动本轮 */
   expertId?: string | null;
+  expertName?: string | null;
+  /** 本次输入使用的技能/工具模式 */
+  selectedMode?: { kind: "skill" | "tool"; command: string; name: string } | null;
   /** 本次发送附带的本地文件（绝对路径引用，不内联内容） */
   attachments?: ChatAttachment[];
-};
-
-export type SlashSkill = {
-  id: string;
-  command: string;
-  title: string;
-  description: string;
-  systemPrompt?: string;
-  promptPrefix?: string;
 };

@@ -229,7 +229,13 @@ function estimateCost(model: string, promptTokens: number, completionTokens: num
   return (promptTokens / 1_000_000) * input + (completionTokens / 1_000_000) * output;
 }
 
-function shouldSkipKnowledgeContext(messages: Message[]) {
+export function shouldSkipKnowledgeContext(messages: Message[], knowledgeCollectionId?: string | null) {
+  // 用户明确选择知识库时，即使问题很短也必须检索；例如「都有那些文件」只有 6 个字，
+  // 但它是一个有效的知识库查询，不能被通用的短问句优化提前跳过。
+  if (knowledgeCollectionId?.trim()) {
+    return false;
+  }
+
   const latestUser = [...messages].reverse().find((message) => message.role === "user")?.content?.trim().toLowerCase() ?? "";
   if (!latestUser) return false;
   if (latestUser.length <= 8) {
@@ -912,7 +918,7 @@ export async function executeChatTurn(options: {
 
   const knowledgeContext =
     enableKnowledgeContext &&
-    !shouldSkipKnowledgeContext(messages) &&
+    !shouldSkipKnowledgeContext(messages, knowledgeCollectionId) &&
     !signal?.aborted
       ? await buildKnowledgeContextBlock({
           model,
@@ -922,13 +928,15 @@ export async function executeChatTurn(options: {
           signal,
         })
       : null;
-  if (knowledgeContext && knowledgeContext.sources.length > 0) {
+  if (knowledgeContext && (knowledgeContext.sources.length > 0 || knowledgeContext.documentInventory)) {
     emitEngineAction({
       type: "action",
       label: "检索",
       title: "Knowledge Search",
       icon: "Search",
-      detail: `「${knowledgeContext.query}」命中 ${knowledgeContext.sources.length} 条知识片段`,
+      detail: knowledgeContext.documentInventory
+        ? `「${knowledgeContext.query}」读取了「${knowledgeContext.documentInventory.collectionName}」文件目录，共 ${knowledgeContext.documentInventory.documents.length} 个文件`
+        : `「${knowledgeContext.query}」命中 ${knowledgeContext.sources.length} 条知识片段`,
     });
   }
 
