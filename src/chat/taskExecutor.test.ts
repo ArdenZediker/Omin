@@ -1,52 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Project } from "./types";
 import type { PluginManifest } from "../plugins/types";
-import { executeInputTask } from "./taskExecutor";
+import { executeInputTask, executeTask } from "./taskExecutor";
 import { executeChatTurn } from "./engine";
 import { pluginRegistry } from "../plugins/registry";
 
 vi.mock("./engine", () => ({
-  executeChatTurn: vi.fn(async () => ({ reply: "ok" })),
-}));
-
-// 轻量替身：直接执行 model 步骤，把 executeChatTurn 的结果塞回 finalResult。
-vi.mock("./taskRunner", () => ({
-  runTaskPlan: vi.fn(async (options: {
-    plan: { taskId: string; intent: string; steps: unknown[] };
-    executeStep: (args: {
-      step: { kind: string; title?: string };
-      api: {
-        appendTrace: (s: string) => void;
-        setFinalResult: (r: unknown) => void;
-        setToolResult: (r: unknown) => void;
-      };
-    }) => Promise<void>;
-  }) => {
-    const state: {
-      conversationMessages: unknown[];
-      finalResult?: unknown;
-      toolResult?: unknown;
-      error?: unknown;
-    } = { conversationMessages: [] };
-    await options.executeStep({
-      step: { kind: "model", title: "model" },
-      api: {
-        appendTrace: () => {},
-        setFinalResult: (r) => {
-          state.finalResult = r;
-        },
-        setToolResult: (r) => {
-          state.toolResult = r;
-        },
-      },
-    });
-    return {
-      status: "completed" as const,
-      plan: options.plan,
-      trace: [] as string[],
-      state,
-    };
-  }),
+  executeChatTurn: vi.fn(async () => ({ content: "ok" })),
 }));
 
 const mockedTurn = vi.mocked(executeChatTurn);
@@ -164,9 +124,98 @@ describe("executeInputTask 斜杠技能许可", () => {
     expect(executeTool).toHaveBeenCalledWith(
       expect.objectContaining({ id: "read_file", command: "/read_file", args: "src/App.tsx" })
     );
+    expect(executeTool).toHaveBeenCalledTimes(1);
     // 本地确定性执行，不该再走一轮模型
     expect(mockedTurn).not.toHaveBeenCalled();
     expect(result.intent).toBe("local_command");
+  });
+});
+
+describe("executeInputTask 知识库上下文", () => {
+  beforeEach(() => {
+    mockedTurn.mockClear();
+  });
+
+  it("保留用户选择的知识库并把 collection id 传给检索引擎，即使问题很短", async () => {
+    const prepared: import("../adapters/types").Message[] = [];
+
+    await executeInputTask({
+      input: "都有那些文件",
+      currentMessages: [],
+      model: "gpt-test",
+      knowledgeCollectionId: "collection-new",
+      selectedKnowledgeCollection: { id: "collection-new", name: "新知识库" },
+      onPrepareConversation: (messages) => prepared.push(...messages),
+      executeTool: vi.fn(async () => undefined),
+    });
+
+    expect(prepared[prepared.length - 1]).toMatchObject({
+      role: "user",
+      content: "都有那些文件",
+      selectedKnowledgeCollection: { id: "collection-new", name: "新知识库" },
+    });
+    expect(mockedTurn).toHaveBeenCalledWith(expect.objectContaining({ knowledgeCollectionId: "collection-new" }));
+  });
+});
+
+describe("真实任务阶段的失败和取消", () => {
+  it("模型中断时，任务终态快照保留已经流出的文字、思考和工具步骤", async () => {
+    const onTaskState = vi.fn();
+    const streamedStep = { type: "tool_call" as const, name: "read_file", arguments: "{}", result: "片段" };
+    mockedTurn.mockImplementationOnce(async (options) => {
+      options.onChunk?.("已经输出的正文");
+      options.onReasoning?.("已经输出的思考");
+      options.onToolStep?.(streamedStep);
+      throw new Error("network disconnected");
+    });
+    const result = await executeTask({ model: "test", messages: [], onTaskState });
+    expect(result.status).toBe("failed");
+    expect(result.partialText).toBe("已经输出的正文");
+    expect(result.partialReasoning).toBe("已经输出的思考");
+    expect(result.partialSteps).toContainEqual(streamedStep);
+    expect(onTaskState).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: "failed", partialText: "已经输出的正文", partialReasoning: "已经输出的思考",
+    }));
+  });
+
+  it("用户取消发生在流式文字之后时，终态是 aborted 且保留部分正文", async () => {
+    const controller = new AbortController();
+    const onTaskState = vi.fn();
+    mockedTurn.mockImplementationOnce(async (options) => {
+      options.onChunk?.("取消前的内容");
+      controller.abort();
+      throw new Error("request stopped");
+    });
+    const result = await executeTask({ model: "test", messages: [], signal: controller.signal, onTaskState });
+    expect(result).toMatchObject({ status: "aborted", partialText: "取消前的内容" });
+    expect(onTaskState).toHaveBeenLastCalledWith(expect.objectContaining({ status: "aborted", partialText: "取消前的内容" }));
+  });
+
+  it("空模型输出不能通过结果校验", async () => {
+    mockedTurn.mockResolvedValueOnce({ content: "  " } as Awaited<ReturnType<typeof executeChatTurn>>);
+    const result = await executeTask({ model: "test", messages: [] });
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("空");
+    expect(result.plan.steps.find((step) => step.kind === "review")?.status).toBe("failed");
+  });
+
+  it("失败工具保留输出但不标记整轮成功", async () => {
+    mockedTurn.mockResolvedValueOnce({ content: "文件读取失败", steps: [
+      { type: "tool_call", name: "read_file", arguments: "{}", result: "拒绝访问", isError: true },
+    ] } as Awaited<ReturnType<typeof executeChatTurn>>);
+    const result = await executeTask({ model: "test", messages: [] });
+    expect(result.status).toBe("failed");
+    expect(result.finalResult?.content).toBe("文件读取失败");
+    expect(result.error).toContain("read_file");
+  });
+
+  it("已取消的本地命令不会执行工具", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const result = await executeInputTask({ input: "/read_file a.txt", currentMessages: [], model: "test", signal: controller.signal, executeTool });
+    expect(result.status).toBe("aborted");
+    expect(executeTool).not.toHaveBeenCalled();
   });
 });
 

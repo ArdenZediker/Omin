@@ -6,9 +6,45 @@ import { resolveLocalSlashCommand } from "./skills";
 import { pluginRegistry } from "../plugins/registry";
 import type { TaskExecutionResult, TaskIntent, TaskPlan, TaskStep } from "./taskTypes";
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord, ChatStep } from "./types";
+import { validateTaskOutput } from "./taskValidation";
 
 function createTaskId() {
   return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+type TaskStateListener = (result: TaskExecutionResult) => void | Promise<void>;
+
+async function executeRecordedPlan(
+  options: Parameters<typeof runTaskPlan>[0],
+  onTaskState?: TaskStateListener,
+  partialOutput?: { text: string; reasoning: string; steps: ChatStep[] },
+): Promise<TaskExecutionResult> {
+  const { plan } = options;
+  const initial: TaskExecutionResult = {
+    taskId: plan.taskId, intent: plan.intent, status: "running", plan,
+    trace: [], conversationMessages: options.initialState?.conversationMessages ?? plan.sourceMessages,
+  };
+  try {
+    await onTaskState?.(structuredClone(initial));
+  } catch (error) {
+    return { ...initial, status: "failed", error: `任务开始状态未保存，尚未执行：${String(error)}` };
+  }
+  const run = await runTaskPlan(options);
+  const result: TaskExecutionResult = {
+    taskId: plan.taskId, intent: plan.intent, status: run.status, plan: run.plan,
+    trace: run.trace, ...run.state,
+    partialText: partialOutput?.text || undefined,
+    partialReasoning: partialOutput?.reasoning || undefined,
+    partialSteps: partialOutput?.steps.length ? partialOutput.steps : undefined,
+  };
+  try {
+    await onTaskState?.(structuredClone(result));
+  } catch (error) {
+    // 执行可能已经产生副作用；保留结果，并明确禁止把保存失败当作可重跑信号。
+    result.error = `${result.error ? `${result.error}；` : ""}任务结果尚未保存：${String(error)}。请重试保存，不要重复执行已完成操作。`;
+    if (result.status === "completed") result.status = "failed";
+  }
+  return result;
 }
 
 function summarizeGoal(messages: Message[], fallback = "执行一轮聊天任务") {
@@ -36,8 +72,6 @@ function createTaskPlan(options: {
   } else if (intent === "tool_chain") {
     steps = [
       { id: "plan_chain", title: "规划组合工具任务", kind: "input", stage: "plan", status: "pending" },
-      { id: "act_search", title: "搜索相关文件", kind: "tool", stage: "act", status: "pending" },
-      { id: "act_read", title: "读取命中文件内容", kind: "tool", stage: "act", status: "pending" },
       { id: "act_model", title: "调用模型总结结果", kind: "model", stage: "act", status: "pending" },
       { id: "review_output", title: "校验总结结果", kind: "review", stage: "review", status: "pending" },
       { id: "finalize_output", title: "整理链路输出", kind: "finalize", stage: "finalize", status: "pending" },
@@ -65,6 +99,7 @@ function createTaskPlan(options: {
 
 export async function executeTask(options: {
   model: string;
+  onTaskState?: TaskStateListener;
   messages: Message[];
   signal?: AbortSignal;
   systemPrompt?: string;
@@ -93,22 +128,22 @@ export async function executeTask(options: {
   const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, onReasoning, onToolStep, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
   const plan = options.plan ?? createTaskPlan({ intent, model, messages });
+  const partialOutput: { text: string; reasoning: string; steps: ChatStep[] } = { text: "", reasoning: "", steps: [] };
 
-  const runResult = await runTaskPlan({
+  return executeRecordedPlan({
     plan,
     signal,
     initialState: {
       conversationMessages: messages,
     },
-    executeStep: async ({ step, api }) => {
+    executeStep: async ({ step, state, api }) => {
       if (step.kind === "input") {
         api.appendTrace("已完成输入整理");
         return;
       }
 
       if (step.kind === "tool") {
-        api.appendTrace(`执行步骤：${step.title}`);
-        return;
+        throw new Error(`任务计划包含未绑定执行器的工具步骤：${step.title}`);
       }
 
       if (step.kind === "model") {
@@ -121,14 +156,14 @@ export async function executeTask(options: {
           project,
           relatedContext,
           enabledToolNames,
-          onChunk,
-          onReasoning,
-          onToolStep,
+          onChunk: (chunk) => { partialOutput.text += chunk; onChunk?.(chunk); },
+          onReasoning: (reasoning) => { partialOutput.reasoning += reasoning; onReasoning?.(reasoning); },
+          onToolStep: (toolStep) => { partialOutput.steps.push(toolStep); onToolStep?.(toolStep); },
           knowledgeCollectionId,
           enableKnowledgeContext: intent === "chat",
           enableMemoryExtraction: intent === "chat",
           enableSummaryExtraction: intent === "chat",
-  enableToolProtocol: intent !== "chat",
+          enableToolProtocol: intent !== "chat",
           tools: options.tools,
           executeToolCall: options.executeToolCall,
           enabledSkillIds: options.enabledSkillIds,
@@ -139,6 +174,7 @@ export async function executeTask(options: {
       }
 
       if (step.kind === "review") {
+        await validateTaskOutput(state.finalResult);
         api.appendTrace("模型输出校验完成");
         return;
       }
@@ -147,23 +183,13 @@ export async function executeTask(options: {
         api.appendTrace("回复内容和用量统计已整理");
       }
     },
-  });
-
-  return {
-    taskId: plan.taskId,
-    intent: plan.intent,
-    status: runResult.status,
-    plan: runResult.plan,
-    trace: runResult.trace,
-    conversationMessages: runResult.state.conversationMessages,
-    finalResult: runResult.state.finalResult,
-    toolResult: runResult.state.toolResult,
-    error: runResult.state.error,
-  };
+  }, options.onTaskState, partialOutput);
 }
 
 async function executeLocalCommandTask(options: {
   model: string;
+  signal?: AbortSignal;
+  onTaskState?: TaskStateListener;
   command: ResolvedLocalSlashCommand;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown; artifact?: import("./artifacts").ArtifactSpec } | void>;
 }): Promise<TaskExecutionResult> {
@@ -178,27 +204,19 @@ async function executeLocalCommandTask(options: {
     },
   });
 
-  const runResult = await runTaskPlan({
+  return executeRecordedPlan({
     plan,
-    executeStep: async ({ api }) => {
+    signal: options.signal,
+    executeStep: async ({ step, api }) => {
+      if (step.kind !== "tool") return;
       api.appendTrace(`执行本地命令：${command.command}`);
       const result = await executeTool(command);
+      api.setToolResult(result ?? { ok: true });
       if (result && result.ok === false) {
         throw new Error(result.error || "本地命令执行失败");
       }
-      api.setToolResult(result ?? { ok: true });
     },
-  });
-
-  return {
-    taskId: plan.taskId,
-    intent: plan.intent,
-    status: runResult.status,
-    plan: runResult.plan,
-    trace: runResult.trace,
-    toolResult: runResult.state.toolResult,
-    error: runResult.state.error,
-  };
+  }, options.onTaskState);
 }
 
 function buildSkillMessages(command: ResolvedLocalSlashCommand, currentMessages: Message[]) {
@@ -216,6 +234,7 @@ function buildSkillMessages(command: ResolvedLocalSlashCommand, currentMessages:
 
 export async function executeInputTask(options: {
   input: string;
+  onTaskState?: TaskStateListener;
   images?: ChatImage[];
   /** 用户随消息附带的本地文件（绝对路径引用）；写入 user 消息，供历史渲染与模型按需读取 */
   attachments?: import("./types").ChatAttachment[];
@@ -238,6 +257,9 @@ export async function executeInputTask(options: {
   /** 每个工具调用执行完成时回调（实时上屏 UI 的「思考过程」步骤） */
   onToolStep?: (step: ChatStep) => void;
   knowledgeCollectionId?: string | null;
+  selectedKnowledgeCollection?: { id: string; name: string } | null;
+  selectedExpert?: { id: string; name: string } | null;
+  selectedMode?: { kind: "skill" | "tool"; command: string; name: string } | null;
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown; artifact?: import("./artifacts").ArtifactSpec } | void>;
   /** function calling：工具声明（透传给 executeTask） */
@@ -262,6 +284,9 @@ export async function executeInputTask(options: {
     enabledToolNames,
     onChunk,
     knowledgeCollectionId,
+    selectedKnowledgeCollection,
+    selectedExpert,
+    selectedMode,
     onPrepareConversation,
     executeTool,
   } = options;
@@ -274,7 +299,15 @@ export async function executeInputTask(options: {
   // 「/命令发出去没反应，窗口里什么都没有」。
   const preparedMessages: Message[] = preparedMessagesOverride ?? [
     ...currentMessages,
-    { role: "user", content: input, images, attachments },
+    {
+      role: "user",
+      content: input,
+      images,
+      attachments,
+      selectedKnowledgeCollection: selectedKnowledgeCollection ?? undefined,
+      selectedExpert: selectedExpert ?? undefined,
+      selectedMode: selectedMode ?? undefined,
+    },
   ];
 
   const localCommand = !images || images.length === 0 ? resolveLocalSlashCommand(input) : null;
@@ -305,6 +338,7 @@ export async function executeInputTask(options: {
       }
       const skillSystemPrompt = [systemPrompt, localCommand.systemPrompt?.trim()].filter(Boolean).join("\n\n") || undefined;
       return executeTask({
+        onTaskState: options.onTaskState,
         model,
         messages: skillMessages,
         signal,
@@ -334,7 +368,9 @@ export async function executeInputTask(options: {
       onPrepareConversation?.(preparedMessages);
     }
     return executeLocalCommandTask({
+      onTaskState: options.onTaskState,
       model,
+      signal,
       command: localCommand,
       executeTool,
     });
@@ -351,6 +387,7 @@ export async function executeInputTask(options: {
   });
 
   return executeTask({
+    onTaskState: options.onTaskState,
     model,
     messages: preparedMessages,
     signal,

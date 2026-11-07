@@ -42,6 +42,8 @@ export type TaskPlan = {
 
 export type TaskExecutionResult = {
   taskId: string;
+  /** Owning conversation; used to restore task status beside its session after restart. */
+  sessionId?: string | null;
   intent: TaskIntent;
   status: TaskStatus;
   plan: TaskPlan;
@@ -49,6 +51,10 @@ export type TaskExecutionResult = {
   conversationMessages?: Message[];
   finalResult?: ChatExecutionResult;
   toolResult?: ToolExecutionResult;
+  /** Streamed output survives abort/review failure even without a final model result. */
+  partialText?: string;
+  partialReasoning?: string;
+  partialSteps?: import("./types").ChatStep[];
   error?: string;
 };
 

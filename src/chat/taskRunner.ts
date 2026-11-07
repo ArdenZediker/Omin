@@ -41,6 +41,7 @@ export async function runTaskPlan(options: {
   const state: TaskRunnerState = {
     conversationMessages: initialState?.conversationMessages ?? plan.sourceMessages,
     finalResult: initialState?.finalResult,
+    toolResult: initialState?.toolResult,
     error: initialState?.error,
   };
 
@@ -85,6 +86,12 @@ export async function runTaskPlan(options: {
       });
 
       updateStepStatus(step.id, "completed");
+      // 已经返回的工具输出保留，但取消不能因发生在最后一步而被吞掉。
+      if (signal?.aborted) {
+        appendTrace(step, "任务已取消；已返回的执行结果已保留");
+        state.error = "Request aborted";
+        return { plan, trace, status: "aborted", state };
+      }
     } catch (error) {
       updateStepStatus(step.id, "failed");
       state.error = error instanceof Error ? error.message : "Unknown task error";
