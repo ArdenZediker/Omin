@@ -1,5 +1,7 @@
 import type { BasicSettings } from "./types";
 import { DEFAULT_USAGE_PREFERENCES, USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
+import { loadBasicSettings, normalizeBasicSettings } from "./settings";
+export { loadBasicSettings } from "./settings";
 import { loadAppKvEntries, removeAppKvEntry, readSqliteBackedJson, readSqliteBackedValue, removeSqliteBackedValue, saveAppKvEntry, saveSqliteBackedValue } from "./sqliteStorage";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS, MAIN_POSITION_STORAGE_KEY } from "./constants";
 
@@ -73,13 +75,8 @@ export async function removeModelConnectionStatus(modelId: string) {
   }
 }
 
-export function loadBasicSettings(storageKey: string, defaults: BasicSettings): BasicSettings {
-  if (typeof window === "undefined") return defaults;
-  return readSqliteBackedJson(storageKey, defaults);
-}
-
 export function saveBasicSettings(storageKey: string, settings: BasicSettings) {
-  saveSqliteBackedValue(storageKey, JSON.stringify(settings));
+  saveSqliteBackedValue(storageKey, JSON.stringify(normalizeBasicSettings(settings)));
 }
 
 /** 一次性迁移标记：把「打开主窗口」的定位偏好从旧的默认值 remember 迁到 center。 */

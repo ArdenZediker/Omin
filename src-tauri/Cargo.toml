@@ -51,4 +51,12 @@ similar = "2"
 [target."cfg(windows)".dependencies]
 clipboard-win = { version = "5", features = ["std"] }
 # 沙箱（sandbox.rs）：Windows 受限 token（对齐 codex windows-sandbox 思路）
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Memory",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }

@@ -10,7 +10,19 @@ type LegacyBasicSettings = BasicSettings & {
 
 export function normalizeBasicSettings(settings: LegacyBasicSettings): BasicSettings {
   const { settingsWindowWidth: _settingsWindowWidth, settingsWindowHeight: _settingsWindowHeight, ...normalized } = settings;
-  return normalized;
+  const sandboxMode: BasicSettings["sandboxMode"] =
+    normalized.sandboxMode === "read-only" ||
+    normalized.sandboxMode === "workspace-write" ||
+    normalized.sandboxMode === "danger-full-access"
+      ? normalized.sandboxMode
+      : normalized.sandboxEnabled === true
+        ? "workspace-write"
+        : "danger-full-access";
+  return {
+    ...normalized,
+    sandboxMode,
+    sandboxEnabled: sandboxMode !== "danger-full-access",
+  };
 }
 
 export function getInitialThemeMode(themeStorageKey: string): ThemeMode {

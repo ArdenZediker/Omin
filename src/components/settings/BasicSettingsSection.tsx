@@ -3,13 +3,19 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { BasicSettings } from "../../app/types";
 import type { ThemeMode } from "../../app/settings";
+import {
+  HAS_OS_FILE_SANDBOX,
+  IS_MACOS_PLATFORM,
+  IS_WINDOWS_PLATFORM,
+} from "../../app/platform";
 import { modelRegistry } from "../../adapters/registry";
 import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
+import { requestConfirmation } from "../../chat/confirmationGate";
 import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
 import CodexPetSection from "./CodexPetSection";
 
-const IS_WINDOWS = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+const IS_WINDOWS = IS_WINDOWS_PLATFORM;
 
 // 常见 Shell 可执行文件路径示例：点按回填到 Shell 路径输入框。
 const WINDOWS_SHELL_EXAMPLES: Array<{ label: string; path: string }> = [
@@ -101,6 +107,34 @@ export default function BasicSettingsSection({
     } catch (error) {
       setShellProbe({ ok: false, output: error instanceof Error ? error.message : String(error), probing: false });
     }
+  };
+
+  const updateSandboxMode = async (value: BasicSettings["sandboxMode"]) => {
+    if (
+      value === "danger-full-access" &&
+      basicSettings.sandboxMode !== "danger-full-access"
+    ) {
+      const approved = await requestConfirmation({
+        source: "sandbox_settings",
+        title: "启用完全文件访问？",
+        summary:
+          "完全访问会关闭命令与文件工具的 OS 级写入边界，模型可以直接修改工作区外的文件。",
+        riskLevel: "destructive",
+        details: [
+          { label: "当前模式", value: basicSettings.sandboxMode },
+          { label: "目标模式", value },
+        ],
+        targets: ["本机文件系统"],
+        warning:
+          "危险命令黑名单、受保护目录检查和逐次确认门仍会生效，但不再有文件系统写入边界。仅在信任当前任务时启用。",
+        confirmLabel: "启用完全访问",
+      });
+      if (!approved) return;
+    }
+    onUpdateBasicSettings({
+      sandboxMode: value,
+      sandboxEnabled: value !== "danger-full-access",
+    });
   };
 
   return (
@@ -363,24 +397,40 @@ export default function BasicSettingsSection({
           </p>
         )}
         <div className="grid grid-cols-[120px_1fr] gap-4">
-          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">沙箱模式（实验）</label>
+          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">文件权限（沙箱）</label>
           <div className="flex flex-col gap-1.5">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={basicSettings.sandboxEnabled === true}
-                disabled={!IS_WINDOWS && basicSettings.sandboxEnabled !== true}
-                onChange={(e) => onUpdateBasicSettings({ sandboxEnabled: e.target.checked })}
-                className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-              />
-              {IS_WINDOWS ? "在受限 token 沙箱中执行命令（剥离全部特权，防止提权）" : "受限 token 沙箱（仅 Windows 可用）"}
-            </label>
+            <OmniSelect
+              value={basicSettings.sandboxMode}
+              ariaLabel="文件权限模式"
+              onChange={(value) => {
+                void updateSandboxMode(value as BasicSettings["sandboxMode"]);
+              }}
+              options={[
+                {
+                  value: "read-only",
+                  label: "只读",
+                  description: "命令不能修改文件，适合检索、查看和运行只读工具",
+                  disabled: !HAS_OS_FILE_SANDBOX,
+                },
+                {
+                  value: "workspace-write",
+                  label: "工作区写入",
+                  description: "只能写当前工作区和隔离临时目录，工作区外写入会被系统拒绝",
+                  disabled: !HAS_OS_FILE_SANDBOX,
+                },
+                {
+                  value: "danger-full-access",
+                  label: "完全访问",
+                  description: "不启用文件写入边界；现有确认门和禁区拦截仍会生效",
+                },
+              ]}
+            />
             <p className="text-xs text-slate-500 omni-settings-muted">
               {IS_WINDOWS
-                ? "实验特性，默认关闭。启用后命令在 Windows 受限令牌下执行（无法提权、密钥类环境变量不注入），但会关闭持久 bash 会话（每次一次性执行，cwd 环境变量不再跨调用保留）。"
-                : basicSettings.sandboxEnabled
-                  ? "当前平台尚未实现受限 token 沙箱。请关闭这个旧设置以恢复命令执行；在关闭前，后端会拒绝命令而不会静默改为普通执行。"
-                  : "当前平台尚未实现受限 token 沙箱，此选项不可用。"}
+                ? "只读和工作区写入使用 Windows WRITE_RESTRICTED Token、能力 SID、目录 ACL 与 Low Integrity。受限模式会关闭持久 PTY，改为一次性执行；沙箱不可用时拒绝执行。"
+                : HAS_OS_FILE_SANDBOX && IS_MACOS_PLATFORM
+                  ? "只读和工作区写入使用 macOS Seatbelt（/usr/bin/sandbox-exec）统一禁止文件写入，仅工作区、/tmp 与用户临时目录可写。沙箱不可用时会拒绝执行，不会静默降级。"
+                  : "当前平台没有已实现的系统级文件沙箱，只提供“完全访问”；受限模式不会静默退化为普通执行。"}
             </p>
           </div>
         </div>

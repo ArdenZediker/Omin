@@ -21,10 +21,138 @@ import { requestConfirmation } from "./confirmationGate";
 import { scanBashWriteSemantics, findNoGoZoneTarget } from "./bashWriteScan";
 import { resolveSessionOutputDir } from "../app/outputStorage";
 import { loadBasicSettings } from "../app/settings";
+import type { SandboxMode } from "../app/types";
 import {
   BASIC_SETTINGS_STORAGE_KEY,
   DEFAULT_BASIC_SETTINGS,
 } from "../app/constants";
+
+const SANDBOX_MODE_RANK: Record<SandboxMode, number> = {
+  "read-only": 0,
+  "workspace-write": 1,
+  "danger-full-access": 2,
+};
+
+function parseSandboxMode(value: unknown): SandboxMode | null {
+  return value === "read-only" ||
+    value === "workspace-write" ||
+    value === "danger-full-access"
+    ? value
+    : null;
+}
+
+function getStandingSandboxMode(): SandboxMode {
+  try {
+    const settings = loadBasicSettings(
+      BASIC_SETTINGS_STORAGE_KEY,
+      DEFAULT_BASIC_SETTINGS,
+    );
+    return (
+      parseSandboxMode(settings.sandboxMode) ??
+      (settings.sandboxEnabled === true
+        ? "workspace-write"
+        : "danger-full-access")
+    );
+  } catch {
+    return "danger-full-access";
+  }
+}
+
+function readOnlyWriteError(action: string): string {
+  return `当前文件权限为 read-only，已拒绝${action}。请先在设置中切换为 workspace-write 或 danger-full-access。`;
+}
+
+function sandboxDeniedToolError(action: string, mode: SandboxMode): string {
+  return (
+    `[sandbox: file access denied under ${mode} mode]\n` +
+    `已拒绝${action}。若该操作确实需要更宽访问，请保持操作内容完全不变，重试一次并传入 ` +
+    "`sandbox_permissions`（能放行的最窄更宽模式）和一句话 `justification`；用户批准只对本次调用生效。"
+  );
+}
+
+type SandboxResolution =
+  | { ok: true; mode: SandboxMode; escalated: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Resolve a per-call sandbox policy using WorkDSH's escalation contract:
+ * arguments travel together, targets must be strictly wider, and a wider mode
+ * requires an explicit one-call approval. The effective mode is then passed to
+ * every backend so the policy boundary cannot be bypassed by a generic
+ * out-of-workspace confirmation.
+ */
+async function resolveSandboxForTool(options: {
+  json: Record<string, unknown> | null;
+  standingMode: SandboxMode;
+  action: string;
+  details?: Array<{ label: string; value: string }>;
+}): Promise<SandboxResolution> {
+  const { json, standingMode, action, details = [] } = options;
+  const requestedRaw = strArg(
+    json,
+    "sandbox_permissions",
+    "sandboxPermissions",
+  );
+  const justification = strArg(json, "justification")?.trim();
+
+  if (!requestedRaw) {
+    if (justification) {
+      return {
+        ok: false,
+        error: "justification 只能与 sandbox_permissions 一起使用",
+      };
+    }
+    return { ok: true, mode: standingMode, escalated: false };
+  }
+
+  const requestedMode = parseSandboxMode(requestedRaw);
+  if (!requestedMode) {
+    return {
+      ok: false,
+      error:
+        "sandbox_permissions 只能是 workspace-write 或 danger-full-access",
+    };
+  }
+  if (!justification) {
+    return {
+      ok: false,
+      error:
+        "sandbox_permissions 必须与 justification 一起使用，用一句话说明为什么本次操作需要更宽访问",
+    };
+  }
+  if (SANDBOX_MODE_RANK[requestedMode] < SANDBOX_MODE_RANK[standingMode]) {
+    return {
+      ok: false,
+      error: `sandbox_permissions 只能升权，不能从 ${standingMode} 降到 ${requestedMode}`,
+    };
+  }
+  if (requestedMode === standingMode) {
+    return { ok: true, mode: standingMode, escalated: false };
+  }
+
+  const approved = await requestConfirmation({
+    source: "sandbox_escalation",
+    title: "允许提升文件权限？",
+    summary: `模型请求将本次操作从 ${standingMode} 提升到 ${requestedMode}。`,
+    riskLevel:
+      requestedMode === "danger-full-access" ? "destructive" : "write",
+    details: [
+      { label: "操作", value: action },
+      { label: "当前模式", value: standingMode },
+      { label: "申请模式", value: requestedMode },
+      { label: "申请理由", value: justification },
+      ...details,
+    ],
+    targets: details.map((detail) => detail.value).filter(Boolean).slice(0, 5),
+    warning:
+      "升权只对本次调用有效。批准后仍会检查危险命令黑名单、工作区边界和受保护目录。",
+    confirmLabel: "允许本次提升",
+  });
+  if (!approved) {
+    return { ok: false, error: "已拒绝本次文件权限提升" };
+  }
+  return { ok: true, mode: requestedMode, escalated: true };
+}
 
 export type LocalToolSession = {
   id: string;
@@ -964,6 +1092,24 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     runtime.activeProject?.workspacePath ??
     null;
 
+  const gitSandboxError = (
+    json: Record<string, unknown> | null,
+    action: string,
+  ): string | null => {
+    const mode = getStandingSandboxMode();
+    if (mode === "danger-full-access") return null;
+    if (mode === "read-only") return readOnlyWriteError(action);
+    const repoPath = resolveGitPath(json);
+    const workspacePath = runtime.getWorkspacePathForSession(runtime.activeChatId);
+    if (!repoPath) {
+      return `当前文件权限为 workspace-write，但${action}没有可用工作区；已拒绝。请先绑定项目工作区。`;
+    }
+    if (isOutsideWorkspace(repoPath, workspacePath)) {
+      return `当前文件权限为 workspace-write，仓库「${repoPath}」不在工作区「${workspacePath}」内；已拒绝${action}。`;
+    }
+    return null;
+  };
+
   registry.register({
     id: "git_info",
     command: "/git_info",
@@ -1003,6 +1149,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const message = strArg(json, "message", "msg");
       if (!message) return null;
+      if (gitSandboxError(json, "提交 Git 改动")) return null;
       const addAll =
         typeof json?.add_all === "boolean"
           ? json.add_all
@@ -1047,6 +1194,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           error:
             "用法：/git_commit <message>（或传 JSON {message, addAll?, paths?}）",
         };
+      const sandboxError = gitSandboxError(json, "提交 Git 改动");
+      if (sandboxError) return { ok: false, error: sandboxError };
       try {
         const output = await invoke<string>("git_commit", {
           projectPath: resolveGitPath(json),
@@ -1080,6 +1229,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const json = parseToolJsonArgs(resolvedCommand.args);
       const title = strArg(json, "title");
       if (!title) return null;
+      if (gitSandboxError(json, "推送 Git 变更")) return null;
       const base = strArg(json, "base") ?? "仓库默认分支";
       return {
         title: "推送分支并创建 PR",
@@ -1109,6 +1259,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           ok: false,
           error: "用法：/git_pr <title>（或传 JSON {title, body?, base?}）",
         };
+      const sandboxError = gitSandboxError(json, "推送 Git 变更");
+      if (sandboxError) return { ok: false, error: sandboxError };
       try {
         const output = await invoke<string>("git_pr", {
           projectPath: resolveGitPath(json),
@@ -1195,9 +1347,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
   /**
    * 解析导出输出路径与围栏根。
    *
-   * fenceRoot 交给 Rust check_path 的工作区边界围栏：自动生成的路径由前端自行决定且已落在
-   * 会话工作目录内，传 null 表示「前端已授权，不必再用工作区边界拦」；
-   * 显式路径落在工作区内时照传工作区，保留原围栏语义。
+   * fenceRoot 交给 Rust check_path 的工作区边界围栏。workspace-write 必须传工作区；
+   * read-only 在前端已经拒绝；danger-full-access 表示本次调用已经获得全访问授权，
+   * 传 null 让后端继续执行 No-Go Zone 校验，但不再用工作区边界二次拦截。
    */
   const resolveExportPath = async (options: {
     pathArg?: string;
@@ -1205,37 +1357,57 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     specRaw: unknown;
     overwrite: boolean;
     workspacePath: string;
-  }): Promise<{ path: string; fenceRoot: string | null }> => {
-    const { pathArg, ext, specRaw, overwrite, workspacePath } = options;
+    sandboxMode: SandboxMode;
+    escalationApproved: boolean;
+  }): Promise<{
+    path: string;
+    fenceRoot: string | null;
+  }> => {
+    const {
+      pathArg,
+      ext,
+      specRaw,
+      overwrite,
+      workspacePath,
+      sandboxMode,
+      escalationApproved,
+    } = options;
+    const fenceRoot =
+      sandboxMode === "workspace-write" ? workspacePath || null : null;
+
+    const requireDangerAccess = async (targetPath: string) => {
+      if (!workspacePath || isWithin(targetPath, workspacePath)) return;
+      if (sandboxMode !== "danger-full-access") {
+        throw new Error(
+          sandboxDeniedToolError("导出到项目工作区之外", sandboxMode),
+        );
+      }
+      if (escalationApproved) return;
+      const approved = await requestConfirmation({
+        source: "export_out_of_workspace",
+        title: "导出到工作区之外？",
+        summary: "模型请求把文件写入项目工作区之外的位置。",
+        riskLevel: "destructive",
+        details: [
+          { label: "目标路径", value: targetPath },
+          { label: "项目工作区", value: workspacePath },
+        ],
+        targets: [targetPath],
+        warning:
+          "越界写入不受工作区围栏保护，文件将保存到项目目录之外。确认后 Omni 才会执行；取消则不会写出文件。",
+        confirmLabel: "仍要导出到此处",
+      });
+      if (!approved) {
+        throw new Error("已取消：输出路径位于项目工作区之外且未获确认");
+      }
+    };
 
     // ① 显式传了绝对路径：原样使用（仅补扩展名）
     if (pathArg && isAbsolutePath(pathArg)) {
-      // 项目会话下，越界写入需用户确认（对齐 WorkBuddy「写操作围栏 + 提权确认」）。
-      // 工作区内绝对路径或「无项目会话」（workspacePath 为空）直接放行。
-      if (workspacePath && !isWithin(pathArg, workspacePath)) {
-        const approved = await requestConfirmation({
-          source: "export_out_of_workspace",
-          title: "导出到工作区之外？",
-          summary: "模型请求把文件写入项目工作区之外的位置。",
-          riskLevel: "destructive",
-          details: [
-            { label: "目标路径", value: pathArg },
-            { label: "项目工作区", value: workspacePath },
-          ],
-          targets: [pathArg],
-          warning:
-            "越界写入不受工作区围栏保护，文件将保存到项目目录之外。确认后 Omni 才会执行；取消则改用工作区内的自动路径。",
-          confirmLabel: "仍要导出到此处",
-        });
-        if (!approved) {
-          throw new Error("已取消：输出路径位于项目工作区之外且未获确认");
-        }
-        // 已获用户提权：不能再把工作区边界传给 Rust，否则 check_path 会二次拒绝，提权形同虚设。
-        return { path: ensureExtension(pathArg, ext), fenceRoot: null };
-      }
+      await requireDangerAccess(pathArg);
       return {
         path: ensureExtension(pathArg, ext),
-        fenceRoot: workspacePath || null,
+        fenceRoot,
       };
     }
 
@@ -1244,7 +1416,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
     // ② 传了相对路径/纯文件名：拼到默认目录
     if (pathArg) {
       const file = sanitizeFileName(pathArg, ext);
-      return { path: dir ? joinPath(dir, file) : file, fenceRoot: null };
+      const target = dir ? joinPath(dir, file) : file;
+      await requireDangerAccess(target);
+      return { path: target, fenceRoot };
     }
 
     // ③ 未传 path：从 spec 提取标题自动命名
@@ -1262,7 +1436,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       name = String(spec.title ?? slides?.[0]?.title ?? "");
     }
     let file = sanitizeFileName(name, ext);
-    if (!dir) return { path: file, fenceRoot: null };
+    if (!dir) {
+      return { path: file, fenceRoot };
+    }
 
     // 冲突避免：overwrite=false 且目标已存在时追加 -1、-2……
     if (!overwrite) {
@@ -1276,9 +1452,12 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         candidate = joinPath(dir, file);
         n += 1;
       }
-      return { path: candidate, fenceRoot: null };
+      await requireDangerAccess(candidate);
+      return { path: candidate, fenceRoot };
     }
-    return { path: joinPath(dir, file), fenceRoot: null };
+    const target = joinPath(dir, file);
+    await requireDangerAccess(target);
+    return { path: target, fenceRoot };
   };
 
   const registerExportTool = (
@@ -1301,6 +1480,25 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             error: `缺少 spec：请按 schema 提供${title}的结构化内容对象`,
           };
         }
+        const standingSandboxMode = getStandingSandboxMode();
+        const sandboxResolution = await resolveSandboxForTool({
+          json,
+          standingMode: standingSandboxMode,
+          action: `生成${title}`,
+          details: pathArg
+            ? [{ label: "目标路径", value: pathArg }]
+            : [{ label: "目标路径", value: "会话默认导出目录" }],
+        });
+        if (!sandboxResolution.ok) {
+          return { ok: false, error: sandboxResolution.error };
+        }
+        const sandboxMode = sandboxResolution.mode;
+        if (sandboxMode === "read-only") {
+          return {
+            ok: false,
+            error: sandboxDeniedToolError(`生成${title}`, sandboxMode),
+          };
+        }
         const overwrite =
           typeof json?.overwrite === "boolean"
             ? json.overwrite
@@ -1319,6 +1517,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             specRaw,
             overwrite,
             workspacePath: ws,
+            sandboxMode,
+            escalationApproved: sandboxResolution.escalated,
           });
           const outcome = await invoke<{ path: string; size: number }>(
             tauriCommand,
@@ -1327,6 +1527,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
               specJson: JSON.stringify(specRaw),
               overwrite,
               workspacePath: fenceRoot,
+              sandboxMode,
             },
           );
           return {
@@ -1390,6 +1591,25 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           error: "缺少 content：请提供要写入文件的 Markdown 正文",
         };
       }
+      const standingSandboxMode = getStandingSandboxMode();
+      const sandboxResolution = await resolveSandboxForTool({
+        json,
+        standingMode: standingSandboxMode,
+        action: "导出 Markdown",
+        details: pathArg
+          ? [{ label: "目标路径", value: pathArg }]
+          : [{ label: "目标路径", value: "会话默认导出目录" }],
+      });
+      if (!sandboxResolution.ok) {
+        return { ok: false, error: sandboxResolution.error };
+      }
+      const sandboxMode = sandboxResolution.mode;
+      if (sandboxMode === "read-only") {
+        return {
+          ok: false,
+          error: sandboxDeniedToolError("导出 Markdown", sandboxMode),
+        };
+      }
       const overwrite =
         typeof json?.overwrite === "boolean"
           ? json.overwrite
@@ -1416,6 +1636,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           specRaw: { title },
           overwrite,
           workspacePath: ws,
+          sandboxMode,
+          escalationApproved: sandboxResolution.escalated,
         });
         const outcome = await invoke<{
           path: string;
@@ -1426,6 +1648,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           content,
           overwrite,
           workspacePath: fenceRoot,
+          sandboxMode,
         });
         return {
           ok: true,
@@ -1482,9 +1705,30 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       if (!content)
         return { ok: false, error: "缺少 content：请提供要写入的完整文件内容" };
 
-      const ws = runtime.activeProject?.workspacePath || "";
+      const standingSandboxMode = getStandingSandboxMode();
+      const sandboxResolution = await resolveSandboxForTool({
+        json,
+        standingMode: standingSandboxMode,
+        action: "写入文件",
+        details: [{ label: "路径", value: path }],
+      });
+      if (!sandboxResolution.ok) {
+        return { ok: false, error: sandboxResolution.error };
+      }
+      const sandboxMode = sandboxResolution.mode;
+      if (sandboxMode === "read-only") {
+        return { ok: false, error: sandboxDeniedToolError("写入文件", sandboxMode) };
+      }
+      const ws =
+        runtime.getWorkspacePathForSession(runtime.activeChatId) || "";
       const outside = isOutsideWorkspace(path, ws);
-      if (outside) {
+      if (outside && sandboxMode !== "danger-full-access") {
+        return {
+          ok: false,
+          error: sandboxDeniedToolError("写入工作区外的文件", sandboxMode),
+        };
+      }
+      if (outside && !sandboxResolution.escalated) {
         const approved = await requestConfirmation({
           source: "write_file",
           title: "写入工作区外的文件？",
@@ -1515,6 +1759,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           overwrite,
           workspacePath: ws || null,
           confirmedOutside: outside,
+          sandboxMode,
         });
         return {
           ok: true,
@@ -1566,9 +1811,30 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           error: "缺少 replace：请提供替换后的文本（删除内容可传空字符串）",
         };
 
-      const ws = runtime.activeProject?.workspacePath || "";
+      const standingSandboxMode = getStandingSandboxMode();
+      const sandboxResolution = await resolveSandboxForTool({
+        json,
+        standingMode: standingSandboxMode,
+        action: "修改文件",
+        details: [{ label: "路径", value: path }],
+      });
+      if (!sandboxResolution.ok) {
+        return { ok: false, error: sandboxResolution.error };
+      }
+      const sandboxMode = sandboxResolution.mode;
+      if (sandboxMode === "read-only") {
+        return { ok: false, error: sandboxDeniedToolError("修改文件", sandboxMode) };
+      }
+      const ws =
+        runtime.getWorkspacePathForSession(runtime.activeChatId) || "";
       const outside = isOutsideWorkspace(path, ws);
-      if (outside) {
+      if (outside && sandboxMode !== "danger-full-access") {
+        return {
+          ok: false,
+          error: sandboxDeniedToolError("修改工作区外的文件", sandboxMode),
+        };
+      }
+      if (outside && !sandboxResolution.escalated) {
         const approved = await requestConfirmation({
           source: "edit_file",
           title: "修改工作区外的文件？",
@@ -1606,6 +1872,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           replaceAll,
           workspacePath: ws || null,
           confirmedOutside: outside,
+          sandboxMode,
         });
         return {
           ok: true,
@@ -1841,8 +2108,9 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
         };
       }
 
-      // 工作目录锁定到项目工作区（缺省回落由 Rust 端处理）。
-      const cwd = runtime.activeProject?.workspacePath || null;
+      // 工作目录锁定到当前会话解析出的工作区（缺省回落由 Rust 端处理）。
+      const cwd =
+        runtime.getWorkspacePathForSession(runtime.activeChatId) || null;
 
       // 自定义 Shell 路径（设置 → 命令执行）：非空时覆盖 Rust 端的自动探测。
       let shellPath: string | null = null;
@@ -1892,61 +2160,61 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           ? `${output}\n${buildClippedNote("命令输出超长被截断", "重跑命令并用 head/tail/grep（或 rg）精确提取所需片段")}`
           : output;
 
+      const standingSandboxMode = getStandingSandboxMode();
+      const sandboxResolution = await resolveSandboxForTool({
+        json,
+        standingMode: standingSandboxMode,
+        action: "执行本机命令",
+        details: [{ label: "命令", value: command }],
+      });
+      if (!sandboxResolution.ok) {
+        return { ok: false, error: sandboxResolution.error };
+      }
+      const effectiveSandboxMode = sandboxResolution.mode;
+      const sandboxEnabled = effectiveSandboxMode !== "danger-full-access";
+
       try {
-        let approved = true;
+        let approved = autoApproved || sandboxResolution.escalated;
         if (!autoApproved) {
-          approved = await requestConfirmation({
-            source: "bash",
-            title: writeScan.hasWriteSemantics
-              ? "执行会修改文件的命令？"
-              : "执行本地命令？",
-            summary: writeScan.hasWriteSemantics
-              ? "命令含写文件语义（重定向/复制/删除/原地修改/安装等），会改动本机文件。"
-              : "模型请求在本机运行一条 shell 命令。",
-            riskLevel: writeScan.destructive ? "destructive" : "write",
-            details: [
-              { label: "命令", value: command },
-              ...(writeScan.targets.length > 0
-                ? [
-                    {
-                      label: "写目标（静态扫描）",
-                      value: writeScan.targets.slice(0, 5).join("、"),
-                    },
-                  ]
-                : []),
-              ...(cwd ? [{ label: "工作目录", value: cwd }] : []),
-            ],
-            targets:
-              writeScan.targets.length > 0
-                ? writeScan.targets.slice(0, 5)
-                : [command],
-            warning: writeScan.hasWriteSemantics
-              ? "静态扫描识别到写文件语义；写目标可能不完整，请核对命令本身。文件写入建议改用 /write_file（可获得 diff 预览与撤销）；系统/密钥目录会被无条件拦截。"
-              : "命令将在你的本机执行。请确认来源可信、命令符合预期后再允许；高危命令将被自动拦截。",
-            confirmLabel: "确认执行",
-          });
+          if (!sandboxResolution.escalated) {
+            approved = await requestConfirmation({
+              source: "bash",
+              title: writeScan.hasWriteSemantics
+                ? "执行会修改文件的命令？"
+                : "执行本地命令？",
+              summary: writeScan.hasWriteSemantics
+                ? "命令含写文件语义（重定向/复制/删除/原地修改/安装等），会改动本机文件。"
+                : "模型请求在本机运行一条 shell 命令。",
+              riskLevel: writeScan.destructive ? "destructive" : "write",
+              details: [
+                { label: "命令", value: command },
+                ...(writeScan.targets.length > 0
+                  ? [
+                      {
+                        label: "写目标（静态扫描）",
+                        value: writeScan.targets.slice(0, 5).join("、"),
+                      },
+                    ]
+                  : []),
+                ...(cwd ? [{ label: "工作目录", value: cwd }] : []),
+              ],
+              targets:
+                writeScan.targets.length > 0
+                  ? writeScan.targets.slice(0, 5)
+                  : [command],
+              warning: writeScan.hasWriteSemantics
+                ? "静态扫描识别到写文件语义；写目标可能不完整，请核对命令本身。文件写入建议改用 /write_file（可获得 diff 预览与撤销）；系统/密钥目录会被无条件拦截。"
+                : "命令将在你的本机执行。请确认来源可信、命令符合预期后再允许；高危命令将被自动拦截。",
+              confirmLabel: "确认执行",
+            });
+          }
         }
         if (!approved) {
           return { ok: false, error: "已取消：未确认执行本地命令" };
         }
 
         // 持久 shell 会话：按聊天会话隔离（同会话复用同一常驻 bash，cwd/env 跨调用保留）。
-        // reset=true 先杀掉旧会话，本次 exec 会自动新建全新会话。
-        // 沙箱模式开启时跳过持久会话（PTY 无法注入受限 token），直接走受限一次性执行
-        // ——损失 cwd/env 跨调用持久性，换取 OS 层防提权兜底，由用户在设置中权衡。
-        const sandboxEnabled = (() => {
-          try {
-            return (
-              loadBasicSettings(
-                BASIC_SETTINGS_STORAGE_KEY,
-                DEFAULT_BASIC_SETTINGS,
-              ).sandboxEnabled === true
-            );
-          } catch {
-            return false;
-          }
-        })();
-
+        // 只读/工作区写入模式跳过持久会话（PTY 无法注入受限 token），走一次性受限执行。
         const sessionId = runtime.activeChatId ?? "default";
         if (!sandboxEnabled && json?.reset === true) {
           try {
@@ -1961,6 +2229,8 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           output: string;
           timedOut: boolean;
           shellReset?: boolean;
+          denied?: boolean;
+          enforcement?: "full" | "partial" | "none";
         };
         if (sandboxEnabled) {
           result = await invoke<{
@@ -1975,7 +2245,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
               cwd,
               shellPath,
               timeoutMs: 120_000,
-              sandbox: true,
+              sandboxMode: effectiveSandboxMode,
             },
           });
         } else {
@@ -2002,10 +2272,27 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
                 cwd,
                 shellPath,
                 timeoutMs: 120_000,
-                sandbox: false,
+                sandboxMode: "danger-full-access",
               },
             });
           }
+        }
+
+        if (result.denied) {
+          return {
+            ok: true,
+            outputText:
+              `[sandbox: file access denied under ${effectiveSandboxMode} mode]\n` +
+              `${withClipNote(result.output)}\n` +
+              "这是文件权限拒绝。若命令确实需要更宽访问，请在重试时传入 sandbox_permissions 和一句 justification；不得绕过沙箱改用其他写入方式。",
+            data: {
+              exitCode: result.exitCode,
+              timedOut: result.timedOut,
+              shellReset: result.shellReset ?? false,
+              denied: true,
+              enforcement: result.enforcement ?? "partial",
+            },
+          };
         }
 
         const resetPrefix = result.shellReset
@@ -2023,6 +2310,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
               exitCode: result.exitCode,
               timedOut: true,
               shellReset: result.shellReset ?? false,
+              enforcement: result.enforcement,
             },
           };
         }
@@ -2036,13 +2324,18 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
             data: {
               exitCode: result.exitCode,
               shellReset: result.shellReset ?? false,
+              enforcement: result.enforcement,
             },
           };
         }
         return {
           ok: true,
           outputText: `${resetPrefix}${withClipNote(result.output) || "（命令执行成功，无输出）"}`,
-          data: { exitCode: 0, shellReset: result.shellReset ?? false },
+          data: {
+            exitCode: 0,
+            shellReset: result.shellReset ?? false,
+            enforcement: result.enforcement,
+          },
         };
       } catch (error) {
         return {

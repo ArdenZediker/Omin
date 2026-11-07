@@ -36,6 +36,18 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: Run frontend tests
+        run: pnpm test
+      - name: Run Rust library tests
+        working-directory: src-tauri
+        run: cargo test --lib
+      - name: Run macOS Seatbelt sandbox tests
+        working-directory: src-tauri
+        run: cargo test --lib sandbox::tests::macos_ -- --test-threads=1
+      - name: Build frontend
+        run: pnpm build
       - name: Build macOS DMG
         env:
           APPLE_SIGNING_IDENTITY: "-"

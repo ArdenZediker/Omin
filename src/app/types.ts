@@ -1,6 +1,7 @@
 export type ViewMode = "chat" | "knowledge";
 export type MinimizeBehavior = "taskbar" | "compact";
 export type WindowPositionMode = "center" | "remember";
+export type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 
 export type BasicSettings = {
   autoLaunch: boolean;
@@ -16,7 +17,9 @@ export type BasicSettings = {
   defaultWorkspacePath: string;
   /** 自定义 Shell 可执行文件路径（/bash 工具）。留空时 Windows 自动探测 Git-Bash，未命中回落 cmd /C；macOS/Linux 用系统 sh */
   shellPath: string;
-  /** 沙箱模式（实验）：命令在 Windows 受限 token 下执行（剥离全部特权防提权）。默认关闭；其他平台不支持并拒绝执行 */
+  /** WorkDSH 文件权限策略：只读 / 工作区写入 / 完全访问。 */
+  sandboxMode: SandboxMode;
+  /** 旧版二态开关；仅用于存量配置迁移，新增逻辑统一读取 sandboxMode。 */
   sandboxEnabled: boolean;
   /**
    * 子 Agent「能力强」模型（capable 档）：专家委派与显式 tier=capable 时选用。

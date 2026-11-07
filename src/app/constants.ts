@@ -1,5 +1,6 @@
 import type { BasicSettings, ExternalChatEntry } from "./types";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
+import { HAS_OS_FILE_SANDBOX } from "./platform";
 
 export const MAIN_WINDOW_LABEL = "main";
 export const COMPACT_WINDOW_LABEL = "compact";
@@ -23,6 +24,10 @@ export const DEFAULT_OPEN_MAIN_SHORTCUT = "Ctrl+Shift+Space";
 export const omniIconSrc = "/omni-mark.svg";
 export const omniSmallIconSrc = "/omni-mark-small.svg";
 
+const DEFAULT_SANDBOX_MODE: BasicSettings["sandboxMode"] = HAS_OS_FILE_SANDBOX
+  ? "workspace-write"
+  : "danger-full-access";
+
 export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   autoLaunch: false,
   minimizeBehavior: "compact",
@@ -37,7 +42,8 @@ export const DEFAULT_BASIC_SETTINGS: BasicSettings = {
   switchPreviousModelShortcut: UNSET_SHORTCUT,
   defaultWorkspacePath: "",
   shellPath: "",
-  sandboxEnabled: false,
+  sandboxMode: DEFAULT_SANDBOX_MODE,
+  sandboxEnabled: DEFAULT_SANDBOX_MODE !== "danger-full-access",
   subAgentModel: "",
   subAgentFastModel: "",
   // 默认关闭：专家只在「项目显式绑定」后才可被模型自动委派（技能/MCP 不受此口径约束）。

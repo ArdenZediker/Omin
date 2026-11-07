@@ -9,12 +9,11 @@
 
 use serde_json::Value;
 use std::io::{BufWriter, Write};
-use std::path::Path;
-#[cfg(not(windows))]
-use std::path::PathBuf;
-use zip::ZipWriter;
+use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
+use crate::sandbox::{ensure_explicit_write_allowed, SandboxMode};
 use crate::storage_paths::fallback_workspace_root;
 
 // ---------- 通用工具 ----------
@@ -105,7 +104,10 @@ pub(crate) fn no_go_zone(path: &Path) -> Option<&'static str> {
             "/private/etc",
             "/private/var",
         ];
-        if forbidden.iter().any(|root| is_within_macos_protected(path, Path::new(root))) {
+        if forbidden
+            .iter()
+            .any(|root| is_within_macos_protected(path, Path::new(root)))
+        {
             return Some("系统目录或密钥目录（macOS 系统目录 / ~/Library / .ssh）");
         }
         if let Some(home) = std::env::var_os("HOME") {
@@ -171,6 +173,8 @@ fn check_path(
     expected_exts: &[&str],
     overwrite: bool,
     workspace_path: Option<&str>,
+    sandbox_mode: SandboxMode,
+    permission_escalated: bool,
 ) -> Result<std::path::PathBuf, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -208,8 +212,16 @@ fn check_path(
         ));
     }
     if p.exists() && !overwrite {
-        return Err(format!("文件已存在：{trimmed}（如需覆盖请传 overwrite=true）"));
+        return Err(format!(
+            "文件已存在：{trimmed}（如需覆盖请传 overwrite=true）"
+        ));
     }
+    ensure_explicit_write_allowed(
+        sandbox_mode,
+        p,
+        workspace_path.map(Path::new),
+        permission_escalated,
+    )?;
     if let Some(parent) = p.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent).map_err(|e| format!("创建输出目录失败: {e}"))?;
@@ -218,31 +230,107 @@ fn check_path(
     Ok(p.to_path_buf())
 }
 
-fn write_zip(
-    path: &std::path::Path,
-    entries: Vec<(String, String)>,
-) -> Result<u64, String> {
-    let file = std::fs::File::create(path).map_err(|e| format!("创建文件失败: {e}"))?;
-    let mut writer = ZipWriter::new(BufWriter::new(file));
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    for (name, content) in &entries {
-        writer
-            .start_file(name.as_str(), options)
-            .map_err(|e| format!("写入 zip 条目 {name} 失败: {e}"))?;
-        writer
-            .write_all(content.as_bytes())
-            .map_err(|e| format!("写入条目 {name} 内容失败: {e}"))?;
+// Only the uniquely-created staging file belongs to us. Never remove the destination
+// on an error (including a concurrent creator or a denied replacement).
+struct PendingOfficeFile(PathBuf);
+
+impl Drop for PendingOfficeFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
-    writer.finish().map_err(|e| format!("收尾 zip 失败: {e}"))?;
-    let size = std::fs::metadata(path).map_err(|e| format!("读取文件元数据失败: {e}"))?.len();
+}
+
+fn write_office_atomically(
+    path: &Path,
+    overwrite: bool,
+    write: impl FnOnce(&mut std::fs::File) -> Result<(), String>,
+) -> Result<u64, String> {
+    let parent = path.parent().ok_or("输出文件缺少父目录")?;
+    let temp_path = parent.join(format!(".omni-office-{}.tmp", uuid::Uuid::new_v4()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)
+        .map_err(|e| format!("创建 Office 临时文件失败: {e}"))?;
+    let pending = PendingOfficeFile(temp_path);
+    // Explicitly close the handle before cleanup/publish, including the error path
+    // (Windows does not necessarily permit deleting an open file).
+    let result = (|| {
+        write(&mut file)?;
+        file.sync_all()
+            .map_err(|e| format!("同步 Office 临时文件失败: {e}"))?;
+        file.metadata()
+            .map(|m| m.len())
+            .map_err(|e| format!("读取文件元数据失败: {e}"))
+    })();
+    drop(file);
+    let size = result?;
+    if overwrite {
+        std::fs::rename(&pending.0, path)
+            .map_err(|e| format!("替换 Office 文件失败，原文件未被删除: {e}"))?;
+    } else {
+        // Atomic create-if-absent: checking exists() followed by rename would race.
+        // A filesystem without hard links fails safely; never fall back to copying
+        // directly into the destination, which would expose a partial package.
+        std::fs::hard_link(&pending.0, path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                format!(
+                    "文件已存在：{}（如需覆盖请传 overwrite=true）",
+                    path.display()
+                )
+            } else {
+                format!("发布 Office 文件失败（需要支持硬链接的本地文件系统），目标未被覆盖: {e}")
+            }
+        })?;
+    }
     Ok(size)
 }
 
+fn write_zip(path: &Path, entries: Vec<(String, String)>, overwrite: bool) -> Result<u64, String> {
+    write_office_atomically(path, overwrite, |file| {
+        let mut writer = ZipWriter::new(BufWriter::new(file));
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in &entries {
+            writer
+                .start_file(name.as_str(), options)
+                .map_err(|e| format!("写入 zip 条目 {name} 失败: {e}"))?;
+            writer
+                .write_all(content.as_bytes())
+                .map_err(|e| format!("写入条目 {name} 内容失败: {e}"))?;
+        }
+        let mut buffer = writer.finish().map_err(|e| format!("收尾 zip 失败: {e}"))?;
+        buffer
+            .flush()
+            .map_err(|e| format!("写入 zip 缓冲区失败: {e}"))
+    })
+}
+
+fn valid_xml_text(text: &str) -> bool {
+    text.chars().all(|c| {
+        matches!(c,
+        '\u{9}' | '\u{a}' | '\u{d}' | '\u{20}'..='\u{d7ff}' |
+        '\u{e000}'..='\u{fffd}' | '\u{10000}'..='\u{10ffff}')
+    })
+}
+
+fn validate_spec_text(value: &Value) -> bool {
+    match value {
+        Value::String(text) => valid_xml_text(text),
+        Value::Array(values) => values.iter().all(validate_spec_text),
+        Value::Object(values) => values.values().all(validate_spec_text),
+        _ => true,
+    }
+}
+
 fn parse_spec(spec_json: &str) -> Result<Value, String> {
-    let v: Value = serde_json::from_str(spec_json.trim())
-        .map_err(|e| format!("spec 不是合法 JSON：{e}"))?;
+    let v: Value =
+        serde_json::from_str(spec_json.trim()).map_err(|e| format!("spec 不是合法 JSON：{e}"))?;
     if !v.is_object() {
         return Err("spec 必须是 JSON 对象".to_string());
+    }
+    if !validate_spec_text(&v) {
+        return Err("spec 含 XML 1.0 不支持的控制字符，请移除后重试".to_string());
     }
     Ok(v)
 }
@@ -300,21 +388,28 @@ fn docx_paragraph(
     if indent_bullet {
         ppr.push_str("<w:ind w:left=\"360\" w:hanging=\"360\"/>");
     }
-    format!("<w:p><w:pPr>{ppr}</w:pPr>{}</w:p>", docx_runs(text, bold, sz))
+    format!(
+        "<w:p><w:pPr>{ppr}</w:pPr>{}</w:p>",
+        docx_runs(text, bold, sz)
+    )
 }
 
 fn docx_table(rows: &[Value], header: bool) -> Result<String, String> {
     if rows.is_empty() {
         return Err("表格 rows 不能为空".to_string());
     }
-    let border =
-        "<w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"9CA3AF\"/>\
+    let border = "<w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"9CA3AF\"/>\
          <w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"9CA3AF\"/>\
          <w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"9CA3AF\"/>\
          <w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"9CA3AF\"/>\
          <w:insideH w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"9CA3AF\"/>\
          <w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"9CA3AF\"/>";
-    let col_count = rows.iter().filter_map(Value::as_array).map(Vec::len).max().unwrap_or(1);
+    let col_count = rows
+        .iter()
+        .filter_map(Value::as_array)
+        .map(Vec::len)
+        .max()
+        .unwrap_or(1);
     let mut grid = String::new();
     for _ in 0..col_count {
         grid.push_str("<w:gridCol w:w=\"2400\"/>");
@@ -350,8 +445,9 @@ fn docx_table(rows: &[Value], header: bool) -> Result<String, String> {
 }
 
 fn build_docx(spec: &Value) -> Result<Vec<(String, String)>, String> {
-    let children = obj_array(spec, "children")
-        .ok_or("spec.children 缺失：应为块级元素数组（h1/h2/h3/p/bullet/number/pagebreak/table）")?;
+    let children = obj_array(spec, "children").ok_or(
+        "spec.children 缺失：应为块级元素数组（h1/h2/h3/p/bullet/number/pagebreak/table）",
+    )?;
     let mut body = String::new();
     let mut number_counter = 0u32;
 
@@ -437,12 +533,17 @@ fn xlsx_cell(ref_: &str, cell: &Value) -> Result<String, String> {
             "<c r=\"{ref_}\" t=\"inlineStr\"><is><t xml:space=\"preserve\">{}</t></is></c>",
             esc_xml(s)
         )),
-        Value::Bool(b) => Ok(format!("<c r=\"{ref_}\" t=\"boolean\"><v>{}</v></c>", if *b { 1 } else { 0 })),
+        Value::Bool(b) => Ok(format!(
+            "<c r=\"{ref_}\" t=\"b\"><v>{}</v></c>",
+            if *b { 1 } else { 0 }
+        )),
         Value::Object(o) => {
             let style_idx = match o.get("style").and_then(Value::as_str) {
                 Some("bold") => Some(1),
                 Some("header") => Some(2),
-                Some(other) => return Err(format!("未知单元格样式「{other}」（支持 bold / header）")),
+                Some(other) => {
+                    return Err(format!("未知单元格样式「{other}」（支持 bold / header）"))
+                }
                 None => None,
             };
             let s_attr = style_idx.map(|s| format!(" s=\"{s}\"")).unwrap_or_default();
@@ -472,6 +573,8 @@ fn build_xlsx(spec: &Value) -> Result<Vec<(String, String)>, String> {
     let mut wb_rels = String::new();
     let mut ct_overrides = String::new();
 
+    let mut sheet_names = std::collections::HashSet::new();
+
     for (idx, sheet) in sheets.iter().enumerate() {
         let n = idx + 1;
         let name = sheet
@@ -481,8 +584,15 @@ fn build_xlsx(spec: &Value) -> Result<Vec<(String, String)>, String> {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("Sheet{n}"));
-        if name.len() > 31 || name.contains([':', '\\', '/', '?', '*', '[', ']']) {
+        if name.encode_utf16().count() > 31
+            || name.contains([':', '\\', '/', '?', '*', '[', ']'])
+            || name.starts_with('\'')
+            || name.ends_with('\'')
+        {
             return Err(format!("工作表名「{name}」非法（≤31 字符，不含 :\\/?*[]）"));
+        }
+        if !sheet_names.insert(name.to_lowercase()) {
+            return Err(format!("工作表名「{name}」重复（不区分大小写）"));
         }
         let rows = obj_array(sheet, "rows").ok_or_else(|| format!("工作表「{name}」缺少 rows"))?;
         let mut sheet_xml = String::from(
@@ -601,7 +711,16 @@ const PPTX_THEME: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes
 
 const PPTX_SP_TREE_OPEN: &str = "<p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>";
 
-fn pptx_text_sp(id: u32, name: &str, x: i64, y: i64, cx: i64, cy: i64, paras: &str, anchor: &str) -> String {
+fn pptx_text_sp(
+    id: u32,
+    name: &str,
+    x: i64,
+    y: i64,
+    cx: i64,
+    cy: i64,
+    paras: &str,
+    anchor: &str,
+) -> String {
     format!(
         "<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"{name}\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr>\
          <p:spPr><a:xfrm><a:off x=\"{x}\" y=\"{y}\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm>\
@@ -686,8 +805,26 @@ fn build_pptx(spec: &Value) -> Result<Vec<(String, String)>, String> {
              {}\
              {}\
              </p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>",
-            pptx_text_sp(2, "标题", 838200, 365760, PPTX_W - 1676400, 1000000, &title_paras, "ctr"),
-            pptx_text_sp(3, "内容", 838200, 1645920, PPTX_W - 1676400, PPTX_H - 2213760, &body_paras, "t"),
+            pptx_text_sp(
+                2,
+                "标题",
+                838200,
+                365760,
+                PPTX_W - 1676400,
+                1000000,
+                &title_paras,
+                "ctr"
+            ),
+            pptx_text_sp(
+                3,
+                "内容",
+                838200,
+                1645920,
+                PPTX_W - 1676400,
+                PPTX_H - 2213760,
+                &body_paras,
+                "t"
+            ),
         );
         entries.push((format!("ppt/slides/slide{n}.xml"), slide_xml));
         entries.push((
@@ -698,7 +835,10 @@ fn build_pptx(spec: &Value) -> Result<Vec<(String, String)>, String> {
              </Relationships>"
                 .to_string(),
         ));
-        sld_ids.push_str(&format!("<p:sldId id=\"{}\" r:id=\"rId{sld_rid}\"/>", 255 + n));
+        sld_ids.push_str(&format!(
+            "<p:sldId id=\"{}\" r:id=\"rId{sld_rid}\"/>",
+            255 + n
+        ));
         pres_rels.push_str(&format!(
             "<Relationship Id=\"rId{sld_rid}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide\" Target=\"slides/slide{n}.xml\"/>"
         ));
@@ -805,11 +945,20 @@ fn run_export(
     exts: &[&str],
     builder: fn(&Value) -> Result<Vec<(String, String)>, String>,
     workspace_path: Option<&str>,
+    sandbox_mode: SandboxMode,
+    permission_escalated: bool,
 ) -> Result<ExportOutcome, String> {
-    let target = check_path(path, exts, overwrite.unwrap_or(false), workspace_path)?;
+    let target = check_path(
+        path,
+        exts,
+        overwrite.unwrap_or(false),
+        workspace_path,
+        sandbox_mode,
+        permission_escalated,
+    )?;
     let spec = parse_spec(spec_json)?;
     let entries = builder(&spec)?;
-    let size = write_zip(&target, entries)?;
+    let size = write_zip(&target, entries, overwrite.unwrap_or(false))?;
     Ok(ExportOutcome {
         path: target.to_string_lossy().into_owned(),
         size,
@@ -838,7 +987,11 @@ pub(crate) struct ExportOutcome {
 /// 内存计算文件差异，不依赖 git。
 /// old_content 为修改前磁盘内容（文件不存在传空串）；new_content 为将要写入的内容。
 /// 返回标准 unified-diff 文本（兼容 git diff 格式）与增删行统计。
-pub(crate) fn compute_file_diff(old_content: &str, new_content: &str, filename: &str) -> DiffResult {
+pub(crate) fn compute_file_diff(
+    old_content: &str,
+    new_content: &str,
+    filename: &str,
+) -> DiffResult {
     let diff = similar::TextDiff::from_lines(old_content, new_content);
     // 输出标准 unified-diff，头部 a/ b/ 与 git diff 一致
     let old_header = format!("a/{filename}");
@@ -873,12 +1026,26 @@ pub(crate) async fn export_docx(
     spec_json: String,
     overwrite: Option<bool>,
     workspace_path: Option<String>,
+    sandbox_mode: Option<SandboxMode>,
+    permission_escalated: Option<bool>,
 ) -> Result<ExportOutcome, String> {
-    let ws = workspace_path
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
+    let _operation = crate::database::maintenance::operation()?;
+    let ws = workspace_path.filter(|s| !s.trim().is_empty()).or_else(|| {
+        fallback_workspace_root(&app)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    });
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["docx"], build_docx, ws.as_deref())
+        run_export(
+            &path,
+            &spec_json,
+            overwrite,
+            &["docx"],
+            build_docx,
+            ws.as_deref(),
+            sandbox_mode.unwrap_or_default(),
+            permission_escalated.unwrap_or(false),
+        )
     })
     .await
     .map_err(|e| format!("export_docx 任务失败: {e}"))?
@@ -891,12 +1058,26 @@ pub(crate) async fn export_xlsx(
     spec_json: String,
     overwrite: Option<bool>,
     workspace_path: Option<String>,
+    sandbox_mode: Option<SandboxMode>,
+    permission_escalated: Option<bool>,
 ) -> Result<ExportOutcome, String> {
-    let ws = workspace_path
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
+    let _operation = crate::database::maintenance::operation()?;
+    let ws = workspace_path.filter(|s| !s.trim().is_empty()).or_else(|| {
+        fallback_workspace_root(&app)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    });
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["xlsx"], build_xlsx, ws.as_deref())
+        run_export(
+            &path,
+            &spec_json,
+            overwrite,
+            &["xlsx"],
+            build_xlsx,
+            ws.as_deref(),
+            sandbox_mode.unwrap_or_default(),
+            permission_escalated.unwrap_or(false),
+        )
     })
     .await
     .map_err(|e| format!("export_xlsx 任务失败: {e}"))?
@@ -909,12 +1090,26 @@ pub(crate) async fn export_pptx(
     spec_json: String,
     overwrite: Option<bool>,
     workspace_path: Option<String>,
+    sandbox_mode: Option<SandboxMode>,
+    permission_escalated: Option<bool>,
 ) -> Result<ExportOutcome, String> {
-    let ws = workspace_path
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
+    let _operation = crate::database::maintenance::operation()?;
+    let ws = workspace_path.filter(|s| !s.trim().is_empty()).or_else(|| {
+        fallback_workspace_root(&app)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    });
     tauri::async_runtime::spawn_blocking(move || {
-        run_export(&path, &spec_json, overwrite, &["pptx"], build_pptx, ws.as_deref())
+        run_export(
+            &path,
+            &spec_json,
+            overwrite,
+            &["pptx"],
+            build_pptx,
+            ws.as_deref(),
+            sandbox_mode.unwrap_or_default(),
+            permission_escalated.unwrap_or(false),
+        )
     })
     .await
     .map_err(|e| format!("export_pptx 任务失败: {e}"))?
@@ -943,13 +1138,25 @@ pub(crate) async fn write_text_file(
     content: String,
     overwrite: Option<bool>,
     workspace_path: Option<String>,
+    sandbox_mode: Option<SandboxMode>,
+    permission_escalated: Option<bool>,
 ) -> Result<ExportOutcome, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let overwrite = overwrite.unwrap_or(false);
     // 未绑定工作空间时回退到兜底目录（仿 codex 永远有 cwd）。
-    let ws = workspace_path
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
-    let p = check_path(&path, &["md", "markdown"], overwrite, ws.as_deref())?;
+    let ws = workspace_path.filter(|s| !s.trim().is_empty()).or_else(|| {
+        fallback_workspace_root(&app)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    });
+    let p = check_path(
+        &path,
+        &["md", "markdown"],
+        overwrite,
+        ws.as_deref(),
+        sandbox_mode.unwrap_or_default(),
+        permission_escalated.unwrap_or(false),
+    )?;
     // 写前读基线：文件已存在则读旧内容作内存基线，否则基线为空串（新建文件）。
     // 仅对中等体量文件算 diff；超大文件跳过 diff 防性能/内存风险（前端不显示行级对比）。
     let baseline = if p.is_file() {
@@ -1018,6 +1225,10 @@ pub(crate) fn default_artifact_dir() -> String {
 // ---------- 单元测试（生成真实文件并校验 zip/XML 结构） ----------
 
 #[cfg(test)]
+#[path = "office_export_tests.rs"]
+mod delivery_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1064,7 +1275,17 @@ mod tests {
             {"type":"table","rows":[["名称","数值"],["甲",1]],"header":true},
             {"type":"pagebreak"}
         ]}"#;
-        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["docx"], build_docx, None).unwrap();
+        let outcome = run_export(
+            path.to_str().unwrap(),
+            spec,
+            Some(true),
+            &["docx"],
+            build_docx,
+            None,
+            SandboxMode::DangerFullAccess,
+            false,
+        )
+        .unwrap();
         assert!(outcome.size > 500);
         assert!(read_entry(&path, "word/document.xml").contains("季度报告"));
         assert_well_formed_xml(&path);
@@ -1081,7 +1302,17 @@ mod tests {
             ["2月",1500],
             ["合计",{"formula":"SUM(B2:B3)"}]
         ]}]}"#;
-        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["xlsx"], build_xlsx, None).unwrap();
+        let outcome = run_export(
+            path.to_str().unwrap(),
+            spec,
+            Some(true),
+            &["xlsx"],
+            build_xlsx,
+            None,
+            SandboxMode::DangerFullAccess,
+            false,
+        )
+        .unwrap();
         assert!(outcome.size > 500);
         let sheet = read_entry(&path, "xl/worksheets/sheet1.xml");
         assert!(sheet.contains("inlineStr"));
@@ -1098,7 +1329,17 @@ mod tests {
             {"title":"开场","bullets":["第一点","第二点"]},
             {"title":"收尾","bullets":["总结"]}
         ]}"#;
-        let outcome = run_export(path.to_str().unwrap(), spec, Some(true), &["pptx"], build_pptx, None).unwrap();
+        let outcome = run_export(
+            path.to_str().unwrap(),
+            spec,
+            Some(true),
+            &["pptx"],
+            build_pptx,
+            None,
+            SandboxMode::DangerFullAccess,
+            false,
+        )
+        .unwrap();
         assert!(outcome.size > 1500);
         assert!(read_entry(&path, "ppt/presentation.xml").contains("sldIdLst"));
         assert!(read_entry(&path, "ppt/slides/slide1.xml").contains("开场"));
@@ -1118,6 +1359,8 @@ mod tests {
             &["docx"],
             build_docx,
             None,
+            SandboxMode::DangerFullAccess,
+            false,
         )
         .unwrap_err();
         assert!(err.contains("已存在"));
@@ -1136,6 +1379,8 @@ mod tests {
             &["docx"],
             build_docx,
             None,
+            SandboxMode::DangerFullAccess,
+            false,
         )
         .unwrap_err();
         assert!(err.contains("禁止写入"), "实际报错：{err}");
@@ -1174,7 +1419,11 @@ mod tests {
             Some(true),
             &["docx"],
             build_docx,
-            std::env::temp_dir().join("omni-unrelated-workspace-root").to_str(),
+            std::env::temp_dir()
+                .join("omni-unrelated-workspace-root")
+                .to_str(),
+            SandboxMode::DangerFullAccess,
+            false,
         )
         .unwrap_err();
         assert!(err.contains("项目工作区内"), "实际报错：{err}");
@@ -1193,6 +1442,8 @@ mod tests {
             &["docx"],
             build_docx,
             ws.to_str(),
+            SandboxMode::DangerFullAccess,
+            false,
         )
         .unwrap();
         assert!(outcome.size > 0);
@@ -1203,7 +1454,10 @@ mod tests {
     #[test]
     fn compute_file_diff_new_file_is_all_insertions() {
         // 新建文件：基线为空，全部为新增行
-        let new = (0..285).map(|i| format!("行{i}")).collect::<Vec<_>>().join("\n");
+        let new = (0..285)
+            .map(|i| format!("行{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let res = compute_file_diff("", &new, "architecture-design.md");
         assert_eq!(res.insertions, 285);
         assert_eq!(res.deletions, 0);
@@ -1233,17 +1487,43 @@ mod tests {
         // write_text_file 复用 check_path：.md / .markdown 应通过扩展名校验。
         let ws = std::env::temp_dir().join("omni-ws-test");
         std::fs::create_dir_all(&ws).unwrap();
-        let ok_md = check_path(ws.join("a.md").to_str().unwrap(), &["md", "markdown"], true, ws.to_str());
+        let ok_md = check_path(
+            ws.join("a.md").to_str().unwrap(),
+            &["md", "markdown"],
+            true,
+            ws.to_str(),
+            SandboxMode::DangerFullAccess,
+            false,
+        );
         assert!(ok_md.is_ok(), "预期 .md 通过：{:?}", ok_md.err());
-        let ok_markdown = check_path(ws.join("b.markdown").to_str().unwrap(), &["md", "markdown"], true, ws.to_str());
-        assert!(ok_markdown.is_ok(), "预期 .markdown 通过：{:?}", ok_markdown.err());
+        let ok_markdown = check_path(
+            ws.join("b.markdown").to_str().unwrap(),
+            &["md", "markdown"],
+            true,
+            ws.to_str(),
+            SandboxMode::DangerFullAccess,
+            false,
+        );
+        assert!(
+            ok_markdown.is_ok(),
+            "预期 .markdown 通过：{:?}",
+            ok_markdown.err()
+        );
     }
 
     #[test]
     fn write_text_file_rejects_non_md_ext() {
         let ws = std::env::temp_dir().join("omni-ws-test");
         std::fs::create_dir_all(&ws).unwrap();
-        let err = check_path(ws.join("c.txt").to_str().unwrap(), &["md", "markdown"], true, ws.to_str()).unwrap_err();
+        let err = check_path(
+            ws.join("c.txt").to_str().unwrap(),
+            &["md", "markdown"],
+            true,
+            ws.to_str(),
+            SandboxMode::DangerFullAccess,
+            false,
+        )
+        .unwrap_err();
         assert!(err.contains("扩展名"), "实际报错：{err}");
     }
 
@@ -1253,10 +1533,26 @@ mod tests {
         std::fs::create_dir_all(&ws).unwrap();
         let path = ws.join("dup.md");
         std::fs::write(&path, b"old").unwrap();
-        let err = check_path(path.to_str().unwrap(), &["md", "markdown"], false, ws.to_str()).unwrap_err();
+        let err = check_path(
+            path.to_str().unwrap(),
+            &["md", "markdown"],
+            false,
+            ws.to_str(),
+            SandboxMode::DangerFullAccess,
+            false,
+        )
+        .unwrap_err();
         assert!(err.contains("已存在"), "实际报错：{err}");
         // overwrite=true 应放行
-        assert!(check_path(path.to_str().unwrap(), &["md", "markdown"], true, ws.to_str()).is_ok());
+        assert!(check_path(
+            path.to_str().unwrap(),
+            &["md", "markdown"],
+            true,
+            ws.to_str(),
+            SandboxMode::DangerFullAccess,
+            false,
+        )
+        .is_ok());
     }
 
     #[cfg(windows)]
@@ -1264,7 +1560,15 @@ mod tests {
     fn write_text_file_refuses_no_go_zone() {
         let no_go = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
         let path = format!("{no_go}\\System32\\omni-evil.md");
-        let err = check_path(&path, &["md", "markdown"], true, None).unwrap_err();
+        let err = check_path(
+            &path,
+            &["md", "markdown"],
+            true,
+            None,
+            SandboxMode::DangerFullAccess,
+            false,
+        )
+        .unwrap_err();
         assert!(err.contains("禁止写入"), "实际报错：{err}");
     }
 
@@ -1276,8 +1580,28 @@ mod tests {
             &["md", "markdown"],
             true,
             None,
+            SandboxMode::DangerFullAccess,
+            false,
         )
         .unwrap_err();
         assert!(err.contains("禁止写入"), "实际报错：{err}");
+    }
+
+    #[test]
+    fn write_text_file_refuses_read_only_policy_before_creating_dirs() {
+        let root =
+            std::env::temp_dir().join(format!("omni-export-readonly-{}", uuid::Uuid::new_v4()));
+        let target = root.join("nested").join("blocked.md");
+        let err = check_path(
+            target.to_str().unwrap(),
+            &["md", "markdown"],
+            true,
+            root.to_str(),
+            SandboxMode::ReadOnly,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.contains("read-only"), "实际报错：{err}");
+        assert!(!target.parent().unwrap().exists());
     }
 }

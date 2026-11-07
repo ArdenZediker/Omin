@@ -34,6 +34,10 @@ const baseMessages: Message[] = [
   { role: "project", content: "你好，有什么可以帮你？" },
 ];
 
+beforeEach(() => {
+  localStorage.removeItem("omni_basic_settings");
+});
+
 function createProject(patch: Partial<Project> = {}): Project {
   return {
     id: "project-1",
@@ -298,6 +302,10 @@ describe("localTools", () => {
 
   it("导出落到会话工作目录下的 Omni-导出", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "workspace-write", sandboxEnabled: true }),
+    );
     vi.mocked(invoke)
       .mockResolvedValueOnce(false) // path_exists：目标文件不存在
       .mockResolvedValueOnce({ path: "C:/Users/Test/Documents/Omni-导出/2026-09-10/测试助手/当前会话_session-/数据.xlsx", size: 512 }); // export_xlsx 结果
@@ -313,12 +321,13 @@ describe("localTools", () => {
 
     expect(result?.ok).toBe(true);
     expect(result?.outputText).toContain("C:/Users/Test/Documents/Omni-导出/2026-09-10/测试助手/当前会话_session-/数据.xlsx");
-    // 自动路径由前端决定且已落在会话工作目录内，不必再把工作区边界交给 Rust 围栏
+    // workspace-write 下必须把真实工作区交给 Rust，文件工具与 shell 才能执行同一套边界。
     expect(invoke).toHaveBeenCalledWith(
       "export_xlsx",
       expect.objectContaining({
         path: "C:/Users/Test/Documents/Omni-导出/2026-09-10/测试助手/当前会话_session-/数据.xlsx",
-        workspacePath: null,
+        workspacePath: "C:/Users/Test/Documents",
+        sandboxMode: "workspace-write",
       })
     );
   });
@@ -701,10 +710,393 @@ describe("/bash 自定义 Shell 路径（设置 → 命令执行）", () => {
   });
 });
 
+describe("/bash WorkDSH 文件权限策略", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.removeItem("omni_basic_settings");
+  });
+
+  it("workspace-write 使用一次性沙箱执行并传入 standing mode", async () => {
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "workspace-write", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+    mockedInvoke.mockResolvedValueOnce({
+      exitCode: 0,
+      output: "clean",
+      timedOut: false,
+      denied: false,
+      enforcement: "partial",
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "git status" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "execute_command",
+      expect.objectContaining({
+        input: expect.objectContaining({
+          command: "git status",
+          cwd: "D:/repo",
+          sandboxMode: "workspace-write",
+        }),
+      }),
+    );
+    expect(mockedInvoke).not.toHaveBeenCalledWith("shell_session_exec", expect.anything());
+  });
+
+  it("沙箱拒绝时返回明确 denial 标记和升权指引", async () => {
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "read-only", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+    mockedInvoke.mockResolvedValueOnce({
+      exitCode: 1,
+      output: "Access is denied.",
+      timedOut: false,
+      denied: true,
+      enforcement: "partial",
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({ command: "git status" }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(result?.outputText).toContain("[sandbox: file access denied under read-only mode]");
+    expect(result?.outputText).toContain("sandbox_permissions");
+    expect(result?.outputText).toContain("justification");
+  });
+
+  it("升权必须带 justification 并经确认，只对本次调用生效", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "read-only", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+    mockedInvoke.mockResolvedValueOnce({
+      exitCode: 0,
+      output: "clean",
+      timedOut: false,
+      denied: false,
+      enforcement: "partial",
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({
+        command: "git status",
+        sandbox_permissions: "workspace-write",
+        justification: "需要在工作区内运行只读命令",
+      }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(requestConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "sandbox_escalation",
+        riskLevel: "write",
+      }),
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "execute_command",
+      expect.objectContaining({
+        input: expect.objectContaining({ sandboxMode: "workspace-write" }),
+      }),
+    );
+    expect(localStorage.getItem("omni_basic_settings")).toContain('"read-only"');
+  });
+
+  it("写命令升到 workspace-write 后只弹一次确认，不再叠加普通命令确认", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "read-only", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({
+      activeProject: createProject({ workspacePath: "D:/repo" }),
+    });
+    mockedInvoke.mockImplementation(async (command: string) =>
+      command === "no_go_zone_check"
+        ? null
+        : { exitCode: 0, output: "ok", timedOut: false },
+    );
+
+    const result = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({
+        command: "mkdir build",
+        sandbox_permissions: "workspace-write",
+        justification: "本次需要在工作区内生成构建产物",
+      }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(requestConfirmation).toHaveBeenCalledTimes(1);
+    expect(requestConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "sandbox_escalation",
+        riskLevel: "write",
+      }),
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "execute_command",
+      expect.objectContaining({
+        input: expect.objectContaining({
+          command: "mkdir build",
+          sandboxMode: "workspace-write",
+        }),
+      }),
+    );
+    expect(localStorage.getItem("omni_basic_settings")).toContain(
+      '"read-only"',
+    );
+  });
+
+  it("升权缺少 justification 或试图降权时直接拒绝", async () => {
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "workspace-write", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/repo" }) });
+
+    const missing = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({
+        command: "git status",
+        sandbox_permissions: "danger-full-access",
+      }),
+    });
+    expect(missing?.ok).toBe(false);
+    expect(missing?.error).toContain("justification");
+
+    const downgrade = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({
+        command: "git status",
+        sandbox_permissions: "read-only",
+        justification: "测试降权拒绝",
+      }),
+    });
+    expect(downgrade?.ok).toBe(false);
+    expect(downgrade?.error).toContain("只能升权");
+
+    const orphanJustification = await executeLocalTool(runtime, {
+      command: "/bash",
+      args: JSON.stringify({
+        command: "git status",
+        justification: "没有声明申请模式",
+      }),
+    });
+    expect(orphanJustification?.ok).toBe(false);
+    expect(orphanJustification?.error).toContain("只能与 sandbox_permissions");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
 describe("/write_file /edit_file（文件修改工具）", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.removeItem("omni_basic_settings");
+  });
+
+  it("read-only 会同时封住 write_file/edit_file/export 旁路", async () => {
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "read-only", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({ activeProject: createProject({ workspacePath: "D:/ws" }) });
+
+    const write = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({ path: "src/app.ts", content: "const a = 1;\n" }),
+    });
+    const edit = await executeLocalTool(runtime, {
+      command: "/edit_file",
+      args: JSON.stringify({ path: "src/app.ts", find: "a", replace: "b" }),
+    });
+    const exported = await executeLocalTool(runtime, {
+      command: "/export_md",
+      args: JSON.stringify({ path: "D:/ws/report.md", content: "# report" }),
+    });
+
+    expect(write?.ok).toBe(false);
+    expect(write?.error).toContain("read-only");
+    expect(edit?.ok).toBe(false);
+    expect(edit?.error).toContain("read-only");
+    expect(exported?.ok).toBe(false);
+    expect(exported?.error).toContain("read-only");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("workspace-write 写工作区外时直接拒绝，不弹普通越界确认", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "workspace-write", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({
+      activeProject: createProject({ workspacePath: "D:/ws" }),
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({ path: "D:/other/notes.md", content: "blocked" }),
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain(
+      "[sandbox: file access denied under workspace-write mode]",
+    );
+    expect(result?.error).toContain("sandbox_permissions");
+    expect(requestConfirmation).not.toHaveBeenCalled();
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("read-only 文件工具可一次性升到 workspace-write，且不修改常驻设置", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "read-only", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({
+      activeProject: createProject({ workspacePath: "D:/ws" }),
+    });
+    mockedInvoke.mockResolvedValueOnce({
+      path: "D:/ws/src/app.ts",
+      size: 12,
+      created: true,
+      replacements: 0,
+      diff: null,
+      snapshotAvailable: true,
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({
+        path: "src/app.ts",
+        content: "const a = 1;",
+        sandbox_permissions: "workspace-write",
+        justification: "本次需要在工作区内创建文件",
+      }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(requestConfirmation).toHaveBeenCalledTimes(1);
+    expect(requestConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "sandbox_escalation" }),
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "write_file_tool",
+      expect.objectContaining({
+        sandboxMode: "workspace-write",
+        confirmedOutside: false,
+      }),
+    );
+    expect(localStorage.getItem("omni_basic_settings")).toContain(
+      '"read-only"',
+    );
+  });
+
+  it("workspace-write 文件工具升到完全访问后只确认一次并可写工作区外", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "workspace-write", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({
+      activeProject: createProject({ workspacePath: "D:/ws" }),
+    });
+    mockedInvoke.mockResolvedValueOnce({
+      path: "D:/other/notes.md",
+      size: 2,
+      created: true,
+      replacements: 0,
+      diff: null,
+      snapshotAvailable: true,
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/write_file",
+      args: JSON.stringify({
+        path: "D:/other/notes.md",
+        content: "ok",
+        sandbox_permissions: "danger-full-access",
+        justification: "用户要求把交付文件写到项目目录之外",
+      }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(requestConfirmation).toHaveBeenCalledTimes(1);
+    expect(requestConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "sandbox_escalation",
+        riskLevel: "destructive",
+      }),
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "write_file_tool",
+      expect.objectContaining({
+        sandboxMode: "danger-full-access",
+        confirmedOutside: true,
+      }),
+    );
+    expect(localStorage.getItem("omni_basic_settings")).toContain(
+      '"workspace-write"',
+    );
+  });
+
+  it("导出工具一次性升到完全访问后不再被工作区围栏二次拒绝", async () => {
+    const { requestConfirmation } = await import("./confirmationGate");
+    localStorage.setItem(
+      "omni_basic_settings",
+      JSON.stringify({ sandboxMode: "workspace-write", sandboxEnabled: true }),
+    );
+    const runtime = createRuntime({
+      activeProject: createProject({
+        workspacePath: "D:/ws",
+        allowedToolIds: ["export_md"],
+      }),
+    });
+    mockedInvoke.mockResolvedValueOnce({
+      path: "D:/deliveries/report.md",
+      size: 20,
+      diff: null,
+    });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/export_md",
+      args: JSON.stringify({
+        path: "D:/deliveries/report.md",
+        content: "# report",
+        sandbox_permissions: "danger-full-access",
+        justification: "交付目录在项目工作区之外",
+      }),
+    });
+
+    expect(result?.ok).toBe(true);
+    expect(requestConfirmation).toHaveBeenCalledTimes(1);
+    expect(requestConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "sandbox_escalation" }),
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "write_text_file",
+      expect.objectContaining({
+        path: "D:/deliveries/report.md",
+        workspacePath: null,
+        sandboxMode: "danger-full-access",
+      }),
+    );
+    expect(localStorage.getItem("omni_basic_settings")).toContain(
+      '"workspace-write"',
+    );
   });
 
   it("工作区内相对路径：静默执行，confirmedOutside=false", async () => {
@@ -726,7 +1118,12 @@ describe("/write_file /edit_file（文件修改工具）", () => {
     expect(result?.ok).toBe(true);
     expect(mockedInvoke).toHaveBeenCalledWith(
       "write_file_tool",
-      expect.objectContaining({ path: "src/app.ts", overwrite: false, confirmedOutside: false }),
+      expect.objectContaining({
+        path: "src/app.ts",
+        overwrite: false,
+        confirmedOutside: false,
+        sandboxMode: "danger-full-access",
+      }),
     );
     expect(result?.fileDiff).toEqual({ filename: "app.ts", insertions: 5, deletions: 0, diffContent: "@@ -0,0 +1,5 @@" });
   });
@@ -808,7 +1205,13 @@ describe("/write_file /edit_file（文件修改工具）", () => {
     expect(result?.ok).toBe(true);
     expect(mockedInvoke).toHaveBeenCalledWith(
       "edit_file_tool",
-      expect.objectContaining({ find: "const a = 1;", replace: "const a = 2;", replaceAll: false, confirmedOutside: false }),
+      expect.objectContaining({
+        find: "const a = 1;",
+        replace: "const a = 2;",
+        replaceAll: false,
+        confirmedOutside: false,
+        sandboxMode: "danger-full-access",
+      }),
     );
     expect(result?.outputText).toContain("替换 1 处");
   });

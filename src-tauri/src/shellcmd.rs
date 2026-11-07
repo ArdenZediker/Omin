@@ -10,11 +10,13 @@
 //!   本模块只负责"执行 + 回传输出 + 超时"，不替业务判断风险。
 
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use crate::sandbox::SandboxMode;
 use crate::storage_paths::fallback_workspace_root;
 
 #[cfg(windows)]
@@ -41,7 +43,10 @@ pub struct ExecuteCommandInput {
     /// 自定义超时（毫秒），可选；超出用默认。
     #[serde(default)]
     pub timeout_ms: Option<u64>,
-    /// 是否在受限 token 沙箱中执行（设置 → 命令执行）。默认关闭；非 Windows 平台拒绝执行。
+    /// 文件写入策略（WorkDSH 权限体系）。缺省时退回旧 `sandbox` 开关。
+    #[serde(default)]
+    pub sandbox_mode: Option<SandboxMode>,
+    /// 兼容旧前端：true 等价于 `workspace-write`，false 等价于 `danger-full-access`。
     #[serde(default)]
     pub sandbox: Option<bool>,
 }
@@ -55,6 +60,10 @@ pub struct ExecuteCommandResult {
     pub output: String,
     /// 是否因超时被强杀。
     pub timed_out: bool,
+    /// 是否被文件沙箱拒绝。
+    pub denied: bool,
+    /// 后端强制级别：full / partial / none。
+    pub enforcement: String,
 }
 
 /// 截断超长输出。截断时把**完整**输出落盘并在提示里附路径，
@@ -253,22 +262,57 @@ fn build_shell_command(command: &str, shell_path: Option<&str>) -> Result<Comman
 pub(crate) fn is_env_allowed(key: &str) -> bool {
     const ALLOWED: &[&str] = &[
         // Windows 系统必需
-        "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "OS",
-        "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS",
-        "ALLUSERSPROFILE", "PROGRAMDATA", "PUBLIC",
-        "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432",
-        "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)", "COMMONPROGRAMW6432",
+        "SYSTEMROOT",
+        "SYSTEMDRIVE",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        "OS",
+        "PROCESSOR_ARCHITECTURE",
+        "NUMBER_OF_PROCESSORS",
+        "ALLUSERSPROFILE",
+        "PROGRAMDATA",
+        "PUBLIC",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "PROGRAMW6432",
+        "COMMONPROGRAMFILES",
+        "COMMONPROGRAMFILES(X86)",
+        "COMMONPROGRAMW6432",
         // 用户与目录
-        "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "HOME", "APPDATA", "LOCALAPPDATA",
-        "TEMP", "TMP", "TMPDIR",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "HOME",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
         // 身份
-        "USERNAME", "COMPUTERNAME", "USERDOMAIN", "USERDOMAIN_ROAMINGPROFILE",
+        "USERNAME",
+        "COMPUTERNAME",
+        "USERDOMAIN",
+        "USERDOMAIN_ROAMINGPROFILE",
         // Shell / 工具链
-        "PATH", "SHELL", "LANG", "LC_ALL", "TERM",
-        "MSYSTEM", "EXEPATH", "HOME_DRIVE",
-        "JAVA_HOME", "CARGO_HOME", "RUSTUP_HOME", "GOPATH", "GOROOT", "PYTHONDONTWRITEBYTECODE",
+        "PATH",
+        "SHELL",
+        "LANG",
+        "LC_ALL",
+        "TERM",
+        "MSYSTEM",
+        "EXEPATH",
+        "HOME_DRIVE",
+        "JAVA_HOME",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOPATH",
+        "GOROOT",
+        "PYTHONDONTWRITEBYTECODE",
     ];
-    ALLOWED.iter().any(|allowed| allowed.eq_ignore_ascii_case(key))
+    ALLOWED
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(key))
 }
 
 /// 环境变量脱敏（对齐 Codex spawn_child 的 allowlist 语义）：
@@ -288,21 +332,40 @@ fn scrub_environment(cmd: &mut Command) {
 fn run_shell(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String> {
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
     let cwd = input.cwd.clone();
+    let sandbox_mode = input.sandbox_mode.unwrap_or_else(|| {
+        if input.sandbox.unwrap_or(false) {
+            SandboxMode::WorkspaceWrite
+        } else {
+            SandboxMode::DangerFullAccess
+        }
+    });
 
-    // 沙箱模式（设置开关，默认关）：Windows 受限 token 执行，剥离全部特权防提权。
-    if input.sandbox.unwrap_or(false) {
+    // WorkDSH 文件策略：只读 / 工作区写入进入系统沙箱；完全访问走普通执行。
+    if sandbox_mode.is_confined() {
         if !crate::sandbox::is_platform_sandbox_supported() {
-            return Err("当前平台尚不支持受限 token 沙箱，请在设置中关闭沙箱模式后重试；命令未执行。".into());
+            return Err(format!(
+                "当前平台尚未实现 {} 沙箱后端；命令未执行。",
+                sandbox_mode.as_str()
+            ));
         }
-        #[cfg(windows)]
-        {
-            let exec = crate::sandbox::execute_restricted(&input.command, cwd.as_deref(), timeout)?;
-            return Ok(ExecuteCommandResult {
-                exit_code: exec.exit_code,
-                output: exec.output,
-                timed_out: exec.timed_out,
-            });
-        }
+        let workspace = cwd
+            .as_deref()
+            .ok_or_else(|| "沙箱执行缺少工作目录；命令未执行。".to_string())?;
+        let policy = crate::sandbox::SandboxPolicy::new(sandbox_mode, workspace)?;
+        let exec = crate::sandbox::execute(
+            &policy,
+            &input.command,
+            cwd.as_deref(),
+            timeout,
+            input.shell_path.as_deref(),
+        )?;
+        return Ok(ExecuteCommandResult {
+            exit_code: exec.exit_code,
+            output: exec.output,
+            timed_out: exec.timed_out,
+            denied: exec.denied,
+            enforcement: exec.enforcement.to_string(),
+        });
     }
 
     let mut cmd = build_shell_command(&input.command, input.shell_path.as_deref())?;
@@ -321,61 +384,80 @@ fn run_shell(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String>
         cmd.current_dir(path);
     }
 
-    let child = cmd.spawn().map_err(|e| format!("无法启动命令（请确认相关可执行文件已在 PATH 中）：{e}"))?;
-
-    // 把 child 放进 Arc<Mutex> 以便超时线程能跨线程 kill。
-    let child_arc = Arc::new(Mutex::new(child));
-    let wait_child = Arc::clone(&child_arc);
-    let (tx, rx) = std::sync::mpsc::channel::<std::process::ExitStatus>();
-    let wait_thread = thread::spawn(move || {
-        let status = wait_child.lock().unwrap().wait();
-        if let Ok(status) = status {
-            let _ = tx.send(status);
-        }
-    });
-
-    match rx.recv_timeout(timeout) {
-        Ok(status) => {
-            let mut guard = child_arc.lock().unwrap();
-            let (stdout, stderr) = collect_outputs(&mut guard);
-            let combined = combine(stdout, stderr);
-            Ok(ExecuteCommandResult {
-                exit_code: status.code().unwrap_or(-1),
-                output: cap_output(&combined, MAX_OUTPUT_CHARS),
-                timed_out: false,
-            })
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            // 超时：强杀子进程并回收。
-            let _ = child_arc.lock().unwrap().kill();
-            let _ = wait_thread.join();
-            let mut guard = child_arc.lock().unwrap();
-            let (stdout, stderr) = collect_outputs(&mut guard);
-            let mut combined = combine(stdout, stderr);
-            combined.push_str("\n[命令超时已被终止]");
-            Ok(ExecuteCommandResult {
-                exit_code: -1,
-                output: cap_output(&combined, MAX_OUTPUT_CHARS),
-                timed_out: true,
-            })
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-            Err("命令执行过程中通道断开".to_string())
-        }
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("无法启动命令（请确认相关可执行文件已在 PATH 中）：{e}"))?;
+    let (status, stdout, stderr) = wait_child_with_timeout(child, timeout)?;
+    let timed_out = status.is_none();
+    let mut combined = combine(stdout, stderr);
+    if timed_out {
+        combined.push_str("\n[命令超时已被终止]");
     }
+    Ok(ExecuteCommandResult {
+        exit_code: status.and_then(|status| status.code()).unwrap_or(-1),
+        output: cap_output(&combined, MAX_OUTPUT_CHARS),
+        timed_out,
+        denied: false,
+        enforcement: "none".to_string(),
+    })
 }
 
-fn collect_outputs(child: &mut std::process::Child) -> (String, String) {
-    use std::io::Read;
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    if let Some(mut out) = child.stdout.take() {
-        let _ = out.read_to_string(&mut stdout);
+/// Drain both pipes while polling the child. Waiting under a mutex would prevent
+/// the timeout branch from acquiring the same mutex to kill the process.
+fn wait_child_with_timeout(
+    mut child: std::process::Child,
+    timeout: Duration,
+) -> Result<(Option<std::process::ExitStatus>, String, String), String> {
+    fn drain<R: Read + Send + 'static>(
+        mut pipe: R,
+    ) -> (Arc<Mutex<Vec<u8>>>, std::sync::mpsc::Receiver<()>) {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let output = Arc::clone(&buffer);
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let mut chunk = [0u8; 8192];
+            while let Ok(size) = pipe.read(&mut chunk) {
+                if size == 0 {
+                    break;
+                }
+                output
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .extend_from_slice(&chunk[..size]);
+            }
+            let _ = done_tx.send(());
+        });
+        (buffer, done_rx)
     }
-    if let Some(mut err) = child.stderr.take() {
-        let _ = err.read_to_string(&mut stderr);
-    }
-    (stdout, stderr)
+    let (stdout, stdout_done) = drain(child.stdout.take().ok_or("子进程标准输出未打开")?);
+    let (stderr, stderr_done) = drain(child.stderr.take().ok_or("子进程标准错误未打开")?);
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if Instant::now() >= deadline => {
+                child.kill().map_err(|e| format!("终止超时命令失败：{e}"))?;
+                child.wait().map_err(|e| format!("回收超时命令失败：{e}"))?;
+                break None;
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("等待命令失败：{e}"));
+            }
+        }
+    };
+    // Descendants may keep an inherited pipe open. Never wait indefinitely for
+    // those readers after the direct child has exited.
+    let drain_deadline = Instant::now() + Duration::from_millis(500);
+    let _ = stdout_done.recv_timeout(drain_deadline.saturating_duration_since(Instant::now()));
+    let _ = stderr_done.recv_timeout(drain_deadline.saturating_duration_since(Instant::now()));
+    let stdout =
+        String::from_utf8_lossy(&stdout.lock().unwrap_or_else(|p| p.into_inner())).into_owned();
+    let stderr =
+        String::from_utf8_lossy(&stderr.lock().unwrap_or_else(|p| p.into_inner())).into_owned();
+    Ok((status, stdout, stderr))
 }
 
 fn combine(stdout: String, stderr: String) -> String {
@@ -391,13 +473,22 @@ fn combine(stdout: String, stderr: String) -> String {
 }
 
 #[tauri::command]
-pub(crate) async fn execute_command(app: tauri::AppHandle, input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String> {
+pub(crate) async fn execute_command(
+    app: tauri::AppHandle,
+    input: ExecuteCommandInput,
+) -> Result<ExecuteCommandResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     if input.command.trim().is_empty() {
         return Err("命令不能为空".to_string());
     }
     let mut input = input;
     // 未传工作目录时回退到兜底目录（仿 codex 永远有 cwd），避免回落到不可控的应用当前目录。
-    if input.cwd.as_deref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+    if input
+        .cwd
+        .as_deref()
+        .map(|s| s.trim().is_empty())
+        .unwrap_or(true)
+    {
         if let Ok(fb) = fallback_workspace_root(&app) {
             input.cwd = Some(fb.to_string_lossy().into_owned());
         }
@@ -494,7 +585,7 @@ pub(crate) async fn detect_shell(path: String) -> Result<DetectShellResult, Stri
 mod tests {
     use super::*;
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     #[test]
     fn sandbox_request_is_rejected_before_running_a_command() {
         let error = run_shell(ExecuteCommandInput {
@@ -513,7 +604,9 @@ mod tests {
     #[test]
     fn where_on_path_finds_where_itself_and_rejects_unknown() {
         // where.exe 必然在 System32（PATH 上）——能找到自己说明解析逻辑可用。
-        assert!(where_on_path("where.exe").iter().any(|p| p.to_ascii_lowercase().contains("where.exe")));
+        assert!(where_on_path("where.exe")
+            .iter()
+            .any(|p| p.to_ascii_lowercase().contains("where.exe")));
         // 无匹配时返回空而非报错。
         assert!(where_on_path("definitely-not-a-real-exe-xyz").is_empty());
     }
@@ -524,7 +617,10 @@ mod tests {
         // 本机存在任一 Git Bash（标准位置/自定义 Git 安装/PATH 便携版）时应能命中，
         // 且命中的绝不是 System32 的 WSL bash。
         if let Some(bash) = detect_git_bash() {
-            assert!(!bash.to_ascii_lowercase().contains("\\system32\\"), "误探测到 WSL bash: {bash}");
+            assert!(
+                !bash.to_ascii_lowercase().contains("\\system32\\"),
+                "误探测到 WSL bash: {bash}"
+            );
             assert!(std::path::Path::new(&bash).is_file());
         }
     }
@@ -532,5 +628,53 @@ mod tests {
     #[test]
     fn cap_output_leaves_short_text_untouched() {
         assert_eq!(cap_output("hello", 10), "hello");
+    }
+
+    #[cfg(windows)]
+    fn test_child(command: &str) -> std::process::Child {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = Command::new("cmd.exe");
+        cmd.raw_arg("/C")
+            .raw_arg(command)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        cmd.spawn().unwrap()
+    }
+
+    #[cfg(unix)]
+    fn test_child(command: &str) -> std::process::Child {
+        Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn drains_stdout_and_stderr_without_waiting_under_child_lock() {
+        #[cfg(windows)]
+        let command = "echo out & echo err 1>&2";
+        #[cfg(unix)]
+        let command = "printf out; printf err >&2";
+        let (status, stdout, stderr) =
+            wait_child_with_timeout(test_child(command), Duration::from_secs(2)).unwrap();
+        assert!(status.unwrap().success());
+        assert!(stdout.contains("out"));
+        assert!(stderr.contains("err"));
+    }
+
+    #[test]
+    fn timeout_kills_and_reaps_child_promptly() {
+        #[cfg(windows)]
+        let command = "ping -n 5 127.0.0.1 >NUL";
+        #[cfg(unix)]
+        let command = "sleep 5";
+        let started = Instant::now();
+        let (status, _, _) =
+            wait_child_with_timeout(test_child(command), Duration::from_millis(50)).unwrap();
+        assert!(status.is_none());
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

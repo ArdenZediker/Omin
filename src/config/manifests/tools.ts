@@ -1,4 +1,21 @@
-import type { ToolManifest } from "./types";
+import type { ToolManifest, ToolParamProperty } from "./types";
+
+const SANDBOX_ESCALATION_PARAMETERS: Record<string, ToolParamProperty> = {
+  sandbox_permissions: {
+    type: "string",
+    enum: ["workspace-write", "danger-full-access"],
+    description:
+      "The narrowest wider sandbox mode for a one-shot retry of the exact operation the sandbox just denied; the retry asks the user for approval.",
+  },
+  justification: {
+    type: "string",
+    description:
+      "Required with sandbox_permissions: one sentence explaining why this exact operation needs wider access.",
+  },
+};
+
+const SANDBOX_ESCALATION_PROMPT =
+  " If a confined mode denies this exact operation, do not bypass it with another tool; retry once with sandbox_permissions (the narrowest wider mode) plus a one-sentence justification. The user must approve that one call.";
 
 export const TOOL_MANIFESTS: ToolManifest[] = [
   {
@@ -216,13 +233,15 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
       "path is relative to the workspace (or absolute). If the file already exists and overwrite is not true, the call is REJECTED — " +
       "prefer /edit_file for targeted changes instead of overwriting whole files. " +
       "Writes inside the project workspace apply directly; a path outside the workspace requires user confirmation. " +
-      "System/key directories (AppData, .ssh, Windows, Program Files) are always blocked. Every write is diff-tracked and revertible in the Changes panel.",
+      "System/key directories (AppData, .ssh, Windows, Program Files) are always blocked. Every write is diff-tracked and revertible in the Changes panel." +
+      SANDBOX_ESCALATION_PROMPT,
     parameters: {
       type: "object",
       properties: {
         path: { type: "string", description: "File path (relative to the workspace, or absolute)." },
         content: { type: "string", description: "Full file content to write." },
         overwrite: { type: "boolean", description: "true = overwrite an existing file. Default false (rejects if exists)." },
+        ...SANDBOX_ESCALATION_PARAMETERS,
       },
       required: ["path", "content"],
     },
@@ -236,7 +255,8 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
       "Call /edit_file for precise in-place edits: JSON{\"path\":\"src/app.ts\",\"find\":\"exact original text (copy it verbatim from the file, may span lines)\",\"replace\":\"new text\",\"replace_all\":false}. " +
       "find must match EXACTLY (including indentation/whitespace); if it occurs 0 times or more than once without replace_all=true, the call is rejected with no changes. " +
       "Prefer this over /write_file for modifying existing files — it keeps the rest of the file untouched. " +
-      "Read the file first (/read_file) to copy the exact text. Every edit is diff-tracked and revertible in the Changes panel.",
+      "Read the file first (/read_file) to copy the exact text. Every edit is diff-tracked and revertible in the Changes panel." +
+      SANDBOX_ESCALATION_PROMPT,
     parameters: {
       type: "object",
       properties: {
@@ -244,6 +264,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
         find: { type: "string", description: "Exact original text to find (verbatim, may span multiple lines)." },
         replace: { type: "string", description: "Replacement text." },
         replace_all: { type: "boolean", description: "true = replace every occurrence. Default false (requires a unique match)." },
+        ...SANDBOX_ESCALATION_PARAMETERS,
       },
       required: ["path", "find", "replace"],
     },
@@ -423,7 +444,8 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     description:
       "Export structured content into a real .docx file (headings / paragraphs / bold / lists / tables / page breaks)",
     promptContribution:
-      "Call /export_docx to export reports, plans, etc. into a .docx file. spec.children supports h1/h2/h3/p/bullet/number/pagebreak/table; paragraphs support **bold** inline syntax. path is optional: when omitted, it auto-saves to the project directory for a project session, otherwise to the Omni folder in the system Documents directory (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/report.docx); never invent virtual paths like sandbox:/. In a project session, an absolute path outside the workspace only executes after user confirmation. Tell the user the file path when done.",
+      "Call /export_docx to export reports, plans, etc. into a .docx file. spec.children supports h1/h2/h3/p/bullet/number/pagebreak/table; paragraphs support **bold** inline syntax. path is optional: when omitted, it auto-saves to the project directory for a project session, otherwise to the Omni folder in the system Documents directory (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/report.docx); never invent virtual paths like sandbox:/. Tell the user the file path when done." +
+        SANDBOX_ESCALATION_PROMPT,
     parameters: {
       type: "object",
       properties: {
@@ -438,6 +460,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
             "Document structure: { title?, children: [{type:'h1'|'h2'|'h3'|'p'|'bullet'|'number'|'pagebreak', text, align?}, {type:'table', rows:[[cell]], header?}] }",
         },
         overwrite: { type: "boolean", description: "Overwrite if the file exists (default false)" },
+        ...SANDBOX_ESCALATION_PARAMETERS,
       },
       required: ["spec"],
     },
@@ -449,7 +472,8 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     description:
       "Export tabular data into a real .xlsx file (multiple sheets / numbers / formulas / header styling)",
     promptContribution:
-      "Call /export_xlsx to export data tables or lists into an .xlsx file. Each item in spec.sheets has name and rows; a cell can be a string / number / {formula:'SUM(B2:B3)'} / {text,style:'bold'|'header'}. path is optional: when omitted, auto-saves to the project directory for a project session, otherwise to the Omni folder in system Documents (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/data.xlsx); never invent virtual paths like sandbox:/. In a project session, an absolute path outside the workspace only executes after user confirmation. Tell the user the file path when done.",
+      "Call /export_xlsx to export data tables or lists into an .xlsx file. Each item in spec.sheets has name and rows; a cell can be a string / number / {formula:'SUM(B2:B3)'} / {text,style:'bold'|'header'}. path is optional: when omitted, auto-saves to the project directory for a project session, otherwise to the Omni folder in system Documents (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/data.xlsx); never invent virtual paths like sandbox:/. Tell the user the file path when done." +
+        SANDBOX_ESCALATION_PROMPT,
     parameters: {
       type: "object",
       properties: {
@@ -464,6 +488,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
             "Table structure: { sheets: [{ name, rows: [[string|number|{formula}|{text,style:'bold'|'header'}]] }] }",
         },
         overwrite: { type: "boolean", description: "Overwrite if the file exists (default false)" },
+        ...SANDBOX_ESCALATION_PARAMETERS,
       },
       required: ["spec"],
     },
@@ -474,7 +499,8 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     title: "Export PPT",
     description: "Export an outline into a real .pptx presentation (16:9, title + bullet slides)",
     promptContribution:
-      "Call /export_pptx to export outlines or reports into a .pptx presentation. Each item in spec.slides has title and bullets (array of points, ≤20). path is optional: when omitted, auto-saves to the project directory for a project session, otherwise to the Omni folder in system Documents (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/report.pptx); never invent virtual paths like sandbox:/. In a project session, an absolute path outside the workspace only executes after user confirmation. Tell the user the file path when done.",
+      "Call /export_pptx to export outlines or reports into a .pptx presentation. Each item in spec.slides has title and bullets (array of points, ≤20). path is optional: when omitted, auto-saves to the project directory for a project session, otherwise to the Omni folder in system Documents (a bare filename also works). If path is given it MUST be a real absolute local path (e.g. C:/Users/<user>/Documents/report.pptx); never invent virtual paths like sandbox:/. Tell the user the file path when done." +
+        SANDBOX_ESCALATION_PROMPT,
     parameters: {
       type: "object",
       properties: {
@@ -488,6 +514,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
           description: "Presentation structure: { slides: [{ title, bullets: [string] }] }",
         },
         overwrite: { type: "boolean", description: "Overwrite if the file exists (default false)" },
+        ...SANDBOX_ESCALATION_PARAMETERS,
       },
       required: ["spec"],
     },
@@ -499,7 +526,8 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     description:
       "Export Markdown content directly into a .md file (keeps the original text, not rendered to Office formats)",
     promptContribution:
-      "Call /export_md to export articles, notes, docs, or READMEs as raw Markdown into a .md file. content is the full Markdown text (may include headings/lists/tables/code blocks). path is optional: auto-saves to the project directory or system Documents/Omni, filename from title or the first line of content. Tell the user the file path when done. In a project session, an absolute path outside the workspace only executes after user confirmation.",
+      "Call /export_md to export articles, notes, docs, or READMEs as raw Markdown into a .md file. content is the full Markdown text (may include headings/lists/tables/code blocks). path is optional: auto-saves to the project directory or system Documents/Omni, filename from title or the first line of content. Tell the user the file path when done." +
+        SANDBOX_ESCALATION_PROMPT,
     parameters: {
       type: "object",
       properties: {
@@ -511,6 +539,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
         content: { type: "string", description: "Full Markdown content to write to the file" },
         title: { type: "string", description: "Optional; used as the default filename (without extension)" },
         overwrite: { type: "boolean", description: "Overwrite if the file exists (default false)" },
+        ...SANDBOX_ESCALATION_PARAMETERS,
       },
       required: ["content"],
     },
@@ -603,10 +632,17 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/bash",
     title: "运行 Shell 命令",
     description:
-      "在持久 bash 会话（真 PTY）中执行 shell 命令：cwd、环境变量、导出跨调用保留。可运行 bun/npm/curl 等 CLI 工具。只读命令自动执行，修改类命令需用户确认，危险命令会被拦截。",
+      "执行 shell 命令。完全访问模式使用持久 PTY；只读和工作区写入模式使用系统文件沙箱的一次性执行。只读命令自动执行，修改类命令需用户确认，危险命令会被拦截。",
     promptContribution:
       "Call /bash to run a shell command on the user's local machine. " +
-      "PERSISTENT SESSION: commands run in a persistent bash session scoped to this conversation — " +
+      "FILE SANDBOX: the session has a standing file policy: read-only, workspace-write, or danger-full-access. " +
+      "The same policy applies to /bash and every file-producing tool (/write_file, /edit_file, /export_*): " +
+      "read-only rejects all file creation or modification; workspace-write permits only the current workspace " +
+      "(plus the sandbox's private temp directory for shell commands). Shell commands in confined modes execute in the OS sandbox; a blocked write is returned as " +
+      "`[sandbox: file access denied under <mode> mode]`. Do not bypass a denial with another write method. " +
+      "If and only if the exact command genuinely needs wider access, retry once with `sandbox_permissions` " +
+      "(workspace-write | danger-full-access) and a one-sentence `justification`; the requested mode must be wider than the standing mode, and escalation is user-approved. " +
+      "PERSISTENT SESSION: in danger-full-access, commands run in a persistent bash session scoped to this conversation — " +
       "cwd, exported env vars and functions persist across calls (e.g. `cd src` once, later calls stay there; " +
       "export once, later calls see it). Pass reset=true to wipe state and start a fresh session. " +
       "On timeout the session survives and partial output is returned — long tasks can end with \" &\" to background, " +
@@ -640,6 +676,15 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
         reset: {
           type: "boolean",
           description: "true = 先重置持久会话再执行（丢弃已保留的 cwd/环境变量，回到全新 shell）。默认 false。",
+        },
+        sandbox_permissions: {
+          type: "string",
+          enum: ["workspace-write", "danger-full-access"],
+          description: "仅用于沙箱拒绝后的显式升权申请；必须与 justification 一起使用，且只能高于当前 standing mode。",
+        },
+        justification: {
+          type: "string",
+          description: "申请更高文件权限时必填：一句话说明为何这条具体命令需要更宽访问。",
         },
       },
       required: ["command"],

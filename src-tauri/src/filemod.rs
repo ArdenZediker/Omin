@@ -11,6 +11,7 @@
 //!   结果经前端 fileDiff 透传进变更面板。
 
 use crate::office_export::{is_within, no_go_zone, DiffResult};
+use crate::sandbox::{ensure_explicit_write_allowed, SandboxMode};
 use crate::storage_paths::fallback_workspace_root;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -74,8 +75,8 @@ fn resolve_target(
             Some(ws) => Path::new(ws).join(p),
             None => {
                 return Err(format!(
-                    "相对路径「{trimmed}」需要项目工作区才能解析，请提供绝对路径或先绑定项目工作目录"
-                ))
+                "相对路径「{trimmed}」需要项目工作区才能解析，请提供绝对路径或先绑定项目工作目录"
+            ))
             }
         }
     };
@@ -123,7 +124,11 @@ fn diff_if_reasonable(old_content: &str, new_content: &str, target: &Path) -> Op
         .file_name()
         .map(|f| f.to_string_lossy().into_owned())
         .unwrap_or_else(|| target.to_string_lossy().into_owned());
-    Some(crate::office_export::compute_file_diff(old_content, new_content, &filename))
+    Some(crate::office_export::compute_file_diff(
+        old_content,
+        new_content,
+        &filename,
+    ))
 }
 
 /// 读文件文本内容（非 UTF-8 视为二进制并拒绝，避免把二进制改坏）。
@@ -146,17 +151,27 @@ pub(crate) async fn write_file_tool(
     overwrite: Option<bool>,
     workspace_path: Option<String>,
     confirmed_outside: Option<bool>,
+    sandbox_mode: Option<SandboxMode>,
 ) -> Result<FileEditOutcome, String> {
+    let _operation = crate::database::maintenance::operation()?;
     if content.is_empty() {
         return Err("写入内容为空：如需清空文件请明确说明，普通写入请提供完整内容".to_string());
     }
     let overwrite = overwrite.unwrap_or(false);
     // 未绑定工作空间时回退到兜底目录（仿 codex 永远有 cwd）。
-    let ws = workspace_path
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
+    let ws = workspace_path.filter(|s| !s.trim().is_empty()).or_else(|| {
+        fallback_workspace_root(&app)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    });
     tauri::async_runtime::spawn_blocking(move || {
         let target = resolve_target(&path, ws.as_deref(), confirmed_outside.unwrap_or(false))?;
+        ensure_explicit_write_allowed(
+            sandbox_mode.unwrap_or_default(),
+            &target,
+            ws.as_deref().map(Path::new),
+            confirmed_outside.unwrap_or(false),
+        )?;
         let created = !target.is_file();
         if !created && !overwrite {
             return Err(format!(
@@ -200,17 +215,27 @@ pub(crate) async fn edit_file_tool(
     replace_all: Option<bool>,
     workspace_path: Option<String>,
     confirmed_outside: Option<bool>,
+    sandbox_mode: Option<SandboxMode>,
 ) -> Result<FileEditOutcome, String> {
+    let _operation = crate::database::maintenance::operation()?;
     if find.is_empty() {
         return Err("find 不能为空：请提供要替换的精确原文（可包含多行）".to_string());
     }
     let replace_all = replace_all.unwrap_or(false);
     // 未绑定工作空间时回退到兜底目录（仿 codex 永远有 cwd）。
-    let ws = workspace_path
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| fallback_workspace_root(&app).ok().map(|p| p.to_string_lossy().into_owned()));
+    let ws = workspace_path.filter(|s| !s.trim().is_empty()).or_else(|| {
+        fallback_workspace_root(&app)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    });
     tauri::async_runtime::spawn_blocking(move || {
         let target = resolve_target(&path, ws.as_deref(), confirmed_outside.unwrap_or(false))?;
+        ensure_explicit_write_allowed(
+            sandbox_mode.unwrap_or_default(),
+            &target,
+            ws.as_deref().map(Path::new),
+            confirmed_outside.unwrap_or(false),
+        )?;
         if !target.is_file() {
             return Err(format!(
                 "文件不存在：{}。请先用 list_files/search_files 定位，或用 write_file 新建",
@@ -254,6 +279,7 @@ pub(crate) async fn edit_file_tool(
 /// 若文件是 agent 新建的则直接删除。无快照时报错（不可恢复的改动不走此命令）。
 #[tauri::command]
 pub(crate) async fn undo_file_edit(path: String) -> Result<UndoOutcome, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let trimmed = path.trim().to_string();
     if trimmed.is_empty() {
         return Err("文件路径不能为空".to_string());
@@ -328,7 +354,10 @@ mod tests {
         let file = dir.join("never_touched.txt");
         std::fs::write(&file, "keep me").unwrap();
         let baseline = with_snapshots(|store| store.remove(&file.to_string_lossy().into_owned()));
-        assert!(baseline.is_none(), "未登记路径不得有快照（否则 undo 会误删）");
+        assert!(
+            baseline.is_none(),
+            "未登记路径不得有快照（否则 undo 会误删）"
+        );
         assert!(std::fs::read_to_string(&file).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -350,12 +379,7 @@ mod tests {
     fn resolve_target_rejects_outside_workspace_without_confirm() {
         let workspace = temp_dir("workspace");
         let outside = temp_dir("outside").join("a.rs");
-        let err = resolve_target(
-            outside.to_str().unwrap(),
-            workspace.to_str(),
-            false,
-        )
-        .unwrap_err();
+        let err = resolve_target(outside.to_str().unwrap(), workspace.to_str(), false).unwrap_err();
         assert!(err.contains("确认"));
     }
 
@@ -369,6 +393,9 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn workspace_paths_respect_case_sensitive_filesystems() {
-        assert!(!is_within(Path::new("/a/project/file.txt"), Path::new("/a/Project")));
+        assert!(!is_within(
+            Path::new("/a/project/file.txt"),
+            Path::new("/a/Project")
+        ));
     }
 }
