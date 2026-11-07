@@ -42,6 +42,9 @@ jobs:
         run: pnpm test
       - name: Run Rust library tests
         working-directory: src-tauri
+        env:
+          CARGO_TERM_COLOR: never
+          CARGO_TERM_PROGRESS_WHEN: never
         run: |
           set -o pipefail
           cargo test --lib 2>&1 | tee rust-test.log
@@ -50,11 +53,23 @@ jobs:
         working-directory: src-tauri
         run: |
           test -f rust-test.log || exit 0
-          tail -40 rust-test.log | while IFS= read -r line; do
-            escaped="${line//'%'/'%25'}"
-            escaped="${escaped//$'\r'/'%0D'}"
-            echo "::error::$escaped"
-          done || true
+          sed $'s/\x1b\\[[0-9;]*[[:alpha:]]//g' rust-test.log > rust-test.clean.log
+          {
+            echo "=== cargo/rust errors ==="
+            grep -n -E -B 4 -A 20 \
+              '(^|[[:space:]])error(\[E[0-9]+\])?:|warning: unused|test result: FAILED|panicked at|failed to run custom build command|linker command failed|undefined reference|fatal error:|failed to download|failed to authenticate|network failure|operation timed out' \
+              rust-test.clean.log || true
+            echo "=== final output ==="
+            tail -60 rust-test.clean.log
+          } > rust-test-diagnostic.log 2>&1
+          split -b 3000 rust-test-diagnostic.log rust-test-diagnostic-chunk-
+          index=1
+          for chunk in rust-test-diagnostic-chunk-*; do
+            test "$index" -le 8 || break
+            encoded="$(base64 < "$chunk" | tr -d '\n')"
+            echo "::error title=Rust test diagnostic chunk $index::$encoded"
+            index=$((index + 1))
+          done
       - name: Upload Rust test log
         if: failure()
         uses: actions/upload-artifact@v4
@@ -62,13 +77,6 @@ jobs:
           name: omni-macos-${{ matrix.arch }}-rust-test-log
           path: src-tauri/rust-test.log
           if-no-files-found: ignore
-      - name: Emit Rust test log annotation
-        if: failure()
-        working-directory: src-tauri
-        run: |
-          test -f rust-test.log || exit 0
-          encoded="$(base64 < rust-test.log | tr -d '\n')"
-          echo "::error title=Rust test log base64::$encoded"
       - name: Run macOS Seatbelt sandbox tests
         working-directory: src-tauri
         run: cargo test --lib sandbox::tests::macos_ -- --test-threads=1
