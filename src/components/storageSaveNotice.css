@@ -1,0 +1,25 @@
+.storage-save-notice {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.storage-save-notice p { margin: 4px 0 0; }
+.storage-save-notice button {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.storage-save-notice button:focus-visible, .storage-save-notice summary:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.storage-save-notice button:disabled { opacity: .6; cursor: wait; }
+.storage-save-notice summary { cursor: pointer; margin-top: 4px; }

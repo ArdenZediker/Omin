@@ -4,8 +4,11 @@
 
 use rusqlite::Connection;
 
-
-pub(crate) fn table_has_column(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
+pub(crate) fn table_has_column(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+) -> Result<bool, String> {
     let sql = format!("PRAGMA table_info({table})");
     let mut stmt = connection.prepare(&sql).map_err(|err| err.to_string())?;
     let columns = stmt

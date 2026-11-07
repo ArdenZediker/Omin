@@ -17,14 +17,7 @@ const UNSET_SHORTCUT: &str = "未设置";
 
 /// 仅作修饰键使用的 token；用来判断一个组合里是否存在真正的“主键”。
 const MODIFIER_TOKENS: [&str; 8] = [
-    "CTRL",
-    "CONTROL",
-    "SHIFT",
-    "ALT",
-    "OPTION",
-    "SUPER",
-    "COMMAND",
-    "CMD",
+    "CTRL", "CONTROL", "SHIFT", "ALT", "OPTION", "SUPER", "COMMAND", "CMD",
 ];
 
 /// 把前端快捷键串翻译成 `global-hotkey` 可解析的规范形式。
@@ -122,9 +115,6 @@ mod tests {
             to_hotkey_spec("Ctrl+Shift+Space").as_deref(),
             Some("Ctrl+Shift+Space")
         );
-        assert_eq!(
-            to_hotkey_spec("Alt+F4").as_deref(),
-            Some("Alt+F4")
-        );
+        assert_eq!(to_hotkey_spec("Alt+F4").as_deref(), Some("Alt+F4"));
     }
 }

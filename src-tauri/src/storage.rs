@@ -161,7 +161,11 @@ fn session_bucket_name(project_id: &str, project_title: Option<&str>) -> String 
         return "_no-project".to_string();
     }
     let slug = sanitize_dir_name(project_title.unwrap_or(""));
-    let slug = if slug.is_empty() { "project".to_string() } else { slug };
+    let slug = if slug.is_empty() {
+        "project".to_string()
+    } else {
+        slug
+    };
     let short: String = pid.chars().take(8).collect();
     format!("{}_{}", slug, short)
 }
@@ -225,7 +229,10 @@ fn cleanup_legacy_session_dirs(root: &Path, bucket: &str, id: &str) {
 /// 构造会话文件头行（JSONL 首行），记录格式版本与压缩方式，供后续迁移识别。
 fn build_session_header() -> String {
     let mut header = serde_json::Map::new();
-    header.insert(SESSION_HEADER_MAGIC.to_string(), JsonValue::from(SESSION_FORMAT_VERSION));
+    header.insert(
+        SESSION_HEADER_MAGIC.to_string(),
+        JsonValue::from(SESSION_FORMAT_VERSION),
+    );
     header.insert("compression".to_string(), JsonValue::from("none"));
     JsonValue::Object(header).to_string()
 }
@@ -236,7 +243,11 @@ fn acquire_cross_process_lease(root: &Path) -> Result<fs::File, String> {
     let lock_path = root.join(SESSION_LEASE_FILE);
     let deadline = Instant::now() + SESSION_LEASE_TIMEOUT;
     loop {
-        match OpenOptions::new().write(true).create_new(true).open(&lock_path) {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
             Ok(file) => return Ok(file),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
                 if Instant::now() >= deadline {
@@ -257,12 +268,15 @@ fn write_session_messages(
     id: &str,
     messages: &JsonValue,
 ) -> Result<(), String> {
-    let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = SESSION_FILE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // 进程间互斥：多实例并发写时串行化，避免文件撕裂。
     let _lease = acquire_cross_process_lease(root)?;
     let dir = root.join(bucket).join(id);
     let was_absent = !dir.exists();
-    fs::create_dir_all(&dir).map_err(|err| format!("创建会话目录失败 {}: {}", dir.display(), err))?;
+    fs::create_dir_all(&dir)
+        .map_err(|err| format!("创建会话目录失败 {}: {}", dir.display(), err))?;
     let target = dir.join("session.jsonl");
     let tmp = dir.join("session.jsonl.tmp");
 
@@ -298,7 +312,9 @@ fn read_session_messages(
     bucket: &str,
     id: &str,
 ) -> Result<Option<Vec<JsonValue>>, String> {
-    let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = SESSION_FILE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let file = session_file_path(root, bucket, id);
     if !file.exists() {
         return Ok(None);
@@ -341,7 +357,9 @@ fn read_session_messages(
 
 /// 删除会话目录。除目标分桶外，一并清理旧扁平结构与改名前的旧桶，保证删干净、不留孤儿。
 fn delete_session_dir(root: &Path, bucket: &str, id: &str) {
-    let _guard = SESSION_FILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = SESSION_FILE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let dir = root.join(bucket).join(id);
     if dir.exists() {
         let _ = fs::remove_dir_all(&dir);
@@ -786,7 +804,18 @@ pub(crate) fn load_structured_chat_storage(
     let sessions: Vec<DbChatSession> = raw_sessions
         .into_iter()
         .map(
-            |(id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path)| {
+            |(
+                id,
+                project_id,
+                title,
+                messages_json,
+                pinned,
+                favorite,
+                created_at,
+                updated_at,
+                usage_json,
+                workspace_path,
+            )| {
                 // 会话目录按项目分桶；项目已删等查不到归属时退化为无项目桶。
                 let bucket = bucket_by_project
                     .get(&project_id)
@@ -890,8 +919,7 @@ pub(crate) fn save_structured_chat_storage(
                 project.system_prompt,
                 project.default_model_id,
                 serde_json::to_string(&project.allowed_tool_ids).map_err(|err| err.to_string())?,
-                serde_json::to_string(&project.allowed_skill_ids)
-                    .map_err(|err| err.to_string())?,
+                serde_json::to_string(&project.allowed_skill_ids).map_err(|err| err.to_string())?,
                 project.created_at,
                 project.updated_at,
             ])
@@ -1138,7 +1166,10 @@ pub(crate) fn delete_project_by_id(
     let bucket = session_bucket_for_project(connection, id);
     // 默认助手不允许删除；同时清理其所属会话，避免孤儿记录。
     connection
-        .execute("DELETE FROM projects WHERE id = ?1 AND kind != 'basic'", params![id])
+        .execute(
+            "DELETE FROM projects WHERE id = ?1 AND kind != 'basic'",
+            params![id],
+        )
         .map_err(|err| err.to_string())?;
     let orphan_ids: Vec<String> = {
         let mut stmt = connection
@@ -1153,7 +1184,10 @@ pub(crate) fn delete_project_by_id(
     };
     for orphan_id in orphan_ids {
         connection
-            .execute("DELETE FROM chat_sessions WHERE id = ?1", params![orphan_id])
+            .execute(
+                "DELETE FROM chat_sessions WHERE id = ?1",
+                params![orphan_id],
+            )
             .map_err(|err| err.to_string())?;
         delete_session_dir(sessions_root, &bucket, &orphan_id);
     }
@@ -1252,11 +1286,8 @@ mod session_file_tests {
 
     fn temp_root() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
-            "omni_session_test_{}_{}",
-            std::process::id(),
-            n
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("omni_session_test_{}_{}", std::process::id(), n));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("创建临时目录");
         dir
@@ -1297,7 +1328,10 @@ mod session_file_tests {
         write_session_messages(&root, TB, "s2", &sample_messages()).expect("写入应成功");
         // 模拟崩溃撕裂：追加一行半截/损坏数据 + 一行有效数据
         let path = root.join(TB).join("s2").join("session.jsonl");
-        let mut f = fs::OpenOptions::new().append(true).open(&path).expect("打开文件");
+        let mut f = fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("打开文件");
         writeln!(f, "{{this is not valid json").expect("追加损坏行");
         writeln!(f, "{{\"role\":\"user\",\"content\":\"追加的有效行\"}}").expect("追加有效行");
         drop(f);
@@ -1315,7 +1349,9 @@ mod session_file_tests {
     fn overwrite_replaces_content_not_append() {
         let root = temp_root();
         write_session_messages(&root, TB, "s3", &sample_messages()).expect("写入应成功");
-        let replacement = JsonValue::Array(vec![serde_json::json!({"role":"system","content":"只有一条"})]);
+        let replacement = JsonValue::Array(vec![
+            serde_json::json!({"role":"system","content":"只有一条"}),
+        ]);
         write_session_messages(&root, TB, "s3", &replacement).expect("重写应成功");
         let loaded = read_session_messages(&root, TB, "s3")
             .expect("读取应成功")
@@ -1332,11 +1368,15 @@ mod session_file_tests {
         write_session_messages(&root, TB, "s5", &msgs).expect("写入应成功");
 
         // 首行应为格式头，含魔数键与版本号
-        let raw = fs::read_to_string(root.join(TB).join("s5").join("session.jsonl")).expect("读原文件");
+        let raw =
+            fs::read_to_string(root.join(TB).join("s5").join("session.jsonl")).expect("读原文件");
         let first_line = raw.lines().next().expect("应有首行");
         let header: serde_json::Map<String, JsonValue> =
             serde_json::from_str(first_line).expect("头行应为合法 JSON");
-        assert_eq!(header.get("_omni_session_format").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(
+            header.get("_omni_session_format").and_then(|v| v.as_u64()),
+            Some(1)
+        );
 
         // 读取结果只含消息、不含头行
         let loaded = read_session_messages(&root, TB, "s5")
@@ -1352,7 +1392,11 @@ mod session_file_tests {
         let dir = root.join(TB).join("s6");
         fs::create_dir_all(&dir).expect("创建目录");
         let mut f = fs::File::create(dir.join("session.jsonl")).expect("创建文件");
-        writeln!(f, "{{\"_omni_session_format\":999,\"compression\":\"none\"}}").expect("写头行");
+        writeln!(
+            f,
+            "{{\"_omni_session_format\":999,\"compression\":\"none\"}}"
+        )
+        .expect("写头行");
         writeln!(f, "{{\"role\":\"user\",\"content\":\"x\"}}").expect("写消息行");
         drop(f);
 
@@ -1382,7 +1426,10 @@ mod session_file_tests {
             "我的项目_abc12345"
         );
         // 标题为空或含非法字符时退化，且结果不含路径分隔符
-        assert_eq!(session_bucket_name("abcdefgh", Some("")), "project_abcdefgh");
+        assert_eq!(
+            session_bucket_name("abcdefgh", Some("")),
+            "project_abcdefgh"
+        );
         assert_eq!(
             session_bucket_name("abcdefgh", Some("a/b:c")),
             "a b c_abcdefgh"

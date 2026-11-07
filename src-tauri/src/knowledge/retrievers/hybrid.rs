@@ -137,7 +137,10 @@ impl HybridRetriever {
         // 元数据：id -> (document_id, title, content)
         let mut meta: HashMap<String, (String, Option<String>, String)> = HashMap::new();
         for (id, document_id, title, content, _score) in &kw {
-            meta.insert(id.clone(), (document_id.clone(), title.clone(), content.clone()));
+            meta.insert(
+                id.clone(),
+                (document_id.clone(), title.clone(), content.clone()),
+            );
         }
 
         let mut kw_norm: Vec<f64> = kw.iter().map(|(_, _, _, _, s)| *s).collect();
@@ -178,14 +181,16 @@ impl HybridRetriever {
 
         Ok(ranked
             .into_iter()
-            .map(|(chunk_id, score, document_id, title, content)| RetrievedChunk {
-                chunk_id,
-                document_id,
-                collection_id: collection_id.to_string(),
-                title,
-                content,
-                score,
-            })
+            .map(
+                |(chunk_id, score, document_id, title, content)| RetrievedChunk {
+                    chunk_id,
+                    document_id,
+                    collection_id: collection_id.to_string(),
+                    title,
+                    content,
+                    score,
+                },
+            )
             .collect())
     }
 }
@@ -205,14 +210,16 @@ impl Retriever for HybridRetriever {
                 let kw = self.keyword_scores(conn, collection_id, query)?;
                 Ok(kw
                     .into_iter()
-                    .map(|(chunk_id, document_id, title, content, score)| RetrievedChunk {
-                        chunk_id,
-                        document_id,
-                        collection_id: collection_id.to_string(),
-                        title,
-                        content,
-                        score,
-                    })
+                    .map(
+                        |(chunk_id, document_id, title, content, score)| RetrievedChunk {
+                            chunk_id,
+                            document_id,
+                            collection_id: collection_id.to_string(),
+                            title,
+                            content,
+                            score,
+                        },
+                    )
                     .take(limit)
                     .collect())
             }

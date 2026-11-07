@@ -123,6 +123,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
   const [activeChatId, setActiveChatId] = useState<string | null>(initialState.activeChatId);
   const [messages, setMessages] = useState<Message[]>(initialState.messages);
   const [isStorageHydrated, setIsStorageHydrated] = useState(!persist);
+  const [isAutomationReady, setIsAutomationReady] = useState(!persist);
   const activeProjectIdRef = useRef(activeProjectId);
   const activeChatIdRef = useRef(activeChatId);
   const persistTimerRef = useRef<number | null>(null);
@@ -213,6 +214,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
         setProjectMemories(nextMemories);
         setSessionSummaries(nextSummaries);
         setScheduledTasks(nextScheduledTasks);
+        setIsAutomationReady(true);
         setUserPreferences(nextPreferences);
         activeProjectIdRef.current = nextActiveProjectId;
         activeChatIdRef.current = nextActiveSession?.id ?? null;
@@ -230,6 +232,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
           // 加载失败：仍让界面可用，但禁止后续持久化写回，
           // 防止用空回退状态覆盖数据库中可能仍存在的会话。
           hydratedWithDataRef.current = false;
+          setIsAutomationReady(false);
           setIsStorageHydrated(true);
         }
       });
@@ -1113,6 +1116,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
     resetActiveChat,
     searchChatSessions,
     scheduledTasks,
+    isAutomationReady,
     selectProject,
     selectChatSession,
     setActiveProjectId,

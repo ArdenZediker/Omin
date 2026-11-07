@@ -12,7 +12,10 @@ pub(crate) fn protected_spans_if_needed(text: &str) -> Option<Vec<ByteSpan>> {
     }
 }
 
-pub(crate) fn drop_boundaries_inside_spans(boundaries: Vec<usize>, spans: &[ByteSpan]) -> Vec<usize> {
+pub(crate) fn drop_boundaries_inside_spans(
+    boundaries: Vec<usize>,
+    spans: &[ByteSpan],
+) -> Vec<usize> {
     if spans.is_empty() {
         return boundaries;
     }

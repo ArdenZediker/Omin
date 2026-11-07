@@ -218,16 +218,17 @@ pub(crate) fn read_file(
     };
     let take = limit_chars.min(remaining);
 
-    let slice: String = content
-        .chars()
-        .skip(offset_chars)
-        .take(take)
-        .collect();
+    let slice: String = content.chars().skip(offset_chars).take(take).collect();
 
     // 行号坐标系：窗口首字符所在行 = 前 offset_chars 字符里的换行数 + 1。
     // 即便 offset 落在行中间，start_line 也指向该（部分）行——模型续读时
     // 行号与 /search_files 的 line_number 连续对齐。
-    let start_line = content.chars().take(offset_chars).filter(|&c| c == '\n').count() + 1;
+    let start_line = content
+        .chars()
+        .take(offset_chars)
+        .filter(|&c| c == '\n')
+        .count()
+        + 1;
     let end_line = start_line + slice.matches('\n').count();
 
     Ok(ReadFileResult {
@@ -326,7 +327,10 @@ pub(crate) fn copy_file_to_store(src: &str, dst: &str) -> Result<CopyFileResult,
             .extension()
             .map(|e| e.to_string_lossy().to_string())
             .unwrap_or_default();
-        let parent = dst_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let parent = dst_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
         let mut n = 1;
         loop {
             let name = if ext.is_empty() {
@@ -503,7 +507,8 @@ pub(crate) fn search_files(
                 let start = idx.saturating_sub(context);
                 let before: Vec<String> = lines[start..idx].iter().map(|s| s.to_string()).collect();
                 let end = (idx + 1 + context).min(lines.len());
-                let after: Vec<String> = lines[idx + 1..end].iter().map(|s| s.to_string()).collect();
+                let after: Vec<String> =
+                    lines[idx + 1..end].iter().map(|s| s.to_string()).collect();
                 results.push(WorkspaceSearchMatch {
                     path: relative.clone(),
                     line_number: idx + 1,
@@ -607,7 +612,10 @@ mod tests {
 
     #[test]
     fn read_offset_chars_skips_leading_content() {
-        let body: String = (1..=50).map(|n| format!("{n:02}")).collect::<Vec<_>>().join("-");
+        let body: String = (1..=50)
+            .map(|n| format!("{n:02}"))
+            .collect::<Vec<_>>()
+            .join("-");
         // 总字符数 50*3 - 1 = 149；offset=60 应跳过前 60 字符
         let abs = write_temp_file("offset.txt", &body);
 
@@ -704,20 +712,40 @@ mod tests {
         let home = Some("C:\\Users\\tester");
 
         // 家目录下的凭据目录：整目录拦截
-        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\.ssh\\id_rsa"), home).is_some());
+        assert!(
+            sensitive_read_reason(Path::new("C:\\Users\\tester\\.ssh\\id_rsa"), home).is_some()
+        );
         assert!(sensitive_read_reason(Path::new("C:/Users/tester/.ssh"), home).is_some());
-        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\.gnupg\\pubring.kbx"), home).is_some());
-        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\.aws\\credentials"), home).is_some());
+        assert!(
+            sensitive_read_reason(Path::new("C:\\Users\\tester\\.gnupg\\pubring.kbx"), home)
+                .is_some()
+        );
+        assert!(
+            sensitive_read_reason(Path::new("C:\\Users\\tester\\.aws\\credentials"), home)
+                .is_some()
+        );
 
         // 前缀必须完整匹配：.ssh-utils 这类同名前缀目录不能误伤
-        assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\.ssh-utils\\a.txt"), home).is_none());
+        assert!(
+            sensitive_read_reason(Path::new("C:\\Users\\tester\\.ssh-utils\\a.txt"), home)
+                .is_none()
+        );
         // 家目录普通文件放行
         assert!(sensitive_read_reason(Path::new("C:\\Users\\tester\\notes.md"), home).is_none());
 
         // Windows 注册表 hive：只拦 SAM/SYSTEM/SECURITY 本体
-        assert!(sensitive_read_reason(Path::new("C:\\Windows\\System32\\config\\SAM"), None).is_some());
-        assert!(sensitive_read_reason(Path::new("C:\\WINDOWS\\system32\\config\\SYSTEM"), None).is_some());
-        assert!(sensitive_read_reason(Path::new("C:\\Windows\\System32\\config\\drivers\\ok.txt"), None).is_none());
+        assert!(
+            sensitive_read_reason(Path::new("C:\\Windows\\System32\\config\\SAM"), None).is_some()
+        );
+        assert!(
+            sensitive_read_reason(Path::new("C:\\WINDOWS\\system32\\config\\SYSTEM"), None)
+                .is_some()
+        );
+        assert!(sensitive_read_reason(
+            Path::new("C:\\Windows\\System32\\config\\drivers\\ok.txt"),
+            None
+        )
+        .is_none());
 
         // NTDS 目录库 + Unix 口令文件（sudoers.d 整目录拦；shadow.d 并非真实敏感路径，放行）
         assert!(sensitive_read_reason(Path::new("D:\\data\\ntds.dit"), None).is_some());
@@ -736,7 +764,10 @@ mod tests {
             home
         )
         .is_some());
-        assert!(sensitive_read_reason(Path::new("/Users/tester/Library/Notes/notes.txt"), home).is_none());
+        assert!(
+            sensitive_read_reason(Path::new("/Users/tester/Library/Notes/notes.txt"), home)
+                .is_none()
+        );
     }
 
     // ---------- copy_file_to_store（会话附件快照） ----------
@@ -818,7 +849,10 @@ mod tests {
     fn sanitize_pasted_file_name_strips_path_and_illegal_chars() {
         assert_eq!(sanitize_pasted_file_name("report.md"), "report.md");
         assert_eq!(sanitize_pasted_file_name("../secret.txt"), "secret.txt");
-        assert_eq!(sanitize_pasted_file_name("C:\\\\bad:file?.docx"), "bad_file_.docx");
+        assert_eq!(
+            sanitize_pasted_file_name("C:\\\\bad:file?.docx"),
+            "bad_file_.docx"
+        );
         assert_eq!(sanitize_pasted_file_name("  spaces  "), "spaces");
         assert_eq!(sanitize_pasted_file_name(""), "pasted-file");
         assert_eq!(sanitize_pasted_file_name("\nname\r"), "_name_");
@@ -884,9 +918,18 @@ mod tests {
 
         let entries = list_files(Some(repo), Some("*.txt".to_string()), None).unwrap();
         let paths: Vec<&str> = entries.iter().map(|e| e.path.as_str()).collect();
-        let new_idx = paths.iter().position(|p| *p == "new.txt").expect("new.txt 应在结果中");
-        let old_idx = paths.iter().position(|p| *p == "old.txt").expect("old.txt 应在结果中");
-        assert!(new_idx < old_idx, "最近修改的 new.txt 应排在 old.txt 之前，实际顺序 {paths:?}");
+        let new_idx = paths
+            .iter()
+            .position(|p| *p == "new.txt")
+            .expect("new.txt 应在结果中");
+        let old_idx = paths
+            .iter()
+            .position(|p| *p == "old.txt")
+            .expect("old.txt 应在结果中");
+        assert!(
+            new_idx < old_idx,
+            "最近修改的 new.txt 应排在 old.txt 之前，实际顺序 {paths:?}"
+        );
     }
 
     #[test]

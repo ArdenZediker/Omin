@@ -53,9 +53,27 @@ impl DocumentParser for TextDocumentParser {
             _ => {
                 let is_text_like = matches!(
                     ext.as_str(),
-                    "txt" | "text" | "log" | "html" | "htm" | "xml" | "yml" | "yaml" | "json"
-                        | "rs" | "ts" | "tsx" | "js" | "py" | "go" | "java" | "c" | "cpp" | "sh"
-                        | "toml" | "sql"
+                    "txt"
+                        | "text"
+                        | "log"
+                        | "html"
+                        | "htm"
+                        | "xml"
+                        | "yml"
+                        | "yaml"
+                        | "json"
+                        | "rs"
+                        | "ts"
+                        | "tsx"
+                        | "js"
+                        | "py"
+                        | "go"
+                        | "java"
+                        | "c"
+                        | "cpp"
+                        | "sh"
+                        | "toml"
+                        | "sql"
                 );
                 if is_text_like {
                     let preview = if matches!(ext.as_str(), "html" | "htm" | "xml") {

@@ -151,7 +151,10 @@ fn normalize_pty_text(text: &str) -> String {
 fn extract_completed(text: &str, m: &CommandMarkers) -> Option<(String, i32)> {
     let end = text.rfind(&m.end)?;
     let status_tail = &text[end + m.end.len()..];
-    let status: String = status_tail.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let status: String = status_tail
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
     if status.is_empty() {
         return None; // END 标记已出但退出码还没刷出来，下一轮轮询再取
     }
@@ -162,7 +165,9 @@ fn extract_completed(text: &str, m: &CommandMarkers) -> Option<(String, i32)> {
         None => "", // START 被环形缓冲挤掉：视作部分输出
     };
     Some((
-        body.trim_start_matches('\n').trim_end_matches(['\r', '\n']).to_string(),
+        body.trim_start_matches('\n')
+            .trim_end_matches(['\r', '\n'])
+            .to_string(),
         code,
     ))
 }
@@ -236,7 +241,10 @@ impl Drop for ShellSession {
 }
 
 /// PTY 读线程：字节流 → 增量 UTF-8 解码（跨 chunk 的多字节字符不会碎）→ scrollback。
-fn spawn_reader<R: std::io::Read + Send + 'static>(mut stream: R, scrollback: Arc<Mutex<Scrollback>>) {
+fn spawn_reader<R: std::io::Read + Send + 'static>(
+    mut stream: R,
+    scrollback: Arc<Mutex<Scrollback>>,
+) {
     thread::spawn(move || {
         let mut buf = [0u8; 8192];
         let mut pending: Vec<u8> = Vec::new();
@@ -293,7 +301,12 @@ impl ShellSession {
         let (program, args) = resolve_persistent_shell(shell_path)?;
         let pty_system = native_pty_system();
         let pair = pty_system
-            .openpty(PtySize { rows: PTY_ROWS, cols: PTY_COLS, pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows: PTY_ROWS,
+                cols: PTY_COLS,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| format!("无法创建 PTY：{e}"))?;
 
         let mut cmd = CommandBuilder::new(&program);
@@ -317,11 +330,19 @@ impl ShellSession {
             .master
             .try_clone_reader()
             .map_err(|e| format!("无法读取 PTY 输出：{e}"))?;
-        let writer = pair.master.take_writer().map_err(|e| format!("无法写入 PTY：{e}"))?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| format!("无法写入 PTY：{e}"))?;
         let scrollback: Arc<Mutex<Scrollback>> = Arc::new(Mutex::new(Scrollback::default()));
         spawn_reader(reader, Arc::clone(&scrollback));
 
-        Ok(ShellSession { _master: pair.master, child, writer: Some(writer), scrollback })
+        Ok(ShellSession {
+            _master: pair.master,
+            child,
+            writer: Some(writer),
+            scrollback,
+        })
     }
 }
 
@@ -337,13 +358,19 @@ fn scrub_pty_env(cmd: &mut CommandBuilder) {
 
 /// 持久会话仅支持 bash 族（标记协议与 `eval --` 依赖 POSIX 语义）。
 /// 优先自定义路径（须为 bash/zsh），否则 Windows 自动探测 Git Bash、Unix 使用用户 bash/zsh。
-fn resolve_persistent_shell(shell_path: Option<&str>) -> Result<(String, Vec<&'static str>), String> {
+fn resolve_persistent_shell(
+    shell_path: Option<&str>,
+) -> Result<(String, Vec<&'static str>), String> {
     if let Some(p) = shell_path.map(str::trim).filter(|s| !s.is_empty()) {
         let path = std::path::Path::new(p);
         if !path.is_file() {
             return Err(format!("自定义 Shell 路径不存在：{p}"));
         }
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
         if stem.contains("bash") {
             return Ok((p.to_string(), vec!["-l", "-i"]));
         }
@@ -370,7 +397,10 @@ fn resolve_persistent_shell(shell_path: Option<&str>) -> Result<(String, Vec<&'s
             .ok()
             .filter(|path| {
                 let path = std::path::Path::new(path);
-                let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("");
+                let stem = path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("");
                 path.is_file() && (stem.contains("bash") || stem.contains("zsh"))
             })
             .unwrap_or_else(|| fallback.to_string());
@@ -392,7 +422,10 @@ fn sessions() -> &'static Mutex<HashMap<String, Arc<Mutex<ShellSession>>>> {
 
 /// 在持久 shell 会话中执行一条命令。会话不存在或已死亡时自动新建（重试一次）。
 #[tauri::command]
-pub(crate) async fn shell_session_exec(input: ShellSessionExecInput) -> Result<ShellSessionExecResult, String> {
+pub(crate) async fn shell_session_exec(
+    input: ShellSessionExecInput,
+) -> Result<ShellSessionExecResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     if input.command.trim().is_empty() {
         return Err("命令不能为空".to_string());
     }
@@ -435,7 +468,9 @@ fn run_command_in_session(
         if Instant::now() >= deadline {
             let mut partial = normalize_pty_text(&extract_partial(&snap.text, &m));
             if snap.lost_prefix {
-                partial = format!("[提示] 输出开头部分已被滚动缓冲丢弃，以下是最早保留的内容。\n{partial}");
+                partial = format!(
+                    "[提示] 输出开头部分已被滚动缓冲丢弃，以下是最早保留的内容。\n{partial}"
+                );
             }
             let output = cap_output(&partial, MAX_OUTPUT_CHARS);
             return Ok(ExecOutcome::TimedOut(output));
@@ -454,7 +489,8 @@ fn run_session_exec(input: ShellSessionExecInput) -> Result<ShellSessionExecResu
             match map.get(&input.session_id) {
                 Some(entry) => (Arc::clone(entry), false),
                 None => {
-                    let session = ShellSession::spawn(input.cwd.as_deref(), input.shell_path.as_deref())?;
+                    let session =
+                        ShellSession::spawn(input.cwd.as_deref(), input.shell_path.as_deref())?;
                     let entry = Arc::new(Mutex::new(session));
                     map.insert(input.session_id.clone(), Arc::clone(&entry));
                     (entry, true)
@@ -464,7 +500,10 @@ fn run_session_exec(input: ShellSessionExecInput) -> Result<ShellSessionExecResu
 
         let mut guard = entry.lock().unwrap();
         // 会话进程已退出 → 丢弃并重建重试。
-        let probe = guard.child.try_wait().map_err(|e| format!("探测持久 shell 状态失败：{e}"));
+        let probe = guard
+            .child
+            .try_wait()
+            .map_err(|e| format!("探测持久 shell 状态失败：{e}"));
         match probe {
             Ok(Some(status)) => {
                 let mut map = sessions().lock().unwrap();
@@ -474,7 +513,10 @@ fn run_session_exec(input: ShellSessionExecInput) -> Result<ShellSessionExecResu
                     shell_reset = true;
                     continue;
                 }
-                return Err(format!("持久 shell 已退出（code={}）且重建失败", status.exit_code() as i32));
+                return Err(format!(
+                    "持久 shell 已退出（code={}）且重建失败",
+                    status.exit_code() as i32
+                ));
             }
             Err(e) => return Err(e),
             Ok(None) => {}
@@ -543,7 +585,9 @@ fn run_session_exec(input: ShellSessionExecInput) -> Result<ShellSessionExecResu
 
 /// 重置（杀掉）一个持久 shell 会话。下次执行会自动新建全新会话。
 #[tauri::command]
-pub(crate) async fn shell_session_reset(input: ShellSessionResetInput) -> Result<ShellSessionResetResult, String> {
+pub(crate) async fn shell_session_reset(
+    input: ShellSessionResetInput,
+) -> Result<ShellSessionResetResult, String> {
     let removed = sessions()
         .lock()
         .unwrap()
@@ -587,10 +631,7 @@ mod tests {
         // 模拟 PTY 回显：整条包装命令（含标记字面量）先出现，随后才是真实输出。
         let m = markers();
         let wrapped = wrap_command("echo hi", &m);
-        let text = format!(
-            "{wrapped}\r\n{}\r\nhi\r\n{}0\r\n",
-            m.start, m.end
-        );
+        let text = format!("{wrapped}\r\n{}\r\nhi\r\n{}0\r\n", m.start, m.end);
         let (body, code) = extract_completed(&normalize_pty_text(&text), &m).unwrap();
         assert_eq!(code, 0);
         assert_eq!(body, "hi");

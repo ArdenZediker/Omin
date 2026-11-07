@@ -7,11 +7,11 @@ use serde_json::Value as JsonValue;
 // `use super::*` 会把 crate 根的一堆名字（含 trait 的隐式可见性）整体吸进来，
 // 与 lib.rs 的 `use 本模块::*;` 形成回环，也让依赖关系变得不可见。
 use crate::{
-    read_kv, write_kv, EmptyFallback, KNOWLEDGE_EMBEDDING_CONFIG_KEY,
-    KNOWLEDGE_MULTIMODAL_CONFIG_KEY, KnowledgeCollectionAudioMultimodalConfigRecord,
+    read_kv, write_kv, EmptyFallback, KnowledgeCollectionAudioMultimodalConfigRecord,
     KnowledgeCollectionImageMultimodalConfigRecord, KnowledgeCollectionMultimodalConfigRecord,
     KnowledgeEmbeddingConfigRecord, KnowledgeEmbeddingModelConfigRecord,
     KnowledgeMultimodalConfigRecord, KnowledgeMultimodalModelConfigRecord,
+    KNOWLEDGE_EMBEDDING_CONFIG_KEY, KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
 };
 
 pub(crate) const OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS: [&str; 6] = [
@@ -286,7 +286,9 @@ pub(crate) fn normalize_knowledge_multimodal_config_record(
     }
 }
 
-pub(crate) fn normalize_collection_multimodal_flag_model(model_id: Option<String>) -> Option<String> {
+pub(crate) fn normalize_collection_multimodal_flag_model(
+    model_id: Option<String>,
+) -> Option<String> {
     model_id
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())

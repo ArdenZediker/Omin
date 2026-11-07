@@ -4,7 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 pub const DOCUMENT_STATUS_PENDING: &str = "pending";
 pub const DOCUMENT_STATUS_PROCESSING: &str = "processing";
 pub const DOCUMENT_STATUS_SEARCHABLE: &str = "searchable";

@@ -5,7 +5,6 @@
 use rusqlite::Connection;
 use std::sync::OnceLock;
 
-
 pub(crate) fn open_pipeline_connection(app: &tauri::AppHandle) -> Result<Connection, String> {
     crate::open_sqlite_connection(app)
 }

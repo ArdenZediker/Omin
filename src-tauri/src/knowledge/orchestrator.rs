@@ -15,7 +15,7 @@ use super::chunkers::legacy::LegacyChunker;
 use super::chunkers::markdown::MarkdownHeadingChunker;
 use super::chunkers::router::RouterChunker;
 use super::contracts::*;
-use super::embedders::async_embed::{AsyncEmbedder, default_async_embedder};
+use super::embedders::async_embed::{default_async_embedder, AsyncEmbedder};
 use super::embedders::legacy::LegacyEmbedder;
 use super::parsers::text::TextDocumentParser;
 use super::repository::KnowledgeRepository;
@@ -131,7 +131,9 @@ mod tests {
             file_extension: Some("md".into()),
             mime_type: None,
             preview_type: None,
-            bytes: "# Overview\n\nIntro text.\n\n## Setup\n\nSteps here.".as_bytes().to_vec(),
+            bytes: "# Overview\n\nIntro text.\n\n## Setup\n\nSteps here."
+                .as_bytes()
+                .to_vec(),
             bridged_content: None,
         };
         let doc = orch.process_text_async(&conn, &input).await.unwrap();

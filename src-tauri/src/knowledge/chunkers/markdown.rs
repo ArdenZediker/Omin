@@ -18,11 +18,7 @@ impl Chunker for MarkdownHeadingChunker {
         "markdown-heading"
     }
 
-    fn chunk(
-        &self,
-        content: &str,
-        _source_name: &str,
-    ) -> Result<Vec<ChunkSlice>, String> {
+    fn chunk(&self, content: &str, _source_name: &str) -> Result<Vec<ChunkSlice>, String> {
         if content.trim().is_empty() {
             return Ok(Vec::new());
         }

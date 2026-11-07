@@ -3,8 +3,8 @@
 //! 由 knowledge_pipeline 单文件拆分而来，保持逻辑不变。
 
 use crate::{
-    find_exact_usable_knowledge_multimodal_model,
-    load_knowledge_collection_multimodal_config, load_knowledge_multimodal_config, KnowledgeCollectionMultimodalConfigRecord,
+    find_exact_usable_knowledge_multimodal_model, load_knowledge_collection_multimodal_config,
+    load_knowledge_multimodal_config, KnowledgeCollectionMultimodalConfigRecord,
     KnowledgeMultimodalModelConfigRecord,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};

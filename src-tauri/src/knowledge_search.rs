@@ -1,10 +1,7 @@
 //! 由 lib.rs 拆分而来，逻辑保持不变。
 
 use rusqlite::{params, Connection, OptionalExtension};
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-};
+use std::{cmp::Ordering, collections::HashMap};
 
 // 显式导入 crate 根条目，不用 `use super::*`（避免吸回 `__cmd__*` 宏导致 E0255）。
 use crate::{
@@ -120,7 +117,9 @@ pub(crate) struct KnowledgeSearchCandidate {
     pub(crate) title_hierarchy: Option<String>,
 }
 
-pub(crate) fn build_chunk_record_from_candidate(candidate: &KnowledgeSearchCandidate) -> KnowledgeChunkRecord {
+pub(crate) fn build_chunk_record_from_candidate(
+    candidate: &KnowledgeSearchCandidate,
+) -> KnowledgeChunkRecord {
     KnowledgeChunkRecord {
         id: candidate.chunk_id.clone(),
         document_id: candidate.document_id.clone(),

@@ -27,11 +27,7 @@ impl Chunker for RouterChunker {
         "router"
     }
 
-    fn chunk(
-        &self,
-        content: &str,
-        source_name: &str,
-    ) -> Result<Vec<ChunkSlice>, String> {
+    fn chunk(&self, content: &str, source_name: &str) -> Result<Vec<ChunkSlice>, String> {
         let ext = Path::new(source_name)
             .extension()
             .and_then(|s| s.to_str())

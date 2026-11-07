@@ -20,13 +20,13 @@
 // 尚未被 `lib.rs` 接线，会触发 dead_code 警告；接入编排器后该属性可移除。
 #![allow(dead_code)]
 
-pub mod contracts;
-pub mod error;
-pub mod parsers;
 pub mod chunkers;
+pub mod contracts;
 pub mod embedders;
-pub mod retrievers;
-pub mod repository;
+pub mod error;
 pub mod orchestrator;
+pub mod parsers;
+pub mod repository;
+pub mod retrievers;
 // 编排器入口在接入 `run_pipeline_worker_tick` 前保持内部可达即可：
 // `crate::knowledge::orchestrator::PipelineOrchestrator::with_defaults().process_text(...)`

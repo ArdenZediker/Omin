@@ -12,150 +12,152 @@
 use std::path::PathBuf;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use tauri::Manager;
 use serde::Deserialize;
 
 /// 前端传来的内联图片（base64 DataURL）。
 #[derive(Deserialize)]
 pub struct ClipboardImage {
-  pub name: Option<String>,
-  pub src: String,
+    pub name: Option<String>,
+    pub src: String,
 }
 
 /// 清理应用数据目录下的 clipboard_cache（上一轮复制留下的内联图片，用户多半已粘贴）。
 /// best-effort：失败返回 Err 但不致命，调用方可忽略。
 pub fn cleanup_clipboard_cache(app: &tauri::AppHandle) -> Result<(), String> {
-  let base = app
-    .path()
-    .app_data_dir()
-    .map_err(|err| format!("获取应用数据目录失败: {err}"))?;
-  let cache_dir = base.join("clipboard_cache");
-  if cache_dir.exists() {
-    std::fs::remove_dir_all(&cache_dir).map_err(|err| format!("清理剪贴板缓存失败: {err}"))?;
-  }
-  Ok(())
+    let base = crate::storage_paths::resolve_data_root(app)?;
+    let cache_dir = base.join("clipboard_cache");
+    if cache_dir.exists() {
+        std::fs::remove_dir_all(&cache_dir).map_err(|err| format!("清理剪贴板缓存失败: {err}"))?;
+    }
+    Ok(())
 }
 
 /// 从 data URL 前缀推断图片扩展名（缺省 png）。
 fn image_ext_from_data_url(src: &str) -> &str {
-  let prefix = src
-    .split(';')
-    .next()
-    .unwrap_or("")
-    .trim_start_matches("data:")
-    .trim_start_matches("image/");
-  match prefix {
-    "png" => "png",
-    "jpeg" | "jpg" => "jpg",
-    "webp" => "webp",
-    "gif" => "gif",
-    "bmp" => "bmp",
-    _ => "png",
-  }
+    let prefix = src
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim_start_matches("data:")
+        .trim_start_matches("image/");
+    match prefix {
+        "png" => "png",
+        "jpeg" | "jpg" => "jpg",
+        "webp" => "webp",
+        "gif" => "gif",
+        "bmp" => "bmp",
+        _ => "png",
+    }
 }
 
 /// 把文件名清洗成安全的单一文件名片段（去路径、去非法字符）。
 fn sanitize_file_stem(name: &str) -> String {
-  let cleaned: String = name
-    .chars()
-    .filter(|c| !matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\r' | '\n' | '\t'))
-    .collect();
-  let cleaned = cleaned.trim().trim_end_matches('.').to_string();
-  if cleaned.is_empty() {
-    "image".to_string()
-  } else {
-    cleaned
-  }
+    let cleaned: String = name
+        .chars()
+        .filter(|c| {
+            !matches!(
+                c,
+                '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\r' | '\n' | '\t'
+            )
+        })
+        .collect();
+    let cleaned = cleaned.trim().trim_end_matches('.').to_string();
+    if cleaned.is_empty() {
+        "image".to_string()
+    } else {
+        cleaned
+    }
 }
 
 #[tauri::command]
 pub fn write_clipboard_with_files(
-  app: tauri::AppHandle,
-  text: String,
-  paths: Vec<String>,
-  images: Vec<ClipboardImage>,
+    app: tauri::AppHandle,
+    text: String,
+    paths: Vec<String>,
+    images: Vec<ClipboardImage>,
 ) -> Result<(), String> {
-  let mut all_files: Vec<PathBuf> = paths
-    .into_iter()
-    .map(PathBuf::from)
-    .filter(|path| path.exists())
-    .collect();
+    let _operation = crate::database::maintenance::operation()?;
+    let mut all_files: Vec<PathBuf> = paths
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|path| path.exists())
+        .collect();
 
-  // base64 图片解码落盘到应用数据目录的 clipboard_cache（稳定、不随系统临时清理丢失）
-  if !images.is_empty() {
-    let base = app
-      .path()
-      .app_data_dir()
-      .map_err(|err| format!("获取应用数据目录失败: {err}"))?;
-    let cache_dir = base.join("clipboard_cache");
-    // 先清掉上一轮复制的残留，再建新目录，避免旧文件无限累积
-    let _ = cleanup_clipboard_cache(&app);
-    std::fs::create_dir_all(&cache_dir).map_err(|err| format!("创建剪贴板缓存目录失败: {err}"))?;
+    // base64 图片解码落盘到应用数据目录的 clipboard_cache（稳定、不随系统临时清理丢失）
+    if !images.is_empty() {
+        let base = crate::storage_paths::resolve_data_root(&app)?;
+        let cache_dir = base.join("clipboard_cache");
+        // 先清掉上一轮复制的残留，再建新目录，避免旧文件无限累积
+        let _ = cleanup_clipboard_cache(&app);
+        std::fs::create_dir_all(&cache_dir)
+            .map_err(|err| format!("创建剪贴板缓存目录失败: {err}"))?;
 
-    for image in images {
-      let src = image.src.trim();
-      let b64 = match src.find("base64,") {
-        Some(idx) => &src[idx + "base64,".len()..],
-        None => src,
-      };
-      let bytes = BASE64_STANDARD
-        .decode(b64.replace('\n', "").replace('\r', "").replace(' ', ""))
-        .map_err(|err| format!("解码图片 base64 失败: {err}"))?;
+        for image in images {
+            let src = image.src.trim();
+            let b64 = match src.find("base64,") {
+                Some(idx) => &src[idx + "base64,".len()..],
+                None => src,
+            };
+            let bytes = BASE64_STANDARD
+                .decode(b64.replace('\n', "").replace('\r', "").replace(' ', ""))
+                .map_err(|err| format!("解码图片 base64 失败: {err}"))?;
 
-      let ext = image_ext_from_data_url(src);
-      let stem = sanitize_file_stem(image.name.as_deref().unwrap_or("image"));
-      let file_name = format!("{stem}.{ext}");
-      let path = cache_dir.join(file_name);
-      std::fs::write(&path, &bytes).map_err(|err| format!("写入剪贴板图片失败: {err}"))?;
-      all_files.push(path);
+            let ext = image_ext_from_data_url(src);
+            let stem = sanitize_file_stem(image.name.as_deref().unwrap_or("image"));
+            let file_name = format!("{stem}.{ext}");
+            let path = cache_dir.join(file_name);
+            std::fs::write(&path, &bytes).map_err(|err| format!("写入剪贴板图片失败: {err}"))?;
+            all_files.push(path);
+        }
     }
-  }
 
-  set_clipboard_text_and_files(&text, &all_files)
+    set_clipboard_text_and_files(&text, &all_files)
 }
 
 /// 平台相关：把文本和文件路径同时写入系统剪贴板。
 #[cfg(windows)]
 fn set_clipboard_text_and_files(text: &str, files: &[PathBuf]) -> Result<(), String> {
-  use clipboard_win::{options::NoClear, raw, Clipboard};
+    use clipboard_win::{options::NoClear, raw, Clipboard};
 
-  let _clipboard = Clipboard::new_attempts(10)
-    .map_err(|err| format!("打开剪贴板失败: {err}"))?;
+    let _clipboard = Clipboard::new_attempts(10).map_err(|err| format!("打开剪贴板失败: {err}"))?;
 
-  raw::empty().map_err(|err| format!("清空剪贴板失败: {err}"))?;
+    raw::empty().map_err(|err| format!("清空剪贴板失败: {err}"))?;
 
-  if !text.is_empty() {
-    raw::set_string_with(text, NoClear)
-      .map_err(|err| format!("写入剪贴板文本失败: {err}"))?;
-  }
+    if !text.is_empty() {
+        raw::set_string_with(text, NoClear).map_err(|err| format!("写入剪贴板文本失败: {err}"))?;
+    }
 
-  if !files.is_empty() {
-    let paths: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-    raw::set_file_list_with(&paths, NoClear)
-      .map_err(|err| format!("写入剪贴板文件失败: {err}"))?;
-  }
+    if !files.is_empty() {
+        let paths: Vec<String> = files
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        raw::set_file_list_with(&paths, NoClear)
+            .map_err(|err| format!("写入剪贴板文件失败: {err}"))?;
+    }
 
-  Ok(())
+    Ok(())
 }
 
 /// 平台相关：把文本和文件路径同时写入系统剪贴板（非 Windows 回退）。
 #[cfg(not(windows))]
 fn set_clipboard_text_and_files(text: &str, files: &[PathBuf]) -> Result<(), String> {
-  let mut clipboard = arboard::Clipboard::new().map_err(|err| format!("打开剪贴板失败: {err}"))?;
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|err| format!("打开剪贴板失败: {err}"))?;
 
-  if !text.is_empty() {
-    clipboard
-      .set()
-      .text(text)
-      .map_err(|err| format!("写入剪贴板文本失败: {err}"))?;
-  }
+    if !text.is_empty() {
+        clipboard
+            .set()
+            .text(text)
+            .map_err(|err| format!("写入剪贴板文本失败: {err}"))?;
+    }
 
-  if !files.is_empty() {
-    clipboard
-      .set()
-      .file_list(files)
-      .map_err(|err| format!("写入剪贴板文件失败: {err}"))?;
-  }
+    if !files.is_empty() {
+        clipboard
+            .set()
+            .file_list(files)
+            .map_err(|err| format!("写入剪贴板文件失败: {err}"))?;
+    }
 
-  Ok(())
+    Ok(())
 }

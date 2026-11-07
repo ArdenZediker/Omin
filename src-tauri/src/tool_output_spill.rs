@@ -31,8 +31,7 @@ pub(crate) fn configure_spill_dir(dir: PathBuf) {
 
 /// 落盘文件名里允许出现的工具名片段安全化（去路径分隔符等，仅留安全字符）。
 fn safe_tool_tag(tool: &str) -> String {
-    tool
-        .chars()
+    tool.chars()
         .map(|c| {
             if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') {
                 c
@@ -68,7 +67,12 @@ fn prune_spill_dir(dir: &std::path::Path, keep: usize) {
     };
     let mut files: Vec<(SystemTime, PathBuf)> = entries
         .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().map(|kind| kind.is_file()).unwrap_or(false))
+        .filter(|entry| {
+            entry
+                .file_type()
+                .map(|kind| kind.is_file())
+                .unwrap_or(false)
+        })
         .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
         .collect();
     if files.len() <= keep {
@@ -187,10 +191,16 @@ mod tests {
         }
         prune_spill_dir(&dir, 2);
         for i in 0..4u64 {
-            assert!(!dir.join(format!("output-{i}.log")).exists(), "旧文件 output-{i} 未被清理");
+            assert!(
+                !dir.join(format!("output-{i}.log")).exists(),
+                "旧文件 output-{i} 未被清理"
+            );
         }
         for i in 4..6u64 {
-            assert!(dir.join(format!("output-{i}.log")).exists(), "新文件 output-{i} 被误删");
+            assert!(
+                dir.join(format!("output-{i}.log")).exists(),
+                "新文件 output-{i} 被误删"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -206,7 +216,10 @@ mod tests {
 
         // 前端依赖的截断标记仍在，且提示里带上了落盘路径。
         assert!(out.contains("字符已截断]"), "缺少截断标记：{out}");
-        assert!(out.contains(dir.to_string_lossy().as_ref()), "提示里应带上落盘路径：{out}");
+        assert!(
+            out.contains(dir.to_string_lossy().as_ref()),
+            "提示里应带上落盘路径：{out}"
+        );
 
         // 落盘的必须是完整原文，而不是被截断的片段。
         let written = std::fs::read_dir(&dir)
@@ -214,7 +227,11 @@ mod tests {
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
             .find(|content| content == &long);
-        assert_eq!(written.as_deref(), Some(long.as_str()), "落盘内容不是完整原文");
+        assert_eq!(
+            written.as_deref(),
+            Some(long.as_str()),
+            "落盘内容不是完整原文"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -148,16 +148,17 @@ fn migrate_from_legacy(app: &tauri::AppHandle, dir: &Path) -> Result<(), String>
     write_field(dir, LONG_TERM_MEMORY_FILE, &parsed.long_term_memory)?;
 
     // 迁移完成后清理旧字段，避免下次又覆盖 md。
-    let _ = connection.execute(
-        "DELETE FROM app_kv WHERE key = ?1",
-        [LEGACY_APP_KV_KEY],
-    );
+    let _ = connection.execute("DELETE FROM app_kv WHERE key = ?1", [LEGACY_APP_KV_KEY]);
     Ok(())
 }
 
 pub(crate) fn read_persona_files(app: &tauri::AppHandle) -> Result<PersonaConfigDto, String> {
     let dir = persona_dir(app)?;
-    if !dir.exists() || fs::read_dir(&dir).map(|mut it| it.next().is_none()).unwrap_or(true) {
+    if !dir.exists()
+        || fs::read_dir(&dir)
+            .map(|mut it| it.next().is_none())
+            .unwrap_or(true)
+    {
         migrate_from_legacy(app, &dir)?;
     }
 

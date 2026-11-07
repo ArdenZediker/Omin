@@ -129,8 +129,11 @@ pub trait Repository: Send + Sync {
 
     /// 把切片与向量落库（P1-#2）。replace 语义：先删旧 chunk 再插入新 chunk，
     /// 并更新文档 `processing_status` / `chunk_count` / 内容预览。
-    fn persist_chunks(&self, conn: &Connection, input: PersistChunksInput)
-        -> Result<(), KnowledgeError>;
+    fn persist_chunks(
+        &self,
+        conn: &Connection,
+        input: PersistChunksInput,
+    ) -> Result<(), KnowledgeError>;
 
     /// 向量缓存读取（P3-#8）。命中返回 embedding JSON，未命中返回 `Ok(None)`。
     fn get_cached_embedding(

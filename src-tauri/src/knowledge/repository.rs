@@ -37,14 +37,22 @@ impl Repository for KnowledgeRepository {
         conn: &Connection,
         collection_id: &str,
     ) -> Result<crate::knowledge_pipeline::KnowledgeProcessingStatusSummary, String> {
-        crate::knowledge_pipeline::load_processing_status_summary(conn, Some(collection_id.to_string()))
+        crate::knowledge_pipeline::load_processing_status_summary(
+            conn,
+            Some(collection_id.to_string()),
+        )
     }
 
     /// 把切片与向量落库（P1-#2）。replace 语义：先删旧 chunk 再插入新 chunk，
     /// 并更新文档 `processing_status` / `chunk_count` / 内容预览。
-    fn persist_chunks(&self, conn: &Connection, input: PersistChunksInput) -> Result<(), KnowledgeError> {
+    fn persist_chunks(
+        &self,
+        conn: &Connection,
+        input: PersistChunksInput,
+    ) -> Result<(), KnowledgeError> {
         let now = now_ms();
-        conn.execute("BEGIN IMMEDIATE", []).map_err(KnowledgeError::from)?;
+        conn.execute("BEGIN IMMEDIATE", [])
+            .map_err(KnowledgeError::from)?;
         let result: Result<(), KnowledgeError> = (|| {
             conn.execute(
                 "DELETE FROM knowledge_chunks WHERE document_id = ?1",
@@ -198,7 +206,8 @@ mod tests {
         ensure_embedding_cache_table(&conn).unwrap();
         let repo = KnowledgeRepository;
         assert_eq!(repo.get_cached_embedding(&conn, "m", "h1").unwrap(), None);
-        repo.put_cached_embedding(&conn, "m", "h1", "[0.1,0.2]").unwrap();
+        repo.put_cached_embedding(&conn, "m", "h1", "[0.1,0.2]")
+            .unwrap();
         assert_eq!(
             repo.get_cached_embedding(&conn, "m", "h1").unwrap(),
             Some("[0.1,0.2]".to_string())
@@ -236,7 +245,9 @@ mod tests {
             file_extension: Some("md".into()),
             mime_type: None,
             preview_type: None,
-            bytes: "# Overview\n\nIntro text.\n\n## Setup\n\nSteps here.".as_bytes().to_vec(),
+            bytes: "# Overview\n\nIntro text.\n\n## Setup\n\nSteps here."
+                .as_bytes()
+                .to_vec(),
             bridged_content: None,
         };
         let doc = orch.process_text_async(&conn, &input).await.unwrap();

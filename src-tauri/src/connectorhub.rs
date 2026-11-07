@@ -96,8 +96,7 @@ pub(crate) async fn install_connectorhub_skill(
                 return Err("无效的技能源名称".to_string());
             }
             // 清单里的 source 与磁盘目录大小写可能不一致，用小写前缀匹配。
-            let source_prefix_lower =
-                format!("{SKILLS_SUBPATH}/{}/", safe_source.to_lowercase());
+            let source_prefix_lower = format!("{SKILLS_SUBPATH}/{}/", safe_source.to_lowercase());
 
             let dir = match skills_dir {
                 Some(d) => std::path::PathBuf::from(d),
@@ -114,9 +113,7 @@ pub(crate) async fn install_connectorhub_skill(
             if !resp.status().is_success() {
                 return Err(format!("仓库下载接口返回 {}", resp.status()));
             }
-            let bytes = resp
-                .bytes()
-                .map_err(|e| format!("读取仓库内容失败: {e}"))?;
+            let bytes = resp.bytes().map_err(|e| format!("读取仓库内容失败: {e}"))?;
 
             let reader = std::io::Cursor::new(bytes);
             let mut archive =
@@ -180,10 +177,9 @@ pub(crate) async fn install_connectorhub_skill(
                 if let Some(parent) = p.target.parent() {
                     std::fs::create_dir_all(parent).ok();
                 }
-                let mut outfile = std::fs::File::create(&p.target)
-                    .map_err(|e| format!("写入文件失败: {e}"))?;
-                std::io::copy(&mut file, &mut outfile)
-                    .map_err(|e| format!("写入文件失败: {e}"))?;
+                let mut outfile =
+                    std::fs::File::create(&p.target).map_err(|e| format!("写入文件失败: {e}"))?;
+                std::io::copy(&mut file, &mut outfile).map_err(|e| format!("写入文件失败: {e}"))?;
             }
 
             // 技能根上的 SKILL.md 原文返回给前端解析。

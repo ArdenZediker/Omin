@@ -1,12 +1,12 @@
-use super::types::{
-    ABSOLUTE_MAX_CHUNK_SIZE, ChunkSlice, DEFAULT_SEPARATORS, DocProfile, normalize_text, rune_len,
-};
 use super::profile::{
     dominant_heading_level, find_heading_boundaries, find_heuristic_boundaries, split_by_boundaries,
 };
-use super::units::{build_units_with_protection, merge_units, overlap_tail};
-use super::title::derive_section_title;
 use super::protected::protected_spans;
+use super::title::derive_section_title;
+use super::types::{
+    normalize_text, rune_len, ChunkSlice, DocProfile, ABSOLUTE_MAX_CHUNK_SIZE, DEFAULT_SEPARATORS,
+};
+use super::units::{build_units_with_protection, merge_units, overlap_tail};
 
 pub(crate) fn split_by_heading_strategy(
     text: &str,
@@ -164,7 +164,11 @@ pub(crate) fn split_by_legacy_strategy(
         .collect()
 }
 
-pub(crate) fn validate_chunks(chunks: &[ChunkSlice], total_chars: usize, chunk_size: usize) -> bool {
+pub(crate) fn validate_chunks(
+    chunks: &[ChunkSlice],
+    total_chars: usize,
+    chunk_size: usize,
+) -> bool {
     if chunks.is_empty() {
         return false;
     }

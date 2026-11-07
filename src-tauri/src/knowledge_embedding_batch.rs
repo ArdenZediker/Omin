@@ -59,7 +59,9 @@ pub(crate) fn request_embedding_batch(
     Ok(embeddings)
 }
 
-pub(crate) fn collect_missing_embedding_spans(embeddings: &[Option<String>]) -> Vec<(usize, usize)> {
+pub(crate) fn collect_missing_embedding_spans(
+    embeddings: &[Option<String>],
+) -> Vec<(usize, usize)> {
     let mut spans = Vec::new();
     let mut span_start = None;
 
@@ -260,10 +262,7 @@ pub(crate) async fn request_embedding_batch_async(
     });
 
     let response = client
-        .post(format!(
-            "{}/embeddings",
-            base_url.trim_end_matches('/')
-        ))
+        .post(format!("{}/embeddings", base_url.trim_end_matches('/')))
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {api_key}"))
         .json(&request_body)
@@ -288,7 +287,9 @@ pub(crate) async fn request_embedding_batch_async(
 }
 
 /// 异步版缺失片段收集（与同步版 `collect_missing_embedding_spans` 同语义）。
-pub(crate) fn collect_missing_embedding_spans_async(embeddings: &[Option<String>]) -> Vec<(usize, usize)> {
+pub(crate) fn collect_missing_embedding_spans_async(
+    embeddings: &[Option<String>],
+) -> Vec<(usize, usize)> {
     let mut spans = Vec::new();
     let mut span_start: Option<usize> = None;
 
@@ -341,8 +342,10 @@ pub(crate) fn recover_embedding_batch_async<'a>(
                     return embeddings;
                 }
 
-                let missing_count =
-                    missing_spans.iter().map(|(start, end)| end - start).sum::<usize>();
+                let missing_count = missing_spans
+                    .iter()
+                    .map(|(start, end)| end - start)
+                    .sum::<usize>();
                 eprintln!(
                     "Knowledge embedding batch returned partial data ({provider}) requested={requested} recovered={} missing={missing_count}",
                     requested.saturating_sub(missing_count)

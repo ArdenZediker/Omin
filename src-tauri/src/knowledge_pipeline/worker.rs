@@ -861,7 +861,10 @@ pub(crate) fn execute_claimed_job(
     )
 }
 
-pub(crate) fn running_step_name(connection: &Connection, job_id: &str) -> Result<Option<String>, String> {
+pub(crate) fn running_step_name(
+    connection: &Connection,
+    job_id: &str,
+) -> Result<Option<String>, String> {
     connection
         .query_row(
             r#"
@@ -898,6 +901,13 @@ pub(crate) fn process_claimed_job(
 }
 
 pub fn run_pipeline_worker_tick(app: &tauri::AppHandle) -> Result<bool, String> {
+    let _tick_operation = match crate::database::maintenance::operation() {
+        Ok(operation) => operation,
+        Err(reason) if reason == "数据正在备份或恢复，请稍后重试" => {
+            return Ok(false)
+        }
+        Err(reason) => return Err(reason),
+    };
     // tick 每 750ms 触发一次，这里复用进程内缓存的连接，避免高频重复打开 SQLite。
     let tick_connection = pipeline_tick_connection(app)?;
     let connection: &Connection = &tick_connection;
@@ -927,7 +937,11 @@ pub fn run_pipeline_worker_tick(app: &tauri::AppHandle) -> Result<bool, String> 
 
         let worker_app = app.clone();
         let retry_limit = settings.max_auto_retries;
+        // Reserve the worker's read-side slot before releasing the tick guard, so
+        // maintenance cannot slip between claiming a job and starting its writes.
+        let worker_operation = crate::database::maintenance::operation()?;
         std::thread::spawn(move || {
+            let _operation = worker_operation;
             if let Err(err) = process_claimed_job(&worker_app, job, retry_limit) {
                 eprintln!("[Omni] knowledge pipeline job execution error: {err}");
             }

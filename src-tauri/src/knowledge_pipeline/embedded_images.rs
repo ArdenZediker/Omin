@@ -2,10 +2,7 @@
 //!
 //! 由 knowledge_pipeline 单文件拆分而来，保持逻辑不变。
 
-use std::{
-    fs,
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use super::*;
 
@@ -55,7 +52,11 @@ pub(crate) fn format_embedded_image_chunk_content(
     lines.join("\n")
 }
 
-pub(crate) fn embedded_asset_file_name(asset_id: &str, asset_index: i64, source_name: &str) -> String {
+pub(crate) fn embedded_asset_file_name(
+    asset_id: &str,
+    asset_index: i64,
+    source_name: &str,
+) -> String {
     let base = sanitize_storage_file_name(source_name);
     let short_id = asset_id.chars().take(8).collect::<String>();
     if base == "document" {

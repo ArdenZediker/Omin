@@ -1,5 +1,66 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export type StorageWriteFailure = { key: string; message: string; failedAt: number };
+type PendingStorageWrite = { generation: number; execute: () => Promise<unknown> };
+const writeTails = new Map<string, Promise<void>>();
+const pendingWrites = new Map<string, PendingStorageWrite>();
+const failures = new Map<string, StorageWriteFailure>();
+const failureListeners = new Set<() => void>();
+let failureSnapshot: StorageWriteFailure[] = [];
+let nextGeneration = 0;
+
+function publishFailures() {
+  failureSnapshot = [...failures.values()].sort((a, b) => b.failedAt - a.failedAt);
+  failureListeners.forEach((listener) => listener());
+}
+
+export function getStorageWriteFailures() { return failureSnapshot; }
+export function subscribeStorageWriteFailures(listener: () => void) {
+  failureListeners.add(listener);
+  return () => failureListeners.delete(listener);
+}
+
+function enqueueStorageWrite(key: string, pending: PendingStorageWrite): Promise<void> {
+  pendingWrites.set(key, pending);
+  const previous = writeTails.get(key) ?? Promise.resolve();
+  const operation = previous.catch(() => undefined).then(async () => {
+    // 每个 awaited 调用都确实落库；失败重试另外选择最新 generation。
+    try {
+      await pending.execute();
+      if (pendingWrites.get(key)?.generation === pending.generation) {
+        pendingWrites.delete(key);
+        failures.delete(key);
+        publishFailures();
+      }
+    } catch (error) {
+      if (pendingWrites.get(key)?.generation === pending.generation) {
+        failures.set(key, { key, message: error instanceof Error ? error.message : String(error), failedAt: Date.now() });
+        publishFailures();
+      }
+      throw error;
+    }
+  });
+  const tail = operation.catch(() => undefined);
+  writeTails.set(key, tail);
+  void tail.finally(() => { if (writeTails.get(key) === tail) writeTails.delete(key); });
+  return operation;
+}
+
+export async function flushStorageWrites() {
+  await Promise.all([...writeTails.values()]);
+}
+
+export async function retryFailedStorageWrites() {
+  const retries = [...pendingWrites.entries()].filter(([key]) => failures.has(key)).map(([key, pending]) => enqueueStorageWrite(key, pending));
+  await Promise.allSettled(retries);
+  return failureSnapshot;
+}
+
+/** 非 KV 存储也共享可见失败和重试；key 是同一数据集合的串行化边界。 */
+export function persistStorageOperation(key: string, execute: () => Promise<unknown>) {
+  return enqueueStorageWrite(key, { generation: ++nextGeneration, execute });
+}
+
 type AppStoragePayload = {
   entries: Record<string, string>;
 };
@@ -22,6 +83,8 @@ export async function bootstrapSqliteStorage(keys: string[]) {
   if (typeof window === "undefined" || keys.length === 0) return;
 
   const uniqueKeys = Array.from(new Set(keys));
+  // 先排空当前窗口尚未完成的保存，再拉取 SQLite，避免启动期旧快照覆盖新值。
+  await Promise.all(uniqueKeys.map((key) => writeTails.get(key)).filter((tail): tail is Promise<void> => Boolean(tail)));
   const legacyEntries = Object.fromEntries(
     uniqueKeys
       .map((key) => [key, localStorage.getItem(key)])
@@ -39,6 +102,7 @@ export async function bootstrapSqliteStorage(keys: string[]) {
     });
 
     Object.entries(payload.entries).forEach(([key, value]) => {
+      if (pendingWrites.has(key)) return;
       // 仅在与本地值不同时才覆盖并通知，避免向监听者广播无变化的事件。
       if (localStorage.getItem(key) === value) {
         return;
@@ -94,9 +158,7 @@ export function saveSqliteBackedValue(key: string, value: string) {
     return;
   }
 
-  void invoke("save_app_kv", { key, value }).catch(() => {
-    // 浏览器或异常环境继续保留 localStorage
-  });
+  void persistStorageOperation(key, () => invoke("save_app_kv", { key, value })).catch(() => undefined);
 }
 
 export function removeSqliteBackedValue(key: string) {
@@ -113,9 +175,7 @@ export function removeSqliteBackedValue(key: string) {
     return;
   }
 
-  void invoke("remove_app_kv", { key }).catch(() => {
-    // 浏览器或异常环境继续保留 localStorage
-  });
+  void persistStorageOperation(key, () => invoke("remove_app_kv", { key })).catch(() => undefined);
 }
 
 export async function loadMemoryStorage() {
@@ -132,7 +192,7 @@ export async function loadMemoryStorage() {
 
 export async function saveMemoryStorage(payload: MemoryStoragePayload) {
   if (!canUseTauriInvoke()) return;
-  await invoke("save_memory_storage_command", payload);
+  await persistStorageOperation("memory", () => invoke("save_memory_storage_command", payload));
 }
 
 export async function loadAutomationStorage() {
@@ -147,7 +207,7 @@ export async function loadAutomationStorage() {
 
 export async function saveAutomationStorage(payload: AutomationStoragePayload) {
   if (!canUseTauriInvoke()) return;
-  await invoke("save_automation_storage_command", payload);
+  await persistStorageOperation("automation", () => invoke("save_automation_storage_command", payload));
 }
 
 
@@ -166,10 +226,10 @@ export async function loadAppKvEntries(keys: string[]) {
 
 export async function saveAppKvEntry(key: string, value: string) {
   if (!canUseTauriInvoke()) return;
-  await invoke("save_app_kv", { key, value });
+  await persistStorageOperation(key, () => invoke("save_app_kv", { key, value }));
 }
 
 export async function removeAppKvEntry(key: string) {
   if (!canUseTauriInvoke()) return;
-  await invoke("remove_app_kv", { key });
+  await persistStorageOperation(key, () => invoke("remove_app_kv", { key }));
 }

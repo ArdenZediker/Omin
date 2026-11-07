@@ -101,6 +101,21 @@ describe("useChatSessions 持久化角色", () => {
     expect(savePersistedChatSessions).not.toHaveBeenCalled();
   });
 
+  it("reminder scheduling becomes ready only after persisted automation data loads", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.mocked(loadPersistedChatState).mockImplementationOnce(async () => {
+      await gate;
+      return {
+        projects: [], sessions: [], projectMemories: [], sessionSummaries: [], userPreferences: [], scheduledTasks: [],
+      };
+    });
+    const { result } = renderHook(() => useChatSessions({ persist: true }));
+    expect(result.current.isAutomationReady).toBe(false);
+    await act(async () => { release(); await gate; });
+    expect(result.current.isAutomationReady).toBe(true);
+  });
+
   it("删除会话时一并清掉它的摘要记录（否则摘要会继续被当作上下文喂回模型）", async () => {
     const { result } = renderHook(() => useChatSessions({ persist: false, role: "owner" }));
 
@@ -142,5 +157,6 @@ describe("useChatSessions 持久化角色", () => {
 
     expect(savePersistedChatState).not.toHaveBeenCalled();
     expect(savePersistedChatSessions).not.toHaveBeenCalled();
+    expect(result.current.isAutomationReady).toBe(false);
   });
 });

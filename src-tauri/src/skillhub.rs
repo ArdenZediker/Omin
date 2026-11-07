@@ -29,9 +29,7 @@ pub(crate) fn default_skillhub_skills_dir() -> Result<std::path::PathBuf, String
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .map_err(|_| "无法解析用户主目录".to_string())?;
-    Ok(std::path::PathBuf::from(home)
-        .join(".dsh")
-        .join("skills"))
+    Ok(std::path::PathBuf::from(home).join(".dsh").join("skills"))
 }
 
 #[tauri::command]
@@ -60,13 +58,14 @@ pub(crate) async fn install_skillhub_skill(
             .timeout(std::time::Duration::from_secs(90))
             .build()
             .map_err(|e| e.to_string())?;
-        let resp = client.get(&url).send().map_err(|e| format!("下载失败: {e}"))?;
+        let resp = client
+            .get(&url)
+            .send()
+            .map_err(|e| format!("下载失败: {e}"))?;
         if !resp.status().is_success() {
             return Err(format!("SkillHub 下载接口返回 {}", resp.status()));
         }
-        let bytes = resp
-            .bytes()
-            .map_err(|e| format!("读取下载内容失败: {e}"))?;
+        let bytes = resp.bytes().map_err(|e| format!("读取下载内容失败: {e}"))?;
 
         if target.exists() {
             std::fs::remove_dir_all(&target).map_err(|e| format!("清理旧技能失败: {e}"))?;
@@ -74,8 +73,7 @@ pub(crate) async fn install_skillhub_skill(
         std::fs::create_dir_all(&target).map_err(|e| format!("创建技能目录失败: {e}"))?;
 
         let reader = std::io::Cursor::new(bytes);
-        let mut archive =
-            zip::ZipArchive::new(reader).map_err(|e| format!("ZIP 解析失败: {e}"))?;
+        let mut archive = zip::ZipArchive::new(reader).map_err(|e| format!("ZIP 解析失败: {e}"))?;
         for i in 0..archive.len() {
             let mut file = archive
                 .by_index(i)
@@ -118,7 +116,10 @@ pub(crate) async fn install_skillhub_skill(
 }
 
 #[tauri::command]
-pub(crate) fn uninstall_skillhub_skill(slug: String, skills_dir: Option<String>) -> Result<(), String> {
+pub(crate) fn uninstall_skillhub_skill(
+    slug: String,
+    skills_dir: Option<String>,
+) -> Result<(), String> {
     let dir = match skills_dir {
         Some(d) => std::path::PathBuf::from(d),
         None => default_skillhub_skills_dir()?,
@@ -225,7 +226,10 @@ pub(crate) async fn list_skillhub_skill_categories(
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| e.to_string())?;
-        let resp = client.get(&url).send().map_err(|e| format!("SkillHub 请求失败: {e}"))?;
+        let resp = client
+            .get(&url)
+            .send()
+            .map_err(|e| format!("SkillHub 请求失败: {e}"))?;
         if !resp.status().is_success() {
             return Err(format!("SkillHub 接口返回 {}", resp.status()));
         }
@@ -239,15 +243,25 @@ pub(crate) async fn list_skillhub_skill_categories(
             .cloned()
             .unwrap_or_default();
         items.sort_by(|a, b| {
-            let ao = a.get("sortOrder").and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
-            let bo = b.get("sortOrder").and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+            let ao = a
+                .get("sortOrder")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(i64::MAX);
+            let bo = b
+                .get("sortOrder")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(i64::MAX);
             ao.cmp(&bo)
         });
 
         let categories: Vec<serde_json::Value> = items
             .into_iter()
             .map(|item| {
-                let key = item.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let key = item
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let display_name = item
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -277,7 +291,10 @@ pub(crate) async fn list_skillhub_plugin_categories(
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| e.to_string())?;
-        let resp = client.get(&url).send().map_err(|e| format!("SkillHub 请求失败: {e}"))?;
+        let resp = client
+            .get(&url)
+            .send()
+            .map_err(|e| format!("SkillHub 请求失败: {e}"))?;
         if !resp.status().is_success() {
             return Err(format!("SkillHub 接口返回 {}", resp.status()));
         }
@@ -314,7 +331,10 @@ pub(crate) async fn list_skillhub_plugins(
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| e.to_string())?;
-        let resp = client.get(&url).send().map_err(|e| format!("SkillHub 请求失败: {e}"))?;
+        let resp = client
+            .get(&url)
+            .send()
+            .map_err(|e| format!("SkillHub 请求失败: {e}"))?;
         if !resp.status().is_success() {
             return Err(format!("SkillHub 接口返回 {}", resp.status()));
         }
@@ -336,7 +356,9 @@ pub(crate) async fn list_skillhub_plugins(
                     "{} {} {}",
                     item.get("name").and_then(|v| v.as_str()).unwrap_or(""),
                     item.get("fullName").and_then(|v| v.as_str()).unwrap_or(""),
-                    item.get("description").and_then(|v| v.as_str()).unwrap_or("")
+                    item.get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
                 )
                 .to_lowercase();
                 text.contains(&q)

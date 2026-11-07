@@ -26,7 +26,10 @@ pub(crate) fn normalize_knowledge_collection_id(value: Option<String>) -> String
     value.unwrap_or_default().trim().to_string()
 }
 
-pub(crate) fn collection_exists(connection: &Connection, collection_id: &str) -> Result<bool, String> {
+pub(crate) fn collection_exists(
+    connection: &Connection,
+    collection_id: &str,
+) -> Result<bool, String> {
     let count: i64 = connection
         .query_row(
             "SELECT COUNT(1) FROM knowledge_collections WHERE id = ?1",
@@ -80,7 +83,10 @@ pub(crate) fn file_extension_from_name(value: &str) -> Option<String> {
         .filter(|ext| !ext.is_empty())
 }
 
-pub(crate) fn normalize_file_extension(extension: Option<String>, source_name: &str) -> Option<String> {
+pub(crate) fn normalize_file_extension(
+    extension: Option<String>,
+    source_name: &str,
+) -> Option<String> {
     extension
         .and_then(|value| {
             let trimmed = value.trim().trim_start_matches('.').to_lowercase();
@@ -119,7 +125,10 @@ pub(crate) fn normalize_optional_text(value: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-pub(crate) fn infer_fallback_mime_type(preview_type: &str, extension: Option<&str>) -> &'static str {
+pub(crate) fn infer_fallback_mime_type(
+    preview_type: &str,
+    extension: Option<&str>,
+) -> &'static str {
     match preview_type {
         "image" => match extension
             .unwrap_or_default()

@@ -1,4 +1,4 @@
-use super::types::{ABSOLUTE_MAX_CHUNK_SIZE, ByteSpan, MAX_PROTECTED_UNIT_SIZE, rune_len};
+use super::types::{rune_len, ByteSpan, ABSOLUTE_MAX_CHUNK_SIZE, MAX_PROTECTED_UNIT_SIZE};
 
 pub(crate) fn build_units_with_protection(
     text: &str,
@@ -33,7 +33,11 @@ pub(crate) fn build_units_with_protection(
     units
 }
 
-pub(crate) fn split_by_separators(text: &str, separators: &[&str], chunk_size: usize) -> Vec<String> {
+pub(crate) fn split_by_separators(
+    text: &str,
+    separators: &[&str],
+    chunk_size: usize,
+) -> Vec<String> {
     if text.is_empty() || separators.is_empty() {
         return vec![text.to_string()];
     }
@@ -118,7 +122,11 @@ pub(crate) fn split_long_unit(text: &str, max_chars: usize) -> Vec<String> {
     out
 }
 
-pub(crate) fn merge_units(units: &[String], chunk_size: usize, chunk_overlap: usize) -> Vec<String> {
+pub(crate) fn merge_units(
+    units: &[String],
+    chunk_size: usize,
+    chunk_overlap: usize,
+) -> Vec<String> {
     if units.is_empty() {
         return Vec::new();
     }
@@ -218,7 +226,12 @@ pub(crate) fn build_chunk(units: &[String]) -> String {
     out
 }
 
-pub(crate) fn overlap_tail(current: &str, chunk_overlap: usize, chunk_size: usize, next_len: usize) -> String {
+pub(crate) fn overlap_tail(
+    current: &str,
+    chunk_overlap: usize,
+    chunk_size: usize,
+    next_len: usize,
+) -> String {
     if chunk_overlap == 0 {
         return String::new();
     }

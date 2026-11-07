@@ -30,18 +30,21 @@ impl Retriever for KeywordRetriever {
             .prepare(sql)
             .map_err(|e| format!("prepare retrieve failed: {e}"))?;
         let rows = stmt
-            .query_map(rusqlite::params![collection_id, like, limit as i64], |row| {
-                let content: String = row.get(4)?;
-                let score = if content.contains(query) { 1.0 } else { 0.5 };
-                Ok(RetrievedChunk {
-                    chunk_id: row.get(0)?,
-                    document_id: row.get(1)?,
-                    collection_id: row.get(2)?,
-                    title: row.get(3)?,
-                    content,
-                    score,
-                })
-            })
+            .query_map(
+                rusqlite::params![collection_id, like, limit as i64],
+                |row| {
+                    let content: String = row.get(4)?;
+                    let score = if content.contains(query) { 1.0 } else { 0.5 };
+                    Ok(RetrievedChunk {
+                        chunk_id: row.get(0)?,
+                        document_id: row.get(1)?,
+                        collection_id: row.get(2)?,
+                        title: row.get(3)?,
+                        content,
+                        score,
+                    })
+                },
+            )
             .map_err(|e| format!("query retrieve failed: {e}"))?;
         let mut out = Vec::new();
         for r in rows {

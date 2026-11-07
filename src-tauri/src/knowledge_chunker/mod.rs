@@ -1,13 +1,13 @@
-pub mod types;
 pub(crate) mod profile;
-pub(crate) mod strategy;
-pub(crate) mod units;
-pub(crate) mod title;
 pub(crate) mod protected;
+pub(crate) mod strategy;
+pub(crate) mod title;
+pub mod types;
+pub(crate) mod units;
 
 pub use self::types::ChunkSlice;
-pub use self::types::DEFAULT_CHUNK_SIZE;
 pub use self::types::DEFAULT_CHUNK_OVERLAP;
+pub use self::types::DEFAULT_CHUNK_SIZE;
 
 use self::profile::profile_document;
 use self::strategy::{

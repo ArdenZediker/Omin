@@ -1,4 +1,3 @@
-
 use crate::workspace_files;
 
 #[tauri::command]
@@ -36,6 +35,7 @@ pub(crate) fn copy_file_to_store(
     src: String,
     dst: String,
 ) -> Result<workspace_files::CopyFileResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     workspace_files::copy_file_to_store(&src, &dst)
 }
 
@@ -46,6 +46,7 @@ pub(crate) fn write_pasted_attachment(
     name: String,
     bytes: Vec<u8>,
 ) -> Result<workspace_files::CopyFileResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     workspace_files::write_pasted_attachment(&app, &name, &bytes)
 }
 
@@ -60,7 +61,16 @@ pub(crate) fn search_workspace_files(
     context: Option<usize>,
     limit: Option<usize>,
 ) -> Result<Vec<workspace_files::WorkspaceSearchMatch>, String> {
-    workspace_files::search_files(project_path, pattern, path, glob, literal, ignore_case, context, limit)
+    workspace_files::search_files(
+        project_path,
+        pattern,
+        path,
+        glob,
+        literal,
+        ignore_case,
+        context,
+        limit,
+    )
 }
 
 #[tauri::command]

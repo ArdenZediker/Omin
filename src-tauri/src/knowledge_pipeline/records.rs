@@ -6,7 +6,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::*;
 
-pub(crate) fn read_job_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeProcessingJobRecord> {
+pub(crate) fn read_job_record(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<KnowledgeProcessingJobRecord> {
     Ok(KnowledgeProcessingJobRecord {
         id: row.get(0)?,
         document_id: row.get(1)?,
@@ -31,7 +33,9 @@ pub(crate) fn read_job_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Knowl
     })
 }
 
-pub(crate) fn read_step_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeProcessingStepRecord> {
+pub(crate) fn read_step_record(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<KnowledgeProcessingStepRecord> {
     Ok(KnowledgeProcessingStepRecord {
         id: row.get(0)?,
         job_id: row.get(1)?,
@@ -46,7 +50,9 @@ pub(crate) fn read_step_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Know
     })
 }
 
-pub(crate) fn read_log_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeProcessingLogRecord> {
+pub(crate) fn read_log_record(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<KnowledgeProcessingLogRecord> {
     Ok(KnowledgeProcessingLogRecord {
         id: row.get(0)?,
         job_id: row.get(1)?,
@@ -80,7 +86,10 @@ pub(crate) fn dead_letter_status_label(status: &str) -> &'static str {
     }
 }
 
-pub(crate) fn dead_letter_snapshot_text(metadata_json: Option<&str>, field: &str) -> Option<String> {
+pub(crate) fn dead_letter_snapshot_text(
+    metadata_json: Option<&str>,
+    field: &str,
+) -> Option<String> {
     metadata_json
         .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
         .and_then(|value| {

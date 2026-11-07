@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { loadAutomationStorage, loadMemoryStorage, saveAutomationStorage, saveMemoryStorage } from "../app/sqliteStorage";
+import { loadAutomationStorage, loadMemoryStorage, saveAutomationStorage, saveMemoryStorage, persistStorageOperation } from "../app/sqliteStorage";
 import type {
   ProjectMemoryRecord,
   Project,
@@ -82,11 +82,11 @@ function getLegacyScheduledTasksJson() {
 }
 
 export async function loadPersistedChatState(): Promise<PersistedChatState> {
-  // 聊天、记忆、自动化三种存储独立加载，避免任意一种失败导致整个加载被判定为失败，
-  // 从而禁用后续保存（这正是「重启后数据消失」的常见根因）。
+  // 任一权威存储读取失败都禁止把默认空状态当成成功加载并写回。
   let payload: ChatStoragePayload | null = null;
   let memoryPayload: Awaited<ReturnType<typeof loadMemoryStorage>> | null = null;
   let automationPayload: Awaited<ReturnType<typeof loadAutomationStorage>> | null = null;
+  const loadErrors: string[] = [];
 
   if (canUseTauriStorage()) {
     try {
@@ -97,6 +97,7 @@ export async function loadPersistedChatState(): Promise<PersistedChatState> {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error("loadPersistedChatState: load_chat_storage failed", error);
+      loadErrors.push(`会话：${String(error)}`);
     }
   }
 
@@ -105,6 +106,7 @@ export async function loadPersistedChatState(): Promise<PersistedChatState> {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("loadPersistedChatState: loadMemoryStorage failed", error);
+    loadErrors.push(`记忆：${String(error)}`);
   }
 
   try {
@@ -112,7 +114,10 @@ export async function loadPersistedChatState(): Promise<PersistedChatState> {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("loadPersistedChatState: loadAutomationStorage failed", error);
+    loadErrors.push(`提醒：${String(error)}`);
   }
+
+  if (loadErrors.length) throw new Error(`本地数据读取失败，已暂停写入以保护现有数据。${loadErrors.join("；")}`);
 
   // 缓存数据根路径，供 TS 侧解析兜底工作目录（与 Rust fallback_workspace_root 对应）。
   // 即便此处失败也不影响加载——Rust 侧会在文件操作/落盘时补全兜底目录。
@@ -154,10 +159,10 @@ export async function savePersistedChatState(projects: Project[], sessions: Chat
 
   if (canUseTauriStorage()) {
     try {
-      await invoke("save_chat_storage", {
+      await persistStorageOperation("chat", () => invoke("save_chat_storage", {
         projectsJson,
         sessionsJson,
-      });
+      }));
       if (typeof window !== "undefined") {
         localStorage.removeItem(CHAT_PROJECTS_STORAGE_KEY);
         localStorage.removeItem(CHAT_SESSIONS_STORAGE_KEY);
@@ -190,7 +195,7 @@ export async function savePersistedChatSessions(sessions: ChatSession[]) {
 
   if (canUseTauriStorage()) {
     try {
-      await invoke("save_chat_sessions", { sessionsJson });
+      await persistStorageOperation("chat", () => invoke("save_chat_sessions", { sessionsJson }));
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error("savePersistedChatSessions: save_chat_sessions failed", error);

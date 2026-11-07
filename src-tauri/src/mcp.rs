@@ -65,9 +65,10 @@ impl McpTransport {
                 headers,
                 session_id,
             } => {
-                let mut req = client
-                    .post(url.as_str())
-                    .header(reqwest::header::ACCEPT, "application/json, text/event-stream");
+                let mut req = client.post(url.as_str()).header(
+                    reqwest::header::ACCEPT,
+                    "application/json, text/event-stream",
+                );
                 for (key, value) in headers.iter() {
                     req = req.header(key, value);
                 }
@@ -106,7 +107,10 @@ impl McpTransport {
             } => {
                 let mut req = client
                     .post(url.as_str())
-                    .header(reqwest::header::ACCEPT, "application/json, text/event-stream")
+                    .header(
+                        reqwest::header::ACCEPT,
+                        "application/json, text/event-stream",
+                    )
                     .header(reqwest::header::CONTENT_TYPE, "application/json");
                 for (key, value) in headers.iter() {
                     req = req.header(key, value);
@@ -180,9 +184,7 @@ impl McpTransport {
 fn verify_response_id(value: &Value, request_id: u64) -> Result<(), String> {
     if let Some(id) = value.get("id").and_then(Value::as_u64) {
         if id != request_id {
-            return Err(format!(
-                "MCP 响应 id 不匹配: 期望 {request_id}, 实际 {id}"
-            ));
+            return Err(format!("MCP 响应 id 不匹配: 期望 {request_id}, 实际 {id}"));
         }
     }
     Ok(())
@@ -251,7 +253,10 @@ fn read_stdio_response(
 // HTTP SSE 解析
 // ---------------------------------------------------------------------------
 
-fn read_sse_response(resp: &mut reqwest::blocking::Response, request_id: u64) -> Result<Value, String> {
+fn read_sse_response(
+    resp: &mut reqwest::blocking::Response,
+    request_id: u64,
+) -> Result<Value, String> {
     let reader = BufReader::new(resp);
     let mut current_data = String::new();
     for line in reader.lines() {
@@ -442,7 +447,9 @@ fn connect_http_server(
 // ---------------------------------------------------------------------------
 
 fn get_connection(id: &str) -> Result<Arc<Mutex<McpConnection>>, String> {
-    let guard = servers().lock().map_err(|_| "MCP 连接表锁失败".to_string())?;
+    let guard = servers()
+        .lock()
+        .map_err(|_| "MCP 连接表锁失败".to_string())?;
     let map = guard.as_ref().ok_or("MCP 服务未初始化")?;
     map.get(id)
         .cloned()
@@ -469,7 +476,9 @@ pub fn start_mcp_server(
 
     // 已启动则直接返回当前状态
     {
-        let guard = servers().lock().map_err(|_| "MCP 连接表锁失败".to_string())?;
+        let guard = servers()
+            .lock()
+            .map_err(|_| "MCP 连接表锁失败".to_string())?;
         if let Some(map) = guard.as_ref() {
             if let Some(existing) = map.get(&id) {
                 let mut conn = existing.lock().map_err(|_| "连接锁失败".to_string())?;
@@ -485,14 +494,16 @@ pub fn start_mcp_server(
         }
     }
 
-    let connection = Arc::new(Mutex::new(if let Some(url) = url.filter(|u| !u.trim().is_empty()) {
-        connect_http_server(&url, &headers.unwrap_or_default())?
-    } else {
-        let cmd = command.ok_or("缺少启动命令（command 或 url 必须提供一个）")?;
-        let args = args.unwrap_or_default();
-        let env = env.unwrap_or_default();
-        spawn_stdio_server(&cmd, &args, &env)?
-    }));
+    let connection = Arc::new(Mutex::new(
+        if let Some(url) = url.filter(|u| !u.trim().is_empty()) {
+            connect_http_server(&url, &headers.unwrap_or_default())?
+        } else {
+            let cmd = command.ok_or("缺少启动命令（command 或 url 必须提供一个）")?;
+            let args = args.unwrap_or_default();
+            let env = env.unwrap_or_default();
+            spawn_stdio_server(&cmd, &args, &env)?
+        },
+    ));
 
     let mut conn = connection.lock().map_err(|_| "连接锁失败".to_string())?;
     let stderr_tail = conn.transport.stderr_tail();
@@ -500,7 +511,9 @@ pub fn start_mcp_server(
     let tools = list_tools_locked(&mut conn)?;
     drop(conn);
 
-    let mut guard = servers().lock().map_err(|_| "MCP 连接表锁失败".to_string())?;
+    let mut guard = servers()
+        .lock()
+        .map_err(|_| "MCP 连接表锁失败".to_string())?;
     if guard.is_none() {
         *guard = Some(HashMap::new());
     }
@@ -518,7 +531,9 @@ pub fn start_mcp_server(
 /// 停止并移除 MCP 服务器。
 #[tauri::command]
 pub fn stop_mcp_server(id: String) -> Result<Vec<String>, String> {
-    let mut guard = servers().lock().map_err(|_| "MCP 连接表锁失败".to_string())?;
+    let mut guard = servers()
+        .lock()
+        .map_err(|_| "MCP 连接表锁失败".to_string())?;
     let map = guard.as_mut().ok_or("MCP 服务未初始化")?;
     let removed = map
         .remove(&id)
@@ -577,7 +592,10 @@ pub fn call_mcp_tool(
         "arguments": arguments.unwrap_or(json!({})),
     });
     let result = mcp_request(&mut conn, "tools/call", params)?;
-    let is_error = result.get("isError").and_then(Value::as_bool).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let content = result
         .get("content")
         .and_then(Value::as_array)

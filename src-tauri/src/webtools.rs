@@ -109,7 +109,11 @@ fn clean_text(input: &str) -> String {
     for line in decoded.split('\n') {
         let trimmed = line.split_whitespace().collect::<Vec<_>>().join(" ");
         if trimmed.is_empty() {
-            if lines.last().map(|l: &String| !l.is_empty()).unwrap_or(false) {
+            if lines
+                .last()
+                .map(|l: &String| !l.is_empty())
+                .unwrap_or(false)
+            {
                 lines.push(String::new());
             }
         } else {
@@ -207,13 +211,13 @@ fn resolve_bing_url(href: &str) -> String {
 }
 
 fn parse_ddg_html(html: &str, limit: usize) -> Vec<WebSearchResult> {
-    let link_re = Regex::new(
-        r#"(?is)<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#,
+    let link_re =
+        Regex::new(r#"(?is)<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#)
+            .expect("静态正则");
+    let snippet_re = Regex::new(
+        r#"(?is)<(?:a|div)[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</(?:a|div)>"#,
     )
     .expect("静态正则");
-    let snippet_re =
-        Regex::new(r#"(?is)<(?:a|div)[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</(?:a|div)>"#)
-            .expect("静态正则");
     let snippets: Vec<String> = snippet_re
         .captures_iter(html)
         .map(|c| clean_text(&c[1]))
@@ -257,11 +261,9 @@ fn parse_ddg_lite(html: &str, limit: usize) -> Vec<WebSearchResult> {
 fn parse_bing_html(html: &str, limit: usize) -> Vec<WebSearchResult> {
     let item_re =
         Regex::new(r#"(?is)<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>(.*?)</li>"#).expect("静态正则");
-    let link_re =
-        Regex::new(r#"(?is)<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).expect("静态正则");
-    let snippet_re =
-        Regex::new(r#"(?is)<div[^>]*class="[^"]*b_caption[^"]*"[^>]*>(.*?)</div>"#)
-            .expect("静态正则");
+    let link_re = Regex::new(r#"(?is)<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).expect("静态正则");
+    let snippet_re = Regex::new(r#"(?is)<div[^>]*class="[^"]*b_caption[^"]*"[^>]*>(.*?)</div>"#)
+        .expect("静态正则");
     let p_re = Regex::new(r#"(?is)<p[^>]*>(.*?)</p>"#).expect("静态正则");
 
     let mut results = Vec::new();
@@ -303,46 +305,47 @@ async fn search_with_provider(
     query: &str,
     limit: usize,
 ) -> Result<Vec<WebSearchResult>, String> {
-    let (resp, parser): (reqwest::Response, fn(&str, usize) -> Vec<WebSearchResult>) = match provider {
-        SearchProvider::DuckDuckGoHtml => {
-            let resp = client
-                .post("https://html.duckduckgo.com/html/")
-                .form(&[("q", query), ("b", "")])
-                .send()
-                .await
-                .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
-            (resp, parse_ddg_html)
-        }
-        SearchProvider::DuckDuckGoLite => {
-            let resp = client
-                .get("https://lite.duckduckgo.com/lite/")
-                .query(&[("q", query)])
-                .send()
-                .await
-                .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
-            (resp, parse_ddg_lite)
-        }
-        SearchProvider::BingGlobal => {
-            let resp = client
-                .get("https://www.bing.com/search")
-                .query(&[("q", query), ("setmkt", "en-US"), ("setlang", "en")])
-                .header("Accept-Language", "zh-CN,zh;q=0.9,en-US,en;q=0.8")
-                .send()
-                .await
-                .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
-            (resp, parse_bing_html)
-        }
-        SearchProvider::BingCn => {
-            let resp = client
-                .get("https://cn.bing.com/search")
-                .query(&[("q", query), ("setmkt", "zh-CN"), ("setlang", "zh")])
-                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                .send()
-                .await
-                .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
-            (resp, parse_bing_html)
-        }
-    };
+    let (resp, parser): (reqwest::Response, fn(&str, usize) -> Vec<WebSearchResult>) =
+        match provider {
+            SearchProvider::DuckDuckGoHtml => {
+                let resp = client
+                    .post("https://html.duckduckgo.com/html/")
+                    .form(&[("q", query), ("b", "")])
+                    .send()
+                    .await
+                    .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
+                (resp, parse_ddg_html)
+            }
+            SearchProvider::DuckDuckGoLite => {
+                let resp = client
+                    .get("https://lite.duckduckgo.com/lite/")
+                    .query(&[("q", query)])
+                    .send()
+                    .await
+                    .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
+                (resp, parse_ddg_lite)
+            }
+            SearchProvider::BingGlobal => {
+                let resp = client
+                    .get("https://www.bing.com/search")
+                    .query(&[("q", query), ("setmkt", "en-US"), ("setlang", "en")])
+                    .header("Accept-Language", "zh-CN,zh;q=0.9,en-US,en;q=0.8")
+                    .send()
+                    .await
+                    .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
+                (resp, parse_bing_html)
+            }
+            SearchProvider::BingCn => {
+                let resp = client
+                    .get("https://cn.bing.com/search")
+                    .query(&[("q", query), ("setmkt", "zh-CN"), ("setlang", "zh")])
+                    .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                    .send()
+                    .await
+                    .map_err(|e| format!("{} 请求失败: {e}", provider.label()))?;
+                (resp, parse_bing_html)
+            }
+        };
 
     let status = resp.status();
     if !status.is_success() {
@@ -405,9 +408,10 @@ fn extract_title(html: &str) -> String {
 /// 轻量 HTML→纯文本：去注释/脚本/样式，块级标签转换行，列表加圆点。
 fn html_to_text(html: &str) -> String {
     let comment_re = Regex::new(r"(?s)<!--.*?-->").expect("静态正则");
-    let block_re =
-        Regex::new(r#"(?i)<br[^>]*>|</(p|div|li|tr|h[1-6]|section|article|blockquote|table|ul|ol)>"#)
-            .expect("静态正则");
+    let block_re = Regex::new(
+        r#"(?i)<br[^>]*>|</(p|div|li|tr|h[1-6]|section|article|blockquote|table|ul|ol)>"#,
+    )
+    .expect("静态正则");
     let li_re = Regex::new(r"(?i)<li[^>]*>").expect("静态正则");
     // Rust regex 不支持反向引用，脚本类标签逐个构建移除正则（进程内缓存）。
     static HIDDEN_RES: std::sync::OnceLock<Vec<Regex>> = std::sync::OnceLock::new();
@@ -433,7 +437,11 @@ fn html_to_text(html: &str) -> String {
     for line in decoded.split('\n') {
         let trimmed = line.split_whitespace().collect::<Vec<_>>().join(" ");
         if trimmed.is_empty() {
-            if lines.last().map(|l: &String| !l.is_empty()).unwrap_or(false) {
+            if lines
+                .last()
+                .map(|l: &String| !l.is_empty())
+                .unwrap_or(false)
+            {
                 lines.push(String::new());
             }
         } else {
@@ -448,7 +456,8 @@ fn html_to_text(html: &str) -> String {
 
 /// 抽取正文中的站外链接（绝对 URL，去重，cap 30 条）。
 fn extract_links(html: &str) -> Vec<WebFetchLink> {
-    let re = Regex::new(r#"(?is)<a\s[^>]*href="(https?://[^"\s]+)"[^>]*>(.*?)</a>"#).expect("静态正则");
+    let re =
+        Regex::new(r#"(?is)<a\s[^>]*href="(https?://[^"\s]+)"[^>]*>(.*?)</a>"#).expect("静态正则");
     let mut seen = std::collections::HashSet::new();
     let mut links = Vec::new();
     for cap in re.captures_iter(html) {
@@ -491,7 +500,10 @@ pub(crate) async fn web_fetch(
     if !status.is_success() {
         return Err(format!("抓取失败：HTTP {status}（{final_url}）"));
     }
-    let bytes = resp.bytes().await.map_err(|e| format!("读取响应失败: {e}"))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
     let slice = &bytes[..bytes.len().min(MAX_FETCH_BYTES)];
     let body = String::from_utf8_lossy(slice).into_owned();
 
@@ -531,7 +543,10 @@ mod tests {
 
     #[test]
     fn decode_entities_handles_named_and_numeric() {
-        assert_eq!(decode_entities("a&amp;b&nbsp;&lt;x&gt;&#20013;&#x4E2D;"), "a&b\u{00A0}<x>中中");
+        assert_eq!(
+            decode_entities("a&amp;b&nbsp;&lt;x&gt;&#20013;&#x4E2D;"),
+            "a&b\u{00A0}<x>中中"
+        );
     }
 
     #[test]
@@ -604,7 +619,9 @@ mod tests {
 
     #[tokio::test]
     async fn web_fetch_rejects_non_http() {
-        let err = web_fetch("ftp://example.com".into(), None).await.unwrap_err();
+        let err = web_fetch("ftp://example.com".into(), None)
+            .await
+            .unwrap_err();
         assert!(err.contains("http"));
     }
 }

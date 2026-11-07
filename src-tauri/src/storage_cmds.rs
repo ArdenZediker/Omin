@@ -2,14 +2,13 @@ use rusqlite::params;
 use std::collections::HashMap;
 
 use crate::{
-    AppStoragePayload, AutomationStoragePayload, ChatStoragePayload, ManifestStoragePayload,
-    MemoryStoragePayload, backup, delete_chat_session_by_id, delete_project_by_id,
-    has_structured_chat_storage, load_automation_storage, load_manifest_storage,
-    load_memory_storage, load_structured_chat_storage, open_sqlite_connection,
-    read_structured_app_value, remove_structured_app_value, resolve_session_dir_for_id,
-    save_automation_storage, save_manifest_storage, save_memory_storage,
-    save_structured_chat_storage, storage_paths, upsert_chat_sessions,
-    write_structured_app_value,
+    backup, delete_chat_session_by_id, delete_project_by_id, has_structured_chat_storage,
+    load_automation_storage, load_manifest_storage, load_memory_storage,
+    load_structured_chat_storage, open_sqlite_connection, read_structured_app_value,
+    remove_structured_app_value, resolve_session_dir_for_id, save_automation_storage,
+    save_manifest_storage, save_memory_storage, save_structured_chat_storage, storage_paths,
+    upsert_chat_sessions, write_structured_app_value, AppStoragePayload, AutomationStoragePayload,
+    ChatStoragePayload, ManifestStoragePayload, MemoryStoragePayload,
 };
 
 #[tauri::command]
@@ -18,6 +17,7 @@ pub(crate) fn load_chat_storage(
     legacy_projects_json: Option<String>,
     legacy_sessions_json: Option<String>,
 ) -> Result<ChatStoragePayload, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     let sessions_root = storage_paths::chat_sessions_root(&app)?;
 
@@ -51,6 +51,7 @@ pub(crate) fn save_chat_storage(
     projects_json: String,
     sessions_json: String,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     save_structured_chat_storage(
         &connection,
@@ -70,6 +71,7 @@ pub(crate) fn save_chat_sessions(
     app: tauri::AppHandle,
     sessions_json: String,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     upsert_chat_sessions(
         &connection,
@@ -81,12 +83,14 @@ pub(crate) fn save_chat_sessions(
 
 #[tauri::command]
 pub(crate) fn delete_chat_session(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     delete_chat_session_by_id(&connection, &id, &storage_paths::chat_sessions_root(&app)?)
 }
 
 #[tauri::command]
 pub(crate) fn delete_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     delete_project_by_id(&connection, &id, &storage_paths::chat_sessions_root(&app)?)
 }
@@ -98,6 +102,7 @@ pub(crate) fn resolve_session_dir(
     app: tauri::AppHandle,
     session_id: String,
 ) -> Result<String, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     Ok(resolve_session_dir_for_id(
         &connection,
@@ -107,7 +112,10 @@ pub(crate) fn resolve_session_dir(
 }
 
 #[tauri::command]
-pub(crate) fn load_manifest_storage_command(app: tauri::AppHandle) -> Result<ManifestStoragePayload, String> {
+pub(crate) fn load_manifest_storage_command(
+    app: tauri::AppHandle,
+) -> Result<ManifestStoragePayload, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     load_manifest_storage(&connection)
 }
@@ -119,6 +127,7 @@ pub(crate) fn save_manifest_storage_command(
     tool_manifests_json: Option<String>,
     skill_manifests_json: Option<String>,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     save_manifest_storage(
         &connection,
@@ -129,7 +138,10 @@ pub(crate) fn save_manifest_storage_command(
 }
 
 #[tauri::command]
-pub(crate) fn load_memory_storage_command(app: tauri::AppHandle) -> Result<MemoryStoragePayload, String> {
+pub(crate) fn load_memory_storage_command(
+    app: tauri::AppHandle,
+) -> Result<MemoryStoragePayload, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     load_memory_storage(&connection)
 }
@@ -141,6 +153,7 @@ pub(crate) fn save_memory_storage_command(
     user_preferences_json: Option<String>,
     session_summaries_json: Option<String>,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     save_memory_storage(
         &connection,
@@ -154,6 +167,7 @@ pub(crate) fn save_memory_storage_command(
 pub(crate) fn load_automation_storage_command(
     app: tauri::AppHandle,
 ) -> Result<AutomationStoragePayload, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     load_automation_storage(&connection)
 }
@@ -163,6 +177,7 @@ pub(crate) fn save_automation_storage_command(
     app: tauri::AppHandle,
     scheduled_tasks_json: Option<String>,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     save_automation_storage(&connection, scheduled_tasks_json.as_deref())
 }
@@ -173,6 +188,7 @@ pub(crate) fn load_app_kv(
     keys: Vec<String>,
     legacy_entries: Option<HashMap<String, String>>,
 ) -> Result<AppStoragePayload, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     let mut entries = HashMap::new();
     let legacy_entries = legacy_entries.unwrap_or_default();
@@ -199,12 +215,14 @@ pub(crate) fn load_app_kv(
 
 #[tauri::command]
 pub(crate) fn save_app_kv(app: tauri::AppHandle, key: String, value: String) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     write_structured_app_value(&connection, &key, &value)
 }
 
 #[tauri::command]
 pub(crate) fn remove_app_kv(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     remove_structured_app_value(&connection, &key)?;
     connection
@@ -225,6 +243,8 @@ pub(crate) fn set_data_root(
     app: tauri::AppHandle,
     new_path: String,
 ) -> Result<storage_paths::DataRootInfo, String> {
+    let _maintenance = crate::database::maintenance::maintenance()?;
+    storage_paths::require_no_pending_root_change()?;
     storage_paths::set_custom_root(&app, &new_path)
 }
 
@@ -232,6 +252,8 @@ pub(crate) fn set_data_root(
 pub(crate) fn reset_data_root(
     app: tauri::AppHandle,
 ) -> Result<storage_paths::DataRootInfo, String> {
+    let _maintenance = crate::database::maintenance::maintenance()?;
+    storage_paths::require_no_pending_root_change()?;
     storage_paths::clear_custom_root(&app)
 }
 
@@ -266,6 +288,7 @@ pub(crate) fn export_data_backup(
     target_path: String,
     secret: Option<String>,
 ) -> Result<backup::BackupManifest, String> {
+    let _maintenance = crate::database::maintenance::maintenance()?;
     let root = storage_paths::resolve_data_root(&app)?;
     if let Some(reason) = storage_paths::path_risk(&root) {
         return Err(format!("当前数据目录存在风险，无法备份：{}", reason));
@@ -280,14 +303,25 @@ pub(crate) fn import_data_backup(
     target_dir: String,
     secret: Option<String>,
 ) -> Result<backup::BackupManifest, String> {
+    let _maintenance = crate::database::maintenance::maintenance()?;
+    storage_paths::require_no_pending_root_change()?;
     let target = std::path::Path::new(&target_dir);
     if let Some(reason) = storage_paths::path_risk(target) {
         return Err(reason);
     }
-    storage_paths::ensure_writable(target)?;
-    let manifest =
-        backup::restore_backup(std::path::Path::new(&source_path), target, secret.as_deref())?;
-    storage_paths::commit_custom_root(&app, target)?;
+    let current_root = storage_paths::resolve_data_root(&app)?;
+    let target = backup::validate_new_target(&current_root, target)?;
+    storage_paths::ensure_writable(target.parent().ok_or("恢复目标缺少父目录")?)?;
+    let manifest = backup::restore_backup(
+        std::path::Path::new(&source_path),
+        &target,
+        secret.as_deref(),
+    )?;
+    storage_paths::commit_custom_root_config(&app, &target)?;
+    // Only pin after the new root is durably configured. If the atomic config
+    // replacement fails, the restore must leave both process behavior and the
+    // previous configured root untouched.
+    storage_paths::pin_current_root_for_restore(current_root);
     Ok(manifest)
 }
 

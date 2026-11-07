@@ -1,8 +1,8 @@
-use super::types::{DocProfile, line_ranges};
+use super::protected::{drop_boundaries_inside_spans, protected_spans_if_needed};
 use super::title::{
     is_all_caps_heading, is_chapter_marker, is_visual_separator, markdown_heading_level,
 };
-use super::protected::{drop_boundaries_inside_spans, protected_spans_if_needed};
+use super::types::{line_ranges, DocProfile};
 
 pub(crate) fn profile_document(text: &str) -> DocProfile {
     let mut profile = DocProfile::default();

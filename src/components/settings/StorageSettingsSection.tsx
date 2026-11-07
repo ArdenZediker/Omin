@@ -104,6 +104,7 @@ export default function StorageSettingsSection({
     try {
       const next = await getDataRootInfo();
       setInfo(next);
+      setNeedsRestart(Boolean(next?.pendingRestart));
     } catch (err) {
       setMessage({
         kind: "error",
@@ -145,9 +146,10 @@ export default function StorageSettingsSection({
     try {
       const next = await setDataRoot(selected);
       setInfo(next);
+      setNeedsRestart(next.pendingRestart);
       setMessage({
         kind: "ok",
-        text: "已迁移数据到新目录，旧目录的数据已保留，可手动清理。",
+        text: "数据已完整迁移到新目录；当前进程仍使用旧目录，重启后切换。旧目录暂未删除。",
       });
     } catch (err) {
       setMessage({
@@ -165,9 +167,12 @@ export default function StorageSettingsSection({
     try {
       const next = await resetDataRoot();
       setInfo(next);
+      setNeedsRestart(next.pendingRestart);
       setMessage({
         kind: "ok",
-        text: "已恢复为默认存储位置（应用数据目录）。",
+        text: next.pendingRestart
+          ? "数据已迁移到默认存储位置；重启后切换。原目录的数据仍保留。"
+          : "当前已使用默认存储位置，无需重启。",
       });
     } catch (err) {
       setMessage({
@@ -256,7 +261,7 @@ export default function StorageSettingsSection({
       setNeedsRestart(true);
       setMessage({
         kind: "ok",
-        text: `已从备份恢复，数据位置已切换到：${importTarget}（格式版本 ${manifest.formatVersion}）`,
+        text: `已从备份恢复到：${importTarget}；重启后切换（格式版本 ${manifest.formatVersion}）`,
       });
     } catch (err) {
       setMessage({
@@ -426,7 +431,7 @@ export default function StorageSettingsSection({
             )}
             {info?.fallbackReason && (
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-700">
-                已回退
+                {info.pendingRestart ? "待重启" : "已回退"}
               </span>
             )}
           </div>
@@ -463,7 +468,7 @@ export default function StorageSettingsSection({
             type="button"
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             onClick={handlePickRoot}
-            disabled={busy !== null}
+            disabled={busy !== null || needsRestart}
           >
             更改存储位置…
           </button>
@@ -471,14 +476,31 @@ export default function StorageSettingsSection({
             type="button"
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             onClick={handleReset}
-            disabled={busy !== null}
+            disabled={busy !== null || needsRestart}
           >
             恢复默认位置
           </button>
         </div>
 
+        {needsRestart && (
+          <div className="rounded-lg bg-amber-50 px-3 py-3 text-xs text-amber-800 ring-1 ring-amber-200">
+            <p className="mb-2 font-medium">
+              数据目录变更已准备完成，但当前程序仍使用旧目录。请重启应用以切换到新目录。
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void restartApp();
+              }}
+              className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+            >
+              重启应用
+            </button>
+          </div>
+        )}
+
         <p className="text-xs leading-5 text-slate-500 omni-settings-muted">
-          不要把数据目录放进云同步盘（OneDrive / Dropbox /
+          迁移目标必须是空目录，迁移完成后需重启应用；源目录会保留，不会自动删除。不要把数据目录放进云同步盘（OneDrive / Dropbox /
           百度网盘等）或网络盘——SQLite 的 WAL 模式在这些位置可能静默损坏。
           软件安装在{" "}
           <code className="rounded bg-slate-100 px-1 text-slate-700">
@@ -529,22 +551,6 @@ export default function StorageSettingsSection({
         <h3 className="text-sm font-medium text-slate-900 omni-settings-title">
           从备份恢复
         </h3>
-        {needsRestart && (
-          <div className="rounded-lg bg-amber-50 px-3 py-3 text-xs text-amber-800 ring-1 ring-amber-200">
-            <p className="mb-2 font-medium">
-              ⚠️ 备份已恢复，但当前运行的程序仍加载着旧数据。请重启应用以载入恢复后的数据（包括对话记录）。
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                void restartApp();
-              }}
-              className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
-            >
-              重启应用
-            </button>
-          </div>
-        )}
         <div className="space-y-3">
           <div className="grid grid-cols-[120px_1fr] gap-4">
             <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">
@@ -597,7 +603,7 @@ export default function StorageSettingsSection({
               type="button"
               className="rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
               onClick={handleImport}
-              disabled={busy !== null || !importSource || !importTarget}
+              disabled={busy !== null || needsRestart || !importSource || !importTarget}
             >
               {busy === "import" ? "恢复中…" : "导入并恢复"}
             </button>

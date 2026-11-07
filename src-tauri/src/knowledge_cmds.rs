@@ -2,49 +2,24 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::fs;
 
 use crate::{
-    ImportKnowledgeDocumentInput,
-    KnowledgeChunkRecord,
-    KnowledgeCollectionRecord,
-    KnowledgeDocumentAssetRecord,
-    KnowledgeDocumentBinaryPayload,
-    KnowledgeDocumentDetailPayload,
-    KnowledgeDocumentRecord,
-    KnowledgeLibraryPayload,
-    KnowledgeMultimodalConfigRecord,
-    LoadKnowledgeDocumentFileInput,
-    LoadKnowledgeDocumentInput,
-    RevectorizeKnowledgeDocumentInput,
-    SearchKnowledgeChunkResult,
-    SearchKnowledgeChunksInput,
-    UpdateKnowledgeCollectionInput,
-    collection_exists,
-    count_vectorized_chunks,
-    current_timestamp_ms,
-    delete_stored_document_file,
-    delete_stored_document_files,
-    derive_vectorization_state,
-    ensure_knowledge_defaults,
-    generate_chunk_embeddings_safe,
-    infer_preview_type,
-    load_knowledge_multimodal_config,
-    normalize_collection_multimodal_config_json_for_storage,
-    normalize_file_extension,
-    normalize_knowledge_collection_id,
-    normalize_knowledge_retrieval_mode,
-    open_sqlite_connection,
-    parse_tags_json,
-    preview_text,
-    save_knowledge_multimodal_config,
-    search_knowledge_chunks,
-    store_knowledge_document_bytes,
-    validate_knowledge_multimodal_upload,
+    collection_exists, count_vectorized_chunks, current_timestamp_ms, delete_stored_document_file,
+    delete_stored_document_files, derive_vectorization_state, ensure_knowledge_defaults,
+    generate_chunk_embeddings_safe, infer_preview_type, load_knowledge_multimodal_config,
+    normalize_collection_multimodal_config_json_for_storage, normalize_file_extension,
+    normalize_knowledge_collection_id, normalize_knowledge_retrieval_mode, open_sqlite_connection,
+    parse_tags_json, preview_text, save_knowledge_multimodal_config, search_knowledge_chunks,
+    store_knowledge_document_bytes, validate_knowledge_multimodal_upload,
+    ImportKnowledgeDocumentInput, KnowledgeChunkRecord, KnowledgeCollectionRecord,
+    KnowledgeDocumentAssetRecord, KnowledgeDocumentBinaryPayload, KnowledgeDocumentDetailPayload,
+    KnowledgeDocumentRecord, KnowledgeLibraryPayload, KnowledgeMultimodalConfigRecord,
+    LoadKnowledgeDocumentFileInput, LoadKnowledgeDocumentInput, RevectorizeKnowledgeDocumentInput,
+    SearchKnowledgeChunkResult, SearchKnowledgeChunksInput, UpdateKnowledgeCollectionInput,
 };
-use crate::{
-    knowledge_pipeline,
-    knowledge_chunker,
-};
+use crate::{knowledge_chunker, knowledge_pipeline};
 
-pub(crate) fn load_knowledge_library(connection: &Connection) -> Result<KnowledgeLibraryPayload, String> {
+pub(crate) fn load_knowledge_library(
+    connection: &Connection,
+) -> Result<KnowledgeLibraryPayload, String> {
     ensure_knowledge_defaults(connection)?;
 
     let mut collections_stmt = connection
@@ -438,7 +413,10 @@ pub(crate) fn update_knowledge_collection(
     })
 }
 
-pub(crate) fn delete_knowledge_collection(connection: &Connection, collection_id: &str) -> Result<(), String> {
+pub(crate) fn delete_knowledge_collection(
+    connection: &Connection,
+    collection_id: &str,
+) -> Result<(), String> {
     let collection_id = collection_id.trim();
     if collection_id.is_empty() {
         return Err("知识库 ID 不能为空".into());
@@ -514,7 +492,10 @@ pub(crate) fn delete_knowledge_collection(connection: &Connection, collection_id
     Ok(())
 }
 
-pub(crate) fn delete_knowledge_document(connection: &Connection, document_id: &str) -> Result<(), String> {
+pub(crate) fn delete_knowledge_document(
+    connection: &Connection,
+    document_id: &str,
+) -> Result<(), String> {
     let document_id = document_id.trim();
     if document_id.is_empty() {
         return Err("文档 ID 不能为空".into());
@@ -843,6 +824,7 @@ pub(crate) fn rebuild_document_embeddings(
 pub(crate) fn load_knowledge_library_command(
     app: tauri::AppHandle,
 ) -> Result<KnowledgeLibraryPayload, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     load_knowledge_library(&connection)
 }
@@ -852,6 +834,7 @@ pub(crate) fn load_knowledge_document_command(
     app: tauri::AppHandle,
     input: LoadKnowledgeDocumentInput,
 ) -> Result<KnowledgeDocumentDetailPayload, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     load_knowledge_document(&connection, &input.document_id)
 }
@@ -861,6 +844,7 @@ pub(crate) fn load_knowledge_document_file_command(
     app: tauri::AppHandle,
     input: LoadKnowledgeDocumentFileInput,
 ) -> Result<KnowledgeDocumentBinaryPayload, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     load_knowledge_document_file(&connection, &input.document_id)
 }
@@ -872,6 +856,7 @@ pub(crate) fn create_knowledge_collection_command(
     description: String,
     multimodal_config_json: Option<String>,
 ) -> Result<KnowledgeCollectionRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     create_knowledge_collection(&connection, &name, &description, multimodal_config_json)
 }
@@ -880,6 +865,7 @@ pub(crate) fn create_knowledge_collection_command(
 pub(crate) fn ensure_default_knowledge_collection_command(
     app: tauri::AppHandle,
 ) -> Result<KnowledgeCollectionRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     ensure_knowledge_defaults(&connection)?;
 
@@ -912,6 +898,7 @@ pub(crate) fn update_knowledge_collection_command(
     app: tauri::AppHandle,
     input: UpdateKnowledgeCollectionInput,
 ) -> Result<KnowledgeCollectionRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     update_knowledge_collection(&connection, input)
 }
@@ -921,6 +908,7 @@ pub(crate) fn delete_knowledge_collection_command(
     app: tauri::AppHandle,
     collection_id: String,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     delete_knowledge_collection(&connection, &collection_id)
 }
@@ -930,6 +918,7 @@ pub(crate) fn delete_knowledge_document_command(
     app: tauri::AppHandle,
     document_id: String,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     delete_knowledge_document(&connection, &document_id)
 }
@@ -939,6 +928,7 @@ pub(crate) fn import_knowledge_document_command(
     app: tauri::AppHandle,
     input: ImportKnowledgeDocumentInput,
 ) -> Result<KnowledgeDocumentRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     import_knowledge_document(&app, &connection, input)
 }
@@ -948,6 +938,7 @@ pub(crate) fn import_knowledge_document_pipeline_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::PipelineImportInput,
 ) -> Result<knowledge_pipeline::PipelineImportResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::create_pipeline_import(&app, &connection, input)
 }
@@ -957,6 +948,7 @@ pub(crate) fn load_knowledge_processing_jobs_command(
     app: tauri::AppHandle,
     document_id: Option<String>,
 ) -> Result<Vec<knowledge_pipeline::KnowledgeProcessingJobRecord>, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::list_processing_jobs(&connection, document_id)
 }
@@ -966,6 +958,7 @@ pub(crate) fn load_knowledge_processing_job_detail_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobDetail, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::load_processing_job_detail(&connection, &job_id)
 }
@@ -975,6 +968,7 @@ pub(crate) fn load_knowledge_processing_status_summary_command(
     app: tauri::AppHandle,
     collection_id: Option<String>,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingStatusSummary, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::load_processing_status_summary(&connection, collection_id)
 }
@@ -984,6 +978,7 @@ pub(crate) fn load_failed_knowledge_processing_jobs_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::FailedJobQueryInput,
 ) -> Result<knowledge_pipeline::FailedJobQueryResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::list_failed_processing_jobs(&connection, input)
 }
@@ -993,6 +988,7 @@ pub(crate) fn retry_failed_knowledge_processing_jobs_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::RetryFailedJobsInput,
 ) -> Result<knowledge_pipeline::RetryFailedJobsResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::retry_failed_jobs(&connection, input)
 }
@@ -1002,6 +998,7 @@ pub(crate) fn load_knowledge_processing_dead_letters_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::DeadLetterQueryInput,
 ) -> Result<knowledge_pipeline::DeadLetterQueryResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::list_dead_letters(&connection, input)
 }
@@ -1011,6 +1008,7 @@ pub(crate) fn replay_knowledge_processing_dead_letters_command(
     app: tauri::AppHandle,
     input: knowledge_pipeline::ReplayDeadLettersInput,
 ) -> Result<knowledge_pipeline::ReplayDeadLettersResult, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::replay_dead_letters(&connection, input)
 }
@@ -1020,6 +1018,7 @@ pub(crate) fn pause_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::request_job_pause(&connection, &job_id)
 }
@@ -1029,6 +1028,7 @@ pub(crate) fn resume_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::request_job_resume(&connection, &job_id)
 }
@@ -1038,6 +1038,7 @@ pub(crate) fn cancel_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<(), String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::request_job_cancel(&connection, &job_id)
 }
@@ -1047,6 +1048,7 @@ pub(crate) fn retry_knowledge_processing_job_command(
     app: tauri::AppHandle,
     job_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::retry_job(&connection, &job_id)
 }
@@ -1056,6 +1058,7 @@ pub(crate) fn reparse_knowledge_document_command(
     app: tauri::AppHandle,
     document_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::create_document_job(&connection, &document_id, "reparse")
 }
@@ -1065,6 +1068,7 @@ pub(crate) fn rechunk_knowledge_document_command(
     app: tauri::AppHandle,
     document_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::create_document_job(&connection, &document_id, "rechunk")
 }
@@ -1074,6 +1078,7 @@ pub(crate) fn revectorize_knowledge_document_command(
     app: tauri::AppHandle,
     document_id: String,
 ) -> Result<knowledge_pipeline::KnowledgeProcessingJobRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::create_document_job(&connection, &document_id, "revectorize")
 }
@@ -1082,6 +1087,7 @@ pub(crate) fn revectorize_knowledge_document_command(
 pub(crate) fn load_knowledge_pipeline_settings_command(
     app: tauri::AppHandle,
 ) -> Result<knowledge_pipeline::KnowledgePipelineSettings, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::load_pipeline_settings(&connection)
 }
@@ -1091,12 +1097,16 @@ pub(crate) fn save_knowledge_pipeline_settings_command(
     app: tauri::AppHandle,
     settings: knowledge_pipeline::KnowledgePipelineSettings,
 ) -> Result<knowledge_pipeline::KnowledgePipelineSettings, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::save_pipeline_settings(&connection, settings)
 }
 
 #[tauri::command]
-pub(crate) fn cleanup_knowledge_processing_logs_command(app: tauri::AppHandle) -> Result<i64, String> {
+pub(crate) fn cleanup_knowledge_processing_logs_command(
+    app: tauri::AppHandle,
+) -> Result<i64, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     knowledge_pipeline::cleanup_processing_logs(&connection)
 }
@@ -1105,6 +1115,7 @@ pub(crate) fn cleanup_knowledge_processing_logs_command(app: tauri::AppHandle) -
 pub(crate) fn load_knowledge_multimodal_config_command(
     app: tauri::AppHandle,
 ) -> Result<KnowledgeMultimodalConfigRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     load_knowledge_multimodal_config(&connection)
 }
@@ -1114,6 +1125,7 @@ pub(crate) fn save_knowledge_multimodal_config_command(
     app: tauri::AppHandle,
     config: KnowledgeMultimodalConfigRecord,
 ) -> Result<KnowledgeMultimodalConfigRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     save_knowledge_multimodal_config(&connection, config)
 }
@@ -1123,6 +1135,7 @@ pub(crate) fn rebuild_knowledge_document_embeddings_command(
     app: tauri::AppHandle,
     input: RevectorizeKnowledgeDocumentInput,
 ) -> Result<KnowledgeDocumentRecord, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     rebuild_document_embeddings(&connection, &input.document_id)
 }
@@ -1132,6 +1145,7 @@ pub(crate) fn search_knowledge_chunks_command(
     app: tauri::AppHandle,
     input: SearchKnowledgeChunksInput,
 ) -> Result<Vec<SearchKnowledgeChunkResult>, String> {
+    let _operation = crate::database::maintenance::operation()?;
     let connection = open_sqlite_connection(&app)?;
     search_knowledge_chunks(&connection, input)
 }

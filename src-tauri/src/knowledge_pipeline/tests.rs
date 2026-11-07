@@ -146,8 +146,7 @@ fn csv_to_markdown_pads_and_escapes_cells() {
 #[test]
 fn parse_markdown_keeps_markdown_preview() {
     let parsed =
-        parse_simple_document("notes.md", Some("md"), None, None, b"# Title\nBody", None)
-            .unwrap();
+        parse_simple_document("notes.md", Some("md"), None, None, b"# Title\nBody", None).unwrap();
 
     assert_eq!(parsed.content, "# Title\nBody");
     assert_eq!(parsed.preview_type, "markdown");
@@ -281,18 +280,13 @@ fn ensure_knowledge_schema_adds_embedded_image_columns() {
     crate::ensure_knowledge_schema(&connection).unwrap();
 
     assert!(crate::table_has_column(&connection, "knowledge_chunks", "chunk_type").unwrap());
-    assert!(
-        crate::table_has_column(&connection, "knowledge_chunks", "parent_chunk_id").unwrap()
-    );
+    assert!(crate::table_has_column(&connection, "knowledge_chunks", "parent_chunk_id").unwrap());
     assert!(crate::table_has_column(&connection, "knowledge_chunks", "asset_id").unwrap());
     assert!(crate::table_has_column(&connection, "knowledge_chunks", "image_info").unwrap());
     assert!(crate::table_has_column(&connection, "knowledge_document_assets", "id").unwrap());
+    assert!(crate::table_has_column(&connection, "knowledge_document_assets", "ocr_text").unwrap());
     assert!(
-        crate::table_has_column(&connection, "knowledge_document_assets", "ocr_text").unwrap()
-    );
-    assert!(
-        crate::table_has_column(&connection, "knowledge_document_assets", "caption_text")
-            .unwrap()
+        crate::table_has_column(&connection, "knowledge_document_assets", "caption_text").unwrap()
     );
 }
 
@@ -319,13 +313,8 @@ fn build_embedded_image_child_chunks_attaches_to_text_chunks() {
         thumbnail_data_url: None,
     }];
 
-    let output = build_embedded_image_assets_and_chunks(
-        &text_chunks,
-        &assets,
-        "doc-test",
-        "col-test",
-        now,
-    );
+    let output =
+        build_embedded_image_assets_and_chunks(&text_chunks, &assets, "doc-test", "col-test", now);
 
     assert_eq!(output.assets.len(), 1);
     assert_eq!(output.child_chunks.len(), 2);
@@ -552,8 +541,8 @@ fn validate_multimodal_upload_accepts_ready_audio_model() {
 fn validate_multimodal_upload_rejects_video_even_without_config_lookup() {
     let connection = new_test_connection();
 
-    let err = crate::validate_knowledge_multimodal_upload(&connection, "missing", "video")
-        .unwrap_err();
+    let err =
+        crate::validate_knowledge_multimodal_upload(&connection, "missing", "video").unwrap_err();
 
     assert!(!err.trim().is_empty());
 }
