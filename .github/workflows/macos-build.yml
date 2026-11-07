@@ -42,7 +42,17 @@ jobs:
         run: pnpm test
       - name: Run Rust library tests
         working-directory: src-tauri
-        run: cargo test --lib
+        run: |
+          set -o pipefail
+          cargo test --lib 2>&1 | tee rust-test.log
+      - name: Annotate Rust test failure
+        if: failure()
+        working-directory: src-tauri
+        run: |
+          test -f rust-test.log || exit 0
+          grep -E "^(error|failures:|test result: FAILED|thread '.*' panicked|---- .* stdout ----)|^[[:space:]]*(left|right):" rust-test.log \
+            | tail -80 \
+            | while IFS= read -r line; do echo "::error::$line"; done || true
       - name: Run macOS Seatbelt sandbox tests
         working-directory: src-tauri
         run: cargo test --lib sandbox::tests::macos_ -- --test-threads=1
