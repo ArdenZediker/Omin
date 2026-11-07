@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Shield, ShieldCheck } from "lucide-react";
+import { ChevronDown, Shield, ShieldCheck } from "lucide-react";
 import { getPermissionMode, isFullAccess, setPermissionMode, subscribePermissionMode, type PermissionMode } from "../chat/permissionMode";
 
 const MODE_LABELS: Record<PermissionMode, string> = {
@@ -42,11 +42,15 @@ export default function PermissionModeSelector() {
     <div className="permission-mode-selector" ref={panelRef}>
       <button
         type="button"
-        className={`chat-composer__tool-button ${fullAccess ? "chat-composer__tool-button--active" : ""}`}
+        className={`permission-mode-selector__trigger ${fullAccess ? "permission-mode-selector__trigger--active" : ""}`}
         title={MODE_LABELS[mode]}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         onClick={() => setIsOpen((open) => !open)}
       >
         {fullAccess ? <ShieldCheck size={16} strokeWidth={1.8} /> : <Shield size={16} strokeWidth={1.8} />}
+        <span>{MODE_LABELS[mode]}</span>
+        <ChevronDown size={14} strokeWidth={1.8} className={isOpen ? "permission-mode-selector__chevron--open" : ""} />
       </button>
 
       {isOpen && (
@@ -58,8 +62,8 @@ export default function PermissionModeSelector() {
 
           <p className="permission-mode-selector__desc">
             {fullAccess
-              ? "当前为完全访问，Omni 将跳过所有确认弹窗直接执行操作。"
-              : "当前为默认权限，所有操作都会在安全沙箱约束内进行，超出范围会请求你的允许。"}
+              ? "当前会跳过确认弹窗；文件写入范围仍由设置中的文件权限（沙箱）决定。"
+              : "危险或写入操作会请求你的允许；文件写入范围由设置中的文件权限（沙箱）决定。"}
           </p>
 
           <label className="permission-mode-selector__row">

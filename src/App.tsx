@@ -1,6 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
+import { sendSystemNotification } from "./app/systemNotifications";
 import type { Message, ChatAttachment, ChatImage } from "./adapters/types";
 import type { ChatSession } from "./chat/types";
 import { createDesktopActions } from "./app/desktopActions";
@@ -10,6 +12,7 @@ import TitleBar from "./components/TitleBar";
 import SettingsWindow from "./components/SettingsWindow";
 import MainChatView from "./components/MainChatView";
 import CompactWindow from "./components/CompactWindow";
+import CompactMenuWindow from "./components/CompactMenuWindow";
 import PetThoughtWindow from "./components/PetThoughtWindow";
 import { usePromptDialog } from "./components/PromptDialog";
 import { ConfirmationDialog } from "./components/ConfirmationDialog";
@@ -23,9 +26,15 @@ import {
   CURRENT_MODEL_STORAGE_KEY,
   EMPTY_CHAT_STARTERS,
   PET_THOUGHT_WINDOW_LABEL,
+  COMPACT_MENU_WINDOW_LABEL,
+  EXTERNAL_CHAT_ENTRIES,
   omniIconSrc,
   omniSmallIconSrc,
 } from "./app/constants";
+import {
+  hideCompactMenuWindow,
+  type CompactMenuWindowAction,
+} from "./app/compactMenuWindow";
 import type { BasicSettings } from "./app/types";
 import { saveBasicSettings } from "./app/settingsStore";
 import { saveSqliteBackedValue } from "./app/sqliteStorage";
@@ -33,6 +42,7 @@ import { getPetWindowScale } from "./app/compactPetScale";
 import {
   getBasicSettings,
   getCompactWindowSize,
+  getCompactQueryViewportSize,
   getExpandedCompactViewportSizeForAppearance,
   getPetCompactViewportSize,
   getPetThoughtAnchorOffset,
@@ -46,6 +56,8 @@ import { useMainWindowController } from "./hooks/useMainWindowController";
 import { useCompactWindowController } from "./hooks/useCompactWindowController";
 import { useWindowRoundedCorners } from "./hooks/useWindowRoundedCorners";
 import ErrorBoundary from "./components/ErrorBoundary";
+import StorageSaveNotice from "./components/StorageSaveNotice";
+import ScheduledReminderNotice from "./components/ScheduledReminderNotice";
 import {
   type CompactAppearance,
   useCompactWindowState,
@@ -116,21 +128,21 @@ function getSafeCurrentWindow() {
 const appWindow = getSafeCurrentWindow();
 const isCompactWindow = appWindow?.label === "compact";
 const isPetThoughtWindow = appWindow?.label === PET_THOUGHT_WINDOW_LABEL;
-const isSettingsWindow = appWindow?.label === "settings";
+const isCompactMenuWindow = appWindow?.label === COMPACT_MENU_WINDOW_LABEL;
 
 function App() {
-  if (isSettingsWindow) {
-    return (
-      <ErrorBoundary>
-        <SettingsWindow />
-      </ErrorBoundary>
-    );
-  }
-
   if (isPetThoughtWindow) {
     return (
       <ErrorBoundary>
         <PetThoughtWindow petSize={getCompactWindowSize("pet", getPetWindowScale())} />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isCompactMenuWindow) {
+    return (
+      <ErrorBoundary>
+        <CompactMenuWindow />
       </ErrorBoundary>
     );
   }
@@ -176,6 +188,7 @@ function MainApp() {
     setScheduledTasks,
     setMessages,
     scheduledTasks,
+    isAutomationReady,
     toggleFavoriteChatSession,
     togglePinnedChatSession,
     updateChatSessionMessages,
@@ -223,6 +236,7 @@ function MainApp() {
   const [currentModel, setCurrentModel] = useState("");
   const [view, setView] = useState<"chat" | "knowledge">(getStoredMainView);
   const [openMarketplace, setOpenMarketplace] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [inputFocusKey, setInputFocusKey] = useState(0);
   const [projectDrafts, setProjectDrafts] = useState<Record<string, ComposerDraft>>({});
   const [inputDraftKey, setInputDraftKey] = useState(0);
@@ -231,6 +245,26 @@ function MainApp() {
   const [openChatMenu, setOpenChatMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [codexPetPackage, setCodexPetPackage] = useState<CodexPetPackage | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isCompactWindow) {
+      return;
+    }
+
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void listen("omni-open-settings", () => setIsSettingsOpen(true)).then((stopListening) => {
+      if (cancelled) {
+        stopListening();
+      } else {
+        unlisten = stopListening;
+      }
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const isAnimatedCompactAppearance = compactAppearance === "pet";
   const effectiveCompactScale = compactAppearance === "pet" ? characterScale * CHARACTER_SCALE_BASELINE : 1;
@@ -264,7 +298,10 @@ function MainApp() {
         reservePetThoughtSpace: shouldReservePetThoughtSpace,
       });
     }
-    if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
+    if (isCompactQueryOpen && !isCompactReplyLoading && !compactReply) {
+      return getCompactQueryViewportSize(compactSize);
+    }
+    if (isCompactQueryOpen || isCompactReplyLoading || compactReply) {
       return getExpandedCompactViewportSizeForAppearance(compactAppearance, effectiveCompactScale, {
         includeReply: Boolean(isCompactReplyLoading || compactReply),
         includeHorizontalPanel: false,
@@ -436,6 +473,7 @@ function MainApp() {
     handleSubmitEditedUserMessage,
     handleUseEmptyPrompt,
     loadingSessionIds,
+    taskRuntimeState,
     setEditingMessageIndex,
     setError,
   } = useChatRuntime({
@@ -626,7 +664,6 @@ function MainApp() {
   // 导致 storage 侧把「已渲染出工具调用、正文还没开始」的回合当成空占位整条删除。
   const hasPendingProjectPlaceholder = isPendingProjectPlaceholder(lastMessage);
   const isActiveSessionLoading = Boolean((activeChatId && loadingSessionIds.includes(activeChatId)) || hasPendingProjectPlaceholder);
-  const isSendBlockedByOtherSession = false;
   const isStreaming = Boolean(isActiveSessionLoading && lastMessage?.role === "project");
 
   const handleCopyMessage = useCallback(async (message: Message) => {
@@ -762,11 +799,87 @@ function MainApp() {
     [handleNewChat, handleRestoreMain]
   );
 
-  useScheduledTasks({
+  const scheduledReminderActions = useMemo(() => ({
+    ...desktopActions,
+    sendSystemNotification,
+    async openSessionReminder(sessionId: string, draft: string) {
+      if (!getChatSessionById(sessionId)) throw new Error("提醒指定的会话已被删除");
+      await handleRestoreMain(true);
+      const session = selectChatSession(sessionId);
+      if (!session) throw new Error("无法打开提醒指定的会话");
+      updateProjectDraft(session.projectId, (current) => ({ ...current, text: draft, images: [] }));
+      setInputDraftKey((value) => value + 1);
+    },
+  }), [desktopActions, getChatSessionById, handleRestoreMain, selectChatSession, setInputDraftKey, updateProjectDraft]);
+
+  const scheduledReminderState = useScheduledTasks({
     scheduledTasks,
     setScheduledTasks,
-    desktopActions,
+    desktopActions: scheduledReminderActions,
+    isOwner: !isCompactWindow,
+    ready: isAutomationReady,
   });
+
+  useEffect(() => {
+    if (!isCompactWindow) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void listen<CompactMenuWindowAction>("omni-compact-menu-action", (event) => {
+      const action = event.payload;
+      if (!action || typeof action !== "object") {
+        return;
+      }
+
+      switch (action.type) {
+        case "appearance":
+          compactController.handleCompactAppearanceChange(action.appearance);
+          break;
+        case "external-chat": {
+          const entry = EXTERNAL_CHAT_ENTRIES.find((candidate) => candidate.id === action.entryId);
+          if (entry) {
+            void compactController.handleOpenExternalChat(entry);
+          }
+          break;
+        }
+        case "settings":
+          closeCompactMenus();
+          void desktopActions.openSettings();
+          break;
+        case "scale-reset":
+          compactController.handleCompactScaleReset();
+          break;
+        case "update-basic-settings":
+          updateBasicSettings(action.patch);
+          break;
+        case "close":
+          closeCompactMenus();
+          break;
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [
+    closeCompactMenus,
+    compactController.handleCompactAppearanceChange,
+    compactController.handleCompactScaleReset,
+    compactController.handleOpenExternalChat,
+    desktopActions.openSettings,
+    isCompactWindow,
+    updateBasicSettings,
+  ]);
+
+  useEffect(() => {
+    if (!isCompactWindow || isCompactMenuOpen) {
+      return;
+    }
+    void hideCompactMenuWindow();
+  }, [isCompactMenuOpen, isCompactWindow]);
 
   if (isCompactWindow) {
     return (
@@ -792,8 +905,10 @@ function MainApp() {
         isCompactMenuOpen={isCompactMenuOpen}
         isCompactModelOpen={isCompactModelOpen}
         compactMenuSide={compactMenuSide}
+        visibleCompactMenuSide={compactController.visibleCompactMenuSide}
         compactSubmenuSide={compactSubmenuSide}
         isCompactQueryOpen={isCompactQueryOpen}
+        isNormalCompactGeometryReady={compactController.isNormalCompactGeometryReady}
         isCompactReplyLoading={isCompactReplyLoading}
         isCharacterDragging={compactController.isCharacterDragging}
         previewCharacterScale={compactController.previewCharacterScale}
@@ -835,6 +950,8 @@ function MainApp() {
 
   return (
     <div className="app-shell glass flex flex-col h-screen w-screen overflow-hidden">
+      <StorageSaveNotice />
+      <ScheduledReminderNotice tasks={scheduledTasks} issues={scheduledReminderState.issues} onRetry={scheduledReminderState.retryReminder} />
       {view === "chat" ? (
         <MainChatView
           activeProject={activeProject}
@@ -859,7 +976,8 @@ function MainApp() {
           inputFocusKey={inputFocusKey}
           isLoading={isActiveSessionLoading}
           loadingSessionIds={loadingSessionIds}
-          isSendBlocked={isSendBlockedByOtherSession || !hasModels}
+          taskHistory={taskRuntimeState.history}
+          isSendBlocked={!hasModels}
           isStreaming={isStreaming}
           relatedContext={relatedContext}
           projectMemories={activeProject ? getProjectMemories(activeProject.id) : []}
@@ -923,6 +1041,9 @@ function MainApp() {
       )}
       {/* 全局危险操作确认门：AI 工具与 UI 动作共用，未经批准不执行 */}
       <ConfirmationDialog />
+      {isSettingsOpen && (
+        <SettingsWindow onClose={() => setIsSettingsOpen(false)} />
+      )}
     </div>
   );
 }

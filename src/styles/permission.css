@@ -6,6 +6,30 @@
   align-items: center;
 }
 
+.permission-mode-selector__trigger {
+  min-height: 36px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  color: var(--omni-app-text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.permission-mode-selector__trigger:hover,
+.permission-mode-selector__trigger--active {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+}
+
+.permission-mode-selector__chevron--open {
+  transform: rotate(180deg);
+}
+
 .permission-mode-selector__panel {
   position: absolute;
   left: 0;

@@ -12,7 +12,7 @@ import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { runSubAgent, type SubAgentRunContext } from "../chat/subAgent";
 import type { ToolCallOutcome } from "../chat/engine";
 import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSelection";
-import { getInitialTaskHistory, saveTaskHistory } from "../chat/taskStorage";
+import { createTaskHistoryStore } from "../chat/taskStorage";
 import { getChatSessionTitle, getFallbackWorkspacePath, isPendingProjectPlaceholder, stripPendingPlaceholder } from "../chat/storage";
 import { settleInterruptedSteps } from "../chat/stepSettlement";
 import { executeLocalTool } from "../chat/localTools";
@@ -194,6 +194,7 @@ export function useChatRuntime({
     activeTask: null,
     history: [],
   });
+  const taskHistoryStoreRef = useRef(createTaskHistoryStore(isCompactWindow ? COMPACT_WINDOW_LABEL : MAIN_WINDOW_LABEL));
   const loadingSessionIdsRef = useRef<Set<string>>(new Set());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const sessionRunIdsRef = useRef<Map<string, number>>(new Map());
@@ -805,18 +806,16 @@ export function useChatRuntime({
   }, [clearPetThoughtTimer]);
 
   useEffect(() => {
-    void saveTaskHistory(taskRuntimeState.history);
-  }, [taskRuntimeState.history]);
-
-  useEffect(() => {
     let cancelled = false;
-
-    void getInitialTaskHistory().then((history) => {
+    void taskHistoryStoreRef.current.load().then(() => {
       if (cancelled) return;
-      setTaskRuntimeState({
-        activeTask: history[0] ?? null,
+      const history = taskHistoryStoreRef.current.getHistory();
+      setTaskRuntimeState((current) => ({
+        activeTask: current.activeTask ?? history[0] ?? null,
         history,
-      });
+      }));
+    }).catch((loadError) => {
+      if (!cancelled) setError(`读取任务历史失败：${String(loadError)}`);
     });
 
     return () => {
@@ -824,11 +823,21 @@ export function useChatRuntime({
     };
   }, []);
 
+  const persistTaskState = useCallback(async (task: TaskExecutionResult, sessionId?: string | null) => {
+    const sessionTask = { ...task, sessionId: task.sessionId ?? sessionId ?? null };
+    await taskHistoryStoreRef.current.record(sessionTask);
+    setTaskRuntimeState((current) => ({
+      activeTask: sessionTask,
+      history: [sessionTask, ...current.history.filter((item) => item.taskId !== sessionTask.taskId)].slice(0, 12),
+    }));
+  }, []);
+
   const finishTaskResult = useCallback(
     (taskResult: TaskExecutionResult, sessionId: string | null | undefined, fallbackMessages: Message[]) => {
+      const sessionTask = { ...taskResult, sessionId: taskResult.sessionId ?? sessionId ?? null };
       setTaskRuntimeState((current) => ({
-        activeTask: taskResult,
-        history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
+        activeTask: sessionTask,
+        history: [sessionTask, ...current.history.filter((item) => item.taskId !== sessionTask.taskId)].slice(0, 12),
       }));
 
       const conversationMessages = taskResult.conversationMessages ?? fallbackMessages;
@@ -951,6 +960,7 @@ export function useChatRuntime({
 
         const taskResult = await executeTask({
           model: executionModel,
+          onTaskState: (task) => persistTaskState(task, sessionId),
           messages: conversationMessages,
           signal: abortController.signal,
           systemPrompt: [systemPrompt, options.hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
@@ -1370,6 +1380,7 @@ export function useChatRuntime({
 
         const taskResult = await executeInputTask({
           input: content,
+          onTaskState: (task) => persistTaskState(task, session.id),
           currentMessages: session.messages,
           model: resolvedModelId,
           onPrepareConversation: (preparedMessages) => {
@@ -1415,8 +1426,8 @@ export function useChatRuntime({
         if (taskResult.intent === "local_command") {
           const outputText = taskResult.toolResult?.outputText ?? "";
           setTaskRuntimeState((current) => ({
-            activeTask: taskResult,
-            history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
+            activeTask: { ...taskResult, sessionId: taskResult.sessionId ?? session.id },
+            history: [{ ...taskResult, sessionId: taskResult.sessionId ?? session.id }, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
           }));
           if (taskResult.status === "failed") {
             setError(taskResult.error || "工具执行失败");
@@ -1448,7 +1459,11 @@ export function useChatRuntime({
           }
 
           setError(taskResult.error || "任务执行失败");
-          setConversationMessagesForSession(sessionId, conversationMessages);
+          // A failed model call can already have streamed text/tool steps. Keep
+          // the persisted reply instead of replacing it with the input snapshot.
+          setConversationMessagesForSession(sessionId, (prev) =>
+            prev.filter((message, index) => index < conversationMessages.length || !isPendingProjectPlaceholder(message))
+          );
           if (isCurrentPetThought(petThoughtId, session.id)) {
             const responseCount = resolvePetThoughtResponseCount(session.id);
             emitPetThought({
@@ -1575,6 +1590,14 @@ export function useChatRuntime({
       setError(null);
       const hiddenContext = options.hiddenContext;
       const selectedKnowledgeCollectionId = options.knowledgeCollectionId?.trim() || null;
+      const selectedKnowledgeCollection = selectedKnowledgeCollectionId && options.knowledgeCollectionName?.trim()
+        ? { id: selectedKnowledgeCollectionId, name: options.knowledgeCollectionName.trim() }
+        : null;
+      const selectedExpertId = options.expertId?.trim() || null;
+      const selectedExpert = selectedExpertId && options.expertName?.trim()
+        ? { id: selectedExpertId, name: options.expertName.trim() }
+        : null;
+      const selectedMode = options.selectedMode ?? null;
       // let：发送前会落快照，把路径改写成会话产物目录下的快照路径（见下方 try 内）
       let attachments = options.attachments ?? [];
 
@@ -1617,7 +1640,15 @@ export function useChatRuntime({
           // （ref 要等 effect 才同步），所以新会话直接用 createSessionFromMessages 的返回值。
           if (!sessionId) {
             const draftSession = createSessionFromMessages(
-              [...scopedCurrentMessages, { role: "user" as const, content, images, attachments }],
+              [...scopedCurrentMessages, {
+                role: "user" as const,
+                content,
+                images,
+                attachments,
+                selectedKnowledgeCollection: selectedKnowledgeCollection ?? undefined,
+                selectedExpert: selectedExpert ?? undefined,
+                selectedMode: selectedMode ?? undefined,
+              }],
               activeProject?.id ?? undefined
             );
             sessionId = draftSession.id;
@@ -1655,7 +1686,6 @@ export function useChatRuntime({
         // 工具集 = 专家声明的本地工具 id ∪ **绑定 MCP 连接器**的 mcp__* 工具。
         // 此前走 `buildChatTools().filter(...)`，而 buildChatTools 永不产出 mcp__*，
         // 于是专家在场时 MCP 被整体摘掉 —— 现在由 defaultMcpConnectorIds 显式声明接入。
-        const selectedExpertId = options.expertId?.trim() || null;
         const activeExpert = selectedExpertId ? resolveExpertForSubAgent(selectedExpertId) : null;
         // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
         // @专家分支：项目白名单是**外层边界**，专家的 defaultMcpConnectorIds 在其内再收窄
@@ -1684,6 +1714,7 @@ export function useChatRuntime({
         };
         const taskResult = await executeInputTask({
           input: content,
+          onTaskState: (task) => persistTaskState(task, sessionId),
           images,
           hiddenContext: [hiddenContext, attachmentContext].filter(Boolean).join("\n\n") || undefined,
           attachments,
@@ -1704,6 +1735,9 @@ export function useChatRuntime({
           signal: abortController.signal,
           systemPrompt: [activeExpert?.templatePrompt, projectSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
           knowledgeCollectionId: selectedKnowledgeCollectionId ?? activeProject?.knowledgeCollectionId ?? null,
+          selectedKnowledgeCollection,
+          selectedExpert,
+          selectedMode,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {
               return;
@@ -1735,8 +1769,8 @@ export function useChatRuntime({
 
         if (taskResult.intent === "local_command") {
           setTaskRuntimeState((current) => ({
-            activeTask: taskResult,
-            history: [taskResult, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
+            activeTask: { ...taskResult, sessionId: taskResult.sessionId ?? sessionId ?? null },
+            history: [{ ...taskResult, sessionId: taskResult.sessionId ?? sessionId ?? null }, ...current.history.filter((item) => item.taskId !== taskResult.taskId)].slice(0, 12),
           }));
           if (taskResult.status === "failed") {
             setError(taskResult.error || "工具执行失败");
@@ -1780,7 +1814,9 @@ export function useChatRuntime({
           }
 
           setError(taskResult.error || "任务执行失败");
-          setConversationMessagesForSession(sessionId, conversationMessages);
+          setConversationMessagesForSession(sessionId, (prev) =>
+            prev.filter((message, index) => index < conversationMessages.length || !isPendingProjectPlaceholder(message))
+          );
           if (hasPetThought && isCurrentPetThought(petThoughtId, sessionId)) {
             const responseCount = resolvePetThoughtResponseCount(sessionId);
             emitPetThought({

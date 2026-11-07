@@ -1,6 +1,6 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { ChatImage } from "../adapters/types";
-import { MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL } from "./constants";
+import { MAIN_WINDOW_LABEL } from "./constants";
 import { showSettingsWindow } from "./window";
 import { saveSqliteBackedValue } from "./sqliteStorage";
 
@@ -32,19 +32,6 @@ export function createDesktopActions(handlers: DesktopActionHandlers) {
       await onRestoreMain(true);
       const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
       await mainWindow?.emit("omni-set-draft", { draft, images });
-    },
-
-    async closeSettings() {
-      const settingsWindow = await WebviewWindow.getByLabel(SETTINGS_WINDOW_LABEL);
-      if (!settingsWindow) {
-        return;
-      }
-
-      try {
-        await settingsWindow.close();
-      } catch {
-        // Ignore close failures. The caller already treats this as a best-effort action.
-      }
     },
 
     async notify(title: string, body: string) {

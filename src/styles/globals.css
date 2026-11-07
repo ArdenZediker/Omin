@@ -34,7 +34,10 @@ html.omni-window-maximized #root {
 
 :root:has(.pet-thought-window),
 body:has(.pet-thought-window),
-#root:has(.pet-thought-window) {
+#root:has(.pet-thought-window),
+:root:has(.compact-menu-window),
+body:has(.compact-menu-window),
+#root:has(.compact-menu-window) {
   background: rgba(0, 0, 0, 0) !important;
   box-shadow: none !important;
 }
@@ -515,15 +518,6 @@ body:has(.pet-thought-window),
   color: rgba(255, 255, 255, 0.5);
 }
 
-:root[data-omni-theme="dark"] .chat-history-panel__item--active {
-  background: rgba(99, 102, 241, 0.22);
-  color: rgba(199, 210, 254, 0.98);
-}
-
-:root[data-omni-theme="dark"] .chat-history-panel__item--active + .chat-history-panel__more {
-  color: rgba(199, 210, 254, 0.9);
-}
-
 /* 顶栏「当前空间」图标：基类 .main-chat-toolbar__project-mark 的底色是写死的浅蓝
    （radial-gradient(...#fff...) + #edf4ff），而里面的图标色走 var(--omni-app-muted)，
    暗色下该变量是 rgba(255,255,255,.42) —— 浅底 + 半透明白图标 = 几乎看不见。
@@ -640,26 +634,10 @@ body:has(.pet-thought-window),
   z-index: 1;
   flex: 0 0 auto;
   min-height: 0;
-  padding: 0 16px 8px;
+  padding: 0 0 8px;
   display: flex;
   flex-direction: column;
   overflow: visible;
-}
-
-/* 固定高度模式：外层容器给定高度后，内部 flex 占满并滚动 */
-.chat-composer--fixed-height,
-.chat-composer--fixed-height .chat-composer__panel,
-.chat-composer--fixed-height .chat-composer__body,
-.chat-composer--fixed-height .chat-composer__editor-wrap,
-.chat-composer--fixed-height .chat-composer__editor {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-composer--fixed-height .chat-composer__body {
-  flex: 1 1 auto;
-  overflow: hidden;
 }
 
 .chat-topic-panel__body {
@@ -1149,10 +1127,6 @@ body:has(.pet-thought-window),
   box-sizing: border-box;
 }
 
-.compact-shell--reply-left {
-  justify-content: flex-end;
-}
-
 /* 球贴窗口右边：菜单在左侧展开，窗口整体向左长大（右边缘不动）。
    ⚠️ 这个类由 CompactWindow 依据**持久的** compactMenuSide 挂载，**不随菜单开关切换**：
    窗口 x 的补偿（保右边缘）要晚数个 IPC 往返，若本类随开关态一起翻转，中间那几帧球
@@ -1314,7 +1288,7 @@ body:has(.pet-thought-window),
   box-shadow: none;
 }
 
-.compact-button--search-chip {
+.compact-button--quick-ask {
   margin-top: 0;
   align-self: center;
   background: rgba(255, 255, 255, 0.88);
@@ -1322,59 +1296,109 @@ body:has(.pet-thought-window),
   box-shadow: none;
 }
 
-.compact-button--search-chip:hover {
+.compact-button--quick-ask:hover {
   background: rgba(248, 250, 252, 0.98);
   box-shadow: none;
 }
 
-.compact-button__search {
+.compact-button--quick-ask:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.8);
+  outline-offset: 2px;
+}
+
+.compact-button__quick-ask {
   width: calc(var(--compact-button-icon-size, 17px) + 1px);
   height: calc(var(--compact-button-icon-size, 17px) + 1px);
-  stroke: #55627a;
+  stroke: currentColor;
   filter: none;
 }
 
-.compact-search-popover {
+.compact-ask-popover {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + 8px);
   left: 0;
-  transform: none;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-width: 220px;
-  width: max-content;
-  max-width: min(420px, calc(100vw - 32px));
-  height: var(--compact-button-size, 34px);
-  padding: 4px 6px;
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 244, 249, 0.82)),
-    rgba(255, 255, 255, 0.34);
-  border: 1px solid rgba(208, 216, 230, 0.56);
+  gap: 8px;
+  width: min(350px, calc(100vw - 24px));
+  height: 44px;
+  padding: 4px 5px 4px 14px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(203, 213, 225, 0.82);
   box-shadow:
-    0 12px 26px rgba(15, 23, 42, 0.1),
-    0 3px 6px rgba(15, 23, 42, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    inset 0 -6px 10px rgba(148, 163, 184, 0.1);
+    0 8px 20px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
   z-index: 19;
 }
 
-.compact-search-popover__input {
-  flex: 1;
-  min-width: 140px;
-  width: 220px;
+/* 提问时用输入条接替悬浮球栏，避免上下堆叠成两个互不相关的控件。 */
+.compact-shell--query-open .compact-bar {
+  width: min(350px, calc(100vw - 24px));
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.compact-shell--query-open .compact-menu-anchor,
+.compact-shell--query-open .compact-bar__actions {
+  display: none;
+}
+
+.compact-shell--query-open .compact-ask-popover {
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.compact-ask-popover__close {
+  display: inline-grid;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(107, 114, 128, 0.9);
+  cursor: pointer;
+}
+
+.compact-ask-popover__close:hover {
+  background: rgba(107, 114, 128, 0.12);
+}
+
+.compact-ask-popover__close:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.8);
+  outline-offset: 1px;
+}
+
+.compact-ask-popover__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 0;
   height: 100%;
   border: 0;
   background: transparent;
   color: #374151;
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
-  padding: 0 6px;
+  padding: 0 4px;
 }
 
-.compact-search-popover__input::placeholder {
+.compact-ask-popover__input::placeholder {
   color: rgba(107, 114, 128, 0.9);
+}
+
+.compact-ask-popover:focus-within {
+  border-color: rgba(99, 102, 241, 0.7);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2), 0 12px 26px rgba(15, 23, 42, 0.1);
 }
 
 .compact-query__preset--inline {
@@ -1383,6 +1407,32 @@ body:has(.pet-thought-window),
   padding: 6px 10px;
   border-radius: 999px;
   font-size: 12px;
+}
+
+.compact-ask-popover__send {
+  height: 34px;
+  min-width: 56px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 17px;
+  background: #5865e8;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 140ms ease, transform 140ms ease;
+}
+
+.compact-ask-popover__send:hover {
+  background: #4854d6;
+}
+
+.compact-ask-popover__send:active {
+  transform: scale(0.97);
+}
+
+.compact-ask-popover__send:focus-visible {
+  outline: 2px solid rgba(88, 101, 232, 0.8);
+  outline-offset: 2px;
 }
 
 .compact-button__icon {
@@ -1492,7 +1542,7 @@ body:has(.pet-thought-window),
   color: rgba(107, 114, 128, 0.92);
 }
 
-.compact-button__search {
+.compact-button__quick-ask {
   width: calc(var(--compact-button-icon-size, 17px) - 2px);
   height: calc(var(--compact-button-icon-size, 17px) - 2px);
 }
@@ -1735,7 +1785,7 @@ body:has(.pet-thought-window),
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), inset 0 -2px 6px rgba(0, 0, 0, 0.22);
 }
 
-:root[data-omni-theme="dark"] .compact-search-popover,
+:root[data-omni-theme="dark"] .compact-ask-popover,
 :root[data-omni-theme="dark"] .compact-query,
 :root[data-omni-theme="dark"] .compact-reply,
 :root[data-omni-theme="dark"] .compact-menu,
@@ -1747,7 +1797,7 @@ body:has(.pet-thought-window),
 }
 
 :root[data-omni-theme="dark"] .compact-button,
-:root[data-omni-theme="dark"] .compact-button--search-chip {
+:root[data-omni-theme="dark"] .compact-button--quick-ask {
   background: linear-gradient(180deg, rgba(18, 19, 25, 0.98), rgba(5, 6, 10, 0.98));
   color: rgba(255, 255, 255, 0.82);
   border-color: rgba(255, 255, 255, 0.075);
@@ -1761,7 +1811,7 @@ body:has(.pet-thought-window),
 }
 
 :root[data-omni-theme="dark"] .compact-button:hover,
-:root[data-omni-theme="dark"] .compact-button--search-chip:hover,
+:root[data-omni-theme="dark"] .compact-button--quick-ask:hover,
 :root[data-omni-theme="dark"] .compact-button--brand:hover {
   filter: none;
   background: rgba(36, 41, 54, 0.92);
@@ -1781,14 +1831,8 @@ body:has(.pet-thought-window),
     0 2px 4px rgba(0, 0, 0, 0.14);
 }
 
-:root[data-omni-theme="dark"] .pet-thought-toggle {
-  background: rgba(18, 18, 18, 0.92);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.72);
-}
-
 :root[data-omni-theme="dark"] .compact-button__icon,
-:root[data-omni-theme="dark"] .compact-button__search {
+:root[data-omni-theme="dark"] .compact-button__quick-ask {
   filter: none;
 }
 
@@ -1811,10 +1855,6 @@ body:has(.pet-thought-window),
   color: rgba(255, 255, 255, 0.94);
 }
 
-:root[data-omni-theme="dark"] .compact-menu__arrow {
-  color: rgba(255, 255, 255, 0.42);
-}
-
 :root[data-omni-theme="dark"] .compact-menu__item--settings {
   background: rgba(0, 0, 0, 0.88);
   color: #ffffff;
@@ -1833,11 +1873,24 @@ body:has(.pet-thought-window),
   background: rgba(0, 0, 0, 0.96);
 }
 
-:root[data-omni-theme="dark"] .compact-search-popover__input,
+:root[data-omni-theme="dark"] .compact-ask-popover__input,
 :root[data-omni-theme="dark"] .compact-query__input {
   color: rgba(255, 255, 255, 0.86);
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-omni-theme="dark"] .compact-ask-popover__input {
+  background: transparent;
+}
+
+:root[data-omni-theme="dark"] .compact-ask-popover__send {
+  background: #737ff2;
+  color: #101322;
+}
+
+:root[data-omni-theme="dark"] .compact-ask-popover__send:hover {
+  background: #8993fa;
 }
 
 /* 在宠物/角色查询面板里，输入框可能受浏览器默认样式或 compact-bar 上下文影响，
@@ -1882,10 +1935,25 @@ body:has(.pet-thought-window),
 :root[data-omni-theme="light"] .compact-submenu,
 :root[data-omni-theme="light"] .compact-query,
 :root[data-omni-theme="light"] .compact-reply,
-:root[data-omni-theme="light"] .compact-search-popover {
+:root[data-omni-theme="light"] .compact-ask-popover {
   background: rgba(255, 255, 255, 0.86);
   color: #1f2937;
   border-color: rgba(203, 213, 225, 0.72);
+}
+
+:root[data-omni-theme="light"] .compact-ask-popover__send {
+  background: #5865e8;
+  color: #fff;
+}
+
+/* Theme surfaces style .compact-bar later in this file; keep the replaced
+   shell transparent in both themes so only the input bar remains visible. */
+:root[data-omni-theme] .compact-shell--query-open .compact-bar {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 :root[data-omni-theme="light"] .app-shell {
@@ -1944,13 +2012,13 @@ body:has(.pet-thought-window),
   color: #646a73 !important;
 }
 
-:root[data-omni-theme="light"] textarea {
+:root[data-omni-theme="light"] textarea:not(.chat-composer__textarea) {
   background: #ffffff !important;
   border-color: #dcdfe6 !important;
   color: #1f2329 !important;
 }
 
-:root[data-omni-theme="light"] textarea::placeholder {
+:root[data-omni-theme="light"] textarea:not(.chat-composer__textarea)::placeholder {
   color: #9aa0a6 !important;
 }
 
@@ -2352,13 +2420,6 @@ body:has(.pet-thought-window),
   padding: 6px 20px 12px;
 }
 
-.artifacts-panel__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px;
-}
-
 .artifacts-panel__overview-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -2383,4 +2444,3 @@ body:has(.pet-thought-window),
   width: 100%;
   height: 100%;
 }
-

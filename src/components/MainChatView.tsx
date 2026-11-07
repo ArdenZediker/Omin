@@ -72,6 +72,9 @@ import {
   openWorkspaceFileInArtifacts,
 } from "../chat/artifacts";
 import type { EmptyChatStarter } from "../app/constants";
+import type { TaskExecutionResult } from "../chat/taskTypes";
+import { getLatestTaskForSession } from "../chat/taskStorage";
+import { InterruptedTaskBadge, InterruptedTaskNotice } from "./TaskStatusIndicators";
 
 import { ALWAYS_ALLOWED_LOCAL_TOOL_IDS } from "../config/manifests/tools";
 import {
@@ -84,7 +87,6 @@ import CreateProjectDialog from "./CreateProjectDialog";
 import CreateExpertDialog from "./CreateExpertDialog";
 import ProjectSettingsDialog from "./ProjectSettingsDialog";
 import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
-import ModelSelector from "./ModelSelector";
 import PluginMarketplace from "./plugins/PluginMarketplace";
 import type { MarketplaceSource } from "./plugins/PluginMarketplace";
 import { pluginRegistry } from "../plugins/registry";
@@ -106,8 +108,6 @@ import {
   MAX_TOPIC_PANEL_WIDTH,
   MIN_MAIN_CHAT_AREA_WIDTH,
   MIN_TOPIC_PANEL_WIDTH,
-  MIN_COMPOSER_RESIZE_HEIGHT,
-  MIN_MESSAGE_AREA_HEIGHT,
   clampPanelWidth,
   getSessionAvatarStyle,
   NewSessionInSpaceIcon,
@@ -308,10 +308,13 @@ type MainChatViewProps = {
    * 侧栏据此在对应会话行挂加载标识 —— 切到别的会话时，也能看出哪些会话还在跑。
    */
   loadingSessionIds: string[];
+  /** Persisted task history, newest first, scoped to this webview. */
+  taskHistory: TaskExecutionResult[];
 };
 
 export default function MainChatView({
   loadingSessionIds,
+  taskHistory,
   activeProject,
   activeProjectId,
   activeChatId,
@@ -381,12 +384,6 @@ export default function MainChatView({
     boolean | null
   >(null);
   const [composerHeight, setComposerHeight] = useState(0);
-  const [composerResizeHeight, setComposerResizeHeight] = useState<
-    number | null
-  >(null);
-  const composerSplitterDraggingRef = useRef(false);
-  const composerSplitterStartYRef = useRef(0);
-  const composerSplitterStartHeightRef = useRef(0);
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab>(() => {
     // 当前会话有产物时默认展示产物面板，否则展示历史提问
     if (activeChatId) {
@@ -700,6 +697,8 @@ export default function MainChatView({
     activeSession?.title ||
     (activeProject?.kind === "basic" ? "Omni" : activeProject?.title) ||
     "Omni";
+  const latestSessionTask = getLatestTaskForSession(taskHistory, activeChatId);
+  const isCurrentSessionInterrupted = latestSessionTask?.status === "aborted" && !loadingSessionIds.includes(activeChatId ?? "");
   const defaultTopicPanelVisible = !isTopicPanelAutoCollapsed;
   const isTopicPanelVisible =
     topicPanelManualVisible ?? defaultTopicPanelVisible;
@@ -772,52 +771,6 @@ export default function MainChatView({
       window.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [topicPanelWidth]);
-
-  const handleComposerSplitterPointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const rect = composerElement?.getBoundingClientRect();
-      composerSplitterDraggingRef.current = true;
-      composerSplitterStartYRef.current = event.clientY;
-      composerSplitterStartHeightRef.current = rect?.height ?? composerHeight;
-    },
-    [composerElement, composerHeight],
-  );
-
-  useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      if (!composerSplitterDraggingRef.current) return;
-      // 向上拖动（clientY 减小）输入框变高，向下拖动变矮，与窗口边缘拖拽直觉一致。
-      const delta = composerSplitterStartYRef.current - event.clientY;
-      // 不人为限制高度：最高可拖到「窗口高 - 消息区保底」，仅防止把消息区完全盖住。
-      const effectiveMax = Math.max(
-        MIN_COMPOSER_RESIZE_HEIGHT,
-        window.innerHeight - MIN_MESSAGE_AREA_HEIGHT,
-      );
-      const nextHeight = clampPanelWidth(
-        composerSplitterStartHeightRef.current + delta,
-        MIN_COMPOSER_RESIZE_HEIGHT,
-        effectiveMax,
-      );
-      setComposerResizeHeight(nextHeight);
-    };
-
-    const handlePointerUp = () => {
-      if (!composerSplitterDraggingRef.current) return;
-      composerSplitterDraggingRef.current = false;
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, []);
 
   const allowedComposerToolIds = useMemo(
     () => [
@@ -1598,6 +1551,9 @@ export default function MainChatView({
                               title="正在输出"
                             />
                           )}
+                          {!loadingSessionIds.includes(session.id) && getLatestTaskForSession(taskHistory, session.id)?.status === "aborted" && (
+                            <InterruptedTaskBadge />
+                          )}
                           <span className="chat-history-panel__session-time">
                             {formatSessionTime(session.updatedAt)}
                           </span>
@@ -2275,23 +2231,6 @@ export default function MainChatView({
                 )}
               </div>
 
-              {!showPluginMarketplace && (
-                <div className="no-drag">
-                  <div className="main-chat-toolbar__model-stack">
-                    <ModelSelector
-                      currentModel={currentModel}
-                      onModelChange={onModelChange}
-                      label="主模型"
-                      title={
-                        selectedExecutionModel &&
-                        executionModel !== currentModel
-                          ? `当前项目会优先使用：${selectedExecutionModel.name}`
-                          : undefined
-                      }
-                    />
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="main-chat-toolbar__actions no-drag">
@@ -2544,26 +2483,22 @@ export default function MainChatView({
                   </button>
                 )}
 
-                <div
-                  className="main-chat-composer-splitter"
-                  role="separator"
-                  aria-orientation="horizontal"
-                  aria-label="调整对话台高度"
-                  onPointerDown={handleComposerSplitterPointerDown}
-                />
+                {isCurrentSessionInterrupted && <InterruptedTaskNotice task={latestSessionTask} />}
 
                 <div
                   ref={setComposerElement}
                   className="main-chat-composer-outer"
-                  style={
-                    composerResizeHeight
-                      ? { height: `${composerResizeHeight}px` }
-                      : undefined
-                  }
                 >
                   <ChatInput
                     allowedToolIds={allowedComposerToolIds}
                     allowedSkillIds={allowedComposerSkillIds}
+                    currentModel={currentModel}
+                    onModelChange={onModelChange}
+                    modelTitle={
+                      selectedExecutionModel && executionModel !== currentModel
+                        ? `当前项目会优先使用：${selectedExecutionModel.name}`
+                        : undefined
+                    }
                     canStartNewTopic={Boolean(activeProject)}
                     contextPresetText={composerContextPresetText}
                     knowledgeCollections={knowledgeCollections}
@@ -2583,8 +2518,6 @@ export default function MainChatView({
                     onStop={onStop}
                     onStartNewTopic={onNewChat}
                     focusSignal={inputFocusKey}
-                    fixedHeight={composerResizeHeight}
-                    onSubmit={() => setComposerResizeHeight(null)}
                     draftScopeKey={inputDraftScopeKey}
                     draftValue={inputDraft}
                     draftImages={inputDraftImages}
@@ -2597,157 +2530,157 @@ export default function MainChatView({
             </main>
           </section>
 
-          <div
-            className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="调整工作台宽度"
-            onPointerDown={handleLayoutDragPointerDown}
-          />
+      <div
+        className="main-chat-layout__splitter main-chat-layout__splitter--topic no-drag"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整工作台宽度"
+        onPointerDown={handleLayoutDragPointerDown}
+      />
 
-          <aside className="chat-topic-panel">
-            <div className="chat-topic-panel__body">
-              <div className="chat-topic-panel__toolbar">
-                <div className="chat-topic-panel__title">
-                  {(() => {
-                    if (sidePanelTab === "history")
-                      return <Clock size={14} strokeWidth={2} />;
-                    if (sidePanelTab === "changes")
-                      return <GitBranch size={14} strokeWidth={2} />;
-                    return <Package size={14} strokeWidth={2} />;
-                  })()}
-                  <span>
-                    {sidePanelTab === "history"
-                      ? "历史提问"
-                      : sidePanelTab === "changes"
-                        ? "变更"
-                        : "产物"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="chat-topic-panel__tabs">
-                <button
-                  type="button"
-                  className={`chat-topic-panel__tab ${sidePanelTab === "artifacts" ? "chat-topic-panel__tab--active" : ""}`}
-                  onClick={() => setSidePanelTab("artifacts")}
-                >
-                  产物
-                  {artifactCount > 0 ? (
-                    <span className="chat-topic-panel__tab-badge">
-                      {artifactCount > 99 ? "99+" : artifactCount}
-                    </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  className={`chat-topic-panel__tab ${sidePanelTab === "changes" ? "chat-topic-panel__tab--active" : ""}`}
-                  onClick={() => {
-                    setTopicPanelManualVisible(true);
-                    setSidePanelTab("changes");
-                  }}
-                >
-                  <GitBranch size={11} strokeWidth={2} />
-                  <span>变更</span>
-                </button>
-                <button
-                  type="button"
-                  className={`chat-topic-panel__tab ${sidePanelTab === "history" ? "chat-topic-panel__tab--active" : ""}`}
-                  onClick={() => setSidePanelTab("history")}
-                >
-                  <Clock size={11} strokeWidth={2} />
-                  <span>历史提问</span>
-                </button>
-              </div>
-
-              {sidePanelTab === "history" &&
-                (() => {
-                  const userQuestions = messages
-                    .map((message, index) => ({ message, index }))
-                    .filter(({ message }) => message.role === "user");
-                  const handleJumpToQuestion = (messageIndex: number) => {
-                    const target = document.querySelector(
-                      `[data-message-index="${messageIndex}"]`,
-                    );
-                    if (!(target instanceof HTMLElement)) return;
-                    target.scrollIntoView({
-                      behavior: "smooth",
-                      block: "center",
-                    });
-                    target.classList.add("chat-message--pulse-highlight");
-                    window.setTimeout(() => {
-                      target.classList.remove("chat-message--pulse-highlight");
-                    }, 1600);
-                  };
-                  return (
-                    <>
-                      <div className="chat-topic-panel__section">
-                        <div className="chat-topic-panel__section-title">
-                          <Clock size={13} strokeWidth={2} />
-                          <span>本次会话提问</span>
-                          <span className="chat-topic-panel__section-count">
-                            {userQuestions.length}
-                          </span>
-                        </div>
-                        {userQuestions.length === 0 ? (
-                          <div className="chat-topic-panel__empty">
-                            {activeChatId
-                              ? "本次会话还没有提问"
-                              : "请先选择或新建会话"}
-                          </div>
-                        ) : (
-                          <div className="chat-topic-panel__list">
-                            {userQuestions.map(({ message, index }, order) => (
-                              <button
-                                key={`${index}-${order}`}
-                                type="button"
-                                className="chat-topic-panel__item chat-topic-panel__item--question"
-                                onClick={() => handleJumpToQuestion(index)}
-                                title={message.content}
-                              >
-                                <MessageSquare
-                                  size={13}
-                                  strokeWidth={1.9}
-                                  className="chat-topic-panel__item-icon"
-                                />
-                                <span className="chat-topic-panel__item-copy">
-                                  <span className="chat-topic-panel__item-title">
-                                    {truncateQuestionPreview(message.content)}
-                                  </span>
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()}
-
-              {sidePanelTab === "artifacts" ? (
-                <ArtifactsPanel
-                  projectId={activeProject?.id ?? null}
-                  sessionId={activeChatId}
-                  onJumpToSession={onSelectChat}
-                />
-              ) : null}
-
-              {sidePanelTab === "changes" ? (
-                <ChangesPanel
-                  changes={changesEntries}
-                  onRevert={async (entry) => {
-                    if (!entry.path) return false;
-                    try {
-                      await invoke("undo_file_edit", { path: entry.path });
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }}
-                />
-              ) : null}
+      <aside className="chat-topic-panel">
+        <div className="chat-topic-panel__body">
+          <div className="chat-topic-panel__toolbar">
+            <div className="chat-topic-panel__title">
+              {(() => {
+                if (sidePanelTab === "history")
+                  return <Clock size={14} strokeWidth={2} />;
+                if (sidePanelTab === "changes")
+                  return <GitBranch size={14} strokeWidth={2} />;
+                return <Package size={14} strokeWidth={2} />;
+              })()}
+              <span>
+                {sidePanelTab === "history"
+                  ? "历史提问"
+                  : sidePanelTab === "changes"
+                    ? "变更"
+                    : "产物"}
+              </span>
             </div>
-          </aside>
+          </div>
+
+          <div className="chat-topic-panel__tabs">
+            <button
+              type="button"
+              className={`chat-topic-panel__tab ${sidePanelTab === "artifacts" ? "chat-topic-panel__tab--active" : ""}`}
+              onClick={() => setSidePanelTab("artifacts")}
+            >
+              <span>产物</span>
+              {artifactCount > 0 ? (
+                <span className="chat-topic-panel__tab-badge">
+                  {artifactCount > 99 ? "99+" : artifactCount}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className={`chat-topic-panel__tab ${sidePanelTab === "changes" ? "chat-topic-panel__tab--active" : ""}`}
+              onClick={() => {
+                setTopicPanelManualVisible(true);
+                setSidePanelTab("changes");
+              }}
+            >
+              <GitBranch size={11} strokeWidth={2} />
+              <span>变更</span>
+            </button>
+            <button
+              type="button"
+              className={`chat-topic-panel__tab ${sidePanelTab === "history" ? "chat-topic-panel__tab--active" : ""}`}
+              onClick={() => setSidePanelTab("history")}
+            >
+              <Clock size={11} strokeWidth={2} />
+              <span>历史提问</span>
+            </button>
+          </div>
+
+          {sidePanelTab === "history" &&
+            (() => {
+              const userQuestions = messages
+                .map((message, index) => ({ message, index }))
+                .filter(({ message }) => message.role === "user");
+              const handleJumpToQuestion = (messageIndex: number) => {
+                const target = document.querySelector(
+                  `[data-message-index="${messageIndex}"]`,
+                );
+                if (!(target instanceof HTMLElement)) return;
+                target.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center",
+                });
+                target.classList.add("chat-message--pulse-highlight");
+                window.setTimeout(() => {
+                  target.classList.remove("chat-message--pulse-highlight");
+                }, 1600);
+              };
+              return (
+                <>
+                  <div className="chat-topic-panel__section">
+                    <div className="chat-topic-panel__section-title">
+                      <Clock size={13} strokeWidth={2} />
+                      <span>本次会话提问</span>
+                      <span className="chat-topic-panel__section-count">
+                        {userQuestions.length}
+                      </span>
+                    </div>
+                    {userQuestions.length === 0 ? (
+                      <div className="chat-topic-panel__empty">
+                        {activeChatId
+                          ? "本次会话还没有提问"
+                          : "请先选择或新建会话"}
+                      </div>
+                    ) : (
+                      <div className="chat-topic-panel__list">
+                        {userQuestions.map(({ message, index }, order) => (
+                          <button
+                            key={`${index}-${order}`}
+                            type="button"
+                            className="chat-topic-panel__item chat-topic-panel__item--question"
+                            onClick={() => handleJumpToQuestion(index)}
+                            title={message.content}
+                          >
+                            <MessageSquare
+                              size={13}
+                              strokeWidth={1.9}
+                              className="chat-topic-panel__item-icon"
+                            />
+                            <span className="chat-topic-panel__item-copy">
+                              <span className="chat-topic-panel__item-title">
+                                {truncateQuestionPreview(message.content)}
+                              </span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+
+          {sidePanelTab === "artifacts" ? (
+            <ArtifactsPanel
+              projectId={activeProject?.id ?? null}
+              sessionId={activeChatId}
+              onJumpToSession={onSelectChat}
+            />
+          ) : null}
+
+          {sidePanelTab === "changes" ? (
+            <ChangesPanel
+              changes={changesEntries}
+              onRevert={async (entry) => {
+                if (!entry.path) return false;
+                try {
+                  await invoke("undo_file_edit", { path: entry.path });
+                  return true;
+                } catch {
+                  return false;
+                }
+              }}
+            />
+          ) : null}
+        </div>
+      </aside>
         </div>
       </section>
 

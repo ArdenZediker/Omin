@@ -1,10 +1,9 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { emit } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showCompactWindow } from "../app/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles } from "lucide-react";
+import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles, X } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import { PROVIDER_DEFAULTS } from "../adapters/modelCatalog";
 import { MODEL_PARAM_COMPAT_CHANGED_EVENT } from "../adapters/paramCompat";
@@ -57,11 +56,9 @@ import KnowledgeMultimodalSection from "./settings/KnowledgeMultimodalSection";
 import ModelSettingsSection from "./settings/ModelSettingsSection";
 import PersonalizationSettingsSection from "./settings/PersonalizationSettingsSection";
 import StorageSettingsSection from "./settings/StorageSettingsSection";
-import TitleBar from "./TitleBar";
 
 interface SettingsPanelProps {
   onClose: () => void;
-  onBackToMain: () => void | Promise<void>;
   onModelChange: (modelId: string) => void;
 }
 type SettingsSection = "basic" | "personalization" | "models" | "storage" | "plugins";
@@ -108,15 +105,7 @@ function normalizeUsagePreferences(prefs: ChatUsagePreferences): ChatUsagePrefer
   };
 }
 
-function getSafeCurrentWindow() {
-  try {
-    return getCurrentWindow();
-  } catch {
-    return null;
-  }
-}
-
-export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: SettingsPanelProps) {
+export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelProps) {
   const [section, setSection] = useState<SettingsSection>("basic");
   const [modelSection, setModelSection] = useState<ModelConfigSection>("chat");
   const [version, setVersion] = useState(0);
@@ -660,38 +649,6 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
     };
   }, []);
 
-  const handleHeaderMouseDown = useCallback(async (event: React.MouseEvent<HTMLElement>) => {
-    if (event.button !== 0) {
-      return;
-    }
-
-    const target = event.target as HTMLElement;
-    if (target.closest(".no-drag")) {
-      return;
-    }
-
-    const currentWindow = getSafeCurrentWindow();
-    if (!currentWindow) {
-      return;
-    }
-
-    await currentWindow.startDragging();
-  }, []);
-
-  const handleMinimizeWindow = useCallback(async () => {
-    const currentWindow = getSafeCurrentWindow();
-    if (!currentWindow) {
-      return;
-    }
-
-    try {
-      await currentWindow.setSkipTaskbar(false);
-      await currentWindow.minimize();
-    } catch {
-      // Ignore window manager failures.
-    }
-  }, []);
-
   return (
     <div className="omni-settings-root relative flex h-full w-full flex-1 min-w-0 overflow-hidden bg-white text-slate-900">
       <aside className="omni-settings-sidebar w-36 shrink-0 border-r border-slate-200 bg-slate-50 py-3">
@@ -757,7 +714,7 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
       </aside>
 
       <section className="omni-settings-main flex min-w-0 flex-1 flex-col bg-white">
-        <header className="omni-settings-header flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-5 select-none" onMouseDown={handleHeaderMouseDown}>
+        <header className="omni-settings-header flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-5">
           <div className="min-w-0 flex-1 pr-3">
             <h2 className="omni-settings-title text-sm font-semibold text-slate-950">
               {section === "basic"
@@ -781,18 +738,13 @@ export default function SettingsPanel({ onClose, onBackToMain, onModelChange }: 
           <div className="no-drag flex items-center gap-2">
             <button
               type="button"
-              onClick={() => void onBackToMain()}
-              className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+              onClick={onClose}
+              className="omni-settings-close"
+              aria-label="关闭设置"
+              title="关闭设置"
             >
-              回到主界面
+              <X size={18} strokeWidth={1.8} />
             </button>
-            <TitleBar
-              inline
-              onMinimizeToCompact={handleMinimizeWindow}
-              onClose={onClose}
-              closeTitle="关闭设置"
-              minimizeBehavior="taskbar"
-            />
           </div>
         </header>
 
