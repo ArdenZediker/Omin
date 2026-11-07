@@ -50,9 +50,18 @@ jobs:
         working-directory: src-tauri
         run: |
           test -f rust-test.log || exit 0
-          grep -E "^(error|failures:|test result: FAILED|thread '.*' panicked|---- .* stdout ----)|^[[:space:]]*(left|right):" rust-test.log \
-            | tail -80 \
-            | while IFS= read -r line; do echo "::error::$line"; done || true
+          tail -40 rust-test.log | while IFS= read -r line; do
+            escaped="${line//'%'/'%25'}"
+            escaped="${escaped//$'\r'/'%0D'}"
+            echo "::error::$escaped"
+          done || true
+      - name: Upload Rust test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-macos-${{ matrix.arch }}-rust-test-log
+          path: src-tauri/rust-test.log
+          if-no-files-found: ignore
       - name: Run macOS Seatbelt sandbox tests
         working-directory: src-tauri
         run: cargo test --lib sandbox::tests::macos_ -- --test-threads=1
