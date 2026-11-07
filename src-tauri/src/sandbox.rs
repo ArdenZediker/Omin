@@ -1439,9 +1439,12 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let root = temp_dir("symlink-workspace");
-        let outside = temp_dir("symlink-outside");
+        let outside_root = std::env::current_dir()
+            .expect("resolve current dir")
+            .join(format!("omni-symlink-outside-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&outside_root).expect("create outside dir");
         let link = root.join("outside-link");
-        symlink(&outside, &link).expect("create escape symlink");
+        symlink(&outside_root, &link).expect("create escape symlink");
         let target = link.join("escaped.txt");
         assert!(ensure_explicit_write_allowed(
             SandboxMode::WorkspaceWrite,
@@ -1451,7 +1454,7 @@ mod tests {
         )
         .is_err());
         std::fs::remove_dir_all(root).expect("workspace cleanup");
-        std::fs::remove_dir_all(outside).expect("outside cleanup");
+        std::fs::remove_dir_all(outside_root).expect("outside cleanup");
     }
 
     #[test]
