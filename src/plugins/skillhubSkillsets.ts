@@ -280,11 +280,6 @@ export async function repairSkillsetChildLinks(
   return changed;
 }
 
-/** 测试用：清空「已回填」记忆（生产代码不调用）。 */
-export function resetSkillsetLinkRepairCache(): void {
-  repairedSkillsetSlugs.clear();
-}
-
 function setSourceUrl(slug: string): string {
   return `https://www.skillhub.cn/skillsets/${slug}`;
 }

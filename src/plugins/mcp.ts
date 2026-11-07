@@ -377,9 +377,6 @@ export function selectMcpToolsWithinBudget(
   return { tools, hidden };
 }
 
-/** 上一次注入时因超预算被隐藏的工具（进程内记忆，供 UI 说明用）。 */
-let lastMcpToolOverflow: McpHiddenTool[] = [];
-
 /**
  * 项目级连接器白名单判据：**空 / 缺省 = 不限制**（口径同 `Project.boundExpertIds`）。
  *
@@ -416,20 +413,7 @@ export function listActiveMcpTools(allowedConnectorIds?: string[]): ChatToolPara
       tools: server.info.tools,
     })),
   );
-  lastMcpToolOverflow = selection.hidden;
   return selection.tools;
-}
-
-/**
- * 上次注入时被隐藏的工具说明；没有隐藏则返回 null。
- *
- * 没有这个提示，「连接器连上了、协议也通了，但工具列表里看不到它」就无从解释——
- * 用户只会以为连接器坏了。
- */
-export function getMcpToolOverflowNotice(): string | null {
-  if (lastMcpToolOverflow.length === 0) return null;
-  const names = lastMcpToolOverflow.map((item) => `${item.connectorName}/${item.toolName}`).join("、");
-  return `已隐藏 ${lastMcpToolOverflow.length} 个超出声明预算的 MCP 工具（${names}）：单个工具上限 ${MCP_TOOL_SCHEMA_BUDGET.perToolMaxChars} 字符、单连接器累计上限 ${MCP_TOOL_SCHEMA_BUDGET.perConnectorMaxChars} 字符。`;
 }
 
 /** 当前已连接状态（供 UI 展示）。 */

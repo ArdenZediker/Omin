@@ -165,23 +165,10 @@
   opacity: 0.52;
 }
 
-.omni-select--field .omni-select__trigger {
-  min-height: 47px;
-  border-radius: 14px;
-  padding: 0 14px;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
 .omni-select--compact .omni-select__trigger {
   min-height: 34px;
   border-radius: 10px;
   padding: 0 9px;
-}
-
-.omni-select--memory {
-  width: 172px;
-  flex: 0 0 172px;
 }
 
 /* 「新建项目」对话框里嵌在「指令」标签行右侧的**项目预设**下拉。

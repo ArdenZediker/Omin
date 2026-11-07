@@ -190,7 +190,7 @@ function InstalledSkillsetCardImpl({
 
   return (
     <div
-      className={`plugin-card plugin-card--skillset ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()}
+      className={`plugin-card plugin-card--skillset ${expanded ? "plugin-card--skillset-expanded" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`.trim()}
     >
       <div
         className="plugin-card__header"

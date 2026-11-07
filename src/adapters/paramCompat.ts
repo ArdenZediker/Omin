@@ -16,7 +16,7 @@
 //
 // 有效跳过集 = ② ∪ ③，由 `resolveUnsupportedParams` 统一给出。
 
-import type { ModelConfig, UnsupportedParam } from "./types";
+import type { UnsupportedParam } from "./types";
 
 export type { UnsupportedParam };
 
@@ -291,11 +291,6 @@ export function unsupportedParamParts(param: UnsupportedParam): { wire: string; 
   }
 }
 
-export function describeUnsupportedParam(param: UnsupportedParam): string {
-  const { wire, title } = unsupportedParamParts(param);
-  return wire === title ? wire : `${wire}（${title}）`;
-}
-
 /**
  * 模型列表徽标数据源：该模型实际会被跳过的参数（显式声明 ∪ 运行期学到）。
  * 无跳过项时返回 null，便于 UI 直接条件渲染。
@@ -319,8 +314,3 @@ export const ALL_UNSUPPORTED_PARAMS: readonly UnsupportedParam[] = [
   "toolChoice",
   "reasoningEffort",
 ];
-
-/** 便捷判定：某模型配置是否声明了给定槽位不支持。 */
-export function declaresUnsupported(model: ModelConfig | undefined, param: UnsupportedParam): boolean {
-  return Boolean(model?.unsupportedParams?.includes(param));
-}

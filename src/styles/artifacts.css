@@ -93,23 +93,6 @@
   border-bottom: 1px solid var(--omni-panel-border);
 }
 
-.artifacts-panel__title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.artifacts-panel__title strong {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--omni-app-text);
-}
-
-.artifacts-panel__title span {
-  font-size: 11px;
-  color: var(--omni-app-muted);
-}
-
 .artifacts-panel__header-actions {
   display: flex;
   align-items: center;
@@ -262,30 +245,6 @@
 .artifacts-panel__item-action--danger:hover {
   background: color-mix(in srgb, var(--omni-danger, #e5484d) 14%, transparent);
   color: var(--omni-danger, #e5484d);
-}
-
-.artifacts-panel__item-chevron {
-  color: var(--omni-app-muted);
-  flex-shrink: 0;
-  transition: transform 0.15s ease;
-}
-
-.artifacts-panel__item-chevron--open {
-  transform: rotate(90deg);
-}
-
-.artifacts-panel__item-preview {
-  margin: 0 8px 8px 32px;
-  padding: 8px 10px;
-  max-height: 220px;
-  overflow: auto;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--omni-app-muted) 6%, transparent);
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--omni-app-muted);
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 
 /* 顶部 Tab 条：多产物切换 */

@@ -468,12 +468,17 @@
 
 .plugin-marketplace__grid {
   display: grid;
-  /* 卡片各自按内容撑高，不被同一行其他展开卡同步拉高。
-   * 注意别改成 align-items:stretch 来「统一卡片高度」—— 专家团套件卡片是可展开的，
-   * 一展开就有几百像素高，stretch 会把同行邻居一起拉成大片空白。
-   * 网格里卡片高矮不齐的真正来源是**描述行数**，在下方的
-   * .plugin-card__description min-height 里解决（用户 2026-09-12「卡片大小统一」）。 */
-  align-items: start;
+  /* 强制对齐：同一行的卡片高度统一为「本行最高卡」，解决描述行数 /
+   * 标题换行 / 标签多少导致的高矮不齐（用户 2026-09-12「卡片大小统一」的延续，
+   * 上次靠 .plugin-card__description min-height 只补了「短描述」的留白，长描述
+   * 与换行标题仍会让同行卡片参差）。卡片本身是 flex-column（description 有
+   * min-height、actions 有 margin-top:auto），拉伸后正文贴顶、按钮沉底，
+   * 整行底边缘对齐。
+   * 唯一的禁忌是「可展开的专家团套件卡」——它展开时高达数百像素。若直接
+   * stretch 占满同行，会把邻居一起拉成大片空白。故 InstalledSkillsetCard 在
+   * 展开态加 .plugin-card--skillset-expanded 让其 grid-column:1/-1 独占整行，
+   * 不与任何邻居并排，从根本上避开拉伸副作用（见下方规则）。 */
+  align-items: stretch;
   /* 默认宽屏固定 4 列（用户 2026-09-01「表格展示改为一行四列」）。
    * 窄屏按断点降级为 3 / 2 / 1 列。 */
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1627,6 +1632,14 @@
   gap: 0;
 }
 
+/* 展开态：独占整行（grid-column:1/-1），不与任何邻居并排。
+ * 配合网格 align-items:stretch，展开的高卡若与邻居同处一行会把整行拉高、
+ * 把邻居撑出大片空白；独占整行后它自成一行，邻居都在其它行，拉伸副作用消失
+ * （用户 2026-09-12「卡片大小统一」后引入 stretch 时的已知禁忌）。 */
+.plugin-card--skillset-expanded {
+  grid-column: 1 / -1;
+}
+
 .plugin-card__badge--skillset {
   background: rgba(99, 102, 241, 0.18);
   color: #a5b4fc;
@@ -1912,7 +1925,7 @@
   margin-top: 4px;
 }
 
-.plugin-marketplace--main-view .plugin-marketplace__category-bar,
+
 .plugin-marketplace--main-view .plugin-marketplace__category-tabs {
   margin-top: 4px;
 }

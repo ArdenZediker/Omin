@@ -56,7 +56,3 @@ export function loadBasicSettings(storageKey: string, defaults: BasicSettings): 
   if (typeof window === "undefined") return defaults;
   return normalizeBasicSettings(readSqliteBackedJson(storageKey, defaults));
 }
-
-export function saveBasicSettings(storageKey: string, settings: BasicSettings) {
-  saveSqliteBackedValue(storageKey, JSON.stringify(normalizeBasicSettings(settings as LegacyBasicSettings)));
-}

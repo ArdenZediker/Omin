@@ -1,5 +1,4 @@
 import type { BasicSettings } from "./types";
-import { DEFAULT_USAGE_PREFERENCES, USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
 import { loadBasicSettings, normalizeBasicSettings } from "./settings";
 export { loadBasicSettings } from "./settings";
 import { loadAppKvEntries, removeAppKvEntry, readSqliteBackedJson, readSqliteBackedValue, removeSqliteBackedValue, saveAppKvEntry, saveSqliteBackedValue } from "./sqliteStorage";
@@ -9,14 +8,6 @@ const MODEL_CONNECTION_STATUS_KEY = "omni_model_connection_status";
 
 function canUseTauriStorage() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-export function loadUsagePreferences() {
-  return readSqliteBackedJson(USAGE_PREFERENCES_STORAGE_KEY, DEFAULT_USAGE_PREFERENCES);
-}
-
-export function saveUsagePreferences(prefs: typeof DEFAULT_USAGE_PREFERENCES) {
-  saveSqliteBackedValue(USAGE_PREFERENCES_STORAGE_KEY, JSON.stringify(prefs));
 }
 
 export async function saveModelConnectionStatus(modelId: string, connected: boolean) {
