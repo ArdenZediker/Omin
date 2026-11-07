@@ -28,6 +28,17 @@ const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 /// 与工具结果通用 spill 管道的默认上限保持一致（见 `tool_output_spill`）。
 pub(crate) const MAX_OUTPUT_CHARS: usize = crate::tool_output_spill::DEFAULT_TOOL_RESULT_CHARS;
 
+fn resolve_sandbox_mode(
+    sandbox_mode: Option<SandboxMode>,
+    legacy_sandbox: Option<bool>,
+) -> SandboxMode {
+    sandbox_mode.unwrap_or_else(|| match legacy_sandbox {
+        Some(true) => SandboxMode::WorkspaceWrite,
+        Some(false) => SandboxMode::DangerFullAccess,
+        None => SandboxMode::default(),
+    })
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecuteCommandInput {
@@ -332,13 +343,7 @@ fn scrub_environment(cmd: &mut Command) {
 fn run_shell(input: ExecuteCommandInput) -> Result<ExecuteCommandResult, String> {
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
     let cwd = input.cwd.clone();
-    let sandbox_mode = input.sandbox_mode.unwrap_or_else(|| {
-        if input.sandbox.unwrap_or(false) {
-            SandboxMode::WorkspaceWrite
-        } else {
-            SandboxMode::DangerFullAccess
-        }
-    });
+    let sandbox_mode = resolve_sandbox_mode(input.sandbox_mode, input.sandbox);
 
     // WorkDSH 文件策略：只读 / 工作区写入进入系统沙箱；完全访问走普通执行。
     if sandbox_mode.is_confined() {
@@ -584,6 +589,31 @@ pub(crate) async fn detect_shell(path: String) -> Result<DetectShellResult, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_sandbox_mode_wins_over_legacy_switch() {
+        assert_eq!(
+            resolve_sandbox_mode(Some(SandboxMode::ReadOnly), Some(false)),
+            SandboxMode::ReadOnly
+        );
+    }
+
+    #[test]
+    fn legacy_sandbox_switch_keeps_compatible_mapping() {
+        assert_eq!(
+            resolve_sandbox_mode(None, Some(true)),
+            SandboxMode::WorkspaceWrite
+        );
+        assert_eq!(
+            resolve_sandbox_mode(None, Some(false)),
+            SandboxMode::DangerFullAccess
+        );
+    }
+
+    #[test]
+    fn missing_sandbox_arguments_use_the_platform_default() {
+        assert_eq!(resolve_sandbox_mode(None, None), SandboxMode::default());
+    }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     #[test]

@@ -1,5 +1,6 @@
 import { emit } from "@tauri-apps/api/event";
 import type { BasicSettings } from "./types";
+import { DEFAULT_BASIC_SETTINGS } from "./constants";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "./sqliteStorage";
 
 export type ThemeMode = "auto" | "dark" | "light";
@@ -15,9 +16,11 @@ export function normalizeBasicSettings(settings: LegacyBasicSettings): BasicSett
     normalized.sandboxMode === "workspace-write" ||
     normalized.sandboxMode === "danger-full-access"
       ? normalized.sandboxMode
-      : normalized.sandboxEnabled === true
-        ? "workspace-write"
-        : "danger-full-access";
+      : typeof normalized.sandboxEnabled === "boolean"
+        ? normalized.sandboxEnabled
+          ? "workspace-write"
+          : "danger-full-access"
+        : DEFAULT_BASIC_SETTINGS.sandboxMode;
   return {
     ...normalized,
     sandboxMode,

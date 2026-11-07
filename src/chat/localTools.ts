@@ -54,7 +54,7 @@ function getStandingSandboxMode(): SandboxMode {
         : "danger-full-access")
     );
   } catch {
-    return "danger-full-access";
+    return DEFAULT_BASIC_SETTINGS.sandboxMode;
   }
 }
 

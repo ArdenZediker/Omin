@@ -32,4 +32,16 @@ describe("sandbox mode settings migration", () => {
     expect(settings.sandboxMode).toBe("read-only");
     expect(settings.sandboxEnabled).toBe(true);
   });
+
+  it("corrupt settings without a legacy flag fall back to the platform default", () => {
+    const settings = normalizeBasicSettings({
+      ...DEFAULT_BASIC_SETTINGS,
+      sandboxMode: "invalid" as never,
+      sandboxEnabled: undefined as never,
+    });
+    expect(settings.sandboxMode).toBe(DEFAULT_BASIC_SETTINGS.sandboxMode);
+    expect(settings.sandboxEnabled).toBe(
+      DEFAULT_BASIC_SETTINGS.sandboxMode !== "danger-full-access",
+    );
+  });
 });

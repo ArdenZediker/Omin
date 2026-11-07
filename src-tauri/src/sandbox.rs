@@ -48,7 +48,11 @@ impl SandboxMode {
 
 impl Default for SandboxMode {
     fn default() -> Self {
-        Self::DangerFullAccess
+        if is_platform_sandbox_supported() {
+            Self::WorkspaceWrite
+        } else {
+            Self::DangerFullAccess
+        }
     }
 }
 
@@ -1354,6 +1358,16 @@ mod tests {
         assert_eq!(SandboxMode::ReadOnly.as_str(), "read-only");
         assert_eq!(SandboxMode::WorkspaceWrite.as_str(), "workspace-write");
         assert_eq!(SandboxMode::DangerFullAccess.as_str(), "danger-full-access");
+    }
+
+    #[test]
+    fn default_mode_is_fail_closed_on_supported_platforms() {
+        let expected = if is_platform_sandbox_supported() {
+            SandboxMode::WorkspaceWrite
+        } else {
+            SandboxMode::DangerFullAccess
+        };
+        assert_eq!(SandboxMode::default(), expected);
     }
 
     #[test]
