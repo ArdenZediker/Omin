@@ -62,6 +62,13 @@ jobs:
           name: omni-macos-${{ matrix.arch }}-rust-test-log
           path: src-tauri/rust-test.log
           if-no-files-found: ignore
+      - name: Emit Rust test log annotation
+        if: failure()
+        working-directory: src-tauri
+        run: |
+          test -f rust-test.log || exit 0
+          encoded="$(base64 < rust-test.log | tr -d '\n')"
+          echo "::error title=Rust test log base64::$encoded"
       - name: Run macOS Seatbelt sandbox tests
         working-directory: src-tauri
         run: cargo test --lib sandbox::tests::macos_ -- --test-threads=1
