@@ -5,7 +5,7 @@ import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice, ToolC
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
 import { resolveReasoningReturnPolicy } from "./reasoningPolicy";
-import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { fetchWithTimeout, postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 
 const OPENAI_MODELS: ModelConfig[] = [
   { id: "gpt-4o", name: "GPT-4o", provider: "openai", maxTokens: 128000, maxOutput: 16384, supportsVision: true, supportsStreaming: true, toolCalling: true },
@@ -243,11 +243,12 @@ export class OpenAIAdapter implements ModelAdapter {
 
   async validate(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/models`, {
+      const response = await fetchWithTimeout(`${this.getBaseUrl()}/models`, {
         headers: { Authorization: `Bearer ${this.config.apiKey}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      return response.ok;
+      }, undefined, 10_000);
+      const valid = response.ok;
+      await response.body?.cancel().catch(() => {});
+      return valid;
     } catch {
       return false;
     }

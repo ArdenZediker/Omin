@@ -11,60 +11,60 @@ use tauri::{
     Emitter, Manager,
 };
 
+mod backup;
+mod clipboard_files;
 mod codex_pets;
+mod connectorhub;
 mod database;
+mod filemod;
+mod gittools;
+mod global_shortcut;
+mod knowledge;
 mod knowledge_chunker;
 mod knowledge_embedded_images;
+mod knowledge_embedding_batch;
+mod knowledge_embedding_config;
 mod knowledge_files;
 mod knowledge_pipeline;
-mod knowledge;
-mod backup;
-mod global_shortcut;
 mod knowledge_schema;
-mod persona;
-mod storage;
-mod storage_paths;
-mod workspace_files;
-mod knowledge_embedding_config;
-mod knowledge_embedding_batch;
 mod knowledge_search;
-mod skillhub;
-mod webtools;
-mod gittools;
-mod office_export;
-mod clipboard_files;
-mod connectorhub;
+mod loopback_http;
 mod mcp;
-mod shellcmd;
-/// 工具结果超长输出的通用 spill 管道（shell / git / MCP 共用）。
-mod tool_output_spill;
+mod office_export;
+mod persona;
 mod sandbox;
 mod shell_session;
-mod filemod;
+mod shellcmd;
+mod skillhub;
+mod storage;
+mod storage_paths;
+/// 工具结果超长输出的通用 spill 管道（shell / git / MCP 共用）。
+mod tool_output_spill;
+mod webtools;
+mod workspace_files;
 
 // 从 lib.rs 拆分出去的四个模块，用私有 glob 取回其中的函数与类型。
 // 这些模块内部**不要**写 `use super::*`：那会把 crate 根的 `__cmd__*` 宏吸进模块，
 // 再通过下面的 glob 拉回 lib.rs，与本地定义撞成 E0255。各模块改为显式 `use crate::...`。
+use clipboard_files::*;
+use connectorhub::*;
+use filemod::*;
+use gittools::*;
 use knowledge_embedding_batch::*;
 use knowledge_embedding_config::*;
 use knowledge_search::*;
+use mcp::*;
+use office_export::*;
+use shell_session::*;
+use shellcmd::*;
 use skillhub::*;
 use webtools::*;
-use gittools::*;
-use office_export::*;
-use clipboard_files::*;
-use connectorhub::*;
-use mcp::*;
-use shellcmd::*;
-use shell_session::*;
-use filemod::*;
 
 // 需要被其它模块以 `crate::X` 引用的条目，改为显式重导出（显式重导出不会牵扯宏命名空间）。
 pub(crate) use knowledge_embedding_config::{
     find_exact_usable_knowledge_multimodal_model, load_knowledge_collection_multimodal_config,
     load_knowledge_multimodal_config, validate_knowledge_multimodal_upload,
 };
-
 
 pub(crate) use database::open_sqlite_connection;
 pub(crate) use knowledge_files::{
@@ -77,29 +77,28 @@ pub(crate) use knowledge_schema::ensure_knowledge_schema;
 #[cfg(test)]
 pub(crate) use knowledge_schema::table_has_column;
 pub(crate) use storage::{
-    delete_project_by_id, delete_chat_session_by_id, has_structured_chat_storage,
-    load_automation_storage, load_manifest_storage,
-    load_memory_storage, load_structured_chat_storage, read_kv, read_structured_app_value,
-    remove_structured_app_value, resolve_session_dir_for_id, save_automation_storage,
-    save_manifest_storage,
+    delete_chat_session_by_id, delete_project_by_id, has_structured_chat_storage,
+    load_automation_storage, load_manifest_storage, load_memory_storage,
+    load_structured_chat_storage, read_kv, read_structured_app_value, remove_structured_app_value,
+    resolve_session_dir_for_id, save_automation_storage, save_manifest_storage,
     save_memory_storage, save_structured_chat_storage, upsert_chat_sessions, write_kv,
-    write_structured_app_value,
-    AutomationStoragePayload, ChatStoragePayload, ManifestStoragePayload, MemoryStoragePayload,
-    KNOWLEDGE_EMBEDDING_CONFIG_KEY, KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
+    write_structured_app_value, AutomationStoragePayload, ChatStoragePayload,
+    ManifestStoragePayload, MemoryStoragePayload, KNOWLEDGE_EMBEDDING_CONFIG_KEY,
+    KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
 };
 
 // 从 lib.rs 拆分出的命令模块（私有 fn + 显式 `use crate::...`），沿用私有 glob 模式避免 E0255。
 mod codex_pet_cmds;
 mod knowledge_cmds;
-mod workspace_cmds;
-mod storage_cmds;
 mod persona_cmds;
+mod storage_cmds;
+mod workspace_cmds;
 
 use codex_pet_cmds::*;
 use knowledge_cmds::*;
-use workspace_cmds::*;
-use storage_cmds::*;
 use persona_cmds::*;
+use storage_cmds::*;
+use workspace_cmds::*;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -467,7 +466,10 @@ pub(crate) fn parse_tags_json(value: &str) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
 }
 
-pub(crate) fn collection_exists(connection: &Connection, collection_id: &str) -> Result<bool, String> {
+pub(crate) fn collection_exists(
+    connection: &Connection,
+    collection_id: &str,
+) -> Result<bool, String> {
     let count: i64 = connection
         .query_row(
             "SELECT COUNT(1) FROM knowledge_collections WHERE id = ?1",
@@ -500,6 +502,7 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(loopback_http::LoopbackProxyState::default())
         // ⚠️ 单实例必须是**第一个**注册的 plugin：它要在其它插件初始化之前就判定
         // 「本次进程是不是已有实例的第二次启动」。是新实例就在这里直接退出，
         // 回调转而在**已有实例**里执行——所以这里只做「把主窗唤到前台」。
@@ -511,6 +514,7 @@ pub fn run() {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -530,6 +534,8 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             greet,
+            loopback_http::loopback_http_request,
+            loopback_http::cancel_loopback_http_request,
             load_workspace_pet_dir_command,
             load_codex_pet_packages,
             import_codex_pet_package,
@@ -659,41 +665,39 @@ pub fn run() {
                 .item(&quit)
                 .build()?;
 
-            if !cfg!(debug_assertions) || std::env::var_os("OMNI_ENABLE_TRAY").is_some() {
-                if let Some(tray_icon) = app.default_window_icon().cloned() {
-                    TrayIconBuilder::with_id("main")
-                        .icon(tray_icon)
-                        .tooltip("Omni 助手")
-                        .menu(&tray_menu)
-                        .show_menu_on_left_click(false)
-                        .on_tray_icon_event(|tray, event| {
-                            if let TrayIconEvent::Click {
-                                button: MouseButton::Left,
-                                button_state: MouseButtonState::Up,
-                                ..
-                            } = event
-                            {
-                                show_main_window(&tray.app_handle());
-                            }
-                        })
-                        .on_menu_event(|app, event| match event.id.as_ref() {
-                            "toggle" => show_main_window(app),
-                            "quit" => app.exit(0),
-                            _ => {}
-                        })
-                        .build(app)?;
-                } else {
-                    eprintln!("[Omni] 托盘图标不可用，已跳过托盘初始化");
-                }
+            if let Some(tray_icon) = app.default_window_icon().cloned() {
+                TrayIconBuilder::with_id("main")
+                    .icon(tray_icon)
+                    .tooltip("Omni 助手")
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            show_main_window(&tray.app_handle());
+                        }
+                    })
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "toggle" => show_main_window(app),
+                        "quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .build(app)?;
             } else {
-                eprintln!("[Omni] tray disabled in debug mode");
+                eprintln!("[Omni] 托盘图标不可用，已跳过托盘初始化");
             }
 
             // 知识库 pipeline worker 默认启动，debug 构建（tauri dev）下同样如此：
             // 否则导入后文档会静默停在「等待处理」，既无 error 也无 processing log，极难排查。
             // 需要临时关闭时设 OMNI_DISABLE_KNOWLEDGE_WORKER=1。
             if std::env::var_os("OMNI_DISABLE_KNOWLEDGE_WORKER").is_some() {
-                eprintln!("[Omni] knowledge pipeline worker disabled by OMNI_DISABLE_KNOWLEDGE_WORKER");
+                eprintln!(
+                    "[Omni] knowledge pipeline worker disabled by OMNI_DISABLE_KNOWLEDGE_WORKER"
+                );
             } else {
                 let worker_app = app.handle().clone();
                 std::thread::spawn(move || loop {

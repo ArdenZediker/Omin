@@ -1,3 +1,4 @@
+import { fetchLoopbackHttp, shouldProxyLoopbackHttp } from "./localHttp";
 /**
  * 适配器共享 HTTP 助手：请求超时 + 指数退避重试。
  * 所有 fetch 必须透传 signal（取消 = 立即中断在途请求），并带超时防永久挂起。
@@ -38,7 +39,7 @@ function sleep(ms: number) {
  * - 超时 → 抛「请求超时」错误
  * - 监听与定时器在请求结束后清理
  */
-async function fetchWithTimeout(
+export async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   signal: AbortSignal | undefined,
@@ -54,7 +55,10 @@ async function fetchWithTimeout(
   }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
+    const request = { ...init, signal: controller.signal };
+    const response = shouldProxyLoopbackHttp(url)
+      ? await fetchLoopbackHttp(url, request, controller.signal, timeoutMs)
+      : await fetch(url, request);
     return response;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
