@@ -2,7 +2,37 @@ use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use crate::knowledge_schema::{ensure_knowledge_defaults, ensure_knowledge_schema, table_has_column};
+#[path = "storage_maintenance.rs"]
+pub(crate) mod maintenance;
+
+/// SQLite itself produces the consistent standalone image, including committed WAL
+/// pages. The caller holds maintenance across this snapshot AND associated files.
+pub(crate) fn snapshot_database(
+    source: &std::path::Path,
+    target: &std::path::Path,
+) -> Result<(), String> {
+    if target.exists() {
+        return Err("快照目标已存在".into());
+    }
+    let connection =
+        Connection::open_with_flags(source, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|err| format!("无法打开源数据库：{err}"))?;
+    connection
+        .busy_timeout(std::time::Duration::from_secs(2))
+        .map_err(|e| e.to_string())?;
+    connection
+        .execute("VACUUM INTO ?1", [target.to_string_lossy().as_ref()])
+        .map_err(|err| format!("SQLite 快照失败：{err}"))?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(target)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| format!("同步 SQLite 快照失败：{e}"))
+}
+
+use crate::knowledge_schema::{
+    ensure_knowledge_defaults, ensure_knowledge_schema, table_has_column,
+};
 use crate::storage::{
     has_structured_chat_storage, read_kv, read_structured_app_value, save_structured_chat_storage,
     write_structured_app_value, KNOWLEDGE_MULTIMODAL_CONFIG_KEY,
@@ -10,9 +40,8 @@ use crate::storage::{
 
 /// 判断表/视图是否存在（表名来自代码常量，非用户输入，直接拼接安全）。
 fn table_exists(connection: &Connection, name: &str) -> bool {
-    let sql = format!(
-        "SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = '{name}'"
-    );
+    let sql =
+        format!("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = '{name}'");
     connection.query_row(&sql, [], |_| Ok(())).is_ok()
 }
 
@@ -37,19 +66,26 @@ pub(crate) fn migrate_legacy_project_data(connection: &Connection) -> Result<(),
     if table_exists(connection, "assistants") && !table_exists(connection, "projects") {
         guarded("ALTER TABLE assistants RENAME TO projects");
     }
-    if table_exists(connection, "assistant_presets") && !table_exists(connection, "project_presets") {
+    if table_exists(connection, "assistant_presets") && !table_exists(connection, "project_presets")
+    {
         guarded("ALTER TABLE assistant_presets RENAME TO project_presets");
     }
-    if table_exists(connection, "assistant_memories") && !table_exists(connection, "project_memories") {
+    if table_exists(connection, "assistant_memories")
+        && !table_exists(connection, "project_memories")
+    {
         guarded("ALTER TABLE assistant_memories RENAME TO project_memories");
     }
     guarded("ALTER TABLE project_memories RENAME COLUMN assistant_id TO project_id");
     guarded("ALTER TABLE session_summaries RENAME COLUMN assistant_id TO project_id");
     guarded("ALTER TABLE chat_sessions RENAME COLUMN assistant_id TO project_id");
-    if table_exists(connection, "projects") && !table_has_column(connection, "projects", "workspace_path").unwrap_or(false) {
+    if table_exists(connection, "projects")
+        && !table_has_column(connection, "projects", "workspace_path").unwrap_or(false)
+    {
         guarded("ALTER TABLE projects ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''");
     }
-    if table_exists(connection, "chat_sessions") && !table_has_column(connection, "chat_sessions", "workspace_path").unwrap_or(false) {
+    if table_exists(connection, "chat_sessions")
+        && !table_has_column(connection, "chat_sessions", "workspace_path").unwrap_or(false)
+    {
         guarded("ALTER TABLE chat_sessions ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''");
     }
 
@@ -301,7 +337,10 @@ fn run_database_migrations(connection: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-fn migrate_legacy_chat_kv_to_structured(connection: &Connection, app: &tauri::AppHandle) -> Result<(), String> {
+fn migrate_legacy_chat_kv_to_structured(
+    connection: &Connection,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
     if has_structured_chat_storage(connection)? {
         return Ok(());
     }
@@ -350,7 +389,10 @@ fn migrate_legacy_app_kv_to_structured(connection: &Connection) -> Result<(), St
     Ok(())
 }
 
-fn ensure_storage_migrations(connection: &Connection, app: &tauri::AppHandle) -> Result<(), String> {
+fn ensure_storage_migrations(
+    connection: &Connection,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
     migrate_legacy_chat_kv_to_structured(connection, app)?;
     migrate_legacy_app_kv_to_structured(connection)?;
     Ok(())
