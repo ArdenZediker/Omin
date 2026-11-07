@@ -209,6 +209,21 @@ describe("compactMenuGeometry", () => {
     });
   });
 
+  it("边缘附近的普通悬浮球按展开视口宽度换边，避免原生窗口钳制时拖动悬浮球", () => {
+    const requiredViewportWidth = getCompactMenuViewportMinWidth();
+    expect(requiredViewportWidth).toBe(462);
+
+    expect(resolveCompactMenuSidesFromSpace(1200, 365, {
+      requiredViewportWidth,
+      allowSplitSides: false,
+    })).toEqual({ menuSide: "left", submenuSide: "left" });
+
+    expect(resolveCompactMenuSidesFromSpace(365, 1200, {
+      requiredViewportWidth,
+      allowSplitSides: false,
+    })).toEqual({ menuSide: "right", submenuSide: "right" });
+  });
+
   it("两侧都放不下时挑选溢出更小的一侧，而不是固定向右", () => {
     // 左 340 / 右 120：整体向右溢出更多，应换到左侧。
     expect(resolveCompactMenuSidesFromSpace(340, 120, { allowSplitSides: false })).toEqual({

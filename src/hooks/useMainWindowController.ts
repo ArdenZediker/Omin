@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalPosition } from "@tauri-apps/api/dpi";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import {
   BASIC_SETTINGS_STORAGE_KEY,
@@ -24,8 +25,7 @@ import {
   applyThemeFromStorage,
   getBasicSettings,
   getMainWindowSizeForView,
-  getStoredMainPosition,
-  isMainPositionVisible,
+  getSafeStoredMainPosition,
   persistMainPosition,
   resizeWindow,
   restoreMainWindow,
@@ -263,9 +263,12 @@ export function useMainWindowController({
 
       const settings = getBasicSettings();
       if (settings.mainWindowPositionMode === "remember") {
-        const storedMainPos = getStoredMainPosition();
-        if (storedMainPos && isMainPositionVisible(storedMainPos)) {
-          await win.setPosition(new LogicalPosition(storedMainPos.x, storedMainPos.y));
+        // 读取即归一化到物理像素（含旧版逻辑值的一次性迁移），并且可见性按**全部
+        // 显示器**的物理工作区判定 —— 不能用 window.screen（当前屏）判，否则在
+        // 别块屏上保存的位置会被误判为不可见、每次启动都回落居中。
+        const safeStored = await getSafeStoredMainPosition(targetSize);
+        if (safeStored) {
+          await win.setPosition(new PhysicalPosition(safeStored.position.x, safeStored.position.y));
           return;
         }
       }
@@ -317,15 +320,17 @@ export function useMainWindowController({
 
     void win
       .onMoved(async (event) => {
+        // event.payload 原生就是**物理像素**，直接存；不要 toLogical —— 那是
+        // 「窗口当前所在屏」的逻辑空间，跨 DPI 屏保存后无法原样还原（读回时用的
+        // 是另一块屏的 scale）。scale 一并记下，与紧凑窗同口径。
         const scaleFactor = await win.scaleFactor();
-        const pos = event.payload.toLogical(scaleFactor);
-        const next = { x: Math.round(pos.x), y: Math.round(pos.y) };
+        const next = { x: Math.round(event.payload.x), y: Math.round(event.payload.y) };
         // 透明无边框窗口创建瞬间会在 (0,0) 闪现并触发 moved，
         // 不要把这种退化坐标当作用户真实摆放持久化。
         if (next.x <= 0 && next.y <= 0) {
           return;
         }
-        persistMainPosition(next);
+        persistMainPosition(next, scaleFactor);
       })
       .then((unlisten) => {
         moveCleanup = unlisten;
@@ -416,19 +421,37 @@ export function useMainWindowController({
   }, [basicSettings, isCompactWindow, onModelChange, previousModel, setView]);
 
   const handleOpenCompact = useCallback(async () => {
-    if (basicSettings.showCompactBall) {
-      const normalizedAppearance: CompactAppearance =
-        compactAppearance === "pet" ? "pet" : compactAppearance === "compact" || compactAppearance === "large" ? compactAppearance : "default";
-      await showCompactWindow(
-        normalizedAppearance,
-        normalizedAppearance === "pet" && isCompactPetHidden() ? 1 : normalizedAppearance === "pet" ? getPetWindowScale() : 1,
-        COMPACT_WINDOW_LABEL,
-        { avoidMainWindowOverlap: false }
-      );
+    if (!appWindow) {
+      return;
     }
-    if (appWindow) {
-      await appWindow.hide();
+
+    const minimizeToTaskbar = async () => {
+      await appWindow.setSkipTaskbar(false);
+      await appWindow.minimize();
+    };
+
+    if (!basicSettings.showCompactBall) {
+      await minimizeToTaskbar();
+      return;
     }
+
+    const normalizedAppearance: CompactAppearance =
+      compactAppearance === "pet" ? "pet" : compactAppearance === "compact" || compactAppearance === "large" ? compactAppearance : "default";
+    await showCompactWindow(
+      normalizedAppearance,
+      normalizedAppearance === "pet" && isCompactPetHidden() ? 1 : normalizedAppearance === "pet" ? getPetWindowScale() : 1,
+      COMPACT_WINDOW_LABEL,
+      { avoidMainWindowOverlap: false }
+    );
+
+    // 桌宠隐藏或紧凑窗未能创建时，不要把主窗口也隐藏到无入口状态。
+    const compactWindow = await WebviewWindow.getByLabel(COMPACT_WINDOW_LABEL);
+    if (!compactWindow || !(await compactWindow.isVisible().catch(() => false))) {
+      await minimizeToTaskbar();
+      return;
+    }
+
+    await appWindow.hide();
   }, [basicSettings.showCompactBall, compactAppearance, effectiveCompactScale]);
 
   const handleRestoreMain = useCallback(async (focusInput = false, options?: { restoreGeometry?: boolean }) => {

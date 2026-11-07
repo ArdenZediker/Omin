@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { BasicSettings, ExternalChatEntry } from "../../app/types";
 import type { CompactAppearance } from "../../hooks/useCompactWindowState";
 import {
@@ -51,6 +51,7 @@ const ENTRY_GROUP_LABELS: Record<"common" | "domestic", string> = {
 type CompactMenuProps = {
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
   menuPosition: { x: number; y: number } | null;
+  isGeometryReady: boolean;
   characterScale: number;
   compactAppearance: CompactAppearance;
   entries: ExternalChatEntry[];
@@ -79,6 +80,7 @@ function MenuLeadingIcon({ children }: { children: ReactNode }) {
 export default function CompactMenu({
   appearanceOptions,
   menuPosition,
+  isGeometryReady,
   characterScale,
   compactAppearance,
   entries,
@@ -98,16 +100,6 @@ export default function CompactMenu({
   const { themeMode, setMode: setThemeMode } = useThemeSync();
   const [isThemeOpen, setIsThemeOpen] = useState(false);
 
-  // Keep the menu invisible until the compact window has finished resizing to
-  // its expanded size. This avoids painting a clipped first frame and prevents
-  // any layout shift from dismissing the hovering orb (the previous fix moved
-  // the window on open, which raced with the hover-leave handler).
-  const [revealed, setRevealed] = useState(false);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setRevealed(true), 140);
-    return () => window.clearTimeout(timer);
-  }, []);
-
   const menuCssVars = {
     "--compact-menu-edge-padding": `${COMPACT_MENU_EDGE_PADDING}px`,
     "--compact-menu-width": `${COMPACT_MENU_WIDTH}px`,
@@ -125,9 +117,8 @@ export default function CompactMenu({
       : menuCssVars;
 
   const menuRevealStyle = {
-    opacity: revealed ? 1 : 0,
-    visibility: revealed ? "visible" : ("hidden" as const),
-    transition: "opacity 140ms ease, visibility 140ms",
+    opacity: isGeometryReady ? 1 : 0,
+    visibility: isGeometryReady ? "visible" : ("hidden" as const),
   } as CSSProperties;
 
   const submenuPositionStyle = {

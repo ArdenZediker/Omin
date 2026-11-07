@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as React from "react";
 import { listen } from "@tauri-apps/api/event";
-import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
-import type { Monitor } from "@tauri-apps/api/window";
+import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
+import { monitorFromPoint, type Monitor } from "@tauri-apps/api/window";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import type { Message } from "../adapters/types";
 import {
@@ -14,11 +14,15 @@ import {
 import type { BasicSettings, CompactReply, PetThoughtState } from "../app/types";
 import {
   getCompactWindowSize,
+  getPhysicalWorkArea,
   getMonitorForCursor,
   getPetThoughtAnchorOffset,
-  getStoredCompactPosition,
+  getSafeStoredCompactPosition,
   moveCompactWindowToMonitor,
   persistCompactPosition,
+  toCompactPhysicalPosition,
+  toPhysicalSize,
+  toNativePetCompactPosition,
   type PetThoughtPlacement,
 } from "../app/window";
 import { bootstrapSqliteStorage, readSqliteBackedValue } from "../app/sqliteStorage";
@@ -31,6 +35,7 @@ import {
 import {
   resolveAnchoredCompactWindowX,
   resolveCompactBallEdge,
+  resolveCompactWindowXKeepingBall,
   toNativePetWindowY,
   toVisualPetWindowY,
   type CharacterDragPosition,
@@ -41,6 +46,7 @@ import { useCompactPrimitives } from "./useCompactPrimitives";
 import { useCompactPetThoughtWindows } from "./useCompactPetThoughtWindows";
 import { useCompactCharacterDrag } from "./useCompactCharacterDrag";
 import { useCompactMenus } from "./useCompactMenus";
+import { PET_WINDOW_DECORATION_MARGIN_TOP } from "../app/pets/codexPetSizing";
 
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
@@ -120,9 +126,7 @@ export function useCompactWindowController({
   petThoughtPlacement,
   arePetThoughtsCollapsed,
   currentModel,
-  isCompactAppearanceOpen,
   isCompactMenuOpen,
-  isCompactModelOpen,
   isCompactQueryOpen,
   isCompactReplyLoading,
   isCompactWindow,
@@ -160,10 +164,25 @@ export function useCompactWindowController({
   // 用拖拽前的读数算出来的——写下去就会把窗口拽回拖拽前的位置，表现出来就是
   // 「拖动悬浮球时球直接瞬移很长一段距离」。
   const [compactGeometryRevision, setCompactGeometryRevision] = useState(0);
+  // Native setPosition/setSize calls from successive effects must not overlap.
+  // A newer layout reads the actual window geometry only after the previous
+  // write completes, so a stale resize cannot land after the current one.
+  const compactGeometryTaskRef = useRef<Promise<void>>(Promise.resolve());
+  const lastCompactBallEdgeRef = useRef(resolveCompactBallEdge(compactMenuSide));
+  // Keep the old visible anchor until native position and size have settled.
+  const [settledNormalGeometry, setSettledNormalGeometry] = useState<{
+    width: number;
+    height: number;
+    side: "left" | "right";
+  } | null>(null);
+  const [visibleCompactMenuSide, setVisibleCompactMenuSide] = useState(compactMenuSide);
+  const nativeCompactDragActiveRef = useRef(false);
   const requestCompactGeometrySync = useCallback(() => {
     setCompactGeometryRevision((value) => value + 1);
   }, []);
   const hasPetThought = Boolean(petThought);
+  const petGeometrySubmenuSide = compactAppearance === "pet" ? compactSubmenuSide : "right";
+  const petGeometryMenuOpen = compactAppearance === "pet" && isCompactMenuOpen;
   const compactMenuCloseTimerRef = useRef<number | null>(null);
   const compactMenuOpeningRef = useRef(false);
   const isCharacterDraggingRef = useRef(false);
@@ -321,8 +340,10 @@ export function useCompactWindowController({
   });
 
   const menus = useCompactMenus({
+    basicSettings,
     characterScale,
     compactAppearance,
+    compactMenuSide,
     compactSize,
     compactViewportSize,
     compactQuery,
@@ -358,6 +379,8 @@ export function useCompactWindowController({
     updatePetThoughtWindowForCurrentPositionAndSize: pet.updatePetThoughtWindowForCurrentPositionAndSize,
     compactMenuCloseTimerRef,
     compactMenuOpeningRef,
+    nativeCompactDragActiveRef,
+    compactGeometryTaskRef,
     scaleWheelTimerRef,
     scaleGestureScaleRef,
     scaleGestureSequenceRef,
@@ -525,25 +548,28 @@ export function useCompactWindowController({
 
     let cancelled = false;
     void (async () => {
-      const storedPosition = getStoredCompactPosition();
-      if (!storedPosition) {
+      // 存储值统一是「物理像素的宠物视觉位置」（旧版逻辑记录由
+      // getSafeStoredCompactPosition 一次性迁移），这里换算成窗口顶边的物理位置，
+      // 与 outerPosition()（原生物理值）同空间比较。
+      const stored = await getSafeStoredCompactPosition(compactSize);
+      if (!stored || cancelled) {
         return;
       }
-      const scaleFactor = await appWindow.scaleFactor();
-      const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+      const targetNative = toNativePetCompactPosition(compactAppearance, stored.position, stored.scale);
+      const currentPosition = await appWindow.outerPosition();
       if (cancelled) {
         return;
       }
 
       const shouldRestorePosition =
-        Math.abs(Math.round(currentPosition.x) - storedPosition.x) > 4 ||
-        Math.abs(toVisualPetWindowY(currentPosition.y) - storedPosition.y) > 4;
+        Math.abs(Math.round(currentPosition.x) - targetNative.x) > 4 ||
+        Math.abs(Math.round(currentPosition.y) - targetNative.y) > 4;
       if (!shouldRestorePosition) {
         return;
       }
 
       compactInternalMoveRef.current = true;
-      await appWindow.setPosition(new LogicalPosition(storedPosition.x, toNativePetWindowY(storedPosition.y)));
+      await appWindow.setPosition(new PhysicalPosition(targetNative.x, targetNative.y));
       window.setTimeout(() => {
         compactInternalMoveRef.current = false;
       }, 120);
@@ -552,6 +578,12 @@ export function useCompactWindowController({
     return () => {
       cancelled = true;
     };
+    // ⚠️ 依赖**只允许**是「开关」类状态，绝不能加 compactSize / compactAppearance：
+    // 本 effect 的语义是「显示/开关切换时，把球纠偏回上次存的位置，跑一次就够」。
+    // characterScale 是滚轮缩放手势**提交后**才变的值，一旦把 compactSize 列进依赖，
+    // 每次缩放提交都会重跑一次纠偏 —— 而那一刻窗口正处于「以宠物中心为锚点重排」的过程中，
+    // 拿存储值去比对就会把窗口拽回旧位置。effect 每次运行用的都是当次渲染的闭包，
+    // 所以不加这两个依赖也不会有读到过期值的问题。
   }, [basicSettings.showCompactBall, isCompactWindow]);
 
   useEffect(() => {
@@ -583,7 +615,7 @@ export function useCompactWindowController({
         }
         compactFollowSyncRunningRef.current = true;
 
-        if (isCharacterDraggingRef.current || characterPointerDownRef.current) {
+        if (isCharacterDraggingRef.current || characterPointerDownRef.current || nativeCompactDragActiveRef.current) {
           return;
         }
 
@@ -614,15 +646,16 @@ export function useCompactWindowController({
           return;
         }
 
-        const scaleFactor = await appWindow.scaleFactor();
-        const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+        // 物理像素：outerPosition() 原生就是物理值，与 monitor.workArea 同一空间，
+        // 交给 moveCompactWindowToMonitor 做跨屏等比映射（不要再 toLogical）。
+        const currentPosition = await appWindow.outerPosition();
         // 二次检查拖拽守卫：syncCompactMonitor 入口检查过守卫，但这里已经
         // await 过 isVisible/monitor/outerPosition，期间用户可能已开始拖拽。
         // 若此时仍 setPosition 会把宠物从拖动位置抢回光标屏锚点，造成闪烁。
-        if (isCharacterDraggingRef.current || characterPointerDownRef.current) {
+        if (isCharacterDraggingRef.current || characterPointerDownRef.current || nativeCompactDragActiveRef.current) {
           return;
         }
-        const currentLogicalPosition = {
+        const currentPhysicalPosition = {
           x: Math.round(currentPosition.x),
           y: Math.round(currentPosition.y),
         };
@@ -631,8 +664,9 @@ export function useCompactWindowController({
         try {
           await moveCompactWindowToMonitor(appWindow, monitor, compactSize, {
             sourceMonitor: previousMonitor,
-            currentPosition: previousMonitor ? currentLogicalPosition : null,
+            currentPosition: previousMonitor ? currentPhysicalPosition : null,
             persistPosition: false,
+            appearance: compactAppearance,
           });
           compactFollowMonitorRef.current = nextMonitorKey;
           compactFollowMonitorSnapshotRef.current = monitor;
@@ -691,7 +725,12 @@ export function useCompactWindowController({
           if (Date.now() <= compactSuppressBlurUntilRef.current) {
             return;
           }
-          if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
+          if (
+            (isCompactMenuOpen && compactAppearance === "pet") ||
+            isCompactQueryOpen ||
+            isCompactReplyLoading ||
+            compactReply
+          ) {
             resetCompactFloatingUi();
           }
         }).catch(() => {
@@ -702,7 +741,12 @@ export function useCompactWindowController({
           if (Date.now() <= compactSuppressBlurUntilRef.current) {
             return;
           }
-          if (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply) {
+          if (
+            (isCompactMenuOpen && compactAppearance === "pet") ||
+            isCompactQueryOpen ||
+            isCompactReplyLoading ||
+            compactReply
+          ) {
             resetCompactFloatingUi();
           }
         });
@@ -716,6 +760,7 @@ export function useCompactWindowController({
     };
   }, [
     compactReply,
+    compactAppearance,
     isCompactMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
@@ -732,7 +777,11 @@ export function useCompactWindowController({
     let cancelled = false;
     const ensureTopmost = async () => {
       try {
-        if (cancelled || isCharacterDraggingRef.current) {
+        if (
+          cancelled ||
+          isCharacterDraggingRef.current ||
+          (compactAppearance !== "pet" && isCompactMenuOpen)
+        ) {
           return;
         }
         const isVisible = await appWindow.isVisible();
@@ -754,7 +803,7 @@ export function useCompactWindowController({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [basicSettings.showCompactBall, isCompactWindow]);
+  }, [basicSettings.showCompactBall, compactAppearance, isCompactMenuOpen, isCompactWindow]);
 
   useEffect(() => {
     if (!isCompactWindow) {
@@ -763,7 +812,7 @@ export function useCompactWindowController({
     // 拖拽守卫：跨屏（尤其跨 DPI 屏）瞬间 compactViewportSize / petThoughtPlacement
     // 等 deps 可能变化触发本 effect，若此时 setPosition 会与拖拽 drain 循环竞争
     // 写位置，造成窗口在两点间快速横跳（闪烁）。拖拽期间位置只归拖拽循环管。
-    if (isCharacterDraggingRef.current) {
+    if (isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
       return;
     }
 
@@ -792,7 +841,7 @@ export function useCompactWindowController({
         ? isCompactMenuOpen
           ? resolvePetMenuViewportOffset(compactSize, compactViewportSize, {
               menuSide: compactMenuSide,
-              submenuSide: compactSubmenuSide,
+              submenuSide: petGeometrySubmenuSide,
             })
           : shouldReservePetThoughtSpace
             ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
@@ -802,11 +851,20 @@ export function useCompactWindowController({
     // outerSize / setPosition）。没有令牌时，先起的那次运行可能在后起的那次之后才落笔，
     // 用过期读数把窗口写回旧位置——视觉上就是窗口「跳一下」。cancelled 让新的运行胜过旧的。
     let cancelled = false;
-    void (async () => {
+    compactGeometryTaskRef.current = compactGeometryTaskRef.current.catch(() => {}).then(async () => {
+      if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
+        return;
+      }
       const scaleFactor = await appWindow.scaleFactor();
+      if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
+        return;
+      }
       const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
+      if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
+        return;
+      }
       const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
-      if (cancelled) {
+      if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
         return;
       }
       suppressCompactBlur();
@@ -823,6 +881,9 @@ export function useCompactWindowController({
           previousPetViewportOffset.x !== targetPetViewportOffset.x ||
           previousPetViewportOffset.y !== targetPetViewportOffset.y;
         if (hasSizeChanged || currentSizeChanged || hasPetViewportOffsetChanged) {
+          if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
+            return;
+          }
           // 以「宠物中心」为锚点：宠物中心在窗口内 = viewportOffset + 宠物本体尺寸/2。
           // 注意必须用宠物尺寸，不能用窗口尺寸——想法气泡存在时窗口被撑大、
           // 宠物被 offset 推离窗口中心，两者不相等，用窗口尺寸会让宠物上下乱跳。
@@ -833,9 +894,15 @@ export function useCompactWindowController({
           const nextCenterY = targetPetViewportOffset.y + previewCompactSize.height / 2;
           const nextX = Math.round(currentPosition.x + prevCenterX - nextCenterX);
           const nextVisualY = toVisualPetWindowY(currentPosition.y) + prevCenterY - nextCenterY;
+          // nextX / nextVisualY 都是「窗口当前所在屏」逻辑空间里的值（currentPosition
+          // 就是按该屏 scale 折算出来的），所以统一用同一个 scaleFactor 显式换算成物理再写入。
+          const nextNativePosition = toCompactPhysicalPosition(
+            { x: nextX, y: toNativePetWindowY(nextVisualY) },
+            scaleFactor
+          );
           compactInternalMoveRef.current = true;
           await Promise.all([
-            appWindow.setPosition(new LogicalPosition(nextX, toNativePetWindowY(nextVisualY))),
+            appWindow.setPosition(new PhysicalPosition(nextNativePosition.x, nextNativePosition.y)),
             appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height)),
             updatePetThoughtWindowForCurrentPositionAndSize(targetSize),
           ]);
@@ -859,22 +926,75 @@ export function useCompactWindowController({
       // 而这里的位置写入要晚数个 IPC 往返，两者不同边时中间那几帧球会被画到窗口的另一侧，
       // 展开态窗口宽达 812 → 视觉上就是「球瞬移一个窗口宽」。
       const currentX = Math.round(currentPosition.x);
-      const nextX = resolveAnchoredCompactWindowX(
-        currentX,
-        Math.round(currentSize.width),
-        Math.round(targetSize.width),
-        resolveCompactBallEdge(compactMenuSide)
-      );
+      const targetEdge = resolveCompactBallEdge(compactMenuSide);
+      const previousEdge = lastCompactBallEdgeRef.current;
+      const desiredX = previousEdge === targetEdge
+        ? resolveAnchoredCompactWindowX(currentX, Math.round(currentSize.width), Math.round(targetSize.width), targetEdge)
+        : resolveCompactWindowXKeepingBall(
+            currentX, Math.round(currentSize.width), Math.round(targetSize.width), compactSize.width, previousEdge, targetEdge
+          );
+      if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
+        return;
+      }
+      // A popup may have to grow toward a monitor edge (or the side may have
+      // changed). Never allow its entire visible control to end up off-screen.
+      let nextX = desiredX;
+      if (compactViewportSize) {
+        const nativePosition = toCompactPhysicalPosition({ x: currentX, y: Math.round(currentPosition.y) }, scaleFactor);
+        const ballCenterX = nativePosition.x + Math.round(
+          (previousEdge === "right" ? currentSize.width - compactSize.width / 2 : compactSize.width / 2) * scaleFactor
+        );
+        const monitor = await monitorFromPoint(ballCenterX, nativePosition.y + Math.round(compactSize.height * scaleFactor / 2)).catch(() => null);
+        if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
+          return;
+        }
+        if (monitor) {
+          const area = getPhysicalWorkArea(monitor);
+          const targetWidth = toPhysicalSize(targetSize, monitor.scaleFactor || scaleFactor).width;
+          const desiredPhysicalX = Math.round(desiredX * scaleFactor);
+          const maxX = Math.max(area.left, area.right - targetWidth);
+          nextX = Math.round(Math.max(area.left, Math.min(maxX, desiredPhysicalX)) / scaleFactor);
+        }
+      }
+      const sizeChanged = Math.round(currentSize.width) !== Math.round(targetSize.width) ||
+        Math.round(currentSize.height) !== Math.round(targetSize.height);
+      const geometryWrites: Promise<void>[] = [];
       if (nextX !== currentX) {
+        const nextNativePosition = toCompactPhysicalPosition(
+          { x: nextX, y: Math.round(currentPosition.y) },
+          scaleFactor
+        );
         compactInternalMoveRef.current = true;
-        await appWindow.setPosition(new LogicalPosition(nextX, Math.round(currentPosition.y)));
+        geometryWrites.push(appWindow.setPosition(new PhysicalPosition(nextNativePosition.x, nextNativePosition.y)));
+      }
+      if (sizeChanged) {
+        geometryWrites.push(appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height)));
+      }
+      // Once one write has begun, complete the pair even if a newer render
+      // cancels this effect. The queued render then reads a coherent geometry.
+      await Promise.all(geometryWrites);
+      if (!cancelled && !isCharacterDraggingRef.current && !nativeCompactDragActiveRef.current) {
+        await appWindow.setAlwaysOnTop(true).catch(() => undefined);
+      }
+      // A superseded write still changed the native window. Commit its visual
+      // anchor as well, so the next queued effect measures the edge actually
+      // rendered instead of applying a second correction from stale CSS.
+      if (!isCharacterDraggingRef.current && !nativeCompactDragActiveRef.current) {
+        lastCompactBallEdgeRef.current = targetEdge;
+        setVisibleCompactMenuSide(compactMenuSide);
+        setSettledNormalGeometry({ width: targetSize.width, height: targetSize.height, side: compactMenuSide });
+      }
+      if (nextX !== currentX) {
         window.setTimeout(() => {
           compactInternalMoveRef.current = false;
         }, 120);
       }
-      await appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height));
-      await appWindow.setAlwaysOnTop(true);
-    })();
+      if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
+        return;
+      }
+    }).catch(() => {
+      // A failed native geometry write should not block the next layout request.
+    });
     return () => {
       cancelled = true;
     };
@@ -883,12 +1003,10 @@ export function useCompactWindowController({
     compactSize,
     compactViewportSize,
     compactMenuSide,
-    compactSubmenuSide,
+    petGeometrySubmenuSide,
     compactAppearance,
     previewCharacterScale,
-    isCompactAppearanceOpen,
-    isCompactMenuOpen,
-    isCompactModelOpen,
+    petGeometryMenuOpen,
     isCompactQueryOpen,
     isCompactReplyLoading,
     isCompactWindow,
@@ -919,6 +1037,11 @@ export function useCompactWindowController({
           return;
         }
         const scaleFactor = await appWindow.scaleFactor();
+        // scaleFactor() 是异步 IPC：等待期间可能已开始拖拽。此时绝不能让之前
+        // 排队的 moved 回调落库，否则会覆盖用户最终的拖拽位置。
+        if (isCharacterDraggingRef.current || characterDragWindowMoveActiveRef.current) {
+          return;
+        }
         const pos = event.payload.toLogical(scaleFactor);
         const petOffset = lastAppliedPetViewportOffsetRef.current;
         const isPetAppearance = compactAppearance === "pet";
@@ -934,8 +1057,16 @@ export function useCompactWindowController({
           // 过滤这类退化坐标，避免覆盖用户拖动后的真实位置。
           const isDegenerate = visualPos.x <= 0 && visualPos.y <= 0;
           if (!isDegenerate) {
-            persistCompactPosition(visualPos);
-            characterDragLastPersistedRef.current = visualPos;
+            // event.payload 已是物理坐标；只把宠物视觉 offset（逻辑像素）按
+            // 当前屏 scale 换算后叠加，避免“物理→逻辑→物理”的舍入与坐标混用。
+            const physicalVisualPos = isPetAppearance
+              ? {
+                  x: Math.round(event.payload.x + petOffset.x * scaleFactor),
+                  y: Math.round(event.payload.y + (PET_WINDOW_DECORATION_MARGIN_TOP + petOffset.y) * scaleFactor),
+                }
+              : { x: Math.round(event.payload.x), y: Math.round(event.payload.y) };
+            persistCompactPosition(physicalVisualPos, scaleFactor);
+            characterDragLastPersistedRef.current = physicalVisualPos;
           }
         }
         await updatePetThoughtWindowForRect({
@@ -983,7 +1114,10 @@ export function useCompactWindowController({
   }, []);
 
   useEffect(() => {
-    if (!isCompactWindow || (!isCompactMenuOpen && !isCompactQueryOpen)) {
+    if (
+      !isCompactWindow ||
+      (!isCompactQueryOpen && !(isCompactMenuOpen && compactAppearance === "pet"))
+    ) {
       return;
     }
 
@@ -999,7 +1133,7 @@ export function useCompactWindowController({
       window.removeEventListener("blur", closeOnBlur);
       document.removeEventListener("visibilitychange", closeOnBlur);
     };
-  }, [closeCompactMenuNow, isCompactMenuOpen, isCompactQueryOpen, isCompactWindow]);
+  }, [closeCompactMenuNow, compactAppearance, isCompactMenuOpen, isCompactQueryOpen, isCompactWindow]);
 
   useEffect(() => {
     if (!isCompactWindow) {
@@ -1045,7 +1179,14 @@ export function useCompactWindowController({
       // is already up, any armed drag is stale — clear it instead of following
       // the cursor.
       if (!(event.buttons & 1)) {
-        resetStaleDragState();
+        // 鼠标可能在 webview 外松开，收不到 mouseup。这里不能直接清空 ref：
+        // 拖拽 drain 可能已有最后一帧 pending 目标，直接清会让窗口停在旧位置且
+        // 不持久化。复用规范收尾路径，先 await 最终物理落位再复位状态。
+        if (characterPointerDownRef.current || isCharacterDraggingRef.current || characterPointerMovedRef.current) {
+          void handleCharacterPointerUp();
+        } else {
+          resetStaleDragState();
+        }
         return;
       }
       const consumed = continueCharacterDrag(event.screenX, event.screenY);
@@ -1062,6 +1203,12 @@ export function useCompactWindowController({
     };
 
     const onWindowBlur = () => {
+      // 失焦可能发生在 mouseup 之前；保留最后目标并走统一收尾，避免清空
+      // pending 后窗口位置和持久化位置落后于用户最后一次拖动。
+      if (characterPointerDownRef.current || isCharacterDraggingRef.current || characterPointerMovedRef.current) {
+        void handleCharacterPointerUp();
+        return;
+      }
       resetStaleDragState();
     };
 
@@ -1117,5 +1264,12 @@ export function useCompactWindowController({
     openCompactMenu,
     previewCharacterScale,
     committedPetOffset,
+    visibleCompactMenuSide,
+    isNormalCompactGeometryReady: compactAppearance === "pet" || Boolean(
+      settledNormalGeometry &&
+      settledNormalGeometry.width === (compactViewportSize ?? compactSize).width &&
+      settledNormalGeometry.height === (compactViewportSize ?? compactSize).height &&
+      settledNormalGeometry.side === compactMenuSide
+    ),
   };
 }

@@ -1,7 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import type * as React from "react";
 import { currentMonitor, cursorPosition, monitorFromPoint } from "@tauri-apps/api/window";
-import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
+import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import type { Message } from "../adapters/types";
@@ -11,18 +11,23 @@ import {
   EXTERNAL_CHAT_ENTRIES,
   MAIN_WINDOW_LABEL,
 } from "../app/constants";
-import type { CompactReply } from "../app/types";
+import type { BasicSettings, CompactReply } from "../app/types";
 import type { ChatSession } from "../chat/types";
 import {
   getCompactWindowSize,
+  getCompactQueryViewportSize,
   getPetCompactMenuViewport,
   openInternalChatWindow,
+  persistCompactPosition,
   showSettingsWindow,
+  toCompactPhysicalPosition,
 } from "../app/window";
 import { readSqliteBackedValue } from "../app/sqliteStorage";
+import { showCompactMenuWindow } from "../app/compactMenuWindow";
 import { executeChatTurn } from "../chat/engine";
 import { resolveCurrentModelId } from "../chat/modelSelection";
 import {
+  getCompactMenuViewportMinWidth,
   resolveCompactMenuPositionFromViewport,
   resolveCompactMenuSidesFromSpace,
   resolvePetMenuAnchorX,
@@ -42,8 +47,10 @@ import type { CompactAppearance } from "./useCompactWindowState";
 import { clampCharacterScale } from "./useCompactWindowState";
 
 type UseCompactMenusArgs = {
+  basicSettings: BasicSettings;
   characterScale: number;
   compactAppearance: CompactAppearance;
+  compactMenuSide: "left" | "right";
   compactSize: { width: number; height: number };
   compactViewportSize: { width: number; height: number } | null;
   compactQuery: string;
@@ -83,6 +90,8 @@ type UseCompactMenusArgs = {
   updatePetThoughtWindowForCurrentPositionAndSize: (size: { width: number; height: number }) => Promise<void>;
   compactMenuCloseTimerRef: MutableRefObject<number | null>;
   compactMenuOpeningRef: MutableRefObject<boolean>;
+  nativeCompactDragActiveRef: MutableRefObject<boolean>;
+  compactGeometryTaskRef: MutableRefObject<Promise<void>>;
   scaleWheelTimerRef: MutableRefObject<number | null>;
   scaleGestureScaleRef: MutableRefObject<number | null>;
   scaleGestureSequenceRef: MutableRefObject<number>;
@@ -108,8 +117,10 @@ type UseCompactMenusArgs = {
  */
 export function useCompactMenus(args: UseCompactMenusArgs) {
   const {
+    basicSettings,
     characterScale,
     compactAppearance,
+    compactMenuSide,
     compactSize,
     compactViewportSize,
     compactQuery,
@@ -144,6 +155,8 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
     updatePetThoughtWindowForCurrentPositionAndSize,
     compactMenuCloseTimerRef,
     compactMenuOpeningRef,
+    nativeCompactDragActiveRef,
+    compactGeometryTaskRef,
     scaleWheelTimerRef,
     scaleGestureScaleRef,
     scaleGestureSequenceRef,
@@ -213,6 +226,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       viewportRightSpace,
       petCompactSize,
       petViewportSize: viewportOverride,
+      requiredViewportWidth: hasMeasuredMenuViewport ? undefined : getCompactMenuViewportMinWidth(),
       allowSplitSides: hasMeasuredMenuViewport,
     });
   }, [compactViewportSize, isCompactWindow]);
@@ -242,8 +256,30 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
   const handleOpenCompactQuery = useCallback(async () => {
     suppressCompactBlur();
     closeCompactMenus();
+    if (compactAppearance !== "pet" && isCompactWindow) {
+      // The ask bar replaces the ball. Pick the side with room before the
+      // native viewport grows, including after the ball has been dragged.
+      try {
+        const position = await appWindow.outerPosition();
+        const size = await appWindow.outerSize();
+        const scale = await appWindow.scaleFactor();
+        const ballHalfWidth = compactSize.width * scale / 2;
+        const centerX = position.x + Math.round(compactMenuSide === "left" ? size.width - ballHalfWidth : ballHalfWidth);
+        const centerY = position.y + Math.round(size.height / 2);
+        const monitor = (await monitorFromPoint(centerX, centerY)) ?? (await currentMonitor());
+        if (monitor) {
+          const area = monitor.workArea;
+          const need = getCompactQueryViewportSize(compactSize).width * (monitor.scaleFactor || 1);
+          const left = centerX - area.position.x;
+          const right = area.position.x + area.size.width - centerX;
+          setCompactMenuSide(right >= need || right >= left ? "right" : "left");
+        }
+      } catch {
+        // Keep the current side if monitor geometry is temporarily unavailable.
+      }
+    }
     setIsCompactQueryOpen(true);
-  }, [closeCompactMenus, setIsCompactQueryOpen, suppressCompactBlur]);
+  }, [closeCompactMenus, compactAppearance, compactMenuSide, compactSize, isCompactWindow, setCompactMenuSide, setIsCompactQueryOpen, suppressCompactBlur]);
 
   const handleOpenExternalChat = useCallback(
     async (entry: (typeof EXTERNAL_CHAT_ENTRIES)[number]) => {
@@ -375,7 +411,13 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
           const prevCenterY = previousPetViewportOffset.y + previousPetSize.height / 2;
           const nextX = Math.round(currentPosition.x + prevCenterX - previewSize.width / 2);
           const nextVisualY = toVisualPetWindowY(currentPosition.y) + prevCenterY - previewSize.height / 2;
-          await appWindow.setPosition(new LogicalPosition(nextX, toNativePetWindowY(nextVisualY)));
+          // nextX / nextVisualY 属于「窗口当前所在屏」的逻辑空间，按同一 scaleFactor
+          // 显式换算成物理再写入（写 LogicalPosition 的换算基准是隐含的，跨屏会错）。
+          const nextNativePosition = toCompactPhysicalPosition(
+            { x: nextX, y: toNativePetWindowY(nextVisualY) },
+            scaleFactor
+          );
+          await appWindow.setPosition(new PhysicalPosition(nextNativePosition.x, nextNativePosition.y));
           await appWindow.setSize(new LogicalSize(previewSize.width, previewSize.height));
           lastAppliedCompactSizeRef.current = { ...previewSize };
           lastAppliedPetSizeRef.current = { ...previewSize };
@@ -438,12 +480,22 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
         return;
       }
       if (event.button === 0) {
-        // 系统原生拖拽：拖拽期间窗口位置归 OS 管，而几何 effect 里在途的 setPosition
-        // 是用**拖拽前**的读数算出来的。拖拽结束后立刻重新同步一次，让几何用最新位置
-        // 重新对齐——否则那笔过期写入会把窗口拽回拖拽前的位置，表现出来就是
-        // 「拖动悬浮球时球直接瞬移很长一段距离」。
-        await appWindow.startDragging();
-        requestCompactGeometrySync();
+        // Claim native position ownership before waiting for outstanding
+        // geometry IPC. No resize, monitor-follow or menu-open may write a
+        // stale position while the OS owns the window during startDragging().
+        nativeCompactDragActiveRef.current = true;
+        try {
+          await compactGeometryTaskRef.current.catch(() => undefined);
+          await appWindow.startDragging();
+          const scale = await appWindow.scaleFactor();
+          const position = await appWindow.outerPosition();
+          // Moved notifications can be skipped while a previous internal-move
+          // guard is pending; always persist the final native drag position.
+          persistCompactPosition({ x: position.x, y: position.y }, scale);
+        } finally {
+          nativeCompactDragActiveRef.current = false;
+          requestCompactGeometrySync();
+        }
       }
     },
     [
@@ -451,26 +503,29 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       markCompactInteraction,
       raiseCompactWindow,
       requestCompactGeometrySync,
+      compactGeometryTaskRef,
+      nativeCompactDragActiveRef,
       setCompactReply,
       setIsCompactQueryOpen,
     ]
   );
 
   const openCompactMenu = useCallback(async (anchorClientX?: number, anchorClientY?: number) => {
+    // Hover and click can arrive before the first IPC resolves. Claim the
+    // opening lock synchronously so only one call changes the menu geometry.
+    if (compactMenuOpeningRef.current || isCompactMenuOpen || nativeCompactDragActiveRef.current) {
+      return;
+    }
+    compactMenuOpeningRef.current = true;
     markCompactInteraction();
     suppressCompactBlur();
     if (compactMenuCloseTimerRef.current !== null) {
       window.clearTimeout(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
     }
-    await raiseCompactWindow();
-    if (compactMenuOpeningRef.current || isCompactMenuOpen) {
-      return;
-    }
-
-    compactMenuOpeningRef.current = true;
     try {
-      if (isCompactQueryOpen) {
+      await raiseCompactWindow();
+      if (isCompactQueryOpen || nativeCompactDragActiveRef.current) {
         return;
       }
       const scaleFactor = await appWindow.scaleFactor();
@@ -489,20 +544,63 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
           : pointer
             ? pointer.y / scaleFactor - windowPosition.y
             : Math.max(0, fallbackSize.height / 2);
+      if (compactAppearance !== "pet") {
+        const nativeWindowPosition = await appWindow.outerPosition();
+        const nativeWindowSize = await appWindow.outerSize();
+        const anchorPhysical = {
+          x: Math.round(nativeWindowPosition.x + anchorX * scaleFactor),
+          y: Math.round(nativeWindowPosition.y + anchorY * scaleFactor),
+        };
+        const layout = await showCompactMenuWindow(
+          anchorPhysical,
+          {
+            compactAppearance,
+            characterScale,
+            followCursorScreen: basicSettings.followCursorScreen,
+          },
+          {
+            x: nativeWindowPosition.x,
+            y: nativeWindowPosition.y,
+            width: nativeWindowSize.width,
+            height: nativeWindowSize.height,
+          }
+        );
+        if (nativeCompactDragActiveRef.current) {
+          return;
+        }
+        setCompactMenuSide(layout.side);
+        setCompactSubmenuSide(layout.side);
+        setCharacterMenuPosition(layout.menuPosition);
+        setIsCompactMenuOpen(true);
+        setIsCompactModelOpen(false);
+        setIsCompactAppearanceOpen(false);
+        setIsCompactQueryOpen(false);
+        return;
+      }
       const petMenuViewport =
         compactAppearance === "pet"
           ? getPetCompactMenuViewport(compactSize)
           : null;
       const { menuSide, submenuSide } = await resolveCompactMenuSides(anchorX, anchorY, petMenuViewport ?? undefined, undefined, compactSize);
+      if (nativeCompactDragActiveRef.current) {
+        return;
+      }
       const menuAnchorX = petMenuViewport
         ? resolvePetMenuAnchorX(compactSize, petMenuViewport, { menuSide, submenuSide })
         : anchorX;
       const menuAnchorY = petMenuViewport
         ? resolvePetMenuAnchorY(compactSize, petMenuViewport, anchorY, { menuSide, submenuSide })
         : anchorY;
+      const menuPosition = await resolveCompactMenuPosition(menuAnchorX, menuAnchorY, menuSide, submenuSide, petMenuViewport ?? undefined);
+      if (nativeCompactDragActiveRef.current) {
+        return;
+      }
+      // Commit side selection and open state together. Committing the side
+      // earlier lets the geometry effect reposition the collapsed window,
+      // then reposition it again when the open state expands the viewport.
       setCompactMenuSide(menuSide);
       setCompactSubmenuSide(submenuSide);
-      setCharacterMenuPosition(await resolveCompactMenuPosition(menuAnchorX, menuAnchorY, menuSide, submenuSide, petMenuViewport ?? undefined));
+      setCharacterMenuPosition(menuPosition);
       setIsCompactMenuOpen(true);
       setIsCompactModelOpen(false);
       setIsCompactAppearanceOpen(false);
@@ -511,16 +609,22 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       compactMenuOpeningRef.current = false;
     }
   }, [
+    basicSettings.followCursorScreen,
+    characterScale,
+    compactAppearance,
+    compactSize,
     resolveCompactMenuSides,
     resolveCompactMenuPosition,
     isCompactMenuOpen,
     isCompactQueryOpen,
+    nativeCompactDragActiveRef,
     markCompactInteraction,
     raiseCompactWindow,
     suppressCompactBlur,
     setIsCompactAppearanceOpen,
     setIsCompactMenuOpen,
     setIsCompactModelOpen,
+    setCharacterMenuPosition,
     setCompactMenuSide,
     setCompactSubmenuSide,
     setIsCompactQueryOpen,

@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import { X } from "lucide-react";
 
 type CompactQueryPanelProps = {
   compactQuery: string;
@@ -75,7 +76,7 @@ export default function CompactQueryPanel({
             value={compactQuery}
             onChange={(event) => onChange(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="请输入查询内容"
+            placeholder="问 Omni 一个问题"
             className="compact-query__input"
             autoFocus
           />
@@ -89,22 +90,31 @@ export default function CompactQueryPanel({
   }
 
   return (
-    <div className="compact-search-popover no-drag" onMouseDown={(event) => event.stopPropagation()}>
-      <button type="button" className="compact-query__preset compact-query__preset--inline" onClick={() => onChange("默认查询")}>
-        默认查询
+    <div className="compact-ask-popover no-drag" onMouseDown={(event) => event.stopPropagation()}>
+      <button
+        type="button"
+        className="compact-ask-popover__close"
+        aria-label="关闭快速提问"
+        title="关闭"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onClose}
+      >
+        <X size={16} strokeWidth={2} aria-hidden="true" />
       </button>
       <input
         type="text"
         value={compactQuery}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="请输入查询内容"
-        className="compact-search-popover__input"
+        placeholder="问 Omni 一个问题"
+        aria-label="快速提问"
+        title="回车直接回答，Alt+回车转到主窗口"
+        className="compact-ask-popover__input"
         autoFocus
       />
       <button
         type="button"
-        className="compact-query__preset compact-query__preset--inline"
+        className="compact-query__preset compact-query__preset--inline compact-ask-popover__send"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           void onSubmit(false);

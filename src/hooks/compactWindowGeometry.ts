@@ -64,6 +64,19 @@ export function resolveAnchoredCompactWindowX(
     : Math.round(currentX);
 }
 
+/** Keep the visible ball in place when the expanded panel needs to switch sides. */
+export function resolveCompactWindowXKeepingBall(
+  currentX: number,
+  currentWidth: number,
+  targetWidth: number,
+  ballWidth: number,
+  previousEdge: CompactWindowEdge,
+  targetEdge: CompactWindowEdge
+): number {
+  const ballX = currentX + (previousEdge === "right" ? currentWidth - ballWidth : 0);
+  return Math.round(ballX - (targetEdge === "right" ? targetWidth - ballWidth : 0));
+}
+
 /**
  * 显示器工作区矩形（物理像素，虚拟桌面坐标系，与 cursorPosition() /
  * outerPosition() 同一空间）。

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type MouseEvent, type SetStateAction, type WheelEvent } from "react";
 import type { BasicSettings, CompactReply, ExternalChatEntry } from "../app/types";
 import { emit, emitTo } from "@tauri-apps/api/event";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, MessageCirclePlus } from "lucide-react";
 import { PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import { getPetThoughtKey } from "../app/petThoughts";
 import type { PetThoughtState } from "../app/types";
@@ -41,7 +41,9 @@ type CompactWindowProps = {
   isCharacterDragging: boolean;
   previewCharacterScale: number | null;
   compactMenuSide: "left" | "right";
+  visibleCompactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
+  isNormalCompactGeometryReady: boolean;
   characterDragMotion: DesktopPetState | null;
   omniSmallIconSrc: string;
   appearanceOptions: Array<{ id: CompactAppearance; title: string; description: string }>;
@@ -106,7 +108,9 @@ export default function CompactWindow({
   characterDragMotion,
   omniSmallIconSrc,
   compactMenuSide,
+  visibleCompactMenuSide,
   compactSubmenuSide,
+  isNormalCompactGeometryReady,
   onCharacterContextMenu,
   onCharacterPointerDown,
   onCharacterPointerMove,
@@ -195,7 +199,6 @@ export default function CompactWindow({
   const [isPetHovered, setIsPetHovered] = useState(false);
   const [petWavingHold, setPetWavingHold] = useState(false);
   const petHoverGraceRef = useRef<number | null>(null);
-  const petMenuOpenGraceRef = useRef<number>(0);
   // After the menu opens (hover mode), the window resizes to make room for it.
   // That resize can momentarily push the cursor out of the hover zone and fire a
   // spurious mouseleave, which would flip the pet back to idle and (after the
@@ -263,19 +266,6 @@ export default function CompactWindow({
   }, [onSetArePetThoughtsCollapsed, petThoughtCount]);
 
 
-  const resolveAnchorEdge = (target: HTMLElement) => {
-    const anchor = target.querySelector<HTMLElement>(".compact-menu-anchor");
-    if (!anchor) {
-      return null;
-    }
-
-    const rect = anchor.getBoundingClientRect();
-    return {
-      x: rect.left + rect.width * 0.62,
-      y: rect.top + rect.height / 2,
-    };
-  };
-
   const isPointerInsideVisibleFloatingUi = (target: EventTarget | null) => {
     if (!(target instanceof HTMLElement)) {
       return false;
@@ -283,7 +273,7 @@ export default function CompactWindow({
 
     return Boolean(
       target.closest(
-        ".compact-menu, .compact-submenu, .compact-query, .compact-reply, .compact-menu-anchor, .compact-button--pet, .pet-thought-compact-toggle, .compact-pet-thought-stack"
+        ".compact-menu, .compact-submenu, .compact-query, .compact-ask-popover, .compact-reply, .compact-menu-anchor, .compact-button--pet, .pet-thought-compact-toggle, .compact-pet-thought-stack"
       )
     );
   };
@@ -292,12 +282,15 @@ export default function CompactWindow({
   // 菜单方向，绝不能掺 isCompactMenuOpen：这个 class 在 React 提交那一帧就换边，而窗口
   // x 的补偿要晚数个 IPC 往返；掺了开关态就会在展开/收起的那几帧把球画到窗口另一侧，
   // 展开态窗口宽达 812，于是看起来就是「球瞬移一整个窗口宽」。
-  const isBallRightAnchored = !isAnimatedAppearance && resolveCompactBallEdge(compactMenuSide) === "right";
+  const isQueryPresentationReady = isPetAppearance || !isCompactQueryOpen || isNormalCompactGeometryReady;
+  const isBallRightAnchored = !isAnimatedAppearance && resolveCompactBallEdge(visibleCompactMenuSide) === "right";
 
   return (
     <div
       className={`compact-shell drag-region ${
         isBallRightAnchored ? "compact-shell--menu-left" : ""
+      } ${
+        isCompactQueryOpen && !isPetAppearance && isQueryPresentationReady ? "compact-shell--query-open" : ""
       } ${
         isPetAppearance && (isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply)
           ? "compact-shell--pet-expanded"
@@ -305,16 +298,15 @@ export default function CompactWindow({
       }`}
       onMouseDownCapture={(e) => {
         const target = e.target as HTMLElement;
-        // The pet button owns its own press: never intercept it for panel
-        // dismissal. Otherwise, whenever a menu/panel is open (e.g. hover mode
-        // opens the menu the moment you hover), the capture-phase
-        // stopPropagation below swallows the pet's mousedown and dragging
-        // becomes completely unresponsive.
-        if (isPetAppearance && Boolean(target.closest(".compact-button--pet"))) {
+        // The ball owns its press in every appearance. Hover can open the
+        // menu before mousedown, so treating the ball as an outside click here
+        // closes it before the button's click handler even runs.
+        if (target.closest(".compact-button--brand")) {
           return;
         }
         const isInsideFloatingPanel = Boolean(
-          target.closest(".compact-query") || target.closest(".compact-reply") || target.closest(".compact-menu") || target.closest(".compact-submenu")
+          target.closest(".compact-query") || target.closest(".compact-ask-popover") ||
+          target.closest(".compact-reply") || target.closest(".compact-menu") || target.closest(".compact-submenu")
         );
         const hasFloatingPanel = Boolean(isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || compactReply);
 
@@ -346,7 +338,7 @@ export default function CompactWindow({
         }
       }}
       onMouseMove={(event) => {
-        if (!isCompactMenuOpen || isCompactQueryOpen) {
+        if (!isPetAppearance || !isCompactMenuOpen || isCompactQueryOpen) {
           return;
         }
         // Ignore spurious moves that immediately follow the open-menu resize.
@@ -373,7 +365,7 @@ export default function CompactWindow({
         }
       }}
       onMouseLeave={() => {
-        if (isCompactQueryOpen || !isCompactMenuOpen) {
+        if (!isPetAppearance || isCompactQueryOpen || !isCompactMenuOpen) {
           return;
         }
         // The pointer left the *entire* floating window. Because onMouseLeave
@@ -382,12 +374,15 @@ export default function CompactWindow({
         if (petHoverCloseTimerRef.current !== null) {
           window.clearTimeout(petHoverCloseTimerRef.current);
         }
+        // A native resize can briefly generate mouseleave before the webview
+        // catches up. Wait until the opening geometry settles before closing.
+        const remainingStableMs = Math.max(0, petMenuStableUntilRef.current - Date.now());
         petHoverCloseTimerRef.current = window.setTimeout(() => {
           if (isCompactMenuOpen && !isCompactQueryOpen) {
             onCloseCompactMenu();
           }
           petHoverCloseTimerRef.current = null;
-        }, 160);
+        }, Math.max(160, remainingStableMs + 160));
       }}
     >
       <div
@@ -405,7 +400,7 @@ export default function CompactWindow({
           }
         }}
         onMouseEnter={
-          (e) => {
+          () => {
             if (isPetAppearance) {
               if (petHoverGraceRef.current !== null) {
                 window.clearTimeout(petHoverGraceRef.current);
@@ -417,10 +412,6 @@ export default function CompactWindow({
             }
             if (!isCompactQueryOpen) {
               onCancelCompactMenuClose();
-              const anchor = resolveAnchorEdge(e.currentTarget);
-              petMenuOpenGraceRef.current = Date.now();
-              petMenuStableUntilRef.current = Date.now() + PET_MENU_STABLE_MS;
-              void onOpenCompactMenu(anchor?.x ?? e.clientX, anchor?.y ?? e.clientY);
             }
           }
         }
@@ -530,10 +521,15 @@ export default function CompactWindow({
                   return;
                 }
                 event.stopPropagation();
+                if (isCompactQueryOpen) {
+                  onSetIsCompactQueryOpen(false);
+                  return;
+                }
                 if (isCompactMenuOpen) {
                   onCloseCompactMenuNow();
                   return;
                 }
+                petMenuStableUntilRef.current = Date.now() + PET_MENU_STABLE_MS;
                 const rect = event.currentTarget.getBoundingClientRect();
                 void onOpenCompactMenu(rect.left + rect.width / 2, rect.top + rect.height / 2);
               }}
@@ -603,40 +599,18 @@ export default function CompactWindow({
               </div>
             ) : null}
 
-            {isCompactMenuOpen && !isPetAppearance && (
-              <CompactMenu
-                appearanceOptions={appearanceOptions}
-                menuPosition={null}
-                characterScale={characterScale}
-                compactAppearance={compactAppearance}
-                entries={entries}
-                isCompactAppearanceOpen={isCompactAppearanceOpen}
-                isCompactModelOpen={isCompactModelOpen}
-                compactMenuSide={compactMenuSide}
-                compactSubmenuSide={compactSubmenuSide}
-                followCursorScreen={basicSettings.followCursorScreen}
-                onCompactAppearanceChange={onCompactAppearanceChange}
-                onOpenExternalChat={onOpenExternalChat}
-                onOpenSettingsFromCompact={onOpenSettingsFromCompact}
-                onScaleReset={onCompactScaleReset}
-                onUpdateBasicSettings={onUpdateBasicSettings}
-                onSetIsCompactAppearanceOpen={onSetIsCompactAppearanceOpen}
-                onSetIsCompactModelOpen={onSetIsCompactModelOpen}
-              />
-            )}
-
-            {isCompactQueryOpen && !isPetAppearance && (
-                <CompactQueryPanel
-                  compactQuery={compactQuery}
-                  isCharacterAppearance={isAnimatedAppearance}
-                  variant="default"
-                  onChange={onSetCompactQuery}
-                  onClose={() => onSetIsCompactQueryOpen(false)}
-                  onSubmit={onCompactQuerySubmit}
-              />
-            )}
-
           </div>
+
+          {isCompactQueryOpen && !isPetAppearance && isQueryPresentationReady && (
+            <CompactQueryPanel
+              compactQuery={compactQuery}
+              isCharacterAppearance={isAnimatedAppearance}
+              variant="default"
+              onChange={onSetCompactQuery}
+              onClose={() => onSetIsCompactQueryOpen(false)}
+              onSubmit={onCompactQuerySubmit}
+            />
+          )}
 
           {isCompactQueryOpen && isPetAppearance && (
             <CompactQueryPanel
@@ -649,11 +623,11 @@ export default function CompactWindow({
             />
           )}
 
-          {!isPetAppearance && !isCompactQueryOpen && (
+          {!isPetAppearance && (!isCompactQueryOpen || !isQueryPresentationReady) && (
             <div className={`compact-bar__actions no-drag ${isPetAppearance ? "compact-bar__actions--pet" : ""}`}>
               <button
                 type="button"
-                className="compact-button compact-button--search-chip no-drag"
+                className="compact-button compact-button--quick-ask no-drag"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -665,13 +639,10 @@ export default function CompactWindow({
                 onClick={() => {
                   void onOpenCompactQuery();
                 }}
-                aria-label="\u6253\u5f00\u67e5\u8be2"
-                title="\u6253\u5f00\u67e5\u8be2"
+                aria-label="快速提问"
+                title="快速提问"
               >
-                <svg className="compact-button__search" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <circle cx="11" cy="11" r="6.5" strokeWidth="1.8" />
-                  <path d="M16 16L21 21" strokeWidth="1.8" strokeLinecap="round" />
-                </svg>
+                <MessageCirclePlus className="compact-button__quick-ask" strokeWidth={1.8} aria-hidden="true" />
               </button>
 
             </div>
@@ -682,6 +653,7 @@ export default function CompactWindow({
           <CompactMenu
             appearanceOptions={appearanceOptions}
             menuPosition={isPetAppearance ? menuPosition : null}
+            isGeometryReady
             characterScale={characterScale}
             compactAppearance={compactAppearance}
             entries={entries}

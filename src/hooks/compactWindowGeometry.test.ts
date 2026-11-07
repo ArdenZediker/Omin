@@ -10,6 +10,7 @@ import {
   clampDragTargetToWorkArea,
   resolveAnchoredCompactWindowX,
   resolveCompactBallEdge,
+  resolveCompactWindowXKeepingBall,
 } from "./compactWindowGeometry";
 
 const bounds = { left: 0, top: 0, right: 1920, bottom: 1080 };
@@ -88,6 +89,12 @@ function ballScreenX(windowX: number, windowWidth: number, ballEdge: "left" | "r
 }
 
 describe("紧凑窗口贴边不变量", () => {
+  it("展开时改变菜单侧边也不会把球挪到窗口另一端", () => {
+    const x = resolveCompactWindowXKeepingBall(1600, 120, 374, 120, "left", "right");
+    expect(x).toBe(1600 + 120 - 374);
+    expect(resolveCompactWindowXKeepingBall(x, 374, 120, 120, "right", "left")).toBe(1600);
+  });
+
   it("窗口锚边与球的贴边必须取同一个判据", () => {
     // 判据只有一个来源（resolveCompactBallEdge），所以「保哪条边」永远等于「球贴哪条边」。
     // 两者一旦不同边，窗口尺寸变化就会把球画到窗口的另一侧 —— 这就是本次修的 bug。

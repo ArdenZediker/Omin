@@ -1,6 +1,6 @@
 import { useCallback, useEffect, type MutableRefObject } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
+import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { PET_THOUGHT_WINDOW_LABEL } from "../app/constants";
 import type { CompactReply, PetThoughtState } from "../app/types";
@@ -194,7 +194,18 @@ export function useCompactPetThoughtWindows(args: UseCompactPetThoughtWindowsArg
       }
       await Promise.all([
         shouldMove
-          ? thoughtWindow.setPosition(new LogicalPosition(layout.position.x, layout.position.y))
+          ? thoughtWindow.setPosition(
+              // layout.position 是**该显示器逻辑空间**的值（resolvePetThoughtWindowLayout
+              // 内部用 getLogicalMonitorWorkArea 计算），写入窗口必须换算成物理像素：
+              // 写 LogicalPosition 时 tao 会按「窗口当前所在屏」的 scale 再乘一次
+              // （windows/window.rs:230），跨 DPI 屏就落错位置。
+              // 注：本分支当前不可达（shouldUseDetachedThoughtWindow 恒为 false），
+              // 这里只为消除隐患，避免将来重新启用时踩同一个坑。
+              new PhysicalPosition(
+                Math.round(layout.position.x * (monitor.scaleFactor || 1)),
+                Math.round(layout.position.y * (monitor.scaleFactor || 1))
+              )
+            )
           : Promise.resolve(),
         thoughtWindow.setSize(new LogicalSize(PET_THOUGHT_WINDOW_SIZE.width, layout.size.height)).catch(() => undefined),
       ]);

@@ -38,7 +38,14 @@ vi.mock("./compactWindowRuntime", () => ({ appWindow: mocks.appWindow }));
 vi.mock("./compactInteractionGuards", () => ({ clearPendingDragTimer: () => undefined }));
 vi.mock("../app/window", () => ({
   isCharacterPointerInHitArea: () => true,
-  persistCompactPosition: (position: { x: number; y: number }) => mocks.persistCompactPosition(position),
+  // 忠实转写：本测试的 scaleFactor 恒为 1，故换算等价于恒等；但仍要求把 scale 一并
+  // 透传下去 —— 持久化「物理像素 + 所属屏 scale」是存储层的新契约。
+  toCompactPhysicalPosition: (position: { x: number; y: number }, scale: number) => ({
+    x: Math.round(position.x * (scale || 1)),
+    y: Math.round(position.y * (scale || 1)),
+  }),
+  persistCompactPosition: (position: { x: number; y: number }, scale: number) =>
+    mocks.persistCompactPosition(position, scale),
 }));
 vi.mock("../app/constants", () => ({ MAIN_WINDOW_LABEL: "main" }));
 vi.mock("../app/pets/codexPetSizing", () => ({
@@ -276,5 +283,11 @@ describe("useCompactCharacterDrag 拖拽与点击判定", () => {
     await act(async () => {
       await result.current.drag.handleCharacterPointerUp();
     });
+
+    // 持久化契约：位置必须与「所属屏 scale」一起写入 —— 读取端要靠它把
+    // 「宠物视觉位置」换算回窗口顶边（跨 DPI 屏时这个 scale 不再是 1）。
+    const persistCalls = mocks.persistCompactPosition.mock.calls;
+    expect(persistCalls.length).toBeGreaterThan(0);
+    expect(persistCalls[persistCalls.length - 1][1]).toBe(1);
   });
 });

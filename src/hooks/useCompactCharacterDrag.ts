@@ -7,7 +7,7 @@ import {
   PET_WINDOW_TOP_OVERSCROLL,
 } from "../app/pets/codexPetSizing";
 import { clearPendingDragTimer } from "./compactInteractionGuards";
-import { isCharacterPointerInHitArea, persistCompactPosition } from "../app/window";
+import { isCharacterPointerInHitArea, persistCompactPosition, toCompactPhysicalPosition } from "../app/window";
 import {
   clampDragTargetToWorkArea,
   resolveCharacterDragMotion,
@@ -507,9 +507,9 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
       characterDragRafRef.current = null;
     }
     await flushCharacterDragPosition();
-    // 与 onMoved 一致：持久化「宠物本体」的视觉位置（逻辑坐标 = 窗口逻辑位置
-    // + 宠物视口偏移）。拖拽目标虽是物理像素，但写入后窗口实际位置即目标，
-    // 读 outerPosition().toLogical 换算回逻辑坐标最准确，跨 DPI 屏松手也正确。
+    // 与 onMoved 一致：持久化「宠物本体」的视觉位置。拖拽目标本身就是物理像素、
+    // 松手后窗口物理位置即目标，所以这里读回逻辑位置后按同一 scaleFactor 换算成
+    // 物理再落库（存储口径见 persistCompactPosition）。
     const scaleFactor = await appWindow.scaleFactor();
     const position = (await appWindow.outerPosition()).toLogical(scaleFactor);
     const petOffset = lastAppliedPetViewportOffsetRef.current;
@@ -517,10 +517,18 @@ export function useCompactCharacterDrag(args: UseCompactCharacterDragArgs) {
       x: Math.round(position.x + petOffset.x),
       y: toVisualPetWindowY(position.y) + petOffset.y,
     };
+    // 持久化口径统一为「物理像素 + 所属屏 scale」：拖拽目标本身就是物理像素，
+    // 松手后窗口物理位置即目标；这里把逻辑空间的视觉位置按同一 scaleFactor 换算成物理。
+    // （想法气泡窗口要的是逻辑矩形，所以 finalVisualPosition 仍按逻辑值传下去。）
+    const physicalVisualPosition = toCompactPhysicalPosition(finalVisualPosition, scaleFactor);
     const lastPersisted = characterDragLastPersistedRef.current;
-    if (!lastPersisted || lastPersisted.x !== finalVisualPosition.x || lastPersisted.y !== finalVisualPosition.y) {
-      persistCompactPosition(finalVisualPosition);
-      characterDragLastPersistedRef.current = finalVisualPosition;
+    if (
+      !lastPersisted ||
+      lastPersisted.x !== physicalVisualPosition.x ||
+      lastPersisted.y !== physicalVisualPosition.y
+    ) {
+      persistCompactPosition(physicalVisualPosition, scaleFactor);
+      characterDragLastPersistedRef.current = physicalVisualPosition;
     }
     await updatePetThoughtWindowForRect({
       left: finalVisualPosition.x,

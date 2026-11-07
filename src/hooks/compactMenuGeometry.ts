@@ -20,6 +20,8 @@ type CompactMenuSideSpaceOptions = {
   petViewportSize?: { width: number; height: number };
   preferredMenuSide?: CompactMenuSide;
   preferredSubmenuSide?: CompactMenuSide;
+  /** Minimum viewport width needed on the side where the expanded window grows. */
+  requiredViewportWidth?: number;
   /**
    * 是否允许一级菜单与二级菜单朝**相反**方向展开（split 组合）。
    *
@@ -108,6 +110,10 @@ export function resolveCompactMenuSidesFromSpace(
       let viewportOverflow = 0;
       if (typeof candidateViewportLeftSpace === "number" && typeof candidateViewportRightSpace === "number") {
         viewportOverflow = getSpaceOverflow(candidateViewportLeftSpace, candidateViewportRightSpace, candidate);
+      }
+      if (typeof options.requiredViewportWidth === "number") {
+        const availableViewportSpace = candidate.menuSide === "right" ? rightSpace : leftSpace;
+        viewportOverflow += Math.max(0, options.requiredViewportWidth - availableViewportSpace);
       }
       const menuSidePenalty = candidate.menuSide === preferredMenuSide ? 0 : 2;
       const submenuSidePenalty = candidate.submenuSide === preferredSubmenuSide ? 0 : 0.35;
