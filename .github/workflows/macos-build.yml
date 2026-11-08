@@ -109,6 +109,16 @@ jobs:
           if [[ "${{ matrix.target }}" == aarch64-* ]]; then expected=arm64; else expected=x86_64; fi
           test "$archs" = "$expected"
           codesign --verify --deep --strict --verbose=2 "${app[0]}"
+          dmg_name="$(basename "${dmg[0]}")"
+          dmg_bytes="$(stat -f '%z' "${dmg[0]}")"
+          dmg_sha256="$(shasum -a 256 "${dmg[0]}" | awk '{print $1}')"
+          {
+            echo "### macOS DMG verification"
+            echo
+            echo "| Architecture | File | Bytes | SHA-256 |"
+            echo "|---|---|---:|---|"
+            echo "| ${{ matrix.arch }} | \`$dmg_name\` | $dmg_bytes | \`$dmg_sha256\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: omni-macos-${{ matrix.arch }}
