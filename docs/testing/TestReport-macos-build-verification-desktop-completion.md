@@ -147,6 +147,7 @@ GitHub Actions：打开待验收提交对应的 macOS build workflow run
 | Windows release smoke（当前工作树） | 通过（有限） | 本次构建 PID 131400 启动后 Responding、标题 `Omni`；请求关闭后正常退出，直接子进程数为 0，复查无 `omni` / `omni-agent-host` 残留。未执行安装器安装和完整 UI 流程 |
 | Windows 单实例重启交接 | 通过（当前工作树） | 修复先 spawn 后退出的单实例竞态，改用 `AppHandle::restart()`。release 经 WebView2 CDP 调用真实 `restart_app`：PID 80860 退出，PID 130340 启动且 Responding，主窗和紧凑窗重新加载；测试后已清理目标进程。该结果只证明进程重启交接，不证明迁移数据后的真实读取 |
 | Windows 备份恢复 / 数据根切换 | 通过（当前工作树） | 修复 verbatim 路径导致的 os error 1 后，release 经 CDP 调用真实 `import_data_backup` 恢复加密备份成功；目标目录含 SQLite，`get_data_root_info` 返回新根和 `pendingRestart=true`。配置随后写回 `D:\ALL_Software_Data\Omni`，重启后读取无 verbatim 前缀、可写且无 fallback。测试资产已清理 |
+| Windows 备份非空目标拒绝（T04） | 通过 | release CDP 对含 `keep.txt` 的目录调用 `import_data_backup`，正确返回“恢复仅允许空的新目录，现有文件不会被覆盖”，`keep.txt` 字节未变 |
 | Windows 系统通知（T05 部分证据） | 通过（有限） | release CDP 实测 `plugin:notification|is_permission_granted=true`、`plugin:notification|notify` 成功返回。未人工确认 Windows 通知中心视觉呈现，不签收 LV03 |
 | Windows 任务启动恢复（T06 部分证据） | 通过（有限） | 注入 running 任务后重启 release，`recoverInterruptedTasks` 转为 aborted 且保留“请先核实结果，再主动发送新消息继续”提示；完整停止/继续 UI 仍待人工 |
 | Windows 知识生命周期（T08 部分证据） | 通过（有限） | release CDP 导入 T08 测试资料、`search_knowledge_chunks_command` 命中 score=9.5；删除后旧引用 `Query returned no rows`、检索为空。未覆盖 UI 引用卡片视觉交互 |

@@ -108,5 +108,6 @@ Agent Host 为默认运行时，回答运行期间输入框保持可编辑并可
 - 2026-11-08：Windows release CDP 实测补齐 T05/T08/T09 关键链路：系统通知权限为 granted 且 `plugin:notification|notify` 成功返回；T08 测试资料导入后 `search_knowledge_chunks_command` 命中（score=9.5），删除后旧引用 `Query returned no rows`、检索为空；DOCX/XLSX/PPTX 通过真实 `export_docx/xlsx/pptx` 生成，重复导出拒绝覆盖，Word/Excel/PowerPoint COM 打开分别确认段落/表格、工作表与公式计算（`=10+5` 计算为 15）、幻灯片标题/页数。T06 注入 running 任务后重启，`recoverInterruptedTasks` 将其转为 aborted 并保留完整中断提示。测试资料与任务记录已清理。
 - 2026-11-08：T02 环境记录：本机当前仅一块屏幕（DISPLAY1，1707x1067，主屏）。双屏/DPI 拖动与快速点击观察仍需人工或第二台设备，不能由当前环境替代。
 - 2026-11-08：T09 视觉证据补齐：release 真实导出 smoke.docx / smoke.xlsx / smoke.pptx 后，依次用本机 Word、Excel、PowerPoint 原生打开并截屏确认：Word 标题「Omni T09 Smoke」、Excel 单元格内容「名称/值/A/1/合计」、PowerPoint 标题「Omni T09」均正确渲染。验证后测试文件已清理。
+- 2026-11-08：T04 非空目标保护实测：release CDP 先用 `export_data_backup` 导出真实加密备份，再对含 `keep.txt` 的非空目录调用 `import_data_backup`，应用正确拒绝（“恢复仅允许空的新目录，现有文件不会被覆盖”），`keep.txt` 内容保持 `user data` 不变。测试资产已清理。
 - 待完成：多屏 DPI/窗口交互实机验收；Office 系统打开/定位、公式实际重算与原生渲染验收；继续/中断完整 UI 集成验收；应用内迁移数据后的重启读取及进程中断。备份不涵盖外部工作区/SkillHub/pet 资源；人为脱离 Shell 的后台进程不受命令生命周期锁约束。
 - 计划评审：Beauvoir 独立复核 [SPEC-OK]；已补备份维护边界、提醒投递契约、中断继续和独立写集。用户已授权按八项范围实施。
