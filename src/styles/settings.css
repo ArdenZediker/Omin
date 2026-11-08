@@ -3,6 +3,8 @@
 .omni-settings-root {
   display: flex;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 .omni-settings-root {
@@ -11,6 +13,9 @@
 }
 
 .omni-settings-sidebar {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
   padding-top: 12px;
@@ -23,6 +28,7 @@
 }
 
 .omni-settings-main {
+  min-height: 0;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
   background:
@@ -36,15 +42,18 @@
 }
 
 .settings-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 300;
   display: grid;
   place-items: center;
+  box-sizing: border-box;
+  min-height: 0;
+  overflow: hidden;
   padding: 20px;
-  background: rgba(8, 10, 16, 0.62);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: rgba(8, 10, 16, 0.52);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
 .settings-overlay__panel {
@@ -52,8 +61,11 @@
   display: flex;
   width: min(1040px, 100%);
   height: min(900px, 100%);
+  max-width: 100%;
+  max-height: 100%;
   min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
   border-radius: 22px;
@@ -66,8 +78,37 @@
 .settings-overlay__panel .omni-settings-root {
   width: 100%;
   height: 100%;
+  min-height: 0;
   padding: 0;
   gap: 0;
+}
+
+.omni-settings-content {
+  padding: clamp(12px, 2.2vw, 20px);
+  overscroll-behavior: contain;
+  scrollbar-color: color-mix(in srgb, var(--omni-app-muted) 34%, transparent) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.omni-settings-content::-webkit-scrollbar {
+  width: 10px;
+}
+
+.omni-settings-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.omni-settings-content::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-app-muted) 34%, transparent);
+  background-clip: padding-box;
+}
+
+.omni-settings-content::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--omni-app-muted) 52%, transparent);
+  background-clip: padding-box;
 }
 
 .settings-overlay__panel .omni-settings-sidebar,
@@ -135,7 +176,27 @@
   }
 
   .settings-overlay__panel {
+    max-height: 100%;
     border-radius: 16px;
+  }
+
+  .omni-settings-sidebar {
+    width: 112px;
+  }
+
+  .omni-settings-header {
+    padding-inline: 14px;
+  }
+
+  .omni-settings-content {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 860px) {
+  .omni-model-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
   }
 }
 

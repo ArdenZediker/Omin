@@ -286,7 +286,9 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       closeCompactMenus();
 
       if (entry.kind === "main") {
-        await onRestoreMain(true);
+        // 主窗口此时通常只是被隐藏，仍保留着用户刚拉伸过的尺寸。
+        // 从悬浮球重新打开时若再次套用设置中的默认宽高，会让窗口每次都被缩小。
+        await onRestoreMain(true, { restoreGeometry: false });
         return;
       }
 

@@ -637,6 +637,11 @@
   color: var(--omni-app-muted);
 }
 
+:root[data-omni-theme="dark"] .skillset-child__icon {
+  background: var(--omni-skill-bg);
+  color: var(--omni-skill);
+}
+
 .skillset-child__main {
   flex: 1 1 auto;
   min-width: 0;

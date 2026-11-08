@@ -43,6 +43,7 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="light"] {
+  color-scheme: light;
   --omni-app-bg: #f5f5f5;
   --omni-app-text: #1f2329;
   --omni-app-muted: #646a73;
@@ -65,6 +66,7 @@ body:has(.compact-menu-window),
      相同的值，保证浅色模式零视觉变化；取值不统一的变量（app-surface-2/3、
      card-bg、accent-soft 等）只放到 dark 块，避免改动浅色观感。 */
   --omni-primary: #4f46e5;
+  --omni-accent: #4f46e5;
   --omni-input-bg: #ffffff;
   --omni-app-surface-1: #fafaf7;
   --omni-app-fg: #0f172a;
@@ -75,47 +77,58 @@ body:has(.compact-menu-window),
   --omni-border: rgba(0, 0, 0, 0.08);
   --omni-danger-soft: rgba(220, 38, 38, 0.08);
   --omni-link: #2563eb;
+  --omni-diff-added: #1a7f37;
+  --omni-diff-removed: #cf222e;
+  --omni-skill: #8250df;
+  --omni-skill-bg: rgba(130, 80, 223, 0.12);
 }
 
 :root[data-omni-theme="dark"] {
-  --omni-app-bg: #050505;
-  --omni-app-text: rgba(255, 255, 255, 0.9);
-  --omni-app-muted: rgba(255, 255, 255, 0.42);
-  --omni-panel-bg: #0b0b0b;
-  --omni-panel-border: #202020;
-  --omni-frame-border: #262a31;
-  --omni-divider-strong: #2a3038;
-  --omni-soft-bg: #111111;
-  --omni-button-bg: #111111;
-  --omni-button-text: rgba(255, 255, 255, 0.84);
-  --omni-message-text: rgba(255, 255, 255, 0.88);
-  --omni-message-muted: rgba(255, 255, 255, 0.54);
-  --omni-message-strong: rgba(255, 255, 255, 0.96);
-  --omni-message-code-bg: rgba(255, 255, 255, 0.1);
-  --omni-message-code-text: rgba(255, 255, 255, 0.92);
-  --omni-message-pre-bg: rgba(0, 0, 0, 0.4);
-  --omni-message-pre-text: rgba(134, 239, 172, 0.9);
+  color-scheme: dark;
+  /* Codex GitHub Dark：canvas / layer-1 / layer-2 / border。 */
+  --omni-app-bg: #0d1117;
+  --omni-app-text: #e6edf3;
+  --omni-app-muted: #8b949e;
+  --omni-panel-bg: #161b22;
+  --omni-panel-border: #30363d;
+  --omni-frame-border: #30363d;
+  --omni-divider-strong: #3d444d;
+  --omni-soft-bg: #0d1117;
+  --omni-button-bg: #21262d;
+  --omni-button-text: #e6edf3;
+  --omni-message-text: #e6edf3;
+  --omni-message-muted: #8b949e;
+  --omni-message-strong: #f0f6fc;
+  --omni-message-code-bg: rgba(110, 118, 129, 0.4);
+  --omni-message-code-text: #e6edf3;
+  --omni-message-pre-bg: #161b22;
+  --omni-message-pre-text: #7ee787;
   /* —— 补全「只被引用、从未定义」的 token（暗色侧）——
      浅色侧未定义的变量（取值不统一的那批）在这里给出暗色值：
      `var(--x, 浅色fallback)` 在 dark 下就会命中这里，而不是落回浅色 fallback。
      这是「变更面板在暗色下整块变浅米色」等问题的一处根因修复。 */
-  --omni-primary: #818cf8;
-  --omni-input-bg: #141414;
-  --omni-app-surface-1: #0d0d0d;
-  --omni-app-surface-2: rgba(255, 255, 255, 0.04);
-  --omni-app-surface-3: rgba(255, 255, 255, 0.06);
-  --omni-app-surface: rgba(28, 30, 38, 0.92);
-  --omni-app-border: rgba(255, 255, 255, 0.12);
-  --omni-card-bg: rgba(255, 255, 255, 0.05);
-  --omni-accent-soft: rgba(96, 165, 250, 0.16);
-  --omni-app-fg: rgba(255, 255, 255, 0.9);
-  --omni-accent-strong: #93c5fd;
-  --omni-app-success: #86efac;
-  --omni-app-success-bg: rgba(99, 153, 34, 0.2);
-  --omni-bg: #111111;
-  --omni-border: rgba(255, 255, 255, 0.12);
-  --omni-danger-soft: rgba(248, 81, 73, 0.16);
-  --omni-link: #60a5fa;
+  --omni-primary: #1f6feb;
+  --omni-accent: #1f6feb;
+  --omni-accent-strong: #388bfd;
+  --omni-input-bg: #0d1117;
+  --omni-app-surface-1: #161b22;
+  --omni-app-surface-2: #1c2128;
+  --omni-app-surface-3: #21262d;
+  --omni-app-surface: rgba(22, 27, 34, 0.94);
+  --omni-app-border: #30363d;
+  --omni-card-bg: #161b22;
+  --omni-accent-soft: rgba(31, 111, 235, 0.15);
+  --omni-app-fg: #e6edf3;
+  --omni-app-success: #3fb950;
+  --omni-app-success-bg: rgba(63, 185, 80, 0.15);
+  --omni-bg: #0d1117;
+  --omni-border: #30363d;
+  --omni-danger-soft: rgba(248, 81, 73, 0.15);
+  --omni-link: #58a6ff;
+  --omni-diff-added: #3fb950;
+  --omni-diff-removed: #f85149;
+  --omni-skill: #bc8cff;
+  --omni-skill-bg: rgba(188, 140, 255, 0.15);
 }
 
 .hide-scrollbar {
@@ -216,10 +229,10 @@ body:has(.compact-menu-window),
 }
 
 .omni-switch[data-checked="true"] .omni-switch__track {
-  border-color: color-mix(in srgb, var(--omni-accent, #7c3aed) 58%, transparent);
-  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  border-color: color-mix(in srgb, var(--omni-accent, #1f6feb) 58%, transparent);
+  background: linear-gradient(135deg, var(--omni-accent, #1f6feb), var(--omni-accent-strong, #388bfd));
   box-shadow:
-    0 7px 18px rgba(124, 58, 237, 0.22),
+    0 7px 18px rgba(31, 111, 235, 0.22),
     inset 0 1px 1px rgba(255, 255, 255, 0.18);
 }
 
@@ -233,7 +246,7 @@ body:has(.compact-menu-window),
 .omni-switch__input:focus-visible + .omni-switch__track {
   outline: none;
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--omni-accent, #7c3aed) 18%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--omni-accent, #1f6feb) 18%, transparent),
     inset 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
@@ -279,7 +292,8 @@ body:has(.compact-menu-window),
 
 .app-shell {
   position: relative;
-  border-radius: 0;
+  /* 与 #root 的透明窗口圆角共用同一条曲线；最大化时随 #root 自动回落为 0。 */
+  border-radius: inherit;
   border: 1px solid var(--omni-frame-border);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omni-frame-border) 46%, transparent);
   background:
@@ -299,6 +313,15 @@ body:has(.compact-menu-window),
     radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.04), transparent 34%);
   mix-blend-mode: screen;
   opacity: 0.65;
+}
+
+:root[data-omni-theme="dark"] .app-shell {
+  background: var(--omni-app-bg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+}
+
+:root[data-omni-theme="dark"] .app-shell::before {
+  display: none;
 }
 
 .omni-view-loading {
@@ -397,8 +420,8 @@ body:has(.compact-menu-window),
 }
 
 .model-selector__trigger:hover {
-  border-color: color-mix(in srgb, #8b5cf6 34%, var(--omni-panel-border));
-  background: color-mix(in srgb, var(--omni-panel-bg) 90%, #8b5cf6 5%);
+  border-color: color-mix(in srgb, var(--omni-accent, #1f6feb) 34%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-panel-bg) 90%, var(--omni-accent, #1f6feb) 5%);
 }
 
 .model-selector__chevron {
@@ -455,27 +478,27 @@ body:has(.compact-menu-window),
 
 .model-selector__option:hover,
 .model-selector__option--active {
-  background: color-mix(in srgb, #8b5cf6 12%, transparent);
+  background: var(--omni-accent-soft, rgba(31, 111, 235, 0.15));
   color: var(--omni-app-text);
 }
 
 .model-selector__badge {
   border-radius: 5px;
   padding: 2px 5px;
-  background: rgba(139, 92, 246, 0.14);
-  color: #7c3aed;
+  background: var(--omni-accent-soft, rgba(31, 111, 235, 0.15));
+  color: var(--omni-accent, #1f6feb);
   font-size: 9px;
   line-height: 1;
 }
 
 .model-selector__badge--thinking {
-  background: rgba(168, 85, 247, 0.14);
-  color: #a855f7;
+  background: var(--omni-skill-bg, rgba(130, 80, 223, 0.12));
+  color: var(--omni-skill, #8250df);
 }
 
 .model-selector__badge--danger {
-  background: rgba(239, 68, 68, 0.12);
-  color: #dc2626;
+  background: var(--omni-danger-soft, rgba(207, 34, 46, 0.12));
+  color: var(--omni-diff-removed, #cf222e);
 }
 
 .model-selector__window {
@@ -495,27 +518,27 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .model-selector__dropdown {
-  background: rgba(18, 18, 20, 0.92);
+  background: rgba(22, 27, 34, 0.96);
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
 }
 
 :root[data-omni-theme="dark"] .model-selector__badge {
-  background: rgba(139, 92, 246, 0.22);
-  color: rgba(196, 181, 253, 0.9);
+  background: var(--omni-accent-soft);
+  color: var(--omni-accent-strong);
 }
 
 :root[data-omni-theme="dark"] .model-selector__badge--thinking {
-  background: rgba(168, 85, 247, 0.22);
-  color: rgba(216, 180, 254, 0.92);
+  background: var(--omni-skill-bg);
+  color: var(--omni-skill);
 }
 
 :root[data-omni-theme="dark"] .model-selector__badge--danger {
-  background: rgba(239, 68, 68, 0.18);
-  color: rgba(252, 165, 165, 0.92);
+  background: var(--omni-danger-soft);
+  color: var(--omni-diff-removed);
 }
 
 :root[data-omni-theme="dark"] .model-selector__window {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--omni-app-muted);
 }
 
 /* 顶栏「当前空间」图标：基类 .main-chat-toolbar__project-mark 的底色是写死的浅蓝
@@ -524,20 +547,13 @@ body:has(.compact-menu-window),
    侧边栏空间行不受影响，因为那里被 `.chat-history-panel__space-head .chat-history-panel__project-folder-icon`
    覆写成了深色 #475569。这里是唯一漏网的一处，单独给暗色底 + 亮图标。 */
 :root[data-omni-theme="dark"] .main-chat-toolbar__project-mark {
-  background:
-    radial-gradient(
-      circle at 32% 30%,
-      rgba(147, 197, 253, 0.22),
-      rgba(59, 130, 246, 0.14) 46%,
-      rgba(2, 6, 23, 0.5) 100%
-    ),
-    #0e1626;
-  border-color: rgba(96, 165, 250, 0.3);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg, #21262d, #161b22);
+  border-color: #30363d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 :root[data-omni-theme="dark"] .main-chat-toolbar__project-mark .chat-history-panel__project-folder-icon {
-  color: rgba(191, 219, 254, 0.95);
+  color: #e6edf3;
 }
 
 /* ===== 同类问题排查后的补充（与 project-mark 同源：基类写死颜色，前景跟主题走）=====
@@ -806,8 +822,8 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .omni-model-add-button {
-  background: var(--omni-app-text) !important;
-  color: #050505 !important;
+  background: var(--omni-accent) !important;
+  color: #ffffff !important;
 }
 
 :root[data-omni-theme="dark"] .omni-model-section-card .rounded-md.border.border-slate-200,
@@ -976,8 +992,8 @@ body:has(.compact-menu-window),
 :root[data-omni-theme="dark"] .omni-knowledge-multimodal-section button[class*="bg-slate-900"],
 :root[data-omni-theme="dark"] .omni-knowledge-embedding-section button[class*="bg-violet-600"],
 :root[data-omni-theme="dark"] .omni-knowledge-multimodal-section button[class*="bg-violet-600"] {
-  background: var(--omni-app-text) !important;
-  color: var(--omni-panel-bg) !important;
+  background: var(--omni-accent) !important;
+  color: #ffffff !important;
 }
 
 :root[data-omni-theme="dark"] .omni-knowledge-embedding-section button[class*="hover:bg-slate-50"]:hover,
@@ -990,15 +1006,15 @@ body:has(.compact-menu-window),
 /* Active/default model cards. */
 :root[data-omni-theme="dark"] .omni-knowledge-embedding-section .omni-knowledge-model-card[class*="bg-violet-50"],
 :root[data-omni-theme="dark"] .omni-knowledge-multimodal-section .omni-knowledge-model-card[class*="bg-violet-50"] {
-  background: color-mix(in srgb, #7c3aed 16%, var(--omni-panel-bg)) !important;
-  border-color: rgba(167, 139, 250, 0.55) !important;
-  box-shadow: inset 3px 0 0 rgba(167, 139, 250, 0.85) !important;
+  background: color-mix(in srgb, var(--omni-accent) 16%, var(--omni-panel-bg)) !important;
+  border-color: color-mix(in srgb, var(--omni-accent) 55%, var(--omni-panel-border)) !important;
+  box-shadow: inset 3px 0 0 var(--omni-accent) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-knowledge-embedding-section .omni-knowledge-model-card:hover,
 :root[data-omni-theme="dark"] .omni-knowledge-multimodal-section .omni-knowledge-model-card:hover {
-  border-color: rgba(167, 139, 250, 0.45) !important;
-  background: color-mix(in srgb, #7c3aed 10%, var(--omni-panel-bg)) !important;
+  border-color: color-mix(in srgb, var(--omni-accent) 45%, var(--omni-panel-border)) !important;
+  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-panel-bg)) !important;
 }
 
 /* Modal overlay inside these sections. */
@@ -1779,10 +1795,12 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .compact-bar {
-  background: linear-gradient(180deg, rgba(31, 31, 36, 0.98), rgba(10, 10, 14, 0.98));
-  border-color: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.88);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), inset 0 -2px 6px rgba(0, 0, 0, 0.22);
+  background: linear-gradient(180deg, rgba(33, 38, 45, 0.98), rgba(22, 27, 34, 0.98));
+  border-color: #30363d;
+  color: #e6edf3;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 22px rgba(0, 0, 0, 0.28);
 }
 
 :root[data-omni-theme="dark"] .compact-ask-popover,
@@ -1790,44 +1808,46 @@ body:has(.compact-menu-window),
 :root[data-omni-theme="dark"] .compact-reply,
 :root[data-omni-theme="dark"] .compact-menu,
 :root[data-omni-theme="dark"] .compact-submenu {
-  background: rgba(45, 45, 45, 0.82);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: rgba(22, 27, 34, 0.97);
+  border-color: #3d444d;
+  color: #e6edf3;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 :root[data-omni-theme="dark"] .compact-button,
 :root[data-omni-theme="dark"] .compact-button--quick-ask {
-  background: linear-gradient(180deg, rgba(18, 19, 25, 0.98), rgba(5, 6, 10, 0.98));
-  color: rgba(255, 255, 255, 0.82);
-  border-color: rgba(255, 255, 255, 0.075);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055), inset 0 -2px 5px rgba(0, 0, 0, 0.32);
+  background: linear-gradient(180deg, #21262d, #161b22);
+  color: #e6edf3;
+  border-color: #30363d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
 :root[data-omni-theme="dark"] .compact-button--brand {
-  background: linear-gradient(180deg, rgba(22, 24, 33, 0.98), rgba(8, 10, 16, 0.98));
-  border-color: rgba(114, 137, 255, 0.2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -2px 5px rgba(0, 0, 0, 0.34);
+  background: linear-gradient(180deg, #21262d, #161b22);
+  border-color: #3d444d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 :root[data-omni-theme="dark"] .compact-button:hover,
 :root[data-omni-theme="dark"] .compact-button--quick-ask:hover,
 :root[data-omni-theme="dark"] .compact-button--brand:hover {
   filter: none;
-  background: rgba(36, 41, 54, 0.92);
+  background: #21262d;
   box-shadow: none;
 }
 
 :root[data-omni-theme="dark"] .compact-button--brand:hover {
-  background: linear-gradient(180deg, rgba(26, 29, 40, 0.98), rgba(10, 12, 18, 0.98));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -2px 5px rgba(0, 0, 0, 0.34);
+  background: linear-gradient(180deg, #30363d, #21262d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 :root[data-omni-theme="dark"] .pet-thought-bubble {
-  --pet-thought-border: rgba(255, 255, 255, 0.12);
-  background: rgba(17, 17, 17, 0.94);
+  --pet-thought-border: #30363d;
+  background: rgba(22, 27, 34, 0.97);
   box-shadow:
-    0 14px 30px rgba(0, 0, 0, 0.32),
+    0 14px 30px rgba(0, 0, 0, 0.38),
     0 2px 4px rgba(0, 0, 0, 0.14);
 }
 
@@ -1846,22 +1866,22 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .compact-menu__meta, :root[data-omni-theme="dark"] .compact-menu__label, :root[data-omni-theme="dark"] .compact-query__hint {
-  color: rgba(255, 255, 255, 0.62);
+  color: #8b949e;
 }
 
 :root[data-omni-theme="dark"] .compact-menu__item:hover,
 :root[data-omni-theme="dark"] .compact-menu__item--active {
-  background: rgba(255, 255, 255, 0.13);
-  color: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6edf3;
 }
 
 :root[data-omni-theme="dark"] .compact-menu__item--settings {
-  background: rgba(0, 0, 0, 0.88);
+  background: var(--omni-accent);
   color: #ffffff;
 }
 
 :root[data-omni-theme="dark"] .compact-menu__item--settings:hover {
-  background: rgba(0, 0, 0, 0.96);
+  background: var(--omni-accent-strong);
 }
 
 :root[data-omni-theme="light"] .compact-menu__item--settings {
@@ -2073,66 +2093,66 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .omni-settings-card {
-  background: #0b0b0b;
-  border-color: #202020;
+  background: var(--omni-panel-bg);
+  border-color: var(--omni-panel-border);
 }
 
 :root[data-omni-theme="dark"] .omni-settings-title,
 :root[data-omni-theme="dark"] .omni-settings-label {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--omni-app-text);
 }
 
 :root[data-omni-theme="dark"] .omni-settings-muted {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--omni-app-muted);
 }
 
 :root[data-omni-theme="dark"] .omni-settings-card code {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.92);
+  background: var(--omni-app-surface-3);
+  color: var(--omni-app-text);
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root,
 :root[data-omni-theme="dark"] .omni-settings-main {
-  background: #050505 !important;
-  color: rgba(255, 255, 255, 0.88) !important;
+  background: var(--omni-app-bg) !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-sidebar {
-  background: #0a0a0a !important;
-  border-color: #1f1f1f !important;
+  background: var(--omni-app-surface-1) !important;
+  border-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-header {
-  background: #050505 !important;
-  border-color: #1f1f1f !important;
+  background: var(--omni-app-bg) !important;
+  border-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-nav {
-  color: rgba(255, 255, 255, 0.58) !important;
+  color: var(--omni-app-muted) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-nav:hover,
 :root[data-omni-theme="dark"] .omni-settings-nav--active {
-  background: #151515 !important;
-  color: rgba(255, 255, 255, 0.92) !important;
+  background: var(--omni-app-surface-3) !important;
+  color: var(--omni-app-text) !important;
   box-shadow: none !important;
-  --tw-ring-color: #262626 !important;
+  --tw-ring-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-nav-icon {
-  background: #1a1a1a !important;
-  color: rgba(196, 181, 253, 0.95) !important;
+  background: var(--omni-app-surface-2) !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root .border-slate-100,
 :root[data-omni-theme="dark"] .omni-settings-root .border-slate-200,
 :root[data-omni-theme="dark"] .omni-settings-root .border-slate-300 {
-  border-color: #202020 !important;
+  border-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root .bg-white,
 :root[data-omni-theme="dark"] .omni-settings-root .bg-slate-50 {
-  background-color: #0b0b0b !important;
+  background-color: var(--omni-panel-bg) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-950,
@@ -2140,104 +2160,108 @@ body:has(.compact-menu-window),
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-800,
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-700,
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-600 {
-  color: rgba(255, 255, 255, 0.88) !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-500,
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-400 {
-  color: rgba(255, 255, 255, 0.5) !important;
+  color: var(--omni-app-muted) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root input,
 :root[data-omni-theme="dark"] .omni-settings-root select {
-  background: #080808 !important;
-  border-color: #262626 !important;
-  color: rgba(255, 255, 255, 0.9) !important;
+  background: var(--omni-input-bg) !important;
+  border-color: var(--omni-panel-border) !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-select__trigger {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 90%, #ffffff 2%), #080808),
-    #080808;
-  border-color: #262626;
-  color: rgba(255, 255, 255, 0.9);
+    linear-gradient(180deg, #21262d, #161b22),
+    var(--omni-input-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-app-text);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 1px 2px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 :root[data-omni-theme="dark"] .omni-select__trigger:hover {
-  border-color: color-mix(in srgb, var(--omni-accent, #a78bfa) 36%, #262626);
+  border-color: #3d444d;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 84%, #ffffff 4%), #0a0a0a),
-    #0a0a0a;
+    linear-gradient(180deg, #30363d, #21262d),
+    var(--omni-app-surface-3);
 }
 
 :root[data-omni-theme="dark"] .omni-select__trigger:focus-visible {
-  border-color: color-mix(in srgb, var(--omni-accent, #a78bfa) 48%, #262626);
+  border-color: var(--omni-accent);
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--omni-accent, #a78bfa) 18%, transparent),
+    0 0 0 3px rgba(255, 255, 255, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 :root[data-omni-theme="dark"] .omni-select__menu {
-  border-color: #262626;
-  background: #0b0b0b;
+  border-color: var(--omni-panel-border);
+  background: var(--omni-panel-bg);
   box-shadow:
     0 18px 42px rgba(0, 0, 0, 0.46),
     0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 :root[data-omni-theme="dark"] .omni-select__option {
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--omni-app-text);
 }
 
 :root[data-omni-theme="dark"] .omni-select__option--active {
-  background: color-mix(in srgb, var(--omni-accent, #a78bfa) 16%, transparent);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 :root[data-omni-theme="dark"] .omni-select__option--selected {
-  color: color-mix(in srgb, var(--omni-accent, #c4b5fd) 72%, #ffffff);
+  color: var(--omni-app-text);
 }
 
 :root[data-omni-theme="dark"] .omni-switch__track {
-  border-color: #2a2a2a;
-  background: #171717;
+  border-color: var(--omni-panel-border);
+  background: var(--omni-app-surface-3);
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.36),
     0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
 :root[data-omni-theme="dark"] .omni-switch__thumb {
-  background: rgba(255, 255, 255, 0.92);
+  background: #8b949e;
   box-shadow:
     0 2px 7px rgba(0, 0, 0, 0.42),
     0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 :root[data-omni-theme="dark"] .omni-switch[data-checked="true"] .omni-switch__track {
-  border-color: color-mix(in srgb, var(--omni-accent, #a78bfa) 54%, #262626);
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  border-color: var(--omni-accent);
+  background: var(--omni-accent);
   box-shadow:
-    0 7px 18px rgba(139, 92, 246, 0.22),
-    inset 0 1px 1px rgba(255, 255, 255, 0.14);
+    0 5px 14px rgba(31, 111, 235, 0.32),
+    inset 0 1px 1px rgba(255, 255, 255, 0.28);
+}
+
+:root[data-omni-theme="dark"] .omni-switch[data-checked="true"] .omni-switch__thumb {
+  background: #f0f6fc;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root option {
-  background: #080808;
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--omni-input-bg);
+  color: var(--omni-app-text);
 }
 
 :root[data-omni-theme="dark"] .omni-shortcut-capture {
-  background: #080808;
-  color: rgba(255, 255, 255, 0.88);
+  background: var(--omni-input-bg);
+  color: var(--omni-app-text);
 }
 
 :root[data-omni-theme="dark"] .omni-shortcut-capture--active {
-  border-color: rgb(139, 92, 246) !important;
-  background: rgba(88, 28, 135, 0.18) !important;
-  color: rgba(221, 214, 254, 0.98) !important;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.24) !important;
+  border-color: rgba(255, 255, 255, 0.34) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: var(--omni-app-text) !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root .shadow-sm,
@@ -2269,19 +2293,19 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .omni-pet-action-button {
-  background: #161616 !important;
-  color: rgba(255, 255, 255, 0.84) !important;
+  background: var(--omni-app-surface-2) !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-pet-action-button:hover {
-  background: #1f1f1f !important;
-  color: rgba(255, 255, 255, 0.92) !important;
+  background: var(--omni-app-surface-3) !important;
+  color: #ffffff !important;
 }
 
 :root[data-omni-theme="dark"] .omni-pet-format-hint,
 :root[data-omni-theme="dark"] .omni-pet-custom-section {
-  background: #0b0b0b !important;
-  border-color: #202020 !important;
+  background: var(--omni-panel-bg) !important;
+  border-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-pet-format-hint .text-slate-700,
@@ -2290,8 +2314,8 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .omni-pet-code {
-  background: #151515 !important;
-  color: rgba(255, 255, 255, 0.72) !important;
+  background: var(--omni-app-surface-1) !important;
+  color: var(--omni-message-muted) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-pet-list {
@@ -2307,20 +2331,20 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .omni-pet-list-item {
-  border-color: #202020 !important;
+  border-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-pet-list-item:hover {
-  background: #111111 !important;
+  background: var(--omni-app-surface-2) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-pet-select-badge {
-  background: #161616 !important;
-  color: rgba(255, 255, 255, 0.58) !important;
+  background: var(--omni-app-surface-2) !important;
+  color: var(--omni-app-muted) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-pet-list-item:hover .omni-pet-select-badge {
-  color: rgba(255, 255, 255, 0.88) !important;
+  color: var(--omni-app-text) !important;
 }
 
 .omni-knowledge-collection-settings__body {
