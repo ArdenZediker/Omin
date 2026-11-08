@@ -1,4 +1,4 @@
-import type { ModelConfig } from "./types";
+import type { ModelConfig, ModelProtocol } from "./types";
 
 /**
  * Omni 内置模型目录（model catalog）。
@@ -23,7 +23,7 @@ export interface ProviderDefaults {
   /** 默认端点；用户不填 baseUrl 时使用 */
   baseUrl: string;
   /** 兼容协议：openai 兼容 / claude / gemini / ollama */
-  protocol: "openai" | "claude" | "gemini" | "ollama";
+  protocol: ModelProtocol;
   /** 是否本地模型（无需 key） */
   local?: boolean;
 }
@@ -38,7 +38,7 @@ export const PROVIDER_DEFAULTS: Record<string, ProviderDefaults> = {
   siliconflow: { label: "SiliconFlow", baseUrl: "https://api.siliconflow.cn/v1", protocol: "openai" },
   dashscope: { label: "阿里云百炼", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", protocol: "openai" },
   zhipu: { label: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4", protocol: "openai" },
-  ollama: { label: "Ollama (本地)", baseUrl: "http://localhost:11434/v1", protocol: "ollama", local: true },
+  ollama: { label: "Ollama (本地)", baseUrl: "http://localhost:11434", protocol: "ollama", local: true },
 };
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {

@@ -1,10 +1,11 @@
 // Omni - Gemini 适配器
-import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, DiscoveredModel } from "./types";
 import { mimeTypeFromDataUrl } from "./types";
 import { toGeminiTools, toGeminiContent, parseGeminiToolCalls, parseGeminiStreamToolCalls } from "./wireTools";
-import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { fetchWithTimeout, postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 import { resolveRequestOptions, geminiThinkingConfig, geminiToolConfig, ToolChoice } from "./chatOptions";
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
+import { normalizeGeminiUsage } from "./usage";
 
 const GEMINI_MODELS: ModelConfig[] = [
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "gemini", maxTokens: 1048576, maxOutput: 65536, supportsVision: true, supportsStreaming: true, toolCalling: true, thinking: true },
@@ -112,13 +113,7 @@ export class GeminiAdapter implements ModelAdapter {
       content: text,
       reasoning: thoughtText || undefined,
       model: data.model,
-      usage: data.usageMetadata
-        ? {
-            promptTokens: data.usageMetadata.promptTokenCount,
-            completionTokens: data.usageMetadata.candidatesTokenCount,
-            totalTokens: data.usageMetadata.totalTokenCount,
-          }
-        : undefined,
+      usage: normalizeGeminiUsage(data.usageMetadata),
       toolCalls: parseGeminiToolCalls(data),
     };
   }
@@ -141,6 +136,7 @@ export class GeminiAdapter implements ModelAdapter {
     let fullContent = "";
     let buffer = "";
     let toolCalls;
+    let usage: ChatResponse["usage"];
 
     const handleLine = (rawLine: string) => {
       const line = rawLine.trim();
@@ -149,6 +145,9 @@ export class GeminiAdapter implements ModelAdapter {
       }
       try {
         const parsed = JSON.parse(line.slice(6));
+        if (parsed.usageMetadata) {
+          usage = normalizeGeminiUsage(parsed.usageMetadata) ?? usage;
+        }
         const parts = parsed.candidates?.[0]?.content?.parts;
         if (Array.isArray(parts)) {
           for (const part of parts) {
@@ -183,7 +182,7 @@ export class GeminiAdapter implements ModelAdapter {
     for (const rawLine of tailLines) handleLine(rawLine);
 
     onChunk({ content: "", done: true, model: request.model });
-    return { content: fullContent, model: request.model, toolCalls };
+    return { content: fullContent, model: request.model, usage, toolCalls };
   }
 
   async validate(): Promise<boolean> {
@@ -193,5 +192,39 @@ export class GeminiAdapter implements ModelAdapter {
     } catch {
       return false;
     }
+  }
+
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const response = await fetchWithTimeout(`${this.getBaseUrl()}/v1beta/models${this.getKeyUrl()}`, {
+      headers: { ...this.config.customHeaders },
+    }, undefined, 10_000);
+    if (!response.ok) {
+      throw new Error(`模型发现失败：HTTP ${response.status}`);
+    }
+    const data = await response.json() as {
+      models?: Array<{
+        name?: string;
+        displayName?: string;
+        inputTokenLimit?: number;
+        outputTokenLimit?: number;
+        supportedGenerationMethods?: string[];
+      }>;
+    };
+    return (data.models ?? [])
+      .filter((model) =>
+        typeof model.name === "string" &&
+        model.name.length > 0 &&
+        (model.supportedGenerationMethods?.includes("generateContent") ?? true)
+      )
+      .map((model) => {
+        const id = String(model.name).replace(/^models\//, "");
+        return {
+          id,
+          name: model.displayName?.trim() || id,
+          maxContextWindow: model.inputTokenLimit,
+          maxOutput: model.outputTokenLimit,
+        };
+      })
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 }

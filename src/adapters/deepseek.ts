@@ -1,10 +1,11 @@
 // Omni - DeepSeek 适配器
-import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, DiscoveredModel } from "./types";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
 import { resolveReasoningReturnPolicy } from "./reasoningPolicy";
-import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { fetchWithTimeout, postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice, ToolChoice } from "./chatOptions";
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
+import { normalizeOpenAIUsage } from "./usage";
 
 const DEEPSEEK_MODELS: ModelConfig[] = [
   { id: "deepseek-chat", name: "DeepSeek V3", provider: "deepseek", maxTokens: 65536, maxOutput: 8192, supportsVision: false, supportsStreaming: true, toolCalling: true },
@@ -46,6 +47,10 @@ export class DeepSeekAdapter implements ModelAdapter {
       messages: request.messages.map((m) => toOpenAIMessage(m, policy)),
       stream,
     };
+    if (stream && !skip.has("streamOptions")) {
+      // DeepSeek 与 OpenAI 相同：流式 usage 需要 include_usage 才会在末尾返回。
+      body.stream_options = { include_usage: true };
+    }
     // 调用方没意见时不下发，而不是凭空塞一个 0.7——有些模型（如 kimi-k3）直接拒绝 temperature。
     if (opts.temperature !== undefined && !skip.has("temperature")) body.temperature = opts.temperature;
     if (opts.maxTokens && !skip.has("maxTokens")) body.max_tokens = opts.maxTokens;
@@ -86,13 +91,7 @@ export class DeepSeekAdapter implements ModelAdapter {
       content: msg.content ?? "",
       reasoning: reasoningText,
       model: data.model,
-      usage: data.usage
-        ? {
-            promptTokens: data.usage.prompt_tokens,
-            completionTokens: data.usage.completion_tokens,
-            totalTokens: data.usage.total_tokens,
-          }
-        : undefined,
+      usage: normalizeOpenAIUsage(data.usage),
       toolCalls: this.supportsTools(request) ? parseOpenAIToolCalls(data) : undefined,
     };
   }
@@ -115,6 +114,7 @@ export class DeepSeekAdapter implements ModelAdapter {
     let fullContent = "";
     let model = request.model;
     let buffer = "";
+    let usage: ChatResponse["usage"];
     const toolAccumulator = new OpenAIStreamToolAccumulator();
 
     const handleLine = (rawLine: string) => {
@@ -129,6 +129,9 @@ export class DeepSeekAdapter implements ModelAdapter {
       }
       try {
         const parsed = JSON.parse(data);
+        if (parsed.usage) {
+          usage = normalizeOpenAIUsage(parsed.usage) ?? usage;
+        }
         const delta = parsed.choices?.[0]?.delta;
         if (delta) {
           model = parsed.model || model;
@@ -170,7 +173,12 @@ export class DeepSeekAdapter implements ModelAdapter {
     buffer = tailLines.pop() ?? "";
     for (const rawLine of tailLines) handleLine(rawLine);
 
-    return { content: fullContent, model, toolCalls: this.supportsTools(request) ? toolAccumulator.getToolCalls() : undefined };
+    return {
+      content: fullContent,
+      model,
+      usage,
+      toolCalls: this.supportsTools(request) ? toolAccumulator.getToolCalls() : undefined,
+    };
   }
 
   async validate(): Promise<boolean> {
@@ -183,5 +191,19 @@ export class DeepSeekAdapter implements ModelAdapter {
     } catch {
       return false;
     }
+  }
+
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const response = await fetchWithTimeout(`${this.getBaseUrl()}/models`, {
+      headers: { Authorization: `Bearer ${this.config.apiKey}` },
+    }, undefined, 10_000);
+    if (!response.ok) {
+      throw new Error(`模型发现失败：HTTP ${response.status}`);
+    }
+    const data = await response.json() as { data?: Array<{ id?: string; name?: string }> };
+    return (data.data ?? [])
+      .filter((model): model is { id: string; name?: string } => typeof model.id === "string" && model.id.length > 0)
+      .map((model) => ({ id: model.id, name: model.name?.trim() || model.id }))
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 }

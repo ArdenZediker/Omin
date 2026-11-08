@@ -30,6 +30,7 @@ const WIRE_NAMES: Record<string, UnsupportedParam> = {
   num_predict: "maxTokens",
   tool_choice: "toolChoice",
   reasoning_effort: "reasoningEffort",
+  stream_options: "streamOptions",
   // Claude 的 thinking / Gemini 的 thinkingConfig 同属「推理力度」槽位
   thinking: "reasoningEffort",
   thinkingconfig: "reasoningEffort",
@@ -227,6 +228,9 @@ export function sentParamsOf(body: Record<string, unknown>): Set<UnsupportedPara
     if ("reasoning_effort" in source || "thinking" in source || "thinkingConfig" in source) {
       sent.add("reasoningEffort");
     }
+    if ("stream_options" in source) {
+      sent.add("streamOptions");
+    }
   };
   scanFlat(body);
   if (body.options && typeof body.options === "object") {
@@ -286,6 +290,8 @@ export function unsupportedParamParts(param: UnsupportedParam): { wire: string; 
       return { wire: "tool_choice", title: "工具选择" };
     case "reasoningEffort":
       return { wire: "reasoning_effort", title: "推理力度" };
+    case "streamOptions":
+      return { wire: "stream_options", title: "流式 usage 选项" };
     default:
       return { wire: param, title: param };
   }
@@ -313,4 +319,5 @@ export const ALL_UNSUPPORTED_PARAMS: readonly UnsupportedParam[] = [
   "maxTokens",
   "toolChoice",
   "reasoningEffort",
+  "streamOptions",
 ];

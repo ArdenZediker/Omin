@@ -7,7 +7,8 @@ import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles, X 
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import { PROVIDER_DEFAULTS } from "../adapters/modelCatalog";
 import { MODEL_PARAM_COMPAT_CHANGED_EVENT } from "../adapters/paramCompat";
-import type { CustomModelConfig, UnsupportedParam } from "../adapters/types";
+import { ReasoningEffort } from "../adapters/types";
+import type { CustomModelConfig, DiscoveredModel, ModelProtocol, UnsupportedParam } from "../adapters/types";
 import type { ChatUsagePreferences } from "../chat/types";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
 import {
@@ -70,12 +71,19 @@ type ModelSectionCard = {
   count: number;
 };
 type ModelSectionCards = Record<ModelConfigSection, ModelSectionCard>;
-type RawRegistry = { configs: Map<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> };
+type RawRegistry = {
+  configs: Map<string, {
+    apiKey: string;
+    baseUrl?: string;
+    name?: string;
+    protocol?: ModelProtocol;
+    customModels?: CustomModelConfig[];
+  }>;
+};
 type ShortcutSettingKey = keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">;
 /** 内置厂商端点预设（单源来自 modelCatalog） */
 const DEFAULT_ENDPOINTS = Object.entries(PROVIDER_DEFAULTS)
-  .filter(([, value]) => !value.local)
-  .map(([id, value]) => ({ id, name: value.label, baseUrl: value.baseUrl }));
+  .map(([id, value]) => ({ id, name: value.label, baseUrl: value.baseUrl, protocol: value.protocol }));
 
 function getRawApiKey(id: string) {
   return (modelRegistry as unknown as RawRegistry).configs.get(id)?.apiKey || "";
@@ -129,13 +137,22 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
   const [endpointName, setEndpointName] = useState("OpenAI 官方");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
   const [apiKey, setApiKey] = useState("");
+  const [modelProtocol, setModelProtocol] = useState<ModelProtocol>("openai");
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<boolean | null>(null);
+  const [discoveringModels, setDiscoveringModels] = useState(false);
+  const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>([]);
+  const [modelDiscoveryError, setModelDiscoveryError] = useState("");
   const [modelEndpointId, setModelEndpointId] = useState("openai");
   const [modelId, setModelId] = useState("");
   const [modelName, setModelName] = useState("");
   const [modelVision, setModelVision] = useState(false);
   const [modelStreaming, setModelStreaming] = useState(true);
+  const [modelContextWindow, setModelContextWindow] = useState<number | undefined>(undefined);
+  const [modelMaxOutput, setModelMaxOutput] = useState<number | undefined>(undefined);
+  const [modelToolCalling, setModelToolCalling] = useState(false);
+  const [modelThinking, setModelThinking] = useState(false);
+  const [modelDefaultReasoningEffort, setModelDefaultReasoningEffort] = useState<ReasoningEffort | undefined>(undefined);
   const [modelUnsupportedParams, setModelUnsupportedParams] = useState<UnsupportedParam[]>([]);
   const [isModelFormOpen, setIsModelFormOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<{ endpointId: string; id: string } | null>(null);
@@ -144,7 +161,12 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     const map = new Map(DEFAULT_ENDPOINTS.map((entry) => [entry.id, entry]));
     for (const id of modelRegistry.getRegisteredProviders()) {
       const cfg = modelRegistry.getProviderConfig(id);
-      map.set(id, { id, name: cfg?.name || id, baseUrl: cfg?.baseUrl || "" });
+      map.set(id, {
+        id,
+        name: cfg?.name || id,
+        baseUrl: cfg?.baseUrl || "",
+        protocol: cfg?.protocol ?? "openai",
+      });
     }
     return [...map.values()];
   }, [version]);
@@ -385,6 +407,9 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
       setModelEndpointId("");
       setEndpointName("");
       setBaseUrl("");
+      setModelProtocol("openai");
+      setDiscoveredModels([]);
+      setModelDiscoveryError("");
       setTestResult(null);
       return;
     }
@@ -394,6 +419,9 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     setModelEndpointId(id);
     setEndpointName(cfg?.name || endpoint?.name || id);
     setBaseUrl(cfg?.baseUrl || endpoint?.baseUrl || "");
+    setModelProtocol(cfg?.protocol ?? endpoint?.protocol ?? "openai");
+    setDiscoveredModels([]);
+    setModelDiscoveryError("");
     setTestResult(null);
   };
 
@@ -405,14 +433,24 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
       const cfg = modelRegistry.getProviderConfig(endpoint.id);
       setEndpointName(cfg?.name || endpoint.name);
       setBaseUrl(cfg?.baseUrl || endpoint.baseUrl || "");
+      setModelProtocol(cfg?.protocol ?? endpoint.protocol ?? "openai");
+    } else {
+      setModelProtocol("openai");
     }
     setApiKey("");
     setModelId("");
     setModelName("");
     setModelVision(false);
     setModelStreaming(true);
+    setModelContextWindow(undefined);
+    setModelMaxOutput(undefined);
+    setModelToolCalling(false);
+    setModelThinking(false);
+    setModelDefaultReasoningEffort(undefined);
     setModelUnsupportedParams([]);
     setModelPrefs({ ...DEFAULT_USAGE_PREFERENCES });
+    setDiscoveredModels([]);
+    setModelDiscoveryError("");
     setTestResult(null);
     setIsModelFormOpen(true);
   };
@@ -424,26 +462,75 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     setModelEndpointId(model.endpointId);
     setEndpointName(cfg?.name || endpoint?.name || model.endpointId);
     setBaseUrl(cfg?.baseUrl || endpoint?.baseUrl || "");
+    setModelProtocol(cfg?.protocol ?? endpoint?.protocol ?? "openai");
     setApiKey(getRawApiKey(model.endpointId) ? "********" : "");
     setModelId(model.requestModelId || model.id.replace(`${model.endpointId}:`, ""));
     setModelName(model.name);
     setModelVision(model.supportsVision ?? false);
     setModelStreaming(model.supportsStreaming ?? true);
+    setModelContextWindow(model.maxContextWindow ?? model.maxTokens);
+    setModelMaxOutput(model.maxOutput);
+    setModelToolCalling(model.toolCalling ?? false);
+    setModelThinking(model.thinking ?? false);
+    setModelDefaultReasoningEffort(model.defaultReasoningEffort);
     setModelUnsupportedParams(model.unsupportedParams ?? []);
     setModelPrefs(getUsagePreferencesForModel(model.id));
+    setDiscoveredModels([]);
+    setModelDiscoveryError("");
     setTestResult(null);
     setIsModelFormOpen(true);
+  };
+
+  const discoverCurrentEndpointModels = async () => {
+    const id = modelEndpointId.trim();
+    const resolvedApiKey = resolveFormApiKey(id, apiKey);
+    if (!id || !endpointName.trim()) return;
+
+    setDiscoveringModels(true);
+    setModelDiscoveryError("");
+    try {
+      modelRegistry.registerProvider(id, {
+        apiKey: resolvedApiKey,
+        name: endpointName.trim(),
+        protocol: modelProtocol,
+        baseUrl: baseUrl.trim() || undefined,
+        customModels: modelRegistry.getCustomModels(id).length
+          ? modelRegistry.getCustomModels(id)
+          : undefined,
+      });
+      const models = await modelRegistry.discoverModels(id);
+      setDiscoveredModels(models);
+      if (models.length === 0) {
+        setModelDiscoveryError("接口未返回可发现模型，可继续手工填写模型 ID。");
+      }
+    } catch (error) {
+      setDiscoveredModels([]);
+      setModelDiscoveryError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDiscoveringModels(false);
+    }
+  };
+
+  const selectDiscoveredModel = (model: DiscoveredModel) => {
+    setModelId(model.id);
+    setModelName(model.name);
+    if (model.maxContextWindow) setModelContextWindow(model.maxContextWindow);
+    if (model.maxOutput) setModelMaxOutput(model.maxOutput);
+    if (model.supportsVision !== undefined) setModelVision(model.supportsVision);
+    if (model.toolCalling !== undefined) setModelToolCalling(model.toolCalling);
+    if (model.thinking !== undefined) setModelThinking(model.thinking);
   };
 
   const validateCurrentEndpoint = async () => {
     const id = modelEndpointId.trim();
     const resolvedApiKey = resolveFormApiKey(id, apiKey);
-    if (!id || !endpointName.trim() || !resolvedApiKey) return null;
+    if (!id || !endpointName.trim()) return null;
 
     const existingModels = modelRegistry.getCustomModels(id);
     modelRegistry.registerProvider(id, {
       apiKey: resolvedApiKey,
       name: endpointName.trim(),
+      protocol: modelProtocol,
       // baseUrl 留空时使用内置默认端点（modelCatalog 或适配器兜底）
       baseUrl: baseUrl.trim() || undefined,
       customModels: existingModels.length ? existingModels : undefined,
@@ -482,7 +569,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     const id = modelEndpointId.trim();
     const rawId = modelId.trim();
     const resolvedApiKey = resolveFormApiKey(id, apiKey);
-    if (!id || !endpointName.trim() || !resolvedApiKey || !rawId) return;
+    if (!id || !endpointName.trim() || !rawId) return;
 
     setTestingConnection(true);
     setTestResult(null);
@@ -507,6 +594,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
     modelRegistry.registerProvider(id, {
       apiKey: resolvedApiKey,
       name: endpointName.trim(),
+      protocol: modelProtocol,
       baseUrl: baseUrl.trim() || undefined,
       customModels: existingModels.length ? existingModels : undefined,
     });
@@ -515,8 +603,14 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
       id: `${id}:${rawId}`,
       requestModelId: rawId,
       name: modelName.trim() || rawId,
+      maxTokens: modelContextWindow,
+      maxContextWindow: modelContextWindow,
+      maxOutput: modelMaxOutput,
       supportsVision: modelVision,
       supportsStreaming: modelStreaming,
+      toolCalling: modelToolCalling,
+      thinking: modelThinking,
+      defaultReasoningEffort: modelThinking ? modelDefaultReasoningEffort : undefined,
       unsupportedParams: modelUnsupportedParams.length > 0 ? modelUnsupportedParams : undefined,
     };
 
@@ -650,7 +744,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
   }, []);
 
   return (
-    <div className="omni-settings-root relative flex h-full w-full flex-1 min-w-0 overflow-hidden bg-white text-slate-900">
+    <div className="omni-settings-root relative flex h-full w-full min-w-0 min-h-0 flex-1 overflow-hidden bg-white text-slate-900">
       <aside className="omni-settings-sidebar w-36 shrink-0 border-r border-slate-200 bg-slate-50 py-3">
         <div className="omni-settings-muted px-3 pb-3 text-xs font-semibold text-slate-500">设置</div>
         <div className="space-y-1 px-2">
@@ -748,7 +842,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
           </div>
         </header>
 
-        <div className="hide-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-5">
+        <div className="omni-settings-content flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
           <div className={`mx-auto flex min-h-full w-full ${section === "models" ? "max-w-none flex-col gap-6" : "max-w-3xl flex-col gap-6"}`}>
             {section === "basic" ? (
               <BasicSettingsSection
@@ -775,7 +869,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             ) : section === "storage" ? (
               <StorageSettingsSection basicSettings={basicSettings} onUpdateBasicSettings={updateBasicSettings} />
             ) : (
-              <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-6">
+              <div className="omni-model-layout grid min-h-0 min-w-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-6">
                 <aside className="omni-model-section-sidebar min-w-0 self-start rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <div className="px-2 pb-3">
                     <div className="text-xs font-semibold text-slate-500">模型分类</div>
@@ -832,23 +926,33 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                       availableModels={availableModels}
                       baseUrl={baseUrl}
                       currentModel={resolvedCurrentModel}
+                      discoveredModels={discoveredModels}
+                      discoveringModels={discoveringModels}
                       editingModel={editingModel}
                       endpointModels={endpointModels}
                       endpointName={endpointName}
                       endpoints={endpoints}
-                      getRawApiKey={getRawApiKey}
                       isModelFormOpen={isModelFormOpen}
                       modelEndpointId={modelEndpointId}
+                      modelProtocol={modelProtocol}
                       modelId={modelId}
+                      modelDiscoveryError={modelDiscoveryError}
                       modelName={modelName}
                       modelStreaming={modelStreaming}
+                      modelContextWindow={modelContextWindow}
+                      modelMaxOutput={modelMaxOutput}
+                      modelToolCalling={modelToolCalling}
+                      modelThinking={modelThinking}
+                      modelDefaultReasoningEffort={modelDefaultReasoningEffort}
                       modelVision={modelVision}
                       modelUnsupportedParams={modelUnsupportedParams}
                       onChooseEndpoint={chooseEndpoint}
                       onCloseModelForm={() => setIsModelFormOpen(false)}
+                      onDiscoverModels={discoverCurrentEndpointModels}
                       onModelChange={changeMainModel}
                       onOpenEditModelForm={openEditModelForm}
                       onOpenNewModelForm={openNewModelForm}
+                      onSelectDiscoveredModel={selectDiscoveredModel}
                       onRemoveModel={removeModel}
                       onSaveModel={saveModel}
                       onResetModelPrefs={resetModelPrefs}
@@ -856,9 +960,18 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                       onSetBaseUrl={setBaseUrl}
                       onSetEndpointName={setEndpointName}
                       onSetModelEndpointId={setModelEndpointId}
+                      onSetModelProtocol={setModelProtocol}
                       onSetModelId={setModelId}
                       onSetModelName={setModelName}
                       onSetModelStreaming={setModelStreaming}
+                      onSetModelContextWindow={setModelContextWindow}
+                      onSetModelMaxOutput={setModelMaxOutput}
+                      onSetModelToolCalling={setModelToolCalling}
+                      onSetModelThinking={(checked) => {
+                        setModelThinking(checked);
+                        if (!checked) setModelDefaultReasoningEffort(undefined);
+                      }}
+                      onSetModelDefaultReasoningEffort={setModelDefaultReasoningEffort}
                       onSetModelVision={setModelVision}
                       onToggleModelUnsupportedParam={toggleModelUnsupportedParam}
                       onSetModelPrefs={updateModelPrefs}

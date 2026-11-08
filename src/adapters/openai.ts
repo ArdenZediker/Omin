@@ -1,11 +1,12 @@
 // Omni - OpenAI 适配器
-import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, EmbeddingResponse } from "./types";
+import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, EmbeddingResponse, DiscoveredModel } from "./types";
 import { toWireRole } from "./types";
 import { resolveRequestOptions, reasoningEffortToOpenAI, openAIToolChoice, ToolChoice } from "./chatOptions";
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 import { toOpenAITools, toOpenAIMessage, parseOpenAIToolCalls, OpenAIStreamToolAccumulator } from "./wireTools";
 import { resolveReasoningReturnPolicy } from "./reasoningPolicy";
 import { fetchWithTimeout, postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { normalizeOpenAIUsage } from "./usage";
 
 const OPENAI_MODELS: ModelConfig[] = [
   { id: "gpt-4o", name: "GPT-4o", provider: "openai", maxTokens: 128000, maxOutput: 16384, supportsVision: true, supportsStreaming: true, toolCalling: true },
@@ -35,7 +36,7 @@ export class OpenAIAdapter implements ModelAdapter {
   private getHeaders(): Record<string, string> {
     return {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${this.config.apiKey}`,
+      ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
       ...this.config.customHeaders,
     };
   }
@@ -69,6 +70,11 @@ export class OpenAIAdapter implements ModelAdapter {
       messages: this.buildMessages(request),
       stream,
     };
+    if (stream && !skip.has("streamOptions")) {
+      // OpenAI 兼容流默认不返回 usage；显式请求最终 usage 才能给上下文计量提供真实锚点。
+      // 不支持的端点会由参数兼容层剥掉该字段并自动重试。
+      body.stream_options = { include_usage: true };
+    }
     if (isOSeries(request.model)) {
       // o 系列：只认 max_completion_tokens，无 temperature（但支持 reasoning_effort）
       if (!skip.has("maxTokens")) body.max_completion_tokens = opts.maxTokens ?? 32768;
@@ -123,13 +129,7 @@ export class OpenAIAdapter implements ModelAdapter {
       content: msg.content ?? "",
       reasoning: reasoningText,
       model: data.model,
-      usage: data.usage
-        ? {
-            promptTokens: data.usage.prompt_tokens,
-            completionTokens: data.usage.completion_tokens,
-            totalTokens: data.usage.total_tokens,
-          }
-        : undefined,
+      usage: normalizeOpenAIUsage(data.usage),
       toolCalls: parseOpenAIToolCalls(data),
     };
   }
@@ -153,6 +153,7 @@ export class OpenAIAdapter implements ModelAdapter {
     let fullContent = "";
     let model = request.model;
     let buffer = "";
+    let usage: ChatResponse["usage"];
     const toolAccumulator = new OpenAIStreamToolAccumulator();
 
     const handleLine = (rawLine: string) => {
@@ -180,6 +181,9 @@ export class OpenAIAdapter implements ModelAdapter {
             ? parsed.error.message
             : JSON.stringify(parsed.error).slice(0, 300);
         throw new Error(`模型返回错误：${message}`);
+      }
+      if (parsed?.usage) {
+        usage = normalizeOpenAIUsage(parsed.usage) ?? usage;
       }
       const delta = parsed?.choices?.[0]?.delta;
         if (delta) {
@@ -222,7 +226,7 @@ export class OpenAIAdapter implements ModelAdapter {
     buffer = tailLines.pop() ?? "";
     for (const rawLine of tailLines) handleLine(rawLine);
 
-    return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls() };
+    return { content: fullContent, model, usage, toolCalls: toolAccumulator.getToolCalls() };
   }
 
   async embed(input: string, model = "text-embedding-3-small"): Promise<EmbeddingResponse> {
@@ -244,7 +248,7 @@ export class OpenAIAdapter implements ModelAdapter {
   async validate(): Promise<boolean> {
     try {
       const response = await fetchWithTimeout(`${this.getBaseUrl()}/models`, {
-        headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        headers: this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {},
       }, undefined, 10_000);
       const valid = response.ok;
       await response.body?.cancel().catch(() => {});
@@ -252,5 +256,19 @@ export class OpenAIAdapter implements ModelAdapter {
     } catch {
       return false;
     }
+  }
+
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const response = await fetchWithTimeout(`${this.getBaseUrl()}/models`, {
+      headers: this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {},
+    }, undefined, 10_000);
+    if (!response.ok) {
+      throw new Error(`模型发现失败：HTTP ${response.status}`);
+    }
+    const data = await response.json() as { data?: Array<{ id?: string; name?: string }> };
+    return (data.data ?? [])
+      .filter((model): model is { id: string; name?: string } => typeof model.id === "string" && model.id.length > 0)
+      .map((model) => ({ id: model.id, name: model.name?.trim() || model.id }))
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 }

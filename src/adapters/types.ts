@@ -1,7 +1,7 @@
 import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
 import type { Artifact } from "../chat/artifacts";
 import type { FileDiff } from "../chat/fileDiff";
-import type { ChatOptions } from "./chatOptions";
+import type { ChatOptions, ReasoningEffort } from "./chatOptions";
 
 // Omni - 多模型适配层
 // 为所有 AI 模型提供统一接口
@@ -81,10 +81,65 @@ export interface Message {
   steps?: ChatStep[];
   /** 推理模型思考链全文（如 R1 reasoning_content / Gemini thought），用于 UI 折叠展示 */
   reasoning?: string;
+  /** 本轮 token 用量；estimated=true 表示模型未返回精确 usage，由本地规则估算。 */
+  turnUsage?: ChatTurnUsage;
   /** 该消息关联的产物（AI 生成的文件/网页/技能等），UI 渲染产物卡片 */
   artifacts?: Artifact[];
   /** 用户随消息附带的本地文件（仅 user 消息有）；内容不内联，只记路径 */
   attachments?: ChatAttachment[];
+}
+
+/** Provider 返回的单次模型调用用量。 */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  /** Prompt-side tokens served from an upstream cache; absent when the provider does not report it. */
+  cachedPromptTokens?: number;
+}
+
+/**
+ * 最近一次成功请求的上下文锚点。
+ *
+ * promptTokens 是 provider 返回的真实 prompt 侧用量；
+ * estimatedTokens 是同一请求在本地固定启发式下的完整价格。两者一起保留，
+ * 才能在后续内容变化时用「真实锚点 + 启发式增量」计算下一次请求压力。
+ */
+export interface ContextUsageAnchor {
+  promptTokens: number;
+  /** 该请求中可持久化会话内容的启发式价格，用于计算后续对话增量。 */
+  conversationTokens: number;
+  /** 该请求完整消息与 tools schema 的启发式价格，用于判断 provider usage 是否可信。 */
+  estimatedTokens: number;
+  model: string;
+}
+
+/** 一条已完成 assistant 回答对应的 token 用量。 */
+export interface ChatTurnUsage {
+  /** 输入 token（provider 返回值；缺失时为本轮 prompt 的本地估算值） */
+  inputTokens: number;
+  /** 输出 token（provider 返回值；缺失时为本轮回复的本地估算值） */
+  outputTokens: number;
+  /** provider 返回或由 input + output 推导/估算出的本轮总用量 */
+  totalTokens: number;
+  /** 完成本轮最终答复的模型 */
+  model: string;
+  /** 本轮工具循环内实际执行的工具轮数 */
+  toolRounds: number;
+  /** Prompt-side tokens served from provider cache; absent when the provider did not report it. */
+  cachedPromptTokens?: number;
+  /** Time spent receiving the model response(s); excludes tool execution between rounds. */
+  generationDurationMs?: number;
+  /** End-to-end model request wall time, including TTFT and decode. */
+  modelDurationMs?: number;
+  /** Summed time from request start to the first streamed token. */
+  ttftDurationMs?: number;
+  /** Number of model requests that produced a measurable TTFT sample. */
+  ttftSamples?: number;
+  /** 是否为本地估算值；缺省表示 provider 返回了精确 usage */
+  estimated?: boolean;
+  /** 供上下文计量复用的最近一次 provider prompt 锚点。 */
+  contextSample?: ContextUsageAnchor;
 }
 
 /**
@@ -181,7 +236,15 @@ export interface ChatToolParam {
  * 合并进同一集合，也才能让同一份声明同时作用于 OpenAI（`max_tokens`）与
  * Ollama（`num_predict`）。解析与降级逻辑见 `paramCompat.ts`。
  */
-export type UnsupportedParam = "temperature" | "maxTokens" | "toolChoice" | "reasoningEffort";
+export type UnsupportedParam =
+  | "temperature"
+  | "maxTokens"
+  | "toolChoice"
+  | "reasoningEffort"
+  | "streamOptions";
+
+/** 模型接口使用的线上协议。provider 是配置命名空间，protocol 决定实际适配器。 */
+export type ModelProtocol = "openai" | "claude" | "gemini" | "ollama";
 
 export interface ModelConfig {
   id: string;
@@ -205,6 +268,8 @@ export interface ModelConfig {
   toolCalling?: boolean;
   /** 推理模型（思考链，如 o 系列 / R1 / Gemini 2.5） */
   thinking?: boolean;
+  /** 思考模型的默认推理力度；缺省时 thinking 模型使用 medium。 */
+  defaultReasoningEffort?: ReasoningEffort;
   /**
    * 该模型/端点**不接受**的请求参数（能力缺口声明）。
    * 适配器下发请求体前会跳过这些槽位；运行期从 400 报文里学到的缺口也会并入同一集合。
@@ -233,11 +298,7 @@ export interface ChatRequest {
 export interface ChatResponse {
   content: string;
   model: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+  usage?: TokenUsage;
   /** 模型请求调用的工具（非流式 function calling 时返回） */
   toolCalls?: ChatToolCall[];
   /** 非流式响应里的完整推理文本（如 R1 / GPT-5.6 / Qwen3-thinking 等），与 StreamChunk.reasoning 字段语义对应 */
@@ -247,6 +308,17 @@ export interface ChatResponse {
 export interface EmbeddingResponse {
   embedding: number[];
   model: string;
+}
+
+/** 模型发现结果。能力字段仅在该协议/端点真实返回时填写。 */
+export interface DiscoveredModel {
+  id: string;
+  name: string;
+  maxContextWindow?: number;
+  maxOutput?: number;
+  supportsVision?: boolean;
+  toolCalling?: boolean;
+  thinking?: boolean;
 }
 
 export interface StreamChunk {
@@ -268,6 +340,8 @@ export interface ModelAdapter {
   ): Promise<ChatResponse>;
   embed?(input: string, model?: string): Promise<EmbeddingResponse>;
   validate(): Promise<boolean>;
+  /** 发现接口当前可用的模型；不支持发现的协议可以不实现。 */
+  discoverModels?(): Promise<DiscoveredModel[]>;
 }
 
 // 提供方配置
@@ -275,6 +349,8 @@ export interface ProviderConfig {
   apiKey: string;
   baseUrl?: string;
   name?: string;
+  /** 线上协议；缺省时按内置 provider 默认值解析，自定义 provider 默认 openai。 */
+  protocol?: ModelProtocol;
   customHeaders?: Record<string, string>;
   customModels?: CustomModelConfig[];
 }
@@ -291,6 +367,8 @@ export interface CustomModelConfig {
   supportsStreaming?: boolean;
   toolCalling?: boolean;
   thinking?: boolean;
+  /** 思考模型的默认推理力度；缺省时使用 medium。 */
+  defaultReasoningEffort?: ReasoningEffort;
   /** 该模型不接受的请求参数（能力缺口声明）；适配器下发前会跳过，见 paramCompat.ts */
   unsupportedParams?: UnsupportedParam[];
   requestModelId?: string;

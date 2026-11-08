@@ -54,6 +54,34 @@ describe("OpenAIAdapter 非流式 reasoning 字段兼容", () => {
   });
 });
 
+describe("OpenAIAdapter 模型发现", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("读取 /models 并稳定排序；本地免鉴权端点不发送 Authorization", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        data: [
+          { id: "zeta-model" },
+          { id: "alpha-model", name: "Alpha Model" },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new OpenAIAdapter({ apiKey: "", baseUrl: "http://localhost:1234/v1" });
+    await expect(adapter.discoverModels()).resolves.toEqual([
+      { id: "alpha-model", name: "Alpha Model" },
+      { id: "zeta-model", name: "zeta-model" },
+    ]);
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).has("Authorization")).toBe(false);
+  });
+});
+
 const TOOL = { name: "read_file", description: "读文件", parameters: { type: "object", properties: {} } };
 
 const okResponse = () =>
@@ -121,5 +149,73 @@ describe("OpenAIAdapter 参数下发契约与自动降级", () => {
     const second = await run({ responses: [okResponse()] });
     expect(second.bodies).toHaveLength(1);
     expect(second.bodies[0]).not.toHaveProperty("temperature");
+  });
+});
+
+describe("OpenAIAdapter 流式 usage 锚点", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    clearLearnedUnsupportedParams();
+  });
+
+  const streamResponse = () => new Response(
+    [
+      'data: {"choices":[{"delta":{"content":"你"}}],"model":"kimi-k3"}',
+      "",
+      'data: {"choices":[],"model":"kimi-k3","usage":{"prompt_tokens":1200,"completion_tokens":34,"total_tokens":1234}}',
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n"),
+    { status: 200, headers: { "Content-Type": "text/event-stream" } }
+  );
+
+  it("请求 include_usage，并把末尾 usage 带回 ChatResponse", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+        bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return streamResponse();
+      })
+    );
+
+    const adapter = new OpenAIAdapter({ apiKey: "sk-test", baseUrl: "https://example.com/v1" });
+    const result = await adapter.chatStream({
+      messages: [{ role: "user", content: "hi" }],
+      model: "kimi-k3",
+      stream: true,
+    }, () => undefined);
+
+    expect(bodies[0].stream_options).toEqual({ include_usage: true });
+    expect(result.usage).toEqual({
+      promptTokens: 1200,
+      completionTokens: 34,
+      totalTokens: 1234,
+    });
+  });
+
+  it("端点拒绝 stream_options 时自动剥参重发", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const queue = [paramErrorResponse("stream_options"), streamResponse()];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+        bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return queue.shift() ?? streamResponse();
+      })
+    );
+
+    const adapter = new OpenAIAdapter({ apiKey: "sk-test", baseUrl: "https://example.com/v1" });
+    const result = await adapter.chatStream({
+      messages: [{ role: "user", content: "hi" }],
+      model: "kimi-k3",
+      stream: true,
+    }, () => undefined);
+
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toHaveProperty("stream_options");
+    expect(bodies[1]).not.toHaveProperty("stream_options");
+    expect(result.usage?.promptTokens).toBe(1200);
   });
 });

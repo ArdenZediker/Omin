@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
-import type { CustomModelConfig, UnsupportedParam } from "../../adapters/types";
+import { ReasoningEffort } from "../../adapters/types";
+import type { CustomModelConfig, DiscoveredModel, ModelProtocol, UnsupportedParam } from "../../adapters/types";
 import {
   ALL_UNSUPPORTED_PARAMS,
   describeSkippedParams,
@@ -12,7 +13,7 @@ import type { ChatUsagePreferences } from "../../chat/types";
 import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
 
-type Endpoint = { id: string; name: string; baseUrl: string };
+type Endpoint = { id: string; name: string; baseUrl: string; protocol: ModelProtocol };
 
 type Props = {
   endpoints: Endpoint[];
@@ -26,6 +27,8 @@ type Props = {
     supportsStreaming: boolean;
   }>;
   currentModel: string;
+  discoveredModels: DiscoveredModel[];
+  discoveringModels: boolean;
   /** 当前正在编辑的模型的请求参数偏好（「新增模型」时为默认值） */
   modelPrefs: ChatUsagePreferences;
   testingConnection: boolean;
@@ -33,20 +36,29 @@ type Props = {
   isModelFormOpen: boolean;
   editingModel: { endpointId: string; id: string } | null;
   modelEndpointId: string;
+  modelProtocol: ModelProtocol;
   endpointName: string;
   baseUrl: string;
   apiKey: string;
   modelId: string;
+  modelDiscoveryError: string;
   modelName: string;
   modelVision: boolean;
   modelStreaming: boolean;
+  modelContextWindow?: number;
+  modelMaxOutput?: number;
+  modelToolCalling: boolean;
+  modelThinking: boolean;
+  modelDefaultReasoningEffort?: ReasoningEffort;
   /** 该模型声明「不接受」的参数槽位（下发请求时跳过，避免 400） */
   modelUnsupportedParams: UnsupportedParam[];
   onOpenNewModelForm: () => void;
   onOpenEditModelForm: (model: CustomModelConfig & { endpointId: string }) => void;
   onCloseModelForm: () => void;
   onChooseEndpoint: (id: string) => void;
+  onDiscoverModels: () => void | Promise<void>;
   onSetModelEndpointId: (value: string) => void;
+  onSetModelProtocol: (value: ModelProtocol) => void;
   onSetEndpointName: (value: string) => void;
   onSetBaseUrl: (value: string) => void;
   onSetApiKey: (value: string) => void;
@@ -54,6 +66,11 @@ type Props = {
   onSetModelName: (value: string) => void;
   onSetModelVision: (value: boolean) => void;
   onSetModelStreaming: (value: boolean) => void;
+  onSetModelContextWindow: (value: number | undefined) => void;
+  onSetModelMaxOutput: (value: number | undefined) => void;
+  onSetModelToolCalling: (value: boolean) => void;
+  onSetModelThinking: (value: boolean) => void;
+  onSetModelDefaultReasoningEffort: (value: ReasoningEffort | undefined) => void;
   onToggleModelUnsupportedParam: (param: UnsupportedParam) => void;
   /** 修改当前编辑模型的请求参数（随「保存模型」一并落盘，按模型 id 隔离） */
   onSetModelPrefs: (prefs: ChatUsagePreferences) => void;
@@ -61,7 +78,7 @@ type Props = {
   onTestConnection: () => void | Promise<void>;
   onSaveModel: () => void | Promise<void>;
   onRemoveModel: (endpointId: string, id: string) => void;
-  getRawApiKey: (id: string) => string;
+  onSelectDiscoveredModel: (model: DiscoveredModel) => void;
   onModelChange: (modelId: string) => void | Promise<void>;
 };
 
@@ -160,25 +177,36 @@ export default function ModelSettingsSection({
   endpointModels,
   availableModels,
   currentModel,
+  discoveredModels,
+  discoveringModels,
   modelPrefs,
   testingConnection,
   testResult,
   isModelFormOpen,
   editingModel,
   modelEndpointId,
+  modelProtocol,
   endpointName,
   baseUrl,
   apiKey,
   modelId,
+  modelDiscoveryError,
   modelName,
   modelVision,
   modelStreaming,
+  modelContextWindow,
+  modelMaxOutput,
+  modelToolCalling,
+  modelThinking,
+  modelDefaultReasoningEffort,
   modelUnsupportedParams,
   onOpenNewModelForm,
   onOpenEditModelForm,
   onCloseModelForm,
   onChooseEndpoint,
+  onDiscoverModels,
   onSetModelEndpointId,
+  onSetModelProtocol,
   onSetEndpointName,
   onSetBaseUrl,
   onSetApiKey,
@@ -186,16 +214,25 @@ export default function ModelSettingsSection({
   onSetModelName,
   onSetModelVision,
   onSetModelStreaming,
+  onSetModelContextWindow,
+  onSetModelMaxOutput,
+  onSetModelToolCalling,
+  onSetModelThinking,
+  onSetModelDefaultReasoningEffort,
   onToggleModelUnsupportedParam,
   onSetModelPrefs,
   onResetModelPrefs,
   onTestConnection,
   onSaveModel,
   onRemoveModel,
-  getRawApiKey,
+  onSelectDiscoveredModel,
   onModelChange,
 }: Props) {
   const selectedMainModel = availableModels.find((model) => model.id === currentModel) ?? null;
+  const parsePositiveInteger = (value: string) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+  };
 
   // 「参数兼容」默认收起：绝大多数模型无需手动声明，只有明确知道某参数不吃、
   // 或服务端已经报过 400 时才需要展开。每次打开弹窗都回到收起态，避免上一个模型
@@ -283,6 +320,8 @@ export default function ModelSettingsSection({
                   <span className={`ml-auto ${isCurrentMainModel ? "text-violet-500" : "text-slate-400"}`}>{model.endpointName}</span>
                   {model.supportsVision && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700">视觉</span>}
                   {model.supportsStreaming && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700">流式</span>}
+                  {model.toolCalling && <span className="rounded bg-cyan-100 px-1.5 py-0.5 text-[10px] text-cyan-700">工具</span>}
+                  {model.thinking && <span className="rounded bg-fuchsia-100 px-1.5 py-0.5 text-[10px] text-fuchsia-700">思考</span>}
                   {skipped && (
                     <span
                       title={`下发时跳过：${skipped.names.join("、")}`}
@@ -349,23 +388,137 @@ export default function ModelSettingsSection({
                   className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
                 />
               </Field>
+              <Field label="接口协议" hint="决定请求体、鉴权头和流式解析方式">
+                <OmniSelect
+                  value={modelProtocol}
+                  onChange={(value) => onSetModelProtocol(value as ModelProtocol)}
+                  ariaLabel="接口协议"
+                  options={[
+                    { value: "openai", label: "OpenAI Compatible" },
+                    { value: "claude", label: "Anthropic Messages" },
+                    { value: "gemini", label: "Google Gemini" },
+                    { value: "ollama", label: "Ollama Native" },
+                  ]}
+                />
+              </Field>
               <Field label="访问密钥">
                 <input
                   type="password"
                   value={apiKey}
                   onFocus={() => apiKey === "********" && onSetApiKey("")}
                   onChange={(e) => onSetApiKey(e.target.value)}
+                  placeholder="Ollama 或免鉴权本地接口可留空"
                   className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
                 />
               </Field>
               <SectionLabel hint="模型标识与内置能力">模型</SectionLabel>
-              <Field label="模型 ID">
-                <input value={modelId} onChange={(e) => onSetModelId(e.target.value)} className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm" />
+              <Field label="模型 ID" hint="可手工填写；接口支持时也可从端点发现">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={modelId}
+                    onChange={(e) => onSetModelId(e.target.value)}
+                    className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 px-3 text-sm"
+                  />
+                  <button
+                    onClick={onDiscoverModels}
+                    disabled={discoveringModels || !modelEndpointId.trim() || !endpointName.trim()}
+                    className="h-9 shrink-0 rounded-md border border-slate-300 px-3 text-xs text-slate-600 disabled:opacity-40"
+                    type="button"
+                  >
+                    {discoveringModels ? "发现中..." : "发现模型"}
+                  </button>
+                </div>
               </Field>
+              {modelDiscoveryError && (
+                <Field label="">
+                  <p className="text-[11px] leading-4 text-amber-700">{modelDiscoveryError}</p>
+                </Field>
+              )}
+              {discoveredModels.length > 0 && (
+                <Field label="发现结果" hint={`${discoveredModels.length} 个可用模型，点击后回填模型 ID 与端点能力`}>
+                  <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-1.5">
+                    {discoveredModels.map((model) => (
+                      <button
+                        key={model.id}
+                        onClick={() => onSelectDiscoveredModel(model)}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-violet-50 ${
+                          model.id === modelId ? "bg-violet-50 text-violet-900" : "text-slate-700"
+                        }`}
+                        type="button"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium">{model.name}</span>
+                        <span className="max-w-[55%] truncate font-mono text-[10px] text-slate-400">{model.id}</span>
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              )}
               <Field label="显示名称">
                 <input value={modelName} onChange={(e) => onSetModelName(e.target.value)} className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm" />
               </Field>
-              <SectionLabel hint="成对的两道开关需同时开启才生效">能力</SectionLabel>
+              <SectionLabel hint="来自模型/接口的真实能力，用于预算、工具和推理请求">模型适配</SectionLabel>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-[11px] text-slate-500">上下文窗口</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={modelContextWindow ?? ""}
+                    onChange={(e) => onSetModelContextWindow(parsePositiveInteger(e.target.value))}
+                    placeholder="未知"
+                    className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  />
+                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">输入与历史压缩的总预算</span>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] text-slate-500">模型最大输出</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={modelMaxOutput ?? ""}
+                    onChange={(e) => onSetModelMaxOutput(parsePositiveInteger(e.target.value))}
+                    placeholder="缺省按上下文推算"
+                    className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  />
+                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">接口允许的单次生成上限</span>
+                </label>
+              </div>
+              <div className="divide-y divide-slate-100 rounded-md border border-slate-200 px-3.5">
+                <ToggleRow
+                  title="工具调用"
+                  description="允许模型发起 function calling；关闭后不会向该模型暴露工具"
+                  checked={modelToolCalling}
+                  onChange={onSetModelToolCalling}
+                  ariaLabel="模型支持工具调用"
+                />
+                <ToggleRow
+                  title="思考模型"
+                  description="启用后默认携带推理力度，适配器会映射为对应协议的思考参数"
+                  checked={modelThinking}
+                  onChange={onSetModelThinking}
+                  ariaLabel="模型支持思考"
+                />
+              </div>
+              {modelThinking && (
+                <Field label="默认推理">
+                  <OmniSelect
+                    value={modelDefaultReasoningEffort ?? ""}
+                    onChange={(value) =>
+                      onSetModelDefaultReasoningEffort(value ? (value as ReasoningEffort) : undefined)
+                    }
+                    ariaLabel="默认推理力度"
+                    options={[
+                      { value: "", label: "自动（默认 Medium）" },
+                      { value: ReasoningEffort.Low, label: "Low" },
+                      { value: ReasoningEffort.Medium, label: "Medium" },
+                      { value: ReasoningEffort.High, label: "High" },
+                      { value: ReasoningEffort.XHigh, label: "XHigh" },
+                      { value: ReasoningEffort.Max, label: "Max" },
+                    ]}
+                  />
+                </Field>
+              )}
+              <SectionLabel hint="成对的两道开关需同时开启才生效">使用偏好</SectionLabel>
               <div className="divide-y divide-slate-100 rounded-md border border-slate-200 px-3.5">
                 <ToggleRow
                   title="视觉输入"
@@ -495,7 +648,7 @@ export default function ModelSettingsSection({
             <div className="omni-model-modal-footer flex flex-wrap items-center gap-2 border-t border-slate-100 px-5 py-3.5">
               <button
                 onClick={onTestConnection}
-                disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim() || (!apiKey.trim() && !getRawApiKey(modelEndpointId.trim()))}
+                disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim()}
                 className="rounded-md border border-slate-200 px-4 py-2 text-xs text-slate-600 disabled:opacity-40"
                 type="button"
               >
@@ -503,7 +656,7 @@ export default function ModelSettingsSection({
               </button>
               <button
                 onClick={onSaveModel}
-                disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim() || !modelId.trim() || (!apiKey.trim() && !getRawApiKey(modelEndpointId.trim()))}
+                disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim() || !modelId.trim()}
                 className="rounded-md bg-violet-600 px-4 py-2 text-xs font-medium text-white disabled:opacity-40"
                 type="button"
               >

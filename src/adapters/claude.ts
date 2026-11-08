@@ -1,11 +1,12 @@
 // Omni - Claude 适配器
-import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig } from "./types";
+import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, DiscoveredModel } from "./types";
 import { mimeTypeFromDataUrl } from "./types";
 import { toWireRole } from "./types";
 import { toClaudeTools, toClaudeMessage, parseClaudeToolCalls, ClaudeStreamToolAccumulator } from "./wireTools";
-import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { fetchWithTimeout, postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 import { resolveRequestOptions, claudeThinkingConfig, claudeToolChoice, ToolChoice } from "./chatOptions";
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
+import { normalizeClaudeUsage } from "./usage";
 
 const CLAUDE_MODELS: ModelConfig[] = [
   { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "claude", maxTokens: 200000, maxOutput: 64000, supportsVision: true, supportsStreaming: true, toolCalling: true },
@@ -125,13 +126,7 @@ export class ClaudeAdapter implements ModelAdapter {
       content: textBlock?.text || "",
       reasoning: thinkingText || undefined,
       model: data.model,
-      usage: data.usage
-        ? {
-            promptTokens: data.usage.input_tokens,
-            completionTokens: data.usage.output_tokens,
-            totalTokens: data.usage.input_tokens + data.usage.output_tokens,
-          }
-        : undefined,
+      usage: normalizeClaudeUsage(data.usage),
       toolCalls: parseClaudeToolCalls(data),
     };
   }
@@ -155,7 +150,28 @@ export class ClaudeAdapter implements ModelAdapter {
     let fullReasoning = "";
     let model = request.model;
     let buffer = "";
+    let promptTokens: number | undefined;
+    let completionTokens: number | undefined;
+    let cachedPromptTokens: number | undefined;
     const toolAccumulator = new ClaudeStreamToolAccumulator();
+
+    const captureUsage = (usage: any) => {
+      if (!usage || typeof usage !== "object") return;
+      const input = Number(usage.input_tokens ?? 0);
+      const cacheRead = Number(usage.cache_read_input_tokens ?? 0);
+      const cacheWrite = Number(usage.cache_creation_input_tokens ?? 0);
+      if ([input, cacheRead, cacheWrite].every(Number.isSafeInteger)) {
+        const nextPromptTokens = input + cacheRead + cacheWrite;
+        if (nextPromptTokens > 0) promptTokens = Math.max(promptTokens ?? 0, nextPromptTokens);
+        if (usage.cache_read_input_tokens !== undefined) {
+          cachedPromptTokens = Math.max(cachedPromptTokens ?? 0, cacheRead);
+        }
+      }
+      const output = Number(usage.output_tokens);
+      if (Number.isSafeInteger(output) && output >= 0) {
+        completionTokens = Math.max(completionTokens ?? 0, output);
+      }
+    };
 
     const handleLine = (rawLine: string) => {
       const line = rawLine.trim();
@@ -174,8 +190,11 @@ export class ClaudeAdapter implements ModelAdapter {
             fullContent += parsed.delta.text;
             onChunk({ content: parsed.delta.text, done: false, model });
           }
-        } else if (parsed.type === "message_start" && parsed.message?.model) {
-          model = parsed.message.model;
+        } else if (parsed.type === "message_start") {
+          if (parsed.message?.model) model = parsed.message.model;
+          captureUsage(parsed.message?.usage);
+        } else if (parsed.type === "message_delta") {
+          captureUsage(parsed.usage);
         } else if (parsed.type === "message_stop") {
           onChunk({ content: "", done: true, model });
         } else if (parsed.type === "content_block_start" || parsed.type === "content_block_delta" || parsed.type === "content_block_stop") {
@@ -199,7 +218,21 @@ export class ClaudeAdapter implements ModelAdapter {
     buffer = tailLines.pop() ?? "";
     for (const rawLine of tailLines) handleLine(rawLine);
 
-    return { content: fullContent, model, toolCalls: toolAccumulator.getToolCalls(), reasoning: fullReasoning || undefined };
+    const usage = promptTokens !== undefined || completionTokens !== undefined
+      ? {
+          promptTokens: promptTokens ?? 0,
+          completionTokens: completionTokens ?? 0,
+          totalTokens: (promptTokens ?? 0) + (completionTokens ?? 0),
+          ...(cachedPromptTokens === undefined ? {} : { cachedPromptTokens }),
+        }
+      : undefined;
+    return {
+      content: fullContent,
+      model,
+      usage,
+      toolCalls: toolAccumulator.getToolCalls(),
+      reasoning: fullReasoning || undefined,
+    };
   }
 
   async validate(): Promise<boolean> {
@@ -222,5 +255,28 @@ export class ClaudeAdapter implements ModelAdapter {
     } catch {
       return false;
     }
+  }
+
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const response = await fetchWithTimeout(`${this.getBaseUrl()}/v1/models`, {
+      headers: {
+        "x-api-key": this.config.apiKey,
+        "anthropic-version": "2023-06-01",
+        ...this.config.customHeaders,
+      },
+    }, undefined, 10_000);
+    if (!response.ok) {
+      throw new Error(`模型发现失败：HTTP ${response.status}`);
+    }
+    const data = await response.json() as {
+      data?: Array<{ id?: string; display_name?: string }>;
+    };
+    return (data.data ?? [])
+      .filter((model): model is { id: string; display_name?: string } => typeof model.id === "string" && model.id.length > 0)
+      .map((model) => ({
+        id: model.id,
+        name: model.display_name?.trim() || model.id,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 }

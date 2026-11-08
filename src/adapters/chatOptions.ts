@@ -155,7 +155,9 @@ export function defaultChatOptions(
   }
 ): ChatOptions {
   const reasoningEffort =
-    explicit?.reasoningEffort ?? (model?.thinking ? ReasoningEffort.Medium : undefined);
+    explicit?.reasoningEffort ??
+    model?.defaultReasoningEffort ??
+    (model?.thinking ? ReasoningEffort.Medium : undefined);
   return {
     temperature: prefs.temperature,
     maxTokens: prefs.maxOutputTokens,

@@ -1,7 +1,17 @@
 // Omni - 模型注册与调度器
 // 负责集中管理所有 AI 模型适配器
 
-import type { ModelAdapter, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, ModelConfig, CustomModelConfig } from "./types";
+import type {
+  ModelAdapter,
+  ChatRequest,
+  ChatResponse,
+  StreamChunk,
+  ProviderConfig,
+  ModelConfig,
+  CustomModelConfig,
+  ModelProtocol,
+  DiscoveredModel,
+} from "./types";
 import { resolveContextWindow } from "./chatOptions";
 import { OpenAIAdapter } from "./openai";
 import { ClaudeAdapter } from "./claude";
@@ -14,20 +24,25 @@ import { loadAppKvEntries, saveAppKvEntry } from "../app/sqliteStorage";
 
 type AdapterConstructor = new (config: ProviderConfig) => ModelAdapter;
 
-const ADAPTER_MAP: Record<string, AdapterConstructor> = {
+const PROTOCOL_ADAPTER_MAP: Record<ModelProtocol, AdapterConstructor> = {
   openai: OpenAIAdapter,
   claude: ClaudeAdapter,
   gemini: GeminiAdapter,
   ollama: OllamaAdapter,
-  deepseek: DeepSeekAdapter,
-  openrouter: OpenAIAdapter,
-  moonshot: OpenAIAdapter,
-  siliconflow: OpenAIAdapter,
-  dashscope: OpenAIAdapter,
-  zhipu: OpenAIAdapter,
 };
 
-class ModelRegistry {
+function resolveProviderProtocol(provider: string, config: ProviderConfig): ModelProtocol {
+  return config.protocol ?? PROVIDER_DEFAULTS[provider]?.protocol ?? "openai";
+}
+
+function normalizeProviderBaseUrl(protocol: ModelProtocol, baseUrl?: string): string | undefined {
+  if (protocol !== "ollama" || !baseUrl) return baseUrl;
+  // 旧默认值曾是 http://localhost:11434/v1；Ollama 原生适配器使用 /api/*，
+  // 保留 /v1 会拼成 /v1/api/chat。只剥离协议尾部的这一层，不猜测其它代理路径。
+  return baseUrl.replace(/\/v1\/?$/i, "");
+}
+
+export class ModelRegistry {
   private adapters: Map<string, ModelAdapter> = new Map();
   private configs: Map<string, ProviderConfig> = new Map();
   private customModels: Map<string, CustomModelConfig[]> = new Map(); // 提供方 -> 自定义模型
@@ -35,9 +50,18 @@ class ModelRegistry {
 
   // 注册提供方及其配置
   registerProvider(provider: string, config: ProviderConfig): void {
-    const AdapterClass = ADAPTER_MAP[provider] || OpenAIAdapter;
-    this.configs.set(provider, config);
-    this.adapters.set(provider, new AdapterClass(config));
+    const protocol = resolveProviderProtocol(provider, config);
+    const normalizedConfig = {
+      ...config,
+      protocol,
+      baseUrl: normalizeProviderBaseUrl(protocol, config.baseUrl),
+    };
+    const AdapterClass =
+      (provider === "deepseek" && protocol === "openai" ? DeepSeekAdapter : undefined) ??
+      PROTOCOL_ADAPTER_MAP[protocol] ??
+      OpenAIAdapter;
+    this.configs.set(provider, normalizedConfig);
+    this.adapters.set(provider, new AdapterClass(normalizedConfig));
     // 如果提供了自定义模型，则保存起来
     if (config.customModels && config.customModels.length > 0) {
       this.customModels.set(provider, config.customModels);
@@ -109,18 +133,26 @@ class ModelRegistry {
           provider,
           maxTokens: resolveContextWindow(m),
           maxContextWindow: m.maxContextWindow,
+          maxOutput: m.maxOutput,
           supportsVision: m.supportsVision ?? false,
           supportsStreaming: m.supportsStreaming ?? true,
+          toolCalling: m.toolCalling,
+          thinking: m.thinking,
+          defaultReasoningEffort: m.defaultReasoningEffort,
+          unsupportedParams: m.unsupportedParams,
           requestModelId: m.requestModelId,
         });
       }
     }
 
-    if (custom.length > 0) {
-      return custom;
-    }
-
-    return BUILTIN_MODELS.filter((m) => registered.includes(m.provider));
+    // 某个 provider 自己声明了模型时，以该 provider 的自定义清单为准；
+    // 其他已注册 provider 的内置模型仍应可用，不能被“任意一个自定义模型”全局挤掉。
+    const builtinFallback = BUILTIN_MODELS.filter(
+      (model) =>
+        registered.includes(model.provider) &&
+        (this.customModels.get(model.provider)?.length ?? 0) === 0
+    );
+    return [...custom, ...builtinFallback];
   }
 
   // 获取模型配置
@@ -143,6 +175,7 @@ class ModelRegistry {
           supportsStreaming: found.supportsStreaming ?? true,
           toolCalling: found.toolCalling,
           thinking: found.thinking,
+          defaultReasoningEffort: found.defaultReasoningEffort,
           unsupportedParams: found.unsupportedParams,
           requestModelId: found.requestModelId,
         };
@@ -193,6 +226,12 @@ class ModelRegistry {
     return adapter.validate();
   }
 
+  async discoverModels(provider: string): Promise<DiscoveredModel[]> {
+    const adapter = this.adapters.get(provider);
+    if (!adapter?.discoverModels) return [];
+    return adapter.discoverModels();
+  }
+
   // 获取所有已注册提供方
   getRegisteredProviders(): string[] {
     return Array.from(this.adapters.keys());
@@ -204,7 +243,7 @@ class ModelRegistry {
   }
 
   // 获取提供方配置（不包含 API Key，避免泄露）
-  getProviderConfig(provider: string): { name?: string; baseUrl?: string; defaultBaseUrl?: string; protocol?: string; label?: string; local?: boolean; hasApiKey: boolean } | null {
+  getProviderConfig(provider: string): { name?: string; baseUrl?: string; defaultBaseUrl?: string; protocol: ModelProtocol; label?: string; local?: boolean; hasApiKey: boolean } | null {
     const config = this.configs.get(provider);
     if (!config) return null;
     const defaults = PROVIDER_DEFAULTS[provider];
@@ -212,7 +251,7 @@ class ModelRegistry {
       name: config.name,
       baseUrl: config.baseUrl,
       defaultBaseUrl: defaults?.baseUrl,
-      protocol: defaults?.protocol,
+      protocol: config.protocol ?? defaults?.protocol ?? "openai",
       label: defaults?.label,
       local: defaults?.local,
       hasApiKey: !!config.apiKey,
@@ -228,12 +267,18 @@ const STORAGE_KEY = "omni_provider_configs";
 export const CURRENT_MODEL_STORAGE_KEY = "omni_current_model";
 
 export async function saveProviderConfigs(): Promise<void> {
-  const data: Record<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }> = {};
+  const data: Record<string, { apiKey: string; baseUrl?: string; name?: string; protocol?: ModelProtocol; customModels?: CustomModelConfig[] }> = {};
   modelRegistry.getRegisteredProviders().forEach((provider) => {
     // 保存时需要原始配置，直接访问私有映射
     const rawConfig = (modelRegistry as unknown as { configs: Map<string, ProviderConfig> }).configs.get(provider);
     if (rawConfig) {
-      data[provider] = { apiKey: rawConfig.apiKey, baseUrl: rawConfig.baseUrl, name: rawConfig.name, customModels: rawConfig.customModels };
+      data[provider] = {
+        apiKey: rawConfig.apiKey,
+        baseUrl: rawConfig.baseUrl,
+        name: rawConfig.name,
+        protocol: rawConfig.protocol,
+        customModels: rawConfig.customModels,
+      };
     }
   });
   await saveAppKvEntry(STORAGE_KEY, JSON.stringify(data));
@@ -245,16 +290,15 @@ export async function loadProviderConfigs(): Promise<void> {
     const entries = await loadAppKvEntries([STORAGE_KEY, CURRENT_MODEL_STORAGE_KEY]);
     const raw = entries[STORAGE_KEY];
     if (raw) {
-      const data = JSON.parse(raw) as Record<string, { apiKey: string; baseUrl?: string; name?: string; customModels?: CustomModelConfig[] }>;
+      const data = JSON.parse(raw) as Record<string, { apiKey: string; baseUrl?: string; name?: string; protocol?: ModelProtocol; customModels?: CustomModelConfig[] }>;
       for (const [provider, config] of Object.entries(data)) {
-        if (config.apiKey) {
-          modelRegistry.registerProvider(provider, {
-            apiKey: config.apiKey,
-            baseUrl: config.baseUrl,
-            name: config.name,
-            customModels: config.customModels,
-          });
-        }
+        modelRegistry.registerProvider(provider, {
+          apiKey: config.apiKey ?? "",
+          baseUrl: config.baseUrl,
+          name: config.name,
+          protocol: config.protocol,
+          customModels: config.customModels,
+        });
       }
     }
 

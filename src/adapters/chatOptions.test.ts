@@ -63,6 +63,13 @@ describe("defaultChatOptions", () => {
     const t = defaultChatOptions(thinkingModel(), { temperature: 0.7, maxOutputTokens: 8000 }, { reasoningEffort: ReasoningEffort.Low });
     expect(t.reasoningEffort).toBe(ReasoningEffort.Low);
   });
+  it("模型声明的默认推理力度优先于 thinking 的 Medium 兜底", () => {
+    const t = defaultChatOptions(
+      thinkingModel({ defaultReasoningEffort: ReasoningEffort.High }),
+      { temperature: 0.7, maxOutputTokens: 8000 }
+    );
+    expect(t.reasoningEffort).toBe(ReasoningEffort.High);
+  });
 });
 
 describe("claudeThinkingConfig", () => {

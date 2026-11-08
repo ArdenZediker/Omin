@@ -1,9 +1,9 @@
 // Omni - Ollama 适配器（本地模型）
-import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, ChatToolCall } from "./types";
+import type { ModelAdapter, ModelConfig, ChatRequest, ChatResponse, StreamChunk, ProviderConfig, ChatToolCall, DiscoveredModel } from "./types";
 import { toWireRole } from "./types";
 import { toOllamaTools, toOllamaMessage, parseOllamaToolCalls } from "./wireTools";
 import { resolveReasoningReturnPolicy } from "./reasoningPolicy";
-import { postJsonWithRetry, postJsonStream, iterateStream } from "./http";
+import { fetchWithTimeout, postJsonWithRetry, postJsonStream, iterateStream } from "./http";
 import { resolveRequestOptions, ollamaToolChoice } from "./chatOptions";
 import { sendWithParamCompat, type UnsupportedParam } from "./paramCompat";
 
@@ -80,6 +80,14 @@ export class OllamaAdapter implements ModelAdapter {
     return {
       content: data.message?.content || "",
       model: data.model || request.model,
+      usage: Number.isSafeInteger(Number(data.prompt_eval_count))
+        && Number.isSafeInteger(Number(data.eval_count))
+        ? {
+            promptTokens: Number(data.prompt_eval_count),
+            completionTokens: Number(data.eval_count),
+            totalTokens: Number(data.prompt_eval_count) + Number(data.eval_count),
+          }
+        : undefined,
       toolCalls: parseOllamaToolCalls(data),
     };
   }
@@ -102,6 +110,7 @@ export class OllamaAdapter implements ModelAdapter {
     let fullContent = "";
     let model = request.model;
     let pendingToolCalls: ChatToolCall[] | undefined;
+    let usage: ChatResponse["usage"];
 
     for await (const value of iterateStream(reader, { signal: request.signal })) {
       const chunk = decoder.decode(value, { stream: true });
@@ -119,6 +128,15 @@ export class OllamaAdapter implements ModelAdapter {
           if (parsed.message?.tool_calls?.length) {
             pendingToolCalls = parseOllamaToolCalls(parsed);
           }
+          const promptTokens = Number(parsed.prompt_eval_count);
+          const completionTokens = Number(parsed.eval_count);
+          if (Number.isSafeInteger(promptTokens) && Number.isSafeInteger(completionTokens)) {
+            usage = {
+              promptTokens,
+              completionTokens,
+              totalTokens: promptTokens + completionTokens,
+            };
+          }
           if (parsed.done) {
             onChunk({ content: "", done: true, model });
           }
@@ -128,7 +146,7 @@ export class OllamaAdapter implements ModelAdapter {
       }
     }
 
-    return { content: fullContent, model, toolCalls: pendingToolCalls };
+    return { content: fullContent, model, usage, toolCalls: pendingToolCalls };
   }
 
   async validate(): Promise<boolean> {
@@ -138,5 +156,20 @@ export class OllamaAdapter implements ModelAdapter {
     } catch {
       return false;
     }
+  }
+
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const response = await fetchWithTimeout(`${this.getBaseUrl()}/api/tags`, {
+      headers: this.getHeaders(),
+    }, undefined, 10_000);
+    if (!response.ok) {
+      throw new Error(`模型发现失败：HTTP ${response.status}`);
+    }
+    const data = await response.json() as { models?: Array<{ name?: string; model?: string }> };
+    return (data.models ?? [])
+      .map((model) => model.name?.trim() || model.model?.trim() || "")
+      .filter(Boolean)
+      .map((id) => ({ id, name: id }))
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 }
