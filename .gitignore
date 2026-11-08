@@ -54,3 +54,6 @@ cargo_check.log
 
 # WorkBuddy 本地项目数据（记忆/技能/MCP 配置等，不入库）
 .workbuddy/
+
+# 本地 WorkDSH 参考源码，仅用于对照实现，不作为本项目代码提交
+workdsh/
