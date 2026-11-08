@@ -150,4 +150,16 @@ describe("CompactWindow ball interaction", () => {
 
     expect(container.querySelector(".compact-menu")).toBeNull();
   });
+
+  it("removes the native drag region while the pet menu is open so outside clicks can close it", () => {
+    const props = makeProps();
+    const { container } = render(
+      <CompactWindow {...props} compactAppearance="pet" isCompactMenuOpen />
+    );
+    const root = container.querySelector(".compact-shell")!;
+
+    expect(root).not.toHaveClass("drag-region");
+    fireEvent.mouseDown(container.querySelector(".compact-hover-zone")!);
+    expect(onCloseCompactMenuNow).toHaveBeenCalledTimes(1);
+  });
 });

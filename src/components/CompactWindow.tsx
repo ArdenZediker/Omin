@@ -148,6 +148,8 @@ export default function CompactWindow({
   };
   const isPetAppearance = compactAppearance === "pet";
   const isAnimatedAppearance = isPetAppearance;
+  const isFloatingUiOpen =
+    isCompactMenuOpen || isCompactQueryOpen || isCompactReplyLoading || Boolean(compactReply);
   const isPetThoughtToggleVisible =
     isPetAppearance &&
     petThoughtCount > 0 &&
@@ -287,7 +289,7 @@ export default function CompactWindow({
 
   return (
     <div
-      className={`compact-shell drag-region ${
+      className={`compact-shell ${isFloatingUiOpen ? "" : "drag-region"} ${
         isBallRightAnchored ? "compact-shell--menu-left" : ""
       } ${
         isCompactQueryOpen && !isPetAppearance && isQueryPresentationReady ? "compact-shell--query-open" : ""
