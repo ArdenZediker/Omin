@@ -46,8 +46,11 @@ pnpm install --frozen-lockfile
 
 ```bash
 pnpm dev           # 只起前端，端口 15420（HMR 15421）
-pnpm tauri dev     # 起完整桌面应用
+pnpm tauri dev     # 构建当前平台 Agent Host sidecar，再起完整桌面应用
 ```
+
+Agent Host 是默认聊天运行时；仅在诊断回退时设置 `VITE_OMNI_AGENT_HOST=0`。`beforeDevCommand`
+已改为 `pnpm dev:desktop`，因此干净环境直接跑 `pnpm tauri dev` 不会因缺少 sidecar 失败。
 
 ⚠️ **端口必须 > 15000**：Windows 动态端口段（本机 1024–15000）会被 Hyper-V/WSL 整段预留，
 落在其中的端口绑定失败会报 `EACCES`（**不是** `EADDRINUSE`，极易误判）。15420 是刻意选的。
@@ -100,10 +103,13 @@ node node_modules/vite/bin/vite.js build
 ```
 输入 → executeInputTask（建会话/写用户消息）
      → buildChatTools() 产出 tools 数组
-     → engine.runToolLoop
-     → 适配器（openai/claude/gemini/deepseek/ollama）
-     → 工具执行（本地 / MCP / 子 Agent）→ 结果回灌 → 下一轮
+     → Agent Host（默认）：事件溯源 ReAct + 会话级工具目录
+     → 原生工具经 Tauri 路由，Omni client tools 经 UI bridge 回确认门
+     → Host 事件投影回会话 → 下一轮
 ```
+
+旧 `engine.runToolLoop` 仍保留，只有显式设置 `VITE_OMNI_AGENT_HOST=0` 时才作为诊断回退路径。
+重启后，已映射的 Omni 会话会从 Host JSONL 回放缺失轮次；删除 Omni 会话会同步删除 Host 映射和事件日志。
 
 三条容易踩的约定：
 
@@ -119,6 +125,7 @@ node node_modules/vite/bin/vite.js build
 - **「哪个会话还在输出」唯一来源** = `useChatRuntime.loadingSessionIds`
 - **整快照写权归主窗**（`owner`），紧凑窗只窄写自己的会话，靠 `chat/crossWindowSync.ts` 增量广播同步
 - **删会话必须广播**，否则紧凑窗留着幽灵条目
+- **删会话必须清 Host**：同步删除 `omni_agent_host_sessions_v1` 映射与 sidecar JSONL，否则会留下孤儿事件
 - 空 assistant 占位只存在内存，不落盘（`isPendingProjectPlaceholder`）
 
 ### 3.4 数据在哪
@@ -126,6 +133,8 @@ node node_modules/vite/bin/vite.js build
 | 内容 | 位置 |
 |---|---|
 | 会话正文 | `<数据根>/chat-sessions/<桶>/<id>/session.jsonl` |
+| Agent Host 事件 | Tauri app data 下的 `agent-host/<sha256(sessionId)>.jsonl` |
+| Omni→Host 会话映射 | SQLite KV `omni_agent_host_sessions_v1` |
 | 任务历史 | SQLite `app_kv` 中 `omni_task_history:main` / `omni_task_history:compact`（旧 `omni_task_history` 键仅供 main 迁移） |
 | 设置/位置/模型配置 | SQLite kv（经 `app/sqliteStorage.ts` 同步到 localStorage） |
 | 本机数据根 | `D:\ALL_Software_Data\Omni`（**本机实测位置**，由应用设置决定；仓库里搜不到该字面量） |
@@ -256,7 +265,12 @@ macOS CI 在同一提交运行完整前端测试、Rust 库测试与 Seatbelt �
 
 Office 测试 fixture 已用三个独立 Python 阅读器解析通过；这不等于 Word/Excel/PowerPoint 原生打开与渲染已验收。通知插件曾因前端 2.7.0 / Rust 2.4.0 版本不匹配被 Tauri CLI 拦截；两侧现精确锁定 2.4.0。发送通知已改为 await 原生命令，测试拒绝权限与 native 命令错误可向调度层传播。提交 `14f23a5` 已重新生成 Windows MSI/NSIS，并在当前提交完成 macOS Apple Silicon / Intel 全链路验证。
 
-Agent Host 也已进入同一条工具链：`src/agent-host/` 的事件溯源运行时经 Node SEA 打包为 `omni-agent-host` sidecar；Tauri 管理进程、转发事件并路由原生工具，聊天会话使用独立工具目录，Omni client tools 经 UI bridge 回到现有权限确认门。打包启动 smoke 已确认 `omni.exe`、WebView2 与 `omni-agent-host.exe` 一起启动，关闭主窗口后 sidecar 不残留。备份不包括仓库内宠物美术资源或 SkillHub 用户级安装目录。
+Agent Host 已进入同一条工具链并成为默认聊天运行时：`src/agent-host/` 的事件溯源运行时经 Node SEA
+打包为 `omni-agent-host` sidecar；Tauri 管理进程、转发事件并路由原生工具，聊天会话使用独立工具目录，
+Omni client tools 经 UI bridge 回到现有权限确认门。`pnpm tauri dev` 会自动构建 sidecar；
+`VITE_OMNI_AGENT_HOST=0` 才回退旧引擎。删除会话会同时清理 Omni 数据、Host 映射和 JSONL 事件。
+真实 smoke 已覆盖两轮工具调用、重启回放、删除后再次重启不复活。备份不包括仓库内宠物美术资源或
+SkillHub 用户级安装目录。
 
 ---
 
@@ -267,6 +281,8 @@ Agent Host 也已进入同一条工具链：`src/agent-host/` 的事件溯源运
 
 | 提交 | 内容 |
 |---|---|
+| `231434b` | Agent Host 成为默认聊天运行时，dev 自动构建 sidecar |
+| `0efac63` | 删除 Omni 会话时同步删除 Host 映射、内存状态与 JSONL 事件 |
 | `08ebb08` | Agent Host 工具目录按会话隔离 |
 | `94bfdb1` | Omni client tools 经 UI bridge 回到确认门执行 |
 | `3f9b733` | 聊天任务接入会话工具目录 |
@@ -321,10 +337,10 @@ Agent Host 也已进入同一条工具链：`src/agent-host/` 的事件溯源运
 | `pnpm exec tsc --noEmit` | ✅ 2026-11-08 提交 `14f23a5` 通过 |
 | `pnpm build` | ✅ 随 `pnpm tauri build --ci` 的 `beforeBuildCommand` 通过；仅有既有 chunk/import 体积警告 |
 | `cargo test --lib` | ✅ 2026-11-08 提交 `14f23a5`：182 passed / 0 failed / 1 ignored |
-| `pnpm agent-host:smoke` | ✅ 真实 sidecar：16 events、2 model calls、restart replay ok |
+| `pnpm agent-host:smoke` | ✅ 真实 sidecar：16 events、2 model calls、restart replay + delete ok |
 | `pnpm tauri build --ci` | ✅ 提交 `14f23a5` 生成 Windows MSI（88,596,480 bytes）与 NSIS（75,116,502 bytes）；SHA-256 见 TestReport §3 |
 | Windows release 启动 smoke | ✅ `omni.exe` 主窗口响应，WebView2 与 Agent Host sidecar 正常启动；关闭后 `omni-agent-host` 不残留。安装器实装与完整 UI 交互仍未人工验收 |
-| `pnpm test` | ✅ 2026-11-08，102 文件 / 978 用例；限定只扫描 Omni `src`，不会误跑 `workdsh/` |
+| `pnpm test` | ✅ 2026-11-08 当前 Agent Host 默认链改动：102 文件 / 984 用例；限定只扫描 Omni `src`，不会误跑 `workdsh/` |
 | `cargo fmt --check` | ✅ 2026-11-08 当前工作区通过 |
 | 单实例行为 | ✅ 早先实测：两次启动后仍 1 个进程，第二 PID 不存活；本轮未重测 |
 | 真机跨屏拖拽及快速开合 | ❌ 本轮未验证，需双屏手动操作 |

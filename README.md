@@ -278,8 +278,10 @@ pnpm tauri dev
 ```
 
 这会同时编译 Rust 后端与前端、拉起桌面窗口，并支持热重载。这是运行应用的**主要命令**。
+它也会先构建当前平台的 Agent Host sidecar，聊天轮次默认走事件溯源 Host 运行时。
 
-> 只跑 `pnpm dev` 只会启动 Vite 网页，没有桌面窗口、没有 Tauri 运行时、也没有本地 SQLite，一般只用于纯前端调试。
+> 只跑 `pnpm dev` 只会启动 Vite 网页，没有桌面窗口、没有 Tauri 运行时、也没有本地 SQLite 或 Agent Host，
+> 一般只用于纯前端调试。设置 `VITE_OMNI_AGENT_HOST=0` 可临时退回旧聊天引擎做诊断。
 
 Vite 开发端口固定为 `15420`，`tauri dev` 复用它作为前端入口。
 
@@ -293,7 +295,7 @@ Vite 开发端口固定为 `15420`，`tauri dev` 复用它作为前端入口。
 pnpm build              # 前端
 pnpm build:desktop      # 前端 + 当前平台 Agent Host sidecar
 pnpm agent-host:build   # 只生成当前平台 sidecar
-pnpm agent-host:smoke   # 真实 sidecar 两轮工具调用与重启回放
+pnpm agent-host:smoke   # 真实 sidecar 两轮工具调用、重启回放与会话删除
 pnpm tauri build        # 桌面应用
 ```
 
