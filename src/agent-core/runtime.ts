@@ -38,6 +38,8 @@ export interface AgentRuntimeOptions {
 export interface CreateAgentSessionOptions {
   title?: string;
   cwd: string;
+  /** Optional prior transcript, used when attaching the durable Host to an existing Omni chat. */
+  history?: AgentMessage[];
 }
 
 export interface PromptOptions {
@@ -133,6 +135,7 @@ export class AgentRuntime {
       payload: {
         cwd: options.cwd,
         ...(options.title ? { title: options.title } : {}),
+        ...(options.history?.length ? { history: options.history } : {}),
       },
     });
     const state = await this.createState(sessionId, [event]);

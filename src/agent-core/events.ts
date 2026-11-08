@@ -35,6 +35,8 @@ export type AgentEvent =
   | AgentEventBase<"session/created", {
       cwd: string;
       title?: string;
+      /** Existing conversation imported from the Omni store when the Host session was created. */
+      history?: AgentMessage[];
     }>
   | AgentEventBase<"agent/status", {
       status: "idle" | "running";

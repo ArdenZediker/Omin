@@ -3,6 +3,10 @@ import type { AgentMessage } from "./types";
 
 export function projectMessages(events: readonly AgentEvent[]): AgentMessage[] {
   const messages: AgentMessage[] = [];
+  const created = events.find((event) => event.type === "session/created");
+  if (created?.type === "session/created" && created.payload.history?.length) {
+    messages.push(...created.payload.history);
+  }
   for (const event of events) {
     switch (event.type) {
       case "user/message":

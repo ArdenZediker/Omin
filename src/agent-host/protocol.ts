@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AgentMessage,
   AgentModelConfig,
   AgentSessionId,
   AgentToolSchema,
@@ -20,7 +21,7 @@ export type HostRequest =
       kind: "request";
       id: string;
       command: "session.create";
-      params: { cwd: string; title?: string };
+      params: { cwd: string; title?: string; history?: AgentMessage[] };
     }
   | {
       kind: "request";
