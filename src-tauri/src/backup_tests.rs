@@ -53,6 +53,19 @@ impl Drop for Fixture {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn checked_path_allows_system_temp_root_but_rejects_user_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = Fixture::new();
+    let link = fixture.0.join("user-link");
+    symlink(fixture.source(), &link).unwrap();
+
+    assert!(checked_path(&std::env::temp_dir()).is_ok());
+    assert!(checked_path(&link).is_err());
+}
+
 #[test]
 fn encrypted_roundtrip_restores_files() {
     let f = Fixture::new();

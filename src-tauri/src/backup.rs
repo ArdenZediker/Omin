@@ -61,18 +61,35 @@ impl Drop for Staging {
     }
 }
 
-pub(crate) fn reject_link(path: &Path) -> Result<(), String> {
-    let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+fn is_link(meta: &fs::Metadata) -> bool {
     let link = meta.file_type().is_symlink();
     #[cfg(windows)]
     let link = {
         use std::os::windows::fs::MetadataExt;
         link || meta.file_attributes() & 0x400 != 0
     };
-    if link {
+    link
+}
+
+fn reject_link(path: &Path) -> Result<(), String> {
+    let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if is_link(&meta) {
         return Err(format!("不允许符号链接或目录联接：{}", path.display()));
     }
     Ok(())
+}
+
+/// macOS exposes its temporary directory as `/var/...`, while `/var` itself
+/// is a system-owned symlink to `/private/var`. Those root aliases are safe to
+/// traverse; user-selected paths elsewhere retain the strict no-link policy.
+#[cfg(target_os = "macos")]
+fn is_system_root_alias(path: &Path) -> bool {
+    matches!(path.to_str(), Some("/var" | "/tmp"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_system_root_alias(_path: &Path) -> bool {
+    false
 }
 
 pub(crate) fn checked_path(path: &Path) -> Result<PathBuf, String> {
@@ -86,7 +103,10 @@ pub(crate) fn checked_path(path: &Path) -> Result<PathBuf, String> {
         }
         current.push(component.as_os_str());
         match fs::symlink_metadata(&current) {
-            Ok(_) => reject_link(&current)?,
+            Ok(meta) if is_link(&meta) && !is_system_root_alias(&current) => {
+                return Err(format!("不允许符号链接或目录联接：{}", current.display()));
+            }
+            Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.to_string()),
         }
