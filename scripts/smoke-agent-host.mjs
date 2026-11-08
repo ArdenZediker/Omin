@@ -163,7 +163,9 @@ class HostProcess {
       if (!waiter) return;
       this.pending.delete(message.id);
       if (message.ok) waiter.resolve(message.result);
-      else waiter.reject(new Error(message.error?.message ?? "Host request failed"));
+      else waiter.reject(new Error(
+        `${this.label}:${waiter.command} failed: ${message.error?.message ?? "Host request failed"}`,
+      ));
       return;
     }
     if (message.kind === "native-tool-call") {
@@ -200,7 +202,8 @@ class HostProcess {
         this.pending.delete(id);
         rejectRequest(new Error(`Host request timed out: ${command}; stderr=${this.stderr}`));
       }, 15_000);
-      this.pending.set(id, {
+    this.pending.set(id, {
+      command,
         resolve(value) {
           clearTimeout(timer);
           resolveRequest(value);
@@ -347,10 +350,30 @@ try {
   if (!replayed.events.some((event) => event.type === "tool/result")) {
     throw new Error("replayed session events did not include tool/result");
   }
+  const deleted = await second.request("session.delete", {
+    sessionId: created.sessionId,
+  });
+  if (deleted.removed !== true) {
+    throw new Error("session.delete did not remove the persisted Host session");
+  }
   await second.close();
 
+  const remainingLogs = (await readdir(dataDir)).filter((name) => name.endsWith(".jsonl"));
+  if (remainingLogs.length !== 0) {
+    throw new Error(`session.delete left ${remainingLogs.length} Host log(s) behind`);
+  }
+
+  const third = new HostProcess("third");
+  const deletedEvents = await third.request("session.events", {
+    sessionId: created.sessionId,
+  });
+  if (deletedEvents.events.length !== 0) {
+    throw new Error("deleted Host session returned replayed events after restart");
+  }
+  await third.close();
+
   process.stdout.write(
-    `agent-host smoke passed: ${eventTypes.length} events, ${modelRequests.length} model calls, restart replay ok\n`,
+    `agent-host smoke passed: ${eventTypes.length} events, ${modelRequests.length} model calls, restart replay + delete ok\n`,
   );
 } finally {
   await new Promise((resolveClose) => modelServer.close(resolveClose));

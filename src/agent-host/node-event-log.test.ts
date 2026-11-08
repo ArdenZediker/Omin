@@ -74,4 +74,15 @@ describe("FileEventLogPort", () => {
     const store = new JsonlSessionEventStore(new FileEventLogPort(rootDir));
     await expect(store.read("missing")).resolves.toEqual([]);
   });
+
+  it("deletes the durable log and clears the in-memory session view", async () => {
+    const rootDir = await temporaryDirectory();
+    const store = new JsonlSessionEventStore(new FileEventLogPort(rootDir));
+    await store.append("session-1", createdEvent("one"));
+
+    await store.delete("session-1");
+
+    await expect(store.read("session-1")).resolves.toEqual([]);
+    await expect(readdir(rootDir)).resolves.toEqual([]);
+  });
 });

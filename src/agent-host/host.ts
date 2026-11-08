@@ -29,7 +29,7 @@ export interface HostToolConfigurator {
  */
 export class AgentHost {
   private readonly listeners = new Set<HostNotificationListener>();
-  private readonly subscribedSessions = new Set<string>();
+  private readonly subscribedSessions = new Map<string, () => void>();
 
   constructor(
     private readonly runtime: AgentRuntime,
@@ -70,10 +70,21 @@ export class AgentHost {
       case "host.ping":
         return { pong: true, protocolVersion: 1 };
       case "host.shutdown": {
-        const sessions = [...this.subscribedSessions];
+        const sessions = [...this.subscribedSessions.keys()];
         await Promise.all(sessions.map(async (sessionId) => {
-          await this.runtime.cancel(sessionId, { reason: "Host shutting down" });
-          await this.runtime.whenIdle(sessionId);
+          const events = await this.runtime.readEvents(sessionId, { limit: 1 });
+          if (events.length === 0) {
+            this.untrackSession(sessionId);
+            return;
+          }
+          try {
+            await this.runtime.cancel(sessionId, { reason: "Host shutting down" });
+            await this.runtime.whenIdle(sessionId);
+          } catch {
+            // A concurrent session.delete can remove the log between the read
+            // and cancel. Shutdown must still complete and clear the tracker.
+            this.untrackSession(sessionId);
+          }
         }));
         return {};
       }
@@ -140,6 +151,11 @@ export class AgentHost {
           ...(request.params.reason ? { reason: request.params.reason } : {}),
         });
         return {};
+      case "session.delete": {
+        const removed = await this.runtime.deleteSession(request.params.sessionId);
+        this.untrackSession(request.params.sessionId);
+        return { removed };
+      }
       case "session.remove-pending":
         this.trackSession(request.params.sessionId);
         return {
@@ -199,8 +215,7 @@ export class AgentHost {
 
   private trackSession(sessionId: string): void {
     if (this.subscribedSessions.has(sessionId)) return;
-    this.subscribedSessions.add(sessionId);
-    this.runtime.subscribe(sessionId, (event: AgentEvent) => {
+    const unsubscribe = this.runtime.subscribe(sessionId, (event: AgentEvent) => {
       const message: HostNotification = { kind: "event", event };
       for (const listener of this.listeners) {
         try {
@@ -210,5 +225,11 @@ export class AgentHost {
         }
       }
     });
+    this.subscribedSessions.set(sessionId, unsubscribe);
+  }
+
+  private untrackSession(sessionId: string): void {
+    this.subscribedSessions.get(sessionId)?.();
+    this.subscribedSessions.delete(sessionId);
   }
 }

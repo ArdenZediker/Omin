@@ -69,6 +69,10 @@ export class FileEventLogPort implements EventLogPort {
     }
   }
 
+  async delete(sessionId: AgentSessionId): Promise<void> {
+    await rm(this.filePath(sessionId), { force: true });
+  }
+
   private filePath(sessionId: AgentSessionId): string {
     const digest = createHash("sha256").update(sessionId, "utf8").digest("hex");
     return join(this.rootDir, `${digest}.jsonl`);

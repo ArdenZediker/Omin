@@ -15,6 +15,7 @@ export interface SessionEventStore {
     sessionId: AgentSessionId,
     options?: { afterSeq?: number; limit?: number },
   ): Promise<AgentEvent[]>;
+  delete(sessionId: AgentSessionId): Promise<void>;
 }
 
 export class InMemorySessionEventStore implements SessionEventStore {
@@ -45,5 +46,9 @@ export class InMemorySessionEventStore implements SessionEventStore {
     return (this.sessions.get(sessionId) ?? [])
       .filter((event) => event.seq > afterSeq)
       .slice(0, limit);
+  }
+
+  async delete(sessionId: AgentSessionId): Promise<void> {
+    this.sessions.delete(sessionId);
   }
 }

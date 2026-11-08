@@ -242,6 +242,16 @@ export async function cancelAgentSession(
   });
 }
 
+export async function deleteAgentSession(
+  sessionId: AgentSessionId,
+): Promise<boolean> {
+  const result = await requestAgentHost<{ removed: boolean }>(
+    "session.delete",
+    { sessionId },
+  );
+  return result.removed;
+}
+
 export async function readAgentEvents(
   sessionId: AgentSessionId,
   afterSeq?: number,

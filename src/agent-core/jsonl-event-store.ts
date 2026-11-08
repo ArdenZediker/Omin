@@ -18,6 +18,7 @@ export interface EventLogPort {
   read(sessionId: AgentSessionId): Promise<string | null>;
   append(sessionId: AgentSessionId, content: string): Promise<void>;
   replace(sessionId: AgentSessionId, content: string): Promise<void>;
+  delete(sessionId: AgentSessionId): Promise<void>;
 }
 
 export class EventLogCorruptionError extends Error {
@@ -150,6 +151,14 @@ export class JsonlSessionEventStore implements SessionEventStore {
     return log.events
       .filter((event) => event.seq > afterSeq)
       .slice(0, limit);
+  }
+
+  delete(sessionId: AgentSessionId): Promise<void> {
+    return this.serialize(sessionId, async () => {
+      this.logs.delete(sessionId);
+      this.loading.delete(sessionId);
+      await this.port.delete(sessionId);
+    });
   }
 
   private async load(sessionId: AgentSessionId): Promise<SessionLog> {

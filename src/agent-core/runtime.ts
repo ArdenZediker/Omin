@@ -283,6 +283,28 @@ export class AgentRuntime {
     return this.store.read(sessionId, options);
   }
 
+  /**
+   * Stops any active turn, deletes the durable event log, and clears all
+   * in-memory state for this session. Returns false for an unknown session.
+   */
+  async deleteSession(sessionId: AgentSessionId): Promise<boolean> {
+    const state = this.sessions.get(sessionId) ?? await this.loading.get(sessionId);
+    if (!state) {
+      const events = await this.store.read(sessionId, { limit: 1 });
+      if (events.length === 0) return false;
+    } else {
+      await this.cancel(sessionId, { reason: "session deleted" });
+      await this.whenIdle(sessionId);
+    }
+
+    await this.store.delete(sessionId);
+    this.sessions.delete(sessionId);
+    this.loading.delete(sessionId);
+    this.sessionTools.delete(sessionId);
+    this.listeners.delete(sessionId);
+    return true;
+  }
+
   listTools(sessionId?: AgentSessionId) {
     return this.toolsFor(sessionId).schemas();
   }

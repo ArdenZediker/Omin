@@ -71,6 +71,12 @@ export type HostRequest =
   | {
       kind: "request";
       id: string;
+      command: "session.delete";
+      params: { sessionId: AgentSessionId };
+    }
+  | {
+      kind: "request";
+      id: string;
       command: "session.remove-pending";
       params: { sessionId: AgentSessionId; promptId: string };
     }

@@ -37,6 +37,7 @@ import {
   configureAgentSessionTools,
   createAgentModelConfig,
   createAgentSession,
+  deleteAgentSession,
   ensureAgentHost,
   failAgentHostClientToolCall,
   promptAgentSession,
@@ -132,9 +133,7 @@ function messageBlocks(message: Message): AgentContentBlock[] {
 
 /**
  * Converts Omni's persisted chat transcript to the Host's neutral message
- * shape. Images remain in the Omni transcript but are intentionally excluded
- * from this text bridge; callers should keep vision turns on the legacy engine
- * until the Host protocol has an image content block.
+ * shape, including image, reasoning and tool-call content blocks.
  */
 export function toAgentHostHistory(messages: Message[]): AgentMessage[] {
   const history: AgentMessage[] = [];
@@ -477,4 +476,30 @@ export async function recoverAgentHostSession(options: {
     hostSessionId,
   );
   return reconciled.recoveredTurns > 0 ? reconciled.messages : null;
+}
+
+/**
+ * Removes the durable Host transcript associated with an Omni chat session.
+ * The mapping is cleared even if the sidecar is unavailable, so a deleted Omni
+ * session can never be projected back into the UI.
+ */
+export async function deleteAgentHostSession(
+  omniSessionId: string,
+): Promise<void> {
+  const map = readSessionMap();
+  const hostSessionId = map[omniSessionId]?.hostSessionId;
+  if (!hostSessionId) return;
+
+  delete map[omniSessionId];
+  writeSessionMap(map);
+
+  try {
+    await startAgentHost();
+    await deleteAgentSession(hostSessionId);
+  } catch (error: unknown) {
+    // The mapping is already gone, so the deleted chat cannot be recovered in
+    // the UI even if the sidecar is temporarily unavailable.
+    // eslint-disable-next-line no-console
+    console.warn("删除 Agent Host 会话事件失败", error);
+  }
 }

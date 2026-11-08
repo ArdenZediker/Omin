@@ -38,6 +38,7 @@ import {
   type ChatStorageSyncRole,
 } from "../chat/crossWindowSync";
 import { clearProjectArtifacts, clearSessionArtifacts } from "../chat/artifacts";
+import { deleteAgentHostSession } from "../app/agentHostRuntime";
 import type {
   ProjectMemoryRecord,
   Project,
@@ -829,6 +830,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
         // eslint-disable-next-line no-console
         console.error("deleteChatSession: delete_chat_session failed", error);
       }
+      await deleteAgentHostSession(sessionId);
 
       // 收尾产物记录：会话数据（含附件快照）由上面的 delete_chat_session → remove_dir_all 删除；
       // 但导出产物落在会话的工作目录里，属于用户的项目文件，删会话时**不**动它（对齐 codex /

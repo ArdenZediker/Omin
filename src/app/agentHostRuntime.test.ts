@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   configureAgentSessionTools: vi.fn(),
   createAgentModelConfig: vi.fn(),
   createAgentSession: vi.fn(),
+  deleteAgentSession: vi.fn(),
   ensureAgentHost: vi.fn(),
   failAgentHostClientToolCall: vi.fn(),
   promptAgentSession: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("./agentHostClient", () => ({
   configureAgentSessionTools: mocks.configureAgentSessionTools,
   createAgentModelConfig: mocks.createAgentModelConfig,
   createAgentSession: mocks.createAgentSession,
+  deleteAgentSession: mocks.deleteAgentSession,
   ensureAgentHost: mocks.ensureAgentHost,
   failAgentHostClientToolCall: mocks.failAgentHostClientToolCall,
   promptAgentSession: mocks.promptAgentSession,
@@ -39,6 +41,7 @@ vi.mock("./agentHostClient", () => ({
 }));
 
 import {
+  deleteAgentHostSession,
   recoverAgentHostSession,
   runAgentHostTurn,
 } from "./agentHostRuntime";
@@ -124,6 +127,40 @@ describe("recoverAgentHostSession", () => {
 
     expect(mocks.startAgentHost).not.toHaveBeenCalled();
     expect(mocks.readAgentEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleteAgentHostSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.startAgentHost.mockResolvedValue({ running: true });
+    mocks.deleteAgentSession.mockResolvedValue(true);
+  });
+
+  it("clears the Omni mapping and deletes the durable Host session", async () => {
+    mocks.readSqliteBackedJson.mockReturnValue({
+      "omni-1": { hostSessionId: "host-1" },
+      "omni-2": { hostSessionId: "host-2" },
+    });
+
+    await deleteAgentHostSession("omni-1");
+
+    expect(mocks.startAgentHost).toHaveBeenCalledOnce();
+    expect(mocks.deleteAgentSession).toHaveBeenCalledWith("host-1");
+    expect(mocks.saveSqliteBackedValue).toHaveBeenCalledWith(
+      "omni_agent_host_sessions_v1",
+      JSON.stringify({ "omni-2": { hostSessionId: "host-2" } }),
+    );
+  });
+
+  it("does not start the Host for an unmapped session", async () => {
+    mocks.readSqliteBackedJson.mockReturnValue({});
+
+    await deleteAgentHostSession("omni-1");
+
+    expect(mocks.startAgentHost).not.toHaveBeenCalled();
+    expect(mocks.deleteAgentSession).not.toHaveBeenCalled();
+    expect(mocks.saveSqliteBackedValue).not.toHaveBeenCalled();
   });
 });
 

@@ -134,6 +134,13 @@ describe("AgentHost", () => {
 
     const ping = await host.handle(request("2", { command: "host.ping" }));
     expect(ping.ok).toBe(true);
+
+    await expect(host.handle(request("3", {
+      command: "host.shutdown",
+    }))).resolves.toMatchObject({
+      ok: true,
+      result: {},
+    });
   });
 
   it("cancels active sessions before shutting down", async () => {
@@ -244,6 +251,20 @@ describe("AgentHost", () => {
       params: { provider: "openai" },
     }));
     expect(removed).toMatchObject({ ok: true, result: { removed: true } });
+  });
+
+  it("deletes a session and its event log", async () => {
+    const agentRuntime = runtime();
+    const host = new AgentHost(agentRuntime);
+    const sessionId = await agentRuntime.createSession({ cwd: "/workspace" });
+
+    const removed = await host.handle(request("delete", {
+      command: "session.delete",
+      params: { sessionId },
+    }));
+
+    expect(removed).toMatchObject({ ok: true, result: { removed: true } });
+    await expect(agentRuntime.readEvents(sessionId)).resolves.toEqual([]);
   });
 
   it("configures native tools through the Host contract", async () => {

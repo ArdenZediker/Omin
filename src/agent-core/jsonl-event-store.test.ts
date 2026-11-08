@@ -44,6 +44,10 @@ class StringEventLogPort implements EventLogPort {
     this.replaceCount += 1;
     this.values.set(sessionId, content);
   }
+
+  async delete(sessionId: string): Promise<void> {
+    this.values.delete(sessionId);
+  }
 }
 
 describe("JsonlSessionEventStore", () => {
