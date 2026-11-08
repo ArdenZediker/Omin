@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   createCustomProject,
+  createDefaultProject,
   createEmptyUsageStats,
+  DEFAULT_PROJECT_SKILL_IDS,
+  DEFAULT_PROJECT_TOOL_IDS,
   isPendingProjectPlaceholder,
   parseChatSessionsSnapshot,
   parseProjectsSnapshot,
@@ -9,6 +12,7 @@ import {
   serializeProjectsSnapshot,
   stripPendingPlaceholder,
 } from "./storage";
+import { DEFAULT_MODEL_TOOL_IDS } from "../config/manifests/tools";
 import type { ChatSession } from "./types";
 import type { Message } from "../adapters/types";
 
@@ -93,6 +97,113 @@ describe("空 assistant 占位消息的清理", () => {
     const raw = serializeChatSessionsSnapshot([sessionWith([userMessage, realReply])]);
     const parsed = JSON.parse(raw) as Array<{ messages: Message[] }>;
     expect(parsed[0].messages).toEqual([userMessage, realReply]);
+  });
+
+  it("保存并重新加载后仍保留本轮 token 用量", () => {
+    const replyWithUsage: Message = {
+      ...realReply,
+      turnUsage: {
+        inputTokens: 120,
+        outputTokens: 30,
+        totalTokens: 150,
+        model: "test-model",
+        toolRounds: 1,
+        estimated: true,
+      },
+    };
+    const raw = serializeChatSessionsSnapshot([sessionWith([userMessage, replyWithUsage])]);
+    const [session] = parseChatSessionsSnapshot(raw);
+    expect(session.messages[1].turnUsage).toEqual(replyWithUsage.turnUsage);
+  });
+});
+
+describe("新项目默认能力集", () => {
+  it("默认项目使用 WorkDSH 对齐的模型工具集", () => {
+    const project = createDefaultProject();
+    expect(project.allowedToolIds).toEqual([...DEFAULT_MODEL_TOOL_IDS]);
+    expect(DEFAULT_PROJECT_TOOL_IDS).toEqual([...DEFAULT_MODEL_TOOL_IDS]);
+  });
+
+  it("默认项目启用六个 WorkDSH 对齐技能，不再默认启用旧技能创作", () => {
+    const project = createDefaultProject();
+    expect(project.allowedSkillIds).toEqual([
+      "workdsh-word-design",
+      "workdsh-excel-design",
+      "workdsh-ppt-design",
+      "workdsh-web-design",
+      "workdsh-skill-creator",
+      "workdsh-workbench-dev",
+    ]);
+    expect(project.allowedSkillIds).toEqual([...DEFAULT_PROJECT_SKILL_IDS]);
+    expect(project.allowedSkillIds).not.toContain("skill-creator");
+  });
+
+  it("读取旧项目时把旧默认技能迁移为 WorkDSH 默认技能", () => {
+    const restored = parseProjectsSnapshot(
+      JSON.stringify([
+        {
+          id: "project-legacy",
+          title: "旧项目",
+          kind: "custom",
+          allowedToolIds: ["read_file"],
+          allowedSkillIds: ["plan", "custom-skill"],
+        },
+      ]),
+    ).find((project) => project.id === "project-legacy");
+
+    expect(restored?.allowedSkillIds).toEqual([
+      ...DEFAULT_PROJECT_SKILL_IDS,
+      "custom-skill",
+    ]);
+    expect(restored?.allowedSkillIds).not.toContain("plan");
+  });
+
+  it("旧默认工具集迁移为 WorkDSH 默认集，并去掉已替换的旧项", () => {
+    const restored = parseProjectsSnapshot(
+      JSON.stringify([
+        {
+          id: "project-legacy-tools",
+          title: "旧工具项目",
+          kind: "custom",
+          allowedToolIds: [
+            "read_file",
+            "read_persona",
+            "update_persona",
+            "git_info",
+            "git_commit",
+            "git_pr",
+            "export_docx",
+            "export_md",
+            "custom_tool",
+          ],
+          allowedSkillIds: [],
+        },
+      ]),
+    ).find((project) => project.id === "project-legacy-tools");
+
+    expect(restored?.allowedToolIds).toEqual(
+      expect.arrayContaining([...DEFAULT_PROJECT_TOOL_IDS, "custom_tool"]),
+    );
+    expect(restored?.allowedToolIds).not.toContain("read_persona");
+    expect(restored?.allowedToolIds).not.toContain("update_persona");
+    expect(restored?.allowedToolIds).not.toContain("git_info");
+  });
+
+  it("用户显式保存的空技能清单不会被默认值重新填满", () => {
+    const restored = parseProjectsSnapshot(
+      JSON.stringify([
+        {
+          id: "project-no-skills",
+          title: "无技能项目",
+          kind: "custom",
+          allowedToolIds: [],
+          allowedSkillIds: [],
+        },
+      ]),
+    ).find((project) => project.id === "project-no-skills");
+
+    expect(restored?.allowedSkillIds).toEqual([]);
+    expect(restored?.allowedToolIds).toEqual([]);
   });
 });
 

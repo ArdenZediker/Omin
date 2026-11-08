@@ -44,12 +44,10 @@ import type { ModelConfig } from "../adapters/types";
 import { modelRegistry } from "../adapters/registry";
 import { resolveContextWindow } from "../adapters/chatOptions";
 import { buildChatTools } from "../hooks/chatRuntimeHelpers";
+import { assembleSkillCatalog } from "../chat/skillCatalog";
 import { listActiveMcpTools } from "../plugins/mcp";
 import type { ContextUsageSnapshot, ContextUsageItem } from "./ContextUsagePanel";
-import {
-  formatUsageLabel,
-  DEFAULT_PROJECT_ID,
-} from "../chat/storage";
+import { DEFAULT_PROJECT_ID } from "../chat/storage";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type {
   ProjectDraft,
@@ -85,6 +83,7 @@ import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import CreateProjectDialog from "./CreateProjectDialog";
 import CreateExpertDialog from "./CreateExpertDialog";
+import OpenWorkspaceMenu from "./OpenWorkspaceMenu";
 import ProjectSettingsDialog from "./ProjectSettingsDialog";
 import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
 import PluginMarketplace from "./plugins/PluginMarketplace";
@@ -812,11 +811,11 @@ export default function MainChatView({
       description: t.description,
       schema: t.parameters,
     }));
-    const skillsPrompt = allowedComposerSkillIds
-      .map((id) => pluginRegistry.getManifest(id)?.promptContribution)
-      .filter((s): s is string => Boolean(s))
-      .join("\n\n");
+    const skillsPrompt = assembleSkillCatalog({ project: activeProject }).modelEntries
+      .map((skill) => `- ${skill.id}: ${skill.description}`)
+      .join("\n");
     return {
+      modelId: executionModel,
       contextWindow,
       systemPrompt: activeProject?.systemPrompt ?? "",
       tools: toolItems,
@@ -2234,6 +2233,12 @@ export default function MainChatView({
             </div>
 
             <div className="main-chat-toolbar__actions no-drag">
+              {!showPluginMarketplace && activeProject?.workspacePath && (
+                <OpenWorkspaceMenu
+                  workspacePath={activeProject.workspacePath}
+                  onError={(message) => showProjectNotice(message, "error")}
+                />
+              )}
               {!showPluginMarketplace && messages.length > 0 && (
                 <button
                   onClick={onClearChat}
@@ -2493,6 +2498,8 @@ export default function MainChatView({
                     allowedToolIds={allowedComposerToolIds}
                     allowedSkillIds={allowedComposerSkillIds}
                     currentModel={currentModel}
+                    messages={messages}
+                    sessionUsage={activeSession?.usage}
                     onModelChange={onModelChange}
                     modelTitle={
                       selectedExecutionModel && executionModel !== currentModel
@@ -2507,11 +2514,6 @@ export default function MainChatView({
                     hasConversation={messages.some(
                       (message) => message.role === "user",
                     )}
-                    usageLabel={
-                      activeSession
-                        ? formatUsageLabel(activeSession.usage)
-                        : null
-                    }
                     contextUsage={contextUsageSnapshot}
                     isLoading={isLoading}
                     isSendBlocked={isSendBlocked}

@@ -13,6 +13,8 @@ import type {
   UserPreferenceRecord,
 } from "./types";
 import { readSqliteBackedJson, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
+import { DEFAULT_MODEL_TOOL_IDS } from "../config/manifests/tools";
+import { DEFAULT_WORKDSH_SKILL_IDS } from "../plugins/workdshSkills";
 
 export const CHAT_SESSIONS_STORAGE_KEY = "omni_chat_sessions";
 export const CHAT_PROJECTS_STORAGE_KEY = "omni_chat_assistants";
@@ -55,25 +57,21 @@ export function getFallbackWorkspacePath(): string {
     : `${cachedDataRootPath}/`;
   return `${base}fallback-workspace`;
 }
-export const DEFAULT_PROJECT_TOOL_IDS = [
-  "search_sessions",
-  "read_session",
-  "list_files",
-  "read_file",
-  "search_files",
+export const DEFAULT_PROJECT_TOOL_IDS = [...DEFAULT_MODEL_TOOL_IDS];
+// 内置技能默认启用（纯提示词技能，无副作用）。
+// 与工具不同，这份白名单是**真生效且可改**的：`allowedSkillIds` 决定内置技能能否被
+// 斜杠调用 / 被定时任务执行（`chat/skills.ts`、`chat/taskExecutor.ts`），
+// 入口在「项目设置 → 技能」（可增可删）。
+export const DEFAULT_PROJECT_SKILL_IDS: string[] = [...DEFAULT_WORKDSH_SKILL_IDS];
+export const DEFAULT_PROJECT_MEMORY_SCOPE: ProjectMemoryScope = "project";
+
+/**
+ * 旧版内置默认集只用于一次性迁移。识别到旧项时替换为新默认集，之后用户
+ * 在项目设置里取消默认技能就会按显式清单保存，不会被 normalize 每次加回来。
+ */
+const LEGACY_DEFAULT_PROJECT_TOOL_IDS = new Set([
   "read_persona",
   "update_persona",
-  // 内置基础盘：联网 + Git 工作流 + Office 导出。
-  //
-  // ⚠️ 这一组**目前在哪儿都关不掉，也不需要关**：16 个 id 全在 `BUILTIN_TOOL_IDS` 里，
-  // 而 `ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [...BUILTIN_TOOL_IDS]` —— 执行期那道闸门
-  // （`localTools.ts`：`!ALWAYS_ALLOWED.has(id) && !project.allowedToolIds.includes(id)`）
-  // 永远拦不下任何东西，`localTools` 注册的 10 个工具也全在内。因此
-  // **`allowedToolIds` 目前是个空操作字段**，这里曾挂着的那句「用户可在项目设置中关闭」
-  // 是假的（那个入口从来没有过）。真正可改的能力集是下面那份**技能**白名单。
-  // 要收紧工具，得先让闸门有意义（例如引入不默认放行的项目工具），别只加 UI。
-  "web_search",
-  "web_fetch",
   "git_info",
   "git_commit",
   "git_pr",
@@ -81,13 +79,32 @@ export const DEFAULT_PROJECT_TOOL_IDS = [
   "export_xlsx",
   "export_pptx",
   "export_md",
-];
-// 内置技能默认启用（纯提示词技能，无副作用）。
-// 与工具不同，这份白名单是**真生效且可改**的：`allowedSkillIds` 决定内置技能能否被
-// 斜杠调用 / 被定时任务执行（`chat/skills.ts`、`chat/taskExecutor.ts`），
-// 入口在「项目设置 → 技能」（可增可删）。
-export const DEFAULT_PROJECT_SKILL_IDS: string[] = ["plan", "code-review", "skill-creator"];
-export const DEFAULT_PROJECT_MEMORY_SCOPE: ProjectMemoryScope = "project";
+]);
+const LEGACY_DEFAULT_PROJECT_SKILL_IDS = new Set(["plan", "code-review", "skill-creator"]);
+
+function uniqueNonEmptyIds(ids: string[]): string[] {
+  return [...new Set(ids.filter((id) => typeof id === "string" && id.trim().length > 0))];
+}
+
+function normalizeProjectToolIds(input: unknown): string[] {
+  if (!Array.isArray(input)) return [...DEFAULT_PROJECT_TOOL_IDS];
+  const ids = uniqueNonEmptyIds(input);
+  if (!ids.some((id) => LEGACY_DEFAULT_PROJECT_TOOL_IDS.has(id))) return ids;
+  return uniqueNonEmptyIds([
+    ...DEFAULT_PROJECT_TOOL_IDS,
+    ...ids.filter((id) => !LEGACY_DEFAULT_PROJECT_TOOL_IDS.has(id)),
+  ]);
+}
+
+function normalizeProjectSkillIds(input: unknown): string[] {
+  if (!Array.isArray(input)) return [...DEFAULT_PROJECT_SKILL_IDS];
+  const ids = uniqueNonEmptyIds(input);
+  if (!ids.some((id) => LEGACY_DEFAULT_PROJECT_SKILL_IDS.has(id))) return ids;
+  return uniqueNonEmptyIds([
+    ...DEFAULT_PROJECT_SKILL_IDS,
+    ...ids.filter((id) => !LEGACY_DEFAULT_PROJECT_SKILL_IDS.has(id)),
+  ]);
+}
 
 export const DEFAULT_USAGE_PREFERENCES: ChatUsagePreferences = {
   enableStreaming: true,
@@ -198,8 +215,12 @@ export function createCustomProject(input?: ProjectDraft): Project {
     systemPrompt: input?.systemPrompt ?? "",
     defaultModelId: input?.defaultModelId ?? null,
     knowledgeCollectionId: input?.knowledgeCollectionId?.trim() || null,
-    allowedToolIds: input?.allowedToolIds?.length ? [...input.allowedToolIds] : [...DEFAULT_PROJECT_TOOL_IDS],
-    allowedSkillIds: input?.allowedSkillIds?.length ? [...input.allowedSkillIds] : [...DEFAULT_PROJECT_SKILL_IDS],
+    allowedToolIds: Array.isArray(input?.allowedToolIds)
+      ? normalizeProjectToolIds(input.allowedToolIds)
+      : [...DEFAULT_PROJECT_TOOL_IDS],
+    allowedSkillIds: Array.isArray(input?.allowedSkillIds)
+      ? normalizeProjectSkillIds(input.allowedSkillIds)
+      : [...DEFAULT_PROJECT_SKILL_IDS],
     // 连接器白名单：空 = 不限（放行全部已信任连接器）。这里刻意**不**补默认值 ——
     // 与工具/技能不同，连接器的「全选」不是一份固定清单，而是运行时已连接的那些，
     // 所以只能靠「空 = 不限」来表达，写死一份默认值反而会把它变成白名单。
@@ -417,13 +438,9 @@ function normalizeProject(input: Partial<Project> & Pick<Project, "id" | "title"
           : "",
     defaultModelId: input.defaultModelId ?? null,
     knowledgeCollectionId: typeof input.knowledgeCollectionId === "string" && input.knowledgeCollectionId.trim() ? input.knowledgeCollectionId.trim() : null,
-    // 前向兼容：既有项目补齐新增的内置默认工具/技能（用户随后可手动关闭）。
-    allowedToolIds: Array.isArray(input.allowedToolIds) && input.allowedToolIds.length > 0
-      ? [...new Set([...DEFAULT_PROJECT_TOOL_IDS, ...input.allowedToolIds])]
-      : [...DEFAULT_PROJECT_TOOL_IDS],
-    allowedSkillIds: Array.isArray(input.allowedSkillIds) && input.allowedSkillIds.length > 0
-      ? [...new Set([...DEFAULT_PROJECT_SKILL_IDS, ...input.allowedSkillIds])]
-      : [...DEFAULT_PROJECT_SKILL_IDS],
+    // 旧默认集迁移一次；已是显式清单（含空数组）时原样保留，确保用户可关闭默认项。
+    allowedToolIds: normalizeProjectToolIds(input.allowedToolIds),
+    allowedSkillIds: normalizeProjectSkillIds(input.allowedSkillIds),
     // 项目绑定专家：从存储恢复时必须保留，否则重启后绑定丢失
     boundExpertIds: Array.isArray(input.boundExpertIds) && input.boundExpertIds.length
       ? [...new Set(input.boundExpertIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0))]
@@ -606,16 +623,4 @@ export function getChatSessionGroupLabel(updatedAt: number) {
   if (dayDiff <= 7) return "7天内";
   if (dayDiff <= 30) return "30天内";
   return "更早";
-}
-
-export function formatUsageLabel(usage: ChatUsageStats) {
-  if (usage.requestCount <= 0 || usage.totalTokens <= 0) {
-    return "未统计";
-  }
-
-  const tokenLabel = usage.totalTokens >= 1000 ? `${(usage.totalTokens / 1000).toFixed(1)}k tokens` : `${usage.totalTokens} tokens`;
-  const costLabel = usage.totalCostUsd > 0 ? ` / $${usage.totalCostUsd.toFixed(4)}` : "";
-  const estimatedLabel = usage.hasEstimatedUsage ? " / 估算" : "";
-  const toolRoundsLabel = usage.toolRounds > 0 ? ` / ${usage.toolRounds} 轮工具` : "";
-  return `${tokenLabel}${costLabel}${estimatedLabel}${toolRoundsLabel}`;
 }

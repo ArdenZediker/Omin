@@ -149,12 +149,10 @@ export default function CreateProjectDialog({
       // MCP 连接器白名单（`allowedConnectorIds`，见 `plugins/mcp.ts::listActiveMcpTools`）。
       //
       // 曾经这里还把每个已选插件的 `defaultToolIds`、专家的 `defaultSkillIds` 一并并进来，
-      // 那是三条空转路径（2026-09-13 实测）：
-      // - **`allowedToolIds` 是彻底的死数据**：`ALWAYS_ALLOWED_LOCAL_TOOL_IDS = [...BUILTIN_TOOL_IDS]`
-      //   （25 个），`DEFAULT_PROJECT_TOOL_IDS` 的 16 个全在其中，`localTools` 注册的 10 个也全在其中，
-      //   于是执行期那道闸门 `!ALWAYS_ALLOWED.has(id) && !project.allowedToolIds.includes(id)`
-      //   永远拦不下任何东西。所以这里不再写它 —— 字段缺省时由 `chat/storage.ts` 补
-      //   `DEFAULT_PROJECT_TOOL_IDS`，行为不变。
+      // 但创建流程并不读取它们：
+      // - 模型默认工具由 `DEFAULT_MODEL_TOOL_IDS` 控制；`allowedToolIds` 当前只作为
+      //   项目额外工具扩展集，字段缺省时由 `chat/storage.ts` 补默认值。这里没有工具选择 UI，
+      //   所以不写它，避免把它误当成第二套默认清单。
       //   ⚠️ 但**连接器不能走这条路**：MCP 工具名是运行时算出来的 `mcp__{连接器id}__{工具}`，
       //   不在工具 manifest 表里，`buildChatTools` 会直接跳过（`chatRuntimeHelpers.ts:113`），
       //   所以连接器 manifest 也从不声明 `defaultToolIds`（全仓 0 处）—— 它必须单列一项。

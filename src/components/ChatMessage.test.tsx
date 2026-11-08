@@ -203,6 +203,97 @@ describe("ChatMessage", () => {
     expect(screen.getByText(/本次回答未使用推理模型或工具调用/)).toBeTruthy();
   });
 
+  it("在回答底部展示本轮精确用量，点击后显示模型与输入输出明细", async () => {
+    render(
+      <ChatMessage
+        message={{
+          role: "project",
+          content: "本次回答完成。",
+          turnUsage: {
+            inputTokens: 12_345,
+            outputTokens: 678,
+            totalTokens: 51_100,
+            model: "gpt-4.1",
+            toolRounds: 2,
+          },
+        }}
+        index={4}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "用量 51.1K tok" });
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole("dialog", { name: "本轮用量" });
+    expect(dialog).toHaveTextContent("51,100 tok");
+    expect(dialog).toHaveTextContent("gpt-4.1");
+    expect(dialog).toHaveTextContent("未缓存输入");
+    expect(dialog).toHaveTextContent("12,345 tok");
+    expect(dialog).toHaveTextContent("678 tok");
+    expect(dialog).not.toHaveTextContent("工具轮次");
+  });
+
+  it("展示估算用量并明确标注统计口径", async () => {
+    render(
+      <ChatMessage
+        message={{
+          role: "project",
+          content: "本次回答完成。",
+          turnUsage: {
+            inputTokens: 48_200,
+            outputTokens: 2_900,
+            totalTokens: 51_100,
+            model: "deepseek-v3",
+            toolRounds: 3,
+            estimated: true,
+          },
+        }}
+        index={5}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "估算 51.1K tok" });
+    const copyButton = screen.getByRole("button", { name: "复制" });
+    const saveButton = screen.getByRole("button", { name: "存为 .md" });
+    expect(trigger.closest(".message-actions")).toHaveClass("message-actions--assistant");
+    expect(copyButton.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(saveButton.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole("dialog", { name: "本轮估算用量" });
+    expect(dialog).toHaveTextContent("≈ 51,100 tok");
+    expect(dialog).toHaveTextContent("模型未返回精确用量，此处为本地估算值");
+  });
+
+  it("没有 usage 或消息仍在流式输出时不展示用量入口", () => {
+    const { rerender } = render(
+      <ChatMessage
+        message={{ role: "project", content: "普通回答。" }}
+        index={5}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^用量 / })).toBeNull();
+
+    rerender(
+      <ChatMessage
+        message={{
+          role: "project",
+          content: "",
+          turnUsage: {
+            inputTokens: 120,
+            outputTokens: 12,
+            totalTokens: 132,
+            model: "gpt-4.1",
+            toolRounds: 0,
+          },
+        }}
+        index={5}
+        isStreaming
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^用量 / })).toBeNull();
+  });
+
   it("steps 按类型分流到两个面板：推理进「深度思考」、工具进「执行步骤」，各自保持原顺序", () => {
     const message: Message = {
       role: "project",

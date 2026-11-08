@@ -34,6 +34,17 @@ function renderChatInput(onSend = vi.fn(), experts: Parameters<typeof ChatInput>
 }
 
 describe("ChatInput", () => {
+  it("点击编辑区右侧空白时仍然聚焦输入框", () => {
+    renderChatInput();
+    const textarea = screen.getByPlaceholderText("输入聊天内容...");
+    const editor = textarea.closest(".chat-composer__editor-wrap");
+
+    expect(editor).not.toBeNull();
+    expect(textarea).not.toHaveFocus();
+    fireEvent.pointerDown(editor!);
+    expect(textarea).toHaveFocus();
+  });
+
   it("生成过程中仍可继续编辑草稿，但不会误发或覆盖正在生成的回答", () => {
     const onSend = vi.fn();
     render(

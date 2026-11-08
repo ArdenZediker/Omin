@@ -13,12 +13,13 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
-import type { ChatAttachment, ChatImage } from "../adapters/types";
-import type { ChatSendOptions } from "../chat/types";
+import type { ChatAttachment, ChatImage, Message } from "../adapters/types";
+import type { ChatSendOptions, ChatUsageStats } from "../chat/types";
 import type { PluginManifest } from "../plugins/types";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
-import ContextUsageTrigger, { type ContextUsageSnapshot } from "./ContextUsagePanel";
+import type { ContextUsageSnapshot } from "./ContextUsagePanel";
+import ChatStatsLine from "./ChatStatsLine";
 import ModelSelector from "./ModelSelector";
 import { baseNameOf, isImageFile, readLocalImageAsDataURL, savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
@@ -29,8 +30,9 @@ interface ChatInputProps {
   currentModel?: string | null;
   modelTitle?: string;
   hasConversation?: boolean;
-  usageLabel?: string | null;
   contextUsage?: ContextUsageSnapshot;
+  messages?: Message[];
+  sessionUsage?: ChatUsageStats;
   contextPresetText?: string;
   knowledgeCollections?: KnowledgeCollection[];
   /** 可选专家（@专家 = 本轮对话切换为该专家的角色/工具/技能集） */
@@ -99,8 +101,9 @@ export default function ChatInput({
     currentModel,
     modelTitle,
     onModelChange,
-    usageLabel,
     contextUsage,
+    messages = [],
+    sessionUsage,
     contextPresetText,
   onSend,
   knowledgeCollections = [],
@@ -390,6 +393,18 @@ export default function ChatInput({
       textarea.setSelectionRange(nextCaretIndex, nextCaretIndex);
       setCaretIndex(nextCaretIndex);
     });
+  };
+
+  const focusComposerFromBackground = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (
+      target instanceof Element
+      && target.closest("button, a, input, textarea, select, [contenteditable='true'], [role='button']")
+    ) {
+      return;
+    }
+    event.preventDefault();
+    textareaRef.current?.focus();
   };
 
   const handleAddFiles = async () => {
@@ -751,7 +766,7 @@ export default function ChatInput({
             </div>
           )}
 
-          <div className="chat-composer__editor-wrap">
+          <div className="chat-composer__editor-wrap" onPointerDown={focusComposerFromBackground}>
             <div className="chat-composer__editor">
               {hasComposerStatus && (
                 <div className="chat-composer__status">
@@ -932,12 +947,8 @@ export default function ChatInput({
                   </div>
                 )}
               </div>
-              {contextUsage && (
-                <ContextUsageTrigger snapshot={contextUsage} placement="footer" />
-              )}
             </div>
             <div className="chat-composer__footer-actions">
-              {usageLabel && <span className="chat-composer__usage">{usageLabel}</span>}
               {typeof currentModel === "string" && (
                 <div className="chat-composer__model">
                   <ModelSelector currentModel={currentModel} onModelChange={onModelChange ?? (() => undefined)} title={modelTitle} />
@@ -962,6 +973,13 @@ export default function ChatInput({
           </div>
         </div>
       </div>
+
+      <ChatStatsLine
+        messages={messages}
+        sessionUsage={sessionUsage}
+        contextUsage={contextUsage}
+        isLoading={isLoading}
+      />
 
       {showSlashSuggestions && (
         <div className="chat-composer__suggestions">

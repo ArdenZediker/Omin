@@ -19,6 +19,7 @@ import { countIncompleteToolSteps, isResolvedAsSuccess } from "../chat/stepSettl
 import { ExecutionTimeline, formatToolArgs, formatToolResult } from "./ExecutionTimeline";
 import ArtifactCards from "./ArtifactCards";
 import AttachmentChip from "./AttachmentChip";
+import TurnUsagePanel from "./TurnUsagePanel";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { savePastedFileAttachment, compressImageBlob } from "./attachmentUtils";
 
@@ -364,7 +365,7 @@ export default function ChatMessage({
           </div>
         </div>
       ) : isUser ? (
-        <div className="message-user-bubble max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-gradient-to-br from-violet-500/80 to-indigo-600/80 text-white/95 text-sm">
+        <div className="message-user-bubble max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md text-sm">
           {userSegments.some((segment) => segment.kind !== "text") && (
             <div className="message-user-attachments">
               <span className="message-user-media-label">
@@ -525,7 +526,11 @@ export default function ChatMessage({
         </div>
       )}
       {!isStreaming && !isEditing && (
-        <div className={`message-actions mt-1.5 flex items-center gap-1.5 ${isUser ? "justify-end" : "justify-start"}`}>
+        <div
+          className={`message-actions mt-1.5 flex items-center gap-1.5 ${
+            isUser ? "message-actions--user justify-end" : "message-actions--assistant justify-start"
+          }`}
+        >
           <MessageActionButton label="复制" onClick={() => onCopy?.(message)}>
             <Copy size={16} strokeWidth={1.8} />
           </MessageActionButton>
@@ -543,6 +548,7 @@ export default function ChatMessage({
               </MessageActionButton>
             </>
           )}
+          {!isUser && message.turnUsage && <TurnUsagePanel usage={message.turnUsage} />}
         </div>
       )}
     </div>
