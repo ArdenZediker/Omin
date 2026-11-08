@@ -1,6 +1,7 @@
 export * from "./event-store";
 export * from "./events";
 export * from "./inbox";
+export * from "./jsonl-event-store";
 export * from "./message-projection";
 export * from "./model";
 export * from "./runtime";
