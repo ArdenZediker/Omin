@@ -237,6 +237,23 @@ export class ModelRegistry {
     return Array.from(this.adapters.keys());
   }
 
+  /**
+   * Returns provider credentials for the in-process Agent Host bridge.
+   * Callers must treat these values as transient: the Host keeps them in
+   * memory only and never writes them to the durable event log.
+   */
+  getProviderConfigs(): Array<{ provider: string; config: ProviderConfig }> {
+    return Array.from(this.configs.entries()).map(([provider, config]) => ({
+      provider,
+      config: {
+        ...config,
+        ...(config.customModels
+          ? { customModels: config.customModels.map((model) => ({ ...model })) }
+          : {}),
+      },
+    }));
+  }
+
   // 检查某个提供方是否已注册
   isProviderRegistered(provider: string): boolean {
     return this.adapters.has(provider);
