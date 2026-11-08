@@ -12,6 +12,10 @@ import type {
   HostResponse,
   HostServerMessage,
 } from "./protocol";
+import type {
+  AgentProviderRegistry,
+  AgentProviderStatus,
+} from "./provider-settings";
 import { HostStdioServer } from "./stdio";
 
 type HostRequestWithoutEnvelope<T> = T extends unknown
@@ -111,6 +115,63 @@ describe("AgentHost", () => {
 
     const ping = await host.handle(request("2", { command: "host.ping" }));
     expect(ping.ok).toBe(true);
+  });
+
+  it("configures providers without returning credentials", async () => {
+    const statuses = new Map<string, AgentProviderStatus>();
+    const providers: AgentProviderRegistry = {
+      configureProvider(settings) {
+        const status: AgentProviderStatus = {
+          provider: settings.provider,
+          protocol: settings.protocol ?? "openai",
+          hasApiKey: settings.apiKey.length > 0,
+          ...(settings.baseUrl ? { baseUrl: settings.baseUrl } : {}),
+        };
+        statuses.set(settings.provider, status);
+        return status;
+      },
+      removeProvider(provider) {
+        return statuses.delete(provider);
+      },
+      listProviders() {
+        return [...statuses.values()];
+      },
+    };
+    const host = new AgentHost(runtime(), providers);
+
+    const configured = await host.handle(request("configure", {
+      command: "provider.configure",
+      params: {
+        provider: "openai",
+        apiKey: "super-secret",
+        baseUrl: "https://example.test/v1",
+        protocol: "openai",
+      },
+    }));
+    expect(configured).toMatchObject({
+      ok: true,
+      result: {
+        provider: "openai",
+        protocol: "openai",
+        baseUrl: "https://example.test/v1",
+        hasApiKey: true,
+      },
+    });
+    expect(JSON.stringify(configured)).not.toContain("super-secret");
+
+    const listed = await host.handle(request("list", {
+      command: "provider.list",
+    }));
+    expect(listed).toMatchObject({
+      ok: true,
+      result: { providers: [{ provider: "openai", hasApiKey: true }] },
+    });
+
+    const removed = await host.handle(request("remove", {
+      command: "provider.remove",
+      params: { provider: "openai" },
+    }));
+    expect(removed).toMatchObject({ ok: true, result: { removed: true } });
   });
 });
 

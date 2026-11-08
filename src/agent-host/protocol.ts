@@ -4,6 +4,10 @@ import type {
   AgentSessionId,
   AgentToolSchema,
 } from "../agent-core";
+import type {
+  AgentProviderSettings,
+  AgentProviderStatus,
+} from "./provider-settings";
 
 export type HostRequest =
   | {
@@ -81,6 +85,23 @@ export type HostRequest =
       kind: "request";
       id: string;
       command: "tools.list";
+    }
+  | {
+      kind: "request";
+      id: string;
+      command: "provider.configure";
+      params: AgentProviderSettings;
+    }
+  | {
+      kind: "request";
+      id: string;
+      command: "provider.remove";
+      params: { provider: string };
+    }
+  | {
+      kind: "request";
+      id: string;
+      command: "provider.list";
     };
 
 export type HostCommand = HostRequest["command"];
@@ -93,6 +114,8 @@ export type HostResult =
   | { running: boolean }
   | { events: AgentEvent[] }
   | { tools: AgentToolSchema[] }
+  | AgentProviderStatus
+  | { providers: AgentProviderStatus[] }
   | Record<string, never>;
 
 export type HostResponse =

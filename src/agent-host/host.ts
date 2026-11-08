@@ -8,6 +8,7 @@ import type {
   HostResponse,
   HostResult,
 } from "./protocol";
+import type { AgentProviderRegistry } from "./provider-settings";
 
 export type HostNotificationListener = (message: HostNotification) => void;
 
@@ -22,7 +23,10 @@ export class AgentHost {
   private readonly listeners = new Set<HostNotificationListener>();
   private readonly subscribedSessions = new Set<string>();
 
-  constructor(private readonly runtime: AgentRuntime) {}
+  constructor(
+    private readonly runtime: AgentRuntime,
+    private readonly providers?: AgentProviderRegistry,
+  ) {}
 
   subscribe(listener: HostNotificationListener): () => void {
     this.listeners.add(listener);
@@ -136,7 +140,22 @@ export class AgentHost {
       }
       case "tools.list":
         return { tools: this.runtime.listTools() };
+      case "provider.configure":
+        return this.requireProviders().configureProvider(request.params);
+      case "provider.remove":
+        return {
+          removed: this.requireProviders().removeProvider(request.params.provider),
+        };
+      case "provider.list":
+        return { providers: this.requireProviders().listProviders() };
     }
+  }
+
+  private requireProviders(): AgentProviderRegistry {
+    if (!this.providers) {
+      throw new Error("provider registry is not available in this Host");
+    }
+    return this.providers;
   }
 
   private trackSession(sessionId: string): void {
