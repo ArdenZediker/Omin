@@ -21,6 +21,11 @@ export type HostRequest =
   | {
       kind: "request";
       id: string;
+      command: "host.shutdown";
+    }
+  | {
+      kind: "request";
+      id: string;
       command: "session.create";
       params: { cwd: string; title?: string; history?: AgentMessage[] };
     }

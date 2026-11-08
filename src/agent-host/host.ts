@@ -67,6 +67,14 @@ export class AgentHost {
     switch (request.command) {
       case "host.ping":
         return { pong: true, protocolVersion: 1 };
+      case "host.shutdown": {
+        const sessions = [...this.subscribedSessions];
+        await Promise.all(sessions.map(async (sessionId) => {
+          await this.runtime.cancel(sessionId, { reason: "Host shutting down" });
+          await this.runtime.whenIdle(sessionId);
+        }));
+        return {};
+      }
       case "session.create": {
         const sessionId = await this.runtime.createSession(request.params);
         this.trackSession(sessionId);

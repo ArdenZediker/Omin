@@ -56,9 +56,28 @@ async function main(): Promise<void> {
   process.once("SIGTERM", shutdown);
 
   try {
-    await server.run(input);
+    await server.run(stopAfterShutdown(input));
   } finally {
     nativeTools.close("agent Host input closed");
+  }
+}
+
+async function* stopAfterShutdown(
+  input: AsyncIterable<string>,
+): AsyncIterable<string> {
+  for await (const line of input) {
+    yield line;
+    try {
+      const message = JSON.parse(line) as {
+        kind?: unknown;
+        command?: unknown;
+      };
+      if (message.kind === "request" && message.command === "host.shutdown") {
+        return;
+      }
+    } catch {
+      // The stdio server reports malformed input and keeps reading.
+    }
   }
 }
 

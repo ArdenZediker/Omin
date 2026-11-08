@@ -356,13 +356,25 @@ impl AgentHostInner {
     }
 
     fn stop(&self, app: &AppHandle) {
+        let shutdown_id = format!("host-shutdown-{}", uuid::Uuid::new_v4());
+        let _ = self.request(&shutdown_id, "host.shutdown", None);
         let process = self
             .process
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take();
         if let Some(mut process) = process {
-            let _ = process.child.kill();
+            let exited = (0..120).any(|_| {
+                if process.child.try_wait().ok().flatten().is_some() {
+                    true
+                } else {
+                    thread::sleep(Duration::from_millis(25));
+                    false
+                }
+            });
+            if !exited {
+                let _ = process.child.kill();
+            }
             let _ = process.child.wait();
         }
         self.mark_exited(app, "Agent Host 已停止");

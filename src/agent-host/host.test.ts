@@ -136,6 +136,59 @@ describe("AgentHost", () => {
     expect(ping.ok).toBe(true);
   });
 
+  it("cancels active sessions before shutting down", async () => {
+    const model: ModelProvider = {
+      async *stream({ signal }) {
+        if (signal.aborted) throw new DOMException("cancelled", "AbortError");
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            reject(new DOMException("cancelled", "AbortError"));
+          }, { once: true });
+        });
+        yield { type: "finish", reason: { kind: "stop" } };
+      },
+    };
+    const host = new AgentHost(runtime(model));
+    const created = await host.handle(request("create", {
+      command: "session.create",
+      params: { cwd: "/workspace" },
+    }));
+    if (!created.ok || !("sessionId" in created.result)) {
+      throw new Error("session.create did not return a session id");
+    }
+    await host.handle(request("prompt", {
+      command: "session.prompt",
+      params: {
+        sessionId: created.result.sessionId,
+        content: "wait",
+        model: { provider: "test", model: "test-model" },
+      },
+    }));
+
+    await expect(host.handle(request("shutdown", {
+      command: "host.shutdown",
+    }))).resolves.toMatchObject({
+      ok: true,
+      result: {},
+    });
+    const events = await host.handle(request("events", {
+      command: "session.events",
+      params: { sessionId: created.result.sessionId },
+    }));
+    expect(events.ok).toBe(true);
+    if (!events.ok || !("events" in events.result)) {
+      throw new Error("session.events failed");
+    }
+    expect(events.result.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "turn/completed",
+        payload: expect.objectContaining({
+          reason: expect.objectContaining({ kind: "aborted" }),
+        }),
+      }),
+    ]));
+  });
+
   it("configures providers without returning credentials", async () => {
     const statuses = new Map<string, AgentProviderStatus>();
     const providers: AgentProviderRegistry = {
