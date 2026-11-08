@@ -536,6 +536,13 @@ export class AgentRuntime {
         payload: { turn, reason: turnReason },
       });
     }
+    // A steer wakes a running driver immediately, then is claimed by this
+    // same turn. Once the inbox is empty there is nothing left to wake for;
+    // retaining the flag starts an empty second driver and can strand
+    // when-idle waiters during shutdown.
+    if (!state.inbox.hasPending) {
+      state.wakeRequested = false;
+    }
 
     const result: AgentTurnResult = {
       sessionId: state.sessionId,

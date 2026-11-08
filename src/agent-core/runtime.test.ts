@@ -259,6 +259,8 @@ describe("AgentRuntime", () => {
     releaseFirst.resolve();
 
     await expect(result).resolves.toMatchObject({ content: "steered", turn: 1 });
+    await runtime.whenIdle(sessionId);
+    expect(await runtime.isRunning(sessionId)).toBe(false);
     expect(requests).toHaveLength(2);
     expect(requests[1].messages.filter((message) => message.role === "user").map(textBlocks))
       .toEqual(["start", "adjust direction"]);
