@@ -133,6 +133,7 @@
 │  业务层          adapters（模型适配 · function calling）  │
 │                  chat（引擎 · 工具 · 任务 · 压缩 · 知识库）│
 │                  plugins（技能 / 连接器 / 专家 / 预设）   │
+│                  agent-host（事件溯源会话 · 工具编排）    │
 ├─────────────── Tauri invoke / 事件 ──────────────────────┤
 │  原生层 (Rust)   workspace_files（文件 · glob · 搜索）    │
 │                  filemod（写入 · 撤销 · 快照）            │
@@ -153,6 +154,9 @@
 
 **一切皆插件**
 技能、工具、连接器、专家、项目预设统一为 `PluginManifest`，由 `pluginRegistry` 单例管理。新增能力不需要改核心代码。
+
+**Agent Host 与会话级工具目录**
+`src/agent-host` 是独立的事件溯源 Agent 运行时，通过 Node SEA 打包成 `omni-agent-host` sidecar；Tauri 负责进程生命周期、事件转发和原生工具路由。每次会话都有独立工具目录，Omni 工具调用再通过 UI bridge 回到现有确认门执行，因此 sidecar 化不会绕过写入确认、沙箱或 UI 监听缺失时的默认拒绝策略。
 
 **工具循环（Tool Loop）与安全预算**
 `adapters/wireTools.ts` 把工具定义装配成模型的 function calling schema，`chat/engine.ts` 驱动「模型 → 调工具 → 拿结果 → 再问模型」的循环。工具步骤有明确的状态机：`running`（流式进行中）/ `interrupted`（已中断）/ 缺省（正常完成），中断后不会留下悬空的“假完成”步骤。
@@ -286,8 +290,11 @@ Vite 开发端口固定为 `15420`，`tauri dev` 复用它作为前端入口。
 ### 构建
 
 ```bash
-pnpm build          # 前端
-pnpm tauri build    # 桌面应用
+pnpm build              # 前端
+pnpm build:desktop      # 前端 + 当前平台 Agent Host sidecar
+pnpm agent-host:build   # 只生成当前平台 sidecar
+pnpm agent-host:smoke   # 真实 sidecar 两轮工具调用与重启回放
+pnpm tauri build        # 桌面应用
 ```
 
 ---

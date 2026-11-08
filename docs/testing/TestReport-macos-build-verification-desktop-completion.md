@@ -127,23 +127,27 @@ GitHub Actions：打开待验收提交对应的 macOS build workflow run
 
 结果：__________
 
-## 3. 机器复核快照（2026-10-26；非最终裁决）
+## 3. 机器复核快照（2026-11-08；非最终裁决）
 
 以下是在当前工作树独立复跑的结果，用于保留新证据；不代表 T02–T12 全部收口，也不预判终审裁决。
 
 | 验收面 | 实际结果 | 证据／限制 |
 |---|---|---|
-| 依赖锁定 | 通过 | `pnpm install --frozen-lockfile` 退出码 0；lockfile SHA-256 前后均为 `64D20067B7B217293B8EE47445BE12064678EA5BCF4C972AA78C3C5DDB6F6383` |
-| TypeScript | 通过，退出码 0 | 本轮独立执行 `pnpm exec tsc --noEmit` |
-| 前端全量 | 通过，78 文件 / 825 用例 | 本轮独立执行完整 `pnpm test`，单次全量 Vitest |
-| Rust lib 全量 | 通过，166 passed / 0 failed / 1 ignored | 本轮从 `src-tauri` 执行 `cargo test --lib --locked -- --test-threads=1`；ignored 为显式 Office fixture 生成器，已单独执行 |
+| 依赖锁定 | 通过 | `pnpm install --frozen-lockfile` 退出码 0；lockfile SHA-256 前后均为 `7E82416C4A8A5260D0D4A8CF2B0E529A1254E4980BA4659DA436FB5B46D92213` |
+| TypeScript | 通过，退出码 0 | 提交 `14f23a5` 上执行 `pnpm exec tsc --noEmit` |
+| 前端全量 | 通过，102 文件 / 978 用例 | 提交 `14f23a5` 上单次完整 `pnpm test` |
+| Rust lib 全量 | 通过，182 passed / 0 failed / 1 ignored | 从 `src-tauri` 执行 `cargo test --lib --locked -- --test-threads=1`；ignored 为显式 Office fixture 生成器 |
+| Agent Host smoke | 通过 | `pnpm agent-host:smoke`：16 events、2 model calls、restart replay ok |
+| Rust 格式 | 通过 | `cargo fmt --check` 退出码 0 |
 | Office 独立解析 | 通过 | 保留在 `Temp/office-acceptance/office-delivery-1aaa3a40-ae5d-444b-b673-343fda017bc3`；DOCX/XLSX/PPTX 独立读库、ZIP CRC、XML 与内容断言全过。Python 依赖安装在 `%TEMP%\omni-office-acceptance-venv`，版本见 `src-tauri/requirements-office-test.txt` |
-| 前端构建 | 通过，Vite build 21.56s | 本轮 `pnpm build`；有既存 stream externalized、chunk、循环依赖、动态/静态 import 警告；产物在 `dist/` |
-| Windows Tauri 包 | 通过，退出码 0 | 本轮最终工作树 `pnpm tauri build --ci`；MSI 55,283,712 bytes，SHA-256 `05C97D33A8A63162C0F78F82137FE76A193419307C0BE2FF5685210BA91AD8F6`；NSIS 52,421,408 bytes，SHA-256 `48F7C3D0BF048451B7CF67EC8BEA4D4344DE488F6C0F6CA9F27E07769141BA77`。未安装，未启动本次最终产物，不能据此签收 UI |
-| macOS CI | 未复核当前工作树 | 当前源/工作流尚未提交，故既有成功 run 不能证明本工作树提交；需对应 SHA 的 Apple Silicon 和 Intel 实际 run/artifacts |
+| 前端构建 | 通过，Vite build 20.78s | `pnpm tauri build --ci` 的 beforeBuildCommand 执行成功；有既存 stream externalized、chunk、循环依赖、动态/静态 import 警告 |
+| Windows Tauri 包 | 通过，退出码 0 | 提交 `14f23a5`：MSI 88,596,480 bytes，SHA-256 `747F62B113DC073BE73E6A899F7DE181AED0AA37FC3201F5112EB97A12F8B1E1`；NSIS 75,116,502 bytes，SHA-256 `EE011D459619E4185FDF92B49B4D4806A7D73F96578DCED7D2D2ECD47BADC490` |
+| Windows release smoke | 通过（有限） | release `omni.exe` 主窗口响应；WebView2 与 Agent Host sidecar 启动；关闭主窗口后 sidecar 不残留。未执行安装器安装和完整 UI 流程 |
+| macOS CI | 通过 | run `42467041924`，提交 `14f23a5`；Apple Silicon 与 Intel job 均全绿，覆盖 sidecar 构建、前端/Rust/Seatbelt 测试、DMG 构建/挂载、架构和 codesign 检查 |
+| macOS artifacts | 已上传 | artifact ID 13612512175 / 13613080484；归档 92,643,917 bytes / 约 90.2 MiB。GitHub artifact digest 见 §1 ⑦，归档 digest 不等同 DMG SHA-256 |
 | 原生 Live | 未执行 | 双屏、通知、重启迁移、继续/中断 UI、Office 原生渲染仍需逐项操作 |
 
-工具版本：Node `v22.22.3`、pnpm `10.19.0`、Cargo `1.98.0`。frozen install 后再次完整复跑 TypeScript 与 Vitest，仍为 78 文件 / 825 用例通过。本轮没有运行 `cargo fmt --check`（本机未安装 rustfmt）。
+工具版本：Node `v22.22.3`、pnpm `10.34.5`、Cargo/Rust `1.98.0`。
 
 T06 当前工作树新增了任务记录与会话关联、侧栏中断标记和会话内风险提示；目标会话有更新运行时隐藏旧中断标记。`TaskStatusIndicators.test.tsx` 覆盖中断提示、成功任务不显示提示及可访问标签。自动面通过不替代停止/重启/继续的完整 UI live 流程。
 

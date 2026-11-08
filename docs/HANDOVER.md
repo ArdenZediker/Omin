@@ -11,10 +11,10 @@
 |---|---|
 | 这是什么 | Tauri 2 + React 19 + Rust 的本地优先 AI 桌面工作台，数据位于本机 SQLite、会话 JSONL 与文件目录 |
 | 现在能跑吗 | Windows：能（dev / build / 打包都验证过） |
-| 能打 Mac 包吗 | **能由 CI 构建 Apple Silicon / Intel DMG**；提交 `b53601e` 已在 macOS runner 实构并通过挂载、架构与签名检查（run `42407001993`） |
-| 测试能跑吗 | 能：2026-11-08 当前工作区前端 83 文件、862 用例通过，Rust 173 passed、1 项忽略；已提交的 `b53601e` 在 CI 为 Rust 156 passed、1 项忽略，见 §6.4 |
-| 工作区干净吗 | **不干净**，多个主题的未提交改动并存，见 §7。**先看 §7 再动手** |
-| 最该先做什么 | 先完成计划中剩余实机验收，再逐主题整理 §7 的改动 |
+| 能打 Mac 包吗 | **能由 CI 构建 Apple Silicon / Intel DMG**；提交 `14f23a5` 的双架构 run `42467041924` 已通过挂载、架构与签名检查 |
+| 测试能跑吗 | 能：2026-11-08 当前提交前端 102 文件、978 用例通过，Rust 182 passed、1 项忽略；真实 Agent Host smoke 通过，见 §6.4 |
+| 工作区干净吗 | 代码与文档已按主题提交，`main` 未改动；后续改动先看 §7 |
+| 最该先做什么 | 完成计划中无法由 CI 代替的原生实机验收；公开分发前再补 Apple Developer ID 签名、公证与 Windows 代码签名 |
 
 ---
 
@@ -138,6 +138,8 @@ node node_modules/vite/bin/vite.js build
 
 | 想改 | 去 |
 |---|---|
+| Agent Host / sidecar 生命周期 | `src/agent-host/`、`src-tauri/src/agent_host.rs`、`scripts/build-agent-host.mjs` |
+| 聊天轮次接入 Agent Host | `src/app/agentHostRuntime.ts`、`src/app/agentHostClient.ts`、`src/chat/taskExecutor.ts` |
 | 工具定义/执行 | `src/chat/localTools.ts`、`src/chat/toolActionMap.ts`、`src-tauri/src/shellcmd.rs` |
 | 模型接入 | `src/adapters/*.ts`（新增适配器要注册到 `adapters/registry.ts`） |
 | 系统提示词 | `src/chat/promptModules.ts`、`src/chat/storage.ts` |
@@ -186,8 +188,11 @@ Windows 上 tao 用**窗口当前所在屏**的 scale 换算，跨 DPI 屏会把
 主窗口使用透明无边框样式；当前 Tauri 2.10.3 在 macOS 需要
 `tauri.conf.json` 的 `app.macOSPrivateApi = true` 与 `Cargo.toml` 的 `macos-private-api` feature。
 
-GitHub Actions 最终双架构验收已通过：run `42407001993`（验证分支 `PENGY/macos-build-verification`，提交 `b53601e`）。
-`macos-15` Apple Silicon 与 `macos-15-intel` 两个 job 均通过类型检查、Vitest、Rust 库测试、macOS Seatbelt 实写边界测试、前端构建、DMG 构建、DMG 挂载检查、二进制架构检查和 `codesign --verify`，并上传 artifact（55,694,803 / 56,398,561 bytes）。
+GitHub Actions 当前提交双架构验收已通过：run `42467041924`（验证分支 `PENGY/macos-build-verification`，提交 `14f23a5`）。
+`macos-15` Apple Silicon 与 `macos-15-intel` 两个 job 均通过类型检查、Vitest、Agent Host sidecar 构建、Rust 库测试、macOS Seatbelt 实写边界测试、前端构建、DMG 构建、DMG 挂载检查、二进制架构检查和 `codesign --verify`，并上传 artifact。
+artifact 归档大小分别为 92,643,917 bytes / 约 90.2 MiB，GitHub artifact digest 分别为
+`sha256:973576f0b2f1b7b6c85cda84cca6443d291eab4dd3380a70e5f881e3e40fed2d` 与
+`sha256:46f2b88f68713afe00bcf9db7a438ceab6a35f7e5b40836de7f7bbffdfd12ba4`；归档 digest 不是 DMG 文件自身的哈希。
 本机 Windows 仍无法实测 macOS UI。CI 使用 ad-hoc 签名用于构建验证，不等同 Developer ID 签名或公证，公开分发仍需单独配置。
 
 ### 6.2 ✅ 文件权限沙箱：Windows 已实测，macOS Seatbelt 已通过双架构 CI
@@ -224,9 +229,10 @@ Windows 与 macOS，其他平台请求受限模式时明确拒绝执行，不静
 
 ### 6.4 ✅ 测试已可运行
 
-`pnpm test` 在当前工作区通过 **83 个测试文件、862 个用例**（2026-11-08）。当前工作区 Rust 库测试
-**173 passed / 1 ignored**；已提交的 `b53601e` 在干净工作树与 macOS CI 中均为 **156 passed / 1 ignored**。
-当前工作区多出的 Rust 用例来自尚未提交的其他主题。此前记录的 runner/config 初始化失败已无法复现；
+`pnpm test` 在提交 `14f23a5` 上通过 **102 个测试文件、978 个用例**；`pnpm exec tsc --noEmit` 通过。
+Rust 库测试为 **182 passed / 0 failed / 1 ignored**，唯一 ignored 是需要显式输出目录的 Office fixture 生成器。
+`pnpm agent-host:smoke` 启动真实 Node SEA sidecar 并通过：16 events、2 次模型调用、重启后事件回放成功。
+macOS CI 在同一提交运行完整前端测试、Rust 库测试与 Seatbelt 测试；此前记录的 runner/config 初始化失败已无法复现。
 后续改动应把全量测试纳入回归，而不是只依赖 `tsc` / `vite build`。
 
 ### 6.5 🟡 发布链路未完成
@@ -244,31 +250,33 @@ Windows 与 macOS，其他平台请求受限模式时明确拒绝执行，不静
 `src/hooks/useCompactPetThoughtWindows.ts:106` 的 `shouldUseDetachedThoughtWindow = false`
 让整块分离窗口逻辑不可达。坐标空间已按物理像素修正（避免地雷），但**删功能是产品决策**，未删。
 
-### 6.8 🟡 桌面版收尾（当前工作区，未提交）
+### 6.8 🟡 桌面版收尾：自动化与打包已通过，原生 Live 项仍待人工
 
 任务历史在 `src/chat/taskStorage.ts` 按窗口分别落盘，启动时把遗留 running 任务归为 aborted；执行器保存开始/终态及失败或取消前已流出的正文、思考和工具步骤。调度只由主窗口在自动化数据 hydration 成功后启动，采用持久化 claim，通知走 Tauri notification 插件，失败在主窗口显示并提供手动重试。备份/恢复维护门覆盖存储、知识处理、应用发起的文件编辑/撤销、附件快照、Office 导出与 Shell 命令；并发测试验证 SQLite 与 JSONL 在途写入排空后才开始快照。通过 Shell 脱离的后台进程不受命令生命周期锁约束，不承诺其外部写入与备份原子一致。普通迁移和恢复默认位置也走同一完整快照流程，目标必须为空、旧目录保留；配置提交成功后当前进程继续使用旧数据根，重启才切换。默认位置已有旧文件时拒绝覆盖，需先人工处理。配置文件原子替换失败已通过真实临时文件故障注入，证明旧配置字节保留与暂存文件清理；真实应用重启及进程中断仍未验收。
 
-Office 测试 fixture 已用三个独立 Python 阅读器解析通过；这不等于 Word/Excel/PowerPoint 原生打开与渲染已验收。通知插件曾因前端 2.7.0 / Rust 2.4.0 版本不匹配被 Tauri CLI 拦截；两侧现精确锁定 2.4.0。发送通知已改为 await 原生命令，测试拒绝权限与 native 命令错误可向调度层传播。当前工作区 `pnpm tauri build --ci` 已成功生成 Windows MSI/NSIS。已提交的 `b53601e` 已在 macOS Apple Silicon / Intel runner 完成全链路验证；当前工作区中其他未提交改动不在该 run 的覆盖范围内。备份不包括仓库内宠物美术资源或 SkillHub 用户级安装目录。
+Office 测试 fixture 已用三个独立 Python 阅读器解析通过；这不等于 Word/Excel/PowerPoint 原生打开与渲染已验收。通知插件曾因前端 2.7.0 / Rust 2.4.0 版本不匹配被 Tauri CLI 拦截；两侧现精确锁定 2.4.0。发送通知已改为 await 原生命令，测试拒绝权限与 native 命令错误可向调度层传播。提交 `14f23a5` 已重新生成 Windows MSI/NSIS，并在当前提交完成 macOS Apple Silicon / Intel 全链路验证。
+
+Agent Host 也已进入同一条工具链：`src/agent-host/` 的事件溯源运行时经 Node SEA 打包为 `omni-agent-host` sidecar；Tauri 管理进程、转发事件并路由原生工具，聊天会话使用独立工具目录，Omni client tools 经 UI bridge 回到现有权限确认门。打包启动 smoke 已确认 `omni.exe`、WebView2 与 `omni-agent-host.exe` 一起启动，关闭主窗口后 sidecar 不残留。备份不包括仓库内宠物美术资源或 SkillHub 用户级安装目录。
 
 ---
 
 ## 7. 工作区与已提交批次（⚠️ 接手第一件事）
 
-工作区仍混有多批改动；macOS 与 WorkDSH 权限体系已单独提交，其余主题仍需逐批复核暂存内容：
+长期遗留的多个主题已经按功能分批提交，接手时不要用旧版“工作区混有 A–H 批次”的说明判断现状。
+最近的关键提交为：
 
-| 批次 | 文件 | 内容 | 验证 |
-|---|---|---|---|
-| A. 窗口几何物理化 | `src/app/window.ts`、`useCompactWindowController.ts`、`useCompactCharacterDrag.ts`、`useCompactMenus.ts`、`useCompactPetThoughtWindows.ts`、`useMainWindowController.ts`、`useCompactCharacterDrag.test.ts`、`src/app/window.compactPosition.test.ts`(新) | 紧凑窗/主窗位置统一到物理像素，修跨 DPI 屏出屏与「记不住位置」 | tsc ✅ |
-| B. 单实例启动 | `src-tauri/Cargo.toml`、`Cargo.lock`、`src-tauri/src/lib.rs` | 加 `tauri-plugin-single-instance`，第二次启动唤起已有窗口 | cargo check ✅、双实例实测 ✅ |
-| C. 第一轮死代码清理 | `src/App.tsx`、`adapters/paramCompat.ts`、`app/settings.ts`、`app/settingsStore.ts`、`chat/types.ts`、`plugins/mcp.ts`、`plugins/skillhubSkillsets.ts`、`src-tauri/src/gittools.rs`、`src/styles/*.css` | 删 7 处死导出 + 250 条死 CSS 规则（1597 行） | tsc ✅、vite build ✅、CSS 复扫 0 ✅ |
-| D. 用户既有改动（**不是本轮做的**） | `src/components/plugins/InstalledSkillsetCard.tsx`、`src/styles/plugins.css` | 「插件卡片尺寸统一」，注释注明 2026-09-12 | 未验证 |
-| E. 全局清理 | `index.html`、`package.json`、`pnpm-lock.yaml`、`src/adapters/*`、`src/chat/*`、`src/components/ArtifactsPanel.test.tsx`、模板图标与一次性脚本 | 删 5 个无效导出、3 个无引用 SVG、1 个一次性迁移脚本、3 个无用依赖 | tsc ✅、vite build ✅、cargo check ✅、vitest 720 ✅ |
-| F. macOS 适配（本轮） | `src-tauri/Cargo.toml`、`main.rs`、`shellcmd.rs`、`shell_session.rs`、`sandbox.rs`、`office_export.rs`、`filemod.rs`、`workspace_files.rs`、设置 UI、`bashWriteScan.ts`、`.github/workflows/macos-build.yml` | 修复非 Windows 编译阻塞，适配用户 Shell/PATH，补系统路径护栏及 Intel/Apple Silicon DMG CI | Windows cargo check ✅、cargo test 136 ✅、pnpm test 729 ✅、pnpm build ✅；Mac CI 双架构 DMG ✅（run 40135570009） |
-| G. 桌面版收尾（当前未提交） | `src/chat/task*`、`src/hooks/useChatRuntime.ts`、`src/hooks/useScheduledTasks.ts`、`src-tauri/src/backup.rs`、`storage_paths.rs`、`storage_maintenance.rs`、知识 worker、Office 测试、README、docs、CI 等 | 任务中断/输出留存、提醒、备份恢复维护门、知识引用、Office 导出验收、发布验证门 | 2026-10-26：tsc ✅、Vitest 78/825 ✅、Rust 166+1 ignored ✅、Office 独立解析 ✅、Windows build/package ✅；原生手测和本轮 Mac CI 待验 |
-| H. WorkDSH 文件权限体系（已提交 `da21f37..b53601e`） | `sandbox.rs`、`shellcmd.rs`、`filemod.rs`、`office_export.rs`、`localTools.ts`、设置 UI、工具 manifest、相关测试、macOS CI、Vitest 范围 | 三档权限、Windows Token/ACL/Low IL、macOS Seatbelt、工作区外拒绝、只读/写入工具统一策略、一次性升权确认 | Windows 当前工作区：Rust 173 passed + 1 ignored ✅、Vitest 83 files / 862 passed ✅、tsc ✅、build ✅；macOS：双架构 CI、Seatbelt 测试、DMG、架构与签名检查全部通过 ✅（run `42407001993`） |
+| 提交 | 内容 |
+|---|---|
+| `08ebb08` | Agent Host 工具目录按会话隔离 |
+| `94bfdb1` | Omni client tools 经 UI bridge 回到确认门执行 |
+| `3f9b733` | 聊天任务接入会话工具目录 |
+| `31a4548` | 忽略本地 `workdsh/` 参考仓库 |
+| `2d7bf35` | macOS CI 在 Rust 测试前构建 Agent Host sidecar |
+| `10f1007` | 备份允许 macOS `/var`、`/tmp` 系统根别名，继续拒绝用户 symlink |
+| `14f23a5` | SQLite 已存路径与 canonical 源路径一致时按 canonical 比较 |
 
-F 批次与早先未提交的 A-E 修改共用 `Cargo.toml` 等文件，提交时需按主题暂存对应 hunk；H 已提交，
-但当前工作区同路径仍可能叠加其他主题改动，不能用文件路径整体暂存。
+历史的 macOS/WorkDSH 权限体系位于 `da21f37..b53601e`。若要继续提交，先用 `git status` 和
+`git diff --stat` 按主题拆分，不把临时构建产物、`workdsh/` 或用户本地配置带入。
 
 提交前注意：
 
@@ -310,15 +318,17 @@ F 批次与早先未提交的 A-E 修改共用 `Cargo.toml` 等文件，提交�
 
 | 项目 | 结果 |
 |---|---|
-| `pnpm exec tsc --noEmit` | ✅ 2026-11-08 当前工作区通过 |
-| `pnpm build` | ✅ 2026-11-08 当前工作区通过；仅有既有 chunk/import 体积警告 |
-| `cargo test --lib` | ✅ 2026-11-08 当前工作区 173 passed / 1 ignored；已提交的 `b53601e` 在干净工作树与 macOS CI 为 156 passed / 1 ignored |
-| `pnpm tauri build --ci` | ✅ 2026-10-26 当前工作区生成 Windows MSI、NSIS；最终包散列见 TestReport §3。此前版本 `omni.exe` 启动进程响应正常；最终包安装、启动与 UI 尚未实测 |
-| `pnpm test` | ✅ 2026-11-08，83 文件 / 862 用例；已限定只扫描 Omni `src`，不会误跑 `workdsh/` |
+| `pnpm exec tsc --noEmit` | ✅ 2026-11-08 提交 `14f23a5` 通过 |
+| `pnpm build` | ✅ 随 `pnpm tauri build --ci` 的 `beforeBuildCommand` 通过；仅有既有 chunk/import 体积警告 |
+| `cargo test --lib` | ✅ 2026-11-08 提交 `14f23a5`：182 passed / 0 failed / 1 ignored |
+| `pnpm agent-host:smoke` | ✅ 真实 sidecar：16 events、2 model calls、restart replay ok |
+| `pnpm tauri build --ci` | ✅ 提交 `14f23a5` 生成 Windows MSI（88,596,480 bytes）与 NSIS（75,116,502 bytes）；SHA-256 见 TestReport §3 |
+| Windows release 启动 smoke | ✅ `omni.exe` 主窗口响应，WebView2 与 Agent Host sidecar 正常启动；关闭后 `omni-agent-host` 不残留。安装器实装与完整 UI 交互仍未人工验收 |
+| `pnpm test` | ✅ 2026-11-08，102 文件 / 978 用例；限定只扫描 Omni `src`，不会误跑 `workdsh/` |
 | `cargo fmt --check` | ✅ 2026-11-08 当前工作区通过 |
 | 单实例行为 | ✅ 早先实测：两次启动后仍 1 个进程，第二 PID 不存活；本轮未重测 |
 | 真机跨屏拖拽及快速开合 | ❌ 本轮未验证，需双屏手动操作 |
-| macOS 构建 | ✅ 2026-11-08 提交 `b53601e` 的 Apple Silicon / Intel 双架构 run `42407001993` 通过；覆盖 Seatbelt 测试、DMG 构建、挂载、架构与 codesign 检查 |
+| macOS 构建 | ✅ 2026-11-08 提交 `14f23a5` 的 Apple Silicon / Intel 双架构 run `42467041924` 通过；覆盖 Agent Host sidecar、Seatbelt 测试、DMG 构建、挂载、架构与 codesign 检查 |
 | Office 系统打开/渲染及备份恢复后重启 | ❌ 本轮未实机验收 |
 
 ---
@@ -326,7 +336,7 @@ F 批次与早先未提交的 A-E 修改共用 `Cargo.toml` 等文件，提交�
 ## 9. 建议的接手顺序
 
 1. 先按 `docs/planning/IMPL_macos-build-verification-desktop-completion.md` 的未验收项做 Windows 原生窗口、备份重启、Office 与通知手测；不要把组件测试当作实机验收。
-2. 按 §7 主题拆分现有未提交改动；先看 `git status`，不把用户原有修改混入本轮提交。
+2. 后续代码仍按 §7 的功能主题拆分提交；先看 `git status`，不把临时产物、本地参考仓库或用户原有修改混入提交。
 3. 公开分发前另行安排 macOS Developer ID 签名/公证与 Windows 签名，并在 Mac 实机按冒烟清单验证 UI、Seatbelt 文件边界与一次性升权。
 
 ---

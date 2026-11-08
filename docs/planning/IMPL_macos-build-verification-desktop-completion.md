@@ -1,6 +1,6 @@
 # Omni 桌面版收尾计划
 
-更新：2026-10-26；分支：PENGY/macos-build-verification；状态：[SPEC-OK] / [GO] 实施中。
+更新：2026-11-08；分支：PENGY/macos-build-verification；状态：[SPEC-OK] / [GO] 自动化与双架构打包已收口，原生 Live 验收待人工。
 需求依据：用户确认的八项桌面收尾清单，并授权持续实施到完整验收。主集成负责人：当前 Codex 会话。
 
 ## 0. 范围与已有资产
@@ -68,7 +68,7 @@
 
 ### P2 发布与资料
 - [x] T10：配置读取入口统一，读取时清理旧字段；前端类型检查通过。
-- [x] T11：CI 含 TypeScript、Vitest、Rust tests、前端及桌面构建（已更新 macOS workflow；GitHub runner 尚待实际触发验证）。
+- [x] T11：CI 含 TypeScript、Vitest、Agent Host sidecar、Rust tests、前端及桌面构建；提交 `14f23a5` 的 Apple Silicon / Intel 双 job 已在 run `42467041924` 全绿，并完成 DMG 挂载、架构与 codesign 检查。
 - [x] T12：README、HANDOVER、IMPL 按代码与本轮测试证据校准；原生手测项明确保留未验收。
 
 ## 3. Release Gate
@@ -93,5 +93,8 @@
 - 2026-10-26：针对上述通知修复再次执行 `pnpm tauri build --ci` 成功，重新生成当前 MSI（55,283,712 字节，SHA-256 `0DB479FBB2C3135DACEA1C5036033559FD469880768CD897F1F179855833A15B`）和 NSIS（52,423,732 字节，SHA-256 `E7A4DFB76459DB4900D1A884F2955307AC85E94628F51A7E90553A95648D56CE`）；release `omni.exe` 启动 smoke check 进程存活并报告 Responding。安装器安装、提醒 OS 投递与 UI/迁移重启仍未手测。
 - 2026-10-26：补任务历史 sessionId 归属，重启恢复的 aborted 任务在对应会话侧栏显示状态并在会话中提示先核实外部操作、再由用户新发消息继续；不自动重放旧工具。新增 4 个 UI/存储断言；`pnpm exec tsc --noEmit` 通过，完整 `pnpm test` 78 文件 / 825 用例通过。`pnpm build` 和 `pnpm tauri build --ci` 对该改动构建成功；新 MSI/NSIS 散列详见 TestReport。完整停止/重启/继续 live 仍待实测。
 - 2026-10-26：恢复默认位置由删除配置文件改为原子写入明确标记；旧版配置仍可读取，替换失败时旧配置字节不变。再次独立复跑当前工作树：TypeScript 0 错误、Vitest 78 文件 / 825 用例、Rust 166 passed / 0 failed / 1 ignored、前端构建和 Windows MSI/NSIS 打包通过；Office DOCX/XLSX/PPTX fixture 独立解析通过。随后 `pnpm install --frozen-lockfile` 退出码 0、lockfile SHA 前后相同；同步安装后 TypeScript 与 78 文件 / 825 用例再次通过。最终包散列与未验收的原生项目见 TestReport §3。
-- 待完成：多屏 DPI/窗口交互实机验收；Office 系统打开/定位、公式实际重算与原生渲染验收；本轮 GitHub macOS 双架构 workflow 实际运行；继续/中断完整 UI 集成验收；备份迁移进程中断及真实应用重启切换。备份不涵盖外部工作区/SkillHub/pet 资源；人为脱离 Shell 的后台进程不受命令生命周期锁约束。
+- 2026-11-08：Agent Host 已接入真实 Omni 工具链：会话级工具目录、Node SEA sidecar、Tauri 原生工具路由、UI client-tool bridge 与原有权限确认门全部接通；`pnpm agent-host:smoke` 在真实 sidecar 上完成 16 events、2 次模型调用及重启回放。
+- 2026-11-08：提交 `14f23a5` 本地全量回归：TypeScript 0 错误、Vitest 102 文件 / 978 用例、Rust 182 passed / 1 ignored；Windows `pnpm tauri build --ci` 重新生成 MSI/NSIS，release `omni.exe` 启动 smoke 显示主窗口响应且 Agent Host sidecar 随主程序关闭退出。
+- 2026-11-08：提交 `14f23a5` 的 macOS run `42467041924` 在 Apple Silicon 与 Intel 两个 runner 全绿；CI 前置构建 sidecar，随后运行完整前端/Rust/Seatbelt 测试、DMG 构建、挂载、架构和 codesign 检查。workflow 已新增 DMG 文件名、字节数与 SHA-256 的 Step Summary 证据。
+- 待完成：多屏 DPI/窗口交互实机验收；Office 系统打开/定位、公式实际重算与原生渲染验收；继续/中断完整 UI 集成验收；备份迁移进程中断及真实应用重启切换。备份不涵盖外部工作区/SkillHub/pet 资源；人为脱离 Shell 的后台进程不受命令生命周期锁约束。
 - 计划评审：Beauvoir 独立复核 [SPEC-OK]；已补备份维护边界、提醒投递契约、中断继续和独立写集。用户已授权按八项范围实施。
