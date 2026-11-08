@@ -155,7 +155,7 @@ GitHub Actions：打开待验收提交对应的 macOS build workflow run
 | macOS CI | 通过 | run `42467041924`，提交 `14f23a5`；Apple Silicon 与 Intel job 均全绿，覆盖 sidecar 构建、前端/Rust/Seatbelt 测试、DMG 构建/挂载、架构和 codesign 检查 |
 | macOS CI（当前工作树） | 通过 | run `42488726124`，提交 `7a64d64`；2 个矩阵 job 全绿。Run 18 失败原因是 Windows-only verbatim 测试未隔离到 Windows，已修复 |
 | macOS artifacts | 已上传 | artifact ID 13612512175 / 13613080484；归档 92,643,917 bytes / 约 90.2 MiB。GitHub artifact digest 见 §1 ⑦，归档 digest 不等同 DMG SHA-256 |
-| 原生 Live | 未执行 | 双屏、通知、迁移后数据读取、继续/中断 UI、Office 原生渲染仍需逐项操作 |
+| 原生 Live | 部分完成 | 通知发送、任务启动恢复、知识生命周期、Office 原生打开均有 Windows release 实测证据；双屏/DPI（单屏环境）与通知中心视觉确认保持 NEED-HUMAN-TEST |
 | T02 双屏环境 | 环境不可测 | 当前 Windows 仅一块屏幕（DISPLAY1，1707x1067，主屏）；跨屏拖动、DPI 缩放差异与重启副屏恢复无法在本机验证 |
 
 运行中追加输入另有定向证据：`ChatInput.test.tsx`、`AgentHostRuntime.test.ts`、`host.test.ts`、`runtime.test.ts` 共 34 用例通过。真实 sidecar smoke 在模型调用中注入 steer，确认下一次模型请求含追加内容、turn 正常完成、`session.when-idle` 返回，并继续完成重启回放与删除。
