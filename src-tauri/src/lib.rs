@@ -8,9 +8,10 @@ use std::{
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
+    Emitter, Manager, RunEvent,
 };
 
+mod agent_host;
 mod backup;
 mod clipboard_files;
 mod codex_pets;
@@ -502,7 +503,8 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .manage(agent_host::AgentHostState::default())
         .manage(loopback_http::LoopbackProxyState::default())
         // ⚠️ 单实例必须是**第一个**注册的 plugin：它要在其它插件初始化之前就判定
         // 「本次进程是不是已有实例的第二次启动」。是新实例就在这里直接退出，
@@ -647,9 +649,21 @@ pub fn run() {
             shell_session_reset,
             write_file_tool,
             edit_file_tool,
-            undo_file_edit
+            undo_file_edit,
+            agent_host::agent_host_start,
+            agent_host::agent_host_stop,
+            agent_host::agent_host_status,
+            agent_host::agent_host_request
         ])
         .setup(|app| {
+            let host_state = app.state::<agent_host::AgentHostState>().inner().clone();
+            let host_app = app.handle().clone();
+            std::thread::spawn(move || {
+                if let Err(error) = host_state.start(&host_app) {
+                    eprintln!("[Omni] Agent Host 自动启动失败（可稍后重试）：{error}");
+                }
+            });
+
             // 工具超长输出落盘目录：截断时完整内容写这里，提示里附路径（对齐 harness spillPath）。
             match crate::storage_paths::tool_output_spill_root(&app.handle()) {
                 Ok(dir) => crate::tool_output_spill::configure_spill_dir(dir),
@@ -715,6 +729,11 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("运行 Omni 时发生错误");
+        .build(tauri::generate_context!())
+        .expect("构建 Omni 时发生错误");
+    app.run(|app_handle, event| {
+        if matches!(event, RunEvent::Exit) {
+            agent_host::shutdown(app_handle);
+        }
+    });
 }
