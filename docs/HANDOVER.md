@@ -12,7 +12,7 @@
 | 这是什么 | Tauri 2 + React 19 + Rust 的本地优先 AI 桌面工作台，数据位于本机 SQLite、会话 JSONL 与文件目录 |
 | 现在能跑吗 | Windows：能（dev / build / 打包都验证过） |
 | 能打 Mac 包吗 | **能由 CI 构建 Apple Silicon / Intel DMG**；提交 `14f23a5` 的双架构 run `42467041924` 已通过挂载、架构与签名检查 |
-| 测试能跑吗 | 能：2026-11-08 当前提交前端 102 文件、978 用例通过，Rust 182 passed、1 项忽略；真实 Agent Host smoke 通过，见 §6.4 |
+| 测试能跑吗 | 能：2026-11-08 当前工作树前端 102 文件、989 用例通过，Rust 182 passed、1 项忽略；真实 Agent Host smoke 覆盖 steer 并通过，见 §8.4 |
 | 工作区干净吗 | 代码与文档已按主题提交，`main` 未改动；后续改动先看 §7 |
 | 最该先做什么 | 完成计划中无法由 CI 代替的原生实机验收；公开分发前再补 Apple Developer ID 签名、公证与 Windows 代码签名 |
 
@@ -269,8 +269,10 @@ Agent Host 已进入同一条工具链并成为默认聊天运行时：`src/agen
 打包为 `omni-agent-host` sidecar；Tauri 管理进程、转发事件并路由原生工具，聊天会话使用独立工具目录，
 Omni client tools 经 UI bridge 回到现有权限确认门。`pnpm tauri dev` 会自动构建 sidecar；
 `VITE_OMNI_AGENT_HOST=0` 才回退旧引擎。删除会话会同时清理 Omni 数据、Host 映射和 JSONL 事件。
-真实 smoke 已覆盖两轮工具调用、重启回放、删除后再次重启不复活。备份不包括仓库内宠物美术资源或
-SkillHub 用户级安装目录。
+回答运行中现在可以继续提交内容：Host 使用 `session.steer` 在下一步模型边界并入当前 turn，输入框同时保留
+“追加到当前回答”和“停止”入口，失败不会清掉草稿。每次 UI 轮次等到 Host idle 后收口，避免迟到 steer 的
+第二 turn 丢失；真实 smoke 已覆盖 steer、三轮模型调用、重启回放、删除后再次重启不复活。备份不包括
+仓库内宠物美术资源或 SkillHub 用户级安装目录。
 
 ---
 
@@ -337,10 +339,10 @@ SkillHub 用户级安装目录。
 | `pnpm exec tsc --noEmit` | ✅ 2026-11-08 提交 `14f23a5` 通过 |
 | `pnpm build` | ✅ 随 `pnpm tauri build --ci` 的 `beforeBuildCommand` 通过；仅有既有 chunk/import 体积警告 |
 | `cargo test --lib` | ✅ 2026-11-08 提交 `14f23a5`：182 passed / 0 failed / 1 ignored |
-| `pnpm agent-host:smoke` | ✅ 真实 sidecar：16 events、2 model calls、restart replay + delete ok |
-| `pnpm tauri build --ci` | ✅ 提交 `14f23a5` 生成 Windows MSI（88,596,480 bytes）与 NSIS（75,116,502 bytes）；SHA-256 见 TestReport §3 |
-| Windows release 启动 smoke | ✅ `omni.exe` 主窗口响应，WebView2 与 Agent Host sidecar 正常启动；关闭后 `omni-agent-host` 不残留。安装器实装与完整 UI 交互仍未人工验收 |
-| `pnpm test` | ✅ 2026-11-08 当前 Agent Host 默认链改动：102 文件 / 984 用例；限定只扫描 Omni `src`，不会误跑 `workdsh/` |
+| `pnpm agent-host:smoke` | ✅ 真实 sidecar：22 events、3 model calls、steer + restart replay + delete ok |
+| `pnpm tauri build --ci` | ✅ 当前工作树生成 Windows MSI（88,596,480 bytes）与 NSIS（75,117,336 bytes）；SHA-256 见 TestReport §3 |
+| Windows release 启动 smoke | ✅ 当前工作树 `omni.exe` 启动后 Responding、标题 `Omni`；关闭后正常退出且无 `omni` / `omni-agent-host` 残留。安装器实装与完整 UI 交互仍未人工验收 |
+| `pnpm test` | ✅ 2026-11-08 当前工作树：102 文件 / 989 用例；限定只扫描 Omni `src`，不会误跑 `workdsh/` |
 | `cargo fmt --check` | ✅ 2026-11-08 当前工作区通过 |
 | 单实例行为 | ✅ 早先实测：两次启动后仍 1 个进程，第二 PID 不存活；本轮未重测 |
 | 真机跨屏拖拽及快速开合 | ❌ 本轮未验证，需双屏手动操作 |

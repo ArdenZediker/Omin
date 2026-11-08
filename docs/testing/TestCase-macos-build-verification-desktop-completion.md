@@ -5,7 +5,7 @@
 | 项 | 内容 |
 |---|---|
 | 分支 | PENGY/macos-build-verification |
-| 目标 | 按[收尾计划](../planning/IMPL_macos-build-verification-desktop-completion.md) C1–C8、T02–T12 和 Release Gate 逐门证明 |
+| 目标 | 按[收尾计划](../planning/IMPL_macos-build-verification-desktop-completion.md) C1–C8、§1.3 运行中追加输入、T02–T12 和 Release Gate 逐门证明 |
 | 与既有测试面 | 汇总现有实现测试与原生验收；不复制既有 fixture 或假装 mock 等于 live |
 | 真相源 | 上述 IMPL 条款；原生输入来自[手测清单](../manual-smoke-checklist.md) |
 | Profile | 本地/CI 自动测试、Windows live、macOS 双架构 runner |
@@ -35,6 +35,7 @@
 - AD07（C7/T08）：documentId/chunkId 定位应用存档；失效提示保留历史摘录。LV05 真实资料导入、引用、删除/重分块。
 - AD08（C8/T09）：DOCX/XLSX/PPTX 可解析，重名/失败原子不覆盖。LV06 原生 Office 打开、版式和公式结果。
 - AD09（T10/T11/T12）：配置入口与类型检查、Windows 安装包、macOS Intel/Apple Silicon DMG 当前提交双矩阵、文档按证据同步。
+- AD10（IMPL §1.3）：生成中追加只进入当前 Host turn；输入框同时保留追加与停止；启动竞态等待 running、失败保留草稿；迟到 steer 触发第二 turn 时结果不丢；本轮结束 `when-idle` 可返回且 shutdown 不挂起。
 
 ## 5. 覆盖勾稽矩阵
 
@@ -51,6 +52,7 @@
 | T10 | AD09：settingsStore test、TypeScript 检查 | 不适用 |
 | T11 | AD09：Windows 构建 + macos-build.yml | 双架构 run/artifact |
 | T12 | AD09：README、HANDOVER、IMPL、TestReport 交叉核对 | 产品方回执 |
+| §1.3 | AD10：ChatInput.test、AgentHostRuntime.test、AgentRuntime.test、agent-host smoke | 真实桌面输入交互仍待人工 |
 
 ## 6. 执行时序
 

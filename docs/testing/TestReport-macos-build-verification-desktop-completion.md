@@ -134,18 +134,22 @@ GitHub Actions：打开待验收提交对应的 macOS build workflow run
 | 验收面 | 实际结果 | 证据／限制 |
 |---|---|---|
 | 依赖锁定 | 通过 | `pnpm install --frozen-lockfile` 退出码 0；lockfile SHA-256 前后均为 `7E82416C4A8A5260D0D4A8CF2B0E529A1254E4980BA4659DA436FB5B46D92213` |
-| TypeScript | 通过，退出码 0 | 提交 `14f23a5` 上执行 `pnpm exec tsc --noEmit` |
-| 前端全量 | 通过，102 文件 / 978 用例 | 提交 `14f23a5` 上单次完整 `pnpm test` |
+| TypeScript | 通过，退出码 0 | 当前工作树执行 `pnpm exec tsc --noEmit` |
+| 前端全量 | 通过，102 文件 / 989 用例 | 当前工作树单次完整 `pnpm test`；首次全量出现 1 个无关焦点断言偶发失败，单文件复跑 12/12 通过后完整套件复跑全绿 |
 | Rust lib 全量 | 通过，182 passed / 0 failed / 1 ignored | 从 `src-tauri` 执行 `cargo test --lib --locked -- --test-threads=1`；ignored 为显式 Office fixture 生成器 |
-| Agent Host smoke | 通过 | `pnpm agent-host:smoke`：16 events、2 model calls、restart replay ok |
+| Agent Host smoke | 通过 | `pnpm agent-host:smoke`：22 events、3 model calls；覆盖运行中 steer、restart replay、delete |
 | Rust 格式 | 通过 | `cargo fmt --check` 退出码 0 |
 | Office 独立解析 | 通过 | 保留在 `Temp/office-acceptance/office-delivery-1aaa3a40-ae5d-444b-b673-343fda017bc3`；DOCX/XLSX/PPTX 独立读库、ZIP CRC、XML 与内容断言全过。Python 依赖安装在 `%TEMP%\omni-office-acceptance-venv`，版本见 `src-tauri/requirements-office-test.txt` |
-| 前端构建 | 通过，Vite build 20.78s | `pnpm tauri build --ci` 的 beforeBuildCommand 执行成功；有既存 stream externalized、chunk、循环依赖、动态/静态 import 警告 |
-| Windows Tauri 包 | 通过，退出码 0 | 提交 `14f23a5`：MSI 88,596,480 bytes，SHA-256 `747F62B113DC073BE73E6A899F7DE181AED0AA37FC3201F5112EB97A12F8B1E1`；NSIS 75,116,502 bytes，SHA-256 `EE011D459619E4185FDF92B49B4D4806A7D73F96578DCED7D2D2ECD47BADC490` |
-| Windows release smoke | 通过（有限） | release `omni.exe` 主窗口响应；WebView2 与 Agent Host sidecar 启动；关闭主窗口后 sidecar 不残留。未执行安装器安装和完整 UI 流程 |
+| 前端构建 | 通过，Vite build 17.89s | 当前工作树 `pnpm build` 退出码 0；有既存 stream externalized、chunk、循环依赖、动态/静态 import 警告 |
+| Windows Tauri 包（历史 `14f23a5`） | 通过，退出码 0 | MSI 88,596,480 bytes，SHA-256 `747F62B113DC073BE73E6A899F7DE181AED0AA37FC3201F5112EB97A12F8B1E1`；NSIS 75,116,502 bytes，SHA-256 `EE011D459619E4185FDF92B49B4D4806A7D73F96578DCED7D2D2ECD47BADC490` |
+| Windows Tauri 包（当前工作树） | 通过，退出码 0 | MSI 88,596,480 bytes，SHA-256 `E18A239EDDD49E338A67165C5ACD1372E7DCF9352719420A06CBA2FC0762F609`；NSIS 75,117,336 bytes，SHA-256 `AD5FB6ABFC8639C9891203FF93C5ABB9DECC349F05066A6BFE5DCF7CD7835C81` |
+| Windows release smoke | 通过（有限） | 历史 `14f23a5`：release `omni.exe` 主窗口响应；WebView2 与 Agent Host sidecar 启动；关闭主窗口后 sidecar 不残留 |
+| Windows release smoke（当前工作树） | 通过（有限） | 本次构建 PID 131400 启动后 Responding、标题 `Omni`；请求关闭后正常退出，直接子进程数为 0，复查无 `omni` / `omni-agent-host` 残留。未执行安装器安装和完整 UI 流程 |
 | macOS CI | 通过 | run `42467041924`，提交 `14f23a5`；Apple Silicon 与 Intel job 均全绿，覆盖 sidecar 构建、前端/Rust/Seatbelt 测试、DMG 构建/挂载、架构和 codesign 检查 |
 | macOS artifacts | 已上传 | artifact ID 13612512175 / 13613080484；归档 92,643,917 bytes / 约 90.2 MiB。GitHub artifact digest 见 §1 ⑦，归档 digest 不等同 DMG SHA-256 |
 | 原生 Live | 未执行 | 双屏、通知、重启迁移、继续/中断 UI、Office 原生渲染仍需逐项操作 |
+
+运行中追加输入另有定向证据：`ChatInput.test.tsx`、`AgentHostRuntime.test.ts`、`host.test.ts`、`runtime.test.ts` 共 34 用例通过。真实 sidecar smoke 在模型调用中注入 steer，确认下一次模型请求含追加内容、turn 正常完成、`session.when-idle` 返回，并继续完成重启回放与删除。
 
 工具版本：Node `v22.22.3`、pnpm `10.34.5`、Cargo/Rust `1.98.0`。
 

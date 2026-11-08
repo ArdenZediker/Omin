@@ -42,6 +42,10 @@
 
 状态仍使用 running/completed/failed/aborted。启动加载到的 running 归为 aborted，error 明确说明上次中断、外部操作结果可能未知；已确认工具输出和模型部分文字保留。运行时在开始和终态持久化，读取完成前禁止空历史覆盖；各窗口只合并自己产生的任务 ID。继续是用户在原会话发起新的聊天轮次，携带现有内容与中断提示，从模型重新规划开始，不恢复/重播旧工具数组；未知写入先查结果，新的危险操作继续经过已有确认门。禁止自动点击继续或后台重试写工具。
 
+### 1.3 运行中追加输入
+
+Agent Host 为默认运行时，回答运行期间输入框保持可编辑并可提交追加内容；停止按钮与追加按钮并存。追加只走 Host `session.steer`，在下一步模型边界进入当前 turn，不并发启动第二个 prompt。若 UI 已进入 loading 但 Host 尚未完成会话创建，最多等待 30 秒直到 `session.status.running=true`；回答已结束或会话未建立时追加失败并保留草稿。提交成功后输入框显示待处理标记，当前轮结束再按原顺序把追加用户消息写入会话历史并接在最终回答之前。Host 在本轮已消费 steer 且 inbox 为空时必须清除 `wakeRequested`，保证 `session.when-idle`、关闭和重启回放不会卡在空唤醒。
+
 | 负责人 | 独占写集 | 共享接线 |
 |---|---|---|
 | 主会话 | App.tsx、chat/types.ts、task*.ts、useChatRuntime.ts、sqliteStorage.ts、settings*.ts、窗口相关文件、Office 导出、CI、文档 | 所有共享类型、应用接线、最终集成 |
@@ -96,5 +100,8 @@
 - 2026-11-08：Agent Host 已接入真实 Omni 工具链：会话级工具目录、Node SEA sidecar、Tauri 原生工具路由、UI client-tool bridge 与原有权限确认门全部接通；`pnpm agent-host:smoke` 在真实 sidecar 上完成 16 events、2 次模型调用及重启回放。
 - 2026-11-08：提交 `14f23a5` 本地全量回归：TypeScript 0 错误、Vitest 102 文件 / 978 用例、Rust 182 passed / 1 ignored；Windows `pnpm tauri build --ci` 重新生成 MSI/NSIS，release `omni.exe` 启动 smoke 显示主窗口响应且 Agent Host sidecar 随主程序关闭退出。
 - 2026-11-08：提交 `14f23a5` 的 macOS run `42467041924` 在 Apple Silicon 与 Intel 两个 runner 全绿；CI 前置构建 sidecar，随后运行完整前端/Rust/Seatbelt 测试、DMG 构建、挂载、架构和 codesign 检查。workflow 已新增 DMG 文件名、字节数与 SHA-256 的 Step Summary 证据。
+- 2026-11-08：Agent Host 运行中追加输入闭环完成。协议、sidecar 与运行时支持 `session.steer`（含图片）；ChatInput 在生成中同时提供“追加到当前回答”和“停止”入口，成功显示待处理标记，失败保留草稿；每次 Host turn 等到 `when-idle` 后才收口，避免迟到 steer 的第二个 turn 丢失。修复 steer 已消费后 `wakeRequested` 残留导致的 `session.when-idle` 卡死。
+- 2026-11-08：追加输入验证：定向 34 用例、完整 `pnpm test` 102 文件 / 989 用例、TypeScript 与 `pnpm build` 通过；真实 sidecar smoke 完成 22 events、3 次模型调用，并验证 steer、重启回放和删除。
+- 2026-11-08：当前工作树 `pnpm tauri build --ci` 通过并生成 MSI 88,596,480 bytes（SHA-256 `E18A239EDDD49E338A67165C5ACD1372E7DCF9352719420A06CBA2FC0762F609`）与 NSIS 75,117,336 bytes（SHA-256 `AD5FB6ABFC8639C9891203FF93C5ABB9DECC349F05066A6BFE5DCF7CD7835C81`）；release `omni.exe` 启动后 Responding、窗口标题 `Omni`，关闭主窗口后进程退出且无残留子进程。完整 UI 手测仍未执行。
 - 待完成：多屏 DPI/窗口交互实机验收；Office 系统打开/定位、公式实际重算与原生渲染验收；继续/中断完整 UI 集成验收；备份迁移进程中断及真实应用重启切换。备份不涵盖外部工作区/SkillHub/pet 资源；人为脱离 Shell 的后台进程不受命令生命周期锁约束。
 - 计划评审：Beauvoir 独立复核 [SPEC-OK]；已补备份维护边界、提醒投递契约、中断继续和独立写集。用户已授权按八项范围实施。
