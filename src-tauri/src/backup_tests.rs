@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "backup_verbatim_tests.rs"]
+mod verbatim;
+
 struct Fixture(PathBuf);
 
 impl Fixture {
@@ -353,4 +356,16 @@ fn migration_failure_cleans_staging_without_publishing_target() {
             .to_string_lossy()
             .starts_with(".omni-staging-")
     }));
+}
+
+#[test]
+#[ignore = "requires an existing encrypted backup and an empty target via environment variables"]
+fn restore_existing_backup_from_environment() {
+    let backup = std::env::var_os("OMNI_RESTORE_SMOKE_ZIP")
+        .expect("OMNI_RESTORE_SMOKE_ZIP must point to an encrypted backup");
+    let target = std::env::var_os("OMNI_RESTORE_SMOKE_TARGET")
+        .expect("OMNI_RESTORE_SMOKE_TARGET must point to an empty directory");
+    let secret = std::env::var("OMNI_RESTORE_SMOKE_SECRET")
+        .expect("OMNI_RESTORE_SMOKE_SECRET must contain the backup password");
+    restore_backup(Path::new(&backup), Path::new(&target), Some(&secret)).unwrap();
 }

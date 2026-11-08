@@ -310,14 +310,18 @@ pub(crate) fn import_data_backup(
         return Err(reason);
     }
     let current_root = storage_paths::resolve_data_root(&app)?;
-    let target = backup::validate_new_target(&current_root, target)?;
-    storage_paths::ensure_writable(target.parent().ok_or("恢复目标缺少父目录")?)?;
+    let target = backup::validate_new_target(&current_root, target)
+        .map_err(|err| format!("恢复目标校验失败：{err}"))?;
+    storage_paths::ensure_writable(target.parent().ok_or("恢复目标缺少父目录")?)
+        .map_err(|err| format!("恢复目标父目录不可写：{err}"))?;
     let manifest = backup::restore_backup(
         std::path::Path::new(&source_path),
         &target,
         secret.as_deref(),
-    )?;
-    storage_paths::commit_custom_root_config(&app, &target)?;
+    )
+    .map_err(|err| format!("恢复备份失败：{err}"))?;
+    storage_paths::commit_custom_root_config(&app, &target)
+        .map_err(|err| format!("提交恢复后的数据根失败：{err}"))?;
     // Only pin after the new root is durably configured. If the atomic config
     // replacement fails, the restore must leave both process behavior and the
     // previous configured root untouched.
@@ -325,26 +329,12 @@ pub(crate) fn import_data_backup(
     Ok(manifest)
 }
 
-/// 重启应用：派生一个新的自身进程后退出当前进程。
+/// 重启应用：交由 Tauri 先释放单实例锁和插件状态，再启动新进程。
 /// 恢复备份后数据根已切换，但运行中的进程仍持有旧数据库句柄，必须重启才能加载新数据。
 #[tauri::command]
 pub(crate) fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|err| err.to_string())?;
-    #[cfg(windows)]
-    {
-        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP：脱离当前进程组，避免被父进程退出连带终止。
-        use std::os::windows::process::CommandExt;
-        std::process::Command::new(&exe)
-            .creation_flags(0x00000008 | 0x00000200)
-            .spawn()
-            .map_err(|err| err.to_string())?;
-    }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new(&exe)
-            .spawn()
-            .map_err(|err| err.to_string())?;
-    }
-    app.exit(0);
-    Ok(())
+    // 不要手动先 spawn 再 app.exit：单实例插件仍由旧进程持锁时，新进程会被
+    // 判定为第二次启动并立即退出，随后旧进程也退出，表现为“重启后应用消失”。
+    // AppHandle::restart 会先 cleanup_before_exit，再启动替身进程。
+    app.restart()
 }

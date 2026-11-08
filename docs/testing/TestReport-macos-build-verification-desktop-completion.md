@@ -136,18 +136,20 @@ GitHub Actions：打开待验收提交对应的 macOS build workflow run
 | 依赖锁定 | 通过 | `pnpm install --frozen-lockfile` 退出码 0；lockfile SHA-256 前后均为 `7E82416C4A8A5260D0D4A8CF2B0E529A1254E4980BA4659DA436FB5B46D92213` |
 | TypeScript | 通过，退出码 0 | 当前工作树执行 `pnpm exec tsc --noEmit` |
 | 前端全量 | 通过，102 文件 / 989 用例 | 当前工作树单次完整 `pnpm test`；首次全量出现 1 个无关焦点断言偶发失败，单文件复跑 12/12 通过后完整套件复跑全绿 |
-| Rust lib 全量 | 通过，182 passed / 0 failed / 1 ignored | 从 `src-tauri` 执行 `cargo test --lib --locked -- --test-threads=1`；ignored 为显式 Office fixture 生成器 |
+| Rust lib 全量 | 通过，185 passed / 0 failed / 2 ignored | 从 `src-tauri` 执行 `cargo test --lib --locked -- --test-threads=1`；ignored 为显式 Office fixture 生成器与外部备份恢复 smoke |
 | Agent Host smoke | 通过 | `pnpm agent-host:smoke`：22 events、3 model calls；覆盖运行中 steer、restart replay、delete |
 | Rust 格式 | 通过 | `cargo fmt --check` 退出码 0 |
 | Office 独立解析 | 通过 | 保留在 `Temp/office-acceptance/office-delivery-1aaa3a40-ae5d-444b-b673-343fda017bc3`；DOCX/XLSX/PPTX 独立读库、ZIP CRC、XML 与内容断言全过。Python 依赖安装在 `%TEMP%\omni-office-acceptance-venv`，版本见 `src-tauri/requirements-office-test.txt` |
 | 前端构建 | 通过，Vite build 17.89s | 当前工作树 `pnpm build` 退出码 0；有既存 stream externalized、chunk、循环依赖、动态/静态 import 警告 |
 | Windows Tauri 包（历史 `14f23a5`） | 通过，退出码 0 | MSI 88,596,480 bytes，SHA-256 `747F62B113DC073BE73E6A899F7DE181AED0AA37FC3201F5112EB97A12F8B1E1`；NSIS 75,116,502 bytes，SHA-256 `EE011D459619E4185FDF92B49B4D4806A7D73F96578DCED7D2D2ECD47BADC490` |
-| Windows Tauri 包（当前工作树） | 通过，退出码 0 | MSI 88,596,480 bytes，SHA-256 `E18A239EDDD49E338A67165C5ACD1372E7DCF9352719420A06CBA2FC0762F609`；NSIS 75,117,336 bytes，SHA-256 `AD5FB6ABFC8639C9891203FF93C5ABB9DECC349F05066A6BFE5DCF7CD7835C81` |
+| Windows Tauri 包（当前工作树） | 通过，退出码 0 | MSI 89,640,960 bytes，SHA-256 `06A714AC01E7270FDE1C48573E0D5C0953ED85EB9721FB5740A23A08A71051E2`；NSIS 75,055,143 bytes，SHA-256 `4F532B733D2222CFDB176138F77367DD56A52FD9DE9AB206F52263CAF373E746` |
 | Windows release smoke | 通过（有限） | 历史 `14f23a5`：release `omni.exe` 主窗口响应；WebView2 与 Agent Host sidecar 启动；关闭主窗口后 sidecar 不残留 |
 | Windows release smoke（当前工作树） | 通过（有限） | 本次构建 PID 131400 启动后 Responding、标题 `Omni`；请求关闭后正常退出，直接子进程数为 0，复查无 `omni` / `omni-agent-host` 残留。未执行安装器安装和完整 UI 流程 |
+| Windows 单实例重启交接 | 通过（当前工作树） | 修复先 spawn 后退出的单实例竞态，改用 `AppHandle::restart()`。release 经 WebView2 CDP 调用真实 `restart_app`：PID 80860 退出，PID 130340 启动且 Responding，主窗和紧凑窗重新加载；测试后已清理目标进程。该结果只证明进程重启交接，不证明迁移数据后的真实读取 |
+| Windows 备份恢复 / 数据根切换 | 通过（当前工作树） | 修复 verbatim 路径导致的 os error 1 后，release 经 CDP 调用真实 `import_data_backup` 恢复加密备份成功；目标目录含 SQLite，`get_data_root_info` 返回新根和 `pendingRestart=true`。配置随后写回 `D:\ALL_Software_Data\Omni`，重启后读取无 verbatim 前缀、可写且无 fallback。测试资产已清理 |
 | macOS CI | 通过 | run `42467041924`，提交 `14f23a5`；Apple Silicon 与 Intel job 均全绿，覆盖 sidecar 构建、前端/Rust/Seatbelt 测试、DMG 构建/挂载、架构和 codesign 检查 |
 | macOS artifacts | 已上传 | artifact ID 13612512175 / 13613080484；归档 92,643,917 bytes / 约 90.2 MiB。GitHub artifact digest 见 §1 ⑦，归档 digest 不等同 DMG SHA-256 |
-| 原生 Live | 未执行 | 双屏、通知、重启迁移、继续/中断 UI、Office 原生渲染仍需逐项操作 |
+| 原生 Live | 未执行 | 双屏、通知、迁移后数据读取、继续/中断 UI、Office 原生渲染仍需逐项操作 |
 
 运行中追加输入另有定向证据：`ChatInput.test.tsx`、`AgentHostRuntime.test.ts`、`host.test.ts`、`runtime.test.ts` 共 34 用例通过。真实 sidecar smoke 在模型调用中注入 steer，确认下一次模型请求含追加内容、turn 正常完成、`session.when-idle` 返回，并继续完成重启回放与删除。
 

@@ -111,7 +111,14 @@ pub(crate) fn path_risk(path: &Path) -> Option<String> {
 
 /// 可写性探针：建目录 → 写文件 → 读回 → 删除。
 pub(crate) fn ensure_writable(dir: &Path) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(|err| format!("无法创建目录：{}", err))?;
+    match fs::metadata(dir) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Err("目标路径不是目录".to_string()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(dir).map_err(|err| format!("无法创建目录：{}", err))?;
+        }
+        Err(err) => return Err(format!("无法读取目录：{}", err)),
+    }
     let probe = dir.join(format!(".omni-write-probe-{}", uuid::Uuid::new_v4()));
     use std::io::Write;
     let mut file = fs::OpenOptions::new()
@@ -475,6 +482,26 @@ mod tests {
         assert!(path_risk(Path::new(r"\\?\C:\OmniData")).is_none());
         assert!(path_risk(Path::new(r"\\?\UNC\server\share")).is_some());
         assert!(path_risk(Path::new(r"\\server\share")).is_some());
+    }
+
+    #[test]
+    fn ensure_writable_accepts_existing_directory_without_recreating_it() {
+        let dir = std::env::temp_dir().join(format!("omni-writable-dir-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        ensure_writable(&dir).unwrap();
+        assert!(dir.is_dir());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ensure_writable_rejects_existing_file_without_changing_it() {
+        let dir = std::env::temp_dir().join(format!("omni-writable-file-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        let file = dir.join("not-a-directory");
+        fs::write(&file, b"keep").unwrap();
+        assert_eq!(ensure_writable(&file).unwrap_err(), "目标路径不是目录");
+        assert_eq!(fs::read(&file).unwrap(), b"keep");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

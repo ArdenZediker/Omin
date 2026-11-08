@@ -72,7 +72,8 @@ fn is_link(meta: &fs::Metadata) -> bool {
 }
 
 fn reject_link(path: &Path) -> Result<(), String> {
-    let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    let meta = fs::symlink_metadata(path)
+        .map_err(|e| format!("无法读取路径元数据 {}：{e}", path.display()))?;
     if is_link(&meta) {
         return Err(format!("不允许符号链接或目录联接：{}", path.display()));
     }
@@ -92,7 +93,29 @@ fn is_system_root_alias(_path: &Path) -> bool {
     false
 }
 
+/// Windows canonical paths keep a `\\?\` verbatim prefix. Rust can read them,
+/// but ordinary Windows path APIs reject the per-component form (especially
+/// the drive prefix `\\?\D:`), so normalize it before strict validation.
+#[cfg(windows)]
+fn normalize_windows_verbatim(path: &Path) -> PathBuf {
+    let text = path.as_os_str().to_string_lossy();
+    let normalized = if let Some(unc_path) = text.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc_path}")
+    } else if let Some(dos_path) = text.strip_prefix(r"\\?\") {
+        dos_path.to_owned()
+    } else {
+        text.to_string()
+    };
+    PathBuf::from(normalized)
+}
+
+#[cfg(not(windows))]
+fn normalize_windows_verbatim(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
 pub(crate) fn checked_path(path: &Path) -> Result<PathBuf, String> {
+    let path = &normalize_windows_verbatim(path);
     if !path.is_absolute() {
         return Err("必须使用绝对路径".into());
     }
@@ -108,14 +131,18 @@ pub(crate) fn checked_path(path: &Path) -> Result<PathBuf, String> {
             }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(format!("无法读取路径元数据 {}：{e}", current.display())),
         }
     }
     if path.exists() {
-        return fs::canonicalize(path).map_err(|e| e.to_string());
+        return fs::canonicalize(path)
+            .map(|result| normalize_windows_verbatim(&result))
+            .map_err(|e| format!("无法规范化路径 {}：{e}", path.display()));
     }
     let parent = path.parent().ok_or("目标缺少父目录")?;
-    let parent = fs::canonicalize(parent).map_err(|e| format!("目标父目录必须存在：{e}"))?;
+    let parent = fs::canonicalize(parent)
+        .map(|result| normalize_windows_verbatim(&result))
+        .map_err(|e| format!("目标父目录必须存在：{e}"))?;
     Ok(parent.join(path.file_name().ok_or("目标不能是磁盘根目录")?))
 }
 
@@ -194,7 +221,8 @@ fn sanitize_entry(name: &str) -> Result<PathBuf, String> {
 }
 fn collect_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
     reject_link(dir)?;
-    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+    for entry in fs::read_dir(dir).map_err(|e| format!("无法枚举目录 {}：{e}", dir.display()))?
+    {
         let path = entry.map_err(|e| e.to_string())?.path();
         reject_link(&path)?;
         let name = path
@@ -214,12 +242,15 @@ fn collect_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<()
     Ok(())
 }
 fn digest(path: &Path) -> Result<FileStamp, String> {
-    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("无法读取待校验文件 {}：{e}", path.display()))?;
     let mut hash = Sha256::new();
     let mut size = 0;
     let mut buffer = [0u8; 65536];
     loop {
-        let read = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("无法校验文件 {}：{e}", path.display()))?;
         if read == 0 {
             break;
         }
@@ -443,12 +474,12 @@ fn validate_data(
     .map_err(|e| format!("无法打开快照数据库：{e}"))?;
     let mut check = connection
         .prepare("PRAGMA integrity_check")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("无法准备数据库完整性检查：{e}"))?;
     let checks = check
         .query_map([], |r| r.get::<_, String>(0))
-        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("无法执行数据库完整性检查：{e}"))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("无法读取数据库完整性检查结果：{e}"))?;
     if checks != ["ok"] {
         return Err(format!("数据库完整性校验失败：{}", checks.join("; ")));
     }
@@ -563,7 +594,8 @@ pub(crate) fn publish_restore(staging: &Path, target: &Path) -> Result<(), Strin
     require_empty(target).map_err(|e| format!("恢复目标不可用：{e}"))?;
     let existed = target.exists();
     if existed {
-        fs::remove_dir(target).map_err(|e| e.to_string())?;
+        fs::remove_dir(target)
+            .map_err(|e| format!("无法移除空恢复目标 {}：{e}", target.display()))?;
     }
     if let Err(error) = fs::rename(staging, target) {
         if existed {
@@ -625,7 +657,9 @@ pub(crate) fn restore_backup(
     }
     let mut seen = HashSet::new();
     for i in 0..archive.len() {
-        let entry = archive.by_index_raw(i).map_err(|e| e.to_string())?;
+        let entry = archive
+            .by_index_raw(i)
+            .map_err(|e| format!("读取备份条目索引 {i} 失败：{e}"))?;
         let name = entry.name();
         let relative = sanitize_entry(name)?;
         if !seen.insert(name.trim_end_matches('/').to_lowercase()) {
@@ -663,17 +697,21 @@ pub(crate) fn restore_backup(
         }
         let output = staging.path.join(sanitize_entry(&name)?);
         if reader.is_dir() {
-            fs::create_dir_all(&output).map_err(|e| e.to_string())?;
+            fs::create_dir_all(&output)
+                .map_err(|e| format!("无法创建恢复目录 {}：{e}", output.display()))?;
             continue;
         }
-        fs::create_dir_all(output.parent().ok_or("条目缺少父目录")?).map_err(|e| e.to_string())?;
+        let parent = output.parent().ok_or("条目缺少父目录")?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("无法创建恢复目录 {}：{e}", parent.display()))?;
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&output)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("无法创建恢复文件 {}：{e}", output.display()))?;
         std::io::copy(&mut reader, &mut file).map_err(|e| format!("备份条目损坏：{e}"))?;
-        file.sync_all().map_err(|e| e.to_string())?;
+        file.sync_all()
+            .map_err(|e| format!("恢复文件同步失败 {}：{e}", output.display()))?;
         stamps.insert(name, digest(&output)?);
     }
     if manifest.format_version >= 2 && stamps != manifest.files {

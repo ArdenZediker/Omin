@@ -12,7 +12,7 @@
 | 这是什么 | Tauri 2 + React 19 + Rust 的本地优先 AI 桌面工作台，数据位于本机 SQLite、会话 JSONL 与文件目录 |
 | 现在能跑吗 | Windows：能（dev / build / 打包都验证过） |
 | 能打 Mac 包吗 | **能由 CI 构建 Apple Silicon / Intel DMG**；提交 `14f23a5` 的双架构 run `42467041924` 已通过挂载、架构与签名检查 |
-| 测试能跑吗 | 能：2026-11-08 当前工作树前端 102 文件、989 用例通过，Rust 182 passed、1 项忽略；真实 Agent Host smoke 覆盖 steer 并通过，见 §8.4 |
+| 测试能跑吗 | 能：2026-11-08 当前工作树前端 102 文件、989 用例通过，Rust 185 passed、2 项忽略；真实 Agent Host smoke 覆盖 steer 并通过，见 §8.4 |
 | 工作区干净吗 | 代码与文档已按主题提交，`main` 未改动；后续改动先看 §7 |
 | 最该先做什么 | 完成计划中无法由 CI 代替的原生实机验收；公开分发前再补 Apple Developer ID 签名、公证与 Windows 代码签名 |
 
@@ -261,7 +261,7 @@ macOS CI 在同一提交运行完整前端测试、Rust 库测试与 Seatbelt �
 
 ### 6.8 🟡 桌面版收尾：自动化与打包已通过，原生 Live 项仍待人工
 
-任务历史在 `src/chat/taskStorage.ts` 按窗口分别落盘，启动时把遗留 running 任务归为 aborted；执行器保存开始/终态及失败或取消前已流出的正文、思考和工具步骤。调度只由主窗口在自动化数据 hydration 成功后启动，采用持久化 claim，通知走 Tauri notification 插件，失败在主窗口显示并提供手动重试。备份/恢复维护门覆盖存储、知识处理、应用发起的文件编辑/撤销、附件快照、Office 导出与 Shell 命令；并发测试验证 SQLite 与 JSONL 在途写入排空后才开始快照。通过 Shell 脱离的后台进程不受命令生命周期锁约束，不承诺其外部写入与备份原子一致。普通迁移和恢复默认位置也走同一完整快照流程，目标必须为空、旧目录保留；配置提交成功后当前进程继续使用旧数据根，重启才切换。默认位置已有旧文件时拒绝覆盖，需先人工处理。配置文件原子替换失败已通过真实临时文件故障注入，证明旧配置字节保留与暂存文件清理；真实应用重启及进程中断仍未验收。
+任务历史在 `src/chat/taskStorage.ts` 按窗口分别落盘，启动时把遗留 running 任务归为 aborted；执行器保存开始/终态及失败或取消前已流出的正文、思考和工具步骤。调度只由主窗口在自动化数据 hydration 成功后启动，采用持久化 claim，通知走 Tauri notification 插件，失败在主窗口显示并提供手动重试。备份/恢复维护门覆盖存储、知识处理、应用发起的文件编辑/撤销、附件快照、Office 导出与 Shell 命令；并发测试验证 SQLite 与 JSONL 在途写入排空后才开始快照。通过 Shell 脱离的后台进程不受命令生命周期锁约束，不承诺其外部写入与备份原子一致。普通迁移和恢复默认位置也走同一完整快照流程，目标必须为空、旧目录保留；配置提交成功后当前进程继续使用旧数据根，重启才切换。默认位置已有旧文件时拒绝覆盖，需先人工处理。配置文件原子替换失败已通过真实临时文件故障注入，证明旧配置字节保留与暂存文件清理。应用内重启已改用 `AppHandle::restart()`，Windows release 实测旧进程退出、新进程正常接管；迁移后的真实数据读取及运行中进程中断仍未验收。
 
 Office 测试 fixture 已用三个独立 Python 阅读器解析通过；这不等于 Word/Excel/PowerPoint 原生打开与渲染已验收。通知插件曾因前端 2.7.0 / Rust 2.4.0 版本不匹配被 Tauri CLI 拦截；两侧现精确锁定 2.4.0。发送通知已改为 await 原生命令，测试拒绝权限与 native 命令错误可向调度层传播。提交 `14f23a5` 已重新生成 Windows MSI/NSIS，并在当前提交完成 macOS Apple Silicon / Intel 全链路验证。
 
@@ -340,7 +340,7 @@ Omni client tools 经 UI bridge 回到现有权限确认门。`pnpm tauri dev` �
 | `pnpm build` | ✅ 随 `pnpm tauri build --ci` 的 `beforeBuildCommand` 通过；仅有既有 chunk/import 体积警告 |
 | `cargo test --lib` | ✅ 2026-11-08 提交 `14f23a5`：182 passed / 0 failed / 1 ignored |
 | `pnpm agent-host:smoke` | ✅ 真实 sidecar：22 events、3 model calls、steer + restart replay + delete ok |
-| `pnpm tauri build --ci` | ✅ 当前工作树生成 Windows MSI（88,596,480 bytes）与 NSIS（75,117,336 bytes）；SHA-256 见 TestReport §3 |
+| `pnpm tauri build --ci` | ✅ 当前工作树生成 Windows MSI（88,592,384 bytes）与 NSIS（75,093,350 bytes）；SHA-256 见 TestReport §3 |
 | Windows release 启动 smoke | ✅ 当前工作树 `omni.exe` 启动后 Responding、标题 `Omni`；关闭后正常退出且无 `omni` / `omni-agent-host` 残留。安装器实装与完整 UI 交互仍未人工验收 |
 | `pnpm test` | ✅ 2026-11-08 当前工作树：102 文件 / 989 用例；限定只扫描 Omni `src`，不会误跑 `workdsh/` |
 | `cargo fmt --check` | ✅ 2026-11-08 当前工作区通过 |
