@@ -855,18 +855,16 @@ export function useCompactWindowController({
       if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
         return;
       }
-      const scaleFactor = await appWindow.scaleFactor();
+      const [scaleFactor, nativePosition, nativeSize] = await Promise.all([
+        appWindow.scaleFactor(),
+        appWindow.outerPosition(),
+        appWindow.outerSize(),
+      ]);
       if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
         return;
       }
-      const currentPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
-      if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
-        return;
-      }
-      const currentSize = (await appWindow.outerSize()).toLogical(scaleFactor);
-      if (cancelled || isCharacterDraggingRef.current || nativeCompactDragActiveRef.current) {
-        return;
-      }
+      const currentPosition = nativePosition.toLogical(scaleFactor);
+      const currentSize = nativeSize.toLogical(scaleFactor);
       suppressCompactBlur();
       if (compactAppearance === "pet") {
         const hasSizeChanged =

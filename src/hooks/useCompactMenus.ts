@@ -1,7 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import type * as React from "react";
 import { currentMonitor, cursorPosition, monitorFromPoint } from "@tauri-apps/api/window";
-import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
+import { LogicalSize, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
 import type { Message } from "../adapters/types";
@@ -112,6 +112,12 @@ type UseCompactMenusArgs = {
   setIsCharacterDragging: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
+type CompactWindowMetrics = {
+  scaleFactor: number;
+  position: PhysicalPosition;
+  size: PhysicalSize;
+};
+
 /**
  * 紧凑窗口菜单/缩放/操作子系统：菜单定位、右键菜单、缩放手势、查询提交、外部操作入口。
  */
@@ -175,21 +181,32 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
     setIsCharacterDragging,
   } = args;
 
+  const readCompactWindowMetrics = useCallback(async (): Promise<CompactWindowMetrics> => {
+    const [scaleFactor, position, size] = await Promise.all([
+      appWindow.scaleFactor(),
+      appWindow.outerPosition(),
+      appWindow.outerSize(),
+    ]);
+    return { scaleFactor, position, size };
+  }, []);
+
   const resolveCompactMenuSides = useCallback(async (
     anchorX?: number,
     anchorY?: number,
     viewportOverride?: { width: number; height: number },
     anchorXOverride?: number,
-    petCompactSize?: { width: number; height: number }
+    petCompactSize?: { width: number; height: number },
+    metrics?: CompactWindowMetrics
   ) => {
     if (!isCompactWindow) {
       return { menuSide: "right" as const, submenuSide: "right" as const };
     }
 
-    const scaleFactor = await appWindow.scaleFactor();
-    const currentPosition = await appWindow.outerPosition();
-    const currentSize = await appWindow.outerSize();
-    const pointer = Number.isFinite(anchorX) && Number.isFinite(anchorY) ? null : await cursorPosition().catch(() => null);
+    const { scaleFactor, position: currentPosition, size: currentSize } =
+      metrics ?? await readCompactWindowMetrics();
+    const pointer = Number.isFinite(anchorX) && Number.isFinite(anchorY)
+      ? null
+      : await cursorPosition().catch(() => null);
     const anchorPhysicalX = Number.isFinite(anchorX)
       ? currentPosition.x + Number(anchorX) * scaleFactor
       : pointer
@@ -229,7 +246,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       requiredViewportWidth: hasMeasuredMenuViewport ? undefined : getCompactMenuViewportMinWidth(),
       allowSplitSides: hasMeasuredMenuViewport,
     });
-  }, [compactViewportSize, isCompactWindow]);
+  }, [compactViewportSize, isCompactWindow, readCompactWindowMetrics]);
 
   const resolveCompactMenuPosition = useCallback(
     async (
@@ -237,15 +254,36 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       anchorY: number,
       side: "left" | "right",
       submenuSide: "left" | "right",
-      viewportOverride?: { width: number; height: number }
+      viewportOverride?: { width: number; height: number },
+      metrics?: CompactWindowMetrics
     ) => {
-      const scaleFactor = await appWindow.scaleFactor();
-      const windowSize = (await appWindow.outerSize()).toLogical(scaleFactor);
-      const viewportWidth = viewportOverride?.width ?? compactViewportSize?.width ?? windowSize.width;
-      const viewportHeight = viewportOverride?.height ?? compactViewportSize?.height ?? windowSize.height;
-      return resolveCompactMenuPositionFromViewport(anchorX, anchorY, side, submenuSide, viewportWidth, viewportHeight);
+      let viewportWidth = viewportOverride?.width ?? compactViewportSize?.width;
+      let viewportHeight = viewportOverride?.height ?? compactViewportSize?.height;
+      if (
+        typeof viewportWidth !== "number" ||
+        !Number.isFinite(viewportWidth) ||
+        typeof viewportHeight !== "number" ||
+        !Number.isFinite(viewportHeight)
+      ) {
+        const { scaleFactor, size } = metrics ?? await readCompactWindowMetrics();
+        const windowSize = size.toLogical(scaleFactor);
+        if (typeof viewportWidth !== "number" || !Number.isFinite(viewportWidth)) {
+          viewportWidth = windowSize.width;
+        }
+        if (typeof viewportHeight !== "number" || !Number.isFinite(viewportHeight)) {
+          viewportHeight = windowSize.height;
+        }
+      }
+      return resolveCompactMenuPositionFromViewport(
+        anchorX,
+        anchorY,
+        side,
+        submenuSide,
+        viewportWidth,
+        viewportHeight
+      );
     },
-    [compactViewportSize]
+    [compactViewportSize, readCompactWindowMetrics]
   );
 
   const handleOpenSettingsFromCompact = useCallback(async () => {
@@ -526,14 +564,24 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       compactMenuCloseTimerRef.current = null;
     }
     try {
-      await raiseCompactWindow();
       if (isCompactQueryOpen || nativeCompactDragActiveRef.current) {
         return;
       }
-      const scaleFactor = await appWindow.scaleFactor();
-      const windowPosition = (await appWindow.outerPosition()).toLogical(scaleFactor);
-      const fallbackSize = await appWindow.outerSize().then((size) => size.toLogical(scaleFactor));
-      const pointer = await cursorPosition().catch(() => null);
+      if (compactAppearance !== "pet") {
+        await raiseCompactWindow();
+      }
+      if (nativeCompactDragActiveRef.current) {
+        return;
+      }
+      const needsPointer =
+        !Number.isFinite(anchorClientX) || !Number.isFinite(anchorClientY);
+      const [metrics, pointer] = await Promise.all([
+        readCompactWindowMetrics(),
+        needsPointer ? cursorPosition().catch(() => null) : Promise.resolve(null),
+      ]);
+      const { scaleFactor, position: nativeWindowPosition, size: nativeWindowSize } = metrics;
+      const windowPosition = nativeWindowPosition.toLogical(scaleFactor);
+      const fallbackSize = nativeWindowSize.toLogical(scaleFactor);
       const anchorX =
         typeof anchorClientX === "number"
           ? anchorClientX
@@ -547,8 +595,6 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
             ? pointer.y / scaleFactor - windowPosition.y
             : Math.max(0, fallbackSize.height / 2);
       if (compactAppearance !== "pet") {
-        const nativeWindowPosition = await appWindow.outerPosition();
-        const nativeWindowSize = await appWindow.outerSize();
         const anchorPhysical = {
           x: Math.round(nativeWindowPosition.x + anchorX * scaleFactor),
           y: Math.round(nativeWindowPosition.y + anchorY * scaleFactor),
@@ -583,7 +629,14 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
         compactAppearance === "pet"
           ? getPetCompactMenuViewport(compactSize)
           : null;
-      const { menuSide, submenuSide } = await resolveCompactMenuSides(anchorX, anchorY, petMenuViewport ?? undefined, undefined, compactSize);
+      const { menuSide, submenuSide } = await resolveCompactMenuSides(
+        anchorX,
+        anchorY,
+        petMenuViewport ?? undefined,
+        undefined,
+        compactSize,
+        metrics
+      );
       if (nativeCompactDragActiveRef.current) {
         return;
       }
@@ -593,7 +646,14 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       const menuAnchorY = petMenuViewport
         ? resolvePetMenuAnchorY(compactSize, petMenuViewport, anchorY, { menuSide, submenuSide })
         : anchorY;
-      const menuPosition = await resolveCompactMenuPosition(menuAnchorX, menuAnchorY, menuSide, submenuSide, petMenuViewport ?? undefined);
+      const menuPosition = await resolveCompactMenuPosition(
+        menuAnchorX,
+        menuAnchorY,
+        menuSide,
+        submenuSide,
+        petMenuViewport ?? undefined,
+        metrics
+      );
       if (nativeCompactDragActiveRef.current) {
         return;
       }
@@ -615,6 +675,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
     characterScale,
     compactAppearance,
     compactSize,
+    readCompactWindowMetrics,
     resolveCompactMenuSides,
     resolveCompactMenuPosition,
     isCompactMenuOpen,
@@ -647,6 +708,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       clearPendingDragTimer(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
 
+      const metrics = isCompactWindow ? await readCompactWindowMetrics() : undefined;
       const petMenuViewport =
         compactAppearance === "pet"
           ? getPetCompactMenuViewport(compactSize)
@@ -656,7 +718,8 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
         event.clientY,
         petMenuViewport ?? undefined,
         undefined,
-        compactSize
+        compactSize,
+        metrics
       );
       const menuAnchorX = petMenuViewport
         ? resolvePetMenuAnchorX(compactSize, petMenuViewport, { menuSide, submenuSide })
@@ -669,7 +732,8 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
         menuAnchorY,
         menuSide,
         submenuSide,
-        petMenuViewport ?? undefined
+        petMenuViewport ?? undefined,
+        metrics
       );
 
       setCompactMenuSide(menuSide);
@@ -682,6 +746,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
     },
     [
       resolveCompactMenuSides,
+      readCompactWindowMetrics,
       suppressCompactBlur,
       setCharacterMenuPosition,
       setIsCompactAppearanceOpen,
@@ -694,6 +759,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       resolveCompactMenuPosition,
       compactAppearance,
       compactSize,
+      isCompactWindow,
     ]
   );
 
