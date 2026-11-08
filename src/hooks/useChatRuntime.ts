@@ -867,7 +867,14 @@ export function useChatRuntime({
         pendingArtifactsRef.current = [];
         const finalToolResults = taskResult.finalResult.toolCallResults;
         const finalSteps = taskResult.finalResult.steps;
-        const turnUsage = createTurnUsage(taskResult.finalResult);
+        const turnDurationMs = taskResult.plan?.createdAt
+          ? Math.max(1_000, Date.now() - taskResult.plan.createdAt)
+          : undefined;
+        const turnUsage = createTurnUsage(
+          turnDurationMs
+            ? { ...taskResult.finalResult, turnDurationMs }
+            : taskResult.finalResult,
+        );
         setConversationMessagesForSession(sessionId, [
           ...conversationMessages,
           {

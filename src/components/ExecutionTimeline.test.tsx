@@ -323,14 +323,23 @@ describe("ExecutionTimeline · 单一滚动容器下的「超长内容默认收�
     expect(container.querySelector(".exec-card__pre")!.textContent).toContain("nothing to commit");
   });
 
-  it("推理段：流式期间自动展开全文，流式结束后自动收起为一行预览", () => {
+  it("思考行：收起时显示预览，点击后展开完整 Markdown", () => {
     const steps: ChatStep[] = [{ type: "reasoning", text: "第一行推理\n第二行推理" }];
-    const { container, rerender } = render(<ExecutionTimeline steps={steps} isStreaming />);
-    expect(container.querySelector(".exec-seg__text")!.textContent).toContain("第二行推理");
-    expect(container.querySelector(".exec-seg__preview")).toBeNull();
-
-    rerender(<ExecutionTimeline steps={steps} />);
+    const { container } = render(<ExecutionTimeline steps={steps} isStreaming />);
     expect(container.querySelector(".exec-seg__text")).toBeNull();
-    expect(container.querySelector(".exec-seg__preview")!.textContent).toBe("第一行推理");
+    expect(container.querySelector(".exec-seg__preview")!.textContent).toContain("第一行推理");
+
+    fireEvent.click(container.querySelector(".exec-seg__toggle")!);
+    expect(container.querySelector(".exec-seg__text")!.textContent).toContain("第一行推理");
+    expect(container.querySelector(".exec-seg__text")!.textContent).toContain("第二行推理");
+  });
+
+  it("思考行：流式预览跟随最新段落，并移除 Markdown 加粗标记", () => {
+    const steps: ChatStep[] = [
+      { type: "reasoning", text: "**先分析需求**\n\n**再看看当前实现**" },
+    ];
+    const { container } = render(<ExecutionTimeline steps={steps} isStreaming />);
+    expect(container.querySelector(".exec-seg__preview")!.textContent).toBe("再看看当前实现");
+    expect(container.querySelector(".exec-seg__preview")!.textContent).not.toContain("**");
   });
 });

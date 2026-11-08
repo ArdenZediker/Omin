@@ -141,6 +141,8 @@ export interface ChatTurnUsage {
   generationDurationMs?: number;
   /** End-to-end model request wall time, including TTFT and decode. */
   modelDurationMs?: number;
+  /** End-to-end Turn wall time, including model generation and tool execution gaps. */
+  turnDurationMs?: number;
   /** Summed time from request start to the first streamed token. */
   ttftDurationMs?: number;
   /** Number of model requests that produced a measurable TTFT sample. */

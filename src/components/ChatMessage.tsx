@@ -443,12 +443,13 @@ export default function ChatMessage({
         </div>
       ) : (
         <div className="message-project max-w-[95%] text-sm markdown-body">
-          {/* 思考块：始终展示，确保 UI 元素可见；无内容时显示「未触发深度推理」提示 */}
-          <ThinkingBlock
+          {/* DSH 式过程折叠：思考与工具执行合并到一条过程记录，最终回答单独留在下方。 */}
+          <ProcessBlock
             reasoning={message.reasoning}
             toolCallResults={message.toolCallResults}
             steps={message.steps}
             isStreaming={isStreaming}
+            turnDurationMs={message.turnUsage?.turnDurationMs ?? message.turnUsage?.modelDurationMs}
             onOpenFileLocation={onOpenFileLocation}
           />
           <div className={isStreaming && message.content.trim() ? "cursor-blink" : ""}>
@@ -581,14 +582,19 @@ function ThinkingIndicator() {
 // 工具图标 / 动作标签映射已迁移至 src/chat/toolActionMap.ts（getToolActionMeta 等）。
 // 执行时间线组件已抽取至 src/components/ExecutionTimeline.tsx（聊天消息与任务面板共用）。
 
-/** 思考过程折叠块：始终展示（WorkBuddy 风格）。空内容时显示「未触发深度推理」提示，
- * 让用户在任何回答下都能看到 UI 元素。优先按 `steps` 按轮交错渲染（WorkBuddy 式
- * 「推理…调用工具…推理…」）；缺失时回落到 `reasoning + toolCallResults` 固定顺序。 */
-function ThinkingBlock({
+/**
+ * DSH 式过程折叠块。
+ *
+ * 思考与工具执行属于同一个 Turn Process：收起时只显示“执行中 / 已完成，用时 N”；
+ * 展开后按 steps 的原始顺序交错呈现“思考 → 工具 → 思考 → 工具”，最终回答始终在
+ * 本组件之外。无过程内容时不占用聊天区。
+ */
+function ProcessBlock({
   reasoning,
   toolCallResults,
   steps,
   isStreaming,
+  turnDurationMs,
   forceExpandSignal,
   onOpenFileLocation,
 }: {
@@ -596,33 +602,25 @@ function ThinkingBlock({
   toolCallResults?: ChatToolCallResult[];
   steps?: ChatStep[];
   isStreaming?: boolean;
+  turnDurationMs?: number;
   /** 自增信号：变化时强制展开时间线（供「查看所有变更」按钮触发） */
   forceExpandSignal?: number;
   /** 点击 /search_files 命中行：在产物面板打开文件并定位行号 */
   onOpenFileLocation?: (path: string, line: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  /** 独立「执行步骤」面板的折叠状态（与「深度思考」面板并列）。 */
-  const [execExpanded, setExecExpanded] = useState(false);
-  /** 各自面板被用户手动点过折叠按钮后置位：本轮结束前不再被自动展开/折叠覆盖 */
-  const reasoningUserToggledRef = useRef(false);
-  const execUserToggledRef = useRef(false);
+  /** 用户手动切换过后，本轮结束时不自动覆盖其选择。 */
+  const userToggledRef = useRef(false);
   const wasStreamingRef = useRef(false);
 
-  // 流式期间两个面板一起自动展开：思考与执行步骤随消息整体向下流动，
-  // 贴底跟随交给消息列表（MainChatView 的单一滚动容器）统一处理；
-  // 流式结束后自动折叠为一行摘要（对齐 deepseek-harness / codex 的「输出完成即收起」）。
-  // wasStreamingRef 初始为 false，确保组件挂载时已处于流式也会展开。
+  // 与 DSH 一致：执行期间过程展开，Turn 完成后自动收起为一行；用户手动切换优先。
   useEffect(() => {
     const streaming = Boolean(isStreaming);
     if (streaming && !wasStreamingRef.current) {
-      reasoningUserToggledRef.current = false;
-      execUserToggledRef.current = false;
+      userToggledRef.current = false;
       setExpanded(true);
-      setExecExpanded(true);
-    } else if (!streaming && wasStreamingRef.current) {
-      if (!reasoningUserToggledRef.current) setExpanded(false);
-      if (!execUserToggledRef.current) setExecExpanded(false);
+    } else if (!streaming && wasStreamingRef.current && !userToggledRef.current) {
+      setExpanded(false);
     }
     wasStreamingRef.current = streaming;
   }, [isStreaming]);
@@ -648,104 +646,76 @@ function ThinkingBlock({
   const actionTotal =
     tools.length +
     (useSteps ? (steps as ChatStep[]).filter((s) => s.type === "action" || s.type === "artifact").length : 0);
-  const isEmpty = !hasReasoning && actionTotal === 0 && !isStreaming;
   const isThinking = Boolean(isStreaming) && !hasReasoning && actionTotal === 0;
-  /** 未完成（running 过渡态或已中断定案）的工具步骤数：>0 说明本轮被中断，收起摘要不谎称「已完成」 */
+  const hasProcess = hasReasoning || actionTotal > 0 || Boolean(isStreaming);
+  /** 未完成（running 过渡态或已中断定案）的工具步骤数：>0 说明本轮被中断。 */
   const incompleteToolCount = countIncompleteToolSteps(steps as ChatStep[] | undefined);
 
-  // 提示：推理内容区原先自带 max-height + overflow 与一套独立的贴底跟随
-  //（useLayoutEffect 瞬时跳底 / wheel·touchmove 解除跟随 / 「最新」浮层）。
-  // 现已全部移除——内容随消息列表整体向下流动，全局只有消息列表一个滚动容器，
-  // 贴底跟随由 MainChatView 统一负责，这里不再需要任何局部滚动逻辑。
+  if (!hasProcess) return null;
 
-  // 「深度思考」面板收起态摘要：只反映推理（动作数由「执行步骤」面板单独显示）。
-  const summaryText = isThinking
-    ? "思考中…"
-    : Boolean(isStreaming) && (hasReasoning || actionTotal > 0)
-      ? "执行中…"
-      : !isStreaming && hasReasoning
-        ? `${incompleteToolCount > 0 ? "已中断" : "已完成"} · 深度思考`
-        : "";
-  // 「执行步骤」面板收起态摘要（方向 B：与「深度思考」并列的独立面板）。
-  const execSummaryText = isStreaming && actionTotal > 0
-    ? "执行中…"
-    : actionTotal > 0
-      ? `${incompleteToolCount > 0 ? "已中断" : "已完成"} · ${actionTotal} 个动作`
-      : "";
+  const stopped = !isStreaming && incompleteToolCount > 0;
+  const durationText = formatProcessDuration(turnDurationMs);
+  const summaryText = isStreaming
+    ? "执行中"
+    : stopped
+      ? "已停止"
+      : durationText
+        ? `已完成，用时 ${durationText}`
+        : "已完成";
 
   return (
-    <>
-      <div className={`message-reasoning ${expanded ? "message-reasoning--expanded" : ""} ${isEmpty ? "message-reasoning--empty" : ""}`}>
-        <button
-          type="button"
-          className="message-reasoning__toggle"
-          onClick={() => {
-            reasoningUserToggledRef.current = true;
-            setExpanded((current) => !current);
-          }}
-          aria-expanded={expanded}
-        >
-          <span className="message-reasoning__label">深度思考</span>
-          {!expanded && summaryText ? <span className="message-reasoning__summary">{summaryText}</span> : null}
-          <ChevronDown size={14} strokeWidth={2} className={`message-reasoning__chevron ${expanded ? "message-reasoning__chevron--open" : ""}`} />
-        </button>
-        {expanded && (
-          <div className="message-reasoning__body">
-            {isThinking ? (
-              <div className="message-reasoning__thinking">
-                <ThinkingIndicator />
-                <p className="message-reasoning__empty-hint">模型正在思考中，推理过程将实时显示在这里。</p>
-              </div>
-            ) : isEmpty ? (
-              <p className="message-reasoning__empty-hint">
-                本次回答未使用推理模型或工具调用，直接给出最终答复。如需查看思考过程：
-              </p>
-            ) : (
-              <ExecutionTimeline
-                mode="reasoning"
-                steps={useSteps ? (steps as ChatStep[]) : undefined}
-                legacyReasoning={!useSteps ? reasoning : undefined}
-                isStreaming={isStreaming}
-                onOpenFileLocation={onOpenFileLocation}
-              />
-            )}
-            {isEmpty && (
-              <ul className="message-reasoning__empty-tips">
-                <li>在「设置 → 模型」切换到支持 reasoning 的模型（如 DeepSeek-R1、o1、Gemini 2.5 thinking）</li>
-                <li>让 AI 跑实际任务（如搜索文件、读取项目、导出文档），会自动触发工具调用步骤</li>
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
-      {actionTotal > 0 ? (
-        <div className={`message-execution ${execExpanded ? "message-execution--expanded" : ""}`}>
-          <button
-            type="button"
-            className="message-execution__toggle"
-            onClick={() => {
-              execUserToggledRef.current = true;
-              setExecExpanded((current) => !current);
-            }}
-            aria-expanded={execExpanded}
-          >
-            <span className="message-execution__label">执行步骤</span>
-            {!execExpanded && execSummaryText ? <span className="message-execution__summary">{execSummaryText}</span> : null}
-            <ChevronDown size={14} strokeWidth={2} className={`message-execution__chevron ${execExpanded ? "message-execution__chevron--open" : ""}`} />
-          </button>
-          {execExpanded && (
-            <div className="message-execution__body">
-              <ExecutionTimeline
-                mode="execution"
-                steps={useSteps ? (steps as ChatStep[]) : undefined}
-                legacyTools={!useSteps ? toolCallResults : undefined}
-                isStreaming={isStreaming}
-                onOpenFileLocation={onOpenFileLocation}
-              />
+    <div
+      className={`message-process ${expanded ? "message-process--expanded" : ""} ${
+        isStreaming ? "message-process--running" : ""
+      } ${stopped ? "message-process--stopped" : ""}`}
+    >
+      <button
+        type="button"
+        className="message-process__toggle"
+        onClick={() => {
+          userToggledRef.current = true;
+          setExpanded((current) => !current);
+        }}
+        aria-expanded={expanded}
+      >
+        <span className="message-process__label">{summaryText}</span>
+        <ChevronDown
+          size={14}
+          strokeWidth={2}
+          className={`message-process__chevron ${expanded ? "message-process__chevron--open" : ""}`}
+        />
+      </button>
+      {expanded && (
+        <div className="message-process__body">
+          {isThinking ? (
+            <div className="message-process__thinking">
+              <ThinkingIndicator />
             </div>
+          ) : (
+            <ExecutionTimeline
+              steps={useSteps ? (steps as ChatStep[]) : undefined}
+              legacyReasoning={!useSteps ? reasoning : undefined}
+              legacyTools={!useSteps ? toolCallResults : undefined}
+              isStreaming={isStreaming}
+              onOpenFileLocation={onOpenFileLocation}
+            />
           )}
         </div>
-      ) : null}
-    </>
+      )}
+    </div>
   );
+}
+
+/** 与 DSH 一致：至少显示 1 秒，超过小时后保留时/分/秒。 */
+function formatProcessDuration(ms: number | undefined): string {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "";
+  const total = Math.max(1, Math.floor(ms / 1_000));
+  const hours = Math.floor(total / 3_600);
+  const minutes = Math.floor(total / 60) % 60;
+  const seconds = total % 60;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours}小时`);
+  if (total >= 60) parts.push(`${minutes}分`);
+  parts.push(`${seconds}秒`);
+  return parts.join("");
 }

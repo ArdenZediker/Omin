@@ -208,6 +208,8 @@ export type ChatExecutionResult = {
   generationDurationMs?: number;
   /** End-to-end model request wall time across all rounds, including TTFT. */
   modelDurationMs?: number;
+  /** End-to-end Turn wall time, including model requests and tool execution gaps. */
+  turnDurationMs?: number;
   /** Summed request-start-to-first-token latency across streamed rounds. */
   ttftDurationMs?: number;
   /** Number of streamed rounds that supplied a measurable TTFT sample. */

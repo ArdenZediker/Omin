@@ -1754,24 +1754,22 @@ body:has(.compact-menu-window),
   color: rgba(255, 255, 255, 0.76);
 }
 
-:root[data-omni-theme="dark"] .message-reasoning__empty-hint,
-:root[data-omni-theme="dark"] .message-reasoning__empty-tips {
+:root[data-omni-theme="dark"] .message-process__toggle {
   color: rgba(255, 255, 255, 0.55);
 }
 
-/* 推理内容区不再是独立滚动容器（原为 max-height:420px + overflow-y:auto）：
-   全局只保留「消息列表」一个滚动容器，思考/执行内容随消息整体向下流动，
-   流式贴底由 MainChatView 统一负责（对齐 deepseek-harness / codex / atomcode）。 */
-.message-reasoning__body {
-  padding: 2px 0 12px;
-}
-
-:root[data-omni-theme="dark"] .message-reasoning__toggle {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-:root[data-omni-theme="dark"] .message-reasoning__chevron {
+:root[data-omni-theme="dark"] .message-process__chevron {
   color: rgba(255, 255, 255, 0.45);
+}
+
+:root[data-omni-theme="dark"] .exec-seg__preview,
+:root[data-omni-theme="dark"] .exec-seg__text {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+:root[data-omni-theme="dark"] .exec-seg__label,
+:root[data-omni-theme="dark"] .exec-seg__toggle {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 @keyframes omniThinkingSpin {

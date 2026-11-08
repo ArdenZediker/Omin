@@ -2,8 +2,9 @@
 // 把 reasoning / tool_call / action / artifact 步骤按时间顺序渲染为
 // 「可折叠推理段 + 人类可读动作行 + 产物迷你卡片」，供聊天消息（ChatMessage）
 // 与任务面板（MainChatView 回答链路）两处复用。
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
+  Brain,
   ChevronRight,
   File,
   FolderSearch,
@@ -28,6 +29,7 @@ import {
 } from "../chat/presentViews";
 import { requestOpenArtifactInPanel } from "../chat/artifacts";
 import { openArtifactPath, revealArtifactPath, openArtifactUrl } from "./ArtifactCards";
+import { renderMarkdown } from "../app/renderMarkdown";
 
 /** 从工具参数 JSON 提取一句简短摘要（取首个关键字段值），截断 60 字 */
 export function formatToolArgs(args: string): string {
@@ -130,7 +132,15 @@ export function ExecutionTimeline({
         if (step.type === "reasoning") {
           const text = step.text.trim();
           if (!text) return null;
-          return <ReasoningSegment key={`r-${index}`} text={text} isStreaming={Boolean(isStreaming)} />;
+          const isLastReasoning =
+            index === items.map((item) => item.type).lastIndexOf("reasoning");
+          return (
+            <ReasoningSegment
+              key={`r-${index}`}
+              text={text}
+              isStreaming={Boolean(isStreaming) && isLastReasoning}
+            />
+          );
         }
         if (step.type === "tool_call") {
           const meta = getToolActionMeta(step.name);
@@ -196,44 +206,52 @@ export function ExecutionTimeline({
   );
 }
 
-/** 单段推理：可折叠「深度思考」块，收起时显示首行预览，展开显示全文。
- *  流式期间自动展开（推理全文随消息向下流动），流式结束后自动收起为一行预览；
- *  用户在本轮内手动切换过则尊重用户选择（与「深度思考 / 执行步骤」两级面板同规则）。 */
+/** DSH 式「思考」行：收起显示首行，流式中显示最新已完成段落；展开渲染完整 Markdown。 */
 function ReasoningSegment({ text, isStreaming }: { text: string; isStreaming: boolean }) {
   const [open, setOpen] = useState(false);
-  const userToggledRef = useRef(false);
-  const wasStreamingRef = useRef(false);
-
-  useEffect(() => {
-    const streaming = Boolean(isStreaming);
-    if (streaming && !wasStreamingRef.current) {
-      userToggledRef.current = false;
-      setOpen(true);
-    } else if (!streaming && wasStreamingRef.current && !userToggledRef.current) {
-      setOpen(false);
-    }
-    wasStreamingRef.current = streaming;
-  }, [isStreaming]);
-
-  const preview = text.split(/\r?\n/).find((line) => line.trim()) ?? text.slice(0, 80);
+  const preview = reasoningPreview(text, isStreaming);
   return (
-    <div className="exec-seg">
+    <div className="exec-seg" data-state={isStreaming ? "running" : "ok"}>
       <button
         type="button"
         className="exec-seg__toggle"
-        onClick={() => {
-          userToggledRef.current = true;
-          setOpen((current) => !current);
-        }}
+        onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
       >
-        <ChevronRight size={12} strokeWidth={2} className={`exec-seg__chevron ${open ? "exec-seg__chevron--open" : ""}`} />
-        <span className="exec-seg__label">深度思考</span>
+        <Brain size={14} strokeWidth={1.8} className="exec-seg__icon" />
+        <span className="exec-seg__label">思考</span>
+        <span className="exec-seg__separator" aria-hidden="true" />
         {!open && preview ? <span className="exec-seg__preview">{preview}</span> : null}
+        <ChevronRight
+          size={12}
+          strokeWidth={2}
+          className={`exec-seg__chevron ${open ? "exec-seg__chevron--open" : ""}`}
+        />
       </button>
-      {open && <pre className="exec-seg__text">{text}</pre>}
+      {open && <div className="exec-seg__text markdown-body">{renderMarkdown(text)}</div>}
     </div>
   );
+}
+
+/** DSH reasoning-row summary: settled uses first line; running uses latest completed paragraph. */
+function reasoningPreview(text: string, running: boolean): string {
+  const normalized = text.split("**").join("");
+  if (!running) {
+    return normalized.split(/\r?\n/).find((line) => line.trim()) ?? normalized.slice(0, 80);
+  }
+  let summary = "";
+  let paragraphStart = 0;
+  const separator = /\r?\n(?:[\t ]*\r?\n)+/g;
+  while (true) {
+    const nextParagraph = separator.exec(normalized);
+    const paragraphEnd =
+      nextParagraph === null ? normalized.length : nextParagraph.index + nextParagraph[0].indexOf("\n");
+    const paragraph = normalized.slice(paragraphStart, paragraphEnd);
+    const firstLine = paragraph.split(/\r?\n/).find((line) => line.trim());
+    if (firstLine) summary = firstLine.trim();
+    if (nextParagraph === null) return summary;
+    paragraphStart = nextParagraph.index + nextParagraph[0].length;
+  }
 }
 
 /** 单个动作行：图标 + 中文动词 + 英文标题 + 参数摘要 + 可选迷你文件卡片 + 结果首行预览。

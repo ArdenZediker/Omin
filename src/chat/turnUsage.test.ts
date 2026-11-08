@@ -72,12 +72,14 @@ describe("createTurnUsage", () => {
       },
       generationDurationMs: 2_000,
       modelDurationMs: 69_000,
+      turnDurationMs: 95_000,
       ttftDurationMs: 12_000,
       ttftSamples: 1,
     }))).toMatchObject({
       cachedPromptTokens: 360,
       generationDurationMs: 2_000,
       modelDurationMs: 69_000,
+      turnDurationMs: 95_000,
       ttftDurationMs: 12_000,
       ttftSamples: 1,
     });

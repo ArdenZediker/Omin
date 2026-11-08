@@ -1986,24 +1986,31 @@
   bottom: calc(100% + 8px);
   z-index: 60;
   min-width: 190px;
-  padding: 10px;
-  border: 1px solid var(--omni-panel-border);
-  border-radius: 14px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 82%, var(--omni-app-text) 18%);
+  border-radius: 16px;
   background: var(--omni-panel-bg);
-  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.18);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   overflow: hidden;
   pointer-events: auto;
 }
 
 .chat-composer__suggestion-group-title {
-  margin-bottom: 6px;
+  padding: 7px 9px 4px;
   color: var(--omni-app-muted);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 650;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+}
+
+.chat-composer__suggestion-group + .chat-composer__suggestion-group {
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--omni-panel-border) 68%, transparent);
 }
 
 .chat-composer__suggestions-list {
@@ -2011,20 +2018,22 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: min(204px, 24vh);
+  gap: 2px;
+  max-height: min(400px, 48vh);
+  padding: 0 2px 2px;
+  scrollbar-width: thin;
 }
 
 .chat-composer__suggestion {
   width: 100%;
   border: 0;
-  border-radius: 11px;
+  border-radius: 10px;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  min-height: 36px;
-  padding: 8px 10px;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 9px;
   background: transparent;
   color: var(--omni-app-text);
   text-align: left;
@@ -2037,12 +2046,16 @@
 }
 
 .chat-composer__suggestion--active {
-  background: color-mix(in srgb, var(--omni-app-text) 10%, transparent);
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+}
+
+.chat-composer__suggestion:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--omni-primary) 72%, transparent);
+  outline-offset: -2px;
 }
 
 .chat-composer__suggestion--active .chat-composer__suggestion-icon {
-  background: #e2e8f0;
-  color: #64748b;
+  background: color-mix(in srgb, var(--omni-app-text) 10%, transparent);
 }
 
 .chat-composer__suggestion--knowledge.chat-composer__suggestion--active .chat-composer__suggestion-icon {
@@ -2051,24 +2064,37 @@
 }
 
 .chat-composer__suggestion-icon {
-  width: 20px;
-  height: 20px;
-  border-radius: 7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  background: #f1f5f9;
-  color: #94a3b8;
+  background: color-mix(in srgb, var(--omni-app-text) 7%, var(--omni-panel-bg));
+  color: var(--omni-app-muted);
+}
+
+.chat-composer__suggestion-command-icon {
+  flex: 0 0 auto;
 }
 
 .chat-composer__suggestion-copy {
   min-width: 0;
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: minmax(76px, max-content) minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   flex: 1 1 auto;
+}
+
+.chat-composer__suggestion-copy--with-title {
+  grid-template-columns: minmax(76px, max-content) minmax(0, max-content) minmax(0, 1fr);
+}
+
+.chat-composer__suggestion-copy--title-first {
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  gap: 8px;
 }
 
 .chat-composer__suggestion-copy--knowledge {
@@ -2086,15 +2112,36 @@
   white-space: nowrap;
 }
 
+.chat-composer__suggestion-title {
+  min-width: 0;
+  color: color-mix(in srgb, var(--omni-app-text) 72%, var(--omni-app-muted));
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .chat-composer__suggestion-description {
   min-width: 0;
-  color: #94a3b8;
+  color: color-mix(in srgb, var(--omni-app-muted) 88%, transparent);
   font-size: 12px;
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: right;
+}
+
+@media (max-width: 720px) {
+  .chat-composer__suggestion-copy,
+  .chat-composer__suggestion-copy--with-title {
+    grid-template-columns: minmax(68px, max-content) minmax(0, 1fr);
+  }
+
+  .chat-composer__suggestion-title {
+    display: none;
+  }
 }
 
 .chat-composer__toolbar-badge {
@@ -2499,6 +2546,78 @@
   background: color-mix(in srgb, var(--omni-app-text) 6%, transparent);
 }
 
+.chat-composer__status-chip-group {
+  max-width: 100%;
+  min-height: 28px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font-size: 12px;
+}
+
+.chat-composer__status-chip-main,
+.chat-composer__status-chip-close {
+  min-height: 26px;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-composer__status-chip-main {
+  min-width: 0;
+  padding: 0 6px 0 10px;
+}
+
+.chat-composer__status-chip-main span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-composer__status-chip-close {
+  width: 24px;
+  padding: 0;
+  justify-content: center;
+  color: var(--omni-app-muted);
+}
+
+.chat-composer__status-chip-main:hover,
+.chat-composer__status-chip-close:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 7%, transparent);
+}
+
+.chat-composer__status-chip--goal {
+  border-color: color-mix(in srgb, #d97706 28%, var(--omni-panel-border));
+  background: color-mix(in srgb, #d97706 8%, var(--omni-panel-bg));
+  color: color-mix(in srgb, #92400e 78%, var(--omni-app-text));
+}
+
+.chat-composer__status-chip--plan {
+  border-color: color-mix(in srgb, #2563eb 28%, var(--omni-panel-border));
+  background: color-mix(in srgb, #2563eb 8%, var(--omni-panel-bg));
+  color: color-mix(in srgb, #1e40af 78%, var(--omni-app-text));
+}
+
+.chat-composer__status-chip--notice {
+  border-color: color-mix(in srgb, #0f766e 24%, var(--omni-panel-border));
+  background: color-mix(in srgb, #0f766e 7%, var(--omni-panel-bg));
+  cursor: default;
+}
+
+.chat-composer__status-chip--notice:hover {
+  background: color-mix(in srgb, #0f766e 7%, var(--omni-panel-bg));
+}
+
 .chat-composer__status-chip span {
   min-width: 0;
   overflow: hidden;
@@ -2645,7 +2764,59 @@
   object-fit: contain;
 }
 
+.chat-composer__textarea-shell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  flex: 1 1 auto;
+  display: flex;
+}
+
+.chat-composer__command-mirror {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 4px 0;
+  color: var(--omni-app-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  user-select: none;
+}
+
+.chat-composer__command-highlight {
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: #2563eb;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/*
+ * Keep the editable /command token as text, matching DSH: the leading token
+ * gets the command accent color while the rest of the draft keeps the normal
+ * text color. The mirror paints the readable text; the transparent textarea
+ * above it retains the native caret, selection, paste, and keyboard behavior.
+ */
+.chat-composer__textarea--command-active {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--omni-app-text);
+}
+
+:root[data-omni-theme="dark"] .chat-composer__command-highlight {
+  color: #58a6ff;
+}
+
 .chat-composer__textarea {
+  position: relative;
+  z-index: 1;
   width: 100%;
   flex: 1 1 auto;
   min-width: 60px;
@@ -2659,6 +2830,7 @@
   padding: 4px 0;
   background: transparent;
   color: var(--omni-app-text);
+  font-family: inherit;
   font-size: 14px;
   line-height: 1.55;
   outline: none;
@@ -3898,123 +4070,62 @@
   font-size: 13px;
 }
 
-/* 深度思考块：面板式背景（WorkBuddy 风格：淡紫→淡蓝渐变 + padding 充足 + 步骤间虚线） */
-.message-reasoning {
+/* DSH 式 Turn Process：思考与工具执行共用一条过程记录，最终回答在折叠区之外。 */
+.message-process {
   position: relative;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   background: transparent;
 }
 
-.message-reasoning__toggle {
+.message-process__toggle {
   width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 0 0 8px;
   font-size: 13px;
   color: var(--omni-message-muted, #646a73);
   background: transparent;
-  border: none;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border, #e5e7eb) 72%, transparent);
   cursor: pointer;
   text-align: left;
-  font-weight: 500;
-}
-
-.message-reasoning__label {
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-
-.message-reasoning__chevron {
-  flex-shrink: 0;
-  transition: transform 0.18s ease;
-  color: var(--omni-message-muted, #646a73);
-}
-
-.message-reasoning__chevron--open {
-  transform: rotate(180deg);
-}
-
-/* 空状态：「深度思考」标题稍淡 */
-.message-reasoning--empty .message-reasoning__toggle {
-  opacity: 0.7;
-}
-
-.message-reasoning__empty-hint {
-  margin: 0 0 6px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 85%, transparent);
-}
-
-.message-reasoning__empty-tips {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 80%, transparent);
-  list-style: disc;
-}
-
-.message-reasoning__thinking {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 4px 0;
-}
-
-/* 「回到最新思考」浮层与 omniFollowFadeIn 动画已移除：
-   推理区不再是独立滚动容器，贴底跟随统一由消息列表（主线唯一滚动容器）负责，
-   「回到最新」按钮也只保留消息列表那一个（.main-chat-scroll-bottom）。 */
-
-/* ===== 独立「执行步骤」面板（方向 B：从「深度思考」面板拆出，与 reasoning 平级） ===== */
-.message-execution {
-  position: relative;
-  margin-bottom: 10px;
-  background: transparent;
-}
-
-.message-execution__toggle {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 13px;
-  color: var(--omni-message-muted, #646a73);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  font-weight: 500;
-}
-
-.message-execution__label {
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-
-.message-execution__chevron {
-  flex-shrink: 0;
-  transition: transform 0.18s ease;
-  color: var(--omni-message-muted, #646a73);
-}
-
-.message-execution__chevron--open {
-  transform: rotate(180deg);
-}
-
-.message-execution__summary {
-  margin-left: 6px;
-  font-size: 12px;
   font-weight: 400;
-  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 80%, transparent);
 }
 
-.message-execution__body {
-  position: relative;
-  padding-top: 2px;
+.message-process__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.message-process__chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+  color: var(--omni-message-muted, #646a73);
+}
+
+.message-process__chevron--open {
+  transform: rotate(180deg);
+}
+
+.message-process__body {
+  padding: 10px 0 0;
+}
+
+.message-process__thinking {
+  padding: 2px 0 4px;
+}
+
+.message-process--running .message-process__toggle {
+  color: color-mix(in srgb, var(--omni-accent, #2563eb) 76%, var(--omni-message-muted, #646a73));
+}
+
+.message-process--stopped .message-process__toggle {
+  color: color-mix(in srgb, #dc5050 76%, var(--omni-message-muted, #646a73));
 }
 
 /* ===== WorkBuddy 式深度思考时间线（ExecutionTimeline） ===== */
@@ -4022,39 +4133,18 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 4px;
-  padding-left: 16px;
+  gap: 6px;
+  margin-top: 2px;
+  padding-left: 0;
 }
 
-.exec-timeline::before {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 6px;
-  bottom: 6px;
-  width: 1px;
-  background: color-mix(in srgb, var(--omni-message-muted, #646a73) 18%, transparent);
-}
-
-/* 推理段：可折叠「深度思考」块 */
+/* 推理段：DSH 式「思考」披露行 */
 .exec-seg {
   position: relative;
 }
 
-.exec-seg::before {
-  content: "";
-  position: absolute;
-  left: -15px;
-  top: 7px;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--omni-message-muted, #646a73) 42%, transparent);
-}
-
 .exec-seg__toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
@@ -4068,10 +4158,20 @@
   text-align: left;
 }
 
+.exec-seg__toggle:hover .exec-seg__label {
+  color: var(--omni-message-text, #1f2329);
+}
+
 .exec-seg__chevron {
+  margin-left: 2px;
   flex-shrink: 0;
   color: var(--omni-message-muted, #646a73);
   transition: transform 0.16s ease;
+}
+
+.exec-seg__icon {
+  flex-shrink: 0;
+  color: var(--omni-message-muted, #646a73);
 }
 
 .exec-seg__chevron--open {
@@ -4079,11 +4179,21 @@
 }
 
 .exec-seg__label {
-  font-weight: 600;
+  flex-shrink: 0;
+  font-weight: 400;
   letter-spacing: 0.01em;
 }
 
+.exec-seg__separator {
+  flex-shrink: 0;
+  width: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-message-muted, #646a73) 62%, transparent);
+}
+
 .exec-seg__preview {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4095,12 +4205,18 @@
 
 .exec-seg__text {
   margin: 4px 0 0;
-  padding: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
+  padding: 0 0 2px 20px;
   font-size: 13px;
   line-height: 1.75;
   color: color-mix(in srgb, var(--omni-message-text, #1f2329) 86%, transparent);
+}
+
+.exec-seg__text.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.exec-seg__text.markdown-body > :last-child {
+  margin-bottom: 0;
 }
 
 /* 动作行 */
@@ -4382,17 +4498,6 @@ span.exec-web-item__title:hover {
   overflow: hidden;
 }
 
-.exec-action::before {
-  content: "";
-  position: absolute;
-  left: -15px;
-  top: 7px;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--omni-accent, #8b5cf6) 55%, transparent);
-}
-
 .exec-action__icon {
   flex-shrink: 0;
   margin-top: 2px;
@@ -4607,17 +4712,6 @@ span.exec-web-item__title:hover {
   text-align: left;
 }
 
-.exec-artifact::before {
-  content: "";
-  position: absolute;
-  left: -15px;
-  top: 11px;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--omni-link, #2563eb) 60%, transparent);
-}
-
 .exec-artifact__icon {
   flex-shrink: 0;
 }
@@ -4630,14 +4724,6 @@ span.exec-web-item__title:hover {
   margin-left: auto;
   font-size: 11px;
   opacity: 0.7;
-}
-
-/* 收起态摘要行 */
-.message-reasoning__summary {
-  margin-left: 6px;
-  font-size: 12px;
-  font-weight: 400;
-  color: color-mix(in srgb, var(--omni-message-muted, #646a73) 80%, transparent);
 }
 
 /* 消息底部聚合入口（查看所有产物 / 变更） */

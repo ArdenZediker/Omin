@@ -38,6 +38,7 @@ export function createTurnUsage(result: ChatExecutionResult | null | undefined):
   const cachedPromptTokens = result.usage.cachedPromptTokens;
   const generationDurationMs = result.generationDurationMs;
   const modelDurationMs = result.modelDurationMs;
+  const turnDurationMs = result.turnDurationMs;
   const ttftDurationMs = result.ttftDurationMs;
   const ttftSamples = result.ttftSamples;
   return {
@@ -58,6 +59,11 @@ export function createTurnUsage(result: ChatExecutionResult | null | undefined):
       && Number.isFinite(modelDurationMs)
       && modelDurationMs > 0
       ? { modelDurationMs }
+      : {}),
+    ...(typeof turnDurationMs === "number"
+      && Number.isFinite(turnDurationMs)
+      && turnDurationMs > 0
+      ? { turnDurationMs }
       : {}),
     ...(typeof ttftDurationMs === "number"
       && Number.isFinite(ttftDurationMs)
