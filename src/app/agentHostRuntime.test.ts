@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "../agent-core";
 
 const mocks = vi.hoisted(() => ({
+  agentSessionStatus: vi.fn(),
   cancelAgentSession: vi.fn(),
   configureAgentSessionTools: vi.fn(),
   createAgentModelConfig: vi.fn(),
@@ -15,8 +16,10 @@ const mocks = vi.hoisted(() => ({
   respondAgentHostClientToolCall: vi.fn(),
   saveSqliteBackedValue: vi.fn(),
   startAgentHost: vi.fn(),
+  steerAgentSession: vi.fn(),
   subscribeAgentHostClientToolCalls: vi.fn(),
   subscribeAgentHostEvents: vi.fn(),
+  waitAgentSessionIdle: vi.fn(),
 }));
 
 vi.mock("./sqliteStorage", () => ({
@@ -25,6 +28,7 @@ vi.mock("./sqliteStorage", () => ({
 }));
 
 vi.mock("./agentHostClient", () => ({
+  agentSessionStatus: mocks.agentSessionStatus,
   cancelAgentSession: mocks.cancelAgentSession,
   configureAgentSessionTools: mocks.configureAgentSessionTools,
   createAgentModelConfig: mocks.createAgentModelConfig,
@@ -36,14 +40,17 @@ vi.mock("./agentHostClient", () => ({
   readAgentEvents: mocks.readAgentEvents,
   respondAgentHostClientToolCall: mocks.respondAgentHostClientToolCall,
   startAgentHost: mocks.startAgentHost,
+  steerAgentSession: mocks.steerAgentSession,
   subscribeAgentHostClientToolCalls: mocks.subscribeAgentHostClientToolCalls,
   subscribeAgentHostEvents: mocks.subscribeAgentHostEvents,
+  waitAgentSessionIdle: mocks.waitAgentSessionIdle,
 }));
 
 import {
   deleteAgentHostSession,
   recoverAgentHostSession,
   runAgentHostTurn,
+  steerAgentHostTurn,
 } from "./agentHostRuntime";
 
 function completedTurnEvents(): AgentEvent[] {
@@ -174,6 +181,7 @@ describe("runAgentHostTurn", () => {
       provider: "mock",
       model: "mock-model",
     });
+    mocks.waitAgentSessionIdle.mockResolvedValue(undefined);
   });
 
   it("uses the full session tool catalog and delegates client tools", async () => {
@@ -316,5 +324,190 @@ describe("runAgentHostTurn", () => {
         completedSeq: 4,
       },
     });
+  });
+
+  it("waits for idle and keeps a late steered turn in the same result", async () => {
+    let eventListener: ((message: unknown) => void) | undefined;
+    let resolveIdle!: () => void;
+    mocks.subscribeAgentHostEvents.mockImplementation(async (listener) => {
+      eventListener = listener;
+      return () => undefined;
+    });
+    mocks.promptAgentSession.mockResolvedValue("prompt-1");
+    mocks.waitAgentSessionIdle.mockImplementation(() =>
+      new Promise<void>((resolve) => {
+        resolveIdle = resolve;
+      })
+    );
+
+    const resultPromise = runAgentHostTurn({
+      omniSessionId: "omni-session",
+      cwd: "D:/workspace",
+      history: [],
+      prompt: "plan",
+      modelId: "mock-model",
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.promptAgentSession).toHaveBeenCalledWith(
+        "host-new",
+        "plan",
+        { provider: "mock", model: "mock-model" },
+        undefined,
+        undefined,
+      );
+    });
+
+    const emit = (event: AgentEvent) => {
+      eventListener?.({ kind: "event", event });
+    };
+    emit({
+      seq: 1,
+      sessionId: "host-new",
+      at: 1,
+      type: "turn/started",
+      payload: { turn: 1 },
+    });
+    emit({
+      seq: 2,
+      sessionId: "host-new",
+      at: 2,
+      type: "assistant/message",
+      payload: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: "assistant-1",
+          role: "assistant",
+          createdAt: 2,
+          content: [{ type: "text", text: "first" }],
+        },
+      },
+    });
+    emit({
+      seq: 3,
+      sessionId: "host-new",
+      at: 3,
+      type: "turn/completed",
+      payload: { turn: 1, reason: { kind: "completed" } },
+    });
+    await vi.waitFor(() => {
+      expect(mocks.waitAgentSessionIdle).toHaveBeenCalledWith("host-new");
+    });
+    emit({
+      seq: 4,
+      sessionId: "host-new",
+      at: 4,
+      type: "user/message",
+      payload: {
+        turn: 2,
+        step: 1,
+        message: {
+          id: "steer-1",
+          role: "user",
+          createdAt: 4,
+          content: [{ type: "text", text: "补充" }],
+        },
+      },
+    });
+    emit({
+      seq: 5,
+      sessionId: "host-new",
+      at: 5,
+      type: "assistant/message",
+      payload: {
+        turn: 2,
+        step: 1,
+        message: {
+          id: "assistant-2",
+          role: "assistant",
+          createdAt: 5,
+          content: [{ type: "text", text: "second" }],
+        },
+      },
+    });
+    emit({
+      seq: 6,
+      sessionId: "host-new",
+      at: 6,
+      type: "turn/completed",
+      payload: { turn: 2, reason: { kind: "completed" } },
+    });
+    resolveIdle();
+
+    await expect(resultPromise).resolves.toMatchObject({
+      content: "first\n\nsecond",
+      agentHost: {
+        sessionId: "host-new",
+        turn: 2,
+        completedSeq: 6,
+      },
+    });
+  });
+});
+
+describe("steerAgentHostTurn", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.ensureAgentHost.mockResolvedValue({ running: true });
+    mocks.agentSessionStatus.mockResolvedValue({ running: true });
+    mocks.createAgentModelConfig.mockReturnValue({
+      provider: "mock",
+      model: "mock-model",
+    });
+    mocks.steerAgentSession.mockResolvedValue("steer-1");
+    mocks.readSqliteBackedJson.mockReturnValue({
+      "omni-1": { hostSessionId: "host-1" },
+    });
+  });
+
+  it("adds text and images to the active Host turn", async () => {
+    await expect(steerAgentHostTurn({
+      omniSessionId: "omni-1",
+      content: "补充上下文",
+      images: [{ src: "data:image/png;base64,AAAA", name: "shot.png" }],
+      modelId: "mock-model",
+    })).resolves.toBe("steer-1");
+
+    expect(mocks.agentSessionStatus).toHaveBeenCalledWith("host-1");
+    expect(mocks.steerAgentSession).toHaveBeenCalledWith(
+      "host-1",
+      "补充上下文",
+      { provider: "mock", model: "mock-model" },
+      undefined,
+      [{ src: "data:image/png;base64,AAAA", name: "shot.png" }],
+    );
+  });
+
+  it("does not create a second turn when the answer already finished", async () => {
+    mocks.agentSessionStatus.mockResolvedValue({ running: false });
+
+    await expect(steerAgentHostTurn({
+      omniSessionId: "omni-1",
+      content: "晚到的消息",
+      modelId: "mock-model",
+      startupTimeoutMs: 0,
+    })).rejects.toThrow("当前回答已经结束");
+
+    expect(mocks.steerAgentSession).not.toHaveBeenCalled();
+  });
+
+  it("waits through the startup race until the Host session is running", async () => {
+    mocks.readSqliteBackedJson
+      .mockReturnValueOnce({})
+      .mockReturnValue({ "omni-1": { hostSessionId: "host-1" } });
+    mocks.agentSessionStatus
+      .mockResolvedValueOnce({ running: false })
+      .mockResolvedValueOnce({ running: true });
+
+    await expect(steerAgentHostTurn({
+      omniSessionId: "omni-1",
+      content: "启动后补充",
+      modelId: "mock-model",
+      startupTimeoutMs: 1_000,
+    })).resolves.toBe("steer-1");
+
+    expect(mocks.agentSessionStatus).toHaveBeenCalledTimes(2);
+    expect(mocks.steerAgentSession).toHaveBeenCalledOnce();
   });
 });

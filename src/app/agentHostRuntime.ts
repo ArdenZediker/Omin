@@ -33,6 +33,7 @@ import {
 } from "../chat/agentHostProjection";
 import { readSqliteBackedJson, saveSqliteBackedValue } from "./sqliteStorage";
 import {
+  agentSessionStatus,
   cancelAgentSession,
   configureAgentSessionTools,
   createAgentModelConfig,
@@ -44,8 +45,10 @@ import {
   readAgentEvents,
   respondAgentHostClientToolCall,
   startAgentHost,
+  steerAgentSession,
   subscribeAgentHostClientToolCalls,
   subscribeAgentHostEvents,
+  waitAgentSessionIdle,
 } from "./agentHostClient";
 
 export const AGENT_HOST_SESSION_MAP_KEY = "omni_agent_host_sessions_v1";
@@ -74,6 +77,16 @@ export interface AgentHostTurnOptions {
   onChunk?: (chunk: string) => void;
   onReasoning?: (reasoning: string) => void;
   onToolStep?: (step: ChatStep) => void;
+}
+
+export interface AgentHostSteerOptions {
+  omniSessionId: string;
+  content: string;
+  images?: AgentImage[];
+  modelId: string;
+  system?: string;
+  /** Upper bound for waiting until the current Host turn enters running state. */
+  startupTimeoutMs?: number;
 }
 
 function readSessionMap(): SessionMap {
@@ -239,8 +252,10 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
   const startedAt = performance.now();
   const usage = emptyAgentUsage();
   let reasoning = "";
-  let finalAssistant: AgentMessage | undefined;
+  const finalAssistants = new Map<number, AgentMessage>();
   let completedTurn: AgentHostTurnMetadata | undefined;
+  let terminalError: unknown;
+  let finalizationStarted = false;
   let closed = false;
   const toolSteps: ChatStep[] = [];
   const toolResults: ChatToolCallResult[] = [];
@@ -266,6 +281,7 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
     options.signal?.removeEventListener("abort", onAbort);
   };
   const settleRejected = (error: unknown) => {
+    if (closed) return;
     cleanup();
     rejectTurn(error);
   };
@@ -274,6 +290,65 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
     settleRejected(new DOMException("Request aborted", "AbortError"));
   };
   options.signal?.addEventListener("abort", onAbort, { once: true });
+
+  const finalizeAfterIdle = async () => {
+    if (closed || finalizationStarted) return;
+    finalizationStarted = true;
+    try {
+      // A steer can arrive at the same instant the model finishes its last
+      // step. Waiting for idle keeps that late input from starting an unseen
+      // second turn after this UI request has already resolved.
+      await waitAgentSessionIdle(hostSessionId);
+    } catch (error: unknown) {
+      settleRejected(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    if (closed) return;
+    if (terminalError) {
+      settleRejected(terminalError);
+      return;
+    }
+
+    cleanup();
+    const orderedAssistants = [...finalAssistants.entries()]
+      .sort(([leftTurn], [rightTurn]) => leftTurn - rightTurn)
+      .map(([, message]) => message);
+    const content = orderedAssistants
+      .map((message) => textBlocks(message))
+      .filter(Boolean)
+      .join("\n\n");
+    const assistantReasoning = orderedAssistants
+      .map((message) => reasoningBlocks(message))
+      .filter(Boolean)
+      .join("\n\n");
+    if (!reasoning && assistantReasoning) reasoning = assistantReasoning;
+    if (usage.totalTokens === 0) {
+      usage.promptTokens = estimatePromptTokens(options.history);
+      usage.completionTokens = estimateTokens(content);
+      usage.totalTokens = usage.promptTokens + usage.completionTokens;
+      usage.exact = false;
+    }
+    const tokenUsage = tokenUsageFromAgentUsage(usage);
+    const toolRounds = new Set(toolResults.map((item) => item.round)).size;
+    const elapsed = performance.now() - startedAt;
+    resolveTurn({
+      content,
+      model: options.modelId,
+      usage: tokenUsage,
+      estimated: !usage.exact,
+      costUsd: estimateCostUsd(options.modelId, tokenUsage),
+      ...(reasoning ? { reasoning } : {}),
+      ...(toolRounds > 0 ? { toolRounds } : {}),
+      ...(toolResults.length ? { toolCallResults: toolResults } : {}),
+      ...(toolSteps.length ? { steps: toolSteps } : {}),
+      ...(options.knowledgeContext
+        ? { knowledgeContext: options.knowledgeContext }
+        : {}),
+      ...(completedTurn ? { agentHost: completedTurn } : {}),
+      generationDurationMs: elapsed,
+      modelDurationMs: elapsed,
+    });
+  };
 
   try {
     if (options.executeClientToolCall) {
@@ -327,7 +402,7 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
           }
           break;
         case "assistant/message":
-          finalAssistant = event.payload.message;
+          finalAssistants.set(event.payload.turn, event.payload.message);
           if (event.payload.usage) addAgentUsage(usage, event.payload.usage);
           break;
         case "tool/call":
@@ -384,45 +459,11 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
             completedSeq: event.seq,
           };
           if (event.payload.reason.kind === "aborted") {
-            settleRejected(new DOMException("Request aborted", "AbortError"));
-            return;
+            terminalError = new DOMException("Request aborted", "AbortError");
+          } else if (event.payload.reason.kind === "failed") {
+            terminalError = new Error(event.payload.reason.message);
           }
-          if (event.payload.reason.kind === "failed") {
-            settleRejected(new Error(event.payload.reason.message));
-            return;
-          }
-          cleanup();
-          {
-            const content = finalAssistant ? textBlocks(finalAssistant) : "";
-            const assistantReasoning = finalAssistant ? reasoningBlocks(finalAssistant) : "";
-            if (!reasoning && assistantReasoning) reasoning = assistantReasoning;
-            if (usage.totalTokens === 0) {
-              usage.promptTokens = estimatePromptTokens(options.history);
-              usage.completionTokens = estimateTokens(content);
-              usage.totalTokens = usage.promptTokens + usage.completionTokens;
-              usage.exact = false;
-            }
-            const tokenUsage = tokenUsageFromAgentUsage(usage);
-            const toolRounds = new Set(toolResults.map((item) => item.round)).size;
-            const elapsed = performance.now() - startedAt;
-            resolveTurn({
-              content,
-              model: options.modelId,
-              usage: tokenUsage,
-              estimated: !usage.exact,
-              costUsd: estimateCostUsd(options.modelId, tokenUsage),
-              ...(reasoning ? { reasoning } : {}),
-              ...(toolRounds > 0 ? { toolRounds } : {}),
-              ...(toolResults.length ? { toolCallResults: toolResults } : {}),
-              ...(toolSteps.length ? { steps: toolSteps } : {}),
-              ...(options.knowledgeContext
-                ? { knowledgeContext: options.knowledgeContext }
-                : {}),
-              agentHost: completedTurn,
-              generationDurationMs: elapsed,
-              modelDurationMs: elapsed,
-            });
-          }
+          void finalizeAfterIdle();
           break;
         default:
           break;
@@ -449,6 +490,44 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
     settleRejected(error instanceof Error ? error : new Error(String(error)));
   }
   return resultPromise;
+}
+
+/**
+ * Adds user input to the active Host turn. Unlike a follow-up prompt, `steer`
+ * is claimed at the next model step boundary, so the current answer can take
+ * the new instruction or context into account instead of racing a second turn.
+ */
+export async function steerAgentHostTurn(
+  options: AgentHostSteerOptions,
+): Promise<string> {
+  await ensureAgentHost();
+  const deadline = Date.now() + (options.startupTimeoutMs ?? 30_000);
+  let sawMappedSession = false;
+  let hostSessionId: string | undefined;
+  while (true) {
+    hostSessionId = readSessionMap()[options.omniSessionId]?.hostSessionId;
+    if (hostSessionId) {
+      sawMappedSession = true;
+      const status = await agentSessionStatus(hostSessionId);
+      if (status.running) break;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        sawMappedSession
+          ? "当前回答已经结束，请将这条消息作为新消息发送"
+          : "当前会话尚未连接到 Agent Host，无法追加到正在生成的回答",
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 75));
+  }
+
+  return steerAgentSession(
+    hostSessionId,
+    options.content,
+    createAgentModelConfig(options.modelId),
+    options.system,
+    options.images,
+  );
 }
 
 /**

@@ -25,6 +25,14 @@ const binary = join(
 );
 const dataDir = await mkdtemp(join(tmpdir(), "omni-agent-host-smoke-"));
 const modelRequests = [];
+let markSecondRequestStarted;
+const secondRequestStarted = new Promise((resolveRequest) => {
+  markSecondRequestStarted = resolveRequest;
+});
+let releaseSecondRequest;
+const secondRequestReleased = new Promise((resolveRequest) => {
+  releaseSecondRequest = resolveRequest;
+});
 
 function writeSse(response, events) {
   response.writeHead(200, {
@@ -53,6 +61,11 @@ const modelServer = createServer((request, response) => {
     const parsed = JSON.parse(body);
     modelRequests.push(parsed);
     const hasToolResult = parsed.messages.some((message) => message.role === "tool");
+    const hasSteer = parsed.messages.some((message) =>
+      message.role === "user"
+      && typeof message.content === "string"
+      && message.content.includes("additional context")
+    );
     if (!hasToolResult) {
       writeSse(response, [{
         id: "chatcmpl-tool",
@@ -76,7 +89,37 @@ const modelServer = createServer((request, response) => {
       }]);
       return;
     }
-    writeSse(response, [
+
+    if (hasSteer) {
+      writeSse(response, [
+        {
+          id: "chatcmpl-steer",
+          object: "chat.completion.chunk",
+          model: "mock-model",
+          choices: [{
+            index: 0,
+            delta: { content: "steered response" },
+            finish_reason: "stop",
+          }],
+        },
+        {
+          id: "chatcmpl-steer",
+          object: "chat.completion.chunk",
+          model: "mock-model",
+          choices: [],
+          usage: {
+            prompt_tokens: 30,
+            completion_tokens: 4,
+            total_tokens: 34,
+          },
+        },
+      ]);
+      return;
+    }
+
+    markSecondRequestStarted?.();
+    markSecondRequestStarted = undefined;
+    void secondRequestReleased.then(() => writeSse(response, [
       {
         id: "chatcmpl-final-1",
         object: "chat.completion.chunk",
@@ -108,7 +151,7 @@ const modelServer = createServer((request, response) => {
           total_tokens: 29,
         },
       },
-    ]);
+    ]));
   });
 });
 
@@ -200,7 +243,11 @@ class HostProcess {
     const promise = new Promise((resolveRequest, rejectRequest) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        rejectRequest(new Error(`Host request timed out: ${command}; stderr=${this.stderr}`));
+        rejectRequest(new Error(
+          `Host request timed out: ${command}; `
+          + `events=${this.events.map((event) => event.type).join(",")}; `
+          + `stderr=${this.stderr}`,
+        ));
       }, 15_000);
     this.pending.set(id, {
       command,
@@ -256,7 +303,11 @@ class HostProcess {
     if (exit === null) {
       this.child.kill();
       await this.exit;
-      throw new Error(`Host ${this.label} did not exit after graceful shutdown`);
+      throw new Error(
+        `Host ${this.label} did not exit after graceful shutdown; `
+        + `events=${this.events.map((event) => event.type).join(",")}; `
+        + `stderr=${this.stderr}`,
+      );
     }
     if (exit.code !== 0) {
       throw new Error(
@@ -302,6 +353,18 @@ try {
     content: "read README.md",
     model: { provider: "mock", model: "mock-model" },
   });
+  await Promise.race([
+    secondRequestStarted,
+    new Promise((_, rejectTimeout) => {
+      setTimeout(() => rejectTimeout(new Error("second model request did not start")), 15_000);
+    }),
+  ]);
+  await first.request("session.steer", {
+    sessionId: created.sessionId,
+    content: "additional context",
+    model: { provider: "mock", model: "mock-model" },
+  });
+  releaseSecondRequest();
   const completed = await completedPromise;
   if (completed.payload.reason.kind !== "completed") {
     throw new Error(`turn did not complete successfully: ${JSON.stringify(completed.payload.reason)}`);
@@ -313,6 +376,7 @@ try {
     "turn/started",
     "tool/call",
     "tool/result",
+    "user/message",
     "assistant/message",
     "turn/completed",
   ]) {
@@ -320,8 +384,8 @@ try {
       throw new Error(`missing Host event: ${expected}; got ${eventTypes.join(", ")}`);
     }
   }
-  if (modelRequests.length !== 2) {
-    throw new Error(`expected two model requests, got ${modelRequests.length}`);
+  if (modelRequests.length !== 3) {
+    throw new Error(`expected three model requests, got ${modelRequests.length}`);
   }
   if (!modelRequests[0].tools?.some((tool) => tool.function?.name === "read_file")) {
     throw new Error("first model request did not include the native read_file schema");
@@ -329,6 +393,20 @@ try {
   if (!modelRequests[1].messages?.some((message) => message.role === "tool")) {
     throw new Error("second model request did not include the native tool result");
   }
+  if (!modelRequests[2].messages?.some((message) =>
+    message.role === "user"
+    && typeof message.content === "string"
+    && message.content.includes("additional context")
+  )) {
+    throw new Error("third model request did not include the steered user input");
+  }
+  const settledStatus = await first.request("session.status", {
+    sessionId: created.sessionId,
+  });
+  if (settledStatus.running) {
+    throw new Error("steered session was still running after turn/completed");
+  }
+  await first.request("session.when-idle", { sessionId: created.sessionId });
   await first.close();
 
   const logs = (await readdir(dataDir)).filter((name) => name.endsWith(".jsonl"));
@@ -373,7 +451,7 @@ try {
   await third.close();
 
   process.stdout.write(
-    `agent-host smoke passed: ${eventTypes.length} events, ${modelRequests.length} model calls, restart replay + delete ok\n`,
+    `agent-host smoke passed: ${eventTypes.length} events, ${modelRequests.length} model calls, steer + restart replay + delete ok\n`,
   );
 } finally {
   await new Promise((resolveClose) => modelServer.close(resolveClose));

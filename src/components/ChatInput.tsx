@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   CirclePlus,
+  LoaderCircle,
   Plus,
   Send,
   Square,
@@ -131,6 +132,8 @@ export default function ChatInput({
   const [selectedKnowledgeIndex, setSelectedKnowledgeIndex] = useState(0);
   const [dismissedMentionInput, setDismissedMentionInput] = useState("");
   const [caretIndex, setCaretIndex] = useState(0);
+  const [pendingFollowUps, setPendingFollowUps] = useState<Array<{ id: string; content: string }>>([]);
+  const [isFollowUpSubmitting, setIsFollowUpSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const toolbarPickerRef = useRef<HTMLDivElement>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -204,7 +207,12 @@ export default function ChatInput({
       })
       .map((expert) => ({ kind: "expert" as const, expert })),
   ].slice(0, 8);
-  const hasComposerStatus = Boolean(activeModeLabel || selectedKnowledgeCollection || selectedExpert);
+  const hasComposerStatus = Boolean(
+    activeModeLabel
+    || selectedKnowledgeCollection
+    || selectedExpert
+    || pendingFollowUps.length > 0,
+  );
   const showMentionSuggestions = Boolean(mentionTrigger && input !== dismissedMentionInput && mentionSuggestions.length > 0);
   const showSlashSuggestions =
     localSuggestions.length > 0 &&
@@ -222,6 +230,18 @@ export default function ChatInput({
       textareaRef.current?.focus();
     }
   }, [focusSignal]);
+
+  useEffect(() => {
+    setPendingFollowUps([]);
+    setIsFollowUpSubmitting(false);
+  }, [draftScopeKey]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setPendingFollowUps([]);
+      setIsFollowUpSubmitting(false);
+    }
+  }, [isLoading]);
 
   useEffect(() => {
     const scopeChanged = draftScopeKey !== lastDraftScopeRef.current;
@@ -501,12 +521,35 @@ export default function ChatInput({
     attachments: attachments.length > 0 ? orderedAttachments : undefined,
   });
 
-  const handleSubmit = () => {
-    if ((!trimmedInput && images.length === 0 && attachments.length === 0) || isLoading || isSendBlocked) {
+  const handleSubmit = async () => {
+    if (
+      (!trimmedInput && images.length === 0 && attachments.length === 0)
+      || isSendBlocked
+      || isFollowUpSubmitting
+    ) {
       return;
     }
 
-    void onSend(trimmedInput, images.length > 0 ? orderedImages : undefined, buildSendOptions());
+    const submittedAsFollowUp = isLoading;
+    if (submittedAsFollowUp) {
+      setIsFollowUpSubmitting(true);
+      try {
+        await onSend(trimmedInput, images.length > 0 ? orderedImages : undefined, buildSendOptions());
+      } catch {
+        return;
+      } finally {
+        setIsFollowUpSubmitting(false);
+      }
+      setPendingFollowUps((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          content: trimmedInput || `已追加 ${images.length + attachments.length} 个附件`,
+        },
+      ]);
+    } else {
+      void onSend(trimmedInput, images.length > 0 ? orderedImages : undefined, buildSendOptions());
+    }
     setInput("");
     setImages([]);
     setAttachments([]);
@@ -655,7 +698,7 @@ export default function ChatInput({
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
-      handleSubmit();
+      void handleSubmit();
     }
   };
 
@@ -770,6 +813,20 @@ export default function ChatInput({
             <div className="chat-composer__editor">
               {hasComposerStatus && (
                 <div className="chat-composer__status">
+                  {pendingFollowUps.map((followUp) => (
+                    <div
+                      key={followUp.id}
+                      className="chat-composer__status-chip chat-composer__status-chip--pending"
+                      title={`已追加到当前回答：${followUp.content}`}
+                    >
+                      <LoaderCircle
+                        className="chat-composer__status-spinner"
+                        size={13}
+                        strokeWidth={1.9}
+                      />
+                      <span>已追加: {followUp.content}</span>
+                    </div>
+                  ))}
                   {activeModeLabel && activeModeTypeLabel && (
                     <button
                       type="button"
@@ -955,12 +1012,32 @@ export default function ChatInput({
                 </div>
               )}
               {isLoading ? (
-                <button onClick={onStop} className="chat-composer__submit" title="停止生成" type="button">
-                  <Square className="chat-composer__submit-icon" size={18} strokeWidth={2} fill="currentColor" />
-                </button>
+                <>
+                  <button
+                    onClick={() => void handleSubmit()}
+                    disabled={
+                      isSendBlocked
+                      || isFollowUpSubmitting
+                      || (!trimmedInput && images.length === 0 && attachments.length === 0)
+                    }
+                    className="chat-composer__submit"
+                    title={isFollowUpSubmitting ? "正在追加..." : "追加到当前回答"}
+                    type="button"
+                  >
+                    <Send className="chat-composer__submit-icon" size={18} strokeWidth={2} />
+                  </button>
+                  <button
+                    onClick={onStop}
+                    className="chat-composer__submit chat-composer__submit--stop"
+                    title="停止生成"
+                    type="button"
+                  >
+                    <Square className="chat-composer__submit-icon" size={18} strokeWidth={2} fill="currentColor" />
+                  </button>
+                </>
               ) : (
                 <button
-                  onClick={handleSubmit}
+                  onClick={() => void handleSubmit()}
                   disabled={isSendBlocked || (!trimmedInput && images.length === 0 && attachments.length === 0)}
                   className="chat-composer__submit"
                   title={sendDisabledTitle}

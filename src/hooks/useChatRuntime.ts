@@ -7,6 +7,7 @@ import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 import { loadBasicSettings } from "../app/settingsStore";
 import { snapshotAttachments } from "../app/outputStorage";
+import { steerAgentHostTurn } from "../app/agentHostRuntime";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
 import { runSubAgent, type SubAgentRunContext } from "../chat/subAgent";
@@ -80,6 +81,11 @@ const RUN_WATCHDOG_MS = RUN_WATCHDOG_MINUTES * 60_000;
 const ENABLE_AGENT_HOST_TURNS = resolveAgentHostTurnsEnabled(
   import.meta.env.VITE_OMNI_AGENT_HOST,
 );
+
+type PendingAgentHostFollowUp = {
+  id: string;
+  message: Message;
+};
 
 /** 兜底生成 assistant 最终展示文本：优先用模型正式 content，其次流式累积内容，
  * 再次工具输出；若全部为空但收集到 reasoning，则用 reasoning 作为内容并附加提示，
@@ -203,6 +209,7 @@ export function useChatRuntime({
   const loadingSessionIdsRef = useRef<Set<string>>(new Set());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const sessionRunIdsRef = useRef<Map<string, number>>(new Map());
+  const pendingAgentHostFollowUpsRef = useRef<Map<string, PendingAgentHostFollowUp[]>>(new Map());
   // 任务级隔离状态：当前 run 的 taskId、按工作区的写串行队列、当前写占用者（taskId）。
   const currentTaskIdRef = useRef<Map<string, string>>(new Map());
   const workspaceWriteQueueRef = useRef<Map<string, Promise<unknown>>>(new Map());
@@ -240,6 +247,14 @@ export function useChatRuntime({
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
   }, [activeChatId]);
+
+  const takePendingAgentHostFollowUps = useCallback((sessionId: string | null | undefined): Message[] => {
+    if (!sessionId) return [];
+    const pending = pendingAgentHostFollowUpsRef.current.get(sessionId);
+    if (!pending?.length) return [];
+    pendingAgentHostFollowUpsRef.current.delete(sessionId);
+    return pending.map((item) => item.message);
+  }, []);
 
   const setSessionLoading = useCallback((sessionId: string, loading: boolean) => {
     const next = new Set(loadingSessionIdsRef.current);
@@ -1599,10 +1614,6 @@ export function useChatRuntime({
 
   const handleSend = useCallback(
     async (content: string, images?: ChatImage[], options: ChatSendOptions = {}) => {
-      if (isSessionLoading(activeChatId)) {
-        return;
-      }
-
       const abortController = new AbortController();
       setError(null);
       const hiddenContext = options.hiddenContext;
@@ -1617,6 +1628,50 @@ export function useChatRuntime({
       const selectedMode = options.selectedMode ?? null;
       // let：发送前会落快照，把路径改写成会话产物目录下的快照路径（见下方 try 内）
       let attachments = options.attachments ?? [];
+
+      if (isSessionLoading(activeChatId)) {
+        if (!ENABLE_AGENT_HOST_TURNS || !activeChatId) {
+          throw new Error("当前引擎不支持在回答过程中追加消息");
+        }
+
+        const pendingId = generateTaskId();
+        const pendingMessage: Message = {
+          role: "user",
+          content,
+          ...(images?.length ? { images } : {}),
+          ...(attachments.length ? { attachments } : {}),
+          ...(selectedKnowledgeCollection ? { selectedKnowledgeCollection } : {}),
+          ...(selectedExpert ? { selectedExpert } : {}),
+          ...(selectedMode ? { selectedMode } : {}),
+        };
+        const pending = pendingAgentHostFollowUpsRef.current.get(activeChatId) ?? [];
+        pendingAgentHostFollowUpsRef.current.set(activeChatId, [
+          ...pending,
+          { id: pendingId, message: pendingMessage },
+        ]);
+
+        try {
+          const attachmentContext = buildAttachmentContext(attachments);
+          await steerAgentHostTurn({
+            omniSessionId: activeChatId,
+            content: [content, attachmentContext].filter(Boolean).join("\n\n"),
+            images,
+            modelId: executionModel,
+          });
+        } catch (steerError) {
+          const remaining = (pendingAgentHostFollowUpsRef.current.get(activeChatId) ?? [])
+            .filter((item) => item.id !== pendingId);
+          if (remaining.length > 0) {
+            pendingAgentHostFollowUpsRef.current.set(activeChatId, remaining);
+          } else {
+            pendingAgentHostFollowUpsRef.current.delete(activeChatId);
+          }
+          const message = steerError instanceof Error ? steerError.message : "追加消息失败";
+          setError(message);
+          throw steerError;
+        }
+        return;
+      }
 
       let sessionId = activeChatId;
       let runId = startSessionRun(sessionId, abortController);
@@ -1872,18 +1927,26 @@ export function useChatRuntime({
         }
 
         const projectReply = resolveProjectReply(taskResult.finalResult?.content, streamedProjectReply, taskResult.toolResult?.outputText, streamedReasoning);
+        const completedConversationMessages = [
+          ...conversationMessages,
+          ...takePendingAgentHostFollowUps(sessionId),
+        ];
         updateStreamPreview(true);
         updateThoughtPreview(true);
         if (hasPetThought && isCurrentPetThought(petThoughtId, sessionId)) {
           completePetThought(
             petThoughtId,
             sessionId,
-            conversationMessages,
+            completedConversationMessages,
             projectReply
           );
         }
         dismissPetThoughtWhenSessionVisible(sessionId, petThoughtId);
-        finishTaskResult(applyProjectReplyToTaskResult(taskResult, projectReply), sessionId, conversationMessages);
+        finishTaskResult(
+          applyProjectReplyToTaskResult(taskResult, projectReply),
+          sessionId,
+          completedConversationMessages,
+        );
       } catch (sendError) {
         // 同主发送流程：不能用 isCurrentSessionRun 守卫——abort 后它恒为 false，
         // 会让下面的清理与超时提示分支永远不可达。
@@ -1917,7 +1980,13 @@ export function useChatRuntime({
         // 统一清理可能残留的空 assistant 占位消息：流式成功时内容已填充不会被误删；
         // 失败/中止时删除占位，避免当前会话或重启后 UI 认为仍在流式中而锁死输入框；
         // 同时把遗留的 running 过渡态步骤定案为 interrupted（中断信息随消息持久化）。
-        setConversationMessagesForSession(sessionId, (prev) => settleInterruptedSteps(stripPendingPlaceholder(prev)));
+        const remainingFollowUps = takePendingAgentHostFollowUps(sessionId);
+        setConversationMessagesForSession(sessionId, (prev) => {
+          const settled = settleInterruptedSteps(stripPendingPlaceholder(prev));
+          return remainingFollowUps.length > 0
+            ? [...settled, ...remainingFollowUps]
+            : settled;
+        });
       }
     },
     [
@@ -1946,6 +2015,7 @@ export function useChatRuntime({
       setLastProjectReasoning,
       startSessionRun,
       startPetThought,
+      takePendingAgentHostFollowUps,
       updatePetThought,
     ]
   );

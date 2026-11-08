@@ -232,6 +232,57 @@ export async function promptAgentSession(
   return result.promptId;
 }
 
+export async function followupAgentSession(
+  sessionId: AgentSessionId,
+  content: string,
+  model: AgentModelConfig,
+  system?: string,
+  images?: AgentImage[],
+): Promise<string> {
+  const result = await requestAgentHost<{ promptId: string }>("session.followup", {
+    sessionId,
+    content,
+    ...(images?.length ? { images } : {}),
+    model,
+    ...(system ? { system } : {}),
+  });
+  return result.promptId;
+}
+
+export async function steerAgentSession(
+  sessionId: AgentSessionId,
+  content: string,
+  model: AgentModelConfig,
+  system?: string,
+  images?: AgentImage[],
+): Promise<string> {
+  const result = await requestAgentHost<{ promptId: string }>("session.steer", {
+    sessionId,
+    content,
+    ...(images?.length ? { images } : {}),
+    model,
+    ...(system ? { system } : {}),
+  });
+  return result.promptId;
+}
+
+export async function injectAgentSession(
+  sessionId: AgentSessionId,
+  content: string,
+  model: AgentModelConfig,
+  system?: string,
+  images?: AgentImage[],
+): Promise<string> {
+  const result = await requestAgentHost<{ promptId: string }>("session.inject", {
+    sessionId,
+    content,
+    ...(images?.length ? { images } : {}),
+    model,
+    ...(system ? { system } : {}),
+  });
+  return result.promptId;
+}
+
 export async function cancelAgentSession(
   sessionId: AgentSessionId,
   reason?: string,
@@ -240,6 +291,29 @@ export async function cancelAgentSession(
     sessionId,
     ...(reason ? { reason } : {}),
   });
+}
+
+export async function agentSessionStatus(
+  sessionId: AgentSessionId,
+): Promise<{ running: boolean }> {
+  return requestAgentHost<{ running: boolean }>("session.status", { sessionId });
+}
+
+export async function waitAgentSessionIdle(
+  sessionId: AgentSessionId,
+): Promise<void> {
+  await requestAgentHost("session.when-idle", { sessionId });
+}
+
+export async function removePendingAgentPrompt(
+  sessionId: AgentSessionId,
+  promptId: string,
+): Promise<boolean> {
+  const result = await requestAgentHost<{ removed: boolean }>(
+    "session.remove-pending",
+    { sessionId, promptId },
+  );
+  return result.removed;
 }
 
 export async function deleteAgentSession(

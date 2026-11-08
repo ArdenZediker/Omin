@@ -128,6 +128,7 @@ export class AgentHost {
         const options = {
           model: request.params.model,
           ...(request.params.system ? { system: request.params.system } : {}),
+          ...(request.params.images?.length ? { images: request.params.images } : {}),
         };
         const promptId = request.command === "session.steer"
           ? await this.runtime.steer(

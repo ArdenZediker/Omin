@@ -2526,6 +2526,24 @@
   background: color-mix(in srgb, #0d9488 12%, var(--omni-panel-bg));
 }
 
+.chat-composer__status-chip--pending {
+  border-color: color-mix(in srgb, #d97706 30%, var(--omni-panel-border));
+  background: color-mix(in srgb, #d97706 8%, var(--omni-panel-bg));
+  color: color-mix(in srgb, #92400e 78%, var(--omni-app-text));
+  cursor: default;
+}
+
+.chat-composer__status-spinner {
+  flex: 0 0 auto;
+  animation: chat-composer-spin 900ms linear infinite;
+}
+
+@keyframes chat-composer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .attachment-chip {
   position: relative;
   display: inline-flex;
@@ -2713,6 +2731,15 @@
 .chat-composer__submit:not(:disabled):hover {
   background: var(--omni-accent-strong, #3730a3);
   transform: translateY(-1px);
+}
+
+.chat-composer__submit--stop {
+  background: color-mix(in srgb, var(--omni-app-text) 12%, var(--omni-panel-bg));
+  color: var(--omni-app-text);
+}
+
+.chat-composer__submit--stop:not(:disabled):hover {
+  background: color-mix(in srgb, var(--omni-app-text) 18%, var(--omni-panel-bg));
 }
 
 .chat-composer__submit {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import ChatInput from "./ChatInput";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
@@ -45,7 +45,7 @@ describe("ChatInput", () => {
     expect(textarea).toHaveFocus();
   });
 
-  it("生成过程中仍可继续编辑草稿，但不会误发或覆盖正在生成的回答", () => {
+  it("生成过程中可以把新内容追加到当前回答，同时保留停止入口", async () => {
     const onSend = vi.fn();
     render(
       <ChatInput
@@ -60,9 +60,37 @@ describe("ChatInput", () => {
     fireEvent.change(textarea, { target: { value: "补充一点背景" } });
     fireEvent.keyDown(textarea, { key: "Enter" });
 
-    expect(textarea).toHaveValue("补充一点背景");
-    expect(onSend).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith(
+        "补充一点背景",
+        undefined,
+        expect.objectContaining({ attachments: undefined }),
+      );
+    });
+    expect(textarea).toHaveValue("");
+    expect(screen.getByText("已追加: 补充一点背景")).toBeInTheDocument();
+    expect(screen.getByTitle("追加到当前回答")).toBeInTheDocument();
     expect(screen.getByTitle("停止生成")).toBeInTheDocument();
+  });
+
+  it("追加失败时保留草稿且不显示已追加状态", async () => {
+    const onSend = vi.fn(async () => {
+      throw new Error("追加失败");
+    });
+    render(
+      <ChatInput
+        onSend={onSend}
+        isLoading
+        onStop={vi.fn()}
+      />
+    );
+    const textarea = screen.getByPlaceholderText("输入聊天内容...");
+    fireEvent.change(textarea, { target: { value: "这条不能丢" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(onSend).toHaveBeenCalledOnce());
+    expect(textarea).toHaveValue("这条不能丢");
+    expect(screen.queryByText("已追加: 这条不能丢")).not.toBeInTheDocument();
   });
 
   it("selects a knowledge collection with @ and sends the collection id without the mention text", () => {
