@@ -42,6 +42,7 @@ mod storage_paths;
 mod tool_output_spill;
 mod webtools;
 mod workspace_files;
+mod workspace_launcher;
 
 // 从 lib.rs 拆分出去的四个模块，用私有 glob 取回其中的函数与类型。
 // 这些模块内部**不要**写 `use super::*`：那会把 crate 根的 `__cmd__*` 宏吸进模块，
@@ -598,6 +599,9 @@ pub fn run() {
             reset_data_root,
             open_data_dir,
             open_path,
+            list_workspace_open_apps,
+            workspace_open_app_icon,
+            open_workspace_with,
             reveal_item_in_dir,
             export_data_backup,
             import_data_backup,

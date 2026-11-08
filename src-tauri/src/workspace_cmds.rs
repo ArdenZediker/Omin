@@ -1,6 +1,36 @@
 use crate::workspace_files;
 
 #[tauri::command]
+pub(crate) async fn list_workspace_open_apps(
+) -> Result<Vec<crate::workspace_launcher::WorkspaceOpenApp>, String> {
+    tauri::async_runtime::spawn_blocking(crate::workspace_launcher::list_workspace_open_apps)
+        .await
+        .map_err(|error| format!("读取打开方式失败：{error}"))?
+}
+
+#[tauri::command]
+pub(crate) async fn workspace_open_app_icon(app_id: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::workspace_launcher::workspace_open_app_icon(&app_id)
+    })
+    .await
+    .map_err(|error| format!("读取应用图标失败：{error}"))?
+}
+
+#[tauri::command]
+pub(crate) async fn open_workspace_with(
+    app: tauri::AppHandle,
+    path: String,
+    app_id: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::workspace_launcher::open_workspace_with(&app, &path, &app_id)
+    })
+    .await
+    .map_err(|error| format!("打开项目失败：{error}"))?
+}
+
+#[tauri::command]
 pub(crate) fn list_workspace_files(
     project_path: Option<String>,
     glob: Option<String>,

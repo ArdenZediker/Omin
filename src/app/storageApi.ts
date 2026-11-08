@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type DataRootSource = "custom" | "portable" | "default";
 
+export interface WorkspaceOpenApp {
+  id: string;
+  name: string;
+}
+
 export interface DataRootInfo {
   path: string;
   source: DataRootSource;
@@ -53,6 +58,26 @@ export async function openDataDir(): Promise<void> {
 export async function openPath(path: string): Promise<void> {
   if (!canUseTauriInvoke()) return;
   await invoke("open_path", { path });
+}
+
+export async function openWorkspaceWith(
+  path: string,
+  appId: string,
+): Promise<void> {
+  if (!canUseTauriInvoke()) return;
+  await invoke("open_workspace_with", { path, appId });
+}
+
+export async function listWorkspaceOpenApps(): Promise<WorkspaceOpenApp[]> {
+  if (!canUseTauriInvoke()) return [];
+  return invoke<WorkspaceOpenApp[]>("list_workspace_open_apps");
+}
+
+export async function getWorkspaceOpenAppIcon(
+  appId: string,
+): Promise<string | null> {
+  if (!canUseTauriInvoke()) return null;
+  return invoke<string | null>("workspace_open_app_icon", { appId });
 }
 
 export async function revealItemInDir(path: string): Promise<void> {
