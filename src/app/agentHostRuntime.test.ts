@@ -2,10 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "../agent-core";
 
 const mocks = vi.hoisted(() => ({
+  cancelAgentSession: vi.fn(),
+  configureAgentSessionTools: vi.fn(),
+  createAgentModelConfig: vi.fn(),
+  createAgentSession: vi.fn(),
+  ensureAgentHost: vi.fn(),
+  failAgentHostClientToolCall: vi.fn(),
+  promptAgentSession: vi.fn(),
   readSqliteBackedJson: vi.fn(),
+  readAgentEvents: vi.fn(),
+  respondAgentHostClientToolCall: vi.fn(),
   saveSqliteBackedValue: vi.fn(),
   startAgentHost: vi.fn(),
-  readAgentEvents: vi.fn(),
+  subscribeAgentHostClientToolCalls: vi.fn(),
+  subscribeAgentHostEvents: vi.fn(),
 }));
 
 vi.mock("./sqliteStorage", () => ({
@@ -14,17 +24,24 @@ vi.mock("./sqliteStorage", () => ({
 }));
 
 vi.mock("./agentHostClient", () => ({
-  cancelAgentSession: vi.fn(),
-  createAgentModelConfig: vi.fn(),
-  createAgentSession: vi.fn(),
-  ensureAgentHost: vi.fn(),
-  promptAgentSession: vi.fn(),
+  cancelAgentSession: mocks.cancelAgentSession,
+  configureAgentSessionTools: mocks.configureAgentSessionTools,
+  createAgentModelConfig: mocks.createAgentModelConfig,
+  createAgentSession: mocks.createAgentSession,
+  ensureAgentHost: mocks.ensureAgentHost,
+  failAgentHostClientToolCall: mocks.failAgentHostClientToolCall,
+  promptAgentSession: mocks.promptAgentSession,
   readAgentEvents: mocks.readAgentEvents,
+  respondAgentHostClientToolCall: mocks.respondAgentHostClientToolCall,
   startAgentHost: mocks.startAgentHost,
-  subscribeAgentHostEvents: vi.fn(),
+  subscribeAgentHostClientToolCalls: mocks.subscribeAgentHostClientToolCalls,
+  subscribeAgentHostEvents: mocks.subscribeAgentHostEvents,
 }));
 
-import { recoverAgentHostSession } from "./agentHostRuntime";
+import {
+  recoverAgentHostSession,
+  runAgentHostTurn,
+} from "./agentHostRuntime";
 
 function completedTurnEvents(): AgentEvent[] {
   return [
@@ -107,5 +124,160 @@ describe("recoverAgentHostSession", () => {
 
     expect(mocks.startAgentHost).not.toHaveBeenCalled();
     expect(mocks.readAgentEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("runAgentHostTurn", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.readSqliteBackedJson.mockReturnValue({});
+    mocks.ensureAgentHost.mockResolvedValue({ running: true });
+    mocks.createAgentSession.mockResolvedValue("host-new");
+    mocks.createAgentModelConfig.mockReturnValue({
+      provider: "mock",
+      model: "mock-model",
+    });
+  });
+
+  it("uses the full session tool catalog and delegates client tools", async () => {
+    let eventListener: ((message: unknown) => void) | undefined;
+    let clientToolListener: ((call: unknown) => void) | undefined;
+    mocks.subscribeAgentHostEvents.mockImplementation(async (listener) => {
+      eventListener = listener;
+      return () => undefined;
+    });
+    mocks.subscribeAgentHostClientToolCalls.mockImplementation(async (listener) => {
+      clientToolListener = listener;
+      return () => undefined;
+    });
+    mocks.promptAgentSession.mockImplementation(async () => {
+      queueMicrotask(() => clientToolListener?.({
+        kind: "native-tool-call",
+        id: "client-call-1",
+        tool: "todo_write",
+        arguments: "{\"todos\":[]}",
+        sessionId: "host-new",
+        turn: 1,
+        step: 1,
+      }));
+      return "prompt-1";
+    });
+    mocks.respondAgentHostClientToolCall.mockImplementation(async () => {
+      const events = [
+        {
+          seq: 1,
+          sessionId: "host-new",
+          at: 1,
+          type: "tool/call",
+          payload: {
+            turn: 1,
+            step: 1,
+            call: {
+              id: "client-call-1",
+              name: "todo_write",
+              arguments: "{\"todos\":[]}",
+            },
+          },
+        },
+        {
+          seq: 2,
+          sessionId: "host-new",
+          at: 2,
+          type: "tool/result",
+          payload: {
+            turn: 1,
+            step: 1,
+            callId: "client-call-1",
+            name: "todo_write",
+            isError: false,
+            message: {
+              id: "tool-result-1",
+              role: "tool",
+              createdAt: 2,
+              content: [{ type: "text", text: "todos updated" }],
+            },
+          },
+        },
+        {
+          seq: 3,
+          sessionId: "host-new",
+          at: 3,
+          type: "assistant/message",
+          payload: {
+            turn: 1,
+            step: 2,
+            message: {
+              id: "assistant-1",
+              role: "assistant",
+              createdAt: 3,
+              content: [{ type: "text", text: "done" }],
+            },
+          },
+        },
+        {
+          seq: 4,
+          sessionId: "host-new",
+          at: 4,
+          type: "turn/completed",
+          payload: { turn: 1, reason: { kind: "completed" } },
+        },
+      ] as AgentEvent[];
+      for (const event of events) {
+        eventListener?.({ kind: "event", event });
+      }
+    });
+    const clientCall = vi.fn(async () => ({
+      outputText: "todos updated",
+      path: "D:/workspace/TODO.md",
+      artifact: { artifactId: "artifact-1", title: "TODO" },
+    }));
+
+    const result = await runAgentHostTurn({
+      omniSessionId: "omni-session",
+      cwd: "D:/workspace",
+      history: [],
+      prompt: "plan",
+      modelId: "mock-model",
+      tools: [{
+        name: "todo_write",
+        description: "Write todos",
+        parameters: { type: "object" },
+      }],
+      executeClientToolCall: clientCall,
+    });
+
+    expect(mocks.configureAgentSessionTools).toHaveBeenCalledWith(
+      "host-new",
+      [expect.objectContaining({ name: "todo_write" })],
+    );
+    expect(clientCall).toHaveBeenCalledWith({
+      id: "client-call-1",
+      name: "todo_write",
+      arguments: "{\"todos\":[]}",
+    });
+    expect(mocks.respondAgentHostClientToolCall).toHaveBeenCalledWith(
+      "client-call-1",
+      { content: "todos updated" },
+    );
+    expect(result).toMatchObject({
+      content: "done",
+      toolCallResults: [{
+        id: "client-call-1",
+        path: "D:/workspace/TODO.md",
+      }],
+      steps: [
+        expect.objectContaining({ type: "tool_call", name: "todo_write" }),
+        {
+          type: "artifact",
+          artifactId: "artifact-1",
+          title: "TODO",
+        },
+      ],
+      agentHost: {
+        sessionId: "host-new",
+        turn: 1,
+        completedSeq: 4,
+      },
+    });
   });
 });

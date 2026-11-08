@@ -6,6 +6,7 @@ import type {
   AgentMessage,
   AgentModelConfig,
   AgentSessionId,
+  AgentToolSchema,
 } from "../agent-core";
 import type {
   HostCommand,
@@ -13,9 +14,11 @@ import type {
   HostResult,
 } from "../agent-host/protocol";
 import { modelRegistry } from "../adapters/registry";
+import type { ChatToolParam } from "../adapters/types";
 
 export const AGENT_HOST_EVENT = "omni-agent-event";
 export const AGENT_HOST_STATUS_EVENT = "omni-agent-host-status";
+export const AGENT_HOST_CLIENT_TOOL_EVENT = "omni-agent-client-tool-call";
 
 export interface AgentHostStatus {
   running: boolean;
@@ -27,6 +30,22 @@ export interface AgentHostStatus {
 export interface AgentHostRequestInput {
   command: HostCommand;
   params?: Record<string, unknown>;
+}
+
+export interface AgentHostClientToolCall {
+  kind: "native-tool-call";
+  id: string;
+  tool: string;
+  arguments: string;
+  sessionId: AgentSessionId;
+  turn: number;
+  step: number;
+}
+
+export interface AgentHostClientToolResult {
+  content: string;
+  isError?: boolean;
+  concludesTurn?: boolean;
 }
 
 function errorMessage(error: unknown): string {
@@ -70,6 +89,46 @@ export async function subscribeAgentHostStatus(
 ): Promise<UnlistenFn> {
   return listen<AgentHostStatus & { reason?: string }>(AGENT_HOST_STATUS_EVENT, (event) => {
     listener(event.payload);
+  });
+}
+
+export async function subscribeAgentHostClientToolCalls(
+  listener: (call: AgentHostClientToolCall) => void,
+): Promise<UnlistenFn> {
+  return listen<AgentHostClientToolCall>(AGENT_HOST_CLIENT_TOOL_EVENT, (event) => {
+    if (
+      event.payload?.kind === "native-tool-call"
+      && typeof event.payload.id === "string"
+    ) {
+      listener(event.payload);
+    }
+  });
+}
+
+export async function respondAgentHostClientToolCall(
+  id: string,
+  result: AgentHostClientToolResult,
+): Promise<void> {
+  await invoke("agent_host_client_tool_result", {
+    input: {
+      id,
+      ok: true,
+      result,
+    },
+  });
+}
+
+export async function failAgentHostClientToolCall(
+  id: string,
+  message: string,
+  code = "CLIENT_TOOL_ERROR",
+): Promise<void> {
+  await invoke("agent_host_client_tool_result", {
+    input: {
+      id,
+      ok: false,
+      error: { message, code },
+    },
   });
 }
 
@@ -133,6 +192,27 @@ export async function createAgentSession(
     },
   );
   return result.sessionId;
+}
+
+export async function configureAgentSessionTools(
+  sessionId: AgentSessionId,
+  tools: ChatToolParam[],
+): Promise<AgentToolSchema[]> {
+  const result = await requestAgentHost<{ tools: AgentToolSchema[] }>(
+    "session.configure-tools",
+    {
+      sessionId,
+      tools: tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description ?? "",
+        parameters: tool.parameters ?? {
+          type: "object",
+          properties: {},
+        },
+      })),
+    },
+  );
+  return result.tools;
 }
 
 export async function promptAgentSession(

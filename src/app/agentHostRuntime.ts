@@ -13,6 +13,8 @@ import {
 } from "../agent-core";
 import type {
   AgentHostTurnMetadata,
+  ChatToolCall,
+  ChatToolParam,
   Message,
   TokenUsage,
 } from "../adapters/types";
@@ -23,6 +25,7 @@ import type {
   ChatStep,
   ChatToolCallResult,
 } from "../chat/types";
+import type { ToolCallOutcome } from "../chat/engine";
 import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
 import {
   projectAgentHostTurns,
@@ -31,12 +34,16 @@ import {
 import { readSqliteBackedJson, saveSqliteBackedValue } from "./sqliteStorage";
 import {
   cancelAgentSession,
+  configureAgentSessionTools,
   createAgentModelConfig,
   createAgentSession,
   ensureAgentHost,
+  failAgentHostClientToolCall,
   promptAgentSession,
   readAgentEvents,
+  respondAgentHostClientToolCall,
   startAgentHost,
+  subscribeAgentHostClientToolCalls,
   subscribeAgentHostEvents,
 } from "./agentHostClient";
 
@@ -58,6 +65,10 @@ export interface AgentHostTurnOptions {
   modelId: string;
   system?: string;
   knowledgeContext?: KnowledgeContextResult | null;
+  tools?: ChatToolParam[];
+  executeClientToolCall?: (
+    call: ChatToolCall,
+  ) => Promise<string | ToolCallOutcome>;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
   onReasoning?: (reasoning: string) => void;
@@ -222,6 +233,9 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
     title: options.title,
     history: options.history,
   });
+  if (options.tools !== undefined) {
+    await configureAgentSessionTools(hostSessionId, options.tools);
+  }
 
   const startedAt = performance.now();
   const usage = emptyAgentUsage();
@@ -231,10 +245,15 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
   let closed = false;
   const toolSteps: ChatStep[] = [];
   const toolResults: ChatToolCallResult[] = [];
+  const clientToolMetadata = new Map<string, Pick<
+    ToolCallOutcome,
+    "artifact" | "path" | "fileDiff"
+  >>();
   const pendingCalls = new Map<string, { name: string; arguments: string }>();
   let resolveTurn!: (result: ChatExecutionResult) => void;
   let rejectTurn!: (error: unknown) => void;
   let unlisten: (() => void) | undefined;
+  let unlistenClientTools: (() => void) | undefined;
   const resultPromise = new Promise<ChatExecutionResult>((resolve, reject) => {
     resolveTurn = resolve;
     rejectTurn = reject;
@@ -244,6 +263,7 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
     if (closed) return;
     closed = true;
     unlisten?.();
+    unlistenClientTools?.();
     options.signal?.removeEventListener("abort", onAbort);
   };
   const settleRejected = (error: unknown) => {
@@ -257,6 +277,42 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
   options.signal?.addEventListener("abort", onAbort, { once: true });
 
   try {
+    if (options.executeClientToolCall) {
+      unlistenClientTools = await subscribeAgentHostClientToolCalls((call) => {
+        if (closed || call.sessionId !== hostSessionId) return;
+        void (async () => {
+          try {
+            const outcome = await options.executeClientToolCall?.(
+              {
+                id: call.id,
+                name: call.tool,
+                arguments: call.arguments,
+              },
+            );
+            if (outcome === undefined) {
+              throw new Error(`客户端工具 ${call.tool} 没有执行器`);
+            }
+            if (typeof outcome === "object") {
+              clientToolMetadata.set(call.id, {
+                ...(outcome.artifact ? { artifact: outcome.artifact } : {}),
+                ...(outcome.path ? { path: outcome.path } : {}),
+                ...(outcome.fileDiff ? { fileDiff: outcome.fileDiff } : {}),
+              });
+            }
+            await respondAgentHostClientToolCall(call.id, {
+              content: typeof outcome === "string"
+                ? outcome
+                : outcome.outputText,
+            });
+          } catch (error: unknown) {
+            await failAgentHostClientToolCall(
+              call.id,
+              error instanceof Error ? error.message : String(error),
+            ).catch(() => undefined);
+          }
+        })();
+      });
+    }
     unlisten = await subscribeAgentHostEvents((notification) => {
       if (closed || notification.kind !== "event") return;
       const event = notification.event;
@@ -284,6 +340,7 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
         case "tool/result": {
           const call = pendingCalls.get(event.payload.callId);
           const text = eventMessageText(event);
+          const clientMetadata = clientToolMetadata.get(event.payload.callId);
           toolResults.push({
             id: event.payload.callId,
             name: event.payload.name,
@@ -291,6 +348,10 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
             result: text,
             isError: event.payload.isError,
             round: event.payload.step,
+            ...(clientMetadata?.path ? { path: clientMetadata.path } : {}),
+            ...(clientMetadata?.fileDiff
+              ? { fileDiff: clientMetadata.fileDiff }
+              : {}),
           });
           const step: ChatStep = {
             type: "tool_call",
@@ -298,9 +359,23 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
             arguments: call?.arguments ?? "",
             result: text,
             isError: event.payload.isError,
+            ...(clientMetadata?.path ? { path: clientMetadata.path } : {}),
+            ...(clientMetadata?.fileDiff
+              ? { fileDiff: clientMetadata.fileDiff }
+              : {}),
           };
           toolSteps.push(step);
           options.onToolStep?.(step);
+          if (clientMetadata?.artifact) {
+            const artifactStep: ChatStep = {
+              type: "artifact",
+              artifactId: clientMetadata.artifact.artifactId,
+              title: clientMetadata.artifact.title,
+            };
+            toolSteps.push(artifactStep);
+            options.onToolStep?.(artifactStep);
+          }
+          clientToolMetadata.delete(event.payload.callId);
           break;
         }
         case "turn/completed":

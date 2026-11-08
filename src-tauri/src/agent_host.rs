@@ -5,12 +5,7 @@
 //! events to the webview, and executes native tool calls through Omni's existing
 //! permission and sandbox-aware command implementations.
 
-use crate::{
-    filemod::{edit_file_tool, write_file_tool},
-    sandbox::SandboxMode,
-    shellcmd::{execute_command, ExecuteCommandInput},
-    workspace_files,
-};
+use crate::workspace_files;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -29,6 +24,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) const EVENT_NAME: &str = "omni-agent-event";
 pub(crate) const STATUS_EVENT_NAME: &str = "omni-agent-host-status";
+pub(crate) const CLIENT_TOOL_EVENT_NAME: &str = "omni-agent-client-tool-call";
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -86,6 +82,17 @@ pub(crate) struct AgentHostRequestInput {
     command: String,
     #[serde(default)]
     params: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentHostClientToolResultInput {
+    id: String,
+    ok: bool,
+    #[serde(default)]
+    result: Option<Value>,
+    #[serde(default)]
+    error: Option<Value>,
 }
 
 impl AgentHostInner {
@@ -201,13 +208,15 @@ impl AgentHostInner {
     }
 
     fn send_native_result(&self, id: &str, result: Result<Value, String>) {
-        let cancelled = self
+        let Some(cancelled) = self
             .native_calls
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .remove(id)
-            .is_some_and(|flag| flag.load(Ordering::SeqCst));
-        if cancelled {
+        else {
+            return;
+        };
+        if cancelled.load(Ordering::SeqCst) {
             return;
         }
         let message = match result {
@@ -501,6 +510,11 @@ fn dispatch_native_call(app: AppHandle, inner: Arc<AgentHostInner>, message: Val
         .unwrap_or_else(|error| error.into_inner())
         .insert(id.clone(), Arc::clone(&cancelled));
 
+    if !is_native_tool_name(&tool) {
+        let _ = app.emit(CLIENT_TOOL_EVENT_NAME, message);
+        return;
+    }
+
     tauri::async_runtime::spawn(async move {
         let result = if cancelled.load(Ordering::SeqCst) {
             Err("原生工具调用已取消".to_string())
@@ -516,7 +530,7 @@ fn dispatch_native_call(app: AppHandle, inner: Arc<AgentHostInner>, message: Val
                 }
             };
             let session_cwd = inner.session_cwd(&session_id);
-            run_native_tool(&app, &tool, args, session_cwd)
+            run_native_tool(&tool, args, session_cwd)
                 .await
                 .map(|value| native_tool_result(&tool, value))
         };
@@ -524,8 +538,11 @@ fn dispatch_native_call(app: AppHandle, inner: Arc<AgentHostInner>, message: Val
     });
 }
 
+fn is_native_tool_name(tool: &str) -> bool {
+    matches!(tool, "list_files" | "read_file" | "search_files")
+}
+
 async fn run_native_tool(
-    app: &AppHandle,
     tool: &str,
     args: Value,
     session_cwd: Option<String>,
@@ -578,61 +595,6 @@ async fn run_native_tool(
             })
             .await
             .map_err(|error| format!("search_files 任务失败：{error}"))??;
-            serde_json::to_value(result).map_err(|error| error.to_string())
-        }
-        "write_file" => {
-            let path = required_string(&args, "path")?;
-            let content = required_raw_string(&args, "content")?;
-            let overwrite = optional_bool(&args, "overwrite")?;
-            let workspace_path = optional_string(&args, "workspacePath")?.or(session_cwd);
-            let confirmed_outside = optional_bool(&args, "confirmedOutside")?;
-            let sandbox_mode = optional_sandbox_mode(&args, "sandboxMode")?;
-            let outcome = write_file_tool(
-                app.clone(),
-                path,
-                content,
-                overwrite,
-                workspace_path,
-                confirmed_outside,
-                sandbox_mode,
-            )
-            .await?;
-            serde_json::to_value(outcome).map_err(|error| error.to_string())
-        }
-        "edit_file" => {
-            let path = required_string(&args, "path")?;
-            let find = required_raw_string(&args, "find")?;
-            let replace = required_raw_string(&args, "replace")?;
-            let replace_all = optional_bool(&args, "replaceAll")?;
-            let workspace_path = optional_string(&args, "workspacePath")?.or(session_cwd);
-            let confirmed_outside = optional_bool(&args, "confirmedOutside")?;
-            let sandbox_mode = optional_sandbox_mode(&args, "sandboxMode")?;
-            let outcome = edit_file_tool(
-                app.clone(),
-                path,
-                find,
-                replace,
-                replace_all,
-                workspace_path,
-                confirmed_outside,
-                sandbox_mode,
-            )
-            .await?;
-            serde_json::to_value(outcome).map_err(|error| error.to_string())
-        }
-        "execute_command" => {
-            let mut input: ExecuteCommandInput = serde_json::from_value(args)
-                .map_err(|error| format!("execute_command 参数无效：{error}"))?;
-            if input
-                .cwd
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .is_none()
-            {
-                input.cwd = session_cwd;
-            }
-            let result = execute_command(app.clone(), input).await?;
             serde_json::to_value(result).map_err(|error| error.to_string())
         }
         other => Err(format!("未知原生工具：{other}")),
@@ -708,80 +670,13 @@ fn native_tool_result(tool: &str, value: Value) -> Value {
                 lines.join("\n")
             }
         }
-        "execute_command" => {
-            let output = value
-                .get("output")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let exit_code = value
-                .get("exitCode")
-                .and_then(Value::as_i64)
-                .unwrap_or_default();
-            let timed_out = value
-                .get("timedOut")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let denied = value
-                .get("denied")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let enforcement = value
-                .get("enforcement")
-                .and_then(Value::as_str)
-                .unwrap_or("none");
-            let body = if output.trim().is_empty() {
-                "(no output)"
-            } else {
-                output
-            };
-            format!(
-                "{body}\n\n[command-meta exitCode={exit_code} timedOut={timed_out} denied={denied} enforcement={enforcement}]"
-            )
-        }
-        "write_file" | "edit_file" => {
-            let path = value
-                .get("path")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let created = value
-                .get("created")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let replacements = value
-                .get("replacements")
-                .and_then(Value::as_u64)
-                .unwrap_or(0);
-            let size = value.get("size").and_then(Value::as_u64).unwrap_or(0);
-            format!(
-                "{}: {path} (size={size}, created={created}, replacements={replacements})",
-                if created { "created" } else { "updated" }
-            )
-        }
         _ => serde_json::to_string_pretty(&value)
             .unwrap_or_else(|_| "native tool completed without a displayable result".to_string()),
     };
 
-    let is_error = if tool == "execute_command" {
-        let exit_code = value
-            .get("exitCode")
-            .and_then(Value::as_i64)
-            .unwrap_or_default();
-        let timed_out = value
-            .get("timedOut")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let denied = value
-            .get("denied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        exit_code != 0 || timed_out || denied
-    } else {
-        false
-    };
-
     json!({
         "content": content,
-        "isError": is_error,
+        "isError": false,
     })
 }
 
@@ -823,46 +718,6 @@ fn native_tool_descriptors() -> Value {
                 "limit": { "type": "integer", "minimum": 1, "maximum": 1000 }
             }), &["pattern"]),
             "parallelSafe": true
-        },
-        {
-            "name": "write_file",
-            "description": "Create a text file or overwrite an existing text file. Workspace escape, no-go zones, sandbox policy, and user confirmation remain enforced by Omni.",
-            "parameters": object_schema(json!({
-                "path": { "type": "string" },
-                "content": { "type": "string" },
-                "overwrite": { "type": "boolean", "default": false },
-                "workspacePath": { "type": "string", "description": "Optional workspace root. Defaults to the current session cwd." },
-                "confirmedOutside": { "type": "boolean", "default": false },
-                "sandboxMode": { "type": "string", "enum": ["read-only", "workspace-write", "danger-full-access"] }
-            }), &["path", "content"]),
-            "parallelSafe": false
-        },
-        {
-            "name": "edit_file",
-            "description": "Replace an exact text fragment in an existing text file. Ambiguous matches require replaceAll or more context. Omni permission checks remain enforced.",
-            "parameters": object_schema(json!({
-                "path": { "type": "string" },
-                "find": { "type": "string" },
-                "replace": { "type": "string" },
-                "replaceAll": { "type": "boolean", "default": false },
-                "workspacePath": { "type": "string", "description": "Optional workspace root. Defaults to the current session cwd." },
-                "confirmedOutside": { "type": "boolean", "default": false },
-                "sandboxMode": { "type": "string", "enum": ["read-only", "workspace-write", "danger-full-access"] }
-            }), &["path", "find", "replace"]),
-            "parallelSafe": false
-        },
-        {
-            "name": "execute_command",
-            "description": "Run a shell command in the current project workspace. Omni's existing command timeout and platform sandbox policy remain enforced.",
-            "parameters": object_schema(json!({
-                "command": { "type": "string" },
-                "cwd": { "type": "string", "description": "Optional working directory. Defaults to the current session cwd." },
-                "shellPath": { "type": "string" },
-                "timeoutMs": { "type": "integer", "minimum": 1 },
-                "sandboxMode": { "type": "string", "enum": ["read-only", "workspace-write", "danger-full-access"] },
-                "sandbox": { "type": "boolean", "description": "Legacy compatibility switch." }
-            }), &["command"]),
-            "parallelSafe": false
         }
     ])
 }
@@ -898,13 +753,6 @@ fn required_string(args: &Value, key: &str) -> Result<String, String> {
     optional_string(args, key)?.ok_or_else(|| format!("缺少必填参数 {key}"))
 }
 
-fn required_raw_string(args: &Value, key: &str) -> Result<String, String> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| format!("缺少必填字符串参数 {key}"))
-}
-
 fn optional_bool(args: &Value, key: &str) -> Result<Option<bool>, String> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -926,17 +774,6 @@ fn optional_usize(args: &Value, key: &str) -> Result<Option<usize>, String> {
             .map(Some)
             .map_err(|_| format!("参数 {key} 必须是非负整数")),
         Some(_) => Err(format!("参数 {key} 必须是非负整数")),
-    }
-}
-
-fn optional_sandbox_mode(args: &Value, key: &str) -> Result<Option<SandboxMode>, String> {
-    match args.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => serde_json::from_value(value.clone())
-            .map(Some)
-            .map_err(|_| {
-                format!("参数 {key} 必须是 read-only、workspace-write 或 danger-full-access")
-            }),
     }
 }
 
@@ -1046,6 +883,30 @@ pub(crate) async fn agent_host_request(
     .map_err(|error| format!("Agent Host 请求任务失败：{error}"))?
 }
 
+#[tauri::command]
+pub(crate) fn agent_host_client_tool_result(
+    state: State<'_, AgentHostState>,
+    input: AgentHostClientToolResultInput,
+) -> Result<(), String> {
+    if input.ok {
+        let result = input
+            .result
+            .ok_or_else(|| "客户端工具成功结果缺少 result".to_string())?;
+        state.inner.send_native_result(&input.id, Ok(result));
+        return Ok(());
+    }
+
+    let message = input
+        .error
+        .as_ref()
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or("客户端工具执行失败")
+        .to_string();
+    state.inner.send_native_result(&input.id, Err(message));
+    Ok(())
+}
+
 pub(crate) fn shutdown(app: &AppHandle) {
     if let Some(state) = app.try_state::<AgentHostState>() {
         state.stop(app);
@@ -1068,16 +929,17 @@ mod tests {
     fn native_schemas_have_required_fields() {
         let tools = native_tool_descriptors();
         let tools = tools.as_array().expect("tool descriptors");
+        assert_eq!(tools.len(), 3);
         let read = tools
             .iter()
             .find(|tool| tool["name"] == "read_file")
             .expect("read_file");
         assert_eq!(read["parameters"]["required"], json!(["path"]));
-        let command = tools
+        let search = tools
             .iter()
-            .find(|tool| tool["name"] == "execute_command")
-            .expect("execute_command");
-        assert_eq!(command["parameters"]["required"], json!(["command"]));
+            .find(|tool| tool["name"] == "search_files")
+            .expect("search_files");
+        assert_eq!(search["parameters"]["required"], json!(["pattern"]));
     }
 
     #[test]
@@ -1091,21 +953,15 @@ mod tests {
         );
         assert_eq!(listing["isError"], false);
         assert_eq!(listing["content"], "src/main.ts\n[dir] src/app");
+    }
 
-        let failed_command = native_tool_result(
-            "execute_command",
-            json!({
-                "exitCode": 1,
-                "output": "failed",
-                "timedOut": false,
-                "denied": false,
-                "enforcement": "full"
-            }),
-        );
-        assert_eq!(failed_command["isError"], true);
-        assert!(failed_command["content"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("exitCode=1"));
+    #[test]
+    fn client_tools_are_routed_outside_the_native_allowlist() {
+        assert!(is_native_tool_name("read_file"));
+        assert!(is_native_tool_name("search_files"));
+        assert!(!is_native_tool_name("write_file"));
+        assert!(!is_native_tool_name("execute_command"));
+        assert!(!is_native_tool_name("todo_write"));
+        assert!(!is_native_tool_name("mcp__github__search"));
     }
 }

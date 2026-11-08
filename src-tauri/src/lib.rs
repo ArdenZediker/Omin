@@ -653,7 +653,8 @@ pub fn run() {
             agent_host::agent_host_start,
             agent_host::agent_host_stop,
             agent_host::agent_host_status,
-            agent_host::agent_host_request
+            agent_host::agent_host_request,
+            agent_host::agent_host_client_tool_result
         ])
         .setup(|app| {
             let host_state = app.state::<agent_host::AgentHostState>().inner().clone();
