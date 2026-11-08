@@ -504,7 +504,9 @@ fn dispatch_native_call(app: AppHandle, inner: Arc<AgentHostInner>, message: Val
                 }
             };
             let session_cwd = inner.session_cwd(&session_id);
-            run_native_tool(&app, &tool, args, session_cwd).await
+            run_native_tool(&app, &tool, args, session_cwd)
+                .await
+                .map(|value| native_tool_result(&tool, value))
         };
         inner.send_native_result(&id, result);
     });
@@ -623,6 +625,152 @@ async fn run_native_tool(
         }
         other => Err(format!("未知原生工具：{other}")),
     }
+}
+
+/// Native tools return structured Rust values, while the Agent Host tool
+/// contract carries model-facing text. Normalize at the process boundary so
+/// arrays/outcomes are never rejected as malformed tool results.
+fn native_tool_result(tool: &str, value: Value) -> Value {
+    let content = match tool {
+        "read_file" => {
+            let body = value
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            format!(
+                "{body}\n\n[file-meta total={} offset={} returned={} lines={}-{} truncated={}]",
+                value
+                    .get("total_chars")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                value
+                    .get("offset_chars")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                value
+                    .get("returned_chars")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(body.chars().count() as u64),
+                value.get("start_line").and_then(Value::as_u64).unwrap_or(1),
+                value.get("end_line").and_then(Value::as_u64).unwrap_or(1),
+                value
+                    .get("truncated")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            )
+        }
+        "list_files" => {
+            let mut lines = Vec::new();
+            if let Some(entries) = value.as_array() {
+                for entry in entries {
+                    let path = entry
+                        .get("path")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let is_dir = entry
+                        .get("is_dir")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    lines.push(format!("{}{path}", if is_dir { "[dir] " } else { "" }));
+                }
+            }
+            if lines.is_empty() {
+                "(no files matched)".to_string()
+            } else {
+                lines.join("\n")
+            }
+        }
+        "search_files" => {
+            let mut lines = Vec::new();
+            if let Some(matches) = value.as_array() {
+                for item in matches {
+                    let path = item.get("path").and_then(Value::as_str).unwrap_or_default();
+                    let line = item.get("line_number").and_then(Value::as_u64).unwrap_or(0);
+                    let text = item.get("line").and_then(Value::as_str).unwrap_or_default();
+                    lines.push(format!("{path}:{line}: {text}"));
+                }
+            }
+            if lines.is_empty() {
+                "(no matches)".to_string()
+            } else {
+                lines.join("\n")
+            }
+        }
+        "execute_command" => {
+            let output = value
+                .get("output")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let exit_code = value
+                .get("exitCode")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            let timed_out = value
+                .get("timedOut")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let denied = value
+                .get("denied")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let enforcement = value
+                .get("enforcement")
+                .and_then(Value::as_str)
+                .unwrap_or("none");
+            let body = if output.trim().is_empty() {
+                "(no output)"
+            } else {
+                output
+            };
+            format!(
+                "{body}\n\n[command-meta exitCode={exit_code} timedOut={timed_out} denied={denied} enforcement={enforcement}]"
+            )
+        }
+        "write_file" | "edit_file" => {
+            let path = value
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let created = value
+                .get("created")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let replacements = value
+                .get("replacements")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let size = value.get("size").and_then(Value::as_u64).unwrap_or(0);
+            format!(
+                "{}: {path} (size={size}, created={created}, replacements={replacements})",
+                if created { "created" } else { "updated" }
+            )
+        }
+        _ => serde_json::to_string_pretty(&value)
+            .unwrap_or_else(|_| "native tool completed without a displayable result".to_string()),
+    };
+
+    let is_error = if tool == "execute_command" {
+        let exit_code = value
+            .get("exitCode")
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
+        let timed_out = value
+            .get("timedOut")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let denied = value
+            .get("denied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        exit_code != 0 || timed_out || denied
+    } else {
+        false
+    };
+
+    json!({
+        "content": content,
+        "isError": is_error,
+    })
 }
 
 fn native_tool_descriptors() -> Value {
@@ -918,5 +1066,34 @@ mod tests {
             .find(|tool| tool["name"] == "execute_command")
             .expect("execute_command");
         assert_eq!(command["parameters"]["required"], json!(["command"]));
+    }
+
+    #[test]
+    fn native_tool_results_are_model_readable() {
+        let listing = native_tool_result(
+            "list_files",
+            json!([
+                { "path": "src/main.ts", "is_dir": false },
+                { "path": "src/app", "is_dir": true }
+            ]),
+        );
+        assert_eq!(listing["isError"], false);
+        assert_eq!(listing["content"], "src/main.ts\n[dir] src/app");
+
+        let failed_command = native_tool_result(
+            "execute_command",
+            json!({
+                "exitCode": 1,
+                "output": "failed",
+                "timedOut": false,
+                "denied": false,
+                "enforcement": "full"
+            }),
+        );
+        assert_eq!(failed_command["isError"], true);
+        assert!(failed_command["content"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("exitCode=1"));
     }
 }
