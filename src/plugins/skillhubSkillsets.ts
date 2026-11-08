@@ -158,6 +158,7 @@ export async function installSkillhubSkillset(
   if (!parsed) throw new Error("专家团 SKILL.md 解析失败");
   parsed.id = res.slug;
   parsed.kind = "skill";
+  parsed.resourceBase = res.path;
   parsed.command = parsed.command || `/${res.slug}`;
   if (!parsed.icon && set.iconUrl) parsed.icon = set.iconUrl;
   if (!parsed.category) parsed.category = mapSkillsetScene(set.scene);

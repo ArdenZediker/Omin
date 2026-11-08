@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { pluginRegistry } from "./registry";
+import { parseSkillMarkdown, pluginRegistry } from "./registry";
 import type { PluginManifest } from "./types";
 
 /**
@@ -151,5 +151,53 @@ describe("pluginRegistry.linkSkillset（专家团子技能归属）", () => {
   it("未安装的 id 直接返回 false（不抛错、不落盘）", () => {
     pluginRegistry.load();
     expect(pluginRegistry.linkSkillset("no-such-plugin", "suite-a")).toBe(false);
+  });
+});
+
+describe("parseSkillMarkdown（dsh 调用策略）", () => {
+  it("解析 whenToUse 与两面调用策略", () => {
+    const manifest = parseSkillMarkdown(`---
+name: private-skill
+description: Internal workflow
+whenToUse: 仅在用户明确要求内部流程时使用
+disable-model-invocation: true
+user-invocable: false
+---
+
+正文`);
+
+    expect(manifest?.whenToUse).toBe("仅在用户明确要求内部流程时使用");
+    expect(manifest?.invocation).toEqual({
+      modelInvocable: false,
+      userInvocable: false,
+    });
+  });
+
+  it("省略策略时两面默认开放，并接受 dsh 的布尔拼写", () => {
+    const manifest = parseSkillMarkdown(`---
+name: default-skill
+description: Default
+disable-model-invocation: off
+user-invocable: YES
+---
+
+正文`);
+
+    expect(manifest?.invocation).toEqual({
+      modelInvocable: true,
+      userInvocable: true,
+    });
+  });
+
+  it("非法布尔值使整个技能失效，而不是静默放开调用面", () => {
+    const manifest = parseSkillMarkdown(`---
+name: broken-skill
+description: Broken
+user-invocable: sometimes
+---
+
+正文`);
+
+    expect(manifest).toBeNull();
   });
 });

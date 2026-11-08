@@ -1,5 +1,5 @@
 import { emit, emitTo } from "@tauri-apps/api/event";
-import { BUILTIN_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
+import { DEFAULT_MODEL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
 import type { ChatToolParam, Message } from "../adapters/types";
 import type { Project } from "../chat/types";
 import { buildShellEnvHint } from "../chat/shellEnv";
@@ -7,6 +7,7 @@ import { resolveDelegatableExperts } from "../chat/expertDelegation";
 import { BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS } from "../app/constants";
 import { loadBasicSettings } from "../app/settings";
 import { pluginRegistry } from "../plugins/registry";
+import { isModelInvocable } from "../plugins/invocation";
 import type { PetThoughtState } from "../app/types";
 
 export type SessionLite = {
@@ -68,17 +69,24 @@ export function buildExpertAgentHint(project: Project | null): string {
     .join("\n");
 }
 
-// 内置工具是所有模型/会话的公用工具：无条件纳入系统提示与可用工具集。
-export function resolveEnabledToolNames(project: Project | null) {
+/**
+ * Single source of truth for the model-visible tool assembly.
+ *
+ * The system-prompt tool list and function-calling schemas are two projections
+ * of this one result, so a tool can never be described to the model while its
+ * executable schema is absent (or vice versa).
+ */
+export function resolveChatToolAssembly(project: Project | null) {
   const sourceToolIds = new Set<string>([
-    ...BUILTIN_TOOL_IDS,
+    ...DEFAULT_MODEL_TOOL_IDS,
     ...(project?.allowedToolIds ?? []),
   ]);
   const toolNames: string[] = [];
   const toolDescriptions: Record<string, string> = {};
+  const tools: ChatToolParam[] = [];
   for (const toolId of new Set(sourceToolIds)) {
     const manifest = getToolManifestById(toolId);
-    if (!manifest?.title) continue;
+    if (!manifest?.title || !isModelInvocable(manifest.invocation)) continue;
     toolNames.push(manifest.title);
     // 仿 deepseek「插件自带指令」：优先使用 manifest 的声明式提示贡献。
     // /bash 额外追加当前 Shell 环境的动态提示（方案B：用户自定义 Shell 时引导模型用对应语法）。
@@ -90,41 +98,31 @@ export function resolveEnabledToolNames(project: Project | null) {
     if (contribution) {
       toolDescriptions[manifest.title] = contribution;
     }
+    tools.push({
+      name: manifest.id,
+      description: contribution || manifest.description,
+      parameters: manifest.parameters ?? { type: "object", properties: {} },
+    });
   }
+  return { toolNames, toolDescriptions, tools };
+}
+
+// 默认模型工具对齐 WorkDSH；项目 allowedToolIds 只作为额外扩展集。
+export function resolveEnabledToolNames(project: Project | null) {
+  const { toolNames, toolDescriptions } = resolveChatToolAssembly(project);
   return { toolNames, toolDescriptions };
 }
 
 /**
  * function calling 用的工具声明：把模型可调用的工具转为工具定义。
  *
- * 内置工具为所有模型/会话的公用工具，无条件暴露；项目额外启用的非内置工具与之取并集。
+ * 模型默认工具对齐 WorkDSH；项目额外启用的工具与默认集取并集。
  * 有副作用的写操作（git 提交/PR、改档案、装插件等）仍受运行时确认门（HITL）保护，
  * 不会因工具可见就自动执行。
  * 参数 schema 以 config/manifests/tools.ts 的 manifest.parameters 为数据源。
  */
 export function buildChatTools(project: Project | null): ChatToolParam[] {
-  // 内置工具为所有模型/会话的公用工具：无条件暴露，不受项目绑定或只读/写分类限制。
-  // 项目启用的非内置工具（用户安装/自定义）与内置工具取并集，仍按 manifest 存在性过滤。
-  const sourceToolIds = new Set<string>([
-    ...BUILTIN_TOOL_IDS,
-    ...(project?.allowedToolIds ?? []),
-  ]);
-  const tools: ChatToolParam[] = [];
-  for (const toolId of new Set(sourceToolIds)) {
-    const manifest = getToolManifestById(toolId);
-    if (!manifest) continue;
-    // /bash 额外追加当前 Shell 环境的动态提示（方案B），/agent 追加专家名册；与 resolveEnabledToolNames 保持一致。
-    const base = manifest.promptContribution ?? manifest.description;
-    let description = base;
-    if (toolId === "bash") description += buildShellEnvHint();
-    if (toolId === "agent") description += buildExpertAgentHint(project);
-    tools.push({
-      name: manifest.id,
-      description,
-      parameters: manifest.parameters ?? { type: "object", properties: {} },
-    });
-  }
-  return tools;
+  return resolveChatToolAssembly(project).tools;
 }
 
 /**

@@ -19,6 +19,7 @@ import {
 import { DEFAULT_MAX_DEPTH, buildOutline, renderOutline } from "./codeOutline";
 import { requestConfirmation } from "./confirmationGate";
 import { scanBashWriteSemantics, findNoGoZoneTarget } from "./bashWriteScan";
+import { assembleSkillCatalog, renderSkillContent } from "./skillCatalog";
 import { resolveSessionOutputDir } from "../app/outputStorage";
 import { loadBasicSettings } from "../app/settings";
 import type { SandboxMode } from "../app/types";
@@ -164,6 +165,11 @@ export type LocalToolSession = {
 
 export type LocalToolRuntime = {
   activeProject: Project | null;
+  /**
+   * 当前任务的专家技能边界。`undefined` = 不额外收窄；空数组 = 不允许技能。
+   * 必须随运行上下文传入，不能从 UI 当前选择反查，否则后台任务会串范围。
+   */
+  allowedSkillIds?: readonly string[];
   activeChatId: string | null;
   getChatSessionById: (sessionId: string) => LocalToolSession | null;
   searchChatSessions: (query: string) => LocalToolSession[];
@@ -1911,30 +1917,28 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
       const raw = (strArg(json, "name", "id", "skill") ?? resolvedCommand.args.trim()).replace(/^\//, "").trim();
       if (!raw) return { ok: false, error: "用法：/use_skill 技能 id 或 /命令（如 weather 或 /weather）" };
 
-      const enabled = pluginRegistry.listEnabledSkills();
-      const match =
-        enabled.find((skill) => skill.id === raw) ||
-        enabled.find((skill) => (skill.command ?? "").replace(/^\//, "") === raw) ||
-        enabled.find((skill) => skill.name === raw);
+      const catalog = assembleSkillCatalog({
+        project: runtime.activeProject,
+        expertSkillIds: runtime.allowedSkillIds,
+      });
+      const match = catalog.getModelSkill(raw);
       if (!match) {
-        const available = enabled.map((skill) => skill.id).join("、") || "（无已启用技能）";
+        const known = catalog.entries.find((skill) =>
+          skill.id.toLowerCase() === raw.toLowerCase() ||
+          skill.command.replace(/^\/+/, "").toLowerCase() === raw.toLowerCase() ||
+          skill.name.toLowerCase() === raw.toLowerCase()
+        );
+        if (known && !known.body) {
+          return { ok: false, error: `技能「${known.name}」没有正文内容。` };
+        }
+        const available = catalog.modelEntries.map((skill) => skill.id).join("、") || "（无已启用技能）";
         return { ok: false, error: `未找到已启用技能：${raw}。当前可用：${available}` };
       }
 
-      const body = (match.systemPrompt ?? "").trim();
-      if (!body) return { ok: false, error: `技能「${match.name ?? match.id}」没有正文内容。` };
-
       return {
         ok: true,
-        outputText: [
-          `技能：${match.name ?? match.id}（${match.command ?? match.id}）`,
-          match.description ? `适用场景：${match.description}` : "",
-          "",
-          body,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        data: { id: match.id, name: match.name ?? match.id },
+        outputText: renderSkillContent(match),
+        data: { id: match.id, name: match.name, resourceBase: match.resourceBase },
       };
     },
   });
@@ -2031,6 +2035,7 @@ export function createLocalToolRegistry(runtime: LocalToolRuntime) {
           };
         parsed.id = res.slug;
         parsed.kind = "skill";
+        parsed.resourceBase = res.path;
         parsed.command = parsed.command || `/${res.slug}`;
         if (!parsed.category) parsed.category = "AI Agent";
         const tags = Array.isArray(json?.tags)

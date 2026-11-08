@@ -1,6 +1,8 @@
 import { pluginRegistry } from "../plugins/registry";
-import type { PluginSkillContribution, PluginToolContribution } from "../plugins/types";
+import type { PluginToolContribution } from "../plugins/types";
+import { isUserInvocable, type InvocationPolicy } from "../plugins/invocation";
 import { isLocalSlashCommand } from "./localTools";
+import { assembleSkillCatalog, type SkillCatalogEntry } from "./skillCatalog";
 
 export type LocalSlashCommand = {
   id: string;
@@ -10,21 +12,27 @@ export type LocalSlashCommand = {
   kind: "tool" | "skill";
   systemPrompt?: string;
   promptPrefix?: string;
+  whenToUse?: string;
+  resourceBase?: string;
+  invocation?: InvocationPolicy;
 };
 
 export type ResolvedLocalSlashCommand = LocalSlashCommand & {
   args: string;
 };
 
-function skillToLocalCommand(skill: PluginSkillContribution): LocalSlashCommand {
+function skillToLocalCommand(skill: SkillCatalogEntry): LocalSlashCommand {
   return {
     id: skill.id,
     command: skill.command,
-    title: skill.title,
+    title: skill.name,
     description: skill.description,
     kind: "skill",
-    systemPrompt: skill.systemPrompt,
-    promptPrefix: skill.promptPrefix,
+    systemPrompt: skill.body,
+    promptPrefix: skill.manifest.promptPrefix,
+    whenToUse: skill.whenToUse,
+    resourceBase: skill.resourceBase,
+    invocation: skill.invocation,
   };
 }
 
@@ -35,12 +43,13 @@ function toolToLocalCommand(tool: PluginToolContribution): LocalSlashCommand {
     title: tool.title,
     description: tool.description,
     kind: "tool",
+    invocation: tool.invocation,
   };
 }
 
 /** 全部可用技能命令 = 内置 + 插件市场已安装且启用。 */
 export function getAllSkillCommands(): LocalSlashCommand[] {
-  return pluginRegistry.toSkillCommands().map(skillToLocalCommand);
+  return assembleSkillCatalog().entries.map(skillToLocalCommand);
 }
 
 /** 全部可用工具命令 = 内置 + 插件市场已安装且启用。 */
@@ -96,6 +105,7 @@ export function getMatchingSlashSuggestions(
   // 而它真正的用法是由模型自己 function calling 触发。
   const toolSuggestions = getAllToolCommands()
     .filter((item) => isRunnableLocalCommand(item))
+    .filter((item) => isUserInvocable(item.invocation))
     .filter((item) => {
       if (allowedToolIdSet && !allowedToolIdSet.has(item.id)) {
         return false;
@@ -108,6 +118,9 @@ export function getMatchingSlashSuggestions(
     });
 
   const skillSuggestions = getAllSkillCommands().filter((item) => {
+    if (!isUserInvocable(item.invocation)) {
+      return false;
+    }
     if (allowedSkillIdSet && !allowedSkillIdSet.has(item.id)) {
       return false;
     }
@@ -138,7 +151,10 @@ export function resolveLocalSlashCommand(input: string): ResolvedLocalSlashComma
   // 与补全共用同一个判据：技能与有本地执行器的工具都可手敲执行；
   // 无本地执行器的（`agent`）返回 null，让这句话照常走模型那一轮。
   const definition = getAllLocalCommands().find(
-    (item) => item.command === command.toLowerCase() && isRunnableLocalCommand(item)
+    (item) =>
+      item.command === command.toLowerCase() &&
+      isRunnableLocalCommand(item) &&
+      isUserInvocable(item.invocation)
   );
   if (!definition) return null;
 

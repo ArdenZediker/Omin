@@ -228,6 +228,7 @@ export async function installConnectorhubSkill(
   }
   parsed.id = result.slug;
   parsed.kind = "skill";
+  parsed.resourceBase = result.path;
   parsed.name = connectorDisplayName(result.slug);
   parsed.category = connectorCategory(result.slug);
   parsed.sourceUrl =

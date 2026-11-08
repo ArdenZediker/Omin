@@ -1,3 +1,5 @@
+import type { InvocationPolicy } from "../../plugins/invocation";
+
 /** function calling 参数的 JSON Schema 属性（支持一层嵌套对象数组，如 agent 工具的 tasks 批量派发）。 */
 export type ToolParamProperty = {
   type: string;
@@ -22,6 +24,8 @@ export type ToolManifest = {
    * 注入到工具协议分片时优先使用此字段，缺省回退到 description。
    */
   promptContribution?: string;
+  /** 面向模型与面向用户的调用策略；缺省两边都允许。 */
+  invocation?: InvocationPolicy;
   /**
    * 并行安全声明（对齐 harness 的 isConcurrencySafe 契约）：
    * 仅显式声明 true 的只读工具可与同轮其他安全工具并行执行；

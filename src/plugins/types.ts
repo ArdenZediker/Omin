@@ -3,6 +3,8 @@
  * 「一切皆插件」：技能、工具、连接器、专家、项目预设都走同一套 manifest + registry。
  */
 
+import type { InvocationPolicy } from "./invocation";
+
 export type PluginKind = "skill" | "tool" | "connector" | "expert" | "template";
 
 export type PluginSource =
@@ -67,6 +69,12 @@ export type PluginManifest = {
   tags?: string[];
   /** 该插件自带的详细指令/正文（DeepSeek Harness SKILL.md 正文） */
   body?: string;
+  /** 技能适用场景；与 description 分开，供模型目录做触发路由。 */
+  whenToUse?: string;
+  /** 目录型技能的相对资源根（references/scripts/assets 等从这里解析）。 */
+  resourceBase?: string;
+  /** 面向模型与面向用户的调用策略；缺省两边都允许。 */
+  invocation?: InvocationPolicy;
 
   // ---- skill ----
   command?: string;
@@ -136,6 +144,9 @@ export type PluginSkillContribution = {
   description: string;
   systemPrompt?: string;
   promptPrefix?: string;
+  whenToUse?: string;
+  resourceBase?: string;
+  invocation?: InvocationPolicy;
 };
 
 /** 从插件导出为旧版 ToolManifest（兼容 localTools） */
@@ -145,4 +156,5 @@ export type PluginToolContribution = {
   title: string;
   description: string;
   promptContribution?: string;
+  invocation?: InvocationPolicy;
 };

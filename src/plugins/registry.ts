@@ -8,6 +8,7 @@ import type {
   PluginSkillContribution,
   PluginToolContribution,
 } from "./types";
+import type { InvocationPolicy } from "./invocation";
 
 const INSTALLED_PLUGINS_STORAGE_KEY = "omni_installed_plugins";
 
@@ -286,6 +287,9 @@ class PluginRegistry {
       description: manifest.description,
       systemPrompt: manifest.systemPrompt,
       promptPrefix: manifest.promptPrefix,
+      whenToUse: manifest.whenToUse,
+      resourceBase: manifest.resourceBase,
+      invocation: manifest.invocation,
     }));
   }
 
@@ -297,6 +301,7 @@ class PluginRegistry {
       title: manifest.name,
       description: manifest.description,
       promptContribution: manifest.promptContribution,
+      invocation: manifest.invocation,
     }));
   }
 
@@ -354,6 +359,13 @@ export function parseSkillMarkdown(content: string): PluginManifest | null {
   const lines = frontmatterMatch[1].split("\n");
   const body = frontmatterMatch[2].trim();
   const meta: Record<string, string> = {};
+  const parseBoolean = (raw: string | undefined): boolean | null | undefined => {
+    if (raw === undefined) return undefined;
+    const normalized = raw.trim().toLowerCase();
+    if (["true", "yes", "on", "1"].includes(normalized)) return true;
+    if (["false", "no", "off", "0"].includes(normalized)) return false;
+    return null;
+  };
 
   for (const line of lines) {
     const colonIndex = line.indexOf(":");
@@ -366,6 +378,13 @@ export function parseSkillMarkdown(content: string): PluginManifest | null {
 
   const id = meta.name?.trim();
   if (!id) return null;
+  const disableModelInvocation = parseBoolean(meta["disable-model-invocation"]);
+  const userInvocable = parseBoolean(meta["user-invocable"]);
+  if (disableModelInvocation === null || userInvocable === null) return null;
+  const invocation: InvocationPolicy = {
+    modelInvocable: disableModelInvocation !== true,
+    userInvocable: userInvocable !== false,
+  };
 
   return {
     id,
@@ -381,10 +400,12 @@ export function parseSkillMarkdown(content: string): PluginManifest | null {
     kind: "skill",
     category: meta.category,
     icon: meta.icon,
+    whenToUse: meta.whenToUse ?? meta["when-to-use"],
     body,
     command: meta.command || `/${id}`,
     systemPrompt: body,
     promptPrefix: meta.promptPrefix,
+    invocation,
   };
 }
 

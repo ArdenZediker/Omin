@@ -1340,9 +1340,12 @@ describe("/use_skill（渐进式披露：按需载入技能正文）", () => {
 
   function mockSkills(skills: Array<Record<string, unknown>>) {
     vi.spyOn(pluginRegistry, "listEnabledSkills").mockReturnValue(skills as never);
+    vi.spyOn(pluginRegistry, "isInstalled").mockImplementation(
+      (id) => skills.some((skill) => skill.id === id),
+    );
   }
 
-  it("按技能 id 载入正文，返回名 / 适用场景 / 正文", async () => {
+  it("按技能 id 载入正文，返回统一的 skill_content 结构", async () => {
     mockSkills([weatherSkill]);
     const runtime = createRuntime();
 
@@ -1352,8 +1355,8 @@ describe("/use_skill（渐进式披露：按需载入技能正文）", () => {
     });
 
     expect(result?.ok).toBe(true);
-    expect(result?.outputText).toContain("技能：weather（/weather）");
-    expect(result?.outputText).toContain("适用场景：查询天气预报，无需 API 密钥");
+    expect(result?.outputText).toContain('<skill_content name="weather">');
+    expect(result?.outputText).toContain("<skill_instructions>");
     expect(result?.outputText).toContain("wttr.in/Yibin");
     expect(result?.data).toMatchObject({ id: "weather" });
   });
@@ -1369,6 +1372,54 @@ describe("/use_skill（渐进式披露：按需载入技能正文）", () => {
     const byName = await executeLocalTool(runtime, { command: "/use_skill", args: "weather" });
     expect(byName?.ok).toBe(true);
     expect(byName?.outputText).toContain("wttr.in/Yibin");
+  });
+
+  it("模型目录只载入 modelInvocable 的技能，并返回资源根", async () => {
+    mockSkills([
+      {
+        ...weatherSkill,
+        whenToUse: "用户问天气时",
+        resourceBase: "C:/Users/Test/.dsh/skills/weather",
+        invocation: { modelInvocable: true, userInvocable: false },
+      },
+      {
+        ...weatherSkill,
+        id: "user-only",
+        command: "/user-only",
+        invocation: { modelInvocable: false, userInvocable: true },
+      },
+    ]);
+    const runtime = createRuntime();
+
+    const loaded = await executeLocalTool(runtime, {
+      command: "/use_skill",
+      args: JSON.stringify({ name: "weather" }),
+    });
+    expect(loaded?.outputText).toContain("Base directory for this skill: C:/Users/Test/.dsh/skills/weather");
+    expect(loaded?.data).toMatchObject({
+      resourceBase: "C:/Users/Test/.dsh/skills/weather",
+    });
+
+    const hidden = await executeLocalTool(runtime, {
+      command: "/use_skill",
+      args: JSON.stringify({ name: "user-only" }),
+    });
+    expect(hidden?.ok).toBe(false);
+    expect(hidden?.error).not.toContain("当前可用：user-only");
+  });
+
+  it("专家技能范围为空时，模型 loader 也不能越权加载全局安装技能", async () => {
+    mockSkills([weatherSkill]);
+    const runtime = createRuntime({ allowedSkillIds: [] });
+
+    const result = await executeLocalTool(runtime, {
+      command: "/use_skill",
+      args: JSON.stringify({ name: "weather" }),
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("未找到已启用技能");
+    expect(result?.error).not.toContain("当前可用：weather");
   });
 
   it("未找到技能时报错并列出当前可用技能", async () => {

@@ -1,4 +1,5 @@
 import type { PluginManifest } from "./types";
+import { WORKDSH_ALIGNED_SKILL_PLUGINS } from "./workdshSkills";
 
 /**
  * 内置插件目录。
@@ -7,6 +8,7 @@ import type { PluginManifest } from "./types";
  */
 
 export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
+  ...WORKDSH_ALIGNED_SKILL_PLUGINS,
   {
     id: "expert-manager",
     name: "专家管理",
@@ -107,35 +109,6 @@ export const BUILTIN_SKILL_PLUGINS: PluginManifest[] = [
 做得好的地方 1-3 条，具体到做法；没有就不写。
 
 【原则】每条意见必须指向具体位置和具体改法，不接受"建议增强健壮性"这类空话；对不确定的推断标注"待确认"；问题多时先说最要命的三条。`,
-  },
-  {
-    id: "skill-creator",
-    name: "技能创作",
-    description: "当用户要求创建/沉淀/保存技能（触发词：创建技能/做个技能/沉淀成技能/保存为技能）时，交互式设计并落盘注册新技能。",
-    version: "1.0.0",
-    author: "Omni",
-    kind: "skill",
-    category: "AI Agent",
-    icon: "Wand2",
-    command: "/skill-creator",
-    systemPrompt: `你是 Omni 的技能创作者，帮助用户把可复用的工作流沉淀为 Omni 技能（kind: "skill" 的插件）。
-
-【Omni 技能是什么】一条结构化定义：id（kebab-case 唯一标识）、name（展示名）、description（触发匹配的关键——模型靠它判断何时启用）、content（Markdown 正文，即技能被激活后注入的工作流指令）。已安装技能存放在 ~/.dsh/skills/<id>/SKILL.md。
-
-【工作流】
-1. 【需求访谈】弄清三件事：这个技能解决什么重复性问题？什么场景/关键词出现时应该激活？产出物长什么样（报告/代码/清单/命令）？信息够了就动手，不搞冗长问卷。
-2. 【设计】
-   - id：kebab-case，表意（如 weekly-report、release-check）
-   - name：中文展示名
-   - description：30-80 字，必须包含触发词与适用边界（"当…时使用；…场景不要用"）
-   - content：正文结构参考——先一段"角色与目标"，再"工作流"分步（每步可执行、可验证），需要硬约束的用"【规则】"小节，最后"【输出格式】"给出交付模板。篇幅以 50-150 行为宜，写清楚但不啰嗦。
-3. 【确认】把 id/name/description 摘要和正文提纲给用户过目；用户同意后进入安装。
-4. 【安装】调用 install_skill 工具，参数：{ id, name, description, content }。content 若自带 YAML frontmatter（---name/description---）则原样传，否则由工具自动合成。
-5. 【收尾】报告安装结果与存放路径；提醒用户在项目设置中确认技能已启用（新建项目默认启用内置技能，自造技能需在「技能」列表确认开关）。
-
-【更新与迭代】用户要求修改已有技能时：读取现状 → 只改用户要求的部分 → 以相同 id 重新调用 install_skill 覆盖安装。id 一经创建不建议更改（改名等于新建）。
-
-【原则】description 写不好 = 技能永远不会被触发，宁可多花时间打磨；正文避免空话，每句话都要能指导行为。`,
   },
 ];
 
@@ -496,11 +469,8 @@ export const BUILTIN_TOOL_PLUGINS: PluginManifest[] = [
  * - `starterPrompt` 是点「插入输入框」时放进草稿的**起手一句**（一次性）。
  *   两者曾经挤在 `templatePrompt` 一个字段里，结果一句「请帮我梳理…」的用户问句
  *   被当成持久项目系统指令写进了项目，语义是反的。
- * - **不声明 `defaultToolIds`**：它们只会是空操作。这里原本给每条预设列了
- *   `list_files/read_file/search_files` 之类的工具，但这些都是 `BUILTIN_TOOL_IDS`
- *   ——内置工具**无条件可用、不受项目 allowedToolIds 限制**（见 `config/manifests/tools.ts`），
- *   所以既没人读（`CreateProjectDialog` 只把 selectedTemplateId 写进指令），
- *   真接上也不产生任何约束。要表达「能力边界」得用别的机制，别在这里留假数据。
+ * - **不声明 `defaultToolIds`**：创建流程并不读取它。模型默认工具由
+ *   `DEFAULT_MODEL_TOOL_IDS` 统一控制；这里再抄一份只会形成第二事实源。
  */
 export const BUILTIN_TEMPLATE_PLUGINS: PluginManifest[] = [
   {

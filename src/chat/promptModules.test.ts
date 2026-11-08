@@ -122,13 +122,12 @@ describe("promptModules", () => {
       ],
     });
 
-    // 目录信息仍在：名 / 命令 / 适用场景——模型据此判断要不要载入。
-    expect(prompt).toContain("### 技能：weather（/weather）");
-    expect(prompt).toContain("适用场景：查询天气预报，无需 API 密钥");
-    // 正文未预载，改为显式指路。
-    expect(prompt).toContain("正文：需先调用 /use_skill weather 载入");
-    expect(prompt).toContain("必须先调用 /use_skill <技能 id> 载入该技能正文");
-    expect(prompt).toContain("同一个技能本轮载入一次即可");
+    // DSH 口径：目录只含稳定 id 与有界描述，不带正文和 whenToUse。
+    expect(prompt).toContain("<available_skills>");
+    expect(prompt).toContain("- `weather`: 查询天气预报，无需 API 密钥");
+    expect(prompt).toContain("call the `use_skill` tool with the exact skill id");
+    expect(prompt).toContain("This catalog contains summaries only");
+    expect(prompt).not.toContain("wttr.in/London");
   });
 
   // 紧凑窗快速问答那条链不传工具，没有 /use_skill 可用，必须退回内联正文。

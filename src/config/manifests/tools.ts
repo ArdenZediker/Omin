@@ -568,6 +568,7 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     id: "agent",
     command: "/agent",
     title: "Sub Agent",
+    invocation: { userInvocable: false },
     description:
       "Delegate a self-contained read-only research subtask to a sub-agent (fresh context + read-only tools); returns its final report.",
     promptContribution:
@@ -693,7 +694,35 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
 ];
 
 
-/** 内置工具：所有模型/会话的公用工具，无条件可用（不受项目 allowedToolIds 限制）。 */
+/**
+ * 模型默认可见工具集，按 WorkDSH 默认能力模型映射到 Omni 的真实执行器。
+ *
+ * 这份清单只决定“模型默认看到什么”；BUILTIN_TOOL_IDS 仍是全部可执行工具的
+ * 全集，用户手敲斜杠命令和已有项目引用不会因此失效。
+ */
+export const DEFAULT_MODEL_TOOL_IDS = [
+  "search_sessions",
+  "read_session",
+  "list_files",
+  "read_file",
+  "search_files",
+  "write_file",
+  "edit_file",
+  "bash",
+  "todo_write",
+  "agent",
+  "use_skill",
+  "install_skill",
+  "install_expert",
+  "web_search",
+  "web_fetch",
+  "export_docx",
+  "export_xlsx",
+  "export_pptx",
+  "export_md",
+];
+
+/** 全部内置工具：保留完整执行器与斜杠命令能力，不代表模型默认暴露。 */
 export const BUILTIN_TOOL_IDS = [
   "search_sessions",
   "read_session",

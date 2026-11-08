@@ -47,13 +47,18 @@ function installUserSkill(overrides?: Partial<PluginManifest>) {
   );
 }
 
-async function runSlash(input: string, project: Project | null) {
+async function runSlash(
+  input: string,
+  project: Project | null,
+  enabledSkillIds?: string[],
+) {
   return executeInputTask({
     input,
     images: [],
     currentMessages: [{ role: "user", content: input }],
     model: "gpt-test",
     project,
+    enabledSkillIds,
     onChunk: () => {},
     executeTool: vi.fn(async () => undefined),
   });
@@ -70,7 +75,7 @@ describe("executeInputTask 斜杠技能许可", () => {
 
   it("用户安装的技能不在项目白名单里也能斜杠调用（安装即授权）", async () => {
     installUserSkill();
-    const project = makeProject(["plan", "code-review", "skill-creator"]);
+    const project = makeProject(["plan", "code-review", "workdsh-skill-creator"]);
 
     await runSlash("/weather 北京", project);
 
@@ -78,6 +83,7 @@ describe("executeInputTask 斜杠技能许可", () => {
     const options = mockedTurn.mock.calls[0][0];
     // 技能正文以 systemPrompt 形式拼接进请求
     expect(String(options.systemPrompt)).toContain("curl wttr.in");
+    expect(String(options.systemPrompt)).toContain('<skill_content name="weather">');
     // 最后一条用户消息是斜杠命令剥离后的参数
     const last = options.messages[options.messages.length - 1];
     expect(last.role).toBe("user");
@@ -86,9 +92,18 @@ describe("executeInputTask 斜杠技能许可", () => {
 
   it("内置技能不在项目白名单里仍然拒绝", async () => {
     installUserSkill();
-    const project = makeProject(["plan", "code-review", "skill-creator"]);
+    const project = makeProject(["plan", "code-review", "workdsh-skill-creator"]);
 
     await expect(runSlash("/expert-manager 创建专家", project)).rejects.toThrow(
+      "当前助手未启用技能"
+    );
+    expect(mockedTurn).not.toHaveBeenCalled();
+  });
+
+  it("专家技能范围同时约束用户显式斜杠调用", async () => {
+    installUserSkill();
+
+    await expect(runSlash("/weather 北京", null, ["plan"])).rejects.toThrow(
       "当前助手未启用技能"
     );
     expect(mockedTurn).not.toHaveBeenCalled();

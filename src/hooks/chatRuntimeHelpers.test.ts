@@ -1,6 +1,6 @@
 import { describe, expect, it, afterEach, beforeEach } from "vitest";
-import { buildChatTools, buildExpertAgentHint, createStructuredOutputFilter, extractToolCallArgs, resolveEnabledToolNames } from "./chatRuntimeHelpers";
-import { BUILTIN_TOOL_IDS } from "../config/manifests/tools";
+import { buildChatTools, buildExpertAgentHint, createStructuredOutputFilter, extractToolCallArgs, resolveChatToolAssembly, resolveEnabledToolNames } from "./chatRuntimeHelpers";
+import { BUILTIN_TOOL_IDS, DEFAULT_MODEL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
 import type { Project } from "../chat/types";
 import { BASIC_SETTINGS_STORAGE_KEY } from "../app/constants";
 import { pluginRegistry } from "../plugins/registry";
@@ -104,28 +104,50 @@ describe("createStructuredOutputFilter", () => {
   });
 });
 
-describe("内置工具对所有模型/会话公用", () => {
-  it("buildChatTools(null) 暴露全部内置工具，不受项目限制", () => {
+describe("模型默认工具集对齐 WorkDSH", () => {
+  it("buildChatTools(null) 暴露完整默认集，而不是全部可执行工具", () => {
     const tools = buildChatTools(null);
     const ids = new Set(tools.map((t) => t.name));
-    expect(ids.size).toBe(BUILTIN_TOOL_IDS.length);
-    for (const id of BUILTIN_TOOL_IDS) expect(ids.has(id)).toBe(true);
+    expect(ids.size).toBe(DEFAULT_MODEL_TOOL_IDS.length);
+    for (const id of DEFAULT_MODEL_TOOL_IDS) expect(ids.has(id)).toBe(true);
+    // 可执行工具全集仍保留这些斜杠能力，但不再默认塞给模型。
+    expect(BUILTIN_TOOL_IDS).toContain("git_commit");
+    expect(ids.has("git_commit")).toBe(false);
+    expect(ids.has("read_persona")).toBe(false);
+    expect(ids.has("update_persona")).toBe(false);
   });
 
-  it("绑定项目时仍暴露全部内置工具，并叠加项目额外启用的工具", () => {
-    const project = { allowedToolIds: ["export_docx"] } as unknown as Project;
+  it("绑定项目时暴露默认集，并叠加项目额外启用的工具", () => {
+    const project = { allowedToolIds: ["git_info"] } as unknown as Project;
     const ids = new Set(buildChatTools(project).map((t) => t.name));
-    for (const id of BUILTIN_TOOL_IDS) expect(ids.has(id)).toBe(true);
-    expect(ids.has("export_docx")).toBe(true);
+    for (const id of DEFAULT_MODEL_TOOL_IDS) expect(ids.has(id)).toBe(true);
+    expect(ids.has("git_info")).toBe(true);
   });
 
-  it("resolveEnabledToolNames 在无项目会话也列出内置工具（英文标题）", () => {
+  it("resolveEnabledToolNames 在无项目会话也列出默认工具（英文标题）", () => {
     const { toolNames } = resolveEnabledToolNames(null);
     expect(toolNames).toContain("Search Sessions");
     expect(toolNames).toContain("Read File");
     expect(toolNames).toContain("Web Search");
+    expect(toolNames).toContain("Export Word");
+    expect(toolNames).not.toContain("Update Persona");
+  });
+
+  it("prompt 工具名与 function-calling schema 来自同一份装配结果", () => {
+    const assembly = resolveChatToolAssembly(null);
+    expect(assembly.tools).toHaveLength(DEFAULT_MODEL_TOOL_IDS.length);
+    expect(assembly.toolNames).toHaveLength(assembly.tools.length);
+    for (const tool of assembly.tools) {
+      const manifest = getToolManifestById(tool.name);
+      expect(toolNamesContains(assembly.toolNames, manifest?.title)).toBe(true);
+      expect(assembly.toolDescriptions[manifest!.title]).toBe(tool.description);
+    }
   });
 });
+
+function toolNamesContains(names: string[], candidate: string | undefined): boolean {
+  return candidate !== undefined && names.includes(candidate);
+}
 
 /**
  * 回归：`update_persona` 曾是唯一没有 parameters 声明的内置工具 —— 模型拿到的是空 schema
@@ -134,7 +156,8 @@ describe("内置工具对所有模型/会话公用", () => {
  */
 describe("update_persona 下发给模型的 schema 与触发条件", () => {
   function updatePersonaTool() {
-    const tool = buildChatTools(null).find((t) => t.name === "update_persona");
+    const project = { allowedToolIds: ["update_persona"] } as unknown as Project;
+    const tool = buildChatTools(project).find((t) => t.name === "update_persona");
     expect(tool).toBeDefined();
     return tool!;
   }

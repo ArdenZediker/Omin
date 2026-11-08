@@ -178,6 +178,7 @@ export async function installSkillhubSkill(
   const id = namespace ? `${namespace}/${res.slug}` : res.slug;
   parsed.id = id;
   parsed.kind = "skill";
+  parsed.resourceBase = res.path;
   // 命令保持简短（不带 namespace），便于用户斜杠输入
   parsed.command = parsed.command || `/${res.slug}`;
   parsed.sourceUrl = `https://skillhub.cn/skill/${res.slug}`;
