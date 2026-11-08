@@ -40,13 +40,11 @@ const DesktopPet = forwardRef<HTMLDivElement, DesktopPetProps>(function DesktopP
       ? packageData.spritesheetWebPath
       : FALLBACK_PET_SPRITESHEET;
   const atlasColumns = 8;
-  const atlasRows = 9;
   const { width: scaledCellWidth, height: scaledCellHeight } = fitCodexPetToBounds({
     width,
     height,
   });
   const scaledAtlasWidth = scaledCellWidth * atlasColumns;
-  const scaledAtlasHeight = scaledCellHeight * atlasRows;
 
   useEffect(() => {
     setFrameIndex((current) => current % frameset.frames.length);
@@ -94,9 +92,8 @@ const DesktopPet = forwardRef<HTMLDivElement, DesktopPetProps>(function DesktopP
             left: spriteOffset.left,
             top: spriteOffset.top,
             width: scaledAtlasWidth,
-            height: scaledAtlasHeight,
+            height: "auto",
             minWidth: scaledAtlasWidth,
-            minHeight: scaledAtlasHeight,
           }}
         />
       </div>
