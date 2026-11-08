@@ -40,6 +40,10 @@ jobs:
         run: pnpm exec tsc --noEmit
       - name: Run frontend tests
         run: pnpm test
+      # tauri-build validates externalBin during cargo test, before Tauri's
+      # normal beforeBuildCommand runs. Build the host-native sidecar first.
+      - name: Build Agent Host sidecar
+        run: node scripts/build-agent-host.mjs --target ${{ matrix.target }}
       - name: Run Rust library tests
         working-directory: src-tauri
         env:
