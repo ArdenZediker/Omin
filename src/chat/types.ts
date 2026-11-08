@@ -1,4 +1,5 @@
 import type {
+  AgentHostTurnMetadata,
   ChatAttachment,
   ChatStep,
   ChatToolCallResult,
@@ -211,6 +212,8 @@ export type ChatExecutionResult = {
   ttftDurationMs?: number;
   /** Number of streamed rounds that supplied a measurable TTFT sample. */
   ttftSamples?: number;
+  /** Durable Host turn identity when this result came from the Agent Host. */
+  agentHost?: AgentHostTurnMetadata;
 };
 
 export type ChatSendOptions = {

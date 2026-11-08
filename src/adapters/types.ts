@@ -87,6 +87,15 @@ export interface Message {
   artifacts?: Artifact[];
   /** 用户随消息附带的本地文件（仅 user 消息有）；内容不内联，只记路径 */
   attachments?: ChatAttachment[];
+  /** Host 事件投影标记，用于应用重启后幂等恢复，避免重复补回同一轮。 */
+  agentHost?: AgentHostTurnMetadata;
+}
+
+export interface AgentHostTurnMetadata {
+  sessionId: string;
+  turn: number;
+  /** 该轮终止事件（或 orphan 轮最后事件）的持久化序号。 */
+  completedSeq: number;
 }
 
 /** Provider 返回的单次模型调用用量。 */

@@ -66,6 +66,7 @@ import { initializePluginRegistry } from "./plugins/registry";
 import { useThemeSync } from "./hooks/useThemeSync";
 import { formatMessageClipboardText, writeClipboardWithFiles } from "./chat/messageClipboard";
 import { isPendingProjectPlaceholder } from "./chat/storage";
+import { recoverAgentHostSession } from "./app/agentHostRuntime";
 import "./App.css";
 
 const KnowledgeBaseView = lazy(() => import("./components/KnowledgeBaseView"));
@@ -189,6 +190,7 @@ function MainApp() {
     setMessages,
     scheduledTasks,
     isAutomationReady,
+    isStorageHydrated,
     toggleFavoriteChatSession,
     togglePinnedChatSession,
     updateChatSessionMessages,
@@ -245,6 +247,32 @@ function MainApp() {
   const [openChatMenu, setOpenChatMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [codexPetPackage, setCodexPetPackage] = useState<CodexPetPackage | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const recoveredHostSessionsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (isCompactWindow || !isStorageHydrated || !activeChatId) return;
+    if (recoveredHostSessionsRef.current.has(activeChatId)) return;
+    const session = getChatSessionById(activeChatId);
+    if (!session) return;
+    recoveredHostSessionsRef.current.add(activeChatId);
+
+    void recoverAgentHostSession({
+      omniSessionId: activeChatId,
+      messages: session.messages,
+    }).then((messages) => {
+      if (messages) {
+        updateChatSessionMessages(activeChatId, messages);
+      }
+    }).catch((error: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn("恢复 Agent Host 会话失败", error);
+    });
+  }, [
+    activeChatId,
+    getChatSessionById,
+    isStorageHydrated,
+    updateChatSessionMessages,
+  ]);
 
   useEffect(() => {
     if (isCompactWindow) {

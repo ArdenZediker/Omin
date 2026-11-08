@@ -12,6 +12,7 @@ import {
   textBlocks,
 } from "../agent-core";
 import type {
+  AgentHostTurnMetadata,
   Message,
   TokenUsage,
 } from "../adapters/types";
@@ -23,6 +24,10 @@ import type {
   ChatToolCallResult,
 } from "../chat/types";
 import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
+import {
+  projectAgentHostTurns,
+  reconcileAgentHostTurns,
+} from "../chat/agentHostProjection";
 import { readSqliteBackedJson, saveSqliteBackedValue } from "./sqliteStorage";
 import {
   cancelAgentSession,
@@ -31,12 +36,17 @@ import {
   ensureAgentHost,
   promptAgentSession,
   readAgentEvents,
+  startAgentHost,
   subscribeAgentHostEvents,
 } from "./agentHostClient";
 
 export const AGENT_HOST_SESSION_MAP_KEY = "omni_agent_host_sessions_v1";
 
-type SessionMap = Record<string, string>;
+interface HostSessionRecord {
+  hostSessionId: string;
+}
+
+type SessionMap = Record<string, HostSessionRecord>;
 
 export interface AgentHostTurnOptions {
   omniSessionId: string | null;
@@ -55,7 +65,27 @@ export interface AgentHostTurnOptions {
 }
 
 function readSessionMap(): SessionMap {
-  return readSqliteBackedJson<SessionMap>(AGENT_HOST_SESSION_MAP_KEY, {});
+  const stored = readSqliteBackedJson<Record<string, unknown>>(
+    AGENT_HOST_SESSION_MAP_KEY,
+    {},
+  );
+  const map: SessionMap = {};
+  for (const [omniSessionId, value] of Object.entries(stored)) {
+    if (typeof value === "string" && value.trim()) {
+      map[omniSessionId] = { hostSessionId: value };
+      continue;
+    }
+    if (
+      typeof value === "object"
+      && value !== null
+      && "hostSessionId" in value
+      && typeof value.hostSessionId === "string"
+      && value.hostSessionId.trim()
+    ) {
+      map[omniSessionId] = { hostSessionId: value.hostSessionId };
+    }
+  }
+  return map;
 }
 
 function writeSessionMap(map: SessionMap): void {
@@ -134,7 +164,7 @@ async function getOrCreateHostSession(options: {
 }): Promise<string> {
   const map = readSessionMap();
   if (options.omniSessionId) {
-    const existing = map[options.omniSessionId];
+    const existing = map[options.omniSessionId]?.hostSessionId;
     if (existing && await hostSessionExists(existing)) {
       return existing;
     }
@@ -147,7 +177,7 @@ async function getOrCreateHostSession(options: {
     toAgentHostHistory(options.history),
   );
   if (options.omniSessionId) {
-    map[options.omniSessionId] = hostSessionId;
+    map[options.omniSessionId] = { hostSessionId };
     writeSessionMap(map);
   }
   return hostSessionId;
@@ -195,9 +225,9 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
 
   const startedAt = performance.now();
   const usage = emptyAgentUsage();
-  usage.exact = false;
   let reasoning = "";
   let finalAssistant: AgentMessage | undefined;
+  let completedTurn: AgentHostTurnMetadata | undefined;
   let closed = false;
   const toolSteps: ChatStep[] = [];
   const toolResults: ChatToolCallResult[] = [];
@@ -274,6 +304,11 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
           break;
         }
         case "turn/completed":
+          completedTurn = {
+            sessionId: hostSessionId,
+            turn: event.payload.turn,
+            completedSeq: event.seq,
+          };
           if (event.payload.reason.kind === "aborted") {
             settleRejected(new DOMException("Request aborted", "AbortError"));
             return;
@@ -309,6 +344,7 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
               ...(options.knowledgeContext
                 ? { knowledgeContext: options.knowledgeContext }
                 : {}),
+              agentHost: completedTurn,
               generationDurationMs: elapsed,
               modelDurationMs: elapsed,
             });
@@ -339,4 +375,31 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
     settleRejected(error instanceof Error ? error : new Error(String(error)));
   }
   return resultPromise;
+}
+
+/**
+ * Pulls durable Host events for an existing session and fills any turns that
+ * never made it into the Omni transcript before the application restarted.
+ *
+ * The operation is idempotent: projected assistant messages carry their Host
+ * session/turn identity and are never appended twice.
+ */
+export async function recoverAgentHostSession(options: {
+  omniSessionId: string;
+  messages: Message[];
+}): Promise<Message[] | null> {
+  const hostSessionId = readSessionMap()[options.omniSessionId]?.hostSessionId;
+  if (!hostSessionId) return null;
+
+  await startAgentHost();
+  if (!await hostSessionExists(hostSessionId)) return null;
+
+  const events = await readAgentEvents(hostSessionId);
+  const turns = projectAgentHostTurns(events, hostSessionId);
+  const reconciled = reconcileAgentHostTurns(
+    options.messages,
+    turns,
+    hostSessionId,
+  );
+  return reconciled.recoveredTurns > 0 ? reconciled.messages : null;
 }

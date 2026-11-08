@@ -1129,6 +1129,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
     setSessionSummaries,
     setScheduledTasks,
     setUserPreferences,
+    isStorageHydrated,
     toggleFavoriteChatSession,
     togglePinnedChatSession,
     deleteProjectProfile,

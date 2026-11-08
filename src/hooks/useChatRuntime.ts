@@ -861,6 +861,9 @@ export function useChatRuntime({
             toolCallResults: finalToolResults?.length ? finalToolResults : undefined,
             steps: finalSteps?.length ? finalSteps : undefined,
             ...(turnUsage ? { turnUsage } : {}),
+            ...(taskResult.finalResult.agentHost
+              ? { agentHost: taskResult.finalResult.agentHost }
+              : {}),
           },
         ]);
         if (sessionId) {
