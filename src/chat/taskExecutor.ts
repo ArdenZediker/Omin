@@ -7,6 +7,7 @@ import { assembleSkillCatalog, renderSkillContent } from "./skillCatalog";
 import type { TaskExecutionResult, TaskIntent, TaskPlan, TaskStep } from "./taskTypes";
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord, ChatStep } from "./types";
 import { validateTaskOutput } from "./taskValidation";
+import { runAgentHostTurn } from "../app/agentHostRuntime";
 
 function createTaskId() {
   return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -124,6 +125,17 @@ export async function executeTask(options: {
   executeToolCall?: (toolCall: ChatToolCall) => Promise<string | import("./engine").ToolCallOutcome>;
   /** 只注入这些 id 的技能提示（专家角色切换时按专家绑定过滤）；透传给 executeChatTurn */
   enabledSkillIds?: string[];
+  /**
+   * Opt-in Host runtime path. The Host owns model/tool turn state and emits
+   * durable events; this executor only projects the final result back into the
+   * existing task contract.
+   */
+  agentHost?: {
+    omniSessionId: string | null;
+    cwd: string;
+    title?: string;
+    prompt?: string;
+  };
 }): Promise<TaskExecutionResult> {
   const { model, messages, signal, systemPrompt, project, relatedContext, enabledToolNames, onChunk, onReasoning, onToolStep, knowledgeCollectionId } = options;
   const intent = options.intent ?? "chat";
@@ -148,26 +160,61 @@ export async function executeTask(options: {
 
       if (step.kind === "model") {
         api.appendTrace(`开始调用模型：${model}`);
-        const finalResult = await executeChatTurn({
-          model,
-          messages,
-          signal,
-          systemPrompt,
-          project,
-          relatedContext,
-          enabledToolNames,
-          onChunk: (chunk) => { partialOutput.text += chunk; onChunk?.(chunk); },
-          onReasoning: (reasoning) => { partialOutput.reasoning += reasoning; onReasoning?.(reasoning); },
-          onToolStep: (toolStep) => { partialOutput.steps.push(toolStep); onToolStep?.(toolStep); },
-          knowledgeCollectionId,
-          enableKnowledgeContext: intent === "chat",
-          enableMemoryExtraction: intent === "chat",
-          enableSummaryExtraction: intent === "chat",
-          enableToolProtocol: intent !== "chat",
-          tools: options.tools,
-          executeToolCall: options.executeToolCall,
-          enabledSkillIds: options.enabledSkillIds,
-        });
+        const onModelChunk = (chunk: string) => {
+          partialOutput.text += chunk;
+          onChunk?.(chunk);
+        };
+        const onModelReasoning = (reasoning: string) => {
+          partialOutput.reasoning += reasoning;
+          onReasoning?.(reasoning);
+        };
+        const onModelToolStep = (toolStep: ChatStep) => {
+          partialOutput.steps.push(toolStep);
+          onToolStep?.(toolStep);
+        };
+        const finalResult = options.agentHost
+          ? await (() => {
+              const latestUserIndex = (() => {
+                for (let index = messages.length - 1; index >= 0; index -= 1) {
+                  if (messages[index].role === "user") return index;
+                }
+                return messages.length;
+              })();
+              const latestUser = latestUserIndex < messages.length
+                ? messages[latestUserIndex]
+                : undefined;
+              return runAgentHostTurn({
+                ...options.agentHost,
+                history: messages.slice(0, latestUserIndex),
+                prompt: options.agentHost.prompt ?? latestUser?.content ?? "",
+                modelId: model,
+                system: systemPrompt,
+                signal,
+                onChunk: onModelChunk,
+                onReasoning: onModelReasoning,
+                onToolStep: onModelToolStep,
+              });
+            })()
+          : await executeChatTurn({
+              model,
+              messages,
+              signal,
+              systemPrompt,
+              project,
+              relatedContext,
+              enabledToolNames,
+              onChunk: onModelChunk,
+              onReasoning: onModelReasoning,
+              onToolStep: onModelToolStep,
+              knowledgeCollectionId,
+              enableKnowledgeContext: intent === "chat",
+              enableMemoryExtraction: intent === "chat",
+              enableSummaryExtraction: intent === "chat",
+              enableToolProtocol: intent !== "chat",
+              tools: options.tools,
+              executeToolCall: options.executeToolCall,
+              enabledSkillIds: options.enabledSkillIds,
+            });
         api.setFinalResult(finalResult);
         api.appendTrace("模型回复生成完成");
         return;
@@ -268,6 +315,12 @@ export async function executeInputTask(options: {
   executeToolCall?: (toolCall: ChatToolCall) => Promise<string | import("./engine").ToolCallOutcome>;
   /** 只注入这些 id 的技能提示（专家角色切换时按专家绑定过滤）；透传给 executeTask */
   enabledSkillIds?: string[];
+  agentHost?: {
+    omniSessionId: string | null;
+    cwd: string;
+    title?: string;
+    prompt?: string;
+  };
 }): Promise<TaskExecutionResult> {
   const {
     input,
@@ -354,6 +407,7 @@ export async function executeInputTask(options: {
         tools: options.tools,
         executeToolCall: options.executeToolCall,
         enabledSkillIds: options.enabledSkillIds,
+        agentHost: options.agentHost,
       });
     }
 
@@ -404,5 +458,6 @@ export async function executeInputTask(options: {
     tools: options.tools,
     executeToolCall: options.executeToolCall,
     enabledSkillIds: options.enabledSkillIds,
+    agentHost: options.agentHost,
   });
 }

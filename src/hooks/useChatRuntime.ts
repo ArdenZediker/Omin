@@ -76,6 +76,7 @@ function generateTaskId(): string {
  */
 const RUN_WATCHDOG_MINUTES = 20;
 const RUN_WATCHDOG_MS = RUN_WATCHDOG_MINUTES * 60_000;
+const ENABLE_AGENT_HOST_TURNS = import.meta.env.VITE_OMNI_AGENT_HOST === "1";
 
 /** 兜底生成 assistant 最终展示文本：优先用模型正式 content，其次流式累积内容，
  * 再次工具输出；若全部为空但收集到 reasoning，则用 reasoning 作为内容并附加提示，
@@ -1616,6 +1617,13 @@ export function useChatRuntime({
       const taskId = generateTaskId();
       currentTaskIdRef.current.set(sessionId ?? "", taskId);
       const taskWs = getWorkspacePathForSession(sessionId);
+      const agentHostOptions = ENABLE_AGENT_HOST_TURNS
+        ? {
+            omniSessionId: sessionId,
+            cwd: taskWs,
+            prompt: content,
+          }
+        : undefined;
       const scopedCurrentMessages = getScopedConversationMessages();
       let conversationMessagesForTask = scopedCurrentMessages;
       let hasPetThought = false;
@@ -1664,6 +1672,7 @@ export function useChatRuntime({
             sessionId = draftSession.id;
             runId = startSessionRun(sessionId, abortController);
             currentTaskIdRef.current.set(sessionId, taskId);
+            if (agentHostOptions) agentHostOptions.omniSessionId = sessionId;
           }
           // 附件快照落在会话目录内（<chat-sessions>/<sessionId>/attachments）：归属由 sessionId
           // 决定，不再需要项目名——产出与对话同目录，删除会话时一并被清掉。
@@ -1743,6 +1752,7 @@ export function useChatRuntime({
               sessionId = nextSession.id;
               runId = startSessionRun(sessionId, abortController);
               currentTaskIdRef.current.set(sessionId, taskId);
+              if (agentHostOptions) agentHostOptions.omniSessionId = sessionId;
             }
             setConversationMessagesForSession(sessionId, [...preparedMessages, { role: "project", content: "" }]);
             petThoughtId = startPetThought(sessionId, preparedMessages);
@@ -1783,6 +1793,7 @@ export function useChatRuntime({
             activeExpert ? activeExpert.defaultSkillIds ?? [] : undefined,
           ),
           enabledSkillIds: activeExpert ? activeExpert.defaultSkillIds ?? [] : undefined,
+          agentHost: agentHostOptions,
         });
 
         if (!isCurrentSessionRun(sessionId, runId, abortController)) {

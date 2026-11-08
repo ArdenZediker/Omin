@@ -54,6 +54,7 @@ const BOOTSTRAP_STORAGE_KEYS = [
   CHARACTER_SCALE_STORAGE_KEY,
   COMPACT_PET_HIDDEN_STORAGE_KEY,
   "omni_provider_configs",
+  "omni_agent_host_sessions_v1",
   USAGE_PREFERENCES_STORAGE_KEY,
   MODEL_USAGE_PREFERENCES_STORAGE_KEY,
   "omni_knowledge_embedding_profile",
