@@ -76,6 +76,7 @@ describe("AgentHost", () => {
       params: {
         sessionId,
         content: "hello",
+        images: [{ src: "data:image/png;base64,AAAA", name: "shot.png" }],
         model: { provider: "test", model: "test-model" },
       },
     }));
@@ -98,6 +99,23 @@ describe("AgentHost", () => {
     if (eventResult.ok && "events" in eventResult.result) {
       expect(eventResult.result.events.map((event) => event.type))
         .toContain("assistant/message");
+      const userMessage = eventResult.result.events.find((event) =>
+        event.type === "user/message"
+      );
+      expect(userMessage).toMatchObject({
+        type: "user/message",
+        payload: {
+          message: {
+            content: [
+              {
+                type: "image",
+                image: { src: "data:image/png;base64,AAAA", name: "shot.png" },
+              },
+              { type: "text", text: "hello" },
+            ],
+          },
+        },
+      });
     }
   });
 

@@ -1,6 +1,7 @@
 import type {
   AgentContentBlock,
   AgentEvent,
+  AgentImage,
   AgentMessage,
   AgentUsage,
 } from "../agent-core";
@@ -21,6 +22,7 @@ import type {
   ChatStep,
   ChatToolCallResult,
 } from "../chat/types";
+import type { KnowledgeContextResult } from "../chat/knowledgeTypes";
 import { readSqliteBackedJson, saveSqliteBackedValue } from "./sqliteStorage";
 import {
   cancelAgentSession,
@@ -42,8 +44,10 @@ export interface AgentHostTurnOptions {
   title?: string;
   history: Message[];
   prompt: string;
+  images?: AgentImage[];
   modelId: string;
   system?: string;
+  knowledgeContext?: KnowledgeContextResult | null;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
   onReasoning?: (reasoning: string) => void;
@@ -65,6 +69,9 @@ function messageBlocks(message: Message): AgentContentBlock[] {
   }
   if (message.content.trim()) {
     blocks.push({ type: "text", text: message.content });
+  }
+  for (const image of message.images ?? []) {
+    blocks.push({ type: "image", image });
   }
   for (const call of message.toolCalls ?? []) {
     blocks.push({
@@ -299,6 +306,9 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
               ...(toolRounds > 0 ? { toolRounds } : {}),
               ...(toolResults.length ? { toolCallResults: toolResults } : {}),
               ...(toolSteps.length ? { steps: toolSteps } : {}),
+              ...(options.knowledgeContext
+                ? { knowledgeContext: options.knowledgeContext }
+                : {}),
               generationDurationMs: elapsed,
               modelDurationMs: elapsed,
             });
@@ -323,6 +333,7 @@ export async function runAgentHostTurn(options: AgentHostTurnOptions): Promise<C
       options.prompt,
       createAgentModelConfig(options.modelId),
       options.system,
+      options.images,
     );
   } catch (error: unknown) {
     settleRejected(error instanceof Error ? error : new Error(String(error)));

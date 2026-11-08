@@ -8,6 +8,7 @@ import type { TaskExecutionResult, TaskIntent, TaskPlan, TaskStep } from "./task
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord, ChatStep } from "./types";
 import { validateTaskOutput } from "./taskValidation";
 import { runAgentHostTurn } from "../app/agentHostRuntime";
+import { buildAgentHostContext } from "./agentHostContext";
 
 function createTaskId() {
   return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -172,8 +173,9 @@ export async function executeTask(options: {
           partialOutput.steps.push(toolStep);
           onToolStep?.(toolStep);
         };
-        const finalResult = options.agentHost
-          ? await (() => {
+        const agentHost = options.agentHost;
+        const finalResult = agentHost
+          ? await (async () => {
               const latestUserIndex = (() => {
                 for (let index = messages.length - 1; index >= 0; index -= 1) {
                   if (messages[index].role === "user") return index;
@@ -183,12 +185,28 @@ export async function executeTask(options: {
               const latestUser = latestUserIndex < messages.length
                 ? messages[latestUserIndex]
                 : undefined;
+              const hostContext = await buildAgentHostContext({
+                model,
+                messages,
+                baseSystemPrompt: systemPrompt,
+                project,
+                relatedContext,
+                enabledToolNames,
+                enabledToolDescriptions: options.enabledToolDescriptions,
+                enabledSkillIds: options.enabledSkillIds,
+                knowledgeCollectionId,
+                tools: options.tools,
+                signal,
+              });
+              for (const step of hostContext.steps) onModelToolStep(step);
               return runAgentHostTurn({
-                ...options.agentHost,
+                ...agentHost,
                 history: messages.slice(0, latestUserIndex),
-                prompt: options.agentHost.prompt ?? latestUser?.content ?? "",
+                prompt: agentHost.prompt ?? latestUser?.content ?? "",
+                images: latestUser?.images,
                 modelId: model,
-                system: systemPrompt,
+                system: hostContext.system,
+                knowledgeContext: hostContext.knowledgeContext,
                 signal,
                 onChunk: onModelChunk,
                 onReasoning: onModelReasoning,

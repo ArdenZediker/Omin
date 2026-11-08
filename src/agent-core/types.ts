@@ -1,8 +1,16 @@
 export type AgentSessionId = string;
 
+export interface AgentImage {
+  /** Base64 data URL. */
+  src: string;
+  name?: string;
+  offset?: number;
+}
+
 export type AgentContentBlock =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string }
+  | { type: "image"; image: AgentImage }
   | { type: "tool-call"; call: AgentToolCall };
 
 export type AgentMessageRole = "user" | "assistant" | "tool";
@@ -53,6 +61,7 @@ export interface AgentModelConfig {
 export interface AgentPrompt {
   id: string;
   content: string;
+  images?: AgentImage[];
   config: AgentModelConfig;
   system?: string;
 }

@@ -16,6 +16,7 @@ import {
   reasoningBlocks,
   textBlocks,
   type AgentContentBlock,
+  type AgentImage,
   type AgentMessage,
   type AgentModelConfig,
   type AgentPrompt,
@@ -45,6 +46,7 @@ export interface CreateAgentSessionOptions {
 export interface PromptOptions {
   model: AgentModelConfig;
   system?: string;
+  images?: AgentImage[];
 }
 
 export interface CancelOptions {
@@ -287,6 +289,7 @@ export class AgentRuntime {
     return {
       id: this.idFactory(),
       content: normalized,
+      ...(options.images?.length ? { images: options.images } : {}),
       config: options.model,
       ...(options.system ? { system: options.system } : {}),
     };
@@ -386,7 +389,15 @@ export class AgentRuntime {
               message: {
                 id: prompt.id,
                 role: "user",
-                content: [{ type: "text", text: prompt.content }],
+                content: [
+                  ...(prompt.images?.length
+                    ? prompt.images.map((image) => ({
+                        type: "image" as const,
+                        image,
+                      }))
+                    : []),
+                  { type: "text", text: prompt.content },
+                ],
                 createdAt: this.now(),
               },
             },

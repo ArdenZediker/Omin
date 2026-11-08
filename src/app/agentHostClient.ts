@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AgentEvent,
+  AgentImage,
   AgentMessage,
   AgentModelConfig,
   AgentSessionId,
@@ -139,10 +140,12 @@ export async function promptAgentSession(
   content: string,
   model: AgentModelConfig,
   system?: string,
+  images?: AgentImage[],
 ): Promise<string> {
   const result = await requestAgentHost<{ promptId: string }>("session.prompt", {
     sessionId,
     content,
+    ...(images?.length ? { images } : {}),
     model,
     ...(system ? { system } : {}),
   });

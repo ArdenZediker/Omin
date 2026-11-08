@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AgentImage,
   AgentMessage,
   AgentModelConfig,
   AgentSessionId,
@@ -30,6 +31,7 @@ export type HostRequest =
       params: {
         sessionId: AgentSessionId;
         content: string;
+        images?: AgentImage[];
         model: AgentModelConfig;
         system?: string;
       };

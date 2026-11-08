@@ -69,12 +69,16 @@ function resolveProtocol(settings: AgentProviderSettings): ModelProtocol {
 
 function toChatMessage(message: AgentMessage): Message {
   const content = textBlocks(message);
+  const images = message.content
+    .filter((block): block is Extract<typeof block, { type: "image" }> => block.type === "image")
+    .map((block) => block.image);
   if (message.role === "assistant") {
     const calls = toolCallBlocks(message);
     return {
       role: "assistant",
       content,
       reasoning: reasoningBlocks(message) || undefined,
+      ...(images.length > 0 ? { images } : {}),
       ...(calls.length > 0
         ? {
             toolCalls: calls.map((call) => ({
@@ -98,7 +102,11 @@ function toChatMessage(message: AgentMessage): Message {
         : {}),
     };
   }
-  return { role: "user", content };
+  return {
+    role: "user",
+    content,
+    ...(images.length > 0 ? { images } : {}),
+  };
 }
 
 function toChatRequest(request: ModelRequest): ChatRequest {

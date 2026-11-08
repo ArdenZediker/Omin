@@ -97,6 +97,18 @@ describe("AdapterModelProvider", () => {
     const events = [];
     for await (const event of provider.stream(request([
       {
+        id: "user-1",
+        role: "user",
+        content: [
+          { type: "text", text: "look" },
+          {
+            type: "image",
+            image: { src: "data:image/png;base64,AAAA", name: "shot.png" },
+          },
+        ],
+        createdAt: 0,
+      },
+      {
         id: "assistant-1",
         role: "assistant",
         content: [
@@ -148,6 +160,11 @@ describe("AdapterModelProvider", () => {
       model: "test-model",
       messages: [
         { role: "system", content: "system prompt" },
+        {
+          role: "user",
+          content: "look",
+          images: [{ src: "data:image/png;base64,AAAA", name: "shot.png" }],
+        },
         {
           role: "assistant",
           content: "previous",
