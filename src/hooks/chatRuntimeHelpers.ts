@@ -24,6 +24,15 @@ export type SessionLite = {
 /** 专家名册上限：避免专家装太多时把 agent 工具描述撑爆（超出部分提示用户去扩展中心看）。 */
 const EXPERT_ROSTER_LIMIT = 12;
 
+/**
+ * Agent Host is the default chat runtime. Keep an explicit opt-out for
+ * diagnostics and emergency rollback instead of requiring every normal user
+ * and packaged build to opt in.
+ */
+export function resolveAgentHostTurnsEnabled(value: string | undefined): boolean {
+  return value !== "0";
+}
+
 /** 读取全局「允许模型指派任意专家」开关；读取失败按默认（关闭 = 只允许项目绑定）处理。 */
 function resolveAllowAnyExpertDelegation(): boolean {
   try {

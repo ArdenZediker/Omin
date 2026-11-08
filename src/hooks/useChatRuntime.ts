@@ -44,6 +44,7 @@ import {
   safelyEmitPetThoughtEvent,
   safelyEmitPetThoughtEventTo,
   canUseTauriEvents,
+  resolveAgentHostTurnsEnabled,
 } from "./chatRuntimeHelpers";
 
 // 工具执行结果的扩展形态：携带本次落库产物的引用（engine 据此追加 artifact step）
@@ -76,7 +77,9 @@ function generateTaskId(): string {
  */
 const RUN_WATCHDOG_MINUTES = 20;
 const RUN_WATCHDOG_MS = RUN_WATCHDOG_MINUTES * 60_000;
-const ENABLE_AGENT_HOST_TURNS = import.meta.env.VITE_OMNI_AGENT_HOST === "1";
+const ENABLE_AGENT_HOST_TURNS = resolveAgentHostTurnsEnabled(
+  import.meta.env.VITE_OMNI_AGENT_HOST,
+);
 
 /** 兜底生成 assistant 最终展示文本：优先用模型正式 content，其次流式累积内容，
  * 再次工具输出；若全部为空但收集到 reasoning，则用 reasoning 作为内容并附加提示，

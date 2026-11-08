@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "node scripts/build-agent-host.mjs && vite",
     "build": "node scripts/sync-file-viewer-assets.mjs && tsc && vite build",
     "build:desktop": "pnpm build && node scripts/build-agent-host.mjs",
     "agent-host:build": "node scripts/build-agent-host.mjs",

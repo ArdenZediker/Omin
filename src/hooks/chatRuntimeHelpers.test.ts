@@ -1,10 +1,30 @@
 import { describe, expect, it, afterEach, beforeEach } from "vitest";
-import { buildChatTools, buildExpertAgentHint, createStructuredOutputFilter, extractToolCallArgs, resolveChatToolAssembly, resolveEnabledToolNames } from "./chatRuntimeHelpers";
+import {
+  buildChatTools,
+  buildExpertAgentHint,
+  createStructuredOutputFilter,
+  extractToolCallArgs,
+  resolveAgentHostTurnsEnabled,
+  resolveChatToolAssembly,
+  resolveEnabledToolNames,
+} from "./chatRuntimeHelpers";
 import { BUILTIN_TOOL_IDS, DEFAULT_MODEL_TOOL_IDS, getToolManifestById } from "../config/manifests/tools";
 import type { Project } from "../chat/types";
 import { BASIC_SETTINGS_STORAGE_KEY } from "../app/constants";
 import { pluginRegistry } from "../plugins/registry";
 import type { PluginManifest } from "../plugins/types";
+
+describe("Agent Host runtime selection", () => {
+  it("defaults to Agent Host when the override is absent", () => {
+    expect(resolveAgentHostTurnsEnabled(undefined)).toBe(true);
+    expect(resolveAgentHostTurnsEnabled("")).toBe(true);
+    expect(resolveAgentHostTurnsEnabled("1")).toBe(true);
+  });
+
+  it("allows an explicit diagnostic opt-out", () => {
+    expect(resolveAgentHostTurnsEnabled("0")).toBe(false);
+  });
+});
 
 describe("extractToolCallArgs", () => {
   it("纯字符串原样返回", () => {
