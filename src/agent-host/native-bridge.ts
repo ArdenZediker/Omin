@@ -203,6 +203,20 @@ export class NativeToolController {
   }
 
   configureTools(tools: NativeToolDescriptor[]): AgentToolSchema[] {
+    const next = this.createTools(tools);
+    for (const dispose of this.disposers.splice(0).reverse()) dispose();
+    for (const tool of next.all()) {
+      this.disposers.push(this.registry.register(tool));
+    }
+    return this.registry.schemas();
+  }
+
+  /**
+   * Creates an isolated registry for one Host session. All descriptors still
+   * route through the same correlated transport; the Rust side decides whether
+   * a call executes natively or is delegated to the Omni UI.
+   */
+  createTools(tools: NativeToolDescriptor[]): AgentToolRegistry {
     const names = new Set<string>();
     for (const tool of tools) {
       if (!tool.name || names.has(tool.name)) {
@@ -211,9 +225,9 @@ export class NativeToolController {
       names.add(tool.name);
     }
 
-    for (const dispose of this.disposers.splice(0).reverse()) dispose();
+    const registry = new AgentToolRegistry();
     for (const tool of tools) {
-      this.disposers.push(this.registry.register({
+      registry.register({
         name: tool.name,
         description: tool.description,
         parameters: tool.parameters,
@@ -228,9 +242,9 @@ export class NativeToolController {
             signal: context.signal,
           },
         ),
-      }));
+      });
     }
-    return this.registry.schemas();
+    return registry;
   }
 
   receive(message: unknown): boolean {

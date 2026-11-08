@@ -134,6 +134,58 @@ describe("AgentRuntime", () => {
     expect(textBlocks(messages[3])).toBe("file is ready");
   });
 
+  it("uses a configured per-session tool catalog", async () => {
+    const store = new InMemorySessionEventStore();
+    const requests: ModelRequest[] = [];
+    const runtime = new AgentRuntime({
+      store,
+      model: {
+        async *stream(request) {
+          requests.push(request);
+          if (requests.length === 1) {
+            yield {
+              type: "finish",
+              reason: {
+                kind: "tool-calls",
+                calls: [{
+                  id: "call-session",
+                  name: "session_only",
+                  arguments: "{}",
+                }],
+              },
+            };
+            return;
+          }
+          yield { type: "text-delta", text: "session tool complete" };
+          yield { type: "finish", reason: { kind: "stop" } };
+        },
+      },
+      tools: new AgentToolRegistry(),
+      idFactory: fixedIds("session-tools"),
+    });
+    const sessionId = await runtime.createSession({ cwd: "/workspace" });
+    const sessionTools = new AgentToolRegistry();
+    sessionTools.register({
+      name: "session_only",
+      description: "session scoped",
+      parameters: { type: "object" },
+      async execute() {
+        return { content: "session result" };
+      },
+    });
+    await runtime.configureTools(sessionId, sessionTools);
+
+    const result = await runtime.prompt(sessionId, "use session tool", { model: MODEL });
+
+    expect(result.content).toBe("session tool complete");
+    expect(requests[0].tools?.map((tool) => tool.name)).toEqual(["session_only"]);
+    const events = await store.read(sessionId);
+    expect(events.find((event) => event.type === "request/header"))
+      .toMatchObject({ payload: { tools: ["session_only"] } });
+    expect(events.find((event) => event.type === "tool/result"))
+      .toMatchObject({ payload: { message: { content: [{ type: "text", text: "session result" }] } } });
+  });
+
   it("queues a follow-up while the current turn is running", async () => {
     const store = new InMemorySessionEventStore();
     const firstStarted = deferred();

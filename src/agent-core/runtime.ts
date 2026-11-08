@@ -116,6 +116,7 @@ export class AgentRuntime {
   private readonly sessions = new Map<AgentSessionId, SessionState>();
   private readonly loading = new Map<AgentSessionId, Promise<SessionState>>();
   private readonly listeners = new Map<AgentSessionId, Set<AgentEventListener>>();
+  private readonly sessionTools = new Map<AgentSessionId, AgentToolRegistry>();
 
   constructor(options: AgentRuntimeOptions) {
     this.store = options.store;
@@ -248,6 +249,23 @@ export class AgentRuntime {
     return (await this.requireState(sessionId)).running;
   }
 
+  /**
+   * Attaches a session-specific tool catalog. Configuration is rejected while
+   * a turn is running so a tool list cannot change underneath a live model
+   * step. Sessions without an explicit catalog use the Host default registry.
+   */
+  async configureTools(
+    sessionId: AgentSessionId,
+    tools: AgentToolRegistry,
+  ): Promise<AgentToolRegistry> {
+    const state = await this.requireState(sessionId);
+    if (state.running) {
+      throw new Error(`Agent session "${sessionId}" is running`);
+    }
+    this.sessionTools.set(sessionId, tools);
+    return tools;
+  }
+
   subscribe(sessionId: AgentSessionId, listener: AgentEventListener): () => void {
     const listeners = this.listeners.get(sessionId) ?? new Set<AgentEventListener>();
     listeners.add(listener);
@@ -265,8 +283,8 @@ export class AgentRuntime {
     return this.store.read(sessionId, options);
   }
 
-  listTools() {
-    return this.tools.schemas();
+  listTools(sessionId?: AgentSessionId) {
+    return this.toolsFor(sessionId).schemas();
   }
 
   private async send(
@@ -334,6 +352,7 @@ export class AgentRuntime {
   }
 
   private async runTurn(state: SessionState, signal: AbortSignal): Promise<void> {
+    const tools = this.toolsFor(state.sessionId);
     const turn = state.lastTurn + 1;
     state.lastTurn = turn;
     await this.appendEvent(state.sessionId, {
@@ -373,7 +392,7 @@ export class AgentRuntime {
             turn,
             config: turnConfig,
             ...(turnSystem ? { system: turnSystem } : {}),
-            tools: this.tools.schemas().map((tool) => tool.name),
+            tools: tools.schemas().map((tool) => tool.name),
           },
         });
         await this.appendEvent(state.sessionId, {
@@ -415,6 +434,7 @@ export class AgentRuntime {
             system: turnSystem,
             config: turnConfig,
             signal,
+            tools,
           });
           addAgentUsage(usage, collected.rawUsage);
           await this.appendEvent(state.sessionId, {
@@ -442,6 +462,7 @@ export class AgentRuntime {
               step,
               collected.finish.calls,
               signal,
+              tools,
             );
             stepEnd = { kind: "tools", count: collected.finish.calls.length };
             if (concluded) turnReason = { kind: "completed" };
@@ -519,6 +540,7 @@ export class AgentRuntime {
     system?: string;
     config: AgentModelConfig;
     signal: AbortSignal;
+    tools: AgentToolRegistry;
   }): Promise<CollectedModelResponse> {
     const content: AgentContentBlock[] = [];
     let text = "";
@@ -553,7 +575,7 @@ export class AgentRuntime {
         step: options.step,
         messages: options.messages,
         ...(options.system ? { system: options.system } : {}),
-        tools: this.tools.schemas(),
+        tools: options.tools.schemas(),
         config: options.config,
         signal: options.signal,
       })) {
@@ -616,11 +638,12 @@ export class AgentRuntime {
     step: number,
     calls: AgentToolCall[],
     signal: AbortSignal,
+    tools: AgentToolRegistry,
   ): Promise<boolean> {
     let next = 0;
     let concluded = false;
     while (next < calls.length) {
-      const mode = await this.tools.executionMode(
+      const mode = await tools.executionMode(
         calls[next].name,
         calls[next].arguments,
       );
@@ -629,7 +652,7 @@ export class AgentRuntime {
         while (
           group.length < this.maxParallelToolCalls
           && next + group.length < calls.length
-          && await this.tools.executionMode(
+          && await tools.executionMode(
             calls[next + group.length].name,
             calls[next + group.length].arguments,
           ) === "parallel"
@@ -644,6 +667,7 @@ export class AgentRuntime {
         step,
         group,
         signal,
+        tools,
       );
       concluded ||= groupConcluded;
       next += group.length;
@@ -667,13 +691,14 @@ export class AgentRuntime {
     step: number,
     calls: AgentToolCall[],
     signal: AbortSignal,
+    tools: AgentToolRegistry,
   ): Promise<boolean> {
     for (const call of calls) {
       signal.throwIfAborted();
       await this.appendToolCall(sessionId, turn, step, call);
     }
     const results = await Promise.all(calls.map((call) =>
-      this.executeTool({ sessionId, turn, step, call, signal })
+      this.executeTool({ sessionId, turn, step, call, signal, tools })
     ));
     let concluded = false;
     for (let index = 0; index < calls.length; index += 1) {
@@ -725,8 +750,9 @@ export class AgentRuntime {
     step: number;
     call: AgentToolCall;
     signal: AbortSignal;
+    tools: AgentToolRegistry;
   }): Promise<ToolExecutionResult> {
-    const tool = this.tools.get(options.call.name);
+    const tool = options.tools.get(options.call.name);
     if (!tool) {
       return {
         content: `Unknown tool: ${options.call.name}`,
@@ -747,6 +773,13 @@ export class AgentRuntime {
         isError: true,
       };
     }
+  }
+
+  private toolsFor(sessionId?: AgentSessionId): AgentToolRegistry {
+    return (
+      (sessionId ? this.sessionTools.get(sessionId) : undefined)
+      ?? this.tools
+    );
   }
 
   private completeStep(

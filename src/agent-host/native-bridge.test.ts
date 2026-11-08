@@ -128,4 +128,33 @@ describe("NativeToolController", () => {
     }]);
     expect(registry.schemas().map((tool) => tool.name)).toEqual(["new"]);
   });
+
+  it("creates isolated registries for session-scoped tools", async () => {
+    const controller = new NativeToolController(new AgentToolRegistry());
+    controller.attachBridge({
+      async call(tool) {
+        return { content: `${tool} result` };
+      },
+    });
+    const first = controller.createTools([{
+      name: "first_tool",
+      description: "First",
+      parameters: { type: "object" },
+    }]);
+    const second = controller.createTools([{
+      name: "second_tool",
+      description: "Second",
+      parameters: { type: "object" },
+    }]);
+
+    expect(first.schemas().map((tool) => tool.name)).toEqual(["first_tool"]);
+    expect(second.schemas().map((tool) => tool.name)).toEqual(["second_tool"]);
+    await expect(first.get("first_tool")?.execute({
+      sessionId: "session-1",
+      turn: 1,
+      step: 1,
+      call: { id: "call-1", name: "first_tool", arguments: "{}" },
+      signal: new AbortController().signal,
+    })).resolves.toEqual({ content: "first_tool result" });
+  });
 });

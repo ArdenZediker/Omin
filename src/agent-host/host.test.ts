@@ -277,6 +277,65 @@ describe("AgentHost", () => {
       },
     });
   });
+
+  it("keeps configured tools scoped to one session", async () => {
+    const tools = new AgentToolRegistry();
+    const nativeTools = new NativeToolController(tools);
+    const host = new AgentHost(new AgentRuntime({
+      store: new InMemorySessionEventStore(),
+      model: oneTurnModel(),
+      tools,
+    }), undefined, nativeTools);
+    const first = await host.handle(request("create-first", {
+      command: "session.create",
+      params: { cwd: "/first" },
+    }));
+    const second = await host.handle(request("create-second", {
+      command: "session.create",
+      params: { cwd: "/second" },
+    }));
+    if (
+      !first.ok
+      || !("sessionId" in first.result)
+      || !second.ok
+      || !("sessionId" in second.result)
+    ) {
+      throw new Error("session.create failed");
+    }
+
+    const configured = await host.handle(request("configure-session", {
+      command: "session.configure-tools",
+      params: {
+        sessionId: first.result.sessionId,
+        tools: [{
+          name: "todo_write",
+          description: "Write todos",
+          parameters: { type: "object" },
+        }],
+      },
+    }));
+    expect(configured).toMatchObject({
+      ok: true,
+      result: { tools: [{ name: "todo_write" }] },
+    });
+
+    const firstTools = await host.handle(request("first-tools", {
+      command: "tools.list",
+      params: { sessionId: first.result.sessionId },
+    }));
+    const secondTools = await host.handle(request("second-tools", {
+      command: "tools.list",
+      params: { sessionId: second.result.sessionId },
+    }));
+    expect(firstTools).toMatchObject({
+      ok: true,
+      result: { tools: [{ name: "todo_write" }] },
+    });
+    expect(secondTools).toMatchObject({
+      ok: true,
+      result: { tools: [] },
+    });
+  });
 });
 
 describe("HostStdioServer", () => {

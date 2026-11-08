@@ -32,6 +32,12 @@ export type HostRequest =
   | {
       kind: "request";
       id: string;
+      command: "session.configure-tools";
+      params: { sessionId: AgentSessionId; tools: NativeToolDescriptor[] };
+    }
+  | {
+      kind: "request";
+      id: string;
       command: "session.prompt" | "session.followup";
       params: {
         sessionId: AgentSessionId;
@@ -94,6 +100,7 @@ export type HostRequest =
       kind: "request";
       id: string;
       command: "tools.list";
+      params?: { sessionId?: AgentSessionId };
     }
   | {
       kind: "request";

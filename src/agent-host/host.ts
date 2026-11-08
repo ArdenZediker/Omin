@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   AgentRuntime,
+  AgentToolRegistry,
   AgentToolSchema,
 } from "../agent-core";
 import type {
@@ -16,6 +17,7 @@ export type HostNotificationListener = (message: HostNotification) => void;
 
 export interface HostToolConfigurator {
   configureTools(tools: NativeToolDescriptor[]): AgentToolSchema[];
+  createTools(tools: NativeToolDescriptor[]): AgentToolRegistry;
 }
 
 /**
@@ -79,6 +81,17 @@ export class AgentHost {
         const sessionId = await this.runtime.createSession(request.params);
         this.trackSession(sessionId);
         return { sessionId };
+      }
+      case "session.configure-tools": {
+        this.trackSession(request.params.sessionId);
+        if (!this.toolConfigurator) {
+          throw new Error("tool configurator is not available in this Host");
+        }
+        const tools = await this.runtime.configureTools(
+          request.params.sessionId,
+          this.toolConfigurator.createTools(request.params.tools),
+        );
+        return { tools: tools.schemas() };
       }
       case "session.prompt":
       case "session.followup": {
@@ -155,7 +168,11 @@ export class AgentHost {
         return { events };
       }
       case "tools.list":
-        return { tools: this.runtime.listTools() };
+        return {
+          tools: this.runtime.listTools(
+            request.params?.sessionId,
+          ),
+        };
       case "tools.configure":
         if (!this.toolConfigurator) {
           throw new Error("tool configurator is not available in this Host");

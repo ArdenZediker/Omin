@@ -274,7 +274,12 @@ try {
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     protocol: "openai",
   });
-  await first.request("tools.configure", {
+  const created = await first.request("session.create", {
+    cwd: root,
+    title: "Agent Host smoke",
+  });
+  await first.request("session.configure-tools", {
+    sessionId: created.sessionId,
     tools: [{
       name: "read_file",
       description: "Read a file",
@@ -285,10 +290,6 @@ try {
       },
       parallelSafe: true,
     }],
-  });
-  const created = await first.request("session.create", {
-    cwd: root,
-    title: "Agent Host smoke",
   });
   const completedPromise = first.waitForEvent((event) =>
     event.sessionId === created.sessionId && event.type === "turn/completed"
