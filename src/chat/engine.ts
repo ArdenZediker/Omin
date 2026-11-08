@@ -339,8 +339,9 @@ async function compactOnce(options: {
   modelConfig?: ModelConfig;
   signal?: AbortSignal;
   tools?: ChatToolParam[];
+  force?: boolean;
 }): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean; cacheEpoch?: number } }> {
-  const { model, requestMessages, modelConfig, signal, tools } = options;
+  const { model, requestMessages, modelConfig, signal, tools, force = false } = options;
   const contextWindow = resolveContextWindow(modelConfig);
   const budget = Math.floor(contextWindow * CONTEXT_BUDGET_RATIO);
   const estimated = measureContextTokens(
@@ -348,7 +349,7 @@ async function compactOnce(options: {
     findLatestContextSample(requestMessages, model),
   ).tokens;
 
-  if (estimated <= budget) {
+  if (!force && estimated <= budget) {
     return { messages: requestMessages };
   }
 
@@ -408,6 +409,20 @@ async function compactOnce(options: {
     messages: [...leading, ...droppedOldest],
     compaction: { removedCount: 2, fallback: true },
   };
+}
+
+/**
+ * 用户主动执行 `/compact`：不依赖当前是否已经超出上下文预算，直接压缩可压缩的旧历史。
+ * 仍然保留 system/knowledge、最近一条 user 及其后的当前轮内容，行为与自动压缩一致。
+ */
+export async function compactHistoryNow(options: {
+  model: string;
+  requestMessages: Message[];
+  modelConfig?: ModelConfig;
+  signal?: AbortSignal;
+  tools?: ChatToolParam[];
+}): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean; cacheEpoch?: number } }> {
+  return compactOnce({ ...options, force: true });
 }
 
 /**

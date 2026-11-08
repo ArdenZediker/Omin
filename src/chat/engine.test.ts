@@ -3,6 +3,7 @@ import {
   executeChatTurn,
   partitionToolCallsForExecution,
   compactHistoryIfNeeded,
+  compactHistoryNow,
   pruneToolResultMessages,
   stubToolResultMessages,
   shouldPruneToolResults,
@@ -712,5 +713,43 @@ describe("compactHistoryIfNeeded（改造4：剪枝 + 无收益守卫）", () =>
     // tiny 窗口 100、预算 75；原 3000 字符工具结果 + 长对话单次 60% 压缩仍超预算，需多次压缩
     expect(chatSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(estimatePromptTokens(res.messages)).toBeLessThanOrEqual(Math.floor(100 * 0.75));
+  });
+});
+
+describe("compactHistoryNow（手动 /compact）", () => {
+  const modelConfig: ModelConfig = {
+    id: "manual-compact",
+    name: "Manual Compact",
+    provider: "openai",
+    maxTokens: 128000,
+    supportsVision: false,
+    supportsStreaming: false,
+    toolCalling: true,
+  };
+
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("即使尚未超出上下文预算，也主动压缩较早历史并保留最近输入", async () => {
+    const messages: Message[] = [
+      { role: "system", content: "system" },
+      { role: "user", content: "较早需求" },
+      { role: "assistant", content: "较早答复" },
+      { role: "user", content: "最近问题" },
+    ];
+    const chatSpy = vi.spyOn(modelRegistry, "chat").mockResolvedValue({
+      content: "较早需求已经完成，当前保留最近问题继续处理。",
+      model: "manual-compact",
+    } as ChatResponse);
+
+    const result = await compactHistoryNow({
+      model: "manual-compact",
+      requestMessages: messages,
+      modelConfig,
+    });
+
+    expect(chatSpy).toHaveBeenCalledOnce();
+    expect(result.compaction?.removedCount).toBe(2);
+    expect(result.messages.some((message) => message.content.startsWith("【历史对话摘要】"))).toBe(true);
+    expect(result.messages[result.messages.length - 1]?.content).toBe("最近问题");
   });
 });

@@ -9,6 +9,7 @@ interface ModelSelectorProps {
   label?: string;
   title?: string;
   onModelChange: (modelId: string) => void;
+  openSignal?: number;
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -44,7 +45,7 @@ function formatContextWindow(tokens: number) {
   return `${tokens}`;
 }
 
-export default function ModelSelector({ currentModel, label, title, onModelChange }: ModelSelectorProps) {
+export default function ModelSelector({ currentModel, label, title, onModelChange, openSignal }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -70,6 +71,12 @@ export default function ModelSelector({ currentModel, label, title, onModelChang
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (typeof openSignal === "number" && openSignal > 0) {
+      setIsOpen(true);
+    }
+  }, [openSignal]);
 
   if (models.length === 0) {
     return <div className="model-selector-empty">未配置模型</div>;

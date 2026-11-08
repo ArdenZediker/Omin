@@ -1030,6 +1030,11 @@ function MainApp() {
           onDeleteProjectMemory={deleteProjectMemory}
           onUpdateProjectMemory={updateProjectMemory}
           onRegenerateMessage={handleRegenerateMessage}
+          onReplaceSessionMessages={(nextMessages) => {
+            if (activeChatId) {
+              updateChatSessionMessages(activeChatId, nextMessages);
+            }
+          }}
           onRenameChat={handleRenameChat}
           onSelectProject={selectProject}
           onSelectChat={handleSelectChat}

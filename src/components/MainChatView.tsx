@@ -271,6 +271,7 @@ type MainChatViewProps = {
   onNewChat: () => void;
   onNewChatInProject: (projectId: string) => void;
   onRegenerateMessage: (messageIndex: number) => void | Promise<void>;
+  onReplaceSessionMessages: (messages: Message[]) => void;
   onRenameChat: (session: ChatSession) => void;
   onSelectProject: (projectId: string) => void;
   onSelectChat: (sessionId: string) => void;
@@ -353,6 +354,7 @@ export default function MainChatView({
   onNewChat,
   onNewChatInProject,
   onRegenerateMessage,
+  onReplaceSessionMessages,
   onSelectProject,
   onSelectChat,
   onUpdateProject,
@@ -2498,6 +2500,8 @@ export default function MainChatView({
                     allowedToolIds={allowedComposerToolIds}
                     allowedSkillIds={allowedComposerSkillIds}
                     currentModel={currentModel}
+                    sessionId={activeChatId}
+                    onReplaceSessionMessages={onReplaceSessionMessages}
                     messages={messages}
                     sessionUsage={activeSession?.usage}
                     onModelChange={onModelChange}

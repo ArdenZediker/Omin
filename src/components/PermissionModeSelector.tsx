@@ -7,10 +7,16 @@ const MODE_LABELS: Record<PermissionMode, string> = {
   "full-access": "完全访问",
 };
 
-export default function PermissionModeSelector() {
+export default function PermissionModeSelector({ openSignal }: { openSignal?: number }) {
   const [mode, setModeState] = useState<PermissionMode>(getPermissionMode);
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof openSignal === "number" && openSignal > 0) {
+      setIsOpen(true);
+    }
+  }, [openSignal]);
 
   useEffect(() => {
     return subscribePermissionMode((next) => {

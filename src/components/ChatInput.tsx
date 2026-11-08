@@ -3,16 +3,39 @@ import {
   BookOpen,
   Bot,
   Check,
-  CirclePlus,
+  Command,
+  ListChecks,
   LoaderCircle,
   Plus,
   Send,
   Square,
+  Target,
   X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
-import { buildSlashDraft, getAllLocalCommands, getMatchingSlashSuggestions, type SlashSuggestion } from "../chat/skills";
+import {
+  getSlashTrigger,
+  getAllLocalCommands,
+  getMatchingSlashSuggestions,
+  type SlashSuggestion,
+} from "../chat/skills";
+import {
+  findBuiltinSlashCommand,
+  type BuiltinCommandDefinition,
+} from "../chat/builtinCommands";
+import {
+  buildBuiltinSessionContext,
+  clearBuiltinGoal,
+  migrateBuiltinSessionState,
+  readBuiltinSessionState,
+  setBuiltinGoal,
+  setBuiltinGoalPhase,
+  setBuiltinPlanMode,
+  type BuiltinSessionState,
+} from "../chat/builtinCommandState";
+import { compactHistoryNow } from "../chat/engine";
+import { modelRegistry } from "../adapters/registry";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ChatAttachment, ChatImage, Message } from "../adapters/types";
 import type { ChatSendOptions, ChatUsageStats } from "../chat/types";
@@ -36,6 +59,8 @@ interface ChatInputProps {
   sessionUsage?: ChatUsageStats;
   contextPresetText?: string;
   knowledgeCollections?: KnowledgeCollection[];
+  sessionId?: string | null;
+  onReplaceSessionMessages?: (messages: Message[]) => void;
   /** 可选专家（@专家 = 本轮对话切换为该专家的角色/工具/技能集） */
   experts?: PluginManifest[];
   onStartNewTopic?: () => void;
@@ -68,6 +93,26 @@ function normalizeMentionText(value: string) {
   return value.trim().toLocaleLowerCase();
 }
 
+function hasDistinctSuggestionTitle(command: string, title: string) {
+  const normalize = (value: string) =>
+    value
+      .trim()
+      .replace(/^\/+/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .toLocaleLowerCase();
+  return normalize(command) !== normalize(title);
+}
+
+function getDisplayedSuggestionCommand(suggestion: SlashSuggestion) {
+  return suggestion.kind === "builtin" ? `/${suggestion.title}` : suggestion.command;
+}
+
+function getLeadingSlashToken(value: string): string | null {
+  const leading = value.match(/^(\/[^\s]*)/)?.[1] ?? "";
+  return leading.length > 1 ? leading : null;
+}
+
 function getKnowledgeMentionTrigger(value: string, caretIndex: number): KnowledgeMentionTrigger | null {
   const safeCaretIndex = Math.max(0, Math.min(caretIndex, value.length));
   const prefix = value.slice(0, safeCaretIndex);
@@ -92,10 +137,6 @@ function scrollElementIntoView(element: HTMLElement | null | undefined) {
   element.scrollIntoView({ block: "nearest" });
 }
 
-function SuggestionIcon() {
-  return <CirclePlus size={16} strokeWidth={1.8} />;
-}
-
 export default function ChatInput({
     allowedToolIds,
     allowedSkillIds,
@@ -106,6 +147,8 @@ export default function ChatInput({
     messages = [],
     sessionUsage,
     contextPresetText,
+  sessionId,
+  onReplaceSessionMessages,
   onSend,
   knowledgeCollections = [],
   experts = [],
@@ -132,15 +175,47 @@ export default function ChatInput({
   const [selectedKnowledgeIndex, setSelectedKnowledgeIndex] = useState(0);
   const [dismissedMentionInput, setDismissedMentionInput] = useState("");
   const [caretIndex, setCaretIndex] = useState(0);
+  const [textareaScrollTop, setTextareaScrollTop] = useState(0);
   const [pendingFollowUps, setPendingFollowUps] = useState<Array<{ id: string; content: string }>>([]);
   const [isFollowUpSubmitting, setIsFollowUpSubmitting] = useState(false);
+  const builtinScopeKey = sessionId ?? `draft:${draftScopeKey ?? "default"}`;
+  const [builtinSessionState, setBuiltinSessionState] = useState<BuiltinSessionState>(
+    () => readBuiltinSessionState(builtinScopeKey)
+  );
+  const [permissionOpenSignal, setPermissionOpenSignal] = useState(0);
+  const [modelOpenSignal, setModelOpenSignal] = useState(0);
+  const [commandNotice, setCommandNotice] = useState<string | null>(null);
+  const [isCompacting, setIsCompacting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const toolbarPickerRef = useRef<HTMLDivElement>(null);
+  const slashSuggestionsRef = useRef<HTMLDivElement>(null);
   const suggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const knowledgeSuggestionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const lastDraftScopeRef = useRef<string | undefined>(undefined);
   const lastDraftSignalRef = useRef<number | undefined>(undefined);
+  const lastBuiltinScopeRef = useRef(builtinScopeKey);
   const suppressNextDraftReportRef = useRef(false);
+
+  useEffect(() => {
+    const previousScope = lastBuiltinScopeRef.current;
+    if (
+      previousScope !== builtinScopeKey
+      && previousScope.startsWith("draft:")
+      && sessionId
+    ) {
+      migrateBuiltinSessionState(previousScope, builtinScopeKey);
+    }
+    lastBuiltinScopeRef.current = builtinScopeKey;
+    setBuiltinSessionState(readBuiltinSessionState(builtinScopeKey));
+  }, [builtinScopeKey, sessionId]);
+
+  useEffect(() => {
+    if (!commandNotice) {
+      return;
+    }
+    const timer = window.setTimeout(() => setCommandNotice(null), 3600);
+    return () => window.clearTimeout(timer);
+  }, [commandNotice]);
 
   useEffect(() => {
     if (!openToolbarPicker) {
@@ -181,11 +256,35 @@ export default function ChatInput({
     }
   };
 
-  const matchedSuggestions = getMatchingSlashSuggestions(input, allowedToolIds, allowedSkillIds);
-  const localSuggestions = matchedSuggestions.filter((suggestion) => suggestion.kind === "local");
+  const slashTrigger = getSlashTrigger(input, caretIndex);
+  const slashQuery = slashTrigger?.query ?? null;
+  const matchedSuggestions = useMemo(
+    () => slashQuery === null
+      ? []
+      : getMatchingSlashSuggestions(slashQuery, allowedToolIds, allowedSkillIds),
+    [allowedSkillIds, allowedToolIds, slashQuery],
+  );
+  const slashSuggestions = matchedSuggestions;
   const trimmedInput = input.trim();
-  const activeSlashCommand = trimmedInput.startsWith("/") ? trimmedInput.split(/\s+/)[0].toLowerCase() : "";
-  const activeLocalCommand = getAllLocalCommands().find((item) => item.command === activeSlashCommand) ?? null;
+  const activeSlashCommand = trimmedInput.match(/^\/\S+/)?.[0].toLowerCase() ?? "";
+  const activeBuiltinCommand = findBuiltinSlashCommand(trimmedInput);
+  const activeLocalCommand = activeBuiltinCommand
+    ? null
+    : getAllLocalCommands().find((item) => item.command === activeSlashCommand) ?? null;
+  const leadingSlashToken = getLeadingSlashToken(input);
+  const highlightedCommandToken = leadingSlashToken && (
+    activeBuiltinCommand
+    || activeLocalCommand
+    || matchedSuggestions.some((suggestion) =>
+      suggestion.command.toLocaleLowerCase().startsWith(leadingSlashToken.toLocaleLowerCase())
+    )
+  )
+    ? leadingSlashToken
+    : null;
+  const commandHighlightSuffix = highlightedCommandToken
+    ? input.slice(highlightedCommandToken.length)
+    : "";
+  const showCommandTextDecoration = Boolean(highlightedCommandToken);
   const activeModeLabel = activeLocalCommand?.title ?? null;
   const activeModeTypeLabel = activeLocalCommand ? (activeLocalCommand.kind === "skill" ? "技能模式" : "工具模式") : null;
   const mentionTrigger = getKnowledgeMentionTrigger(input, caretIndex);
@@ -209,17 +308,52 @@ export default function ChatInput({
   ].slice(0, 8);
   const hasComposerStatus = Boolean(
     activeModeLabel
+    || builtinSessionState.goal
+    || builtinSessionState.planMode
+    || commandNotice
+    || isCompacting
     || selectedKnowledgeCollection
     || selectedExpert
     || pendingFollowUps.length > 0,
   );
   const showMentionSuggestions = Boolean(mentionTrigger && input !== dismissedMentionInput && mentionSuggestions.length > 0);
-  const showSlashSuggestions =
-    localSuggestions.length > 0 &&
+  const showSlashSuggestions = Boolean(
+    slashTrigger &&
+    slashSuggestions.length > 0 &&
     !activeModeLabel &&
-    trimmedInput.startsWith("/") &&
     input !== dismissedSlashInput &&
-    !mentionTrigger;
+    !mentionTrigger,
+  );
+  const slashSuggestionGroups = [
+    {
+      commandKind: "add" as const,
+      title: "添加",
+      items: slashSuggestions
+        .map((suggestion, index) => ({ suggestion, index }))
+        .filter(({ suggestion }) => suggestion.commandKind === "add"),
+    },
+    {
+      commandKind: "command" as const,
+      title: "指令",
+      items: slashSuggestions
+        .map((suggestion, index) => ({ suggestion, index }))
+        .filter(({ suggestion }) => suggestion.commandKind === "command"),
+    },
+    {
+      commandKind: "tool" as const,
+      title: "工具",
+      items: slashSuggestions
+        .map((suggestion, index) => ({ suggestion, index }))
+        .filter(({ suggestion }) => suggestion.commandKind === "tool"),
+    },
+    {
+      commandKind: "skill" as const,
+      title: "技能",
+      items: slashSuggestions
+        .map((suggestion, index) => ({ suggestion, index }))
+        .filter(({ suggestion }) => suggestion.commandKind === "skill"),
+    },
+  ].filter((group) => group.items.length > 0);
 
   useLayoutEffect(() => {
     syncTextareaHeight();
@@ -283,8 +417,12 @@ export default function ChatInput({
   }, [attachments, images, input, onDraftChange]);
 
   useEffect(() => {
-    suggestionItemRefs.current = suggestionItemRefs.current.slice(0, localSuggestions.length);
-  }, [localSuggestions.length]);
+    suggestionItemRefs.current = suggestionItemRefs.current.slice(0, slashSuggestions.length);
+  }, [slashSuggestions.length]);
+
+  useEffect(() => {
+    setSelectedSuggestionIndex(0);
+  }, [slashQuery, slashTrigger?.start]);
 
   useEffect(() => {
     knowledgeSuggestionItemRefs.current = knowledgeSuggestionItemRefs.current.slice(0, mentionSuggestions.length);
@@ -296,8 +434,8 @@ export default function ChatInput({
       return;
     }
 
-    setSelectedSuggestionIndex((current) => Math.min(current, localSuggestions.length - 1));
-  }, [localSuggestions.length, showSlashSuggestions]);
+    setSelectedSuggestionIndex((current) => Math.min(current, slashSuggestions.length - 1));
+  }, [slashSuggestions.length, showSlashSuggestions]);
 
   useEffect(() => {
     if (!showMentionSuggestions) {
@@ -333,6 +471,30 @@ export default function ChatInput({
       setDismissedSlashInput("");
     }
   }, [dismissedSlashInput, input]);
+
+  useEffect(() => {
+    setDismissedSlashInput("");
+  }, [caretIndex]);
+
+  useEffect(() => {
+    if (!showSlashSuggestions) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        slashSuggestionsRef.current?.contains(target)
+        || textareaRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setDismissedSlashInput(input);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [input, showSlashSuggestions]);
 
   useEffect(() => {
     if (!dismissedMentionInput) {
@@ -509,8 +671,168 @@ export default function ChatInput({
     return items;
   }, [images, attachments]);
 
+  const stripActiveSlashToken = () => {
+    const trigger = getSlashTrigger(input, textareaRef.current?.selectionStart ?? caretIndex);
+    if (!trigger) {
+      return;
+    }
+    const nextInput = `${input.slice(0, trigger.start)}${input.slice(trigger.end)}`
+      .replace(/[ \t]{2,}/g, " ")
+      .trim();
+    setInput(nextInput);
+    setCaretIndex(nextInput.length);
+    clearSuggestionDismissal();
+    focusTextareaAt(nextInput.length);
+  };
+
+  const applyGoalCommand = (args: string) => {
+    const trimmedArgs = args.trim();
+    if (!trimmedArgs) {
+      const currentGoal = builtinSessionState.goal;
+      setCommandNotice(
+        currentGoal
+          ? `当前目标：${currentGoal.objective}。可输入 /goal edit 新目标、/goal pause、/goal resume 或 /goal clear`
+          : "输入目标，Omni 会在后续轮次持续围绕它推进"
+      );
+      setInput("/goal ");
+      focusTextareaAt(6);
+      return;
+    }
+
+    const [verb, ...rest] = trimmedArgs.split(/\s+/);
+    const normalizedVerb = verb.toLocaleLowerCase();
+    if (normalizedVerb === "pause") {
+      if (!builtinSessionState.goal) {
+        setCommandNotice("当前没有可暂停的目标");
+        return;
+      }
+      setBuiltinSessionState(setBuiltinGoalPhase(builtinScopeKey, "paused"));
+      setCommandNotice("目标已暂停，后续请求不会再注入该目标");
+      return;
+    }
+    if (normalizedVerb === "resume") {
+      if (!builtinSessionState.goal) {
+        setCommandNotice("当前没有可恢复的目标");
+        return;
+      }
+      setBuiltinSessionState(setBuiltinGoalPhase(builtinScopeKey, "active"));
+      setCommandNotice("目标已恢复，后续请求会继续围绕它推进");
+      return;
+    }
+    if (normalizedVerb === "clear") {
+      setBuiltinSessionState(clearBuiltinGoal(builtinScopeKey));
+      setCommandNotice("已清除当前目标");
+      return;
+    }
+
+    const objective = normalizedVerb === "edit" ? rest.join(" ").trim() : trimmedArgs;
+    if (!objective) {
+      setCommandNotice("请在 /goal 后输入目标内容");
+      return;
+    }
+    setBuiltinSessionState(setBuiltinGoal(builtinScopeKey, objective));
+    setCommandNotice(`目标已${normalizedVerb === "edit" ? "更新" : "保存"}：${objective}`);
+  };
+
+  const togglePlanMode = () => {
+    const nextPlanMode = !builtinSessionState.planMode;
+    setBuiltinSessionState(setBuiltinPlanMode(builtinScopeKey, nextPlanMode));
+    setCommandNotice(nextPlanMode
+      ? "已进入计划模式：只分析并给出计划，确认后再执行"
+      : "已退出计划模式");
+  };
+
+  const compactConversationNow = async () => {
+    if (isCompacting) {
+      return;
+    }
+    if (!currentModel) {
+      setCommandNotice("请先配置模型，再压缩对话");
+      return;
+    }
+    if (!sessionId || !onReplaceSessionMessages) {
+      setCommandNotice("当前会话还不可压缩");
+      return;
+    }
+
+    setIsCompacting(true);
+    try {
+      const result = await compactHistoryNow({
+        model: currentModel,
+        requestMessages: messages,
+        modelConfig: modelRegistry.getModelConfig(currentModel),
+      });
+      if (!result.compaction || result.messages === messages) {
+        setCommandNotice("可压缩的历史不足，当前对话保持原样");
+        return;
+      }
+      onReplaceSessionMessages(result.messages);
+      setCommandNotice(
+        result.compaction.fallback
+          ? "已丢弃最旧的历史消息，为当前对话释放上下文空间"
+          : `已压缩 ${result.compaction.removedCount} 条较早消息`
+      );
+    } catch (error) {
+      console.error("手动压缩对话失败", error);
+      setCommandNotice("压缩失败，请稍后重试");
+    } finally {
+      setIsCompacting(false);
+    }
+  };
+
+  const executeBuiltinCommand = async (
+    command: BuiltinCommandDefinition,
+    args = ""
+  ) => {
+    switch (command.id) {
+      case "file":
+        stripActiveSlashToken();
+        await handleAddFiles();
+        return;
+      case "goal":
+        applyGoalCommand(args);
+        return;
+      case "plan":
+        stripActiveSlashToken();
+        togglePlanMode();
+        return;
+      case "compact":
+        stripActiveSlashToken();
+        await compactConversationNow();
+        return;
+      case "permission":
+        stripActiveSlashToken();
+        setPermissionOpenSignal((current) => current + 1);
+        return;
+      case "model":
+        stripActiveSlashToken();
+        if (!currentModel) {
+          setCommandNotice("请先在设置中配置可用模型");
+          return;
+        }
+        setModelOpenSignal((current) => current + 1);
+        return;
+    }
+  };
+
+  const executeBuiltinSlashInput = async (text: string): Promise<boolean> => {
+    const command = findBuiltinSlashCommand(text);
+    if (!command) {
+      return false;
+    }
+    const trimmed = text.trim();
+    const token = trimmed.match(/^\/\S+/)?.[0] ?? command.command;
+    const args = trimmed.slice(token.length).trim();
+    await executeBuiltinCommand(command, args);
+    return true;
+  };
+
+  const builtinContext = buildBuiltinSessionContext(builtinSessionState);
   const buildSendOptions = (): ChatSendOptions => ({
-    hiddenContext: contextPresetText?.trim() ? contextPresetText : undefined,
+    hiddenContext: [
+      contextPresetText?.trim(),
+      builtinContext,
+    ].filter(Boolean).join("\n\n") || undefined,
     knowledgeCollectionId: selectedKnowledgeCollection?.id ?? null,
     knowledgeCollectionName: selectedKnowledgeCollection?.name ?? null,
     expertId: selectedExpert?.id ?? null,
@@ -524,9 +846,24 @@ export default function ChatInput({
   const handleSubmit = async () => {
     if (
       (!trimmedInput && images.length === 0 && attachments.length === 0)
-      || isSendBlocked
       || isFollowUpSubmitting
     ) {
+      return;
+    }
+
+    if (activeBuiltinCommand) {
+      if (await executeBuiltinSlashInput(trimmedInput)) {
+        const hasGoalArguments = activeBuiltinCommand.id === "goal"
+          && trimmedInput.trim() !== activeBuiltinCommand.command;
+        if (activeBuiltinCommand.id !== "goal" || hasGoalArguments) {
+          setInput("");
+          setCaretIndex(0);
+        }
+        return;
+      }
+    }
+
+    if (isSendBlocked) {
       return;
     }
 
@@ -563,9 +900,34 @@ export default function ChatInput({
   const sendDisabledTitle = isSendBlocked ? "请先配置可用模型或等待当前会话完成" : "发送消息";
 
   const applySuggestion = (suggestion: SlashSuggestion) => {
-    setInput(buildSlashDraft(suggestion));
+    const displayedCommand = getDisplayedSuggestionCommand(suggestion);
+    if (suggestion.kind === "builtin" && suggestion.builtinId !== "goal") {
+      const command = findBuiltinSlashCommand(suggestion.command);
+      if (command) {
+        void executeBuiltinCommand(command);
+      }
+      return;
+    }
+
+    const textarea = textareaRef.current;
+    const trigger = getSlashTrigger(input, textarea?.selectionStart ?? caretIndex);
+    if (!trigger) {
+      const nextInput = `${displayedCommand} `;
+      setInput(nextInput);
+      clearSuggestionDismissal();
+      focusTextareaAt(nextInput.length);
+      return;
+    }
+
+    const before = input.slice(0, trigger.start);
+    const after = input.slice(trigger.end);
+    const suffix = after.replace(/^[ \t]+/, "");
+    const separator = suffix.length === 0 || suffix.startsWith("\n") ? (after.length === 0 ? " " : "") : " ";
+    const nextInput = `${before}${displayedCommand}${separator}${suffix}`;
+    const nextCaretIndex = before.length + displayedCommand.length + separator.length;
+    setInput(nextInput);
     clearSuggestionDismissal();
-    textareaRef.current?.focus();
+    focusTextareaAt(nextCaretIndex);
   };
 
   const applyMentionSuggestion = (suggestion: MentionSuggestion) => {
@@ -598,7 +960,7 @@ export default function ChatInput({
     }
 
     const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (document.activeElement !== textareaRef.current) {
+      if (event.defaultPrevented || document.activeElement !== textareaRef.current) {
         return;
       }
 
@@ -612,13 +974,13 @@ export default function ChatInput({
       if (event.key === "Tab") {
         event.preventDefault();
         event.stopPropagation();
-        applySuggestion(localSuggestions[selectedSuggestionIndex] ?? localSuggestions[0]);
+        applySuggestion(slashSuggestions[selectedSuggestionIndex] ?? slashSuggestions[0]);
       }
     };
 
     window.addEventListener("keydown", onWindowKeyDown, true);
     return () => window.removeEventListener("keydown", onWindowKeyDown, true);
-  }, [applySuggestion, input, localSuggestions, selectedSuggestionIndex, showSlashSuggestions]);
+  }, [applySuggestion, input, slashSuggestions, selectedSuggestionIndex, showSlashSuggestions]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (showMentionSuggestions && mentionSuggestions.length > 0) {
@@ -658,7 +1020,7 @@ export default function ChatInput({
       }
     }
 
-    if (showSlashSuggestions && localSuggestions.length > 0) {
+    if (showSlashSuggestions && slashSuggestions.length > 0) {
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -669,28 +1031,28 @@ export default function ChatInput({
       if (event.key === "Tab") {
         event.preventDefault();
         event.stopPropagation();
-        applySuggestion(localSuggestions[selectedSuggestionIndex] ?? localSuggestions[0]);
+        applySuggestion(slashSuggestions[selectedSuggestionIndex] ?? slashSuggestions[0]);
         return;
       }
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
         event.stopPropagation();
-        setSelectedSuggestionIndex((current) => (current + 1) % localSuggestions.length);
+        setSelectedSuggestionIndex((current) => (current + 1) % slashSuggestions.length);
         return;
       }
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
         event.stopPropagation();
-        setSelectedSuggestionIndex((current) => (current - 1 + localSuggestions.length) % localSuggestions.length);
+        setSelectedSuggestionIndex((current) => (current - 1 + slashSuggestions.length) % slashSuggestions.length);
         return;
       }
 
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
-        applySuggestion(localSuggestions[selectedSuggestionIndex] ?? localSuggestions[0]);
+        applySuggestion(slashSuggestions[selectedSuggestionIndex] ?? slashSuggestions[0]);
         return;
       }
     }
@@ -827,6 +1189,64 @@ export default function ChatInput({
                       <span>已追加: {followUp.content}</span>
                     </div>
                   ))}
+                  {isCompacting && (
+                    <div className="chat-composer__status-chip chat-composer__status-chip--pending">
+                      <LoaderCircle className="chat-composer__status-spinner" size={13} strokeWidth={1.9} />
+                      <span>正在压缩较早的对话…</span>
+                    </div>
+                  )}
+                  {builtinSessionState.goal && (
+                    <div className="chat-composer__status-chip-group chat-composer__status-chip--goal">
+                      <button
+                        type="button"
+                        className="chat-composer__status-chip-main"
+                        title={builtinSessionState.goal.phase === "active" ? "点击暂停目标" : "点击恢复目标"}
+                        onClick={() => {
+                          const nextPhase = builtinSessionState.goal?.phase === "active" ? "paused" : "active";
+                          setBuiltinSessionState(setBuiltinGoalPhase(builtinScopeKey, nextPhase));
+                          setCommandNotice(nextPhase === "active" ? "目标已恢复" : "目标已暂停");
+                        }}
+                      >
+                        <Target size={13} strokeWidth={1.9} />
+                        <span>
+                          目标{builtinSessionState.goal.phase === "paused" ? "（已暂停）" : ""}: {builtinSessionState.goal.objective}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-composer__status-chip-close"
+                        title="清除当前目标"
+                        aria-label="清除当前目标"
+                        onClick={() => {
+                          setBuiltinSessionState(clearBuiltinGoal(builtinScopeKey));
+                          setCommandNotice("已清除当前目标");
+                        }}
+                      >
+                        <X size={12} strokeWidth={2} />
+                      </button>
+                    </div>
+                  )}
+                  {builtinSessionState.planMode && (
+                    <button
+                      type="button"
+                      className="chat-composer__status-chip chat-composer__status-chip--plan"
+                      title="退出计划模式"
+                      onClick={togglePlanMode}
+                    >
+                      <ListChecks size={13} strokeWidth={1.9} />
+                      <span>计划模式</span>
+                      <X size={12} strokeWidth={2} />
+                    </button>
+                  )}
+                  {commandNotice && (
+                    <div
+                      className="chat-composer__status-chip chat-composer__status-chip--notice"
+                      role="status"
+                      title={commandNotice}
+                    >
+                      <span>{commandNotice}</span>
+                    </div>
+                  )}
                   {activeModeLabel && activeModeTypeLabel && (
                     <button
                       type="button"
@@ -877,22 +1297,50 @@ export default function ChatInput({
                   )}
                 </div>
               )}
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(event) => {
-                  setInput(event.target.value);
-                  updateCaretFromTextarea(event.currentTarget);
-                }}
-                onClick={(event) => updateCaretFromTextarea(event.currentTarget)}
-                onKeyDownCapture={handleKeyDown}
-                onKeyUp={(event) => updateCaretFromTextarea(event.currentTarget)}
-                onPaste={handlePaste}
-                onSelect={(event) => updateCaretFromTextarea(event.currentTarget)}
-                placeholder="输入聊天内容..."
-                className="chat-composer__textarea hide-scrollbar"
-                rows={1}
-              />
+              <div
+                className={`chat-composer__textarea-shell${
+                  showCommandTextDecoration ? " chat-composer__textarea-shell--with-command" : ""
+                }`}
+              >
+                {showCommandTextDecoration && (
+                  <div
+                    className="chat-composer__command-mirror"
+                    aria-hidden="true"
+                    style={{ transform: `translateY(-${textareaScrollTop}px)` }}
+                  >
+                    <span className="chat-composer__command-highlight">
+                      {highlightedCommandToken}
+                    </span>
+                    {commandHighlightSuffix}
+                  </div>
+                )}
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(event) => {
+                    setInput(event.target.value);
+                    updateCaretFromTextarea(event.currentTarget);
+                  }}
+                  onClick={(event) => updateCaretFromTextarea(event.currentTarget)}
+                  onKeyDownCapture={handleKeyDown}
+                  onKeyUp={(event) => updateCaretFromTextarea(event.currentTarget)}
+                  onPaste={handlePaste}
+                  onSelect={(event) => updateCaretFromTextarea(event.currentTarget)}
+                  onScroll={(event) => setTextareaScrollTop(event.currentTarget.scrollTop)}
+                  placeholder="输入聊天内容..."
+                  className={`chat-composer__textarea hide-scrollbar${
+                    showCommandTextDecoration ? " chat-composer__textarea--command-active" : ""
+                  }`}
+                  aria-autocomplete={showSlashSuggestions ? "list" : undefined}
+                  aria-controls={showSlashSuggestions ? "chat-slash-command-listbox" : undefined}
+                  aria-activedescendant={
+                    showSlashSuggestions
+                      ? `chat-slash-command-option-${selectedSuggestionIndex}`
+                      : undefined
+                  }
+                  rows={1}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -909,7 +1357,7 @@ export default function ChatInput({
               >
                 <Plus size={20} strokeWidth={1.7} />
               </button>
-              <PermissionModeSelector />
+              <PermissionModeSelector openSignal={permissionOpenSignal} />
               <div className="chat-composer__pickers" ref={toolbarPickerRef}>
                 <button
                   type="button"
@@ -1008,33 +1456,23 @@ export default function ChatInput({
             <div className="chat-composer__footer-actions">
               {typeof currentModel === "string" && (
                 <div className="chat-composer__model">
-                  <ModelSelector currentModel={currentModel} onModelChange={onModelChange ?? (() => undefined)} title={modelTitle} />
+                  <ModelSelector
+                    currentModel={currentModel}
+                    onModelChange={onModelChange ?? (() => undefined)}
+                    title={modelTitle}
+                    openSignal={modelOpenSignal}
+                  />
                 </div>
               )}
               {isLoading ? (
-                <>
-                  <button
-                    onClick={() => void handleSubmit()}
-                    disabled={
-                      isSendBlocked
-                      || isFollowUpSubmitting
-                      || (!trimmedInput && images.length === 0 && attachments.length === 0)
-                    }
-                    className="chat-composer__submit"
-                    title={isFollowUpSubmitting ? "正在追加..." : "追加到当前回答"}
-                    type="button"
-                  >
-                    <Send className="chat-composer__submit-icon" size={18} strokeWidth={2} />
-                  </button>
-                  <button
-                    onClick={onStop}
-                    className="chat-composer__submit chat-composer__submit--stop"
-                    title="停止生成"
-                    type="button"
-                  >
-                    <Square className="chat-composer__submit-icon" size={18} strokeWidth={2} fill="currentColor" />
-                  </button>
-                </>
+                <button
+                  onClick={onStop}
+                  className="chat-composer__submit chat-composer__submit--stop"
+                  title="停止生成"
+                  type="button"
+                >
+                  <Square className="chat-composer__submit-icon" size={18} strokeWidth={2} fill="currentColor" />
+                </button>
               ) : (
                 <button
                   onClick={() => void handleSubmit()}
@@ -1059,31 +1497,66 @@ export default function ChatInput({
       />
 
       {showSlashSuggestions && (
-        <div className="chat-composer__suggestions">
+        <div
+          ref={slashSuggestionsRef}
+          id="chat-slash-command-listbox"
+          className="chat-composer__suggestions chat-composer__suggestions--slash"
+          role="listbox"
+          aria-label="斜杠命令"
+        >
           <div className="chat-composer__suggestions-list">
-            <div className="chat-composer__suggestion-group">
-              <div className="chat-composer__suggestion-group-title">本地命令</div>
-              {localSuggestions.map((suggestion, index) => (
-                <button
-                  key={`${suggestion.kind}-${suggestion.id}`}
-                  ref={(element) => {
-                    suggestionItemRefs.current[index] = element;
-                  }}
-                  type="button"
-                  className={`chat-composer__suggestion${selectedSuggestionIndex === index ? " chat-composer__suggestion--active" : ""}`}
-                  onClick={() => applySuggestion(suggestion)}
-                  onMouseEnter={() => setSelectedSuggestionIndex(index)}
+            {slashSuggestionGroups.map((group) => (
+              <div
+                key={group.commandKind}
+                className="chat-composer__suggestion-group"
+                role="group"
+                aria-labelledby={`chat-slash-command-group-${group.commandKind}`}
+              >
+                <div
+                  id={`chat-slash-command-group-${group.commandKind}`}
+                  className="chat-composer__suggestion-group-title"
                 >
-                  <span className="chat-composer__suggestion-icon" aria-hidden="true">
-                    <SuggestionIcon />
-                  </span>
-                  <span className="chat-composer__suggestion-copy">
-                    <span className="chat-composer__suggestion-command">{suggestion.command}</span>
-                    <span className="chat-composer__suggestion-description">{suggestion.description}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
+                  {group.title}
+                </div>
+                {group.items.map(({ suggestion, index }) => {
+                  const displayedCommand = getDisplayedSuggestionCommand(suggestion);
+                  const showTitle = hasDistinctSuggestionTitle(displayedCommand, suggestion.title);
+                  const showTitleFirst = suggestion.kind === "builtin" && showTitle;
+                  return (
+                    <button
+                      id={`chat-slash-command-option-${index}`}
+                      key={`${suggestion.commandKind}-${suggestion.id}`}
+                      ref={(element) => {
+                        suggestionItemRefs.current[index] = element;
+                      }}
+                      type="button"
+                      role="option"
+                      aria-selected={selectedSuggestionIndex === index}
+                      className={`chat-composer__suggestion chat-composer__suggestion--${suggestion.commandKind}${
+                        selectedSuggestionIndex === index ? " chat-composer__suggestion--active" : ""
+                      }`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => applySuggestion(suggestion)}
+                      onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                    >
+                      <span className="chat-composer__suggestion-icon" aria-hidden="true">
+                        <Command className="chat-composer__suggestion-command-icon" size={15} strokeWidth={1.9} />
+                      </span>
+                      <span
+                        className={`chat-composer__suggestion-copy${
+                          showTitle ? " chat-composer__suggestion-copy--with-title" : ""
+                        }${showTitleFirst ? " chat-composer__suggestion-copy--title-first" : ""}`}
+                      >
+                        {showTitleFirst && <span className="chat-composer__suggestion-title">{suggestion.title}</span>}
+                        <span className="chat-composer__suggestion-command">{displayedCommand}</span>
+                        {showTitle && !showTitleFirst && <span className="chat-composer__suggestion-title">{suggestion.title}</span>}
+                        <span className="chat-composer__suggestion-description">{suggestion.description}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       )}
