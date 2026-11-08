@@ -13,7 +13,10 @@ function canUseTauriInvoke() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-const MIN_KNOWLEDGE_CONTEXT_SCORE = 2.4;
+const MIN_KEYWORD_KNOWLEDGE_CONTEXT_SCORE = 2.4;
+const MIN_VECTOR_KNOWLEDGE_CONTEXT_SCORE = 0.65;
+const KNOWLEDGE_CONTENT_QUERY_PATTERN =
+  /(?:写|讲|说)(?:了|的)?(?:是)?(?:些)?什么|主要(?:内容)?(?:是)?什么|内容(?:是|讲|写|说)?(?:些)?什么|内容如何|总结|概括|介绍了什么/;
 
 function normalizeQuery(value: string | null | undefined) {
   return value?.trim().replace(/\s+/g, " ") ?? "";
@@ -29,7 +32,7 @@ export function isKnowledgeInventoryQuery(value: string) {
 
 export function isKnowledgeContentQuery(value: string) {
   const query = normalizeQuery(value).toLowerCase();
-  return /(写了什么|写的什么|写什么|讲了什么|讲的什么|讲什么|说了什么|主要内容|内容是什么|内容如何|总结|概括|介绍了什么)/.test(query);
+  return KNOWLEDGE_CONTENT_QUERY_PATTERN.test(query);
 }
 
 function extractLatestUserMessage(messages: Message[]) {
@@ -144,6 +147,16 @@ function buildKnowledgeBlock(query: string, sources: KnowledgeContextSource[]) {
   return lines.join("\n");
 }
 
+function buildKnowledgeMissBlock(query: string, collectionName: string, reason: string) {
+  return [
+    "【本地知识库检索状态】",
+    `用户明确选择了知识库「${collectionName}」，但${reason}。`,
+    `本次查询：${query}`,
+    "不要改读工作区文件来替代用户选中的知识库；除非用户明确要求读取工作区文件。",
+    "请如实说明本次没有从所选知识库取得可用内容，并提示用户检查文件是否已导入、处理完成或需要重建向量索引。",
+  ].join("\n");
+}
+
 export async function buildKnowledgeContextBlock(options: {
   model: string;
   messages: Message[];
@@ -165,12 +178,34 @@ export async function buildKnowledgeContextBlock(options: {
     return null;
   }
 
-  if (options.knowledgeCollectionId?.trim() && isKnowledgeInventoryQuery(query)) {
+  const selectedCollectionId = options.knowledgeCollectionId?.trim() || null;
+  let selectedCollectionName = "所选知识库";
+  let selectedRetrievalMode: string | null = null;
+  let selectedLibraryPromise: Promise<KnowledgeLibraryPayload> | null = null;
+
+  const loadSelectedLibrary = () => {
+    if (!selectedLibraryPromise) {
+      selectedLibraryPromise = invoke<KnowledgeLibraryPayload>("load_knowledge_library_command");
+    }
+    return selectedLibraryPromise;
+  };
+
+  const rememberSelectedCollection = (library: KnowledgeLibraryPayload) => {
+    if (!selectedCollectionId) return null;
+    const collection = library.collections.find((item) => item.id === selectedCollectionId) ?? null;
+    if (collection) {
+      selectedCollectionName = collection.name || selectedCollectionName;
+      selectedRetrievalMode = collection.retrievalMode ?? null;
+    }
+    return collection;
+  };
+
+  if (selectedCollectionId && isKnowledgeInventoryQuery(query)) {
     try {
-      const library = await invoke<KnowledgeLibraryPayload>("load_knowledge_library_command");
-      const collection = library.collections.find((item) => item.id === options.knowledgeCollectionId);
+      const library = await loadSelectedLibrary();
+      const collection = rememberSelectedCollection(library);
       const documents = library.documents
-        .filter((item) => item.collectionId === options.knowledgeCollectionId)
+        .filter((item) => item.collectionId === selectedCollectionId)
         .map((item) => ({
           id: item.id,
           name: item.sourceName,
@@ -206,12 +241,12 @@ export async function buildKnowledgeContextBlock(options: {
     }
   }
 
-  if (options.knowledgeCollectionId?.trim() && isKnowledgeContentQuery(query)) {
+  if (selectedCollectionId && isKnowledgeContentQuery(query)) {
     try {
-      const library = await invoke<KnowledgeLibraryPayload>("load_knowledge_library_command");
-      const collection = library.collections.find((item) => item.id === options.knowledgeCollectionId);
+      const library = await loadSelectedLibrary();
+      const collection = rememberSelectedCollection(library);
       const collectionDocuments = library.documents
-        .filter((item) => item.collectionId === options.knowledgeCollectionId)
+        .filter((item) => item.collectionId === selectedCollectionId)
         .filter((item) => item.processingStatus === "searchable" || item.processingStatus === "partial");
       const normalizedQuery = query.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
       const namedDocuments = collectionDocuments.filter((document) =>
@@ -223,10 +258,16 @@ export async function buildKnowledgeContextBlock(options: {
 
       for (const document of targetDocuments) {
         if (remainingChars <= 0 || sources.length >= 24) break;
-        const detail = await invoke<{
+        let detail: {
           document: KnowledgeLibraryPayload["documents"][number];
           chunks: Array<{ id: string; documentId: string; chunkIndex: number; title?: string | null; content: string; chunkType?: KnowledgeContextSource["matchedChunkType"] }>;
-        }>("load_knowledge_document_command", { input: { documentId: document.id } });
+        };
+        try {
+          detail = await invoke("load_knowledge_document_command", { input: { documentId: document.id } });
+        } catch (error) {
+          console.warn(`[knowledge] failed to load selected document ${document.id}`, error);
+          continue;
+        }
         for (const chunk of detail.chunks) {
           if (remainingChars <= 0 || sources.length >= 24) break;
           const excerpt = clipText(chunk.content, Math.min(1_800, remainingChars));
@@ -307,15 +348,35 @@ export async function buildKnowledgeContextBlock(options: {
   try {
     results = await invoke<SearchKnowledgeChunkResult[]>("search_knowledge_chunks_command", { input });
   } catch {
-    return null;
+    return selectedCollectionId
+      ? {
+          query,
+          block: buildKnowledgeMissBlock(query, selectedCollectionName, "知识库检索调用失败"),
+          sources: [],
+        }
+      : null;
   }
 
   if (options.signal?.aborted) {
     throw new DOMException("Request aborted", "AbortError");
   }
 
+  if (selectedCollectionId && !selectedRetrievalMode) {
+    try {
+      rememberSelectedCollection(await loadSelectedLibrary());
+    } catch {
+      // Retrieval can still succeed even if collection metadata cannot be read.
+    }
+  }
+  const usesVectorScore =
+    Boolean(queryEmbedding?.length) &&
+    selectedRetrievalMode !== "keyword";
+  const minimumScore = usesVectorScore
+    ? MIN_VECTOR_KNOWLEDGE_CONTEXT_SCORE
+    : MIN_KEYWORD_KNOWLEDGE_CONTEXT_SCORE;
+
   const sources = results
-    .filter((item) => item.score >= MIN_KNOWLEDGE_CONTEXT_SCORE)
+    .filter((item) => item.score >= minimumScore)
     .slice(0, limit)
     .map((item) => {
       const displayChunk = item.displayChunk ?? item.chunk;
@@ -342,7 +403,17 @@ export async function buildKnowledgeContextBlock(options: {
     .filter((item) => item.excerpt.length > 0);
 
   if (sources.length === 0) {
-    return null;
+    return selectedCollectionId
+      ? {
+          query,
+          block: buildKnowledgeMissBlock(
+            query,
+            selectedCollectionName,
+            "本次没有找到达到相关度门槛的片段",
+          ),
+          sources: [],
+        }
+      : null;
   }
 
   return {
