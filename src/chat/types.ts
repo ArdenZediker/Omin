@@ -1,4 +1,11 @@
-import type { ChatAttachment, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
+import type {
+  ChatAttachment,
+  ChatStep,
+  ChatToolCallResult,
+  ContextUsageAnchor,
+  Message,
+  TokenUsage,
+} from "../adapters/types";
 import type { KnowledgeContextResult } from "./knowledgeTypes";
 
 export type { ChatAttachment, ChatStep, ChatToolCallResult };
@@ -180,13 +187,11 @@ export type ChatSession = {
 export type ChatExecutionResult = {
   content: string;
   model: string;
-  usage: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+  usage: TokenUsage;
   estimated: boolean;
   costUsd: number;
+  /** 最近一次成功模型请求的上下文锚点；工具轮询等无法映射到持久化会话时为空。 */
+  contextSample?: ContextUsageAnchor;
   knowledgeContext?: KnowledgeContextResult | null;
   suggestedMemories?: SuggestedProjectMemory[];
   suggestedSummary?: SuggestedSessionSummary | null;
@@ -198,6 +203,14 @@ export type ChatExecutionResult = {
   toolCallResults?: ChatToolCallResult[];
   /** 工具循环内按轮交错的 steps 流（reasoning 段 + 工具步骤）；存在时 UI 优先按 steps 渲染 */
   steps?: ChatStep[];
+  /** Time spent receiving model output across all model rounds; excludes tool execution gaps. */
+  generationDurationMs?: number;
+  /** End-to-end model request wall time across all rounds, including TTFT. */
+  modelDurationMs?: number;
+  /** Summed request-start-to-first-token latency across streamed rounds. */
+  ttftDurationMs?: number;
+  /** Number of streamed rounds that supplied a measurable TTFT sample. */
+  ttftSamples?: number;
 };
 
 export type ChatSendOptions = {

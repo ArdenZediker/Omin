@@ -1,7 +1,16 @@
 import { modelRegistry } from "../adapters/registry";
-import { pluginRegistry } from "../plugins/registry";
 import { getToolManifestById } from "../config/manifests/tools";
-import type { ChatStep, ChatToolCall, ChatToolCallResult, ChatToolParam, Message, ModelConfig, ChatOptions } from "../adapters/types";
+import type {
+  ChatStep,
+  ChatToolCall,
+  ChatToolCallResult,
+  ChatToolParam,
+  ContextUsageAnchor,
+  Message,
+  ModelConfig,
+  ChatOptions,
+  TokenUsage,
+} from "../adapters/types";
 import { defaultChatOptions, resolveContextWindow } from "../adapters/chatOptions";
 import type { CompactionStrategy } from "../adapters/chatOptions";
 import type { FileDiff } from "./fileDiff";
@@ -10,10 +19,17 @@ import { getUsagePreferencesForModel, loadPersonaConfig } from "./storage";
 import type { ChatExecutionResult } from "./types";
 import { buildKnowledgeContextBlock } from "./knowledgeContext";
 import { buildOmniSystemPrompt } from "./promptModules";
+import { assembleSkillCatalog, buildEnabledSkillPrompts } from "./skillCatalog";
 import { parseOmniStructuredOutput } from "./structuredOutput";
 import { getModelPricing } from "../adapters/modelCatalog";
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord } from "./types";
-import { estimateTokens, estimatePromptTokens } from "./tokenEstimator";
+import {
+  estimatePromptTokens,
+  estimateRequestTokens,
+  estimateTokens,
+  findLatestContextSample,
+  measureContextTokens,
+} from "./tokenEstimator";
 import { isFirstByteTimeoutError } from "../adapters/http";
 import { headTailClip } from "./textClip";
 
@@ -109,7 +125,7 @@ export interface ToolCallOutcome {
   /** 文件写入类工具产生的差异（随结果透传，供变更面板 before/after 对比） */
   fileDiff?: FileDiff;
   /** 工具内部产生的额外模型用量（子 Agent 委派回填，并入父循环用量统计） */
-  usage?: { promptTokens: number; completionTokens: number; totalTokens: number; estimated?: boolean };
+  usage?: TokenUsage & { estimated?: boolean };
   /** 工具内部消耗的额外工具轮数（子 Agent 委派回填，并入会话「N 轮工具」统计） */
   toolRounds?: number;
 }
@@ -179,9 +195,19 @@ export function pruneToolResultMessages(messages: Message[]): Message[] {
  * 超过阈值的工具结果就会剪一次并上屏：既刷屏，又在上下文宽裕时白白损失工具输出
  * （模型随后可能还要引用它，只能重读一次）。
  */
-export function shouldPruneToolResults(messages: Message[], modelConfig?: ModelConfig): boolean {
+export function shouldPruneToolResults(
+  messages: Message[],
+  modelConfig?: ModelConfig,
+  model = modelConfig?.id,
+  tools?: ChatToolParam[],
+): boolean {
   const budget = Math.floor(resolveContextWindow(modelConfig) * CONTEXT_BUDGET_RATIO);
-  return estimatePromptTokens(messages) > budget;
+  const currentTokens = estimateRequestTokens(messages, tools);
+  const measured = measureContextTokens(
+    currentTokens,
+    findLatestContextSample(messages, model),
+  );
+  return measured.tokens > budget;
 }
 
 /**
@@ -249,25 +275,58 @@ interface UsageAccumulator {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedPromptTokens: number;
+  cacheObserved: boolean;
   /** 是否全部为真实 usage（任一估算即为 false） */
   allReal: boolean;
+  /** 最近一次可映射回持久化会话的成功请求锚点。 */
+  contextSample?: ContextUsageAnchor;
 }
 
 function emptyUsage(): UsageAccumulator {
-  return { promptTokens: 0, completionTokens: 0, totalTokens: 0, allReal: true };
+  return {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    cachedPromptTokens: 0,
+    cacheObserved: false,
+    allReal: true,
+  };
 }
 
-function accumulateUsage(acc: UsageAccumulator, usage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined, estimatedFor: { promptTokens: number; completionTokens: number }) {
+function accumulateUsage(acc: UsageAccumulator, usage: TokenUsage | undefined, estimatedFor: { promptTokens: number; completionTokens: number }) {
   if (usage) {
     acc.promptTokens += usage.promptTokens;
     acc.completionTokens += usage.completionTokens;
     acc.totalTokens += usage.totalTokens;
+    if (usage.cachedPromptTokens !== undefined) {
+      acc.cachedPromptTokens += usage.cachedPromptTokens;
+      acc.cacheObserved = true;
+    }
   } else {
     acc.promptTokens += estimatedFor.promptTokens;
     acc.completionTokens += estimatedFor.completionTokens;
     acc.totalTokens += estimatedFor.promptTokens + estimatedFor.completionTokens;
     acc.allReal = false;
   }
+}
+
+function createContextSample(
+  model: string,
+  estimatedTokens: number,
+  conversationTokens: number,
+  usage: TokenUsage | undefined,
+): ContextUsageAnchor | undefined {
+  if (!usage || !model) return undefined;
+  const promptTokens = Math.max(0, Math.round(usage.promptTokens));
+  const heuristicTokens = Math.max(0, Math.round(estimatedTokens));
+  const persistedConversationTokens = Math.max(0, Math.round(conversationTokens));
+  return {
+    promptTokens,
+    conversationTokens: persistedConversationTokens,
+    estimatedTokens: heuristicTokens,
+    model,
+  };
 }
 
 /**
@@ -279,11 +338,15 @@ async function compactOnce(options: {
   requestMessages: Message[];
   modelConfig?: ModelConfig;
   signal?: AbortSignal;
+  tools?: ChatToolParam[];
 }): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean; cacheEpoch?: number } }> {
-  const { model, requestMessages, modelConfig, signal } = options;
+  const { model, requestMessages, modelConfig, signal, tools } = options;
   const contextWindow = resolveContextWindow(modelConfig);
   const budget = Math.floor(contextWindow * CONTEXT_BUDGET_RATIO);
-  const estimated = estimatePromptTokens(requestMessages);
+  const estimated = measureContextTokens(
+    estimateRequestTokens(requestMessages, tools),
+    findLatestContextSample(requestMessages, model),
+  ).tokens;
 
   if (estimated <= budget) {
     return { messages: requestMessages };
@@ -382,6 +445,7 @@ export async function compactHistoryIfNeeded(options: {
   requestMessages: Message[];
   modelConfig?: ModelConfig;
   signal?: AbortSignal;
+  tools?: ChatToolParam[];
   /** 压缩策略；缺省 summarize（LLM 摘要）。token_budget 走零 LLM 滑动窗口重置。 */
   compactionStrategy?: CompactionStrategy;
 }): Promise<{ messages: Message[]; compaction?: { removedCount: number; fallback: boolean; cacheEpoch?: number } }> {
@@ -393,14 +457,18 @@ export async function compactHistoryIfNeeded(options: {
   for (let guard = 0; guard < 16; guard++) {
     const contextWindow = resolveContextWindow(options.modelConfig);
     const budget = Math.floor(contextWindow * CONTEXT_BUDGET_RATIO);
-    if (estimatePromptTokens(current) <= budget) {
+    const measured = (messages: Message[]) => measureContextTokens(
+      estimateRequestTokens(messages, options.tools),
+      findLatestContextSample(messages, options.model),
+    ).tokens;
+    if (measured(current) <= budget) {
       return { messages: current, compaction: lastCompaction };
     }
     // 第 1 档 stub：历史超长工具结果改单行（零 LLM、保前缀缓存、保留 active turn）
     const stubbed = stubToolResultMessages(current);
     if (stubbed.changed) {
       cacheEpoch++;
-      if (estimatePromptTokens(stubbed.messages) <= budget) {
+      if (measured(stubbed.messages) <= budget) {
         return { messages: stubbed.messages, compaction: { removedCount: 0, fallback: false, cacheEpoch } };
       }
       current = stubbed.messages;
@@ -411,7 +479,7 @@ export async function compactHistoryIfNeeded(options: {
     const truncated = pruneToolResultMessages(current);
     if (truncated !== current) {
       cacheEpoch++;
-      if (estimatePromptTokens(truncated) <= budget) {
+      if (measured(truncated) <= budget) {
         return { messages: truncated, compaction: { removedCount: 0, fallback: false, cacheEpoch } };
       }
       current = truncated;
@@ -487,6 +555,8 @@ async function runToolLoop(options: {
   tools: ChatToolParam[];
   signal?: AbortSignal;
   modelConfig?: ModelConfig;
+  /** 原始持久化会话消息；只用于给普通无工具调用回合记录上下文锚点。 */
+  contextSurfaceMessages?: Message[];
   /** 首包超时（毫秒），覆盖默认 60s；thinking/非流式请求通常更长 */
   timeoutMs?: number;
   onChunk?: (chunk: string) => void;
@@ -502,8 +572,25 @@ async function runToolLoop(options: {
   reasoning: string;
   toolCallResults: ChatToolCallResult[];
   steps: ChatStep[];
+  generationDurationMs: number;
+  modelDurationMs: number;
+  ttftDurationMs: number;
+  ttftSamples: number;
 }> {
-  const { model, requestMessages, chatOptions, tools, signal, modelConfig, timeoutMs, onChunk, onReasoning, onToolStep, executeToolCall } = options;
+  const {
+    model,
+    requestMessages,
+    chatOptions,
+    tools,
+    signal,
+    modelConfig,
+    contextSurfaceMessages,
+    timeoutMs,
+    onChunk,
+    onReasoning,
+    onToolStep,
+    executeToolCall,
+  } = options;
   let workingMessages = [...requestMessages];
   const usage = emptyUsage();
   let reasoning = "";
@@ -512,6 +599,10 @@ async function runToolLoop(options: {
   const steps: ChatStep[] = [];
   // 工具内部消耗的额外工具轮数（子 Agent 委派回填，跨轮累计）
   let extraToolRounds = 0;
+  let generationDurationMs = 0;
+  let modelDurationMs = 0;
+  let ttftDurationMs = 0;
+  let ttftSamples = 0;
   const canStream = modelConfig?.supportsStreaming !== false;
   /** 实际跑满的工具轮数（正常收尾取当轮序号；预算耗尽/无进展中断取已完成的轮数） */
   let executedRounds = 0;
@@ -528,6 +619,9 @@ async function runToolLoop(options: {
       throw new DOMException("Request aborted", "AbortError");
     }
 
+    const requestStartedAt = performance.now();
+    let firstChunkAt: number | null = null;
+    let lastChunkAt: number | null = null;
     let response;
     /** 本轮模型 content 缓冲区。当本轮存在 tool_calls 时，先把 content 攒下来，
      * 等本批工具全部执行完成后再一次性输出，避免用户看到「工具还在转，正文已经出来」的错乱顺序。 */
@@ -546,6 +640,11 @@ async function runToolLoop(options: {
           },
           (chunk) => {
             if (signal?.aborted) return;
+            if (chunk.reasoning || chunk.content) {
+              const receivedAt = performance.now();
+              firstChunkAt ??= receivedAt;
+              lastChunkAt = receivedAt;
+            }
             if (chunk.reasoning) {
               reasoning += chunk.reasoning;
               roundReasoning += chunk.reasoning;
@@ -579,13 +678,35 @@ async function runToolLoop(options: {
         roundContentBuffer += response.content;
       }
     }
+    const requestFinishedAt = performance.now();
+    const requestDurationMs = requestFinishedAt - requestStartedAt;
+    modelDurationMs += requestDurationMs;
+    if (firstChunkAt !== null) {
+      ttftDurationMs += Math.max(0, firstChunkAt - requestStartedAt);
+      ttftSamples += 1;
+    }
+    const observedDecodeMs = firstChunkAt !== null && lastChunkAt !== null
+      ? lastChunkAt - firstChunkAt
+      : 0;
+    generationDurationMs += observedDecodeMs > 0
+      ? observedDecodeMs
+      : requestFinishedAt - requestStartedAt;
 
+    const requestEstimatedTokens = estimateRequestTokens(workingMessages, tools);
     accumulateUsage(usage, response.usage, {
-      promptTokens: estimatePromptTokens(workingMessages),
+      promptTokens: requestEstimatedTokens,
       completionTokens: estimateTokens(response.content ?? ""),
     });
 
     if (!response.toolCalls || response.toolCalls.length === 0) {
+      if (round === 0) {
+        usage.contextSample = createContextSample(
+          model,
+          requestEstimatedTokens,
+          estimatePromptTokens(contextSurfaceMessages ?? workingMessages),
+          response.usage,
+        );
+      }
       if (roundReasoning.trim()) {
         steps.push({ type: "reasoning", text: roundReasoning });
         roundReasoning = "";
@@ -593,7 +714,19 @@ async function runToolLoop(options: {
       if (roundContentBuffer) {
         onChunk?.(roundContentBuffer);
       }
-      return { content: roundContentBuffer || response.content || "", model: response.model, usage, toolRounds: round + 1 + extraToolRounds, reasoning, toolCallResults: allToolCallResults, steps };
+      return {
+        content: roundContentBuffer || response.content || "",
+        model: response.model,
+        usage,
+        toolRounds: round + 1 + extraToolRounds,
+        reasoning,
+        toolCallResults: allToolCallResults,
+        steps,
+        generationDurationMs,
+        modelDurationMs,
+        ttftDurationMs,
+        ttftSamples,
+      };
     }
 
     // 本轮 reasoning 增量 → step（本轮 reasoning 在工具调用之前发生）
@@ -743,7 +876,7 @@ async function runToolLoop(options: {
     // 2) 仍存在可压缩历史（最近 user 之前 ≥2 条）时才交给 compactHistoryIfNeeded 循环再压，
     //    避免仅当前轮溢出时白白发起一次摘要 LLM 调用（溢出重试由其内部循环保障）。
     // 仅在确有剪枝/压缩时才上屏动作步骤。
-    const pruned = shouldPruneToolResults(workingMessages, modelConfig)
+    const pruned = shouldPruneToolResults(workingMessages, modelConfig, model, tools)
       ? pruneToolResultMessages(workingMessages)
       : workingMessages;
     const hasCompletableHistory = (() => {
@@ -754,7 +887,14 @@ async function runToolLoop(options: {
       return pruned.slice(cs, pruned.length - 1 - lu).length >= 2;
     })();
     const precheck = hasCompletableHistory
-      ? await compactHistoryIfNeeded({ model, requestMessages: pruned, modelConfig, signal, compactionStrategy: chatOptions?.compactionStrategy })
+      ? await compactHistoryIfNeeded({
+          model,
+          requestMessages: pruned,
+          modelConfig,
+          signal,
+          tools,
+          compactionStrategy: chatOptions?.compactionStrategy,
+        })
       : { messages: pruned };
     if (precheck.messages.length < workingMessages.length) {
       workingMessages = precheck.messages;
@@ -810,6 +950,7 @@ async function runToolLoop(options: {
     ...workingMessages,
     { role: "user", content: stopNote },
   ];
+  const degradeStartedAt = performance.now();
   const response = await withFirstByteRetry(signal, () =>
     modelRegistry.chat({
       messages: degradeMessages,
@@ -820,11 +961,26 @@ async function runToolLoop(options: {
       options: chatOptions,
     })
   );
+  const degradeFinishedAt = performance.now();
+  generationDurationMs += degradeFinishedAt - degradeStartedAt;
+  modelDurationMs += degradeFinishedAt - degradeStartedAt;
   accumulateUsage(usage, response.usage, {
     promptTokens: estimatePromptTokens(degradeMessages),
     completionTokens: estimateTokens(response.content ?? ""),
   });
-  return { content: response.content ?? "", model: response.model, usage, toolRounds: executedRounds + extraToolRounds, reasoning, toolCallResults: allToolCallResults, steps };
+  return {
+    content: response.content ?? "",
+    model: response.model,
+    usage,
+    toolRounds: executedRounds + extraToolRounds,
+    reasoning,
+    toolCallResults: allToolCallResults,
+    steps,
+    generationDurationMs,
+    modelDurationMs,
+    ttftDurationMs,
+    ttftSamples,
+  };
 }
 
 export async function executeChatTurn(options: {
@@ -947,6 +1103,10 @@ export async function executeChatTurn(options: {
   // 本轮是否具备工具能力：决定技能走「目录 + 按需载入正文」还是退回内联正文。
   // （提前到提示装配之前 —— 原先在工具循环前才计算，装配时取不到。）
   const hasTools = Boolean(tools?.length && executeToolCall && modelConfig?.toolCalling !== false);
+  const skillCatalog = assembleSkillCatalog({
+    project,
+    expertSkillIds: enabledSkillIds,
+  });
 
   const composedSystemPrompt = buildOmniSystemPrompt({
     project,
@@ -961,23 +1121,10 @@ export async function executeChatTurn(options: {
     includeToolProtocol: enableToolProtocol,
     persona: personaConfig,
     projectAgentsMd,
-    enabledSkillPrompts: pluginRegistry
-      .listEnabledSkills()
-      .filter((s) => !enabledSkillIds || enabledSkillIds.includes(s.id))
-      // 没有正文的技能不列进目录（否则目录会推荐一个 /use_skill 必然报错的技能）。
-      .filter((s) => Boolean((s.systemPrompt ?? "").trim()))
-      // 带上 name/command/description：技能的 frontmatter 在 parseSkillMarkdown 里
-      // 被剥离，只传 body 会让模型收到一段无触发条件的参考文档，无法把请求路由到技能。
-      .map((s) => ({
-        id: s.id,
-        name: s.name,
-        command: s.command,
-        description: s.description,
-        // 渐进式披露：有工具时正文不预载，由模型按需调用 /use_skill 取；
-        // 无工具的运行（紧凑窗快速问答）没有该通道，只能内联正文。
-        prompt: hasTools ? "" : s.systemPrompt ?? "",
-        catalogOnly: hasTools,
-      })),
+    // DSH-style progressive disclosure: with tools, the prompt gets one
+    // invocation-neutral catalog and bodies stay behind /use_skill. Compact
+    // window runs without tools still need inline bodies.
+    enabledSkillPrompts: buildEnabledSkillPrompts(skillCatalog, hasTools),
   });
   const systemMessage: Message = { role: "system", content: composedSystemPrompt };
   const knowledgeMessages: Message[] = knowledgeContext
@@ -987,7 +1134,14 @@ export async function executeChatTurn(options: {
 
   // 上下文预算：超窗压缩（不重复压缩，一次足够）
   if (requestMessages.length > 4) {
-    const compacted = await compactHistoryIfNeeded({ model, requestMessages, modelConfig, signal, compactionStrategy: chatOptions?.compactionStrategy });
+    const compacted = await compactHistoryIfNeeded({
+      model,
+      requestMessages,
+      modelConfig,
+      signal,
+      tools,
+      compactionStrategy: chatOptions?.compactionStrategy,
+    });
     requestMessages = compacted.messages;
     if (compacted.compaction) {
       emitEngineAction({
@@ -1011,6 +1165,7 @@ export async function executeChatTurn(options: {
       tools: tools!,
       signal,
       modelConfig,
+      contextSurfaceMessages: messages,
       timeoutMs: resolveFirstByteTimeoutMs(true, modelConfig),
       onChunk,
       onReasoning,
@@ -1026,9 +1181,17 @@ export async function executeChatTurn(options: {
     return {
       content: parsed.content,
       model: toolResult.model,
-      usage: toolResult.usage,
+      usage: {
+        promptTokens: toolResult.usage.promptTokens,
+        completionTokens: toolResult.usage.completionTokens,
+        totalTokens: toolResult.usage.totalTokens,
+        ...(toolResult.usage.cacheObserved
+          ? { cachedPromptTokens: toolResult.usage.cachedPromptTokens }
+          : {}),
+      },
       estimated: !toolResult.usage.allReal,
       costUsd: estimateCost(model, toolResult.usage.promptTokens, toolResult.usage.completionTokens),
+      contextSample: toolResult.usage.contextSample,
       knowledgeContext: knowledgeContext ?? null,
       suggestedMemories: parsed.suggestedMemories,
       suggestedSummary: parsed.suggestedSummary,
@@ -1036,6 +1199,10 @@ export async function executeChatTurn(options: {
       toolRounds: toolResult.toolRounds,
       toolCallResults: toolResult.toolCallResults.length ? toolResult.toolCallResults : undefined,
       steps: finalSteps.length ? finalSteps : undefined,
+      generationDurationMs: toolResult.generationDurationMs,
+      modelDurationMs: toolResult.modelDurationMs,
+      ttftDurationMs: toolResult.ttftDurationMs,
+      ttftSamples: toolResult.ttftSamples,
     };
   }
 
@@ -1044,6 +1211,9 @@ export async function executeChatTurn(options: {
   if (shouldStream) {
     let streamedContent = "";
     let reasoning = "";
+    const generationStartedAt = performance.now();
+    let firstChunkAt: number | null = null;
+    let lastChunkAt: number | null = null;
     const response = await withFirstByteRetry(signal, () =>
       modelRegistry.chatStream(
         {
@@ -1059,6 +1229,11 @@ export async function executeChatTurn(options: {
             return;
           }
           if (chunk.done) return;
+          if (chunk.reasoning || chunk.content) {
+            const receivedAt = performance.now();
+            firstChunkAt ??= receivedAt;
+            lastChunkAt = receivedAt;
+          }
           if (chunk.reasoning) {
             reasoning += chunk.reasoning;
             onReasoning?.(chunk.reasoning);
@@ -1070,13 +1245,28 @@ export async function executeChatTurn(options: {
         }
       )
     );
+    const generationFinishedAt = performance.now();
 
     if (signal?.aborted) {
       throw new DOMException("Request aborted", "AbortError");
     }
+    const observedDecodeMs = firstChunkAt !== null && lastChunkAt !== null
+      ? lastChunkAt - firstChunkAt
+      : 0;
+    const generationDurationMs = observedDecodeMs > 0
+      ? observedDecodeMs
+      : generationFinishedAt - generationStartedAt;
+    const modelDurationMs = generationFinishedAt - generationStartedAt;
+    const ttftDurationMs = firstChunkAt === null
+      ? 0
+      : Math.max(0, firstChunkAt - generationStartedAt);
+    const ttftSamples = firstChunkAt === null ? 0 : 1;
 
     const parsed = parseOmniStructuredOutput(streamedContent || response.content);
-    const estimated = { promptTokens: estimatePromptTokens(requestMessages), completionTokens: estimateTokens(parsed.content) };
+    const estimated = {
+      promptTokens: estimateRequestTokens(requestMessages),
+      completionTokens: estimateTokens(parsed.content),
+    };
     return {
       content: parsed.content,
       model: response.model,
@@ -1084,17 +1274,31 @@ export async function executeChatTurn(options: {
         promptTokens: response.usage?.promptTokens ?? estimated.promptTokens,
         completionTokens: response.usage?.completionTokens ?? estimated.completionTokens,
         totalTokens: response.usage?.totalTokens ?? estimated.promptTokens + estimated.completionTokens,
+        ...(response.usage?.cachedPromptTokens === undefined
+          ? {}
+          : { cachedPromptTokens: response.usage.cachedPromptTokens }),
       },
       estimated: !response.usage,
       costUsd: estimateCost(model, response.usage?.promptTokens ?? estimated.promptTokens, response.usage?.completionTokens ?? estimated.completionTokens),
+      contextSample: createContextSample(
+        model,
+        estimated.promptTokens,
+        estimatePromptTokens(messages),
+        response.usage,
+      ),
       knowledgeContext: knowledgeContext ?? null,
       suggestedMemories: parsed.suggestedMemories,
       suggestedSummary: parsed.suggestedSummary,
       reasoning: reasoning || undefined,
       steps: engineActions.length ? engineActions : undefined,
+      generationDurationMs,
+      modelDurationMs,
+      ttftDurationMs,
+      ttftSamples,
     };
   }
 
+  const generationStartedAt = performance.now();
   const response = await withFirstByteRetry(signal, () =>
     modelRegistry.chat({
       messages: requestMessages,
@@ -1105,13 +1309,15 @@ export async function executeChatTurn(options: {
       options: chatOptions,
     })
   );
+  const generationDurationMs = performance.now() - generationStartedAt;
 
   if (signal?.aborted) {
     throw new DOMException("Request aborted", "AbortError");
   }
 
   const parsed = parseOmniStructuredOutput(response.content);
-  const promptTokens = response.usage?.promptTokens ?? estimatePromptTokens(requestMessages);
+  const estimatedPromptTokens = estimateRequestTokens(requestMessages);
+  const promptTokens = response.usage?.promptTokens ?? estimatedPromptTokens;
   const completionTokens = response.usage?.completionTokens ?? estimateTokens(parsed.content);
   return {
     content: parsed.content,
@@ -1120,13 +1326,26 @@ export async function executeChatTurn(options: {
       promptTokens,
       completionTokens,
       totalTokens: response.usage?.totalTokens ?? promptTokens + completionTokens,
+      ...(response.usage?.cachedPromptTokens === undefined
+        ? {}
+        : { cachedPromptTokens: response.usage.cachedPromptTokens }),
     },
     estimated: !response.usage,
     costUsd: estimateCost(model, promptTokens, completionTokens),
+    contextSample: createContextSample(
+      model,
+      estimatedPromptTokens,
+      estimatePromptTokens(messages),
+      response.usage,
+    ),
     knowledgeContext: knowledgeContext ?? null,
     suggestedMemories: parsed.suggestedMemories,
     suggestedSummary: parsed.suggestedSummary,
     reasoning: response.reasoning || undefined,
     steps: engineActions.length ? engineActions : undefined,
+    generationDurationMs,
+    modelDurationMs: generationDurationMs,
+    ttftDurationMs: 0,
+    ttftSamples: 0,
   };
 }

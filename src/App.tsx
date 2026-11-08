@@ -474,6 +474,7 @@ function MainApp() {
     handleUseEmptyPrompt,
     loadingSessionIds,
     taskRuntimeState,
+    resolvedActiveProject,
     setEditingMessageIndex,
     setError,
   } = useChatRuntime({
@@ -954,7 +955,7 @@ function MainApp() {
       <ScheduledReminderNotice tasks={scheduledTasks} issues={scheduledReminderState.issues} onRetry={scheduledReminderState.retryReminder} />
       {view === "chat" ? (
         <MainChatView
-          activeProject={activeProject}
+          activeProject={resolvedActiveProject ?? activeProject}
           activeProjectId={activeProjectId}
           activeChatId={activeChatId}
           activeSession={activeSession}

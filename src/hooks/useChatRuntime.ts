@@ -15,6 +15,7 @@ import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSel
 import { createTaskHistoryStore } from "../chat/taskStorage";
 import { getChatSessionTitle, getFallbackWorkspacePath, isPendingProjectPlaceholder, stripPendingPlaceholder } from "../chat/storage";
 import { settleInterruptedSteps } from "../chat/stepSettlement";
+import { createTurnUsage } from "../chat/turnUsage";
 import { executeLocalTool } from "../chat/localTools";
 import { pluginRegistry } from "../plugins/registry";
 import { requestConfirmation } from "../chat/confirmationGate";
@@ -847,6 +848,7 @@ export function useChatRuntime({
         pendingArtifactsRef.current = [];
         const finalToolResults = taskResult.finalResult.toolCallResults;
         const finalSteps = taskResult.finalResult.steps;
+        const turnUsage = createTurnUsage(taskResult.finalResult);
         setConversationMessagesForSession(sessionId, [
           ...conversationMessages,
           {
@@ -857,6 +859,7 @@ export function useChatRuntime({
             artifacts: pendingArtifacts.length ? pendingArtifacts : undefined,
             toolCallResults: finalToolResults?.length ? finalToolResults : undefined,
             steps: finalSteps?.length ? finalSteps : undefined,
+            ...(turnUsage ? { turnUsage } : {}),
           },
         ]);
         if (sessionId) {
@@ -1142,15 +1145,19 @@ export function useChatRuntime({
   );
 
   const executeTool = useCallback(
-    async (command: {
-      command: string;
-      args: string;
-      /** 未经变换的原始入参对象（仅 function calling 路径提供），供参数校验使用。 */
-      rawObject?: Record<string, unknown> | null;
-    }): Promise<ToolResultWithArtifact | void> => {
+    async (
+      command: {
+        command: string;
+        args: string;
+        /** 未经变换的原始入参对象（仅 function calling 路径提供），供参数校验使用。 */
+        rawObject?: Record<string, unknown> | null;
+      },
+      allowedSkillIds?: readonly string[],
+    ): Promise<ToolResultWithArtifact | void> => {
       const result = await executeLocalTool(
         {
           activeProject: resolvedActiveProject,
+          allowedSkillIds,
           activeChatId,
           getChatSessionById,
           searchChatSessions,
@@ -1197,6 +1204,8 @@ export function useChatRuntime({
        * 误判成「未启用」而拒掉一次合法调用。
        */
       allowedConnectorIds?: string[],
+      /** 该次运行所属专家的技能边界；必须随调用传入，避免后台任务串用 UI 当前专家。 */
+      allowedSkillIds?: readonly string[],
     ): Promise<string | ToolCallOutcome> => {
       // 子 Agent 调度：主模型发起 agent 调用 → 独立上下文 + 只读白名单跑一轮子任务
       if (toolCall.name === "agent") {
@@ -1217,7 +1226,7 @@ export function useChatRuntime({
         command: toolCallNameToCommand(toolCall.name),
         args,
         rawObject,
-      });
+      }, allowedSkillIds);
       return { outputText: formatToolCallResult(result), artifact: result?.savedArtifact, path: result?.path, fileDiff: result?.fileDiff };
     },
     [executeTool]
@@ -1246,6 +1255,7 @@ export function useChatRuntime({
       workspacePath: string,
       /** 该次运行所属项目的连接器白名单，原样透传给 executeToolCall 的 MCP 校验。 */
       allowedConnectorIds?: string[],
+      allowedSkillIds?: readonly string[],
     ) =>
       async (toolCall: ChatToolCall): Promise<string | ToolCallOutcome> => {
         const command = toolCallNameToCommand(toolCall.name);
@@ -1276,7 +1286,7 @@ export function useChatRuntime({
           workspaceWriteOwnerRef.current.set(wsKey, liveTaskId);
           const prev = workspaceWriteQueueRef.current.get(wsKey) ?? Promise.resolve();
           const run = prev
-            .then(() => executeToolCall(toolCall, allowedConnectorIds))
+            .then(() => executeToolCall(toolCall, allowedConnectorIds, allowedSkillIds))
             .finally(() => {
               if (workspaceWriteOwnerRef.current.get(wsKey) === liveTaskId) {
                 workspaceWriteOwnerRef.current.delete(wsKey);
@@ -1285,7 +1295,7 @@ export function useChatRuntime({
           workspaceWriteQueueRef.current.set(wsKey, run);
           return run;
         }
-        return executeToolCall(toolCall, allowedConnectorIds);
+        return executeToolCall(toolCall, allowedConnectorIds, allowedSkillIds);
       },
     [executeToolCall, requestConfirmation]
   );
@@ -1708,7 +1718,13 @@ export function useChatRuntime({
           project: activeProject,
           signal: abortController.signal,
           tools: runTools,
-          executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs, activeProject?.allowedConnectorIds),
+          executeToolCall: makeTaskToolExecutor(
+            sessionId,
+            taskId,
+            taskWs,
+            activeProject?.allowedConnectorIds,
+            activeExpert ? activeExpert.defaultSkillIds ?? [] : undefined,
+          ),
           resolveExpert: resolveExpertForSubAgent,
           onToolStep: handleToolStep,
         };
@@ -1759,7 +1775,13 @@ export function useChatRuntime({
           onToolStep: handleToolStep,
           executeTool,
           tools: runTools,
-          executeToolCall: makeTaskToolExecutor(sessionId, taskId, taskWs, activeProject?.allowedConnectorIds),
+          executeToolCall: makeTaskToolExecutor(
+            sessionId,
+            taskId,
+            taskWs,
+            activeProject?.allowedConnectorIds,
+            activeExpert ? activeExpert.defaultSkillIds ?? [] : undefined,
+          ),
           enabledSkillIds: activeExpert ? activeExpert.defaultSkillIds ?? [] : undefined,
         });
 
@@ -2042,6 +2064,7 @@ export function useChatRuntime({
   );
 
   return {
+    resolvedActiveProject,
     editingMessageIndex,
     error,
     handleCancelEditUserMessage,

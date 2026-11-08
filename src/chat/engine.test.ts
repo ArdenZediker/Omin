@@ -121,17 +121,26 @@ describe("executeChatTurn", () => {
       for (const chunk of chunks) {
         onChunk(chunk);
       }
-      return { content: "Hello world", model: "gpt-test" } as ChatResponse;
+      return {
+        content: "Hello world",
+        model: "gpt-test",
+        usage: { promptTokens: 120, completionTokens: 3, totalTokens: 123 },
+      } as ChatResponse;
     });
 
     const chunksReceived: string[] = [];
-    await executeChatTurn({
+    const result = await executeChatTurn({
       model: "gpt-test",
       messages: [{ role: "user", content: "hi" }],
       onChunk: (chunk) => chunksReceived.push(chunk),
     });
 
     expect(chunksReceived.join("")).toBe("Hello world");
+    expect(result.contextSample).toMatchObject({
+      promptTokens: 120,
+      model: "gpt-test",
+    });
+    expect(result.contextSample?.conversationTokens).toBeGreaterThan(0);
   });
 
   it("工具轮次间上下文再次超预算时触发步间压缩（触发双保险）", async () => {
@@ -459,7 +468,7 @@ describe("shouldPruneToolResults（剪枝的会话级预算门）", () => {
   });
 
   it("小窗口模型下普通内容也会触发（预算被窗口而非内容决定）", () => {
-    const messages: Message[] = [{ role: "user", content: "字".repeat(200) }];
+    const messages: Message[] = [{ role: "user", content: "字".repeat(400) }];
     expect(shouldPruneToolResults(messages, tinyModel)).toBe(true);
   });
 
@@ -478,7 +487,7 @@ describe("isCompactionNoGain（无收益守卫，吸 atomcode committed/refused�
   });
 
   it("摘要接近原文 token 数 → 无收益（触发）", () => {
-    expect(isCompactionNoGain("摘要".repeat(200), 200)).toBe(true);
+    expect(isCompactionNoGain("摘要".repeat(400), 200)).toBe(true);
   });
 
   it("原文为 0 token → 不误判无收益", () => {
