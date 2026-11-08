@@ -8,6 +8,7 @@
     "build": "node scripts/sync-file-viewer-assets.mjs && tsc && vite build",
     "build:desktop": "pnpm build && node scripts/build-agent-host.mjs",
     "agent-host:build": "node scripts/build-agent-host.mjs",
+    "agent-host:smoke": "node scripts/smoke-agent-host.mjs",
     "viewer:assets": "node scripts/sync-file-viewer-assets.mjs",
     "test": "vitest run",
     "preview": "vite preview",
