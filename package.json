@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/sync-file-viewer-assets.mjs && tsc && vite build",
+    "build:desktop": "pnpm build && node scripts/build-agent-host.mjs",
+    "agent-host:build": "node scripts/build-agent-host.mjs",
     "viewer:assets": "node scripts/sync-file-viewer-assets.mjs",
     "test": "vitest run",
     "preview": "vite preview",
@@ -47,6 +49,7 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "jsdom": "^29.1.1",
+    "postject": "1.0.0-alpha.6",
     "tailwindcss": "^4.2.4",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
