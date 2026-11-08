@@ -340,6 +340,17 @@ fn internal_relative(value: &str, source: Option<&Path>) -> Result<Option<PathBu
     let value = value.replace('\\', "/");
     let value = value.strip_prefix("//?/").unwrap_or(&value);
     if let Some(source) = source {
+        // Stored paths may use an alias that canonicalization later rewrites
+        // (notably macOS `/var` -> `/private/var`). Compare canonical paths
+        // when both sides still exist, then fall back to lexical matching for
+        // backups restored from a machine that no longer has the old root.
+        if let (Ok(canonical_value), Ok(canonical_source)) =
+            (fs::canonicalize(value), fs::canonicalize(source))
+        {
+            if let Ok(relative) = canonical_value.strip_prefix(&canonical_source) {
+                return sanitize_entry(&relative.to_string_lossy().replace('\\', "/")).map(Some);
+            }
+        }
         let root = source.to_string_lossy().replace('\\', "/");
         let root = root
             .strip_prefix("//?/")
