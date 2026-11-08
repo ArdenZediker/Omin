@@ -150,7 +150,7 @@ GitHub Actions：打开待验收提交对应的 macOS build workflow run
 | Windows 系统通知（T05 部分证据） | 通过（有限） | release CDP 实测 `plugin:notification|is_permission_granted=true`、`plugin:notification|notify` 成功返回。未人工确认 Windows 通知中心视觉呈现，不签收 LV03 |
 | Windows 任务启动恢复（T06 部分证据） | 通过（有限） | 注入 running 任务后重启 release，`recoverInterruptedTasks` 转为 aborted 且保留“请先核实结果，再主动发送新消息继续”提示；完整停止/继续 UI 仍待人工 |
 | Windows 知识生命周期（T08 部分证据） | 通过（有限） | release CDP 导入 T08 测试资料、`search_knowledge_chunks_command` 命中 score=9.5；删除后旧引用 `Query returned no rows`、检索为空。未覆盖 UI 引用卡片视觉交互 |
-| Windows Office 原生打开（T09） | 通过（有限） | release CDP 真实导出 DOCX/XLSX/PPTX；重复导出拒绝覆盖。Word COM 确认 10 段落/1 表格、Excel 确认 2 工作表且 `=10+5` 计算为 15、PowerPoint 确认 1 页与标题。未覆盖视觉排版与人工界面操作 |
+| Windows Office 原生打开（T09） | 通过 | release CDP 真实导出 DOCX/XLSX/PPTX；重复导出拒绝覆盖。Word/Excel/PowerPoint 原生打开并截屏确认标题、单元格与幻灯片内容正确渲染；Excel COM 另确认 `=10+5` 计算为 15。视觉排版细节与人工界面操作未逐项检查 |
 | macOS CI | 通过 | run `42467041924`，提交 `14f23a5`；Apple Silicon 与 Intel job 均全绿，覆盖 sidecar 构建、前端/Rust/Seatbelt 测试、DMG 构建/挂载、架构和 codesign 检查 |
 | macOS artifacts | 已上传 | artifact ID 13612512175 / 13613080484；归档 92,643,917 bytes / 约 90.2 MiB。GitHub artifact digest 见 §1 ⑦，归档 digest 不等同 DMG SHA-256 |
 | 原生 Live | 未执行 | 双屏、通知、迁移后数据读取、继续/中断 UI、Office 原生渲染仍需逐项操作 |
