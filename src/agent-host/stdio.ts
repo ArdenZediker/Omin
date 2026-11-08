@@ -2,10 +2,10 @@ import type { AgentHost } from "./host";
 import type {
   HostRequest,
   HostResponse,
-  HostServerMessage,
 } from "./protocol";
 
 export type LineWriter = (line: string) => void | Promise<void>;
+export type ControlMessageHandler = (message: unknown) => boolean;
 
 /**
  * Newline-delimited JSON Host transport.
@@ -20,6 +20,7 @@ export class HostStdioServer {
   constructor(
     private readonly host: AgentHost,
     private readonly write: LineWriter,
+    private readonly controlMessageHandler?: ControlMessageHandler,
   ) {
     this.host.subscribe((message) => {
       void this.send(message);
@@ -38,10 +39,14 @@ export class HostStdioServer {
     await this.writeTail;
   }
 
+  sendProtocolMessage(message: unknown): Promise<void> {
+    return this.send(message);
+  }
+
   private async handleLine(line: string): Promise<void> {
-    let request: HostRequest;
+    let parsed: unknown;
     try {
-      request = JSON.parse(line) as HostRequest;
+      parsed = JSON.parse(line);
     } catch {
       await this.send({
         kind: "response",
@@ -51,6 +56,22 @@ export class HostStdioServer {
       });
       return;
     }
+    try {
+      if (this.controlMessageHandler?.(parsed)) return;
+    } catch (error: unknown) {
+      await this.send({
+        kind: "response",
+        id: "",
+        ok: false,
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          code: "CONTROL_MESSAGE_ERROR",
+        },
+      });
+      return;
+    }
+
+    const request = parsed as HostRequest;
     if (
       request?.kind !== "request"
       || typeof request.id !== "string"
@@ -68,7 +89,7 @@ export class HostStdioServer {
     await this.send(response);
   }
 
-  private send(message: HostServerMessage): Promise<void> {
+  private send(message: unknown): Promise<void> {
     const line = `${JSON.stringify(message)}\n`;
     const write = this.writeTail.then(() => this.write(line));
     this.writeTail = write.catch(() => undefined);

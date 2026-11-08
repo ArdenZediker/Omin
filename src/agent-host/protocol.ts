@@ -8,6 +8,7 @@ import type {
   AgentProviderSettings,
   AgentProviderStatus,
 } from "./provider-settings";
+import type { NativeToolDescriptor } from "./native-bridge";
 
 export type HostRequest =
   | {
@@ -85,6 +86,12 @@ export type HostRequest =
       kind: "request";
       id: string;
       command: "tools.list";
+    }
+  | {
+      kind: "request";
+      id: string;
+      command: "tools.configure";
+      params: { tools: NativeToolDescriptor[] };
     }
   | {
       kind: "request";

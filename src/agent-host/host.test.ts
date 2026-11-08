@@ -6,6 +6,7 @@ import {
   type ModelProvider,
 } from "../agent-core";
 import { AgentHost } from "./host";
+import { NativeToolController } from "./native-bridge";
 import type {
   HostNotification,
   HostRequest,
@@ -173,6 +174,38 @@ describe("AgentHost", () => {
     }));
     expect(removed).toMatchObject({ ok: true, result: { removed: true } });
   });
+
+  it("configures native tools through the Host contract", async () => {
+    const tools = new AgentToolRegistry();
+    const nativeTools = new NativeToolController(tools);
+    const host = new AgentHost(new AgentRuntime({
+      store: new InMemorySessionEventStore(),
+      model: oneTurnModel(),
+      tools,
+    }), undefined, nativeTools);
+
+    const configured = await host.handle(request("configure-tools", {
+      command: "tools.configure",
+      params: {
+        tools: [{
+          name: "read_file",
+          description: "Read a file",
+          parameters: { type: "object" },
+          parallelSafe: true,
+        }],
+      },
+    }));
+    expect(configured).toMatchObject({
+      ok: true,
+      result: {
+        tools: [{
+          name: "read_file",
+          description: "Read a file",
+          parameters: { type: "object" },
+        }],
+      },
+    });
+  });
 });
 
 describe("HostStdioServer", () => {
@@ -247,6 +280,42 @@ describe("HostStdioServer", () => {
         ok: true,
       }),
     ]));
+  });
+
+  it("routes control frames without treating them as Host requests", async () => {
+    const host = new AgentHost(runtime());
+    const written: HostServerMessage[] = [];
+    const controls: unknown[] = [];
+    const nativeResult = {
+      kind: "native-tool-result",
+      id: "call-1",
+      ok: true,
+      result: { content: "ok" },
+    };
+    const server = new HostStdioServer(host, (line) => {
+      written.push(JSON.parse(line) as HostServerMessage);
+    }, (message) => {
+      if (typeof message === "object"
+        && message !== null
+        && "kind" in message
+        && message.kind === "native-tool-result") {
+        controls.push(message);
+        return true;
+      }
+      return false;
+    });
+
+    await server.run(lines([
+      JSON.stringify(nativeResult),
+      JSON.stringify(request("ping", { command: "host.ping" })),
+    ]));
+
+    expect(controls).toEqual([nativeResult]);
+    expect(written).toEqual([expect.objectContaining({
+      kind: "response",
+      id: "ping",
+      ok: true,
+    })]);
   });
 });
 

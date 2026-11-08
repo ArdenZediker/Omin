@@ -5,12 +5,13 @@ import {
   type SessionEventStore,
 } from "../agent-core";
 import { AdapterModelProvider } from "./adapter-model-provider";
-import { AgentHost } from "./host";
+import { AgentHost, type HostToolConfigurator } from "./host";
 import { FileEventLogPort } from "./node-event-log";
 
 export interface PersistentAgentHostOptions {
   dataDir: string;
   tools?: AgentToolRegistry;
+  toolConfigurator?: HostToolConfigurator;
   store?: SessionEventStore;
 }
 
@@ -33,7 +34,7 @@ export function createPersistentAgentHost(
     tools: options.tools ?? new AgentToolRegistry(),
   });
   return {
-    host: new AgentHost(runtime, providers),
+    host: new AgentHost(runtime, providers, options.toolConfigurator),
     providers,
     runtime,
     store,

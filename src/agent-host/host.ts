@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   AgentRuntime,
+  AgentToolSchema,
 } from "../agent-core";
 import type {
   HostNotification,
@@ -9,8 +10,13 @@ import type {
   HostResult,
 } from "./protocol";
 import type { AgentProviderRegistry } from "./provider-settings";
+import type { NativeToolDescriptor } from "./native-bridge";
 
 export type HostNotificationListener = (message: HostNotification) => void;
+
+export interface HostToolConfigurator {
+  configureTools(tools: NativeToolDescriptor[]): AgentToolSchema[];
+}
 
 /**
  * Transport-neutral Agent Host.
@@ -26,6 +32,7 @@ export class AgentHost {
   constructor(
     private readonly runtime: AgentRuntime,
     private readonly providers?: AgentProviderRegistry,
+    private readonly toolConfigurator?: HostToolConfigurator,
   ) {}
 
   subscribe(listener: HostNotificationListener): () => void {
@@ -139,6 +146,12 @@ export class AgentHost {
         return { events };
       }
       case "tools.list":
+        return { tools: this.runtime.listTools() };
+      case "tools.configure":
+        if (!this.toolConfigurator) {
+          throw new Error("tool configurator is not available in this Host");
+        }
+        this.toolConfigurator.configureTools(request.params.tools);
         return { tools: this.runtime.listTools() };
       case "provider.configure":
         return this.requireProviders().configureProvider(request.params);

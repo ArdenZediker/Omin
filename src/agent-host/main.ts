@@ -1,5 +1,10 @@
 import { createInterface } from "node:readline";
+import { AgentToolRegistry } from "../agent-core";
 import { createPersistentAgentHost } from "./bootstrap";
+import {
+  NativeStdioBridge,
+  NativeToolController,
+} from "./native-bridge";
 import { HostStdioServer } from "./stdio";
 
 function argumentValue(name: string): string | undefined {
@@ -16,15 +21,26 @@ async function main(): Promise<void> {
     return;
   }
 
-  const app = createPersistentAgentHost({ dataDir });
-  const server = new HostStdioServer(app.host, async (line) => {
+  const tools = new AgentToolRegistry();
+  const nativeTools = new NativeToolController(tools);
+  const app = createPersistentAgentHost({
+    dataDir,
+    tools,
+    toolConfigurator: nativeTools,
+  });
+  let server: HostStdioServer;
+  const nativeBridge = new NativeStdioBridge((message) => (
+    server.sendProtocolMessage(message)
+  ));
+  nativeTools.attachBridge(nativeBridge);
+  server = new HostStdioServer(app.host, async (line) => {
     await new Promise<void>((resolve, reject) => {
       process.stdout.write(line, (error) => {
         if (error) reject(error);
         else resolve();
       });
     });
-  });
+  }, (message) => nativeTools.receive(message));
   const input = createInterface({
     input: process.stdin,
     crlfDelay: Number.POSITIVE_INFINITY,
@@ -39,7 +55,11 @@ async function main(): Promise<void> {
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
 
-  await server.run(input);
+  try {
+    await server.run(input);
+  } finally {
+    nativeTools.close("agent Host input closed");
+  }
 }
 
 void main().catch((error: unknown) => {
