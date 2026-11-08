@@ -207,6 +207,8 @@ export async function executeTask(options: {
                 modelId: model,
                 system: hostContext.system,
                 knowledgeContext: hostContext.knowledgeContext,
+                tools: options.tools,
+                executeClientToolCall: options.executeToolCall,
                 signal,
                 onChunk: onModelChunk,
                 onReasoning: onModelReasoning,

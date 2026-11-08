@@ -93,9 +93,10 @@ export async function buildAgentHostContext(
     includeToolProtocol: false,
     persona,
     projectAgentsMd,
-    // The current native Host catalog does not expose use_skill yet, so skill
-    // bodies must remain inline instead of promising an unavailable loader.
-    enabledSkillPrompts: buildEnabledSkillPrompts(skillCatalog, false),
+    // The Host now exposes the full Omni tool catalog, including use_skill.
+    // Keep only the progressive-disclosure catalog prompt instead of inlining
+    // every skill body before the model has selected one.
+    enabledSkillPrompts: buildEnabledSkillPrompts(skillCatalog, true),
   });
   const system = [arrangedPrompt, knowledgeContext?.block]
     .filter((part): part is string => Boolean(part?.trim()))
