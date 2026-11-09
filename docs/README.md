@@ -15,3 +15,4 @@
 |---|---|---|
 | [research/macos-build-verification-悬浮球窗口框架调研.md](research/macos-build-verification-悬浮球窗口框架调研.md) | **技术调研**：比较 GitHub 上 Tauri、Electron、Qt/PyQt、WPF、Win32/Rust 的悬浮窗模式，并对比 Omni 当前架构 | 调研稿（2026-11-08，含方案建议） |
 | [research/macos-build-verification-Tauri透明窗口浮层菜单闪烁.md](research/macos-build-verification-Tauri透明窗口浮层菜单闪烁.md) | **技术调研**：分析 Tauri/WebView2 透明窗口的几何与首帧时序风险，提供 instrumentation、固定宿主和独立 popup 的 A/B 决策门 | 调研稿（2026-11-08，静态分析；未做运行时验证） |
+| [research/macos-build-verification-宠物菜单边缘闪烁方案验证.md](research/macos-build-verification-宠物菜单边缘闪烁方案验证.md) | **技术调研**：结合最新 GIF 与当前代码，区分菜单关闭与重绘闪帧，并比较固定 viewport 和独立 popup | 调研稿（2026-11-09，静态分析 + GIF 帧观察；待运行时验证） |
