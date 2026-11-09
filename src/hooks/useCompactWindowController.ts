@@ -47,12 +47,13 @@ import { useCompactPetThoughtWindows } from "./useCompactPetThoughtWindows";
 import { useCompactCharacterDrag } from "./useCompactCharacterDrag";
 import { useCompactMenus } from "./useCompactMenus";
 import { PET_WINDOW_DECORATION_MARGIN_TOP } from "../app/pets/codexPetSizing";
+import { petMenuDiagnostic } from "./petMenuDiagnostics";
 
 type UseCompactWindowControllerArgs = {
   basicSettings: BasicSettings;
   characterScale: number;
-  closeCompactMenuPanels: () => void;
-  closeCompactMenus: () => void;
+  closeCompactMenuPanels: (reason?: string) => void;
+  closeCompactMenus: (reason?: string) => void;
   compactAppearance: CompactAppearance;
   compactMenuSide: "left" | "right";
   compactSubmenuSide: "left" | "right";
@@ -73,7 +74,7 @@ type UseCompactWindowControllerArgs = {
   isCompactReplyLoading: boolean;
   isCompactWindow: boolean;
   onRestoreMain: (focusInput?: boolean, options?: { restoreGeometry?: boolean }) => Promise<void>;
-  resetCompactFloatingUi: () => void;
+  resetCompactFloatingUi: (reason?: string) => void;
   setCharacterMenuPosition: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
   setCharacterScale: React.Dispatch<React.SetStateAction<number>>;
   setCompactAppearance: React.Dispatch<React.SetStateAction<CompactAppearance>>;
@@ -714,15 +715,18 @@ export function useCompactWindowController({
       .onFocusChanged(({ payload }) => {
         void appWindow.isVisible().then((isVisible) => {
           if (!isVisible) {
+            petMenuDiagnostic("native-focus-change-ignored", { focused: payload, visible: false });
             return;
           }
 
           if (payload) {
+            petMenuDiagnostic("native-focus-changed", { focused: true });
             void raiseCompactWindow();
             return;
           }
 
           if (Date.now() <= compactSuppressBlurUntilRef.current) {
+            petMenuDiagnostic("native-focus-change-ignored", { focused: false, suppressed: true });
             return;
           }
           if (
@@ -731,14 +735,17 @@ export function useCompactWindowController({
             isCompactReplyLoading ||
             compactReply
           ) {
-            resetCompactFloatingUi();
+            petMenuDiagnostic("native-focus-close", { focused: false, suppressed: false });
+            resetCompactFloatingUi("native-window-focus-lost");
           }
         }).catch(() => {
           if (payload) {
+            petMenuDiagnostic("native-focus-changed", { focused: true, readFailed: true });
             void raiseCompactWindow();
             return;
           }
           if (Date.now() <= compactSuppressBlurUntilRef.current) {
+            petMenuDiagnostic("native-focus-change-ignored", { focused: false, suppressed: true, readFailed: true });
             return;
           }
           if (
@@ -747,7 +754,8 @@ export function useCompactWindowController({
             isCompactReplyLoading ||
             compactReply
           ) {
-            resetCompactFloatingUi();
+            petMenuDiagnostic("native-focus-close", { focused: false, suppressed: false, readFailed: true });
+            resetCompactFloatingUi("native-window-focus-lost");
           }
         });
       })
@@ -847,6 +855,15 @@ export function useCompactWindowController({
             ? getPetThoughtAnchorOffset(compactViewportSize, compactSize)
             : { x: 0, y: 0 }
         : { x: 0, y: 0 };
+    const isPetMenuGeometry = compactAppearance === "pet" && isCompactMenuOpen;
+    if (isPetMenuGeometry) {
+      petMenuDiagnostic("geometry-effect-start", {
+        targetSize,
+        targetPetViewportOffset,
+        menuSide: compactMenuSide,
+        submenuSide: petGeometrySubmenuSide,
+      });
+    }
     // 本 effect 的 deps 很多，body 里又是一串 await（scaleFactor / outerPosition /
     // outerSize / setPosition）。没有令牌时，先起的那次运行可能在后起的那次之后才落笔，
     // 用过期读数把窗口写回旧位置——视觉上就是窗口「跳一下」。cancelled 让新的运行胜过旧的。
@@ -865,6 +882,13 @@ export function useCompactWindowController({
       }
       const currentPosition = nativePosition.toLogical(scaleFactor);
       const currentSize = nativeSize.toLogical(scaleFactor);
+      if (isPetMenuGeometry) {
+        petMenuDiagnostic("geometry-metrics-read", {
+          scaleFactor,
+          position: currentPosition,
+          size: currentSize,
+        });
+      }
       suppressCompactBlur();
       if (compactAppearance === "pet") {
         const hasSizeChanged =
@@ -899,6 +923,13 @@ export function useCompactWindowController({
             scaleFactor
           );
           compactInternalMoveRef.current = true;
+          if (isPetMenuGeometry) {
+            petMenuDiagnostic("geometry-write-start", {
+              operation: "pet-position-size",
+              nextPosition: nextNativePosition,
+              targetSize,
+            });
+          }
           await Promise.all([
             appWindow.setPosition(new PhysicalPosition(nextNativePosition.x, nextNativePosition.y)),
             appWindow.setSize(new LogicalSize(targetSize.width, targetSize.height)),
@@ -911,6 +942,13 @@ export function useCompactWindowController({
           lastAppliedPetSizeRef.current = { ...previewCompactSize };
           lastAppliedPetViewportOffsetRef.current = targetPetViewportOffset;
           setCommittedPetOffset(targetPetViewportOffset);
+          if (isPetMenuGeometry) {
+            petMenuDiagnostic("geometry-write-finished", {
+              operation: "pet-position-size",
+              nextPosition: nextNativePosition,
+              targetSize,
+            });
+          }
         }
         return;
       }
@@ -1028,6 +1066,13 @@ export function useCompactWindowController({
     let unlisten: (() => void) | undefined;
     void appWindow
       .onMoved(async (event) => {
+        if (compactAppearance === "pet") {
+          petMenuDiagnostic("native-window-moved", {
+            x: event.payload.x,
+            y: event.payload.y,
+            internalMove: compactInternalMoveRef.current,
+          });
+        }
         if (isCharacterDraggingRef.current) {
           return;
         }
@@ -1084,6 +1129,23 @@ export function useCompactWindowController({
   }, [compactAppearance, compactSize.height, compactSize.width, isCompactWindow, updatePetThoughtWindowForRect]);
 
   useEffect(() => {
+    if (!isCompactWindow) return;
+    let unlisten: (() => void) | undefined;
+    void appWindow.onResized(({ payload }) => {
+      if (compactAppearance === "pet") {
+        petMenuDiagnostic("native-window-resized", {
+          width: payload.width,
+          height: payload.height,
+          menuOpen: isCompactMenuOpen,
+        });
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+    return () => unlisten?.();
+  }, [compactAppearance, isCompactMenuOpen, isCompactWindow]);
+
+  useEffect(() => {
     return () => {
       if (compactMenuCloseTimerRef.current !== null) {
         window.clearTimeout(compactMenuCloseTimerRef.current);
@@ -1121,9 +1183,11 @@ export function useCompactWindowController({
 
     const closeOnBlur = () => {
       if (Date.now() <= compactSuppressBlurUntilRef.current) {
+        petMenuDiagnostic("blur-ignored", { suppressed: true });
         return;
       }
-      closeCompactMenuNow();
+      petMenuDiagnostic("blur-close", { suppressed: false });
+      closeCompactMenuNow("window-blur");
     };
     window.addEventListener("blur", closeOnBlur);
     document.addEventListener("visibilitychange", closeOnBlur);

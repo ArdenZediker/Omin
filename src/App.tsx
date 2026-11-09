@@ -951,7 +951,7 @@ function MainApp() {
         onPetPointerMove={compactController.handlePetPointerMove}
         onPetPointerUp={compactController.handlePetPointerUp}
         onCancelCompactMenuClose={compactController.cancelCompactMenuClose}
-        onCloseCompactMenu={compactController.closeCompactMenu}
+        onCloseCompactMenu={(reason) => compactController.closeCompactMenu(undefined, reason)}
         onCloseCompactMenuNow={compactController.closeCompactMenuNow}
         onCompactAppearanceChange={compactController.handleCompactAppearanceChange}
         onCompactDrag={compactController.handleCompactDrag}

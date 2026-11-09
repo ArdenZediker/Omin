@@ -14,6 +14,7 @@ import DesktopPet, { type DesktopPetState } from "./DesktopPet";
 import CompactMenu from "./compact/CompactMenu";
 import CompactQueryPanel from "./compact/CompactQueryPanel";
 import PetThoughtBubble from "./compact/PetThoughtBubble";
+import { endPetMenuTrace, petMenuDiagnostic } from "../hooks/petMenuDiagnostics";
 
 type CompactWindowProps = {
   basicSettings: BasicSettings;
@@ -55,8 +56,8 @@ type CompactWindowProps = {
   onPetPointerMove: (e: MouseEvent<HTMLButtonElement>) => void;
   onPetPointerUp: () => void;
   onCancelCompactMenuClose: () => void;
-  onCloseCompactMenu: () => void;
-  onCloseCompactMenuNow: () => void;
+  onCloseCompactMenu: (reason?: string) => void;
+  onCloseCompactMenuNow: (reason?: string) => void;
   onCompactAppearanceChange: (appearance: CompactAppearance) => void;
   onCompactDrag: (e: MouseEvent<HTMLDivElement>) => void | Promise<void>;
   onCompactQuerySubmit: (openMain?: boolean) => void | Promise<void>;
@@ -214,6 +215,37 @@ export default function CompactWindow({
   // merely moves across the pet body. Moving onto the menu (a child) never
   // fires root onMouseLeave, which is what stops the open/close jitter.
   const petHoverCloseTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isPetAppearance) return;
+    if (!isCompactMenuOpen) {
+      petMenuDiagnostic("menu-state-closed");
+      endPetMenuTrace({ state: "closed" });
+      return;
+    }
+
+    petMenuDiagnostic("menu-state-open");
+    const firstFrame = window.requestAnimationFrame(() => {
+      const menu = document.querySelector<HTMLElement>(".compact-menu");
+      petMenuDiagnostic("menu-first-frame", {
+        rect: menu?.getBoundingClientRect().toJSON() ?? null,
+        visibility: menu ? getComputedStyle(menu).visibility : "missing",
+        opacity: menu ? getComputedStyle(menu).opacity : null,
+      });
+      window.requestAnimationFrame(() => {
+        const nextMenu = document.querySelector<HTMLElement>(".compact-menu");
+        petMenuDiagnostic("menu-second-frame", {
+          rect: nextMenu?.getBoundingClientRect().toJSON() ?? null,
+          visibility: nextMenu ? getComputedStyle(nextMenu).visibility : "missing",
+          opacity: nextMenu ? getComputedStyle(nextMenu).opacity : null,
+        });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      petMenuDiagnostic("menu-open-effect-cleanup");
+    };
+  }, [isCompactMenuOpen, isPetAppearance]);
   const petState: DesktopPetState = characterDragMotion
     ? characterDragMotion
     : petClickBounce
@@ -360,7 +392,7 @@ export default function CompactWindow({
         if (petHoverCloseTimerRef.current === null) {
           petHoverCloseTimerRef.current = window.setTimeout(() => {
             if (isCompactMenuOpen && !isCompactQueryOpen) {
-              onCloseCompactMenu();
+              onCloseCompactMenu("pointer-outside");
             }
             petHoverCloseTimerRef.current = null;
           }, 140);
@@ -381,7 +413,7 @@ export default function CompactWindow({
         const remainingStableMs = Math.max(0, petMenuStableUntilRef.current - Date.now());
         petHoverCloseTimerRef.current = window.setTimeout(() => {
           if (isCompactMenuOpen && !isCompactQueryOpen) {
-            onCloseCompactMenu();
+            onCloseCompactMenu("window-mouseleave");
           }
           petHoverCloseTimerRef.current = null;
         }, Math.max(160, remainingStableMs + 160));
@@ -528,7 +560,7 @@ export default function CompactWindow({
                   return;
                 }
                 if (isCompactMenuOpen) {
-                  onCloseCompactMenuNow();
+                  onCloseCompactMenuNow("pet-click-toggle");
                   return;
                 }
                 petMenuStableUntilRef.current = Date.now() + PET_MENU_STABLE_MS;

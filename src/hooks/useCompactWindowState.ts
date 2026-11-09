@@ -6,6 +6,7 @@ import { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale, getStoredCharacterSca
 import type { PetThoughtState } from "../app/types";
 import type { PetThoughtPlacement } from "../app/window";
 import { getPetThoughtKey, matchesPetThought } from "../app/petThoughts";
+import { petMenuDiagnostic } from "./petMenuDiagnostics";
 export { CHARACTER_SCALE_STORAGE_KEY, clampCharacterScale } from "../app/compactPetScale";
 
 export type CompactAppearance = "default" | "compact" | "large" | "pet";
@@ -274,14 +275,15 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     saveSqliteBackedValue(CHARACTER_SCALE_STORAGE_KEY, String(characterScale));
   }, [characterScale]);
 
-  const closeCompactMenuPanels = useCallback(() => {
+  const closeCompactMenuPanels = useCallback((reason = "unspecified") => {
+    petMenuDiagnostic("close-request", { reason });
     setIsCompactMenuOpen(false);
     setIsCompactModelOpen(false);
     setIsCompactAppearanceOpen(false);
   }, []);
 
-  const closeCompactMenus = useCallback(() => {
-    closeCompactMenuPanels();
+  const closeCompactMenus = useCallback((reason = "unspecified") => {
+    closeCompactMenuPanels(reason);
   }, [closeCompactMenuPanels]);
 
   const clearCompactReply = useCallback(() => {
@@ -294,8 +296,8 @@ export function useCompactWindowState({ isCompactWindow }: UseCompactWindowState
     setCompactQuery("");
   }, []);
 
-  const resetCompactFloatingUi = useCallback(() => {
-    closeCompactMenus();
+  const resetCompactFloatingUi = useCallback((reason = "reset-floating-ui") => {
+    closeCompactMenus(reason);
     clearCompactQuery();
     clearCompactReply();
   }, [clearCompactQuery, clearCompactReply, closeCompactMenus]);

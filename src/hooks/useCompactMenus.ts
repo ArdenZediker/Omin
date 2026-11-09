@@ -45,6 +45,7 @@ import {
 import { appWindow } from "./compactWindowRuntime";
 import type { CompactAppearance } from "./useCompactWindowState";
 import { clampCharacterScale } from "./useCompactWindowState";
+import { beginPetMenuTrace, petMenuDiagnostic } from "./petMenuDiagnostics";
 
 type UseCompactMenusArgs = {
   basicSettings: BasicSettings;
@@ -59,7 +60,7 @@ type UseCompactMenusArgs = {
   isCompactMenuOpen: boolean;
   isCompactQueryOpen: boolean;
   onRestoreMain: (focusInput?: boolean, options?: { restoreGeometry?: boolean }) => Promise<void>;
-  closeCompactMenus: () => void;
+  closeCompactMenus: (reason?: string) => void;
   activeProjectId: string;
   createSessionFromMessages: (messages: Message[], projectId?: string) => ChatSession;
   updateChatSessionMessages: (
@@ -287,13 +288,13 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
   );
 
   const handleOpenSettingsFromCompact = useCallback(async () => {
-    closeCompactMenus();
+    closeCompactMenus("open-settings");
     await showSettingsWindow();
   }, [closeCompactMenus]);
 
   const handleOpenCompactQuery = useCallback(async () => {
     suppressCompactBlur();
-    closeCompactMenus();
+    closeCompactMenus("open-query");
     if (compactAppearance !== "pet" && isCompactWindow) {
       // The ask bar replaces the ball. Pick the side with room before the
       // native viewport grows, including after the ball has been dragged.
@@ -321,7 +322,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
 
   const handleOpenExternalChat = useCallback(
     async (entry: (typeof EXTERNAL_CHAT_ENTRIES)[number]) => {
-      closeCompactMenus();
+      closeCompactMenus("open-external-chat");
 
       if (entry.kind === "main") {
         // 主窗口此时通常只是被隐藏，仍保留着用户刚拉伸过的尺寸。
@@ -494,7 +495,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
   const handleCompactAppearanceChange = useCallback(
     (appearance: CompactAppearance) => {
       setCompactAppearance(appearance);
-      closeCompactMenus();
+      closeCompactMenus("appearance-change");
     },
     [closeCompactMenus, setCompactAppearance]
   );
@@ -503,7 +504,7 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
     scaleGestureScaleRef.current = null;
     setPreviewCharacterScale(null);
     setCharacterScale(1);
-    closeCompactMenus();
+    closeCompactMenus("scale-reset");
   }, [closeCompactMenus, setCharacterScale]);
 
   const handleCompactDrag = useCallback(
@@ -554,9 +555,20 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
     // Hover and click can arrive before the first IPC resolves. Claim the
     // opening lock synchronously so only one call changes the menu geometry.
     if (compactMenuOpeningRef.current || isCompactMenuOpen || nativeCompactDragActiveRef.current) {
+      if (compactAppearance === "pet") {
+        petMenuDiagnostic("open-ignored", {
+          opening: compactMenuOpeningRef.current,
+          alreadyOpen: isCompactMenuOpen,
+          dragging: nativeCompactDragActiveRef.current,
+        });
+      }
       return;
     }
+    if (compactAppearance === "pet") {
+      beginPetMenuTrace({ anchorClientX, anchorClientY });
+    }
     compactMenuOpeningRef.current = true;
+    petMenuDiagnostic("open-handler-start", { compactAppearance });
     markCompactInteraction();
     suppressCompactBlur();
     if (compactMenuCloseTimerRef.current !== null) {
@@ -580,6 +592,11 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
         needsPointer ? cursorPosition().catch(() => null) : Promise.resolve(null),
       ]);
       const { scaleFactor, position: nativeWindowPosition, size: nativeWindowSize } = metrics;
+      petMenuDiagnostic("window-metrics-read", {
+        scaleFactor,
+        position: { x: nativeWindowPosition.x, y: nativeWindowPosition.y },
+        size: { width: nativeWindowSize.width, height: nativeWindowSize.height },
+      });
       const windowPosition = nativeWindowPosition.toLogical(scaleFactor);
       const fallbackSize = nativeWindowSize.toLogical(scaleFactor);
       const anchorX =
@@ -654,6 +671,13 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
         petMenuViewport ?? undefined,
         metrics
       );
+      petMenuDiagnostic("menu-layout-resolved", {
+        menuSide,
+        submenuSide,
+        anchor: { x: menuAnchorX, y: menuAnchorY },
+        menuPosition,
+        viewport: petMenuViewport,
+      });
       if (nativeCompactDragActiveRef.current) {
         return;
       }
@@ -664,11 +688,13 @@ export function useCompactMenus(args: UseCompactMenusArgs) {
       setCompactSubmenuSide(submenuSide);
       setCharacterMenuPosition(menuPosition);
       setIsCompactMenuOpen(true);
+      petMenuDiagnostic("open-state-committed", { menuSide, submenuSide, menuPosition });
       setIsCompactModelOpen(false);
       setIsCompactAppearanceOpen(false);
       setIsCompactQueryOpen(false);
     } finally {
       compactMenuOpeningRef.current = false;
+      petMenuDiagnostic("open-handler-finished");
     }
   }, [
     basicSettings.followCursorScreen,

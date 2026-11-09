@@ -2,10 +2,11 @@ import { useCallback, type MutableRefObject } from "react";
 import { COMPACT_MENU_CLOSE_DELAY_MS } from "../app/constants";
 import { deferToAfterWindowMoveSettles, type CharacterDragPosition } from "./compactWindowGeometry";
 import { appWindow } from "./compactWindowRuntime";
+import { petMenuDiagnostic } from "./petMenuDiagnostics";
 
 type UseCompactPrimitivesArgs = {
   isCompactWindow: boolean;
-  closeCompactMenuPanels: () => void;
+  closeCompactMenuPanels: (reason?: string) => void;
   compactMenuCloseTimerRef: MutableRefObject<number | null>;
   compactInteractionUntilRef: MutableRefObject<number>;
   compactSuppressBlurUntilRef: MutableRefObject<number>;
@@ -79,24 +80,27 @@ export function useCompactPrimitives(args: UseCompactPrimitivesArgs) {
     }
   }, []);
 
-  const closeCompactMenu = useCallback((delayMs = COMPACT_MENU_CLOSE_DELAY_MS) => {
+  const closeCompactMenu = useCallback((delayMs = COMPACT_MENU_CLOSE_DELAY_MS, reason = "delayed-close") => {
     if (compactMenuCloseTimerRef.current !== null) {
       return;
     }
 
     const closeDelay = Math.max(0, delayMs);
+    petMenuDiagnostic("close-scheduled", { reason, delayMs: closeDelay });
     compactMenuCloseTimerRef.current = window.setTimeout(() => {
-      closeCompactMenuPanels();
+      petMenuDiagnostic("close-timer-fired", { reason });
+      closeCompactMenuPanels(reason);
       compactMenuCloseTimerRef.current = null;
     }, closeDelay);
   }, [closeCompactMenuPanels]);
 
-  const closeCompactMenuNow = useCallback(() => {
+  const closeCompactMenuNow = useCallback((reason = "immediate-close") => {
     if (compactMenuCloseTimerRef.current !== null) {
       window.clearTimeout(compactMenuCloseTimerRef.current);
       compactMenuCloseTimerRef.current = null;
     }
-    closeCompactMenuPanels();
+    petMenuDiagnostic("close-immediate", { reason });
+    closeCompactMenuPanels(reason);
   }, [closeCompactMenuPanels]);
 
   return {
