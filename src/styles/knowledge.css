@@ -366,7 +366,7 @@
   -webkit-backdrop-filter: blur(14px) saturate(1.03);
 }
 
-.omni-settings-card, .omni-knowledge-sidebar, .omni-knowledge-main, .omni-settings-main {
+.omni-settings-card, .omni-knowledge-sidebar, .omni-settings-main {
   box-shadow: var(--omni-surface-shadow);
 }
 
@@ -384,8 +384,8 @@
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
   border-radius: var(--omni-radius-xl);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 88%, transparent), color-mix(in srgb, var(--omni-soft-bg) 92%, transparent)),
-    var(--omni-soft-bg) !important;
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-panel-bg) 86%, transparent)),
+    var(--omni-panel-bg) !important;
   backdrop-filter: blur(14px) saturate(1.03);
   -webkit-backdrop-filter: blur(14px) saturate(1.03);
 }
@@ -435,11 +435,12 @@
 .omni-knowledge-content-panel {
   min-width: 0;
   min-height: 0;
-  border: 0;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
   border-radius: var(--omni-radius-xl);
   background: var(--omni-app-bg);
   overflow: hidden;
-  box-shadow: none;
+  box-shadow: var(--omni-surface-shadow);
+  padding: 8px;
 }
 
 .omni-knowledge-topic-shell {

@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  font-family: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --omni-font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --omni-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--omni-font-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -44,14 +46,14 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="light"] {
   color-scheme: light;
-  --omni-app-bg: #f5f5f5;
+  --omni-app-bg: #ffffff;
   --omni-app-text: #1f2329;
   --omni-app-muted: #646a73;
   --omni-panel-bg: #ffffff;
   --omni-panel-border: #e5e6eb;
-  --omni-frame-border: #d7dbe3;
-  --omni-divider-strong: #d6dbe5;
-  --omni-soft-bg: #f7f8fa;
+  --omni-frame-border: #e5e7eb;
+  --omni-divider-strong: #d1d5db;
+  --omni-soft-bg: #fcfcfc;
   --omni-button-bg: #ffffff;
   --omni-button-text: #1f2329;
   --omni-message-text: #172033;
@@ -68,7 +70,10 @@ body:has(.compact-menu-window),
   --omni-primary: #4f46e5;
   --omni-accent: #4f46e5;
   --omni-input-bg: #ffffff;
-  --omni-app-surface-1: #fafaf7;
+  --omni-app-surface-1: #ffffff;
+  --omni-app-surface-2: #fcfcfc;
+  --omni-app-surface-3: #fafafa;
+  --omni-card-bg: #ffffff;
   --omni-app-fg: #0f172a;
   --omni-accent-strong: #1d4ed8;
   --omni-app-success: #3b6d11;
@@ -138,6 +143,15 @@ body:has(.compact-menu-window),
 
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+:root[data-omni-theme-preset] code,
+:root[data-omni-theme-preset] pre,
+:root[data-omni-theme-preset] kbd,
+:root[data-omni-theme-preset] samp,
+:root[data-omni-theme-preset] .cm-editor,
+:root[data-omni-theme-preset] .monaco-editor {
+  font-family: var(--omni-font-mono) !important;
 }
 
 @keyframes blink {
@@ -350,10 +364,10 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="dark"] .main-chat-nav__item:hover,
 :root[data-omni-theme="dark"] .main-chat-nav__item--active {
-  background: rgba(255, 255, 255, 0.09);
+  background: color-mix(in srgb, var(--omni-panel-bg) 72%, var(--omni-app-text) 5%);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 10px 24px rgba(0, 0, 0, 0.18);
+    inset 0 0 0 1px color-mix(in srgb, var(--omni-panel-border) 70%, transparent),
+    0 8px 18px color-mix(in srgb, var(--omni-app-text) 8%, transparent);
 }
 
 .omni-window-control-slot {
@@ -2041,25 +2055,25 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="light"] .omni-settings-root {
-  background: #f5f5f5 !important;
+  background: var(--omni-app-bg) !important;
   color: #1f2329 !important;
 }
 
 :root[data-omni-theme="light"] .omni-knowledge-root,
 :root[data-omni-theme="light"] .omni-knowledge-layout {
-  background: #f5f5f5 !important;
+  background: var(--omni-app-bg) !important;
 }
 
 :root[data-omni-theme="light"] .omni-settings-sidebar {
-  background: #f7f8fa !important;
-  border-color: #e5e6eb !important;
+  background: var(--omni-soft-bg) !important;
+  border-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="light"] .omni-settings-main,
 :root[data-omni-theme="light"] .omni-settings-header,
 :root[data-omni-theme="light"] .omni-settings-card {
-  background: #ffffff !important;
-  border-color: #e5e6eb !important;
+  background: var(--omni-panel-bg) !important;
+  border-color: var(--omni-panel-border) !important;
   box-shadow: none !important;
 }
 
@@ -2070,6 +2084,384 @@ body:has(.compact-menu-window),
 :root[data-omni-theme="light"] .omni-settings-muted,
 :root[data-omni-theme="light"] .omni-settings-label {
   color: #646a73 !important;
+}
+
+/* 主题模式选择器：三张紧凑预览卡，和设置页其它选择控件保持同一密度。 */
+.omni-theme-picker {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--omni-panel-border, #30363d);
+  border-radius: 16px;
+  background: var(--omni-app-surface-1, #161b22);
+}
+
+.omni-theme-picker__option {
+  display: flex;
+  min-width: 116px;
+  min-height: 88px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--omni-app-muted, #8b949e);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.omni-theme-picker__option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--omni-app-text, #e6edf3);
+}
+
+.omni-theme-picker__option:focus-visible {
+  outline: 2px solid var(--omni-accent, #58a6ff);
+  outline-offset: 2px;
+}
+
+.omni-theme-picker__option--selected {
+  border-color: #79a9ff;
+  background: rgba(88, 166, 255, 0.12);
+  color: var(--omni-app-text, #e6edf3);
+  box-shadow: inset 0 0 0 1px rgba(121, 169, 255, 0.16);
+}
+
+.omni-theme-picker__label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.omni-theme-config {
+  width: min(100%, 660px);
+  overflow: hidden;
+  border: 1px solid var(--omni-panel-border, #30363d);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--omni-panel-bg, #161b22) 92%, var(--omni-app-bg, #0d1117));
+}
+
+.omni-theme-config-stack {
+  display: flex;
+  width: min(100%, 660px);
+  flex-direction: column;
+  gap: 12px;
+}
+
+.omni-theme-config-stack > .omni-theme-config {
+  width: 100%;
+}
+
+.omni-theme-config-stack > .omni-theme-config__row {
+  overflow: hidden;
+  border: 1px solid var(--omni-panel-border, #30363d);
+  border-radius: 16px;
+  background: var(--omni-card-bg, #161b22);
+}
+
+.omni-theme-config__heading {
+  padding: 11px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border, #30363d) 72%, transparent);
+  color: var(--omni-app-text, #e6edf3);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.omni-theme-config__row {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 14px 8px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border, #30363d) 72%, transparent);
+}
+
+.omni-theme-config__row:last-child {
+  border-bottom: 0;
+}
+
+.omni-theme-config__label {
+  color: var(--omni-app-text, #e6edf3);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.omni-theme-config__switch-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.omni-theme-config__hint {
+  color: var(--omni-app-muted, #8b949e);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.omni-theme-config__control {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.omni-theme-config__control > .omni-select {
+  min-width: 168px;
+}
+
+.omni-theme-swatch {
+  position: relative;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--swatch-ink) 16%, var(--swatch-surface));
+  border-radius: 50%;
+  background: var(--swatch-surface);
+  color: var(--swatch-accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.omni-theme-swatch__glyph {
+  transform: translateY(-0.5px);
+}
+
+.omni-theme-config__icon-button {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--omni-app-muted, #8b949e);
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.omni-theme-config__icon-button:hover {
+  border-color: var(--omni-panel-border, #30363d);
+  background: var(--omni-accent-soft, rgba(31, 111, 235, 0.15));
+  color: var(--omni-app-text, #e6edf3);
+}
+
+.omni-theme-config__icon-button:focus-visible,
+.omni-theme-config__hex:focus-visible,
+.omni-theme-config__color:focus-visible {
+  outline: 2px solid var(--omni-accent, #1f6feb);
+  outline-offset: 2px;
+}
+
+.omni-theme-config__color {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--omni-panel-border, #30363d);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.omni-theme-config__hex {
+  width: 90px;
+  height: 36px;
+  border: 1px solid var(--omni-panel-border, #30363d);
+  border-radius: 18px;
+  background: var(--omni-input-bg, #0d1117);
+  color: var(--omni-app-text, #e6edf3);
+  font: 600 12px/1 var(--omni-font-mono, ui-monospace, monospace);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.omni-theme-config__hex--invalid {
+  border-color: #f85149;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omni-theme-config__icon-button,
+  .omni-theme-picker__option {
+    transition: none;
+  }
+}
+
+.omni-theme-preview {
+  position: relative;
+  display: block;
+  width: 106px;
+  height: 62px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: #161b22;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+}
+
+.omni-theme-preview--auto {
+  background: linear-gradient(90deg, #f4f6f8 0 50%, #151b24 50% 100%);
+}
+
+.omni-theme-preview--light {
+  background: #f4f6f8;
+  border-color: #c8d0da;
+}
+
+.omni-theme-preview--dark {
+  background: #151b24;
+  border-color: #343b45;
+}
+
+.omni-theme-preview__rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 15px;
+  border-right: 1px solid rgba(127, 138, 151, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.omni-theme-preview--light .omni-theme-preview__rail {
+  background: rgba(30, 41, 59, 0.06);
+}
+
+.omni-theme-preview__window {
+  position: absolute;
+  top: 9px;
+  right: 7px;
+  bottom: 7px;
+  left: 22px;
+  display: block;
+  overflow: hidden;
+  border: 1px solid rgba(127, 138, 151, 0.3);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.omni-theme-preview--auto .omni-theme-preview__window {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.94) 0 50%, rgba(23, 29, 38, 0.96) 50% 100%);
+}
+
+.omni-theme-preview--dark .omni-theme-preview__window {
+  background: #202731;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.omni-theme-preview__window-top {
+  position: absolute;
+  top: 7px;
+  left: 9px;
+  width: 42%;
+  height: 3px;
+  border-radius: 999px;
+  background: #5b8fdc;
+}
+
+.omni-theme-preview__lines {
+  position: absolute;
+  top: 17px;
+  right: 8px;
+  left: 9px;
+  display: grid;
+  gap: 4px;
+}
+
+.omni-theme-preview__lines span {
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(87, 103, 123, 0.25);
+}
+
+.omni-theme-preview__lines span:nth-child(2) {
+  width: 72%;
+  background: rgba(91, 143, 220, 0.82);
+}
+
+.omni-theme-preview__lines span:nth-child(3) {
+  width: 84%;
+}
+
+.omni-theme-preview--auto .omni-theme-preview__lines span,
+.omni-theme-preview--dark .omni-theme-preview__lines span {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.omni-theme-preview--auto .omni-theme-preview__lines span:nth-child(2),
+.omni-theme-preview--dark .omni-theme-preview__lines span:nth-child(2) {
+  background: rgba(120, 169, 255, 0.88);
+}
+
+.omni-theme-preview__dot {
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #6ea8fe;
+}
+
+:root[data-omni-theme="light"] .omni-theme-picker {
+  border-color: #e5e7eb;
+  background: #fcfcfc;
+}
+
+:root[data-omni-theme="light"] .omni-theme-picker__option {
+  color: #646a73;
+}
+
+:root[data-omni-theme="light"] .omni-theme-picker__option:hover {
+  background: rgba(31, 35, 41, 0.06);
+  color: #1f2329;
+}
+
+:root[data-omni-theme="light"] .omni-theme-picker__option--selected {
+  border-color: #4f86d9;
+  background: rgba(79, 134, 217, 0.1);
+  color: #1f2329;
+}
+
+@media (max-width: 620px) {
+  .omni-theme-picker {
+    width: 100%;
+  }
+
+  .omni-theme-picker__option {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .omni-theme-preview {
+    width: 100%;
+    max-width: 106px;
+  }
+
+  .omni-theme-config__row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .omni-theme-config__control {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 :root[data-omni-theme="light"] .omni-settings-root input,
@@ -2111,17 +2503,17 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="dark"] .omni-settings-root,
 :root[data-omni-theme="dark"] .omni-settings-main {
-  background: var(--omni-app-bg) !important;
+  background: var(--omni-panel-bg) !important;
   color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-sidebar {
-  background: var(--omni-app-surface-1) !important;
+  background: var(--omni-panel-bg) !important;
   border-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-header {
-  background: var(--omni-app-bg) !important;
+  background: var(--omni-panel-bg) !important;
   border-color: var(--omni-panel-border) !important;
 }
 

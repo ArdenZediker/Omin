@@ -1,4 +1,5 @@
 import ReactDOM from "react-dom/client";
+import "@fontsource-variable/noto-sans-sc";
 import App from "./App";
 import { PromptDialogProvider } from "./components/PromptDialog";
 

@@ -20,8 +20,8 @@
   border-radius: var(--omni-radius-xl);
   padding-top: 12px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 88%, transparent), color-mix(in srgb, var(--omni-soft-bg) 92%, transparent)),
-    var(--omni-soft-bg) !important;
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-app-surface-3) 92%, transparent), color-mix(in srgb, var(--omni-app-surface-3) 86%, transparent)),
+    var(--omni-app-surface-3) !important;
   box-shadow: var(--omni-surface-shadow);
   backdrop-filter: blur(14px) saturate(1.03);
   -webkit-backdrop-filter: blur(14px) saturate(1.03);
@@ -51,9 +51,9 @@
   min-height: 0;
   overflow: hidden;
   padding: 20px;
-  background: rgba(8, 10, 16, 0.52);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .settings-overlay__panel {
@@ -67,10 +67,10 @@
   min-height: 0;
   box-sizing: border-box;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
+  border: 0;
   border-radius: 22px;
-  background: var(--omni-app-bg);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+  background: var(--omni-panel-bg) !important;
+  box-shadow: none;
   outline: none;
   animation: omni-settings-enter 160ms ease-out;
 }
@@ -79,54 +79,244 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 0;
-  gap: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  padding: 12px;
+  gap: 12px;
+  background: transparent !important;
 }
 
 .omni-settings-content {
   padding: clamp(12px, 2.2vw, 20px);
   overscroll-behavior: contain;
-  scrollbar-color: color-mix(in srgb, var(--omni-app-muted) 34%, transparent) transparent;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
+  /* 设置页内容本身已用分区卡片和右缘间距表达层级，隐藏原生滚动条；
+   * 保留滚动能力，不改变内容宽度。 */
+  scrollbar-width: none;
 }
 
-.omni-settings-content::-webkit-scrollbar {
-  width: 10px;
+/* Basic settings use one visual system: section cards, compact rows, and one
+ * consistent content column. This keeps nested controls from looking like
+ * unrelated floating panels. */
+.omni-basic-settings {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  padding-bottom: 8px;
 }
 
-.omni-settings-content::-webkit-scrollbar-track {
-  background: transparent;
+.omni-settings-group {
+  min-width: 0;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
+  border-radius: var(--omni-radius-lg);
+  background: var(--omni-card-bg);
+  box-shadow: none;
 }
 
-.omni-settings-content::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--omni-app-muted) 34%, transparent);
-  background-clip: padding-box;
+.omni-settings-group__heading {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border) 72%, transparent);
 }
 
-.omni-settings-content::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--omni-app-muted) 52%, transparent);
-  background-clip: padding-box;
+.omni-settings-group__heading h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.omni-settings-group__heading p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.omni-settings-group__row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  padding: 16px 18px;
+}
+
+.omni-settings-group__row + .omni-settings-group__row {
+  border-top: 1px solid color-mix(in srgb, var(--omni-panel-border) 62%, transparent);
+}
+
+.omni-settings-group__row--theme-mode {
+  align-items: center;
+}
+
+.omni-settings-group__label {
+  padding-top: 8px;
+  color: var(--omni-app-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.omni-settings-group__row--theme-mode .omni-settings-group__label {
+  padding-top: 0;
+}
+
+.omni-settings-group__row--visual-style {
+  padding-top: 14px;
+}
+
+.omni-settings-group__row--visual-style > .omni-settings-group__label {
+  padding-top: 12px;
+}
+
+.omni-settings-group .omni-theme-config-stack {
+  width: 100%;
+  max-width: none;
+  gap: 0;
+}
+
+.omni-settings-group .omni-theme-config {
+  max-width: none;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+}
+
+.omni-settings-group .omni-theme-config__heading {
+  padding: 14px 0 10px;
+  border-bottom: 0;
+}
+
+.omni-settings-group .omni-theme-config__row {
+  padding-inline: 0;
+}
+
+.omni-settings-group .omni-theme-config__row--switch {
+  padding: 10px 0 14px;
+  border-top: 1px solid color-mix(in srgb, var(--omni-panel-border) 62%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border) 62%, transparent);
+  background: transparent !important;
+}
+
+.omni-settings-group .omni-theme-config-stack > .omni-theme-config__row {
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border) 62%, transparent);
+  border-radius: 0;
+  background: transparent !important;
+}
+
+.omni-settings-group .omni-theme-config-stack > .omni-theme-config__row--switch {
+  border-top: 1px solid color-mix(in srgb, var(--omni-panel-border) 62%, transparent);
+}
+
+.omni-settings-group .omni-theme-config + .omni-theme-config {
+  border-top: 1px solid color-mix(in srgb, var(--omni-panel-border) 72%, transparent);
+}
+
+.omni-settings-form-row {
+  align-items: center;
+  min-height: 42px;
+}
+
+.omni-settings-group > .omni-settings-form-row {
+  padding: 10px 18px;
+}
+
+.omni-settings-group > .omni-settings-form-row + .omni-settings-form-row {
+  border-top: 1px solid color-mix(in srgb, var(--omni-panel-border) 62%, transparent);
+}
+
+.omni-settings-form-row + .omni-settings-form-row {
+  padding-top: 4px;
+}
+
+.omni-settings-form-row > .omni-settings-label,
+.omni-settings-form-row > label {
+  padding-top: 0;
+  color: var(--omni-app-text);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.omni-settings-group > .space-y-3,
+.omni-settings-group > .space-y-4 {
+  padding: 12px 18px 18px;
+}
+
+.omni-settings-group > p {
+  padding: 12px 18px 4px;
+}
+
+.omni-settings-group > .omni-settings-form-row + p,
+.omni-settings-group > .omni-settings-form-row + .pl-\[136px\] {
+  padding: 8px 18px 12px;
+}
+
+@media (max-width: 720px) {
+  .omni-settings-group__row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .omni-settings-group__label,
+  .omni-settings-group__row--visual-style > .omni-settings-group__label {
+    padding-top: 0;
+  }
+
+  .omni-settings-form-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.omni-settings-content .text-sm {
+  font-size: 13px;
 }
 
 .settings-overlay__panel .omni-settings-sidebar,
 .settings-overlay__panel .omni-settings-main {
-  border-radius: 0;
-  box-shadow: none;
+  border-radius: var(--omni-radius-xl) !important;
+  box-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .settings-overlay__panel .omni-settings-sidebar {
-  border-top: 0 !important;
-  border-bottom: 0 !important;
-  border-left: 0 !important;
+  border: 1px solid var(--omni-panel-border) !important;
 }
 
 .settings-overlay__panel .omni-settings-main {
-  border-top: 0 !important;
-  border-right: 0 !important;
-  border-bottom: 0 !important;
+  min-height: 0;
+  gap: 12px;
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.settings-overlay__panel .omni-settings-header {
+  flex: 0 0 auto;
+  border: 1px solid var(--omni-panel-border) !important;
+  border-radius: var(--omni-radius-xl) !important;
+  background: var(--omni-app-surface-2) !important;
+  box-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.settings-overlay__panel .omni-settings-content {
+  min-height: 0;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: var(--omni-radius-xl);
+  background: var(--omni-app-surface-1);
+  box-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 @keyframes omni-settings-enter {

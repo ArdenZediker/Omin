@@ -48,6 +48,7 @@ quick-xml = "0.37.2"
 lopdf = "0.35.0"
 image = "0.25.5"
 similar = "2"
+font-kit = "0.14"
 
 [target."cfg(windows)".dependencies]
 clipboard-win = { version = "5", features = ["std"] }

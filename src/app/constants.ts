@@ -14,6 +14,7 @@ export const MAIN_POSITION_STORAGE_KEY = "omni_main_position";
 export const MAIN_VIEW_STORAGE_KEY = "omni_main_view";
 export const CURRENT_MODEL_STORAGE_KEY = "omni_current_model";
 export const THEME_MODE_STORAGE_KEY = "omni_theme_mode";
+export const THEME_CONFIG_STORAGE_KEY = "omni_theme_config_v1";
 export const CHARACTER_SCALE_BASELINE = 1.4;
 export const COMPACT_MENU_CLOSE_DELAY_MS = 160;
 export const COMPACT_MENU_PANEL_WIDTH = 360;
@@ -95,8 +96,7 @@ export const CHAT_WINDOW_SIZE = { width: 1200, height: 820 };
  * 「把这个问题拆成可执行步骤」，「效率命令助手」插入「对比两个方案的优缺点」。
  * **跨数组按下标对齐 = 必然分叉**，所以合并成一条记录，从结构上消掉这个 bug 类。
  *
- * 与插件模板（`kind:"template"`）无关，别合并：模板产出的是「新建项目的初始条件」
- * （写进 project.systemPrompt + 工具白名单），这里产出的只是「一句话起手」。
+ * 与专家预设无关：专家预设是可复用的项目指令与角色档案，这里产出的只是「一句话起手」。
  */
 export type EmptyChatStarter = {
   title: string;

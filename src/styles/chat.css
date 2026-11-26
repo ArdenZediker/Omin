@@ -69,11 +69,11 @@
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
   border-radius: var(--omni-radius-xl);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-soft-bg) 92%, #ffffff 8%), var(--omni-soft-bg)),
-    color-mix(in srgb, var(--omni-soft-bg) 86%, transparent);
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-app-surface-3) 92%, transparent), color-mix(in srgb, var(--omni-app-surface-3) 86%, transparent)),
+    var(--omni-app-surface-3);
   box-shadow: var(--omni-surface-shadow);
-  backdrop-filter: blur(14px) saturate(1.04);
-  -webkit-backdrop-filter: blur(14px) saturate(1.04);
+  backdrop-filter: blur(14px) saturate(1.03);
+  -webkit-backdrop-filter: blur(14px) saturate(1.03);
 }
 
 .main-chat-nav__brand,
@@ -139,8 +139,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 统一为 panel-bg 纯色，避免从上到下的渐变在中间聊天区/输入区产生颜色分层。 */
-  background: var(--omni-panel-bg);
+  background: var(--omni-app-bg);
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
   border-radius: var(--omni-radius-xl);
   box-shadow: var(--omni-surface-shadow);
@@ -154,8 +153,8 @@
 .main-chat-header {
   position: relative;
   min-width: 0;
-  height: 76px;
-  min-height: 76px;
+  height: 64px;
+  min-height: 64px;
   display: block;
   background: transparent;
 }
@@ -182,9 +181,9 @@
 .main-chat-toolbar {
   position: relative;
   z-index: 120;
-  height: 76px;
-  min-height: 76px;
-  max-height: 76px;
+  height: 64px;
+  min-height: 64px;
+  max-height: 64px;
   margin: 0;
   padding: 12px 14px;
   display: flex;
@@ -623,8 +622,8 @@
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 88%, transparent), color-mix(in srgb, var(--omni-soft-bg) 92%, transparent)),
-    var(--omni-soft-bg);
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-app-surface-3) 92%, transparent), color-mix(in srgb, var(--omni-app-surface-3) 86%, transparent)),
+    var(--omni-app-surface-3);
   padding: 12px 10px 10px;
   overflow: visible;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
@@ -2304,6 +2303,60 @@
   font-size: 12px;
 }
 
+.chat-composer__picker--choice {
+  width: min(320px, calc(100vw - 32px));
+  padding: 10px;
+  border-radius: 12px;
+}
+
+.chat-composer__picker--choice .chat-composer__picker-heading {
+  padding: 3px 8px 9px;
+  margin: 0 0 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border) 72%, transparent);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.chat-composer__picker--choice .chat-composer__picker-option {
+  min-height: 48px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 18px;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.chat-composer__picker--choice .chat-composer__picker-option:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 5%, transparent);
+}
+
+.chat-composer__picker--choice .chat-composer__picker-option--selected,
+.chat-composer__picker--choice .chat-composer__picker-option--selected:hover {
+  background: color-mix(in srgb, var(--omni-primary) 9%, var(--omni-panel-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omni-primary) 22%, transparent);
+}
+
+.chat-composer__picker--choice .chat-composer__picker-option-copy strong {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.chat-composer__picker--choice .chat-composer__picker-option-copy small {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.chat-composer__picker--choice .chat-composer__picker-option > svg {
+  flex: 0 0 auto;
+  color: var(--omni-primary);
+}
+
+.chat-composer__picker--choice .chat-composer__picker-empty {
+  padding: 10px 8px 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .chat-composer__model {
   width: auto;
   min-width: 0;
@@ -3034,8 +3087,8 @@
   gap: 0;
   padding: 0;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-soft-bg) 88%, transparent)),
-    var(--omni-soft-bg);
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-app-surface-3) 92%, transparent), color-mix(in srgb, var(--omni-app-surface-3) 86%, transparent)),
+    var(--omni-app-surface-3);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
   border-radius: var(--omni-radius-xl);
@@ -3283,11 +3336,11 @@
 }
 
 
-/* 知识库主栏属于连续 shell，不再单独绘制内容卡片。 */
-.omni-knowledge-main > :not(header) {
+/* 知识库主栏子层延续 shell 表面；内容区本身保留独立大卡片。 */
+.omni-knowledge-main > :not(header):not(.omni-knowledge-content-panel) {
   border: 0;
   border-radius: 0;
-  background: var(--omni-panel-bg);
+  background: transparent;
   overflow: hidden;
   min-width: 0;
   min-height: 0;
@@ -3295,12 +3348,13 @@
 
 .omni-knowledge-main > header {
   /* 与聊天标题栏同高、同底色、同底部分割线；窄窗需要两行时仍可自然增高。 */
-  border: 0 !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
-  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
+  border-radius: var(--omni-radius-lg);
   overflow: hidden;
-  box-shadow: none;
-  background: var(--omni-panel-bg) !important;
+  box-shadow: var(--omni-surface-shadow);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--omni-app-surface-3) 92%, transparent), color-mix(in srgb, var(--omni-app-surface-3) 86%, transparent)),
+    var(--omni-app-surface-3) !important;
   min-height: 64px;
   max-height: none;
   height: auto;
@@ -4786,8 +4840,8 @@ span.exec-web-item__title:hover {
  * plugins.css 中后加载的 .plugin-marketplace 默认规则覆盖。 */
 .main-chat-stage > .plugin-marketplace.plugin-marketplace--main-view {
   position: absolute;
-  /* 与 grid 第二行对齐：76px header + 10px grid gap */
-  inset: 86px 0 0 0;
+  /* 与 grid 第二行对齐：64px header + 10px grid gap */
+  inset: 74px 0 0 0;
   z-index: 20;
   transform: none;
   width: 100%;
@@ -4795,7 +4849,7 @@ span.exec-web-item__title:hover {
   max-height: none;
   height: auto;
   margin: 0;
-  /* 套用与 .main-chat-workspace 相同的卡片外形 */
+  /* 与聊天工作区、知识库内容区使用相同的主表面层级。 */
   border-radius: var(--omni-radius-xl);
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 86%, transparent);
   box-shadow: var(--omni-surface-shadow);
@@ -5412,44 +5466,38 @@ span.exec-web-item__title:hover {
 
 /* Codex GitHub Dark: canvas / layer-1 / layer-2 / selected surfaces. */
 :root[data-omni-theme="dark"] .main-chat-toolbar {
-  border-color: #30363d;
-  background: #161b22;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  border-color: var(--omni-panel-border);
+  background: var(--omni-app-surface-3);
 }
 
 :root[data-omni-theme="dark"] .chat-history-panel,
 :root[data-omni-theme="dark"] .chat-topic-panel {
-  border-color: #30363d;
-  background: #0d1117;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  border-color: var(--omni-panel-border);
+  background: var(--omni-app-surface-3);
 }
 
 :root[data-omni-theme="dark"] .chat-history-panel__brand-mark {
-  border-color: #30363d;
-  background: linear-gradient(180deg, #21262d, #161b22);
+  border-color: var(--omni-panel-border);
+  background: linear-gradient(180deg, var(--omni-app-surface-3), var(--omni-panel-bg));
 }
 
 :root[data-omni-theme="dark"] .chat-history-panel__project-search {
-  border-color: #30363d;
-  background: #161b22;
+  border-color: var(--omni-panel-border);
+  background: var(--omni-input-bg);
 }
 
 :root[data-omni-theme="dark"] .chat-history-panel__session:hover {
-  background: #161b22;
+  background: var(--omni-app-surface-1);
 }
 
 :root[data-omni-theme="dark"] .chat-history-panel__session--active {
-  background: #21262d;
+  background: var(--omni-app-surface-3);
   box-shadow: inset 2px 0 0 var(--omni-accent);
 }
 
 :root[data-omni-theme="dark"] .chat-composer__panel {
-  border-color: #30363d;
-  background: #161b22;
+  border-color: var(--omni-panel-border);
+  background: var(--omni-panel-bg);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
 }
 

@@ -1,19 +1,27 @@
-import { useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { BasicSettings } from "../../app/types";
-import type { ThemeMode } from "../../app/settings";
+import {
+  DEFAULT_LIGHT_THEME_CONFIG,
+  DEFAULT_THEME_CONFIG,
+  THEME_PRESET_LABELS,
+  THEME_PRESETS,
+  type ThemeConfig,
+  type ThemeMode,
+  type ThemeSettings,
+  type ThemeVariant,
+} from "../../app/settings";
 import {
   HAS_OS_FILE_SANDBOX,
   IS_MACOS_PLATFORM,
   IS_WINDOWS_PLATFORM,
 } from "../../app/platform";
 import { modelRegistry } from "../../adapters/registry";
-import type { CodexPetLibraryState, CodexPetPackage } from "../../app/pets/codexPetTypes";
 import { requestConfirmation } from "../../chat/confirmationGate";
 import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
-import CodexPetSection from "./CodexPetSection";
+import { Check, Clipboard, Download } from "lucide-react";
 
 const IS_WINDOWS = IS_WINDOWS_PLATFORM;
 
@@ -37,15 +45,10 @@ type Props = {
   basicSettings: BasicSettings;
   themeMode: ThemeMode;
   onChangeThemeMode: (mode: ThemeMode) => void;
+  themeConfig: ThemeConfig;
+  themeSettings: ThemeSettings;
+  onChangeThemeSettings: (settings: ThemeSettings) => void;
   onUpdateBasicSettings: (patch: Partial<BasicSettings>) => void;
-  codexPetPackages: CodexPetPackage[];
-  codexPetLibraryState: CodexPetLibraryState;
-  codexPetHome: string;
-  isDesktopPetAwake: boolean;
-  onEnableDesktopPet: () => void;
-  onSelectCodexPet: (petId: string) => void;
-  onImportCodexPet: () => Promise<boolean>;
-  onRefreshCodexPets: () => void;
   onCaptureShortcut: (
     event: ReactKeyboardEvent<HTMLButtonElement>,
     keyName: keyof Pick<BasicSettings, "openMainShortcut" | "switchPreviousModelShortcut">
@@ -59,7 +62,7 @@ type Props = {
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[120px_1fr] gap-4">
+    <div className="omni-settings-form-row grid grid-cols-[120px_1fr] gap-4">
       <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">{label}</label>
       {children}
     </div>
@@ -68,9 +71,228 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function Actions({ label, children }: { label?: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[120px_1fr] gap-4">
+    <div className="omni-settings-form-row grid grid-cols-[120px_1fr] gap-4">
       <span className="pt-1 text-right text-sm text-slate-700">{label}</span>
       <div className="flex items-center gap-3">{children}</div>
+    </div>
+  );
+}
+
+const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
+  { value: "auto", label: "自动" },
+  { value: "light", label: "明亮" },
+  { value: "dark", label: "暗黑" },
+];
+
+function ThemePreview({ mode }: { mode: ThemeMode }) {
+  return (
+    <span className={`omni-theme-preview omni-theme-preview--${mode}`} aria-hidden="true">
+      <span className="omni-theme-preview__rail" />
+      <span className="omni-theme-preview__window">
+        <span className="omni-theme-preview__window-top" />
+        <span className="omni-theme-preview__lines">
+          <span />
+          <span />
+          <span />
+        </span>
+        <span className="omni-theme-preview__dot" />
+      </span>
+    </span>
+  );
+}
+
+function ThemePicker({ mode, onChange }: { mode: ThemeMode; onChange: (next: ThemeMode) => void }) {
+  return (
+    <div className="omni-theme-picker" role="radiogroup" aria-label="主题模式">
+      {THEME_OPTIONS.map((option, index) => {
+        const selected = mode === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            tabIndex={selected ? 0 : -1}
+            aria-label={option.label}
+            title={option.label}
+            className={`omni-theme-picker__option${selected ? " omni-theme-picker__option--selected" : ""}`}
+            onClick={() => onChange(option.value)}
+            onKeyDown={(event) => {
+              if (!["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(event.key)) return;
+              event.preventDefault();
+              const direction = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1;
+              const nextIndex = (index + direction + THEME_OPTIONS.length) % THEME_OPTIONS.length;
+              onChange(THEME_OPTIONS[nextIndex].value);
+              event.currentTarget.parentElement
+                ?.querySelectorAll<HTMLButtonElement>("[role='radio']")
+                .item(nextIndex)
+                ?.focus();
+            }}
+          >
+            <ThemePreview mode={option.value} />
+            <span className="omni-theme-picker__label">{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ThemeColorRow({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(value.toUpperCase());
+  useEffect(() => setDraft(value.toUpperCase()), [value]);
+  const commit = (next: string) => {
+    setDraft(next.toUpperCase());
+    if (/^#[\da-f]{6}$/i.test(next)) onChange(next.toLowerCase());
+  };
+  return (
+    <div className="omni-theme-config__row">
+      <span className="omni-theme-config__label">{label}</span>
+      <div className="omni-theme-config__control">
+        <input aria-label={`${label}颜色`} className="omni-theme-config__color" type="color" value={value} onChange={(event) => commit(event.target.value)} />
+        <input
+          aria-label={`${label}HEX值`}
+          className={`omni-theme-config__hex${/^#[\da-f]{6}$/i.test(draft) ? "" : " omni-theme-config__hex--invalid"}`}
+          value={draft}
+          maxLength={7}
+          onChange={(event) => commit(event.target.value)}
+          onBlur={() => setDraft(value.toUpperCase())}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ThemeSwatch({ themeId, config }: { themeId: string; config?: ThemeConfig }) {
+  const theme = config?.theme ?? THEME_PRESETS[themeId]?.theme ?? DEFAULT_THEME_CONFIG.theme;
+  return (
+    <span
+      className="omni-select__icon omni-theme-swatch"
+      aria-hidden="true"
+      style={{
+        "--swatch-accent": theme.accent,
+        "--swatch-surface": theme.surface,
+        "--swatch-ink": theme.ink,
+      } as React.CSSProperties}
+    >
+      <span className="omni-theme-swatch__glyph">Aa</span>
+    </span>
+  );
+}
+
+function ThemeConfigPanel({ config, variant, label, onChange }: {
+  config: ThemeConfig;
+  variant: ThemeVariant;
+  label?: string;
+  onChange: (config: ThemeConfig) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [systemFonts, setSystemFonts] = useState<string[]>([]);
+  const [fontsLoading, setFontsLoading] = useState(true);
+  const theme = config.theme;
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<string[]>("list_system_fonts")
+      .then((fonts) => {
+        if (!cancelled) setSystemFonts(fonts);
+      })
+      .catch(() => {
+        if (!cancelled) setSystemFonts(["Arial", "Cascadia Code", "Consolas", "Inter", "JetBrains Mono", "Microsoft YaHei", "Noto Sans SC Variable", "Segoe UI"]);
+      })
+      .finally(() => {
+        if (!cancelled) setFontsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const updateTheme = (patch: Partial<ThemeConfig["theme"]>) => onChange({ ...config, theme: { ...theme, ...patch } });
+  const updateColor = (key: "accent" | "surface" | "ink", value: string) => {
+    if (!/^#[\da-f]{6}$/i.test(value)) return;
+    updateTheme({ [key]: value.toLowerCase(), ...(key === "accent" ? { accentSource: "custom" as const } : {}) });
+  };
+  const copyConfig = async () => {
+    const value = `codex-theme-v1:${JSON.stringify(config)}`;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+  const downloadConfig = () => {
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${config.codeThemeId || "omni-theme"}.codex-theme.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  const setPreset = (presetId: string) => {
+    const preset = THEME_PRESETS[presetId] ?? DEFAULT_THEME_CONFIG;
+    const modeBase = variant === "light" ? DEFAULT_LIGHT_THEME_CONFIG : DEFAULT_THEME_CONFIG;
+    onChange({
+      ...preset,
+      variant,
+      theme: {
+        ...preset.theme,
+        surface: modeBase.theme.surface,
+        ink: modeBase.theme.ink,
+        opaqueWindows: modeBase.theme.opaqueWindows,
+        semanticColors: { ...modeBase.theme.semanticColors },
+        fonts: { ...theme.fonts },
+      },
+    });
+  };
+  return (
+    <div className="omni-theme-config" aria-label={label ? `${label}视觉配置` : "主题视觉配置"}>
+      {label ? <div className="omni-theme-config__heading">{label}</div> : null}
+      <div className="omni-theme-config__row">
+        <span className="omni-theme-config__label">主题包</span>
+        <div className="omni-theme-config__control">
+          <button type="button" className="omni-theme-config__icon-button" onClick={downloadConfig} aria-label="下载主题配置" title="下载主题配置">
+            <Download size={16} />
+          </button>
+          <button type="button" className="omni-theme-config__icon-button" onClick={() => void copyConfig()} aria-label="复制主题配置" title="复制 codex-theme-v1 配置">
+            {copied ? <Check size={16} /> : <Clipboard size={16} />}
+          </button>
+          <OmniSelect
+            value={config.codeThemeId}
+            onChange={setPreset}
+            ariaLabel="主题包"
+            options={Object.keys(THEME_PRESETS).map((value) => ({
+              value,
+              label: THEME_PRESET_LABELS[value],
+              icon: <ThemeSwatch themeId={value} config={value === config.codeThemeId ? config : undefined} />,
+            }))}
+          />
+        </div>
+      </div>
+      <ThemeColorRow label="强调色" value={theme.accent} onChange={(value) => updateColor("accent", value)} />
+      <ThemeColorRow label="背景" value={theme.surface} onChange={(value) => updateColor("surface", value)} />
+      <ThemeColorRow label="前景" value={theme.ink} onChange={(value) => updateColor("ink", value)} />
+      <div className="omni-theme-config__row">
+        <span className="omni-theme-config__label">界面字体</span>
+        <OmniSelect
+          value={theme.fonts.ui ?? "system"}
+          onChange={(value) => updateTheme({ fonts: { ...theme.fonts, ui: value === "system" ? null : value } })}
+          ariaLabel="界面字体"
+          options={[{ value: "system", label: "系统（跟随系统）" }, ...systemFonts.map((font) => ({ value: font, label: font }))]}
+          placeholder={fontsLoading ? "读取系统字体…" : "选择字体"}
+        />
+      </div>
+      <div className="omni-theme-config__row">
+        <span className="omni-theme-config__label">代码字体</span>
+        <OmniSelect
+          value={theme.fonts.code ?? "system"}
+          onChange={(value) => updateTheme({ fonts: { ...theme.fonts, code: value === "system" ? null : value } })}
+          ariaLabel="代码字体"
+          options={[{ value: "system", label: "系统（跟随系统）" }, ...systemFonts.map((font) => ({ value: font, label: font }))]}
+          placeholder={fontsLoading ? "读取系统字体…" : "选择字体"}
+        />
+      </div>
     </div>
   );
 }
@@ -79,15 +301,10 @@ export default function BasicSettingsSection({
   basicSettings,
   themeMode,
   onChangeThemeMode,
+  themeConfig,
+  themeSettings,
+  onChangeThemeSettings,
   onUpdateBasicSettings,
-  codexPetPackages,
-  codexPetLibraryState,
-  codexPetHome,
-  isDesktopPetAwake,
-  onEnableDesktopPet,
-  onSelectCodexPet,
-  onImportCodexPet,
-  onRefreshCodexPets,
   onCaptureShortcut,
   onStartShortcutCapture,
   onCancelShortcutCapture,
@@ -138,62 +355,65 @@ export default function BasicSettingsSection({
   };
 
   return (
-    <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
-      <div className="border-b border-slate-100 pb-3">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">主题设置</h3>
-        <p className="mt-1 text-xs text-slate-500 omni-settings-muted">主题会同步影响主窗口、设置界面、悬浮窗和悬浮球。</p>
-      </div>
-
-      <div className="grid grid-cols-[120px_1fr] gap-4">
-        <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">主题</label>
-        <div className="inline-flex w-fit overflow-hidden rounded-lg border border-slate-300 bg-white">
-          {(["auto", "dark", "light"] as ThemeMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => onChangeThemeMode(mode)}
-              className={`px-5 py-2 text-sm transition-colors ${
-                themeMode === mode ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
-              }`}
-            >
-              {mode === "auto" ? "自动" : mode === "dark" ? "暗黑" : "明亮"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <div className="mb-2 text-center text-sm font-semibold text-slate-900">亮色预览</div>
-          <div className="rounded-lg bg-gradient-to-br from-sky-100 via-pink-100 to-amber-100 p-4">
-            <div className="w-32 rounded-xl bg-white/78 p-2 shadow-lg backdrop-blur">
-              <div className="mb-2 h-5 rounded bg-slate-200" />
-              <div className="space-y-1">
-                <div className="h-3 rounded bg-slate-300" />
-                <div className="h-3 rounded bg-violet-200" />
-                <div className="h-3 rounded bg-slate-200" />
-              </div>
-            </div>
+    <div className="omni-basic-settings">
+      <section className="omni-settings-group omni-settings-group--appearance" aria-labelledby="basic-theme-heading">
+        <div className="omni-settings-group__heading">
+          <div>
+            <h3 id="basic-theme-heading" className="omni-settings-title">主题与外观</h3>
+            <p className="omni-settings-muted">主题会同步影响主窗口、设置界面、悬浮窗和悬浮球。</p>
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-slate-950 p-3">
-          <div className="mb-2 text-center text-sm font-semibold text-white">暗色预览</div>
-          <div className="rounded-lg bg-gradient-to-br from-slate-900 via-fuchsia-950 to-sky-950 p-4">
-            <div className="w-32 rounded-xl bg-black/62 p-2 shadow-lg backdrop-blur">
-              <div className="mb-2 h-5 rounded bg-white/15" />
-              <div className="space-y-1">
-                <div className="h-3 rounded bg-white/20" />
-                <div className="h-3 rounded bg-violet-400/30" />
-                <div className="h-3 rounded bg-white/10" />
+        <div className="omni-settings-group__row omni-settings-group__row--theme-mode">
+          <label className="omni-settings-group__label">主题模式</label>
+          <ThemePicker mode={themeMode} onChange={onChangeThemeMode} />
+        </div>
+
+        <div className="omni-settings-group__row omni-settings-group__row--visual-style">
+          <div className="omni-settings-group__label">视觉风格</div>
+          <div className="omni-theme-config-stack">
+            <div className="omni-theme-config__row omni-theme-config__row--switch">
+              <div className="omni-theme-config__switch-copy">
+                <span className="omni-theme-config__label">分别设置浅色和深色模式</span>
+                <span className="omni-theme-config__hint">分别选择各自的主题、颜色和字体</span>
               </div>
+              <OmniSwitch
+                checked={themeSettings.separateVariants}
+                onChange={(checked) => onChangeThemeSettings({ ...themeSettings, separateVariants: checked })}
+                ariaLabel="分别设置浅色和深色模式"
+              />
             </div>
+            {themeSettings.separateVariants ? (
+              <>
+                <ThemeConfigPanel
+                  config={themeSettings.light}
+                  variant="light"
+                  label="浅色主题"
+                  onChange={(config) => onChangeThemeSettings({ ...themeSettings, light: { ...config, variant: "light" } })}
+                />
+                <ThemeConfigPanel
+                  config={themeSettings.dark}
+                  variant="dark"
+                  label="深色主题"
+                  onChange={(config) => onChangeThemeSettings({ ...themeSettings, dark: { ...config, variant: "dark" } })}
+                />
+              </>
+            ) : (
+              <ThemeConfigPanel
+                config={themeConfig}
+                variant={themeConfig.variant}
+                onChange={(config) => onChangeThemeSettings({
+                  ...themeSettings,
+                  [themeConfig.variant]: { ...config, variant: themeConfig.variant },
+                })}
+              />
+            )}
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="space-y-4 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">悬浮与窗口</h3>
+      <section className="omni-settings-group" aria-labelledby="basic-window-heading">
+        <div className="omni-settings-group__heading"><h3 id="basic-window-heading" className="omni-settings-title">悬浮与窗口</h3></div>
         <Actions label="开机自启">
           <OmniSwitch checked={basicSettings.autoLaunch} onChange={(checked) => onUpdateBasicSettings({ autoLaunch: checked })} ariaLabel="开机自启" />
           <span className="text-xs text-slate-500 omni-settings-muted">已保存开关，接入系统自启插件后生效。</span>
@@ -228,10 +448,10 @@ export default function BasicSettingsSection({
           <OmniSwitch checked={basicSettings.followCursorScreen} onChange={(checked) => onUpdateBasicSettings({ followCursorScreen: checked })} ariaLabel="鼠标随航" />
           <span className="text-xs text-slate-500 omni-settings-muted">鼠标跨屏时悬浮球会切换到所在屏幕，并尽量保留原来的相对位置。</span>
         </Actions>
-      </div>
+      </section>
 
-      <div className="space-y-4 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">主窗口默认尺寸</h3>
+      <section className="omni-settings-group" aria-labelledby="basic-size-heading">
+        <div className="omni-settings-group__heading"><h3 id="basic-size-heading" className="omni-settings-title">主窗口默认尺寸</h3></div>
         <div className="space-y-3">
           <Field label="主界面尺寸">
             <div className="flex items-center gap-2">
@@ -259,10 +479,10 @@ export default function BasicSettingsSection({
             影响聊天/知识库主界面的默认窗口大小，不影响设置窗口、悬浮球和桌宠窗口。
           </p>
         </div>
-      </div>
+      </section>
 
-      <div className="space-y-4 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">快捷键</h3>
+      <section className="omni-settings-group" aria-labelledby="basic-shortcuts-heading">
+        <div className="omni-settings-group__heading"><h3 id="basic-shortcuts-heading" className="omni-settings-title">快捷键</h3></div>
         <Field label="打开主界面">
           <button
             type="button"
@@ -318,11 +538,11 @@ export default function BasicSettingsSection({
             {openMainShortcutNotice.text}
           </p>
         ) : null}
-      </div>
+      </section>
 
-      <div className="space-y-4 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">命令执行</h3>
-        <div className="grid grid-cols-[120px_1fr] gap-4">
+      <section className="omni-settings-group" aria-labelledby="basic-command-heading">
+        <div className="omni-settings-group__heading"><h3 id="basic-command-heading" className="omni-settings-title">命令执行</h3></div>
+        <div className="omni-settings-form-row grid grid-cols-[120px_1fr] gap-4">
           <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">Shell 路径</label>
           <div className="flex items-center gap-2">
             <input
@@ -396,7 +616,7 @@ export default function BasicSettingsSection({
             {shellProbe.output || (shellProbe.ok ? "可用" : "未知错误")}
           </p>
         )}
-        <div className="grid grid-cols-[120px_1fr] gap-4">
+        <div className="omni-settings-form-row grid grid-cols-[120px_1fr] gap-4">
           <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">文件权限（沙箱）</label>
           <div className="flex flex-col gap-1.5">
             <OmniSelect
@@ -434,10 +654,10 @@ export default function BasicSettingsSection({
             </p>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="space-y-4 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-medium text-slate-900 omni-settings-title">子 Agent 模型</h3>
+      <section className="omni-settings-group" aria-labelledby="basic-subagent-heading">
+        <div className="omni-settings-group__heading"><h3 id="basic-subagent-heading" className="omni-settings-title">子 Agent 模型</h3></div>
         <p className="text-xs text-slate-500 omni-settings-muted">
           通过 agent 工具派出的子 Agent 可走「能力强 / 轻量」两档模型。未设置时回落到本轮主运行模型；轻量档未设置再回落能力强档。通用只读调研默认走轻量档，专家委派默认走能力强档，也可用 tier 参数显式覆盖。
         </p>
@@ -482,20 +702,7 @@ export default function BasicSettingsSection({
             </p>
           </div>
         </Field>
-      </div>
-
-      <div className="border-t border-slate-100 pt-4">
-        <CodexPetSection
-          packages={codexPetPackages}
-          state={codexPetLibraryState}
-          projectPetsRoot={codexPetHome}
-          isDesktopPetAwake={isDesktopPetAwake}
-          onEnableDesktopPet={onEnableDesktopPet}
-          onSelectPet={onSelectCodexPet}
-          onImportPet={onImportCodexPet}
-          onRefreshPets={onRefreshCodexPets}
-        />
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

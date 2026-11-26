@@ -1802,14 +1802,415 @@
   min-height: 0;
 }
 
+.expert-team-manager-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(2px);
+}
+
+.expert-team-manager {
+  z-index: 141;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 1002;
+}
+
+.expert-team-manager__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--omni-border);
+}
+
+.expert-team-manager__header h2 {
+  margin: 5px 0 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.expert-team-manager__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+}
+
+.expert-team-manager__body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(170px, 0.72fr) minmax(0, 1.5fr);
+  flex: 1;
+}
+
+.expert-team-manager__list {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 10px;
+  border-right: 1px solid var(--omni-border);
+}
+
+.expert-team-manager__new,
+.expert-team-manager__row {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--omni-app-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.expert-team-manager__new {
+  color: var(--omni-accent);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.expert-team-manager__row {
+  justify-content: space-between;
+}
+
+.expert-team-manager__row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.expert-team-manager__row span,
+.expert-team-manager__section-head span {
+  flex: none;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+}
+
+.expert-team-manager__new:hover,
+.expert-team-manager__row:hover,
+.expert-team-manager__row.is-active {
+  background: var(--omni-accent-soft);
+}
+
+.expert-team-manager__editor {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  overflow: auto;
+  padding: 18px 20px;
+}
+
+.expert-team-manager__field {
+  display: grid;
+  gap: 6px;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+}
+
+.expert-team-manager__field input,
+.expert-team-manager__field textarea,
+.expert-team-manager__add-member input,
+.expert-team-manager__add-member select {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid var(--omni-border);
+  border-radius: 5px;
+  background: var(--omni-input-bg);
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.expert-team-manager__field input:focus,
+.expert-team-manager__field textarea:focus,
+.expert-team-manager__add-member input:focus,
+.expert-team-manager__add-member select:focus {
+  border-color: var(--omni-accent);
+}
+
+.expert-team-manager__field textarea {
+  resize: vertical;
+}
+
+.expert-team-manager__section-head {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.expert-team-manager__members {
+  display: grid;
+  gap: 6px;
+}
+
+.expert-team-manager__member {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--omni-accent);
+  background: var(--omni-soft-bg);
+}
+
+.expert-team-manager__member > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.expert-team-manager__member strong {
+  font-size: 12px;
+}
+
+.expert-team-manager__member span {
+  overflow: hidden;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expert-team-manager__member button,
+.expert-team-manager__add-member > button {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--omni-app-muted);
+  cursor: pointer;
+}
+
+.expert-team-manager__member button:hover,
+.expert-team-manager__add-member > button:hover:not(:disabled) {
+  background: var(--omni-accent-soft);
+  color: var(--omni-app-text);
+}
+
+.expert-team-manager__add-member {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.5fr) 30px;
+  align-items: center;
+  gap: 6px;
+}
+
+.expert-team-manager__add-member > button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.expert-team-manager__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.expert-team-manager__actions button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--omni-border);
+  border-radius: 5px;
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+  cursor: pointer;
+}
+
+.expert-team-manager__actions .expert-team-manager__delete {
+  margin-right: auto;
+  color: var(--omni-danger);
+}
+
+.expert-team-manager__actions .expert-team-manager__save {
+  border-color: var(--omni-accent);
+  background: var(--omni-accent);
+  color: var(--omni-button-text);
+}
+
+.expert-team-manager__actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.expert-team-manager__history {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--omni-border);
+}
+
+.expert-team-manager__run {
+  border-bottom: 1px solid var(--omni-border);
+}
+
+.expert-team-manager__run summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  list-style: none;
+}
+
+.expert-team-manager__run summary::-webkit-details-marker {
+  display: none;
+}
+
+.expert-team-manager__run summary strong {
+  margin-left: auto;
+  color: var(--omni-app-text);
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.expert-team-manager__run-state {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--omni-app-muted);
+}
+
+.expert-team-manager__run-state--completed { background: #2da44e; }
+.expert-team-manager__run-state--failed { background: var(--omni-danger); }
+.expert-team-manager__run-state--interrupted { background: #bf8700; }
+.expert-team-manager__run-state--running,
+.expert-team-manager__run-state--provisioning { background: var(--omni-accent); }
+
+.expert-team-manager__run-content {
+  display: grid;
+  gap: 12px;
+  padding: 3px 0 12px 15px;
+}
+
+.expert-team-manager__run-group {
+  display: grid;
+  gap: 5px;
+}
+
+.expert-team-manager__run-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.expert-team-manager__run-task {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  background: var(--omni-soft-bg);
+  font-size: 11px;
+}
+
+.expert-team-manager__run-task small {
+  flex: none;
+  color: var(--omni-app-muted);
+}
+
+.expert-team-manager__report {
+  padding: 8px;
+  border-left: 2px solid var(--omni-accent);
+  background: var(--omni-soft-bg);
+}
+
+.expert-team-manager__report strong {
+  font-size: 11px;
+}
+
+.expert-team-manager__report p {
+  max-height: 180px;
+  overflow: auto;
+  margin: 5px 0 0;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.expert-team-manager__empty,
+.expert-team-manager__welcome {
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.expert-team-manager__welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.expert-team-manager__welcome strong {
+  color: var(--omni-app-text);
+  font-size: 14px;
+}
+
+.expert-team-manager__error {
+  margin: 0;
+  color: var(--omni-danger);
+  font-size: 12px;
+}
+
+@media (max-width: 620px) {
+  .expert-team-manager__body {
+    grid-template-columns: 1fr;
+  }
+
+  .expert-team-manager__list {
+    max-height: 150px;
+    border-right: 0;
+    border-bottom: 1px solid var(--omni-border);
+  }
+}
+
 .plugin-marketplace__my-experts-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
   font-size: 12px;
   color: var(--omni-app-muted);
+}
+
+.plugin-marketplace__my-experts-toolbar > span {
+  margin-right: auto;
 }
 
 .plugin-marketplace__create-expert {
@@ -1835,6 +2236,76 @@
 
 .plugin-marketplace__create-expert:active {
   transform: scale(0.97);
+}
+
+.plugin-marketplace__create-expert--secondary {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-muted);
+}
+
+.plugin-marketplace__create-expert--secondary:hover {
+  border-color: color-mix(in srgb, var(--omni-accent, #7c3aed) 36%, var(--omni-panel-border));
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.plugin-marketplace__create-menu {
+  position: relative;
+}
+
+.plugin-marketplace__create-menu-popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 292px;
+  padding: 6px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 14px;
+  background: var(--omni-panel-bg);
+  box-shadow: 0 18px 44px rgb(0 0 0 / 24%);
+}
+
+.plugin-marketplace__create-menu-popover button {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--omni-app-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.plugin-marketplace__create-menu-popover button:hover {
+  background: var(--omni-soft-bg);
+}
+
+.plugin-marketplace__create-menu-popover button > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--omni-accent, #7c3aed);
+}
+
+.plugin-marketplace__create-menu-popover button > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.plugin-marketplace__create-menu-popover strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.plugin-marketplace__create-menu-popover small {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .plugin-marketplace__empty--my-experts {
@@ -2225,4 +2696,112 @@
 :root[data-omni-theme="dark"] .omni-tools-dialog__close:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #f3f4f6;
+}
+
+/* 三页共享的渲染层级：App.css 最后加载本文件，这里用未分层规则覆盖各页
+ * 分散的 !important 和深浅主题硬编码。窗口/卡片间隙用主题背景，左侧与
+ * 主体面板用一级表面，顶栏和配置卡用二级表面，内层卡用 card-bg。 */
+.omni-settings-root,
+.main-chat-layout,
+.main-chat-stage,
+.main-chat-header {
+  background: var(--omni-app-surface-1) !important;
+}
+
+:root[data-omni-theme] .omni-knowledge-root,
+:root[data-omni-theme] .omni-knowledge-layout,
+:root[data-omni-theme] .omni-knowledge-main,
+:root[data-omni-theme] .omni-knowledge-body-shell {
+  background: transparent !important;
+}
+
+:root[data-omni-theme="light"] .omni-knowledge-root {
+  background: #f5f5f5 !important;
+}
+
+:root[data-omni-theme="dark"] .omni-knowledge-root {
+  background: var(--omni-app-bg) !important;
+}
+
+.main-chat-nav,
+.chat-history-panel,
+.chat-topic-panel,
+.omni-knowledge-sidebar,
+.omni-settings-sidebar,
+.omni-settings-main,
+.main-chat-workspace,
+.main-chat-stage > .plugin-marketplace.plugin-marketplace--main-view,
+.omni-knowledge-content-panel {
+  background: var(--omni-app-surface-1) !important;
+}
+
+.omni-knowledge-main > header,
+.main-chat-toolbar,
+.omni-settings-header,
+.omni-theme-picker,
+.omni-theme-config,
+.omni-theme-config-stack > .omni-theme-config__row,
+.omni-knowledge-empty-state__action {
+  background: var(--omni-app-surface-2) !important;
+}
+
+.omni-knowledge-main > header,
+.omni-knowledge-content-panel {
+  box-shadow: none !important;
+}
+
+.omni-settings-card,
+.omni-settings-main .omni-settings-card,
+.omni-knowledge-collection-settings__capability-card,
+.plugin-card {
+  background: var(--omni-card-bg) !important;
+}
+
+.main-chat-nav__item:hover,
+.main-chat-nav__item--active,
+.omni-settings-nav:hover,
+.omni-settings-nav--active {
+  background: var(--omni-app-surface-3) !important;
+}
+
+.main-chat-nav,
+.chat-history-panel,
+.chat-topic-panel,
+.omni-knowledge-sidebar,
+.omni-knowledge-main > header,
+.omni-knowledge-content-panel,
+.omni-settings-sidebar,
+.omni-settings-main,
+.omni-settings-card,
+.omni-theme-picker,
+.omni-theme-config,
+.main-chat-workspace,
+.main-chat-stage > .plugin-marketplace.plugin-marketplace--main-view,
+.plugin-card {
+  border-color: var(--omni-panel-border) !important;
+}
+
+.main-chat-toolbar,
+.main-chat-header,
+.omni-knowledge-main > header,
+.omni-settings-header {
+  height: 64px !important;
+  min-height: 64px !important;
+  max-height: 64px !important;
+}
+
+.main-chat-stage > .plugin-marketplace.plugin-marketplace--main-view {
+  inset: 74px 0 0 0 !important;
+}
+
+.main-chat-nav,
+.chat-history-panel,
+.chat-topic-panel,
+.omni-knowledge-sidebar,
+.omni-knowledge-content-panel,
+.omni-settings-sidebar,
+.omni-settings-main,
+.main-chat-workspace,
+.main-chat-stage > .plugin-marketplace.plugin-marketplace--main-view {
+  border-radius: var(--omni-radius-xl) !important;
 }

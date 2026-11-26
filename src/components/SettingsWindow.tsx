@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { loadProviderConfigs, modelRegistry } from "../adapters/registry";
-import { BASIC_SETTINGS_STORAGE_KEY, CURRENT_MODEL_STORAGE_KEY, THEME_MODE_STORAGE_KEY } from "../app/constants";
+import { BASIC_SETTINGS_STORAGE_KEY, CURRENT_MODEL_STORAGE_KEY, THEME_CONFIG_STORAGE_KEY, THEME_MODE_STORAGE_KEY } from "../app/constants";
 import { applyThemeFromStorage } from "../app/window";
 import { bootstrapSqliteStorage, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { MODEL_USAGE_PREFERENCES_STORAGE_KEY, USAGE_PREFERENCES_STORAGE_KEY } from "../chat/storage";
@@ -11,6 +11,7 @@ const SETTINGS_BOOTSTRAP_KEYS = [
   BASIC_SETTINGS_STORAGE_KEY,
   CURRENT_MODEL_STORAGE_KEY,
   THEME_MODE_STORAGE_KEY,
+  THEME_CONFIG_STORAGE_KEY,
   USAGE_PREFERENCES_STORAGE_KEY,
   MODEL_USAGE_PREFERENCES_STORAGE_KEY,
   "omni_provider_configs",

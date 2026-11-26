@@ -1,10 +1,11 @@
 import { Check, ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 export type OmniSelectOption = {
   value: string;
   label: string;
+  icon?: ReactNode;
   description?: string;
   disabled?: boolean;
 };
@@ -191,6 +192,7 @@ export default function OmniSelect({
         onClick={() => (isOpen ? closeMenu() : openMenu())}
         onKeyDown={handleKeyDown}
       >
+        {selectedOption?.icon}
         <span className={`omni-select__value${selectedOption ? "" : " omni-select__value--placeholder"}`}>
           {selectedOption?.label ?? placeholder}
         </span>
@@ -227,6 +229,7 @@ export default function OmniSelect({
                     onMouseEnter={() => !option.disabled && setActiveIndex(index)}
                     onClick={() => chooseOption(option)}
                   >
+                    {option.icon}
                     <span className="omni-select__option-text">
                       <span className="omni-select__option-label">{option.label}</span>
                       {option.description ? (

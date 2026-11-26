@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { showCompactWindow } from "../app/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { Cuboid, Database, MessageSquareText, Paintbrush, Settings, Sparkles, X } from "lucide-react";
+import { Cuboid, Database, MessageSquareText, Paintbrush, PawPrint, Settings, Sparkles, X } from "lucide-react";
 import { modelRegistry, saveProviderConfigs } from "../adapters/registry";
 import { PROVIDER_DEFAULTS } from "../adapters/modelCatalog";
 import { MODEL_PARAM_COMPAT_CHANGED_EVENT } from "../adapters/paramCompat";
@@ -52,6 +52,7 @@ import {
   saveUsagePreferencesForModel,
 } from "../chat/storage";
 import BasicSettingsSection from "./settings/BasicSettingsSection";
+import CodexPetSection from "./settings/CodexPetSection";
 import KnowledgeEmbeddingSection from "./settings/KnowledgeEmbeddingSection";
 import KnowledgeMultimodalSection from "./settings/KnowledgeMultimodalSection";
 import ModelSettingsSection from "./settings/ModelSettingsSection";
@@ -62,7 +63,7 @@ interface SettingsPanelProps {
   onClose: () => void;
   onModelChange: (modelId: string) => void;
 }
-type SettingsSection = "basic" | "personalization" | "models" | "storage" | "plugins";
+type SettingsSection = "basic" | "pets" | "personalization" | "models" | "storage" | "plugins";
 type ModelConfigSection = "chat" | "embedding" | "multimodal";
 type ModelSectionCard = {
   title: string;
@@ -118,7 +119,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
   const [modelSection, setModelSection] = useState<ModelConfigSection>("chat");
   const [version, setVersion] = useState(0);
   const [currentModel, setCurrentModel] = useState(modelRegistry.getCurrentModel());
-  const { themeMode, setMode: setThemeMode } = useThemeSync();
+  const { themeMode, setMode: setThemeMode, themeConfig, themeSettings, setThemeSettings } = useThemeSync();
   const [basicSettings, setBasicSettings] = useState<BasicSettings>(
     loadBasicSettings(BASIC_SETTINGS_STORAGE_KEY, DEFAULT_BASIC_SETTINGS)
   );
@@ -764,6 +765,20 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
           </button>
           <button
             type="button"
+            onClick={() => setSection("pets")}
+            className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
+              section === "pets"
+                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
+                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
+            }`}
+          >
+            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+              <PawPrint size={13} strokeWidth={1.8} />
+            </span>
+            宠物
+          </button>
+          <button
+            type="button"
             onClick={() => setSection("personalization")}
             className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
               section === "personalization"
@@ -813,7 +828,9 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             <h2 className="omni-settings-title text-sm font-semibold text-slate-950">
               {section === "basic"
                 ? "基本设置"
-                : section === "personalization"
+                : section === "pets"
+                  ? "宠物"
+                  : section === "personalization"
                   ? "个性化"
                   : section === "storage"
                     ? "数据存储"
@@ -822,7 +839,9 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             <p className="omni-settings-muted text-[11px] text-slate-500">
               {section === "basic"
                 ? "管理 Omni 的通用基础选项。"
-                : section === "personalization"
+                : section === "pets"
+                  ? "选择桌面宠物、管理宠物包并配置显示状态。"
+                  : section === "personalization"
                   ? "调整 Omni 的回复风格、语调与自定义指令。"
                   : section === "storage"
                     ? "管理数据库、知识库文件存放位置与整库备份。"
@@ -843,26 +862,32 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
         </header>
 
         <div className="omni-settings-content flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-          <div className={`mx-auto flex min-h-full w-full ${section === "models" ? "max-w-none flex-col gap-6" : "max-w-3xl flex-col gap-6"}`}>
+          <div className={`mx-auto flex min-h-full w-full ${section === "models" ? "max-w-none flex-col gap-6" : section === "basic" ? "max-w-4xl flex-col gap-6" : "max-w-3xl flex-col gap-6"}`}>
             {section === "basic" ? (
               <BasicSettingsSection
                 basicSettings={basicSettings}
-                codexPetPackages={codexPetPackages}
-                codexPetLibraryState={codexPetLibraryState}
-                codexPetHome={codexPetHome}
-                isDesktopPetAwake={isDesktopPetAwake}
-                onEnableDesktopPet={enableDesktopPet}
-                onSelectCodexPet={selectCodexPet}
-                onImportCodexPet={importCodexPet}
-                onRefreshCodexPets={refreshCodexPets}
                 onCaptureShortcut={captureShortcut}
                 onChangeThemeMode={changeThemeMode}
+                themeConfig={themeConfig}
+                themeSettings={themeSettings}
+                onChangeThemeSettings={setThemeSettings}
                 onUpdateBasicSettings={updateBasicSettings}
                 onStartShortcutCapture={startShortcutCapture}
                 onCancelShortcutCapture={cancelShortcutCapture}
                 openMainShortcutNotice={openMainShortcutNotice}
                 themeMode={themeMode}
                 recordingShortcut={recordingShortcut}
+              />
+            ) : section === "pets" ? (
+              <CodexPetSection
+                packages={codexPetPackages}
+                state={codexPetLibraryState}
+                projectPetsRoot={codexPetHome}
+                isDesktopPetAwake={isDesktopPetAwake}
+                onEnableDesktopPet={enableDesktopPet}
+                onSelectPet={selectCodexPet}
+                onImportPet={importCodexPet}
+                onRefreshPets={refreshCodexPets}
               />
             ) : section === "personalization" ? (
               <PersonalizationSettingsSection />

@@ -17,7 +17,7 @@ import {
   PET_THOUGHT_WINDOW_LABEL,
   THEME_MODE_STORAGE_KEY,
 } from "./constants";
-import { applyThemeMode } from "./settings";
+import { applyActiveThemeConfig, applyThemeMode } from "./settings";
 import type { BasicSettings, ExternalChatEntry, ViewMode } from "./types";
 import { isCompactPetHidden } from "./compactVisibility";
 import type { CompactAppearance } from "../hooks/useCompactWindowState";
@@ -69,6 +69,8 @@ export function applyThemeFromStorage() {
   const mode = saved === "dark" || saved === "light" ? saved : "auto";
   // applyThemeMode 会设置 data-* 属性、持久化并广播跨窗口同步事件。
   applyThemeMode(THEME_MODE_STORAGE_KEY, mode);
+  // 模式对应哪套视觉风格由 mode 决定，避免旧单配置覆盖明暗切换结果。
+  applyActiveThemeConfig(mode);
 }
 
 // ── 紧凑窗几何：统一使用**物理像素** ───────────────────────────────────────────

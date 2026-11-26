@@ -94,6 +94,7 @@ mod codex_pet_cmds;
 mod knowledge_cmds;
 mod persona_cmds;
 mod storage_cmds;
+mod theme_cmds;
 mod workspace_cmds;
 
 use codex_pet_cmds::*;
@@ -592,6 +593,7 @@ pub fn run() {
             load_app_kv,
             save_app_kv,
             remove_app_kv,
+            theme_cmds::list_system_fonts,
             write_clipboard_with_files,
             delete_chat_session,
             delete_project,

@@ -68,6 +68,19 @@
   text-overflow: ellipsis;
 }
 
+.omni-select__icon {
+  flex: 0 0 auto;
+}
+
+.omni-select__trigger > .omni-select__icon {
+  margin-right: 2px;
+}
+
+.omni-select__option > .omni-select__icon {
+  align-self: center;
+  margin-right: 2px;
+}
+
 .omni-select__value--placeholder {
   color: var(--omni-app-muted);
 }
@@ -567,6 +580,84 @@
   font-size: 16px;
   font-weight: 600;
   margin: 0;
+}
+
+.omni-dialog--create-expert {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(860px, calc(100vh - 32px));
+}
+
+.omni-dialog__subtitle {
+  margin: 5px 0 0;
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.omni-dialog__section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--omni-panel-border);
+}
+
+.omni-dialog__section-heading strong {
+  padding-top: 14px;
+  font-size: 13px;
+  color: var(--omni-app-text);
+}
+
+.omni-dialog__section-heading span {
+  padding-top: 14px;
+  color: var(--omni-app-muted);
+  font-size: 11px;
+}
+
+.omni-dialog__example-fields {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--omni-panel-bg) 88%, var(--omni-soft-bg));
+}
+
+.omni-dialog__example-fields input,
+.omni-dialog__example-fields textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.omni-dialog__example-fields input:focus,
+.omni-dialog__example-fields textarea:focus {
+  outline: 2px solid color-mix(in srgb, #4f46e5 55%, transparent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 680px) {
+  .omni-dialog--create-expert {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .omni-dialog__section-heading {
+    display: block;
+  }
+
+  .omni-dialog__section-heading span {
+    display: block;
+    padding-top: 4px;
+    padding-bottom: 8px;
+  }
 }
 
 .omni-dialog__close {

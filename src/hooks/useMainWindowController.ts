@@ -11,6 +11,7 @@ import {
   CURRENT_MODEL_STORAGE_KEY,
   MAIN_VIEW_STORAGE_KEY,
   THEME_MODE_STORAGE_KEY,
+  THEME_CONFIG_STORAGE_KEY,
 } from "../app/constants";
 import type { BasicSettings, ViewMode } from "../app/types";
 import { bootstrapSqliteStorage, readSqliteBackedValue, saveSqliteBackedValue } from "../app/sqliteStorage";
@@ -19,6 +20,7 @@ import { ARTIFACTS_KEY, ARTIFACT_PANEL_STATE_KEY } from "../chat/artifacts";
 import { resolveCurrentModelId } from "../chat/modelSelection";
 import { getPetWindowScale } from "../app/compactPetScale";
 import { COMPACT_PET_HIDDEN_STORAGE_KEY, isCompactPetHidden } from "../app/compactVisibility";
+import { expertTeamRegistry } from "../plugins/expertTeams";
 import { CHARACTER_SCALE_STORAGE_KEY, type CompactAppearance } from "./useCompactWindowState";
 import {
   applyCompactWindowChrome,
@@ -48,6 +50,7 @@ const appWindow = getSafeCurrentWindow();
 /** 启动引导涉及的应用存储键：启动时从 SQLite 一次性同步进 localStorage。 */
 const BOOTSTRAP_STORAGE_KEYS = [
   THEME_MODE_STORAGE_KEY,
+  THEME_CONFIG_STORAGE_KEY,
   BASIC_SETTINGS_STORAGE_KEY,
   MAIN_VIEW_STORAGE_KEY,
   "omni_compact_appearance",
@@ -55,6 +58,7 @@ const BOOTSTRAP_STORAGE_KEYS = [
   COMPACT_PET_HIDDEN_STORAGE_KEY,
   "omni_provider_configs",
   "omni_agent_host_sessions_v1",
+  "omni_expert_teams_v1",
   USAGE_PREFERENCES_STORAGE_KEY,
   MODEL_USAGE_PREFERENCES_STORAGE_KEY,
   "omni_knowledge_embedding_profile",
@@ -79,7 +83,9 @@ let bootstrapStoragePromise: Promise<void> | null = null;
  * 而且随后的同步事件会把刚写回的新值再覆盖一次（典型症状是"改了设置，启动时又变回去"）。
  */
 function ensureBootstrapStorage() {
-  bootstrapStoragePromise ??= bootstrapSqliteStorage(BOOTSTRAP_STORAGE_KEYS).catch(() => undefined);
+  bootstrapStoragePromise ??= bootstrapSqliteStorage(BOOTSTRAP_STORAGE_KEYS)
+    .then(() => { expertTeamRegistry.recoverInterruptedRuns(); })
+    .catch(() => undefined);
   return bootstrapStoragePromise;
 }
 
@@ -261,6 +267,11 @@ export function useMainWindowController({
         return;
       }
       hasAppliedInitialMainGeometryRef.current = true;
+
+      // Let the native window process its new size before calculating its final origin.
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
 
       const settings = getBasicSettings();
       if (settings.mainWindowPositionMode === "remember") {
