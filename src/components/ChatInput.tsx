@@ -10,6 +10,7 @@ import {
   Send,
   Square,
   Target,
+  UsersRound,
   X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -40,6 +41,7 @@ import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import type { ChatAttachment, ChatImage, Message } from "../adapters/types";
 import type { ChatSendOptions, ChatUsageStats } from "../chat/types";
 import type { PluginManifest } from "../plugins/types";
+import type { ExpertTeam } from "../plugins/expertTeams";
 import PermissionModeSelector from "./PermissionModeSelector";
 import AttachmentChip from "./AttachmentChip";
 import type { ContextUsageSnapshot } from "./ContextUsagePanel";
@@ -63,6 +65,9 @@ interface ChatInputProps {
   onReplaceSessionMessages?: (messages: Message[]) => void;
   /** 可选专家（@专家 = 本轮对话切换为该专家的角色/工具/技能集） */
   experts?: PluginManifest[];
+  expertTeams?: readonly ExpertTeam[];
+  boundExpert?: { id: string; name: string } | null;
+  onSummonExpert?: (expert: PluginManifest) => void;
   onStartNewTopic?: () => void;
   onModelChange?: (modelId: string) => void;
   onSend: (content: string, images?: ChatImage[], options?: ChatSendOptions) => void | Promise<void>;
@@ -152,6 +157,9 @@ export default function ChatInput({
   onSend,
   knowledgeCollections = [],
   experts = [],
+  expertTeams = [],
+  boundExpert = null,
+  onSummonExpert,
   isLoading,
   isSendBlocked = false,
   onStop,
@@ -171,7 +179,8 @@ export default function ChatInput({
   const [dismissedSlashInput, setDismissedSlashInput] = useState("");
   const [selectedKnowledgeCollection, setSelectedKnowledgeCollection] = useState<KnowledgeCollection | null>(null);
   const [selectedExpert, setSelectedExpert] = useState<PluginManifest | null>(null);
-  const [openToolbarPicker, setOpenToolbarPicker] = useState<"knowledge" | "expert" | null>(null);
+  const [selectedExpertTeam, setSelectedExpertTeam] = useState<ExpertTeam | null>(null);
+  const [openToolbarPicker, setOpenToolbarPicker] = useState<"knowledge" | "expert" | "team" | null>(null);
   const [selectedKnowledgeIndex, setSelectedKnowledgeIndex] = useState(0);
   const [dismissedMentionInput, setDismissedMentionInput] = useState("");
   const [caretIndex, setCaretIndex] = useState(0);
@@ -314,6 +323,7 @@ export default function ChatInput({
     || isCompacting
     || selectedKnowledgeCollection
     || selectedExpert
+    || selectedExpertTeam
     || pendingFollowUps.length > 0,
   );
   const showMentionSuggestions = Boolean(mentionTrigger && input !== dismissedMentionInput && mentionSuggestions.length > 0);
@@ -837,6 +847,7 @@ export default function ChatInput({
     knowledgeCollectionName: selectedKnowledgeCollection?.name ?? null,
     expertId: selectedExpert?.id ?? null,
     expertName: selectedExpert?.name ?? null,
+    ...(selectedExpertTeam ? { expertTeamId: selectedExpertTeam.id, expertTeamName: selectedExpertTeam.name } : {}),
     selectedMode: activeLocalCommand
       ? { kind: activeLocalCommand.kind, command: activeSlashCommand, name: activeModeLabel ?? activeSlashCommand }
       : null,
@@ -892,6 +903,7 @@ export default function ChatInput({
     setAttachments([]);
     setSelectedKnowledgeCollection(null);
     setSelectedExpert(null);
+    setSelectedExpertTeam(null);
     setCaretIndex(0);
     clearSuggestionDismissal();
     clearMentionDismissal();
@@ -935,8 +947,11 @@ export default function ChatInput({
     const trigger = getKnowledgeMentionTrigger(input, textarea?.selectionStart ?? caretIndex);
     if (suggestion.kind === "knowledge") {
       setSelectedKnowledgeCollection(suggestion.collection);
+    } else if (boundExpert && boundExpert.id !== suggestion.expert.id && onSummonExpert) {
+      onSummonExpert(suggestion.expert);
     } else {
       setSelectedExpert(suggestion.expert);
+      setSelectedExpertTeam(null);
     }
     clearMentionDismissal();
 
@@ -1295,6 +1310,21 @@ export default function ChatInput({
                       <X size={12} strokeWidth={2} />
                     </button>
                   )}
+                  {selectedExpertTeam && (
+                    <button
+                      type="button"
+                      className="chat-composer__status-chip chat-composer__status-chip--expert"
+                      onClick={() => {
+                        setSelectedExpertTeam(null);
+                        textareaRef.current?.focus();
+                      }}
+                      title="取消本次专家团"
+                    >
+                      <UsersRound size={13} strokeWidth={1.9} />
+                      <span>专家团: {selectedExpertTeam.name}</span>
+                      <X size={12} strokeWidth={2} />
+                    </button>
+                  )}
                 </div>
               )}
               <div
@@ -1362,47 +1392,79 @@ export default function ChatInput({
                 <button
                   type="button"
                   className={`chat-composer__tool-button chat-composer__tool-button--labeled${selectedExpert ? " chat-composer__tool-button--active" : ""}`}
-                  title="选择本轮专家"
-                  aria-label="选择专家"
+                  title="召唤专家"
+                  aria-label="召唤专家"
                   aria-expanded={openToolbarPicker === "expert"}
                   onClick={() => setOpenToolbarPicker((current) => current === "expert" ? null : "expert")}
                 >
                   <Bot size={17} strokeWidth={1.8} />
                 </button>
                 {openToolbarPicker === "expert" && (
-                  <div className="chat-composer__picker" aria-label="选择专家">
-                    <div className="chat-composer__picker-heading">本轮使用专家</div>
-                    <button
-                      type="button"
-                      className={`chat-composer__picker-option${selectedExpert ? "" : " chat-composer__picker-option--selected"}`}
-                      onClick={() => {
-                        setSelectedExpert(null);
-                        setOpenToolbarPicker(null);
-                        textareaRef.current?.focus();
-                      }}
-                    >
-                      <span>默认助手</span>
-                      {!selectedExpert && <Check size={15} />}
-                    </button>
+                  <div className="chat-composer__picker chat-composer__picker--choice" aria-label="选择专家">
+                    <div className="chat-composer__picker-heading">召唤专家</div>
                     {experts.map((expert) => (
                       <button
                         key={expert.id}
                         type="button"
-                        className={`chat-composer__picker-option${selectedExpert?.id === expert.id ? " chat-composer__picker-option--selected" : ""}`}
+                        className={`chat-composer__picker-option${(selectedExpert?.id ?? boundExpert?.id) === expert.id ? " chat-composer__picker-option--selected" : ""}`}
+                        disabled={Boolean(!onSummonExpert && boundExpert && boundExpert.id !== expert.id)}
                         onClick={() => {
-                          setSelectedExpert(expert);
+                          setOpenToolbarPicker(null);
+                          if (onSummonExpert) {
+                            onSummonExpert(expert);
+                          } else {
+                            setSelectedExpert(expert);
+                            setSelectedExpertTeam(null);
+                            textareaRef.current?.focus();
+                          }
+                        }}
+                      >
+                        <span className="chat-composer__picker-option-copy">
+                          <strong>{expert.name}</strong>
+                          <small>
+                            {onSummonExpert ? "召唤会新建绑定此专家的对话" : expert.description}
+                          </small>
+                        </span>
+                        {(selectedExpert?.id ?? boundExpert?.id) === expert.id && <Check size={15} />}
+                      </button>
+                    ))}
+                    {experts.length === 0 && <div className="chat-composer__picker-empty">暂无可用专家</div>}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`chat-composer__tool-button chat-composer__tool-button--labeled${selectedExpertTeam ? " chat-composer__tool-button--active" : ""}`}
+                  title={boundExpert ? "当前会话已绑定专家，专家团请在新对话中使用" : "选择本轮专家团"}
+                  aria-label="选择专家团"
+                  aria-expanded={openToolbarPicker === "team"}
+                  disabled={Boolean(boundExpert)}
+                  onClick={() => setOpenToolbarPicker((current) => current === "team" ? null : "team")}
+                >
+                  <UsersRound size={17} strokeWidth={1.8} />
+                </button>
+                {openToolbarPicker === "team" && (
+                  <div className="chat-composer__picker chat-composer__picker--choice" aria-label="选择专家团">
+                    <div className="chat-composer__picker-heading">本轮协作专家团</div>
+                    {expertTeams.map((team) => (
+                      <button
+                        key={team.id}
+                        type="button"
+                        className={`chat-composer__picker-option${selectedExpertTeam?.id === team.id ? " chat-composer__picker-option--selected" : ""}`}
+                        onClick={() => {
+                          setSelectedExpertTeam(team);
+                          setSelectedExpert(null);
                           setOpenToolbarPicker(null);
                           textareaRef.current?.focus();
                         }}
                       >
                         <span className="chat-composer__picker-option-copy">
-                          <strong>{expert.name}</strong>
-                          {expert.description && <small>{expert.description}</small>}
+                          <strong>{team.name}</strong>
+                          <small>{team.members.length} 位成员{team.description ? ` · ${team.description}` : ""}</small>
                         </span>
-                        {selectedExpert?.id === expert.id && <Check size={15} />}
+                        {selectedExpertTeam?.id === team.id && <Check size={15} />}
                       </button>
                     ))}
-                    {experts.length === 0 && <div className="chat-composer__picker-empty">暂无可用专家</div>}
+                    {expertTeams.length === 0 && <div className="chat-composer__picker-empty">请先在扩展中心创建专家并配置专家团</div>}
                   </div>
                 )}
                 <button
@@ -1416,7 +1478,7 @@ export default function ChatInput({
                   <BookOpen size={18} strokeWidth={1.8} />
                 </button>
                 {openToolbarPicker === "knowledge" && (
-                  <div className="chat-composer__picker" aria-label="选择知识库">
+                  <div className="chat-composer__picker chat-composer__picker--choice" aria-label="选择知识库">
                     <div className="chat-composer__picker-heading">本轮检索范围</div>
                     <button
                       type="button"
@@ -1427,7 +1489,10 @@ export default function ChatInput({
                         textareaRef.current?.focus();
                       }}
                     >
-                      <span>不指定知识库</span>
+                      <span className="chat-composer__picker-option-copy">
+                        <strong>不指定知识库</strong>
+                        <small>不限定到某一个知识库</small>
+                      </span>
                       {!selectedKnowledgeCollection && <Check size={15} />}
                     </button>
                     {knowledgeCollections.map((collection) => (

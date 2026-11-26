@@ -1,5 +1,6 @@
 import { readSqliteBackedJson, saveSqliteBackedValue } from "../app/sqliteStorage";
 import { BUILTIN_PLUGINS } from "./builtins";
+import { canonicalizeExpertManifest } from "./expertProfiles";
 import type {
   InstalledPlugin,
   PluginFilter,
@@ -58,12 +59,33 @@ class PluginRegistry {
   load(): void {
     if (this.loaded) return;
     const snapshot = readSqliteBackedJson<Record<string, InstalledPlugin>>(INSTALLED_PLUGINS_STORAGE_KEY, {});
+    let migratedLegacyPresets = false;
     for (const [id, entry] of Object.entries(snapshot)) {
       if (entry?.manifest?.id) {
+        // Older releases stored project-only presets as `template`. Fold them
+        // into the expert-preset model while retaining their ids and project
+        // instructions, so existing projects and saved presets keep working.
+        if ((entry.manifest as unknown as { kind?: string }).kind === "template") {
+          entry.manifest = {
+            ...entry.manifest,
+            kind: "expert",
+            templatePrompt: entry.manifest.templatePrompt ||
+              `你是「${entry.manifest.name}」专家。遵循该预设的项目指令，完成分配给你的任务。`,
+          };
+          migratedLegacyPresets = true;
+        }
+        if (entry.manifest.kind === "expert") {
+          const canonical = canonicalizeExpertManifest(entry.manifest);
+          if (!entry.manifest.expertProfile || entry.manifest.templatePrompt !== canonical.templatePrompt) {
+            entry.manifest = canonical;
+            migratedLegacyPresets = true;
+          }
+        }
         this.installed.set(id, entry);
       }
     }
     this.loaded = true;
+    if (migratedLegacyPresets) this.save();
   }
 
   /**
@@ -112,8 +134,7 @@ class PluginRegistry {
   /**
    * 是否为「应用内自建」项（`source.type === "user"`）。
    *
-   * 与 `isBuiltin` 的区别：内置项不可卸载，自建项可以。目前只有项目预设会以
-   * 这个来源落库（项目设置「另存为预设」），详情抽屉靠它决定要不要给「删除」。
+   * 与 `isBuiltin` 的区别：内置项不可卸载，自建专家预设可以删除。
    */
   isUserCreated(id: string): boolean {
     return this.installed.get(id)?.source?.type === "user";
@@ -189,7 +210,7 @@ class PluginRegistry {
   }
 
   /**
-   * 列出**已启用**的专家（全部为已安装项 —— Omni 不内置专家）。
+   * 列出可用的专家预设（内置 + 已安装，且已启用）。
    *
    * 必须带 `enabled: true`：`list()` 在 `enabled` 缺省时不过滤开关状态，
    * 曾在「我的插件」里关掉的专家仍会进 agent 工具名册、仍能被委派，
@@ -199,12 +220,15 @@ class PluginRegistry {
     return this.list({ kind: "expert", enabled: true });
   }
 
-  listTemplates(): PluginManifest[] {
-    return this.list({ kind: "template" });
+  listAgentPresets(): PluginManifest[] {
+    // Project setup consumes the same expert presets as delegation. Only
+    // profiles with a durable project instruction belong in this selector.
+    return this.list({ kind: "expert", enabled: true }).filter((manifest) => Boolean(manifest.instruction?.trim()));
   }
 
   /** 安装插件（来自 marketplace 或本地路径）。 */
   install(manifest: PluginManifest, source: InstalledPlugin["source"]): InstalledPlugin {
+    manifest = canonicalizeExpertManifest(manifest);
     const entry: InstalledPlugin = {
       manifest,
       enabled: true,
@@ -238,7 +262,7 @@ class PluginRegistry {
   updateManifest(manifest: PluginManifest): boolean {
     const entry = this.installed.get(manifest.id);
     if (!entry) return false;
-    entry.manifest = manifest;
+    entry.manifest = canonicalizeExpertManifest(manifest);
     this.save();
     return true;
   }
@@ -321,7 +345,6 @@ class PluginRegistry {
       tool: all.filter((m) => m.kind === "tool").length,
       connector: all.filter((m) => m.kind === "connector").length,
       expert: all.filter((m) => m.kind === "expert").length,
-      template: all.filter((m) => m.kind === "template").length,
       total: all.length,
     };
   }
@@ -395,8 +418,7 @@ export function parseSkillMarkdown(content: string): PluginManifest | null {
     // 恒为 "skill"：从前透传 frontmatter 的 kind，但 4 个调用方
     // （localTools / connectorhub / skillhub / skillhubSkillsets）解析后都立刻覆写为
     // "skill"，透传值从未被读取过 —— 去掉以消除「SKILL.md 可产出 template 预设」的假象。
-    // 项目预设（kind:"template"）另有三处手写来源：builtins.ts / projectPresets.ts /
-    // MainChatView.tsx，与本函数无关。
+    // 专家预设的内置定义集中在 builtins.ts；旧版 SKILL.md 从未创建过项目预设。
     kind: "skill",
     category: meta.category,
     icon: meta.icon,

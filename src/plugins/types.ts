@@ -1,11 +1,11 @@
 /**
  * Omni 统一插件系统（受 SkillHub / DeepSeek Harness 启发）
- * 「一切皆插件」：技能、工具、连接器、专家、项目预设都走同一套 manifest + registry。
+ * 「一切皆插件」：技能、工具、连接器与专家预设走同一套 manifest + registry。
  */
 
 import type { InvocationPolicy } from "./invocation";
 
-export type PluginKind = "skill" | "tool" | "connector" | "expert" | "template";
+export type PluginKind = "skill" | "tool" | "connector" | "expert";
 
 export type PluginSource =
   | { type: "builtin" }
@@ -13,8 +13,8 @@ export type PluginSource =
   /**
    * 应用内自建、**不对应任何磁盘目录或外部来源**的项。
    *
-   * 目前只有 `kind:"template"` 用它：项目设置里的「另存为预设」把当前项目指令
-   * 存成一条预设，它只活在注册表（SQLite 快照）里 —— 卸载时不该去删目录，
+   * 专家预设的「保存为专家预设」把当前项目指令存入注册表（SQLite 快照），
+   * 不对应磁盘目录 —— 卸载时不该去删目录，
    * 所以不能复用 `local`（那个的语义是「磁盘上有个目录」，技能卸载要连目录一起删）。
    */
   | { type: "user" }
@@ -90,34 +90,32 @@ export type PluginManifest = {
   baseUrl?: string;
   configFields?: PluginConfigField[];
 
-  // ---- expert / template ----
-  /** 专家系统提示词（角色定义，长文；子 Agent 运行规则由 `chat/subAgent.ts` 运行时追加）。 */
+  // ---- expert preset ----
+  /** 由结构化 DSH 专家资料编译出的角色提示词；运行规则由运行时追加。 */
   templatePrompt?: string;
+  /** DSH 专家档案的结构化角色资料，默认专家与用户创建的专家共用此形状。 */
+  expertProfile?: ExpertProfile;
   /**
-   * `kind:"template"` 专用：**持久项目指令**，新建项目时写进 `project.systemPrompt`。
-   *
-   * 与 `starterPrompt` 必须分开 —— 两者曾经挤在 `templatePrompt` 一个字段里，
-   * 结果那句「请帮我梳理当前问题的背景…」这种**一次性用户问句**被当成**每轮都生效的
-   * 项目系统指令**写进了项目。这里放的是"这个项目该怎么干活"，不是"这次想问什么"。
+   * 专家项目应用指令。它是 Omni 的项目集成扩展，不属于 DSH 专家定义本体；
+   * 新建专家不再填写此字段，历史数据仍保留以兼容已有项目。
    */
   instruction?: string;
-  /**
-   * `kind:"template"` 专用：**起手一句**，点「插入输入框」时写进输入框草稿（不直接发送）。
-   * 语义等同空态推荐卡（`app/constants.ts::EMPTY_CHAT_STARTERS.prompt`），只是来源不同。
-   */
+  /** 一次性起手句，属于 Omni 输入框集成，不参与专家角色定义。 */
   starterPrompt?: string;
-  /** 项目预设推荐默认 allowedToolIds */
+  /** 专家默认允许使用的工具。 */
   defaultToolIds?: string[];
-  /** 项目预设推荐默认 allowedSkillIds */
+  /** 专家默认注入的技能。 */
   defaultSkillIds?: string[];
-  /**
-   * 专家绑定的 MCP 连接器 id（连接器 manifest id 即 MCP 的 serverId，
-   * 其工具名形如 `mcp__{连接器id}__{工具}`）。
-   *
-   * 为什么 MCP 要单独声明：`buildChatTools()` 只产出内置 + 项目工具，**永远不含 `mcp__*`**，
-   * 所以专家的 `defaultToolIds` 勾不到任何 MCP 工具。不单列这一项，专家在场时 MCP 只能被整体摘掉。
-   */
+  /** 专家绑定的 MCP 连接器。 */
   defaultMcpConnectorIds?: string[];
+};
+
+export type ExpertProfile = {
+    role: string;
+    methodology: string;
+    boundaries: string;
+    deliverables: string;
+    examples: Array<{ id: string; title: string; prompt: string }>;
 };
 
 export type InstalledPlugin = {

@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -19,22 +20,23 @@ export type CreateProjectDialogProps = {
   onClose: () => void;
   onCreate: (draft: ProjectDraft) => void;
   /**
-   * 打开时预选的**项目预设** id（来自扩展中心「用它新建项目」）。
+   * 打开时预选的**专家预设** id（来自扩展中心「用它新建项目」）。
    * 不传 / 传 null 即普通新建项目，用户自行从下拉里选。
    */
-  initialTemplateId?: string | null;
+  initialAgentPresetId?: string | null;
 };
 
 export default function CreateProjectDialog({
   open,
   onClose,
   onCreate,
-  initialTemplateId,
+  initialAgentPresetId,
 }: CreateProjectDialogProps) {
   const [title, setTitle] = useState("");
   const [instruction, setInstruction] = useState("");
   const [workspacePath, setWorkspacePath] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedAgentPresetId, setSelectedAgentPresetId] = useState("");
+  const selectedAgentPresetIdRef = useRef("");
   // 绑定专家（agent 委派白名单）与内置技能白名单。都是 id 数组 —— 行为与
   // ProjectSettingsDialog 完全一致，两处必须同步改（见该文件头部注释）。
   const [boundExpertIds, setBoundExpertIds] = useState<string[]>([]);
@@ -47,79 +49,87 @@ export default function CreateProjectDialog({
       setTitle("");
       setInstruction("");
       setWorkspacePath("");
-      setSelectedTemplateId("");
+      setSelectedAgentPresetId("");
+      selectedAgentPresetIdRef.current = "";
       setBoundExpertIds([]);
       setAllowedSkillIds([]);
       setConnectorIds([]);
     }
   }, [open]);
 
-  // 预设选项的**唯一事实来源**就是注册表（`kind:"template"`）。
+  // 预设选项的唯一事实来源是专家注册表；角色和项目指令都从同一条 manifest 读取。
   // 曾经这里读 `RECOMMENDED_PROJECT_PRESETS`（另一份同名、同描述的硬编码副本），
-  // 而指令正文却去 `pluginRegistry.listTemplates()` 取 —— 两份定义必须手工同步，
-  // 改一侧就静默失配（下拉还列着，指令悄悄变成一句描述）。现只留注册表这一份。
+  // 指令正文也从同一份注册表读取，避免选项与实际套用内容出现两份来源。
   // 订阅理由同 PluginMarketplace：注册表是渲染进程模块级单例，变更可能发生在
   // 本组件之外，靠自身 handler 刷新必漏。snapshot 是递增数字（原始值），不会
   // 像返回新数组那样把 React 推进无限重渲染。
-  const templateVersion = useSyncExternalStore(
+  const agentPresetVersion = useSyncExternalStore(
     (listener) => pluginRegistry.subscribe(listener),
     () => pluginRegistry.getVersion(),
   );
 
-  const templateOptions = useMemo<OmniSelectOption[]>(() => {
+  const agentPresetOptions = useMemo<OmniSelectOption[]>(() => {
     // 快照本身不参与计算，只用于把这份列表钉在注册表版本上（否则装了/卸了预设不刷新）。
-    void templateVersion;
+    void agentPresetVersion;
     return [
       { value: "", label: "无预设" },
-      ...pluginRegistry.listTemplates().map((manifest) => ({
+      ...pluginRegistry.listAgentPresets().map((manifest) => ({
         value: manifest.id,
         label: manifest.name,
       })),
     ];
-  }, [templateVersion]);
+  }, [agentPresetVersion]);
 
-  const applyTemplate = useCallback((templateId: string) => {
-    setSelectedTemplateId(templateId);
-    const template = templateId
-      ? pluginRegistry.listTemplates().find((m) => m.id === templateId)
+  const applyAgentPreset = useCallback((presetId: string) => {
+    const previousPresetId = selectedAgentPresetIdRef.current;
+    selectedAgentPresetIdRef.current = presetId;
+    setSelectedAgentPresetId(presetId);
+    const preset = presetId
+      ? pluginRegistry.listAgentPresets().find((m) => m.id === presetId)
       : undefined;
     // 写的是**持久项目指令** `instruction`，不是起手句 —— 后者（`starterPrompt`）
     // 是一次性的「这次想问什么」，由扩展中心卡片的「插入输入框」消费。
-    setInstruction(template?.instruction ?? "");
+    setInstruction(preset?.instruction ?? "");
+    setBoundExpertIds((current) => {
+      const next = current.filter((id) => id !== previousPresetId);
+      return preset && !next.includes(preset.id)
+        ? [...next, preset.id]
+        : next;
+    });
   }, []);
 
   // 从扩展中心「用它新建项目」进来时预设已选定：打开即套用。
   // 必须声明在上面那条重置 effect **之后** —— 同一次提交里两个 effect 按声明顺序执行，
   // 先清空再套用；顺序反了套用的结果会被重置覆盖掉。
   useEffect(() => {
-    if (open && initialTemplateId) applyTemplate(initialTemplateId);
-  }, [open, initialTemplateId, applyTemplate]);
+    if (open && initialAgentPresetId) applyAgentPreset(initialAgentPresetId);
+  }, [open, initialAgentPresetId, applyAgentPreset]);
 
   /**
    * 三行的候选集。与 `ProjectSettingsDialog` 逐字同源，改一处必须改两处。
    *
-   * - 专家 = 已启用专家（现在全部由用户自建）；
+   * - 专家 = 已启用专家（内置与用户自建共用同一套配置）；
    * - 技能 = **仅内置技能** —— `allowedSkillIds` 管不到用户自装技能（那些走
    *   `listEnabledUserSkills()` 绕过白名单，见 `registry.ts:158-171`）；
    * - 连接器由 `McpConnectorRow` 自己订阅注册表算（要滤掉模型连接器）。
    *
-   * 专家/技能这两份依赖 `templateVersion`，把它钉在注册表版本上：插件可能在别处装、卸、改。
+   * 专家/技能依赖 `agentPresetVersion`，把它钉在注册表版本上：插件可能在别处装、卸、改。
    */
   const expertOptions = useMemo(() => {
-    void templateVersion;
+    void agentPresetVersion;
     return pluginRegistry.listExperts().map((manifest) => ({
       id: manifest.id,
       name: manifest.name,
     }));
-  }, [templateVersion]);
+  }, [agentPresetVersion]);
 
   const skillOptions = useMemo(() => {
-    void templateVersion;
+    void agentPresetVersion;
     return pluginRegistry
       .list({ kind: "skill" })
       .filter((manifest) => pluginRegistry.isBuiltin(manifest.id))
       .map((manifest) => ({ id: manifest.id, name: manifest.name }));
-  }, [templateVersion]);
+  }, [agentPresetVersion]);
 
   const toggleBoundExpert = useCallback((id: string) => {
     setBoundExpertIds((current) =>
@@ -220,11 +230,11 @@ export default function CreateProjectDialog({
                   `__body` 还是 overflow-y:auto，留在对话框内部的浮层会被裁或被卷走）。 */}
               <OmniSelect
                 className="omni-select--preset"
-                ariaLabel="选择项目预设"
+                ariaLabel="选择专家预设"
                 placeholder="无预设"
-                value={selectedTemplateId}
-                options={templateOptions}
-                onChange={applyTemplate}
+                value={selectedAgentPresetId}
+                options={agentPresetOptions}
+                onChange={applyAgentPreset}
               />
             </div>
             <textarea
@@ -299,7 +309,7 @@ export default function CreateProjectDialog({
             idleIcon={<Wand2 size={12} strokeWidth={1.8} />}
           />
 
-          <p className="omni-dialog__hint">切换预设会覆盖「指令」中已编辑的内容</p>
+          <p className="omni-dialog__hint">切换专家预设会覆盖「指令」中已编辑的内容</p>
         </div>
 
         <div className="omni-dialog__footer">

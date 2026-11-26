@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PluginMarketplace from "./PluginMarketplace";
 import { pluginRegistry } from "../../plugins/registry";
-import { saveProjectPreset } from "../../plugins/projectPresets";
+import { saveAgentPreset } from "../../plugins/agentPresets";
 
 // ensureMcpConnector 的真实实现会 invoke Tauri 命令；这里只关心「连接中」这段 UI，
 // 用手动 resolve 的 promise 把连接悬停在飞行中，才能断言中间态。
@@ -210,10 +210,10 @@ describe("PluginMarketplace MCP 连接中间态", () => {
 });
 
 /**
- * 回归：连接器 / 项目预设卡片必须带 `plugin-card--compact` 修饰类。
+ * 回归：只有需要承载连接管理操作的连接器卡片使用 `plugin-card--compact`。
  *
  * 该类在 plugins.css 里承载「紧凑卡片的布局」：不参与描述区 3 行预留
- * （卡片底部不再空一大片）、底部操作行撑满整行、内边距 12px。少了它，这两类卡片
+ * （卡片底部不再空一大片）、底部操作行撑满整行、内边距 12px。少了它，连接器卡片
  * 会静默退回 8b29f15 的统一高度预留，而这正是用户 2026-09-12「卡片大小排版调整」
  * 要修掉的表现。技能卡片必须**不带**这个类 —— 它们仍需要预留行来保证同行等高。
  */
@@ -277,16 +277,15 @@ describe("PluginMarketplace 紧凑卡片布局", () => {
     );
     expect(skillCard?.className ?? "").not.toContain("plugin-card--compact");
 
-    // 项目预设（内置，无需安装）同样走紧凑布局：描述也只有一行，
-    // 且底部现在有「新建项目 / 插入输入框」两个真实操作。
-    const template = pluginRegistry.listTemplates()[0];
+    // 专家预设卡片不承载项目操作，保持普通卡片布局。
+    const template = pluginRegistry.listExperts()[0];
     expect(template).toBeTruthy();
     render(
       <PluginMarketplace
         mainView
         embedded
         source="local"
-        initialFilter={{ kind: "template" }}
+        initialFilter={{ kind: "expert" }}
         onSourceChange={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -294,7 +293,7 @@ describe("PluginMarketplace 紧凑卡片布局", () => {
     const presetCard = (await screen.findByText(template.name)).closest(
       ".plugin-card",
     );
-    expect(presetCard?.className ?? "").toContain("plugin-card--compact");
+    expect(presetCard?.className ?? "").not.toContain("plugin-card--compact");
 
     act(() => {
       pluginRegistry.uninstall(connectorId);
@@ -304,7 +303,7 @@ describe("PluginMarketplace 紧凑卡片布局", () => {
 });
 
 /**
- * 项目预设的「真实操作」。
+ * 专家预设的项目应用与起手句操作。
  *
  * 在此之前 `kind:"template"` 在扩展中心是条死路：操作行当年只在「选择模式或连接器」
  * 时渲染（那个「选择模式」`onPick` 已于 2026-09-13 随项目对话框三行统一而删除）
@@ -314,8 +313,7 @@ describe("PluginMarketplace 紧凑卡片布局", () => {
  * 「插入输入框」（把 starterPrompt 放进输入框草稿）。两者都**必须由宿主提供回调
  * 才渲染**：没传就退回纯浏览态，而不是渲染一排点了没反应的按钮。
  */
-describe("PluginMarketplace 项目预设的真实操作", () => {
-  const listTemplates = () => pluginRegistry.listTemplates();
+describe("PluginMarketplace DSH 专家目录", () => {
 
   const renderPresets = (props: Record<string, unknown> = {}) =>
     render(
@@ -323,51 +321,73 @@ describe("PluginMarketplace 项目预设的真实操作", () => {
         mainView
         embedded
         source="local"
-        initialFilter={{ kind: "template" }}
+        initialFilter={{ kind: "expert" }}
         onSourceChange={vi.fn()}
         onClose={vi.fn()}
         {...props}
       />,
     );
 
-  it("未传回调时不渲染操作行（纯浏览态）", async () => {
+  it("展示三位 DSH 默认专家及完整结构化资料", async () => {
     pluginRegistry.load();
-    const target = listTemplates()[0];
-    expect(target).toBeTruthy();
+    const defaults = pluginRegistry.listExperts().filter((manifest) => pluginRegistry.isBuiltin(manifest.id));
+    expect(defaults.map((manifest) => manifest.name)).toEqual(["需求分析顾问", "文档评审顾问", "工作复盘顾问"]);
 
     renderPresets();
 
-    expect(await screen.findByText(target.name)).toBeTruthy();
+    expect(await screen.findByText("需求分析顾问")).toBeTruthy();
+    expect(screen.getByText("文档评审顾问")).toBeTruthy();
+    expect(screen.getByText("工作复盘顾问")).toBeTruthy();
     expect(screen.queryByText("新建项目")).toBeNull();
     expect(screen.queryByText("插入输入框")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "需求分析顾问 详情" }));
+    expect(await screen.findByText("角色定位")).toBeTruthy();
+    expect(screen.getByText("工作方法")).toBeTruthy();
+    expect(screen.getByText("行为边界")).toBeTruthy();
+    expect(screen.getByText("交付物")).toBeTruthy();
+    expect(screen.getByText("使用示例 · 2")).toBeTruthy();
   });
 
-  it("传了回调：每条预设各一个操作，且回调拿到该预设 / 它的起手句", async () => {
+  it("使用单一「制作专家」菜单创建专家或专家团", async () => {
     pluginRegistry.load();
-    const list = listTemplates();
-    expect(list.length).toBeGreaterThan(0);
-    const onUseTemplate = vi.fn();
-    const onInsertPrompt = vi.fn();
+    const onDraftExpert = vi.fn();
+    render(
+      <PluginMarketplace
+        mainView
+        embedded
+        source="my"
+        initialFilter={{ kind: "expert" }}
+        onSourceChange={vi.fn()}
+        onClose={vi.fn()}
+        onDraftExpert={onDraftExpert}
+        onCreateExpert={vi.fn()}
+      />,
+    );
 
-    renderPresets({ onUseTemplate, onInsertPrompt });
+    fireEvent.click(await screen.findByRole("button", { name: "制作专家菜单" }));
+    expect(await screen.findByRole("menu")).toBeTruthy();
+    expect(screen.getByText("对话创建专家")).toBeTruthy();
+    expect(screen.getByText("填写表单创建")).toBeTruthy();
 
-    const newProjectButtons = await screen.findAllByText("新建项目");
-    expect(newProjectButtons.length).toBe(list.length);
+    fireEvent.click(screen.getByText("对话创建专家"));
+    expect(onDraftExpert).toHaveBeenCalledWith(expect.stringContaining("/expert-manager 帮我创建一个 XXX 专家"));
 
-    fireEvent.click(newProjectButtons[0].closest("button")!);
-    expect(onUseTemplate).toHaveBeenCalledTimes(1);
-    const picked = onUseTemplate.mock.calls[0][0];
-    expect(picked.kind).toBe("template");
-    expect(list.some((m) => m.id === picked.id)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "制作专家菜单" }));
+    fireEvent.click(await screen.findByText("对话创建专家团"));
+    expect(onDraftExpert).toHaveBeenCalledWith(expect.stringContaining("XXX 专家团"));
+  });
 
-    // 次操作交出去的必须是**起手句**（starterPrompt），不是持久指令（instruction）
-    const insertButtons = screen.getAllByText("插入输入框");
-    expect(insertButtons.length).toBe(list.length);
-    fireEvent.click(insertButtons[0].closest("button")!);
-    expect(onInsertPrompt).toHaveBeenCalledTimes(1);
-    const text = onInsertPrompt.mock.calls[0][0];
-    expect(list.some((m) => m.starterPrompt === text)).toBe(true);
-    expect(list.some((m) => m.instruction === text)).toBe(false);
+  it("从专家详情召唤时交给宿主创建绑定会话", async () => {
+    pluginRegistry.load();
+    const onSummonExpert = vi.fn();
+    renderPresets({ onSummonExpert });
+
+    fireEvent.click(await screen.findByRole("button", { name: "需求分析顾问 详情" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤专家" }));
+
+    expect(onSummonExpert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expect.any(String), kind: "expert" }),
+    );
   });
 });
 
@@ -396,7 +416,7 @@ describe("PluginMarketplace 自建预设的删除入口", () => {
         mainView
         embedded
         source="local"
-        initialFilter={{ kind: "template" }}
+        initialFilter={{ kind: "expert" }}
         onSourceChange={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -404,7 +424,7 @@ describe("PluginMarketplace 自建预设的删除入口", () => {
 
   it("自建预设的详情抽屉给出「删除」并能删掉；内置预设不给", async () => {
     pluginRegistry.load();
-    const saved = saveProjectPreset({
+    const saved = saveAgentPreset({
       name: "抽屉删除用例",
       instruction: "本项目只输出结论，不写过程。",
     });
@@ -413,7 +433,7 @@ describe("PluginMarketplace 自建预设的删除入口", () => {
     createdIds.push(saved.manifest.id);
 
     const builtin = pluginRegistry
-      .listTemplates()
+      .listExperts()
       .find((manifest) => pluginRegistry.isBuiltin(manifest.id));
     expect(builtin).toBeTruthy();
 

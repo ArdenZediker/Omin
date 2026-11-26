@@ -9,6 +9,7 @@ import {
   Paperclip,
   Pencil,
   RefreshCw,
+  UsersRound,
 } from "lucide-react";
 import type { ChatAttachment, ChatImage, ChatStep, ChatToolCallResult, Message } from "../adapters/types";
 import type { FileDiff } from "../chat/fileDiff";
@@ -401,7 +402,7 @@ export default function ChatMessage({
               })}
             </div>
           )}
-          {(message.selectedKnowledgeCollection || message.selectedExpert || message.selectedMode) && (
+          {(message.selectedKnowledgeCollection || message.selectedExpert || message.selectedExpertTeam || message.selectedMode) && (
             <div className="message-user-context-list">
               {message.selectedKnowledgeCollection && (
                 <div
@@ -422,6 +423,12 @@ export default function ChatMessage({
                   <span className="message-user-context__label">专家</span>
                   <span className="message-user-context__name">{message.selectedExpert.name}</span>
                 </div>
+              )}
+              {message.selectedExpertTeam && (
+                <span className="message-user-context__item message-user-context__item--expert" title={`本轮协作专家团：${message.selectedExpertTeam.name}`}>
+                  <UsersRound size={13} strokeWidth={1.8} />
+                  <span className="message-user-context__name">{message.selectedExpertTeam.name}</span>
+                </span>
               )}
               {message.selectedMode && (
                 <div
@@ -631,13 +638,21 @@ function ProcessBlock({
   }, [forceExpandSignal]);
 
   const useSteps = Array.isArray(steps) && steps.length > 0;
-  const trimmedReasoning = useSteps
+  const stepReasoning = useSteps
     ? (steps as ChatStep[])
         .filter((s): s is Extract<ChatStep, { type: "reasoning" }> => s.type === "reasoning")
         .map((s) => s.text)
         .join("\n\n")
         .trim()
-    : (reasoning?.trim() ?? "");
+    : "";
+  const standaloneReasoning = reasoning?.trim() ?? "";
+  const hasStepReasoning = Boolean(stepReasoning);
+  const displaySteps = useSteps
+    ? !hasStepReasoning && standaloneReasoning
+      ? [{ type: "reasoning" as const, text: standaloneReasoning }, ...(steps as ChatStep[])]
+      : (steps as ChatStep[])
+    : undefined;
+  const trimmedReasoning = hasStepReasoning ? stepReasoning : standaloneReasoning;
   const tools = useSteps
     ? (steps as ChatStep[]).filter((s): s is Extract<ChatStep, { type: "tool_call" }> => s.type === "tool_call")
     : (toolCallResults ?? []);
@@ -693,7 +708,7 @@ function ProcessBlock({
             </div>
           ) : (
             <ExecutionTimeline
-              steps={useSteps ? (steps as ChatStep[]) : undefined}
+              steps={displaySteps}
               legacyReasoning={!useSteps ? reasoning : undefined}
               legacyTools={!useSteps ? toolCallResults : undefined}
               isStreaming={isStreaming}

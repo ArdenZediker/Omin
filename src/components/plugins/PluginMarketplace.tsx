@@ -29,6 +29,9 @@ import {
   ShieldAlert,
   Terminal,
   Globe,
+  Sparkles,
+  UsersRound,
+  ChevronDown,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
 import {
@@ -63,6 +66,7 @@ import { getMcpCommandTemplate } from "../../plugins/connectorhub";
 import { uninstallSkillhubSkill } from "../../plugins/skillhub";
 import { repairSkillsetChildLinks } from "../../plugins/skillhubSkillsets";
 import OmniSwitch from "../ui/OmniSwitch";
+import ExpertTeamManager from "../ExpertTeamManager";
 
 type PluginMarketplaceProps = {
   initialFilter?: Omit<PluginFilter, "kind"> & { kind?: PluginKind };
@@ -73,6 +77,12 @@ type PluginMarketplaceProps = {
   onCreateExpert?: () => void;
   /** 「编辑专家」入口：点击后由宿主打开编辑对话框（传入待编辑 manifest）。 */
   onEditExpert?: (manifest: PluginManifest) => void;
+  /** 从一个可用的专家预设复制出用户自己的档案。 */
+  onCopyExpert?: (manifest: PluginManifest) => void;
+  /** 用「创造模式」在对话里生成并注册自定义专家预设。 */
+  onDraftExpert?: (prompt: string) => void;
+  /** 新建绑定该专家的会话，并把当前草稿带过去。 */
+  onSummonExpert?: (manifest: PluginManifest) => void;
   /** 「新增 MCP」入口：连接器 tab 页面内会渲染新增按钮，点击回调。 */
   onAddMcp?: () => void;
   /** Marketplace 数据源（local/skillhub/...）。传入即受控；省略则用内部默认行为（=未推荐）。
@@ -86,13 +96,13 @@ type PluginMarketplaceProps = {
    *  第三方用（CreateProjectDialog 等）保持默认 false，自身渲染。 */
   omitTopTabs?: boolean;
   /**
-   * 「项目预设」（`kind:"template"`）卡片 / 详情抽屉的主操作：点「用它新建项目」时回调。
+   * 专家预设卡片 / 详情抽屉的项目应用操作。
    * 由宿主负责真正打开新建项目对话框（预设 id 会带过去当初始值）。
    * 不传则不渲染该操作 —— 预设卡片退回纯浏览态，和其它 kind 一致。
    */
-  onUseTemplate?: (manifest: PluginManifest) => void;
+  onUseAgentPreset?: (manifest: PluginManifest) => void;
   /**
-   * 「项目预设」的次操作：点「插入输入框」时把预设的**起手一句**交给宿主写入输入框草稿。
+   * 专家预设的次操作：点「插入输入框」时把预设的**起手一句**交给宿主写入输入框草稿。
    * 传的是文本而非 manifest，宿主无需知道预设结构。不传则不渲染该按钮。
    */
   onInsertPrompt?: (text: string) => void;
@@ -102,7 +112,7 @@ type PluginMarketplaceProps = {
  *  - skill     → local = "我的技能"，skillhub = "SkillHub 实时"，suites = "专家团"，connectors = "远程技能"
  *  - connector → local = "我的连接器"（仅 MCP；原远程接入市场已并入「我的技能」的「远程技能」tab）
  *  - expert    → my = "我的专家"（专家不再内置，已无 local 视图）
- *  - tool/template → 只能 local */
+ *  - tool → 只能 local */
 export type MarketplaceSource =
   | "local"
   | "skillhub"
@@ -119,7 +129,6 @@ const KIND_TABS: {
   { kind: "tool", label: "工具", icon: Puzzle },
   { kind: "connector", label: "连接器", icon: Cable },
   { kind: "expert", label: "专家", icon: Bot },
-  { kind: "template", label: "项目预设", icon: LayoutTemplate },
 ];
 
 const ICON_MAP: Record<string, typeof Puzzle> = {
@@ -127,7 +136,6 @@ const ICON_MAP: Record<string, typeof Puzzle> = {
   tool: Puzzle,
   connector: Cable,
   expert: Bot,
-  template: LayoutTemplate,
 };
 
 /** 内置工具在 Marketplace 中的功能分组展示顺序。 */
@@ -177,7 +185,7 @@ function renderPluginIcon(manifest: PluginManifest) {
 
 /** 通用插件详情抽屉。复用 .skillhub-detail* 样式（从右滑入、半透明遮罩、Esc 关闭），
  *  显示基础元数据 + body + 标签，底部按安装状态切换按钮。
- * skill / tool / connector / expert / template 都可用。 */
+ * skill / tool / connector / expert 都可用。 */
 function PluginDetailDrawer({
   manifest,
   isInstalled,
@@ -185,8 +193,11 @@ function PluginDetailDrawer({
   onClose,
   onInstall,
   onUninstall,
-  onUseTemplate,
+  onUseAgentPreset,
   onInsertPrompt,
+  onCopyExpert,
+  onEditExpert,
+  onSummonExpert,
 }: {
   manifest: PluginManifest | null;
   isInstalled: boolean;
@@ -194,10 +205,13 @@ function PluginDetailDrawer({
   onClose: () => void;
   onInstall: (m: PluginManifest) => void;
   onUninstall: (m: PluginManifest) => void;
-  /** 「项目预设」的主操作（同 PluginMarketplaceProps.onUseTemplate）。 */
-  onUseTemplate?: (m: PluginManifest) => void;
-  /** 「项目预设」的次操作：把起手一句交给宿主写进输入框草稿。 */
+  /** 将专家预设应用到新项目。 */
+  onUseAgentPreset?: (m: PluginManifest) => void;
+  /** 专家预设的次操作：把起手一句交给宿主写进输入框草稿。 */
   onInsertPrompt?: (text: string) => void;
+  onCopyExpert?: (manifest: PluginManifest) => void;
+  onEditExpert?: (manifest: PluginManifest) => void;
+  onSummonExpert?: (manifest: PluginManifest) => void;
 }) {
   useEffect(() => {
     if (!manifest) return;
@@ -236,8 +250,7 @@ function PluginDetailDrawer({
             <div className="skillhub-detail__title-wrap">
               <h2>{manifest.name}</h2>
               <div className="skillhub-detail__title-row">
-                {/* 徽标用中文类名（KIND_TABS 是唯一口径）；直接打印 manifest.kind 会在
-                    中文界面里露出 "template" 这种内部标识，与左侧导航「项目预设」对不上。 */}
+                {/* 徽标使用本地化类别名，避免直接暴露内部 kind。 */}
                 <span className="plugin-card__badge">
                   {KIND_TABS.find((item) => item.kind === manifest.kind)?.label ??
                     manifest.kind}
@@ -296,8 +309,8 @@ function PluginDetailDrawer({
               <span className="skillhub-detail__meta-label">ID</span>
               <span className="skillhub-detail__meta-value">{manifest.id}</span>
             </div>
-            {/* 「命令」对项目预设没有意义（它没有斜杠命令），显示成「命令 /」只会让人困惑。 */}
-            {manifest.kind !== "template" && (
+            {/* 专家预设没有斜杠命令，不展示没有意义的「命令 /」。 */}
+            {manifest.kind !== "expert" && (
               <div className="skillhub-detail__meta-item">
                 <span className="skillhub-detail__meta-label">命令</span>
                 <span className="skillhub-detail__meta-value">
@@ -353,12 +366,40 @@ function PluginDetailDrawer({
             </details>
           )}
 
-          {/* 项目预设：把两个字段摊开给用户看 —— 它到底会往项目里写什么、起手句是什么。
-              这一页原先对预设是条死路（footer 只有「已安装（内置）」灰按钮），
-              至少要做到「看得懂它能干什么、怎么用」。 */}
-          {manifest.kind === "template" && manifest.instruction && (
+          {manifest.expertProfile && (
+            <div className="plugin-expert-profile">
+              <details className="skillhub-detail__description-en" open>
+                <summary>角色定位</summary>
+                <p>{manifest.expertProfile.role}</p>
+              </details>
+              <details className="skillhub-detail__description-en" open>
+                <summary>工作方法</summary>
+                <p>{manifest.expertProfile.methodology}</p>
+              </details>
+              <details className="skillhub-detail__description-en" open>
+                <summary>行为边界</summary>
+                <p>{manifest.expertProfile.boundaries}</p>
+              </details>
+              <details className="skillhub-detail__description-en" open>
+                <summary>交付物</summary>
+                <p>{manifest.expertProfile.deliverables}</p>
+              </details>
+              <details className="skillhub-detail__description-en">
+                <summary>使用示例 · {manifest.expertProfile.examples.length}</summary>
+                {manifest.expertProfile.examples.map((example) => (
+                  <div key={example.id}>
+                    <strong>{example.title}</strong>
+                    <p>{example.prompt}</p>
+                  </div>
+                ))}
+              </details>
+            </div>
+          )}
+
+          {/* 展示专家预设的项目长期指令与起手句，让用户明白这份档案可如何复用。 */}
+          {manifest.instruction && (
             <details className="skillhub-detail__description-en" open>
-              <summary>项目指令（用它新建项目时写入，之后每轮生效）</summary>
+              <summary>应用于项目的长期指令（每轮生效）</summary>
               <pre
                 style={{
                   whiteSpace: "pre-wrap",
@@ -372,7 +413,7 @@ function PluginDetailDrawer({
             </details>
           )}
 
-          {manifest.kind === "template" && manifest.starterPrompt && (
+          {manifest.starterPrompt && (
             <details className="skillhub-detail__description-en">
               <summary>起手句（「插入输入框」用，一次性）</summary>
               <pre
@@ -390,13 +431,49 @@ function PluginDetailDrawer({
         </div>
 
         <footer className="skillhub-detail__footer">
-          {manifest.kind === "template" ? (
+          {manifest.kind === "expert" && onSummonExpert && (
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--primary"
+              onClick={() => onSummonExpert(manifest)}
+            >
+              <Sparkles size={14} strokeWidth={1.8} />
+              <span>召唤专家</span>
+            </button>
+          )}
+          {manifest.kind === "expert" && onCopyExpert && (
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--secondary"
+              onClick={() => {
+                onCopyExpert(manifest);
+                onClose();
+              }}
+            >
+              <Plus size={14} strokeWidth={1.8} />
+              <span>复制专家</span>
+            </button>
+          )}
+          {manifest.kind === "expert" && !isBuiltin && onEditExpert && (
+            <button
+              type="button"
+              className="plugin-card__button plugin-card__button--secondary"
+              onClick={() => {
+                onEditExpert(manifest);
+                onClose();
+              }}
+            >
+              <Pencil size={14} strokeWidth={1.8} />
+              <span>编辑专家</span>
+            </button>
+          )}
+          {manifest.instruction ? (
             <>
-              {onUseTemplate && (
+              {onUseAgentPreset && (
                 <button
                   type="button"
                   className="plugin-card__button plugin-card__button--primary"
-                  onClick={() => onUseTemplate(manifest)}
+                  onClick={() => onUseAgentPreset(manifest)}
                 >
                   <Plus size={14} strokeWidth={1.8} />
                   <span>用它新建项目</span>
@@ -412,10 +489,7 @@ function PluginDetailDrawer({
                   <span>插入输入框</span>
                 </button>
               )}
-              {/* 自建预设必须能删。template 分支原本直接抢在
-                  `isInstalled && !isBuiltin`（下面的卸载分支）之前，于是**任何**非内置预设
-                  都拿不到卸载入口 —— 项目设置「另存为预设」一上线，用户存下的预设就成了
-                  只能进不能出的死胡同。内置预设仍不可删（不受影响，它们走不到这里）。 */}
+              {/* 自建预设可以删除；内置预设保持只读。 */}
               {isInstalled && !isBuiltin && (
                 <button
                   type="button"
@@ -484,11 +558,14 @@ export default function PluginMarketplace({
   mainView = false,
   onCreateExpert,
   onEditExpert,
+  onCopyExpert,
+  onDraftExpert,
+  onSummonExpert,
   onAddMcp,
   source: controlledSource,
   onSourceChange,
   omitTopTabs = false,
-  onUseTemplate,
+  onUseAgentPreset,
   onInsertPrompt,
 }: PluginMarketplaceProps) {
   const [query, setQuery] = useState(initialFilter.query ?? "");
@@ -532,6 +609,9 @@ export default function PluginMarketplace({
     [isSourceControlled, onSourceChange],
   );
   const [refreshKey, setRefreshKey] = useState(0);
+  const [expertTeamManagerOpen, setExpertTeamManagerOpen] = useState(false);
+  const [expertCreateMenuOpen, setExpertCreateMenuOpen] = useState(false);
+  const expertCreateMenuRef = useRef<HTMLDivElement>(null);
   // 注册表一变更就重算：安装/卸载可能发生在**本组件之外**（SkillHub 子面板、
   // 远程技能子面板、技能创作、对话里模型调用 /install_skill），这些路径收不到
   // 本组件的任何回调 —— 只靠自身 handler bump 刷新键会漏，表现为「已安装
@@ -541,6 +621,23 @@ export default function PluginMarketplace({
     () => pluginRegistry.subscribe(() => setRefreshKey((current) => current + 1)),
     [],
   );
+  useEffect(() => {
+    if (!expertCreateMenuOpen) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !expertCreateMenuRef.current?.contains(event.target)) {
+        setExpertCreateMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpertCreateMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [expertCreateMenuOpen]);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
   // 详情抽屉选中（点击整卡打开）。
@@ -706,6 +803,11 @@ export default function PluginMarketplace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [refreshKey],
   );
+  const builtinExperts = useMemo(
+    () => pluginRegistry.list({ kind: "expert" }).filter((manifest) =>
+      pluginRegistry.isBuiltin(manifest.id)),
+    [refreshKey],
+  );
 
   const emptyInfo = useMemo(() => {
     switch (kind) {
@@ -730,12 +832,6 @@ export default function PluginMarketplace({
           hint: onCreateExpert
             ? "试试其他关键词，或点击「创建专家」新建一个"
             : "试试其他关键词",
-        };
-      case "template":
-        return {
-          icon: LayoutTemplate,
-          title: "没有找到匹配的项目预设",
-          hint: "试试其他关键词",
         };
       default:
         return {
@@ -842,7 +938,7 @@ export default function PluginMarketplace({
   /** 卸载非内置插件：
    *  - skill 走 uninstallSkillhubSkill（删 ~/.dsh/skills/<slug> + 移注册表），
    *    Rust 失败兜底仅移注册表；
-   *  - expert / tool / connector / template 没有磁盘目录，仅 pluginRegistry.uninstall
+   *  - expert / tool / connector 没有磁盘目录，仅 pluginRegistry.uninstall
    *    即可（不调 Rust 命令，避免 Rust 端找不到目录抛错）。 */
   const handleUninstall = useCallback((manifest: PluginManifest) => {
     const parts = manifest.id.split("/");
@@ -1230,13 +1326,8 @@ export default function PluginMarketplace({
       }
       const isSelected = inBatch && selectedIds.has(manifest.id);
       const enabled = pluginRegistry.isEnabled(manifest.id);
-      // 连接器 / 项目预设卡片走紧凑布局（见 plugins.css `.plugin-card--compact`）：
-      // 描述区不参与「统一高度」的预留行，操作行撑满整行。这两类的描述基本只有一行、
-      // 且底部有真实操作按钮；技能 / SkillHub 卡片仍保持 8b29f15 的同行等高策略。
-      const compactClass =
-        manifest.kind === "connector" || manifest.kind === "template"
-          ? " plugin-card--compact"
-          : "";
+      // 连接器卡片走紧凑布局；专家预设的项目操作放在详情中，卡片保持统一高度。
+      const compactClass = manifest.kind === "connector" ? " plugin-card--compact" : "";
       const cardClass =
         (inBatch
           ? `plugin-card plugin-card--batch ${isSelected ? "plugin-card--batch-selected" : ""} ${enabled || isBuiltin ? "" : "plugin-card--disabled"}`
@@ -1331,13 +1422,9 @@ export default function PluginMarketplace({
               </div>
             </div>
           </div>
-          {/* 卡片底部 actions 区：只在「连接器」（套件管理：连接 / 断开 / 配置）和
-              「项目预设」（用它新建项目 / 插入输入框）两种场景保留。其余场景
-              （我的技能 / 我的专家 / 批量管理 / 通用浏览）都不再在卡片底部展示
-              按钮行——卡片可整体点击打开详情抽屉，所有 安装 / 卸载 / 已安装 等
-              单卡操作统一入口。避免在 4 列 grid 下视觉拥挤 + 防止误触「删除」按钮。 */}
-          {(manifest.kind === "connector" ||
-            (manifest.kind === "template" && Boolean(onUseTemplate))) && (
+          {/* 卡片底部操作区仅用于连接器状态管理。专家预设的项目操作放在详情抽屉，
+              避免每张专家卡都重复显示「新建项目 / 插入输入框」。 */}
+          {manifest.kind === "connector" && (
             <div
               className="plugin-card__actions"
               onClick={(e) => e.stopPropagation()}
@@ -1445,35 +1532,6 @@ export default function PluginMarketplace({
                         </span>
                       </button>
                     )
-                  ) : null}
-                </>
-              ) : manifest.kind === "template" && onUseTemplate ? (
-                <>
-                  <button
-                    type="button"
-                    className="plugin-card__button plugin-card__button--primary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onUseTemplate(manifest);
-                    }}
-                    title="用这个预设新建项目（指令已按预设填好，仍可编辑）"
-                  >
-                    <Plus size={14} strokeWidth={1.8} />
-                    <span>新建项目</span>
-                  </button>
-                  {onInsertPrompt && manifest.starterPrompt ? (
-                    <button
-                      type="button"
-                      className="plugin-card__button plugin-card__button--secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onInsertPrompt(manifest.starterPrompt ?? "");
-                      }}
-                      title="把预设的起手一句放进输入框，可自行修改后再发送"
-                    >
-                      <Wand2 size={14} strokeWidth={1.8} />
-                      <span>插入输入框</span>
-                    </button>
                   ) : null}
                 </>
               ) : installed && !pluginRegistry.isBuiltin(manifest.id) ? (
@@ -2126,7 +2184,7 @@ export default function PluginMarketplace({
                     if (targets.length === 0) return;
                     setConfirmDialog({
                       title: "确认批量卸载",
-                      message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 专家团 / 工具 / 连接器 / 专家 / 项目预设）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
+                      message: `将卸载当前列表中全部 ${targets.length} 个已安装技能（含 SkillHub / 专家团 / 工具 / 连接器 / 专家预设）。内置基础栈不受影响。此操作无法撤销，是否继续？`,
                       danger: true,
                       onConfirm: () => handleBatchAllUninstall(),
                     });
@@ -2158,97 +2216,121 @@ export default function PluginMarketplace({
           ) : showMyExperts ? (
             <div className="plugin-marketplace__my-experts">
               <div className="plugin-marketplace__my-experts-toolbar">
-                <span>你创建或从市场安装的专家</span>
+                <span>默认专家与自定义专家档案</span>
                 <button
                   type="button"
-                  className="plugin-marketplace__create-expert"
-                  onClick={onCreateExpert}
+                  className="plugin-marketplace__create-expert plugin-marketplace__create-expert--secondary"
+                  onClick={() => setExpertTeamManagerOpen(true)}
                 >
-                  <Plus size={14} strokeWidth={2} />
-                  <span>创建专家</span>
+                  <UsersRound size={14} strokeWidth={1.8} />
+                  <span>管理专家团</span>
                 </button>
+                <div className="plugin-marketplace__create-menu" ref={expertCreateMenuRef}>
+                  <button
+                    type="button"
+                    className="plugin-marketplace__create-expert"
+                    aria-label="制作专家菜单"
+                    aria-haspopup="menu"
+                    aria-expanded={expertCreateMenuOpen}
+                    onClick={() => setExpertCreateMenuOpen((open) => !open)}
+                  >
+                    <Plus size={14} strokeWidth={2} />
+                    <span>制作专家</span>
+                    <ChevronDown size={13} strokeWidth={2} />
+                  </button>
+                  {expertCreateMenuOpen && (
+                    <div className="plugin-marketplace__create-menu-popover" role="menu">
+                      {onDraftExpert && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setExpertCreateMenuOpen(false);
+                            onDraftExpert(
+                              "/expert-manager 帮我创建一个 XXX 专家，擅长 XXXXX。我的经验是：[请补充你的行业背景、相关经验]",
+                            );
+                          }}
+                        >
+                          <Sparkles size={15} strokeWidth={1.8} />
+                          <span>
+                            <strong>对话创建专家</strong>
+                            <small>通过专家管理对话生成角色、技能和工具配置</small>
+                          </span>
+                        </button>
+                      )}
+                      {onCreateExpert && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setExpertCreateMenuOpen(false);
+                            onCreateExpert();
+                          }}
+                        >
+                          <Plus size={15} strokeWidth={1.8} />
+                          <span>
+                            <strong>填写表单创建</strong>
+                            <small>直接录入名称、角色方法和行为边界</small>
+                          </span>
+                        </button>
+                      )}
+                      {onDraftExpert && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setExpertCreateMenuOpen(false);
+                            onDraftExpert(
+                              "/expert-manager 帮我创建一个 XXX 专家团，团队成员包括[请补充成员角色]，共同擅长 XXXXX。我的经验是：[请补充你的行业背景、相关经验]",
+                            );
+                          }}
+                        >
+                          <UsersRound size={15} strokeWidth={1.8} />
+                          <span>
+                            <strong>对话创建专家团</strong>
+                            <small>在同一个管理流程中定义团队角色和协作方式</small>
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
+              {builtinExperts.length > 0 && (
+                <section className="plugin-marketplace__group">
+                  <h3 className="plugin-marketplace__group-title">默认专家</h3>
+                  <div className="plugin-marketplace__grid">
+                    {builtinExperts.map((manifest) => renderPluginCard(manifest))}
+                  </div>
+                </section>
+              )}
               {myExperts.length === 0 ? (
                 <div className="plugin-marketplace__empty plugin-marketplace__empty--my-experts">
                   <Bot size={40} strokeWidth={1.2} />
                   <p>还没有自定义专家</p>
                   <span>
-                    点击「创建专家」填写名称、角色提示词并绑定工具/技能，
-                    创建后可通过项目绑定、@ 提及或 agent 委派使用
+                    复制默认专家作为起点，或创建自己的专家档案；专家可用于 @ 对话和 Agent 委派。
                   </span>
                   <button
                     type="button"
                     className="plugin-marketplace__create-expert"
-                    onClick={onCreateExpert}
+                    onClick={() => {
+                      if (onDraftExpert) {
+                        onDraftExpert(
+                          "/expert-manager 帮我创建一个 XXX 专家，擅长 XXXXX。我的经验是：[请补充你的行业背景、相关经验]",
+                        );
+                      } else {
+                        onCreateExpert?.();
+                      }
+                    }}
                   >
-                    <Plus size={14} strokeWidth={2} />
-                    <span>创建专家</span>
+                    {onDraftExpert ? <Sparkles size={14} strokeWidth={1.8} /> : <Plus size={14} strokeWidth={2} />}
+                    <span>{onDraftExpert ? "制作专家" : "创建专家"}</span>
                   </button>
                 </div>
               ) : (
                 <div className="plugin-marketplace__grid">
-                  {myExperts.map((manifest) => {
-                    return (
-                      <div key={manifest.id} className="plugin-card">
-                        <div className="plugin-card__icon">
-                          {renderPluginIcon(manifest)}
-                        </div>
-                        <div className="plugin-card__main">
-                          <div className="plugin-card__title-row">
-                            <h3>{manifest.name}</h3>
-                            <span className="plugin-card__badge">expert</span>
-                          </div>
-                          <p className="plugin-card__description">
-                            {manifest.description}
-                          </p>
-                          <div className="plugin-card__meta">
-                            <span>{manifest.author ?? "Omni"}</span>
-                            {manifest.category && (
-                              <span>· {manifest.category}</span>
-                            )}
-                            <span>· v{manifest.version}</span>
-                          </div>
-                          {manifest.tags && manifest.tags.length > 0 && (
-                            <div className="plugin-card__tags">
-                              {manifest.tags.map((tag) => (
-                                <span key={tag} className="plugin-card__tag">
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="plugin-card__actions">
-                          <span className="plugin-card__connected">
-                            <span className="plugin-card__connected-dot" />
-                            <span>已启用</span>
-                          </span>
-                          {onEditExpert && (
-                            <button
-                              type="button"
-                              className="plugin-card__button"
-                              onClick={() => onEditExpert(manifest)}
-                              title="编辑此专家的提示词/工具/技能"
-                              aria-label={`编辑 ${manifest.name}`}
-                            >
-                              <Pencil size={14} strokeWidth={1.8} />
-                              <span>编辑</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="plugin-card__button plugin-card__button--danger"
-                            onClick={() => handleUninstall(manifest)}
-                            title="卸载并删除此专家"
-                            aria-label={`删除 ${manifest.name}`}
-                          >
-                            <Trash2 size={14} strokeWidth={1.8} />
-                            <span>删除</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {myExperts.map((manifest) => renderPluginCard(manifest))}
                 </div>
               )}
             </div>
@@ -2304,7 +2386,6 @@ export default function PluginMarketplace({
             <span>{stats.tool} 工具</span>
             <span>{stats.connector} 连接器</span>
             <span>{stats.expert} 专家</span>
-            <span>{stats.template} 项目预设</span>
           </div>
         </div>
 
@@ -2317,8 +2398,11 @@ export default function PluginMarketplace({
           onClose={() => setDetailManifest(null)}
           onInstall={(m) => void handleInstall(m)}
           onUninstall={(m) => void handleUninstall(m)}
-          onUseTemplate={onUseTemplate}
+          onUseAgentPreset={onUseAgentPreset}
           onInsertPrompt={onInsertPrompt}
+          onCopyExpert={onCopyExpert}
+          onEditExpert={onEditExpert}
+          onSummonExpert={onSummonExpert}
         />
 
         {/* 危险操作二次确认 dialog（参考 .omni-confirm-overlay / .omni-confirm-dialog
@@ -2459,6 +2543,7 @@ export default function PluginMarketplace({
             </div>
           </div>
         )}
+        <ExpertTeamManager open={expertTeamManagerOpen} onClose={() => setExpertTeamManagerOpen(false)} />
       </div>
     );
   };

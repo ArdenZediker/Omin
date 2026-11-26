@@ -89,6 +89,7 @@ import ProjectGroupManagerDialog from "./chat/ProjectGroupManagerDialog";
 import PluginMarketplace from "./plugins/PluginMarketplace";
 import type { MarketplaceSource } from "./plugins/PluginMarketplace";
 import { pluginRegistry } from "../plugins/registry";
+import { expertTeamRegistry } from "../plugins/expertTeams";
 import {
   setConnectorTrusted,
   ensureMcpConnector,
@@ -296,8 +297,10 @@ type MainChatViewProps = {
   ) => void | Promise<void>;
   onToggleFavoriteChat: (session: ChatSession) => void;
   onTogglePinChat: (session: ChatSession) => void;
-  /** 把一段文本放进输入框草稿（不直接发送）。空态起步卡与项目预设「插入输入框」共用。 */
+  /** 把一段文本放进输入框草稿（不直接发送）。空态起步卡与专家预设起手句共用。 */
   onUsePromptDraft: (prompt: string) => void;
+  /** 召唤专家：新建绑定该专家快照的会话，并保留当前输入草稿。 */
+  onSummonExpert?: (manifest: PluginManifest) => void;
   onOpenKnowledge: () => void;
   openMarketplace?: boolean;
   onMarketplaceChange?: (open: boolean) => void;
@@ -364,6 +367,8 @@ export default function MainChatView({
   onStop,
   onSubmitEditedUserMessage,
   onUsePromptDraft,
+  onSummonExpert,
+  onJumpToChat,
   onOpenKnowledge,
   openMarketplace,
   onMarketplaceChange,
@@ -424,6 +429,7 @@ export default function MainChatView({
   const [creatingMcp, setCreatingMcp] = useState(false);
   const [creatingExpert, setCreatingExpert] = useState(false);
   const [editingExpert, setEditingExpert] = useState<PluginManifest | null>(null);
+  const [copyingExpert, setCopyingExpert] = useState<PluginManifest | null>(null);
   const [newMcp, setNewMcp] = useState({
     name: "",
     desc: "",
@@ -557,12 +563,20 @@ export default function MainChatView({
   /** 「创建专家」：打开表单对话框直接创建（注册为本地插件，无需经过对话）。 */
   const handleCreateExpert = useCallback(() => {
     setEditingExpert(null);
+    setCopyingExpert(null);
     setCreatingExpert(true);
   }, []);
 
   /** 「编辑专家」：打开表单对话框预填已有档案，保存走 updateManifest。 */
   const handleEditExpert = useCallback((manifest: PluginManifest) => {
     setEditingExpert(manifest);
+    setCopyingExpert(null);
+    setCreatingExpert(true);
+  }, []);
+
+  const handleCopyExpert = useCallback((manifest: PluginManifest) => {
+    setEditingExpert(null);
+    setCopyingExpert(manifest);
     setCreatingExpert(true);
   }, []);
 
@@ -631,10 +645,10 @@ export default function MainChatView({
   const [spaceSectionCollapsed, setSpaceSectionCollapsed] = useState(false);
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set());
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
-  // 从扩展中心「用它新建项目」带过来的项目预设 id。非空即表示这次新建项目不是
+  // 从专家预设目录「用它新建项目」带过来的 id。非空即表示这次新建项目不是
   // 用户手点侧栏按钮进来的，打开对话框时要把该预设的指令套上。
   // 关闭对话框必须清空 —— 否则下次普通「新建项目」会莫名带上上次的预设。
-  const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
+  const [pendingAgentPresetId, setPendingAgentPresetId] = useState<string | null>(null);
   const [projectGroupManagerOpen, setProjectGroupManagerOpen] = useState(false);
   const [projectGroupCreateMode, setProjectGroupCreateMode] = useState(false);
   const [projectGroupDraft, setProjectGroupDraft] = useState("");
@@ -891,6 +905,10 @@ export default function MainChatView({
   >([]);
   // 可 @ 的专家（内置 + 已安装）；每次渲染即时读取注册表，安装/卸载后自然刷新
   const expertOptions = pluginRegistry.listExperts();
+  const expertTeams = useSyncExternalStore(
+    expertTeamRegistry.subscribe.bind(expertTeamRegistry),
+    expertTeamRegistry.getSnapshot.bind(expertTeamRegistry),
+  );
   const [isMessagesAtBottom, setIsMessagesAtBottom] = useState(true);
   const isMessagesAtBottomRef = useRef(true);
   /** 程序滚动宽限窗口的时间戳：窗口内的 scroll 事件不视为「用户滚走」。 */
@@ -905,7 +923,7 @@ export default function MainChatView({
     [],
   );
   const handleCreateProject = useCallback(() => {
-    setPendingTemplateId(null);
+    setPendingAgentPresetId(null);
     setCreateProjectDialogOpen(true);
   }, []);
 
@@ -917,7 +935,7 @@ export default function MainChatView({
    */
   const handleUseProjectPreset = useCallback(
     (manifest: PluginManifest) => {
-      setPendingTemplateId(manifest.id);
+      setPendingAgentPresetId(manifest.id);
       closeMarketplace();
       setCreateProjectDialogOpen(true);
     },
@@ -1446,11 +1464,6 @@ export default function MainChatView({
                 { kind: "skill" as const, label: "技能", icon: Wand2 },
                 { kind: "connector" as const, label: "连接器", icon: Cable },
                 { kind: "expert" as const, label: "专家", icon: Bot },
-                {
-                  kind: "template" as const,
-                  label: "项目预设",
-                  icon: LayoutTemplate,
-                },
               ].map((item) => (
                 <button
                   key={item.kind}
@@ -2026,11 +2039,21 @@ export default function MainChatView({
             onClose={closeMarketplace}
             onCreateExpert={handleCreateExpert}
             onEditExpert={handleEditExpert}
+            onCopyExpert={handleCopyExpert}
+            onDraftExpert={(prompt) => {
+              closeMarketplace();
+              if (onJumpToChat) onJumpToChat(prompt);
+              else onUsePromptDraft(prompt);
+            }}
+            onSummonExpert={(manifest) => {
+              closeMarketplace();
+              onSummonExpert?.(manifest);
+            }}
             onAddMcp={() => setCreatingMcp(true)}
             source={marketplaceSource}
             onSourceChange={setMarketplaceSource}
             omitTopTabs
-            onUseTemplate={handleUseProjectPreset}
+            onUseAgentPreset={handleUseProjectPreset}
             onInsertPrompt={onUsePromptDraft}
           />
         )}
@@ -2514,6 +2537,9 @@ export default function MainChatView({
                     contextPresetText={composerContextPresetText}
                     knowledgeCollections={knowledgeCollections}
                     experts={expertOptions}
+                    expertTeams={expertTeams}
+                    boundExpert={activeSession?.expertBinding ?? null}
+                    onSummonExpert={onSummonExpert}
                     onSend={onSend}
                     hasConversation={messages.some(
                       (message) => message.role === "user",
@@ -2692,10 +2718,10 @@ export default function MainChatView({
 
       <CreateProjectDialog
         open={createProjectDialogOpen}
-        initialTemplateId={pendingTemplateId}
+        initialAgentPresetId={pendingAgentPresetId}
         onClose={() => {
           setCreateProjectDialogOpen(false);
-          setPendingTemplateId(null);
+          setPendingAgentPresetId(null);
         }}
         onCreate={handleCreateProjectFromDialog}
       />
@@ -2710,9 +2736,11 @@ export default function MainChatView({
       <CreateExpertDialog
         open={creatingExpert}
         editing={editingExpert}
+        copying={copyingExpert}
         onClose={() => {
           setCreatingExpert(false);
           setEditingExpert(null);
+          setCopyingExpert(null);
         }}
         onCreated={() => setMarketplaceNonce((current) => current + 1)}
       />

@@ -117,6 +117,9 @@ struct DbChatSession {
     /// `fallback_workspace_root` 补全为兜底目录，保证「永远有 cwd」（仿 codex）。
     #[serde(default)]
     workspace_path: String,
+    /// 会话绑定的专家快照。前端首次召唤专家时写入，后续消息沿用同一版本配置。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    expert_binding: Option<serde_json::Value>,
 }
 
 /// 会话消息权威源：<sessions_root>/<sessionId>/session.jsonl（JSONL 事件日志，每行一个 message）。
@@ -764,7 +767,7 @@ pub(crate) fn load_structured_chat_storage(
     let mut session_stmt = connection
         .prepare(
             r#"
-            SELECT id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path
+            SELECT id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path, expert_binding_json
             FROM chat_sessions
             ORDER BY updated_at DESC, created_at DESC, id DESC
             "#,
@@ -782,6 +785,7 @@ pub(crate) fn load_structured_chat_storage(
         i64,
         String,
         String,
+        String,
     )> = session_stmt
         .query_map([], |row| {
             Ok((
@@ -795,6 +799,7 @@ pub(crate) fn load_structured_chat_storage(
                 row.get(7)?,
                 row.get(8)?,
                 row.get::<_, String>(9).unwrap_or_default(),
+                row.get::<_, String>(10).unwrap_or_else(|_| "null".to_string()),
             ))
         })
         .map_err(|err| err.to_string())?
@@ -815,6 +820,7 @@ pub(crate) fn load_structured_chat_storage(
                 updated_at,
                 usage_json,
                 workspace_path,
+                expert_binding_json,
             )| {
                 // 会话目录按项目分桶；项目已删等查不到归属时退化为无项目桶。
                 let bucket = bucket_by_project
@@ -842,6 +848,9 @@ pub(crate) fn load_structured_chat_storage(
                     last_used_at: None,
                     has_estimated_usage: false,
                 });
+                let expert_binding = serde_json::from_str::<serde_json::Value>(&expert_binding_json)
+                    .ok()
+                    .filter(|value| !value.is_null());
                 Ok(DbChatSession {
                     id,
                     project_id,
@@ -853,6 +862,7 @@ pub(crate) fn load_structured_chat_storage(
                     updated_at,
                     usage,
                     workspace_path,
+                    expert_binding,
                 })
             },
         )
@@ -932,8 +942,8 @@ pub(crate) fn save_structured_chat_storage(
             .prepare(
                 r#"
                 INSERT OR REPLACE INTO chat_sessions (
-                  id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                  id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path, expert_binding_json
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 "#,
             )
             .map_err(|err| err.to_string())?;
@@ -967,6 +977,7 @@ pub(crate) fn save_structured_chat_storage(
                 session.updated_at,
                 serde_json::to_string(&session.usage).map_err(|err| err.to_string())?,
                 &session.workspace_path,
+                serde_json::to_string(&session.expert_binding).map_err(|err| err.to_string())?,
             ])
             .map_err(|err| err.to_string())?;
         }
@@ -1043,8 +1054,8 @@ pub(crate) fn upsert_chat_sessions(
             .prepare(
                 r#"
                 INSERT OR REPLACE INTO chat_sessions (
-                  id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                  id, project_id, title, messages_json, pinned, favorite, created_at, updated_at, usage_json, workspace_path, expert_binding_json
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 "#,
             )
             .map_err(|err| err.to_string())?;
@@ -1077,6 +1088,7 @@ pub(crate) fn upsert_chat_sessions(
                 session.updated_at,
                 serde_json::to_string(&session.usage).map_err(|err| err.to_string())?,
                 &session.workspace_path,
+                serde_json::to_string(&session.expert_binding).map_err(|err| err.to_string())?,
             ])
             .map_err(|err| err.to_string())?;
         }

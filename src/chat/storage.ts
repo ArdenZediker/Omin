@@ -340,7 +340,11 @@ export function stripPendingPlaceholder(messages: Message[]): Message[] {
   return messages;
 }
 
-export function createChatSession(messages: Message[] = [], projectId = DEFAULT_PROJECT_ID): ChatSession {
+export function createChatSession(
+  messages: Message[] = [],
+  projectId = DEFAULT_PROJECT_ID,
+  expertBinding?: ChatSession["expertBinding"],
+): ChatSession {
   const now = Date.now();
   const id =
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -355,6 +359,7 @@ export function createChatSession(messages: Message[] = [], projectId = DEFAULT_
     createdAt: now,
     updatedAt: now,
     usage: createEmptyUsageStats(),
+    ...(expertBinding ? { expertBinding } : {}),
   };
 }
 
@@ -477,6 +482,19 @@ function normalizeSession(
     createdAt,
     updatedAt,
     usage: normalizeUsageStats(input.usage),
+    ...(input.expertBinding && typeof input.expertBinding.id === "string" && typeof input.expertBinding.name === "string"
+      ? {
+          expertBinding: {
+            id: input.expertBinding.id,
+            name: input.expertBinding.name,
+            ...(typeof input.expertBinding.templatePrompt === "string" ? { templatePrompt: input.expertBinding.templatePrompt } : {}),
+            ...(typeof input.expertBinding.instruction === "string" ? { instruction: input.expertBinding.instruction } : {}),
+            ...(Array.isArray(input.expertBinding.defaultToolIds) ? { defaultToolIds: input.expertBinding.defaultToolIds.filter((id): id is string => typeof id === "string") } : {}),
+            ...(Array.isArray(input.expertBinding.defaultSkillIds) ? { defaultSkillIds: input.expertBinding.defaultSkillIds.filter((id): id is string => typeof id === "string") } : {}),
+            ...(Array.isArray(input.expertBinding.defaultMcpConnectorIds) ? { defaultMcpConnectorIds: input.expertBinding.defaultMcpConnectorIds.filter((id): id is string => typeof id === "string") } : {}),
+          },
+        }
+      : {}),
   };
 }
 

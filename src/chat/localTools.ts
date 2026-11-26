@@ -5,6 +5,7 @@ import {
   getToolManifestById,
 } from "../config/manifests/tools";
 import type { PluginManifest } from "../plugins/types";
+import { compileExpertTemplatePrompt, legacyExpertProfile } from "../plugins/expertProfiles";
 import { pluginRegistry, parseSkillMarkdown } from "../plugins/registry";
 import type { Project, PersonaConfig } from "./types";
 import { ToolRegistry, type ToolExecutionResult } from "./toolRegistry";
@@ -392,16 +393,19 @@ export function normalizeExpertManifest(input: PluginManifest): PluginManifest {
   }
   if (!name) throw new Error("缺少必填字段 name（专家展示名）");
   if (!description) throw new Error("缺少必填字段 description（一句话描述）");
-  if (!templatePrompt)
+  if (!templatePrompt && !input.expertProfile)
     throw new Error(
-      "缺少必填字段 templatePrompt（专家系统提示词，应可直接执行、不含占位符）",
+      "缺少必填字段 expertProfile 或 templatePrompt（专家定义必须可直接执行）",
     );
+  const expertProfile = input.expertProfile ?? legacyExpertProfile({ templatePrompt });
   return {
     ...input,
     id,
     name,
     description,
-    templatePrompt,
+    // ExpertProfile 是唯一事实来源，避免模型同时传入互相矛盾的两份定义。
+    templatePrompt: compileExpertTemplatePrompt(name, expertProfile),
+    expertProfile,
     kind: "expert",
     version: String(input.version ?? "1.0.0"),
     author: input.author ?? "Omni",

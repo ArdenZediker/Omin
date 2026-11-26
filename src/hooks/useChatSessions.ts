@@ -538,8 +538,8 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
   }, []);
 
   const createSessionFromMessages = useCallback(
-    (conversationMessages: Message[], projectId = activeProjectIdRef.current) => {
-      const nextSession = createChatSession(conversationMessages, projectId);
+    (conversationMessages: Message[], projectId = activeProjectIdRef.current, expertBinding?: ChatSession["expertBinding"]) => {
+      const nextSession = createChatSession(conversationMessages, projectId, expertBinding);
       // 记下「本窗口创建的会话」：follower 只窄写这些，其余会话是 owner 的副本。
       ownedSessionIdsRef.current.add(nextSession.id);
       activeChatIdRef.current = nextSession.id;
@@ -550,6 +550,19 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
     },
     []
   );
+
+  const bindChatSessionExpert = useCallback((sessionId: string, expertBinding: NonNullable<ChatSession["expertBinding"]>) => {
+    const now = Date.now();
+    setChatSessions((sessions) => {
+      const current = sessions.find((session) => session.id === sessionId);
+      if (!current || current.expertBinding) return sessions;
+      const next = sessions.map((session) => session.id === sessionId
+        ? { ...session, expertBinding, updatedAt: now }
+        : session);
+      chatSessionsRef.current = next;
+      return next;
+    });
+  }, []);
 
   const updateChatSessionMessages = useCallback((sessionId: string, nextMessages: Message[] | ((current: Message[]) => Message[])) => {
     const now = Date.now();
@@ -1101,6 +1114,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
     activeChatId,
     activeSession,
     applyUsageToSession,
+    bindChatSessionExpert,
     projectSessions,
     projects,
     chatSessions,

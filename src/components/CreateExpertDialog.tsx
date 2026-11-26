@@ -1,97 +1,125 @@
 import { useEffect, useMemo, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { X, Bot, Wand2, Cable, Plug, Check } from "lucide-react";
 import { TOOL_MANIFESTS } from "../config/manifests/tools";
 import { pluginRegistry } from "../plugins/registry";
-import type { PluginManifest } from "../plugins/types";
+import { canonicalizeExpertManifest, legacyExpertProfile, compileExpertTemplatePrompt } from "../plugins/expertProfiles";
+import type { ExpertProfile, PluginManifest } from "../plugins/types";
 
 export type CreateExpertDialogProps = {
   open: boolean;
-  /** 编辑模式：传入已有专家 manifest（id 不可改，保存走 updateManifest 覆盖）。 */
   editing?: PluginManifest | null;
+  copying?: PluginManifest | null;
   onClose: () => void;
-  /** 创建/保存成功后回调（宿主用于刷新扩展中心列表）。 */
   onCreated?: (manifest: PluginManifest) => void;
 };
 
 const EXPERT_CATEGORIES = [
-  "开发编程",
-  "内容创作",
-  "数据分析",
-  "知识管理",
-  "商业运营",
-  "设计多媒体",
-  "AI Agent",
-  "教育学习",
-  "行业专业",
+  "开发编程", "内容创作", "数据分析", "知识管理", "商业运营", "产品管理",
+  "质量管理", "项目管理", "设计多媒体", "AI Agent", "教育学习", "行业专业",
 ];
 
-/**
- * 创建/编辑专家对话框：表单化生成或更新 PluginManifest(kind: "expert")。
- * 专家 = 子 Agent 档案：templatePrompt 为角色提示词，defaultToolIds / defaultSkillIds /
- * defaultMcpConnectorIds 三者共同决定该专家被 agent 委派或 @ 指定时的能力边界。
- * 编辑模式（editing 非空）预填表单，保存走 pluginRegistry.updateManifest（保留启用状态）。
- */
-export default function CreateExpertDialog({ open, editing = null, onClose, onCreated }: CreateExpertDialogProps) {
+type DraftExample = { title: string; prompt: string };
+
+const EMPTY_EXAMPLES: DraftExample[] = [
+  { title: "示例一", prompt: "" },
+  { title: "示例二", prompt: "" },
+];
+
+function profileFromManifest(source: PluginManifest | null): ExpertProfile {
+  return source?.expertProfile ?? (source ? legacyExpertProfile(source) : {
+    role: "",
+    methodology: "",
+    boundaries: "",
+    deliverables: "",
+    examples: [],
+  });
+}
+
+function splitTags(value: string): string[] {
+  return [...new Set(value.split(/[、,，\n]/).map((tag) => tag.trim()).filter(Boolean))].slice(0, 8);
+}
+
+function profileIsComplete(profile: ExpertProfile): boolean {
+  return Boolean(
+    profile.role.trim() && profile.methodology.trim() && profile.boundaries.trim() &&
+    profile.deliverables.trim() && profile.examples.length >= 2 &&
+    profile.examples.every((example) => example.prompt.trim()),
+  );
+}
+
+/** 创建、复制、编辑统一使用 DSH ExpertProfile，再编译为运行时提示词。 */
+export default function CreateExpertDialog({
+  open,
+  editing = null,
+  copying = null,
+  onClose,
+  onCreated,
+}: CreateExpertDialogProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState(EXPERT_CATEGORIES[0]);
-  const [templatePrompt, setTemplatePrompt] = useState("");
+  const [role, setRole] = useState("");
+  const [methodology, setMethodology] = useState("");
+  const [boundaries, setBoundaries] = useState("");
+  const [deliverables, setDeliverables] = useState("");
+  const [tagsText, setTagsText] = useState("");
+  const [examples, setExamples] = useState<DraftExample[]>(EMPTY_EXAMPLES);
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [selectedMcpConnectorIds, setSelectedMcpConnectorIds] = useState<string[]>([]);
 
   const isEditing = Boolean(editing);
 
-  // 打开时初始化：编辑模式预填已有档案，创建模式清空表单。
   useEffect(() => {
     if (!open) return;
-    if (editing) {
-      setName(editing.name);
-      setDescription(editing.description ?? "");
-      setCategory(editing.category && EXPERT_CATEGORIES.includes(editing.category) ? editing.category : EXPERT_CATEGORIES[0]);
-      setTemplatePrompt(editing.templatePrompt ?? "");
-      setSelectedToolIds([...(editing.defaultToolIds ?? [])]);
-      setSelectedSkillIds([...(editing.defaultSkillIds ?? [])]);
-      setSelectedMcpConnectorIds([...(editing.defaultMcpConnectorIds ?? [])]);
-    } else {
-      setName("");
-      setDescription("");
-      setCategory(EXPERT_CATEGORIES[0]);
-      setTemplatePrompt("");
-      setSelectedToolIds([]);
-      setSelectedSkillIds([]);
-      setSelectedMcpConnectorIds([]);
-    }
-  }, [open, editing]);
+    const source = editing ?? copying;
+    const profile = profileFromManifest(source);
+    setName(source ? (editing ? source.name : `${source.name}（自定义）`) : "");
+    setDescription(source?.description ?? "");
+    setCategory(source?.category && EXPERT_CATEGORIES.includes(source.category) ? source.category : EXPERT_CATEGORIES[0]);
+    setRole(profile.role);
+    setMethodology(profile.methodology);
+    setBoundaries(profile.boundaries);
+    setDeliverables(profile.deliverables);
+    setTagsText(source?.tags?.join("、") ?? "");
+    setExamples(profile.examples.length > 0
+      ? profile.examples.slice(0, 2).map((example) => ({ title: example.title, prompt: example.prompt }))
+      : EMPTY_EXAMPLES);
+    setSelectedToolIds([...(source?.defaultToolIds ?? [])]);
+    setSelectedSkillIds([...(source?.defaultSkillIds ?? [])]);
+    setSelectedMcpConnectorIds([...(source?.defaultMcpConnectorIds ?? [])]);
+  }, [open, editing, copying]);
 
-  // 可声明工具：全部内置工具清单（排除 agent 自身，避免专家声明递归派发）。
   const toolOptions = useMemo(
     () => TOOL_MANIFESTS.filter((tool) => tool.id !== "agent").map((tool) => ({ id: tool.id, title: tool.title })),
-    []
+    [],
   );
-  // 可绑定技能：注册表中的全部技能（含未启用——声明后由项目/会话启用逻辑决定是否生效）。
   const skillOptions = useMemo(
     () => pluginRegistry.list({ kind: "skill" }).map((skill) => ({ id: skill.id, title: skill.name })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [open]
+    [open],
   );
-  // 可绑定 MCP：kind=connector 且无 provider 的连接器（有 provider 的是模型连接器，在「模型设置」里配）。
-  // 只按 id 绑定连接器，不逐个勾工具——连接器暴露的工具会随其版本变化，绑定连接器更稳。
   const mcpOptions = useMemo(
-    () =>
-      pluginRegistry
-        .list({ kind: "connector" })
-        .filter((connector) => !connector.provider)
-        .map((connector) => ({ id: connector.id, title: connector.name })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [open]
+    () => pluginRegistry.list({ kind: "connector" }).filter((connector) => !connector.provider)
+      .map((connector) => ({ id: connector.id, title: connector.name })),
+    [open],
   );
 
   if (!open) return null;
 
-  const toggle = (list: string[], id: string): string[] =>
-    list.includes(id) ? list.filter((item) => item !== id) : [...list, id];
+  const profile: ExpertProfile = {
+    role,
+    methodology,
+    boundaries,
+    deliverables,
+    examples: examples.map((example, index) => ({
+      id: `example-${index + 1}`,
+      title: example.title.trim() || `示例${index + 1}`,
+      prompt: example.prompt,
+    })),
+  };
+  const tags = splitTags(tagsText);
+  const canSubmit = Boolean(name.trim() && description.trim() && tags.length > 0 && profileIsComplete(profile));
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (event.key === "Escape") {
@@ -100,15 +128,22 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
     }
   };
 
-  const canSubmit = Boolean(name.trim() && templatePrompt.trim());
-
   const handleConfirm = () => {
     if (!canSubmit) return;
     const fields = {
       name: name.trim(),
-      description: description.trim() || `${name.trim()}：自定义专家`,
-      category: category,
-      templatePrompt: templatePrompt.trim(),
+      description: description.trim(),
+      category,
+      tags,
+      expertProfile: {
+        ...profile,
+        role: profile.role.trim(),
+        methodology: profile.methodology.trim(),
+        boundaries: profile.boundaries.trim(),
+        deliverables: profile.deliverables.trim(),
+        examples: profile.examples.map((example) => ({ ...example, prompt: example.prompt.trim() })),
+      },
+      templatePrompt: compileExpertTemplatePrompt(name.trim(), profile),
       defaultToolIds: [...selectedToolIds],
       defaultSkillIds: [...selectedSkillIds],
       defaultMcpConnectorIds: [...selectedMcpConnectorIds],
@@ -118,197 +153,104 @@ export default function CreateExpertDialog({ open, editing = null, onClose, onCr
       manifest = { ...editing, ...fields };
       pluginRegistry.updateManifest(manifest);
     } else {
-      const slug =
-        name
-          .toLowerCase()
-          .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-          .replace(/^-+|-+$/g, "") || "expert";
-      // id 必须唯一：install() 是「按 id 覆盖」而不是追加，同名专家若撞上同一 id
-      // 会**静默覆盖**先建的那份档案（时间戳只到毫秒，批量创建时极易撞）。
-      // 撞上已有 manifest 就追加序号 —— id 丑一点也不能丢用户刚建的档案。
+      const slug = name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-").replace(/^-+|-+$/g, "") || "expert";
       const base = `expert-${slug}-${Date.now().toString(36)}`;
       let id = base;
-      for (let n = 2; pluginRegistry.getManifest(id); n += 1) {
-        id = `${base}-${n}`;
-      }
-      manifest = {
-        id,
-        version: "1.0.0",
-        author: "用户",
-        kind: "expert",
-        icon: "Bot",
-        ...fields,
-      };
-      pluginRegistry.install(manifest, { type: "local", path: "user" });
+      for (let n = 2; pluginRegistry.getManifest(id); n += 1) id = `${base}-${n}`;
+      manifest = { id, version: "1.0.0", author: "用户", kind: "expert", icon: "Bot", ...fields };
+      manifest = canonicalizeExpertManifest(manifest);
+      pluginRegistry.install(manifest, { type: "user" });
     }
     onCreated?.(manifest);
     onClose();
   };
 
+  const field = (
+    label: string,
+    value: string,
+    setValue: (value: string) => void,
+    placeholder: string,
+    rows = 3,
+  ) => (
+    <label className="omni-dialog__field">
+      <span className="omni-dialog__label">{label}</span>
+      <textarea value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder} rows={rows} />
+    </label>
+  );
+
   return (
     <>
       <div className="omni-dialog-backdrop" onClick={onClose} />
-      <div className="omni-dialog omni-dialog--create-project" role="dialog" aria-modal="true" aria-labelledby="create-expert-title">
+      <div className="omni-dialog omni-dialog--create-project omni-dialog--create-expert" role="dialog" aria-modal="true" aria-labelledby="create-expert-title">
         <div className="omni-dialog__header">
-          <h2 id="create-expert-title">{isEditing ? "编辑专家" : "创建专家"}</h2>
-          <button type="button" className="omni-dialog__close" onClick={onClose} aria-label="关闭">
-            <X size={18} strokeWidth={1.8} />
-          </button>
+          <div>
+            <h2 id="create-expert-title">{isEditing ? "编辑专家" : copying ? "复制专家" : "创建专家"}</h2>
+            <p className="omni-dialog__subtitle">按 DSH 专家定义创建，可直接用于 @ 对话和 Agent 委派。</p>
+          </div>
+          <button type="button" className="omni-dialog__close" onClick={onClose} aria-label="关闭"><X size={18} strokeWidth={1.8} /></button>
         </div>
 
         <div className="omni-dialog__body">
-          <label className="omni-dialog__field">
-            <span className="omni-dialog__label">专家名称</span>
-            <input
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="如：周报专家、代码评审专家"
-              maxLength={20}
-            />
-            <span className="omni-dialog__counter">{name.length}/20</span>
-          </label>
+          <div className="omni-dialog__section-heading"><strong>基本信息</strong><span>用于目录展示和专家匹配</span></div>
+          <label className="omni-dialog__field"><span className="omni-dialog__label">专家名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} onKeyDown={handleKeyDown} placeholder="如：周报分析顾问" maxLength={40} /></label>
+          <label className="omni-dialog__field"><span className="omni-dialog__label">专家描述</span><input value={description} onChange={(event) => setDescription(event.target.value)} onKeyDown={handleKeyDown} placeholder="说明专家解决什么问题、适用于什么场景" maxLength={160} /></label>
+          <label className="omni-dialog__field"><span className="omni-dialog__label">分类</span><select value={category} onChange={(event) => setCategory(event.target.value)}>{EXPERT_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label className="omni-dialog__field"><span className="omni-dialog__label">标签</span><input value={tagsText} onChange={(event) => setTagsText(event.target.value)} onKeyDown={handleKeyDown} placeholder="用顿号或逗号分隔，例如：复盘、改进、团队协作" /></label>
 
-          <label className="omni-dialog__field">
-            <span className="omni-dialog__label">一句话描述</span>
-            <input
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="擅长什么、什么场景下会用到（用于委派匹配）"
-              maxLength={80}
-            />
-            <span className="omni-dialog__counter">{description.length}/80</span>
-          </label>
+          <div className="omni-dialog__section-heading"><strong>专家定义</strong><span>这四项会原样进入 DSH 专家档案</span></div>
+          {field("角色定位", role, setRole, "这个专家是谁，擅长解决什么类型的问题？", 4)}
+          {field("工作方法", methodology, setMethodology, "描述专家如何分析、判断和推进任务。", 5)}
+          {field("行为边界", boundaries, setBoundaries, "说明不能臆造什么、遇到信息不足如何处理。", 4)}
+          {field("交付物", deliverables, setDeliverables, "说明最终应该输出什么结果。", 3)}
 
-          <label className="omni-dialog__field">
-            <span className="omni-dialog__label">行业分类</span>
-            <select value={category} onChange={(event) => setCategory(event.target.value)}>
-              {EXPERT_CATEGORIES.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="omni-dialog__field">
-            <span className="omni-dialog__label">角色提示词</span>
-            <textarea
-              value={templatePrompt}
-              onChange={(event) => setTemplatePrompt(event.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="专家的系统提示词：角色定位 + 工作方式 + 输出偏好。被 agent 委派或 @ 指定时以此驱动。"
-              rows={5}
-            />
-          </label>
-
-          <div className="omni-dialog__plugin-row">
-            <div className="omni-dialog__plugin-row-header">
-              <div className="omni-dialog__plugin-row-title">
-                <Cable size={16} strokeWidth={1.8} />
-                <span>推荐工具</span>
-                <span className="omni-dialog__plugin-row-hint">（可多选；委派时按声明给出，写类操作仍需用户确认）</span>
-              </div>
+          <div className="omni-dialog__section-heading"><strong>使用示例</strong><span>至少提供两个真实提问，帮助用户直接召唤专家</span></div>
+          {examples.map((example, index) => (
+            <div className="omni-dialog__example-fields" key={index}>
+              <input value={example.title} onChange={(event) => setExamples((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, title: event.target.value } : item))} onKeyDown={handleKeyDown} placeholder={`示例${index + 1}标题`} />
+              <textarea value={example.prompt} onChange={(event) => setExamples((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, prompt: event.target.value } : item))} onKeyDown={handleKeyDown} placeholder="用户会怎样向这个专家提问？" rows={3} />
             </div>
-            <div className="omni-dialog__plugin-chips">
-              {toolOptions.map((tool) => {
-                const active = selectedToolIds.includes(tool.id);
-                return (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    className={`omni-dialog__plugin-chip${active ? " omni-dialog__plugin-chip--active" : ""}`}
-                    onClick={() => setSelectedToolIds((current) => toggle(current, tool.id))}
-                  >
-                    {active ? <Check size={12} strokeWidth={2} /> : <Cable size={12} strokeWidth={1.8} />}
-                    <span>{tool.title}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          ))}
 
-          <div className="omni-dialog__plugin-row">
-            <div className="omni-dialog__plugin-row-header">
-              <div className="omni-dialog__plugin-row-title">
-                <Plug size={16} strokeWidth={1.8} />
-                <span>绑定 MCP</span>
-                <span className="omni-dialog__plugin-row-hint">（可多选；绑定后该专家可用这个连接器暴露的全部工具）</span>
-              </div>
-            </div>
-            {mcpOptions.length > 0 ? (
-              <div className="omni-dialog__plugin-chips">
-                {mcpOptions.map((connector) => {
-                  const active = selectedMcpConnectorIds.includes(connector.id);
-                  return (
-                    <button
-                      key={connector.id}
-                      type="button"
-                      className={`omni-dialog__plugin-chip${active ? " omni-dialog__plugin-chip--active" : ""}`}
-                      onClick={() => setSelectedMcpConnectorIds((current) => toggle(current, connector.id))}
-                    >
-                      {active ? <Check size={12} strokeWidth={2} /> : <Plug size={12} strokeWidth={1.8} />}
-                      <span>{connector.title}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="omni-dialog__hint">暂无已安装的 MCP 连接器（可在扩展中心「连接器」中添加）</p>
-            )}
-          </div>
+          <div className="omni-dialog__section-heading"><strong>能力依赖</strong><span>只绑定当前 Omni 中真实存在的工具、技能和 MCP</span></div>
+          <PluginChips icon={<Cable size={16} strokeWidth={1.8} />} title="推荐工具" hint="可多选；写类操作仍需用户确认" options={toolOptions} selected={selectedToolIds} setSelected={setSelectedToolIds} />
+          <PluginChips icon={<Wand2 size={16} strokeWidth={1.8} />} title="绑定技能" hint="可多选" options={skillOptions} selected={selectedSkillIds} setSelected={setSelectedSkillIds} />
+          <PluginChips icon={<Plug size={16} strokeWidth={1.8} />} title="绑定 MCP" hint="可多选；绑定后使用连接器暴露的工具" options={mcpOptions} selected={selectedMcpConnectorIds} setSelected={setSelectedMcpConnectorIds} empty="暂无已安装的 MCP 连接器" />
 
-          <div className="omni-dialog__plugin-row">
-            <div className="omni-dialog__plugin-row-header">
-              <div className="omni-dialog__plugin-row-title">
-                <Wand2 size={16} strokeWidth={1.8} />
-                <span>绑定技能</span>
-                <span className="omni-dialog__plugin-row-hint">（可多选；留空则专家不使用技能）</span>
-              </div>
-            </div>
-            {skillOptions.length > 0 ? (
-              <div className="omni-dialog__plugin-chips">
-                {skillOptions.map((skill) => {
-                  const active = selectedSkillIds.includes(skill.id);
-                  return (
-                    <button
-                      key={skill.id}
-                      type="button"
-                      className={`omni-dialog__plugin-chip${active ? " omni-dialog__plugin-chip--active" : ""}`}
-                      onClick={() => setSelectedSkillIds((current) => toggle(current, skill.id))}
-                    >
-                      {active ? <Check size={12} strokeWidth={2} /> : <Wand2 size={12} strokeWidth={1.8} />}
-                      <span>{skill.title}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="omni-dialog__hint">暂无已安装技能</p>
-            )}
-          </div>
-
-          <p className="omni-dialog__hint">
-            <Bot size={12} strokeWidth={1.8} /> 创建后可在「我的专家」管理，项目绑定或 @ 提及即可使用。
-          </p>
+          <p className="omni-dialog__hint"><Bot size={12} strokeWidth={1.8} /> 保存后会生成统一的 DSH ExpertProfile，并由系统编译运行时角色提示词。</p>
         </div>
-
         <div className="omni-dialog__footer">
-          <button type="button" className="omni-dialog__button omni-dialog__button--secondary" onClick={onClose}>
-            取消
-          </button>
-          <button
-            type="button"
-            className="omni-dialog__button omni-dialog__button--primary"
-            onClick={handleConfirm}
-            disabled={!canSubmit}
-          >
-            {isEditing ? "保存" : "创建"}
-          </button>
+          <button type="button" className="omni-dialog__button omni-dialog__button--secondary" onClick={onClose}>取消</button>
+          <button type="button" className="omni-dialog__button omni-dialog__button--primary" onClick={handleConfirm} disabled={!canSubmit}>{isEditing ? "保存" : copying ? "创建副本" : "创建专家"}</button>
         </div>
       </div>
     </>
+  );
+}
+
+function PluginChips({
+  icon,
+  title,
+  hint,
+  options,
+  selected,
+  setSelected,
+  empty,
+}: {
+  icon: ReactNode;
+  title: string;
+  hint: string;
+  options: Array<{ id: string; title: string }>;
+  selected: string[];
+  setSelected: (update: (current: string[]) => string[]) => void;
+  empty?: string;
+}) {
+  return (
+    <div className="omni-dialog__plugin-row">
+      <div className="omni-dialog__plugin-row-header"><div className="omni-dialog__plugin-row-title">{icon}<span>{title}</span><span className="omni-dialog__plugin-row-hint">（{hint}）</span></div></div>
+      {options.length > 0 ? <div className="omni-dialog__plugin-chips">{options.map((option) => {
+        const active = selected.includes(option.id);
+        return <button key={option.id} type="button" className={`omni-dialog__plugin-chip${active ? " omni-dialog__plugin-chip--active" : ""}`} onClick={() => setSelected((current) => current.includes(option.id) ? current.filter((id) => id !== option.id) : [...current, option.id])}>{active ? <Check size={12} strokeWidth={2} /> : icon}<span>{option.title}</span></button>;
+      })}</div> : <p className="omni-dialog__hint">{empty ?? "暂无可用项"}</p>}
+    </div>
   );
 }

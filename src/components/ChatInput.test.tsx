@@ -4,6 +4,7 @@ import ChatInput from "./ChatInput";
 import type { KnowledgeCollection } from "../chat/knowledgeTypes";
 import { BUILTIN_SESSION_STATE_KEY } from "../chat/builtinCommandState";
 import { modelRegistry } from "../adapters/registry";
+import type { ExpertTeam } from "../plugins/expertTeams";
 
 const knowledgeCollections: KnowledgeCollection[] = [
   {
@@ -468,6 +469,58 @@ describe("ChatInput", () => {
     fireEvent.click(screen.getByRole("button", { name: /产品知识库/ }));
 
     expect(screen.getByTitle("取消本次知识库选择")).toHaveTextContent("@ 产品知识库");
+  });
+
+  it("从输入框召唤专家时交给宿主新建绑定会话", () => {
+    const onSummonExpert = vi.fn();
+    const expert = {
+      id: "review-expert",
+      name: "评审专家",
+      description: "评审交付物",
+      version: "1.0.0",
+      kind: "expert" as const,
+      templatePrompt: "你是评审专家",
+    };
+    render(
+      <ChatInput
+        experts={[expert]}
+        onSummonExpert={onSummonExpert}
+        onSend={vi.fn()}
+        isLoading={false}
+        onStop={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "召唤专家" }));
+    expect(screen.queryByText("默认助手")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /评审专家/ }));
+
+    expect(onSummonExpert).toHaveBeenCalledWith(expert);
+  });
+
+  it("selects an expert team for the current turn and includes it in send options", () => {
+    const onSend = vi.fn();
+    const team: ExpertTeam = {
+      id: "release-review",
+      name: "发布评审团",
+      description: "审查上线风险",
+      members: [{ id: "reviewer", expertId: "code-review", name: "代码评审", role: "检查回归" }],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    render(<ChatInput expertTeams={[team]} onSend={onSend} isLoading={false} onStop={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "选择专家团" }));
+    fireEvent.click(screen.getByRole("button", { name: /发布评审团/ }));
+    expect(screen.getByTitle("取消本次专家团")).toHaveTextContent("专家团: 发布评审团");
+
+    const textarea = screen.getByPlaceholderText("输入聊天内容...");
+    fireEvent.change(textarea, { target: { value: "检查这个版本" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(onSend).toHaveBeenCalledWith("检查这个版本", undefined, expect.objectContaining({
+      expertTeamId: team.id,
+      expertTeamName: team.name,
+    }));
   });
 
   it("selects an expert with @ and sends the expert id for role switch", () => {

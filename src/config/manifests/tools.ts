@@ -325,9 +325,9 @@ export const TOOL_MANIFESTS: ToolManifest[] = [
     command: "/install_expert",
     title: "Install Expert",
     description:
-      "Register an Omni-compliant expert definition (a PluginManifest with kind 'expert') into the local plugin library; afterwards it appears under 'Expert Categories → My Experts'.",
+      "Register an Omni-compliant expert definition (a PluginManifest with kind 'expert') into the local plugin library; afterwards it appears under 'Experts → My Experts'.",
     promptContribution:
-      "Call /install_expert to register an Omni-compliant expert definition (PluginManifest with kind fixed to 'expert') into the local plugin library; it takes effect immediately under 'Expert Categories → My Experts'. Only use when the user asks to create/install/update an expert; pass the full expert manifest as JSON.",
+      "Call /install_expert to register an Omni-compliant expert definition (PluginManifest with kind fixed to 'expert') into the local plugin library; it takes effect immediately under 'Experts → My Experts'. Only use when the user asks to create/install/update an expert; pass the full expert manifest as JSON.",
     parameters: {
       type: "object",
       properties: {

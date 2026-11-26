@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import ProjectSettingsDialog from "./ProjectSettingsDialog";
 import { PromptDialogProvider } from "./PromptDialog";
 import { pluginRegistry } from "../plugins/registry";
-import { userPresetId } from "../plugins/projectPresets";
+import { saveAgentPreset, userPresetId } from "../plugins/agentPresets";
 import type { Project } from "../chat/types";
 
 /**
@@ -52,8 +52,9 @@ const renderDialog = (overrides: Partial<Project> = {}) => {
 };
 
 const instructionField = () => screen.getByLabelText("指令") as HTMLTextAreaElement;
-const saveButton = () => screen.getByRole("button", { name: /另存为预设/ });
+const saveButton = () => screen.getByRole("button", { name: /保存为专家预设/ });
 const saveSubmit = () => screen.getByRole("button", { name: "保存" });
+const presetSubmit = () => screen.getByRole("button", { name: "保存专家预设" });
 
 /** 按行标题定位插件行（三行的 chips 形态相同，只能先定位行）。 */
 const pluginRow = (label: string) => {
@@ -98,14 +99,14 @@ describe("ProjectSettingsDialog「另存为预设」", () => {
     fireEvent.change(instructionField(), { target: { value: edited } });
     fireEvent.click(saveButton());
 
-    const nameInput = await screen.findByLabelText("预设名称");
+    const nameInput = await screen.findByLabelText("专家名称");
     // 名称默认取项目名，避免用户从零开始打字
     expect((nameInput as HTMLInputElement).value).toBe("周报项目");
     fireEvent.change(nameInput, { target: { value: "周报口径" } });
     fireEvent.change(screen.getByLabelText(/一句话说明/), {
       target: { value: "每周五出周报" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存预设" }));
+    fireEvent.click(presetSubmit());
 
     createdIds.push(userPresetId("周报口径"));
 
@@ -114,7 +115,7 @@ describe("ProjectSettingsDialog「另存为预设」", () => {
     });
     expect(pluginRegistry.isUserCreated(userPresetId("周报口径"))).toBe(true);
     // 反馈必须告诉用户去哪儿找，否则「存了但找不到」等于没存
-    expect(await screen.findByText(/新建项目时可在「选择预设」里找到/)).toBeTruthy();
+    expect(await screen.findByText(/可在专家管理和项目选择器中使用/)).toBeTruthy();
   });
 
   it("同名再存一次提示「已覆盖」，不产生第二条", async () => {
@@ -123,45 +124,50 @@ describe("ProjectSettingsDialog「另存为预设」", () => {
     renderDialog({ systemPrompt: "同名覆盖用例指令。" });
     createdIds.push(userPresetId("同名用例"));
 
-    for (const expected of [/新建项目时可在「选择预设」里找到/, /已覆盖同名预设/]) {
+    for (const expected of [/可在专家管理和项目选择器中使用/, /已更新同名专家预设/]) {
       fireEvent.click(saveButton());
-      const nameInput = await screen.findByLabelText("预设名称");
+      const nameInput = await screen.findByLabelText("专家名称");
       fireEvent.change(nameInput, { target: { value: "同名用例" } });
-      fireEvent.click(screen.getByRole("button", { name: "保存预设" }));
+      fireEvent.click(presetSubmit());
       expect(await screen.findByText(expected)).toBeTruthy();
     }
 
-    expect(pluginRegistry.listTemplates().filter((m) => m.name === "同名用例")).toHaveLength(1);
+    expect(pluginRegistry.listAgentPresets().filter((m) => m.name === "同名用例")).toHaveLength(1);
   });
 
   it("取消名称输入时不写注册表", async () => {
     pluginRegistry.load();
-    const before = pluginRegistry.listTemplates().length;
+    const before = pluginRegistry.listAgentPresets().length;
 
     renderDialog({ systemPrompt: "这段指令不应该被存下来。" });
     fireEvent.click(saveButton());
-    await screen.findByLabelText("预设名称");
+    await screen.findByLabelText("专家名称");
     // 必须限定在提示弹窗内取「取消」：项目设置自己的 footer 里也有一个「取消」
     fireEvent.click(
-      within(screen.getByRole("dialog", { name: "另存为项目预设" })).getByRole("button", {
+      within(screen.getByRole("dialog", { name: "保存为专家预设" })).getByRole("button", {
         name: "取消",
       }),
     );
 
     await waitFor(() => {
-      expect(screen.queryByLabelText("预设名称")).toBeNull();
+      expect(screen.queryByLabelText("专家名称")).toBeNull();
     });
-    expect(pluginRegistry.listTemplates()).toHaveLength(before);
+    expect(pluginRegistry.listAgentPresets()).toHaveLength(before);
   });
 });
 
 describe("ProjectSettingsDialog 能力集与预设选择", () => {
   const installedSkillIds: string[] = [];
+  const createdPresetIds: string[] = [];
 
   afterEach(async () => {
     await act(async () => {
       while (installedSkillIds.length > 0) {
         const id = installedSkillIds.pop();
+        if (id) pluginRegistry.uninstall(id);
+      }
+      while (createdPresetIds.length > 0) {
+        const id = createdPresetIds.pop();
         if (id) pluginRegistry.uninstall(id);
       }
     });
@@ -235,16 +241,19 @@ describe("ProjectSettingsDialog 能力集与预设选择", () => {
 
   it("「选择预设」是覆盖式套用，并给出提示", async () => {
     pluginRegistry.load();
-    const target = pluginRegistry.listTemplates().find((m) => m.id === "code-debugger");
-    expect(target?.instruction).toBeTruthy();
+    const saved = saveAgentPreset({ name: "项目设置应用专家用例", instruction: "只用于验证项目设置的专家选择。" });
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    createdPresetIds.push(saved.manifest.id);
+    const target = saved.manifest;
 
     renderDialog({ systemPrompt: "原来自己写的指令" });
 
-    fireEvent.click(screen.getByRole("button", { name: "选择项目预设" }));
-    fireEvent.click(screen.getByRole("option", { name: target!.name }));
+    fireEvent.click(screen.getByRole("button", { name: "选择专家预设" }));
+    fireEvent.click(screen.getByRole("option", { name: target.name }));
 
-    expect(instructionField().value).toBe(target!.instruction);
-    expect(await screen.findByText(new RegExp(`已套用预设「${target!.name}」`))).toBeTruthy();
+    expect(instructionField().value).toBe(target.instruction);
+    expect(await screen.findByText(new RegExp(`已套用专家预设「${target.name}」`))).toBeTruthy();
     // 覆盖是有代价的动作，常驻提示必须一直在（不能只靠一次性 notice）
     expect(screen.getByText(/套用预设会覆盖/)).toBeTruthy();
   });

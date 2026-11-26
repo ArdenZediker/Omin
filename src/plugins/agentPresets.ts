@@ -1,12 +1,13 @@
 import { pluginRegistry } from "./registry";
+import { canonicalizeExpertManifest } from "./expertProfiles";
 import type { PluginManifest } from "./types";
 
 /**
- * 项目预设的**自建通道**（项目设置 →「另存为预设」）。
+ * 统一专家预设的项目指令保存入口（项目设置 →「保存为专家预设」）。
  *
  * 背景：预设此前只有内置那 4 条，定义在 `plugins/builtins.ts` 里 —— 想加一条只能改源码。
- * 而用户真正手上有价值的东西是**自己调好的那个项目的指令**，所以入口做成「把当前项目的
- * 指令另存为一条预设」，而不是再给一张空白表单。
+ * 当前项目指令会沉淀为统一专家预设；该条目既可应用于项目，也可用于委派，并可在专家编辑器
+ * 中继续配置角色提示词、工具和技能。
  *
  * 三条口径：
  * 1. **同名即覆盖**：「另存为」的语义就是「叫这个名字的预设 = 这份内容」。名字不变 →
@@ -15,9 +16,7 @@ import type { PluginManifest } from "./types";
  * 2. **id 由名字哈希得出且带前缀**：`user-preset-<hash>`。前缀保证永远不会撞上内置/市场的
  *    id（那些都是 kebab 英文名）；哈希保证同一个名字永远落到同一个 id（覆盖语义的基础）。
  *    哈希理论上会撞，所以落库前还有一道「同 id 不同名 → 换后缀」的兜底。
- * 3. **只存 `instruction`**：预设 =「持久项目指令」。不写 `starterPrompt`，因此自建预设
- *    没有「插入输入框」按钮（该按钮本来就以 `manifest.starterPrompt` 存在为前提）；
- *    也不写 `defaultToolIds` —— 内置工具无条件可用，写了是空操作（见 `builtins.ts` 同处注释）。
+ * 3. 项目长期指令存入 `instruction`，角色指导另存于 `templatePrompt`；二者作用范围不同。
  */
 
 /** 自建预设 id 前缀。判别「这条是用户自建还是内置/市场来的」只看它。 */
@@ -56,7 +55,7 @@ function resolvePresetId(name: string): string {
   }
 }
 
-export type SaveProjectPresetInput = {
+export type SaveAgentPresetInput = {
   /** 预设名称（同时是覆盖判据）。 */
   name: string;
   /** 一句话说明，展示在预设列表里。留空则给一句兜底文案。 */
@@ -65,15 +64,14 @@ export type SaveProjectPresetInput = {
   instruction: string;
 };
 
-export type SaveProjectPresetResult =
+export type SaveAgentPresetResult =
   | { ok: true; manifest: PluginManifest; created: boolean }
   | { ok: false; error: string };
 
 /**
- * 把一段项目指令保存为项目预设（同名覆盖）。写注册表 → 广播 → 新建项目对话框的下拉、
- * 扩展中心的「项目预设」tab 都会立刻反映出来。
+ * 把项目指令保存为统一专家预设（同名覆盖）。
  */
-export function saveProjectPreset(input: SaveProjectPresetInput): SaveProjectPresetResult {
+export function saveAgentPreset(input: SaveAgentPresetInput): SaveAgentPresetResult {
   const name = input.name.trim();
   const instruction = input.instruction.trim();
 
@@ -81,18 +79,20 @@ export function saveProjectPreset(input: SaveProjectPresetInput): SaveProjectPre
   if (!instruction) return { ok: false, error: "指令为空，没有可保存的内容" };
 
   const id = resolvePresetId(name);
-  const manifest: PluginManifest = {
+  const existing = pluginRegistry.getManifest(id);
+  const manifest: PluginManifest = canonicalizeExpertManifest({
+    ...existing,
     id,
     name,
-    description: input.description?.trim() || `由项目指令保存的预设：${name}`,
-    version: "1.0.0",
-    author: "我",
-    kind: "template",
-    // 独立分类：让它在内置预设（商业运营 / 开发编程 / 内容创作）之外自成一档，
-    // 用户一眼能认出哪几条是自己存的。
-    category: "我的预设",
+    description: input.description?.trim() || `由项目指令保存的专家预设：${name}`,
+    version: existing?.version ?? "1.0.0",
+    author: existing?.author ?? "我",
+    kind: "expert",
+    templatePrompt: existing?.templatePrompt ||
+      `你是「${name}」专家。依据项目指令开展工作，专注于完成分配给你的任务并给出清晰、可核验的结果。`,
+    category: existing?.category ?? "AI Agent",
     instruction,
-  };
+  });
 
   if (pluginRegistry.isInstalled(id)) {
     pluginRegistry.updateManifest(manifest);

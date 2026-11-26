@@ -19,6 +19,15 @@ export type SessionLite = {
   workspacePath?: string;
   /** 会话创建时间（ms）。设了「固定归档目录」时产出按它分日期桶；缺省则退化为当前时刻。 */
   createdAt?: number;
+  expertBinding?: {
+    id: string;
+    name: string;
+    templatePrompt?: string;
+    instruction?: string;
+    defaultToolIds?: string[];
+    defaultSkillIds?: string[];
+    defaultMcpConnectorIds?: string[];
+  };
 };
 
 /** 专家名册上限：避免专家装太多时把 agent 工具描述撑爆（超出部分提示用户去扩展中心看）。 */

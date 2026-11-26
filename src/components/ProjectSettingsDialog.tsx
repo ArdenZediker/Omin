@@ -4,7 +4,7 @@ import { X, Bot, FolderOpen, Wand2, BookmarkPlus } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { Project } from "../chat/types";
 import { pluginRegistry } from "../plugins/registry";
-import { saveProjectPreset } from "../plugins/projectPresets";
+import { saveAgentPreset } from "../plugins/agentPresets";
 import { usePromptDialog } from "./PromptDialog";
 import OmniSelect, { type OmniSelectOption } from "./ui/OmniSelect";
 import PluginToggleRow from "./ui/PluginToggleRow";
@@ -61,21 +61,21 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
     }
   }, [open, project]);
 
-  // 预设选项的唯一事实来源是注册表（`kind:"template"`）。订阅理由同 CreateProjectDialog：
+  // 预设选项的唯一事实来源是专家注册表。订阅理由同 CreateProjectDialog：
   // 注册表是渲染进程模块级单例，预设可能是本组件之外存的（「另存为预设」就在本组件里，
   // 但扩展中心、对话工具都会写），靠自身 handler 刷新必漏。
-  const templateVersion = useSyncExternalStore(
+  const agentPresetVersion = useSyncExternalStore(
     (listener) => pluginRegistry.subscribe(listener),
     () => pluginRegistry.getVersion(),
   );
 
-  const templateOptions = useMemo<OmniSelectOption[]>(() => {
-    void templateVersion;
-    return pluginRegistry.listTemplates().map((manifest) => ({
+  const agentPresetOptions = useMemo<OmniSelectOption[]>(() => {
+    void agentPresetVersion;
+    return pluginRegistry.listAgentPresets().map((manifest) => ({
       value: manifest.id,
       label: manifest.name,
     }));
-  }, [templateVersion]);
+  }, [agentPresetVersion]);
 
   /**
    * 候选集：专家 = 已启用专家（现在全部是用户自建的）；技能 = **仅内置技能**。
@@ -85,23 +85,23 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
    * `pluginRegistry.listEnabledUserSkills()` **绕过这个白名单**（`registry.ts:158-171`）。
    * 之前那个「添加 → 扩展中心」弹层把自装技能也列了出来，勾了写进去却永远不生效 —— 语义错配。
    *
-   * 依赖 `templateVersion` 是把它钉在注册表版本上：专家/技能可能在别处装、卸、改。
+   * 依赖 `agentPresetVersion` 是把它钉在注册表版本上：专家/技能可能在别处装、卸、改。
    */
   const expertOptions = useMemo(() => {
-    void templateVersion;
+    void agentPresetVersion;
     return pluginRegistry.listExperts().map((manifest) => ({
       id: manifest.id,
       name: manifest.name,
     }));
-  }, [templateVersion]);
+  }, [agentPresetVersion]);
 
   const skillOptions = useMemo(() => {
-    void templateVersion;
+    void agentPresetVersion;
     return pluginRegistry
       .list({ kind: "skill" })
       .filter((manifest) => pluginRegistry.isBuiltin(manifest.id))
       .map((manifest) => ({ id: manifest.id, name: manifest.name }));
-  }, [templateVersion]);
+  }, [agentPresetVersion]);
 
   const toggleBoundExpert = useCallback((id: string) => {
     setBoundExpertIds((current) =>
@@ -122,15 +122,16 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
   }, []);
 
   /** 套用预设：写进 textarea（**覆盖**现有指令），由用户决定要不要「保存」。 */
-  const applyPreset = useCallback((templateId: string) => {
-    const template = pluginRegistry.listTemplates().find((manifest) => manifest.id === templateId);
-    if (!template?.instruction) return;
-    setInstruction(template.instruction);
-    setNotice(`已套用预设「${template.name}」的指令，可继续编辑后再保存。`);
+  const applyPreset = useCallback((agentPresetId: string) => {
+    const agentPreset = pluginRegistry.listAgentPresets().find((manifest) => manifest.id === agentPresetId);
+    if (!agentPreset?.instruction) return;
+    setInstruction(agentPreset.instruction);
+    setBoundExpertIds((current) => current.includes(agentPreset.id) ? current : [...current, agentPreset.id]);
+    setNotice(`已套用专家预设「${agentPreset.name}」的指令并绑定该专家，可继续编辑后再保存。`);
   }, []);
 
   /**
-   * 「另存为预设」：把当前 textarea 里的指令存成一条项目预设。
+   * 「保存为专家预设」：把当前 textarea 里的项目指令存入统一专家目录。
    *
    * 存的是**当前编辑中的内容**（不是已保存项目的 systemPrompt）—— 用户往往是先调顺了眼下的
    * 指令、再想把它沉淀成预设，此时强迫他先点「保存」再另存是多余的。
@@ -138,15 +139,15 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
    */
   const handleSaveAsPreset = async () => {
     const values = await openPrompt({
-      title: "另存为项目预设",
+      title: "保存为专家预设",
       description:
-        "把当前指令存成一条预设：下次「新建项目」时可直接选用，也会出现在扩展中心的「项目预设」里。同名预设会被覆盖。",
-      confirmLabel: "保存预设",
+        "保存后可在项目中套用，也能绑定工具和技能供会话委派使用。同名预设会更新。",
+      confirmLabel: "保存专家预设",
       fields: [
         {
-          label: "预设名称",
+          label: "专家名称",
           defaultValue: title.trim(),
-          placeholder: "如：周报写作",
+          placeholder: "如：周报专家",
           autoFocus: true,
         },
         {
@@ -159,12 +160,12 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
     if (!values) return;
 
     const [name, description] = values;
-    const result = saveProjectPreset({ name, description, instruction });
+    const result = saveAgentPreset({ name, description, instruction });
     setNotice(
       result.ok
         ? result.created
-          ? `已保存为预设「${result.manifest.name}」，新建项目时可在「选择预设」里找到。`
-          : `已覆盖同名预设「${result.manifest.name}」。`
+          ? `已保存专家预设「${result.manifest.name}」，可在专家管理和项目选择器中使用。`
+          : `已更新同名专家预设「${result.manifest.name}」。`
         : `保存失败：${result.error}`,
     );
   };
@@ -231,10 +232,10 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
               <div className="omni-dialog__label-actions">
                 <OmniSelect
                   className="omni-select--preset"
-                  ariaLabel="选择项目预设"
+                  ariaLabel="选择专家预设"
                   placeholder="选择预设"
                   value=""
-                  options={templateOptions}
+                  options={agentPresetOptions}
                   onChange={applyPreset}
                 />
                 <button
@@ -244,12 +245,12 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
                   disabled={!instruction.trim()}
                   title={
                     instruction.trim()
-                      ? "把当前指令保存为项目预设，下次新建项目时可直接选用（同名预设会被覆盖）"
+                      ? "保存为可在项目和专家委派中复用的专家预设（同名时更新）"
                       : "指令为空，没有可保存的内容"
                   }
                 >
                   <BookmarkPlus size={14} strokeWidth={1.8} />
-                  <span>另存为预设</span>
+                  <span>保存为专家预设</span>
                 </button>
               </div>
             </div>

@@ -1,6 +1,6 @@
 import type { ChatToolCall, ChatToolParam, Message } from "../adapters/types";
 import { executeChatTurn, type ToolCallOutcome } from "./engine";
-import type { ChatStep, Project } from "./types";
+import type { ChatExecutionResult, ChatStep, Project } from "./types";
 import type { PluginManifest } from "../plugins/types";
 import { canDelegateExpert } from "./expertDelegation";
 import { selectExpertTools } from "./expertTools";
@@ -212,6 +212,17 @@ export type SubAgentRunContext = {
   executeToolCall: (toolCall: ChatToolCall) => Promise<string | ToolCallOutcome>;
   /** 按 id 解析专家 manifest（非专家 kind 返回 null）；由运行时注入以隔离 pluginRegistry */
   resolveExpert?: (id: string) => PluginManifest | null;
+  /** Optional durable per-expert session runner, used by explicitly selected teams. */
+  runPersistentExpert?: (options: {
+    expert: PluginManifest;
+    task: string;
+    model: string;
+    systemPrompt: string;
+    tools: ChatToolParam[];
+    project?: Project | null;
+    signal?: AbortSignal;
+    onToolStep?: (step: ChatStep) => void;
+  }) => Promise<Pick<ChatExecutionResult, "content" | "usage" | "estimated" | "toolRounds">>;
   /**
    * 全局放宽开关（设置 → 子 Agent 模型 → 允许模型指派任意专家）。
    * 缺省 false = 只允许委派**当前项目绑定**的专家 —— 专家是项目级工作角色，
@@ -271,7 +282,11 @@ async function runSingleSubAgent(spec: SubAgentTaskSpec, context: SubAgentRunCon
     // 工具按专家声明给：本地工具按 id 精确匹配 + 绑定连接器暴露的 mcp__* 工具
     //（写类工具允许，HITL 确认门在执行器里照常生效）；两类声明皆空 = 纯文本专家。
     tools = selectExpertTools(context.tools, expert);
-    systemPrompt = [expert.templatePrompt?.trim() || `你是「${expert.name}」专家。`, SUB_AGENT_EXPERT_RULES].join("\n");
+    systemPrompt = [
+      expert.templatePrompt?.trim() || `你是「${expert.name}」专家。`,
+      expert.instruction?.trim() ? `当前项目指令：\n${expert.instruction.trim()}` : "",
+      SUB_AGENT_EXPERT_RULES,
+    ].filter(Boolean).join("\n\n");
     skillIds = expert.defaultSkillIds;
   } else {
     tools = filterSubAgentTools(context.tools);
@@ -295,23 +310,25 @@ async function runSingleSubAgent(spec: SubAgentTaskSpec, context: SubAgentRunCon
   });
 
   try {
-    const result = await executeChatTurn({
-      model,
-      messages: [{ role: "user", content: task } satisfies Message],
-      signal,
-      systemPrompt,
-      project: project ?? null,
-      tools,
-      executeToolCall,
-      onToolStep,
-      // 子 Agent 保持精简：无知识检索、无记忆/摘要抽取、无结构化输出协议
-      enableKnowledgeContext: false,
-      enableMemoryExtraction: false,
-      enableSummaryExtraction: false,
-      enableToolProtocol: false,
-      // 专家模式按专家绑定过滤技能提示；通用调研子 Agent 不注入任何技能
-      enabledSkillIds: skillIds ?? [],
-    });
+    const result = expert && context.runPersistentExpert
+      ? await context.runPersistentExpert({ expert, task, model, systemPrompt, tools, project, signal, onToolStep })
+      : await executeChatTurn({
+          model,
+          messages: [{ role: "user", content: task } satisfies Message],
+          signal,
+          systemPrompt,
+          project: project ?? null,
+          tools,
+          executeToolCall,
+          onToolStep,
+          // 子 Agent 保持精简：无知识检索、无记忆/摘要抽取、无结构化输出协议
+          enableKnowledgeContext: false,
+          enableMemoryExtraction: false,
+          enableSummaryExtraction: false,
+          enableToolProtocol: false,
+          // 专家模式按专家绑定过滤技能提示；通用调研子 Agent 不注入任何技能
+          enabledSkillIds: skillIds ?? [],
+        });
 
     const report = result.content?.trim() || "";
     if (!report) {
@@ -410,5 +427,47 @@ export async function runSubAgent(options: {
     };
   } finally {
     activeSubAgentRuns -= specs.length;
+  }
+}
+
+/** Run one explicit team round while retaining a separate result per expert member. */
+export async function runExpertTeamMembers(options: {
+  tasks: Array<SubAgentTaskSpec & { memberId: string; memberName: string; role: string }>;
+  context: SubAgentRunContext;
+}): Promise<Array<{ memberId: string; memberName: string; expertId: string; outputText: string }>> {
+  const { tasks, context } = options;
+  if (tasks.length === 0 || tasks.length > MAX_SUB_AGENT_BATCH) {
+    throw new Error(`专家团成员数量必须在 1 到 ${MAX_SUB_AGENT_BATCH} 之间`);
+  }
+  if (activeSubAgentRuns >= MAX_SUB_AGENT_DEPTH) {
+    throw new Error("当前已有子 Agent 调度，不能在嵌套运行中启动专家团");
+  }
+  if (tasks.some((task) => !task.expertId)) {
+    throw new Error("专家团成员必须绑定有效专家档案");
+  }
+
+  activeSubAgentRuns += tasks.length;
+  try {
+    const results = await Promise.all(tasks.map(async (task) => {
+      const result = await runSingleSubAgent({
+        task: [
+          `团队成员：${task.memberName}`,
+          `本轮分工：${task.role}`,
+          `团队共同目标：${task.task}`,
+          "请先独立完成自己的分工，给 Lead 返回结论、依据和需要其他成员协助的事项。",
+        ].join("\n\n"),
+        expertId: task.expertId,
+        tier: task.tier,
+      }, context);
+      return {
+        memberId: task.memberId,
+        memberName: task.memberName,
+        expertId: task.expertId!,
+        outputText: result.outputText,
+      };
+    }));
+    return results;
+  } finally {
+    activeSubAgentRuns -= tasks.length;
   }
 }

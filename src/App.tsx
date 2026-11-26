@@ -5,6 +5,8 @@ import { listen } from "@tauri-apps/api/event";
 import { sendSystemNotification } from "./app/systemNotifications";
 import type { Message, ChatAttachment, ChatImage } from "./adapters/types";
 import type { ChatSession } from "./chat/types";
+import type { PluginManifest } from "./plugins/types";
+import { createExpertSessionBinding } from "./chat/expertSession";
 import { createDesktopActions } from "./app/desktopActions";
 import { modelRegistry } from "./adapters/registry";
 import { resolveCurrentModelId, resolveExecutionModelId } from "./chat/modelSelection";
@@ -166,6 +168,7 @@ function MainApp() {
     activeSession,
     addProjectMemory,
     applyUsageToSession,
+    bindChatSessionExpert,
     projects,
     chatSessions,
     clearProjectMemories,
@@ -445,6 +448,14 @@ function MainApp() {
     [activeProjectId, updateProjectDraft]
   );
 
+  const handleSummonExpert = useCallback((manifest: PluginManifest) => {
+    const binding = createExpertSessionBinding(manifest);
+    if (!binding) return;
+    setView("chat");
+    createSessionFromMessages([], activeProjectId, binding);
+    setInputFocusKey((key) => key + 1);
+  }, [activeProjectId, createSessionFromMessages]);
+
   const handleModelChange = useCallback((modelId: string) => {
     setCurrentModel((current) => {
       if (current && current !== modelId) {
@@ -511,6 +522,7 @@ function MainApp() {
     availableModels,
     messages,
     applyUsageToSession,
+    bindChatSessionExpert,
     commitProjectMemory,
     createSessionFromMessages,
     currentModel,
@@ -1048,6 +1060,7 @@ function MainApp() {
           onToggleFavoriteChat={handleToggleFavoriteChat}
           onTogglePinChat={handleTogglePinChat}
           onUsePromptDraft={handleUseEmptyPrompt}
+          onSummonExpert={handleSummonExpert}
           onDraftChange={handleComposerDraftChange}
           onJumpToChat={handleJumpToChat}
           onOpenKnowledge={() => setView("knowledge")}

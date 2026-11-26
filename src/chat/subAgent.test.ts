@@ -234,6 +234,24 @@ describe("runSubAgent", () => {
     expect(call.enableKnowledgeContext).toBe(false);
   });
 
+  it("团队专家优先交给持久会话 runner，继续复用专家声明工具", async () => {
+    const runPersistentExpert = vi.fn(async (_options: Parameters<NonNullable<SubAgentRunContext["runPersistentExpert"]>>[0]) => ({
+      content: "持久成员报告",
+      usage: { promptTokens: 12, completionTokens: 6, totalTokens: 18 },
+      estimated: false,
+      toolRounds: 2,
+    }));
+    const { outputText } = await runSubAgent({
+      args: JSON.stringify({ task: "审查发布" , expertId: "writer-expert" }),
+      context: makeExpertContext(expertManifest, { runPersistentExpert }),
+    });
+
+    expect(outputText).toContain("持久成员报告");
+    expect(runPersistentExpert).toHaveBeenCalledOnce();
+    expect(runPersistentExpert.mock.calls[0][0].tools.map((tool) => tool.name)).toEqual(["read_file", "export_md"]);
+    expect(mockedExecuteChatTurn).not.toHaveBeenCalled();
+  });
+
   it("专家 id 无法解析时返回错误文本", async () => {
     const { outputText } = await runSubAgent({
       args: JSON.stringify({ task: "任务", expertId: "ghost-expert" }),

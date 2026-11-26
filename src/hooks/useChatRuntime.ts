@@ -7,10 +7,11 @@ import { COMPACT_WINDOW_LABEL, CURRENT_MODEL_STORAGE_KEY, MAIN_WINDOW_LABEL, PET
 import { readSqliteBackedValue } from "../app/sqliteStorage";
 import { loadBasicSettings } from "../app/settingsStore";
 import { snapshotAttachments } from "../app/outputStorage";
-import { steerAgentHostTurn } from "../app/agentHostRuntime";
+import { runAgentHostTurn, steerAgentHostTurn } from "../app/agentHostRuntime";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { executeInputTask, executeTask } from "../chat/taskExecutor";
-import { runSubAgent, type SubAgentRunContext } from "../chat/subAgent";
+import { buildAttachmentContext } from "../chat/attachmentContext";
+import { runExpertTeamMembers, runSubAgent, type SubAgentRunContext } from "../chat/subAgent";
 import type { ToolCallOutcome } from "../chat/engine";
 import { resolveCurrentModelId, resolveExecutionModelId } from "../chat/modelSelection";
 import { createTaskHistoryStore } from "../chat/taskStorage";
@@ -18,7 +19,9 @@ import { getChatSessionTitle, getFallbackWorkspacePath, isPendingProjectPlacehol
 import { settleInterruptedSteps } from "../chat/stepSettlement";
 import { createTurnUsage } from "../chat/turnUsage";
 import { executeLocalTool } from "../chat/localTools";
+import { createExpertSessionBinding } from "../chat/expertSession";
 import { pluginRegistry } from "../plugins/registry";
+import { expertTeamRegistry } from "../plugins/expertTeams";
 import { requestConfirmation } from "../chat/confirmationGate";
 import { appendArtifact, loadArtifacts, notifyArtifactsChanged, NO_PROJECT_ARTIFACT_KEY, type Artifact } from "../chat/artifacts";
 import { executeMcpToolCall, listActiveMcpTools } from "../plugins/mcp";
@@ -113,7 +116,8 @@ type UseChatRuntimeArgs = {
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
   commitProjectMemory: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
   // 返回完整 ChatSession（含 title）：附件快照需要用 title 生成与镜像一致的会话目录名。
-  createSessionFromMessages: (conversationMessages: Message[], projectId?: string) => ChatSession;
+  createSessionFromMessages: (conversationMessages: Message[], projectId?: string, expertBinding?: ChatSession["expertBinding"]) => ChatSession;
+  bindChatSessionExpert: (sessionId: string, expertBinding: NonNullable<ChatSession["expertBinding"]>) => void;
   currentModel: string;
   getProjectById: (projectId: string) => Project | null;
   getChatSessionById: (sessionId: string) => SessionLite | null;
@@ -136,26 +140,6 @@ type UseChatRuntimeArgs = {
 
 // 会话运行时辅助函数（工具解析 / 宠物思考事件同步 / 节流器）已抽到 ./chatRuntimeHelpers。
 
-/**
- * 把用户随消息附带的非图片本地文件，转成注入模型的上下文说明。
- * 文件内容不内联（避免把几十 MB 的 docx 塞进请求体），只给绝对路径，
- * 让模型按需在工具循环里调用 /read_file 读取——这正是 WorkBuddy「把文件挂进
- * 工作上下文、由智能体自行读取」的本地化实现。
- */
-function buildAttachmentContext(attachments: ChatAttachment[]): string | undefined {
-  if (attachments.length === 0) {
-    return undefined;
-  }
-  const lines = attachments.map((attachment) => {
-    const size = attachment.size != null ? `（${attachment.size} 字节）` : "";
-    return `- ${attachment.path}${size}`;
-  });
-  return [
-    "以下为用户随本条消息附带的本地文件（绝对路径）。如需其内容，请调用 /read_file 传入对应路径读取，不要假设文件内容已在上下文中：",
-    ...lines,
-  ].join("\n");
-}
-
 export function useChatRuntime({
   activeChatId,
   activeProject,
@@ -164,6 +148,7 @@ export function useChatRuntime({
   applyUsageToSession,
   commitProjectMemory,
   createSessionFromMessages,
+  bindChatSessionExpert,
   currentModel,
   getProjectById,
   getChatSessionById,
@@ -989,7 +974,6 @@ export function useChatRuntime({
           resolveExpert: resolveExpertForSubAgent,
           onToolStep: handleToolStep,
         };
-
         const taskResult = await executeTask({
           model: executionModel,
           onTaskState: (task) => persistTaskState(task, sessionId),
@@ -1632,6 +1616,36 @@ export function useChatRuntime({
       const selectedExpert = selectedExpertId && options.expertName?.trim()
         ? { id: selectedExpertId, name: options.expertName.trim() }
         : null;
+      const sessionExpertBinding = activeChatId ? getChatSessionById(activeChatId)?.expertBinding ?? null : null;
+      const selectedExpertTeamId = options.expertTeamId?.trim() || null;
+      const selectedExpertTeam = selectedExpertTeamId && options.expertTeamName?.trim()
+        ? { id: selectedExpertTeamId, name: options.expertTeamName.trim() }
+        : null;
+      if (sessionExpertBinding && selectedExpertId && selectedExpertId !== sessionExpertBinding.id) {
+        setError(`此会话已绑定专家「${sessionExpertBinding.name}」，请新建对话后再使用其他专家`);
+        return;
+      }
+      if (sessionExpertBinding && selectedExpertTeam) {
+        setError(`此会话已绑定专家「${sessionExpertBinding.name}」，请新建对话后再使用专家团`);
+        return;
+      }
+      const selectedExpertManifest = selectedExpertId ? resolveExpertForSubAgent(selectedExpertId) : null;
+      if (selectedExpertId && !sessionExpertBinding && !selectedExpertManifest) {
+        setError("所选专家不存在或未启用，请重新选择");
+        return;
+      }
+      const expertBinding = sessionExpertBinding
+        ?? (selectedExpertManifest ? createExpertSessionBinding(selectedExpertManifest) : null);
+      const activeExpertTeam = selectedExpertTeamId ? expertTeamRegistry.get(selectedExpertTeamId) : null;
+      if (selectedExpertTeam && !activeExpertTeam) {
+        setError(`专家团「${selectedExpertTeam.name}」已不存在，请重新选择`);
+        return;
+      }
+      const unavailableTeamMember = activeExpertTeam?.members.find((member) => !resolveExpertForSubAgent(member.expertId));
+      if (unavailableTeamMember) {
+        setError(`专家团成员「${unavailableTeamMember.name}」绑定的专家不存在或未启用，请先修复团队配置`);
+        return;
+      }
       const selectedMode = options.selectedMode ?? null;
       // let：发送前会落快照，把路径改写成会话产物目录下的快照路径（见下方 try 内）
       let attachments = options.attachments ?? [];
@@ -1649,6 +1663,7 @@ export function useChatRuntime({
           ...(attachments.length ? { attachments } : {}),
           ...(selectedKnowledgeCollection ? { selectedKnowledgeCollection } : {}),
           ...(selectedExpert ? { selectedExpert } : {}),
+          ...(selectedExpertTeam ? { selectedExpertTeam } : {}),
           ...(selectedMode ? { selectedMode } : {}),
         };
         const pending = pendingAgentHostFollowUpsRef.current.get(activeChatId) ?? [];
@@ -1658,7 +1673,7 @@ export function useChatRuntime({
         ]);
 
         try {
-          const attachmentContext = buildAttachmentContext(attachments);
+          const attachmentContext = await buildAttachmentContext(attachments);
           await steerAgentHostTurn({
             omniSessionId: activeChatId,
             content: [content, attachmentContext].filter(Boolean).join("\n\n"),
@@ -1682,6 +1697,7 @@ export function useChatRuntime({
 
       let sessionId = activeChatId;
       let runId = startSessionRun(sessionId, abortController);
+      if (sessionId && expertBinding && !sessionExpertBinding) bindChatSessionExpert(sessionId, expertBinding);
       const taskId = generateTaskId();
       currentTaskIdRef.current.set(sessionId ?? "", taskId);
       const taskWs = getWorkspacePathForSession(sessionId);
@@ -1733,9 +1749,11 @@ export function useChatRuntime({
                 attachments,
                 selectedKnowledgeCollection: selectedKnowledgeCollection ?? undefined,
                 selectedExpert: selectedExpert ?? undefined,
+                selectedExpertTeam: selectedExpertTeam ?? undefined,
                 selectedMode: selectedMode ?? undefined,
               }],
-              activeProject?.id ?? undefined
+              activeProject?.id ?? undefined,
+              expertBinding ?? undefined,
             );
             sessionId = draftSession.id;
             runId = startSessionRun(sessionId, abortController);
@@ -1768,12 +1786,20 @@ export function useChatRuntime({
           }
           if (artifactsDirty) notifyArtifactsChanged();
         }
-        const attachmentContext = buildAttachmentContext(attachments);
+        const attachmentContext = await buildAttachmentContext(attachments);
         // @专家角色切换：本轮对话用专家的提示词/工具/技能集驱动。
         // 工具集 = 专家声明的本地工具 id ∪ **绑定 MCP 连接器**的 mcp__* 工具。
         // 此前走 `buildChatTools().filter(...)`，而 buildChatTools 永不产出 mcp__*，
         // 于是专家在场时 MCP 被整体摘掉 —— 现在由 defaultMcpConnectorIds 显式声明接入。
-        const activeExpert = selectedExpertId ? resolveExpertForSubAgent(selectedExpertId) : null;
+        const activeExpert = selectedExpertTeam ? null : expertBinding
+          ? {
+              ...(pluginRegistry.getManifest(expertBinding.id) ?? {}),
+              ...expertBinding,
+              kind: "expert" as const,
+              description: pluginRegistry.getManifest(expertBinding.id)?.description ?? "会话绑定的专家",
+              version: pluginRegistry.getManifest(expertBinding.id)?.version ?? "1.0.0",
+            }
+          : selectedExpertId ? resolveExpertForSubAgent(selectedExpertId) : null;
         // 子 Agent 调度上下文：本轮任务运行期间允许主模型通过 agent 工具派出只读子 Agent
         // @专家分支：项目白名单是**外层边界**，专家的 defaultMcpConnectorIds 在其内再收窄
         // （selectExpertTools 从传入列表里挑该专家声明的那些 ⇒ 天然取交集）。
@@ -1805,6 +1831,32 @@ export function useChatRuntime({
           resolveExpert: resolveExpertForSubAgent,
           onToolStep: handleToolStep,
         };
+        if (activeExpertTeam && ENABLE_AGENT_HOST_TURNS && subAgentContextRef.current) {
+          const teamSubAgentContext = subAgentContextRef.current;
+          teamSubAgentContext.runPersistentExpert = async ({ expert, task, model, systemPrompt, tools, signal, onToolStep }) => {
+            const member = activeExpertTeam.members.find((entry) => entry.expertId === expert.id);
+            if (!member) throw new Error(`专家「${expert.name}」不属于当前专家团`);
+            const result = await runAgentHostTurn({
+              omniSessionId: `expert-team:${activeExpertTeam.id}:${member.id}`,
+              cwd: taskWs,
+              title: `${activeExpertTeam.name} · ${member.name}`,
+              history: [],
+              prompt: task,
+              modelId: model,
+              system: systemPrompt,
+              tools,
+              executeClientToolCall: teamSubAgentContext.executeToolCall,
+              signal,
+              onToolStep,
+            });
+            return {
+              content: result.content,
+              usage: result.usage,
+              estimated: result.estimated,
+              toolRounds: result.toolRounds,
+            };
+          };
+        }
         const taskResult = await executeInputTask({
           input: content,
           onTaskState: (task) => persistTaskState(task, sessionId),
@@ -1816,7 +1868,7 @@ export function useChatRuntime({
           onPrepareConversation: (preparedMessages) => {
             conversationMessagesForTask = preparedMessages;
             if (!sessionId) {
-              const nextSession = createSessionFromMessages(preparedMessages, activeProject?.id ?? undefined);
+              const nextSession = createSessionFromMessages(preparedMessages, activeProject?.id ?? undefined, expertBinding ?? undefined);
               sessionId = nextSession.id;
               runId = startSessionRun(sessionId, abortController);
               currentTaskIdRef.current.set(sessionId, taskId);
@@ -1827,10 +1879,41 @@ export function useChatRuntime({
             hasPetThought = true;
           },
           signal: abortController.signal,
-          systemPrompt: [activeExpert?.templatePrompt, projectSystemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+          systemPrompt: [
+            activeExpert?.templatePrompt,
+            activeExpert?.instruction && !projectSystemPrompt?.includes(activeExpert.instruction)
+              ? activeExpert.instruction
+              : undefined,
+            projectSystemPrompt,
+            hiddenContext?.trim(),
+          ].filter(Boolean).join("\n\n") || undefined,
           knowledgeCollectionId: selectedKnowledgeCollectionId ?? activeProject?.knowledgeCollectionId ?? null,
           selectedKnowledgeCollection,
           selectedExpert,
+          selectedExpertTeam: activeExpertTeam,
+          sessionId: sessionId ?? "draft-session",
+          runTeamMembers: async (team, task) => {
+            const context = subAgentContextRef.current;
+            if (!context) throw new Error("子 Agent 上下文尚未就绪");
+            const memberExpertIds = team.members.map((member) => member.expertId);
+            return runExpertTeamMembers({
+              tasks: team.members.map((member) => ({
+                memberId: member.id,
+                memberName: member.name,
+                role: member.role,
+                expertId: member.expertId,
+                task,
+                tier: "capable" as const,
+              })),
+              context: {
+                ...context,
+                allowAnyExpertDelegation: true,
+                project: context.project
+                  ? { ...context.project, boundExpertIds: [...new Set([...(context.project.boundExpertIds ?? []), ...memberExpertIds])] }
+                  : context.project,
+              },
+            });
+          },
           selectedMode,
           onChunk: (chunk) => {
             if (!isCurrentSessionRun(sessionId, runId, abortController)) {

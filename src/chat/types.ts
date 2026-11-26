@@ -183,6 +183,16 @@ export type ChatSession = {
   /** 会话固化的工作目录（effective workspace）。与 codex 一致：即使未显式绑定工作空间，
    *  也会落盘为一个兜底目录，保证「永远有 cwd」。空字符串表示尚未固化（落盘时由 Rust 补全）。 */
   workspacePath?: string;
+  /** 首次召唤的专家快照；绑定后该会话后续消息持续使用同一专家配置。 */
+  expertBinding?: {
+    id: string;
+    name: string;
+    templatePrompt?: string;
+    instruction?: string;
+    defaultToolIds?: string[];
+    defaultSkillIds?: string[];
+    defaultMcpConnectorIds?: string[];
+  };
 };
 
 export type ChatExecutionResult = {
@@ -225,6 +235,9 @@ export type ChatSendOptions = {
   /** 本次对话指定专家（@专家角色切换）：用专家提示词/工具/技能集驱动本轮 */
   expertId?: string | null;
   expertName?: string | null;
+  /** 本轮显式选择的专家团。 */
+  expertTeamId?: string | null;
+  expertTeamName?: string | null;
   /** 本次输入使用的技能/工具模式 */
   selectedMode?: { kind: "skill" | "tool"; command: string; name: string } | null;
   /** 本次发送附带的本地文件（绝对路径引用，不内联内容） */

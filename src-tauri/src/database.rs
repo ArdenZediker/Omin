@@ -88,6 +88,11 @@ pub(crate) fn migrate_legacy_project_data(connection: &Connection) -> Result<(),
     {
         guarded("ALTER TABLE chat_sessions ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''");
     }
+    if table_exists(connection, "chat_sessions")
+        && !table_has_column(connection, "chat_sessions", "expert_binding_json").unwrap_or(false)
+    {
+        guarded("ALTER TABLE chat_sessions ADD COLUMN expert_binding_json TEXT NOT NULL DEFAULT 'null'");
+    }
 
     Ok(())
 }
@@ -210,7 +215,8 @@ fn init_schema_once(connection: &Connection, app: &tauri::AppHandle) -> Result<(
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL,
           usage_json TEXT NOT NULL,
-          workspace_path TEXT NOT NULL DEFAULT ''
+          workspace_path TEXT NOT NULL DEFAULT '',
+          expert_binding_json TEXT NOT NULL DEFAULT 'null'
         );
 
         CREATE TABLE IF NOT EXISTS knowledge_collections (

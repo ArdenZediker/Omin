@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CreateProjectDialog from "./CreateProjectDialog";
 import { pluginRegistry } from "../plugins/registry";
-import { saveProjectPreset, userPresetId } from "../plugins/projectPresets";
+import { saveAgentPreset, userPresetId } from "../plugins/agentPresets";
 
 // 「确定」要求工作目录非空，而工作目录只能由系统目录选择器写入 —— 挡成一个固定路径，
 // 测试才走得到 handleConfirm（此前本文件没有能真正提交表单的用例）。
@@ -11,12 +11,12 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 /**
- * 回归锁：项目预设的选项与「持久项目指令」必须来自**同一份**注册表，且写进去的
+ * 回归锁：可应用于项目的专家预设与「持久项目指令」必须来自**同一份**注册表，且写进去的
  * 必须是 `instruction`，不能是起手句 `starterPrompt`。
  *
  * 曾经下拉选项读 `config/manifests/projects.ts::RECOMMENDED_PROJECT_PRESETS`
  * （与内置预设同名、同描述的第二份硬编码副本），而正文却去
- * `pluginRegistry.listTemplates()` 取，并保留「取不到就退回 presets.description」
+ * `pluginRegistry.listAgentPresets()` 取，并保留「取不到就退回 presets.description」
  * 的兜底 —— 两份定义靠手工同步，改一侧就静默失配。
  * 同一时期 `instruction` 与 `starterPrompt` 还挤在一个 `templatePrompt` 字段里，
  * 结果是**一次性用户问句**被当成**每轮生效的项目系统指令**写进项目。
@@ -30,15 +30,37 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 const instructionField = () =>
   screen.getByPlaceholderText(/提供当前项目的背景信息/) as HTMLTextAreaElement;
 
-const presetTrigger = () => screen.getByRole("button", { name: "选择项目预设" });
+const presetTrigger = () => screen.getByRole("button", { name: "选择专家预设" });
 
 const openPresetMenu = () => {
   fireEvent.click(presetTrigger());
 };
 
-describe("CreateProjectDialog 项目预设", () => {
+describe("CreateProjectDialog 专家预设", () => {
+  const createdPresetIds: string[] = [];
+
+  afterEach(async () => {
+    await act(async () => {
+      while (createdPresetIds.length) {
+        const id = createdPresetIds.pop();
+        if (id) pluginRegistry.uninstall(id);
+      }
+    });
+  });
+
   it("下拉选项来自注册表，且选中后写入该预设自己的 instruction（不是起手句、不是描述）", () => {
-    const templates = pluginRegistry.listTemplates();
+    pluginRegistry.load();
+    const saved = saveAgentPreset({
+      name: "项目指令专家用例",
+      instruction: "按当前项目的业务约束输出可验证的需求。",
+      description: "验证项目指令专家选择。",
+    });
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    pluginRegistry.updateManifest({ ...saved.manifest, starterPrompt: "请按需求分析专家的角色开展本次工作。" });
+    createdPresetIds.push(saved.manifest.id);
+    const templates = pluginRegistry.listAgentPresets();
+    const created = templates.find((manifest) => manifest.id === saved.manifest.id);
     expect(templates.length).toBeGreaterThan(0);
 
     render(<CreateProjectDialog open onClose={vi.fn()} onCreate={vi.fn()} />);
@@ -51,7 +73,7 @@ describe("CreateProjectDialog 项目预设", () => {
       expect(screen.getByRole("option", { name: template.name })).toBeTruthy();
     }
 
-    const target = templates.find((m) => m.id === "code-debugger");
+    const target = created;
     expect(target).toBeTruthy();
     expect(target?.instruction?.trim()).toBeTruthy();
     expect(target?.starterPrompt?.trim()).toBeTruthy();
@@ -87,16 +109,19 @@ describe("CreateProjectDialog 项目预设", () => {
     expect(screen.getByRole("listbox")).toBeTruthy();
   });
 
-  it("带 initialTemplateId 打开时，预设与指令已就绪（扩展中心「用它新建项目」的入口）", () => {
-    const target = pluginRegistry
-      .listTemplates()
-      .find((m) => m.id === "command-helper");
+  it("带 initialAgentPresetId 打开时，预设与指令已就绪（扩展中心「用它新建项目」的入口）", () => {
+    pluginRegistry.load();
+    const saved = saveAgentPreset({ name: "项目应用入口用例", instruction: "仅用于验证专家应用到项目。" });
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    createdPresetIds.push(saved.manifest.id);
+    const target = saved.manifest;
     expect(target).toBeTruthy();
 
     render(
       <CreateProjectDialog
         open
-        initialTemplateId="command-helper"
+        initialAgentPresetId={target.id}
         onClose={vi.fn()}
         onCreate={vi.fn()}
       />,
@@ -105,17 +130,19 @@ describe("CreateProjectDialog 项目预设", () => {
     expect(instructionField().value).toBe(target!.instruction);
     // 预选值也要反映在下拉触发器上，不能只有正文变了而触发器还写着「无预设」
     expect(presetTrigger().textContent).toContain(target!.name);
+    // 项目应用专家预设时同时绑定该专家，后续 Agent 委派才能使用这份档案。
+    expect(screen.getByRole("button", { name: target.name }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("不带 initialTemplateId 时不预选任何预设（指令为空）", () => {
+  it("不带 initialAgentPresetId 时不预选任何预设（指令为空）", () => {
     render(<CreateProjectDialog open onClose={vi.fn()} onCreate={vi.fn()} />);
     expect(instructionField().value).toBe("");
   });
 
   /**
-   * 闭环：项目设置里「另存为预设」存下的东西，必须能在**新建项目**的下拉里选到。
+   * 闭环：项目设置里保存的专家预设，必须能在**新建项目**的选择器里选到。
    *
-   * 两件事一起锁：①两个对话框读的是同一份注册表（都走 `listTemplates()`）；
+   * 两件事一起锁：①两个对话框读的是同一份注册表（都走 `listAgentPresets()`）；
    * ②预设是在**组件之外**写入的（另一个对话框），所以这里刻意先 render 再 save ——
    * 靠的正是注册表的订阅广播，而不是「本组件自己触发的刷新」。
    */
@@ -144,7 +171,7 @@ describe("CreateProjectDialog 项目预设", () => {
       expect(screen.queryByRole("option", { name: "自建预设-闭环" })).toBeNull();
 
       act(() => {
-        saveProjectPreset({ name: "自建预设-闭环", instruction });
+        saveAgentPreset({ name: "自建预设-闭环", instruction });
       });
       createdIds.push(userPresetId("自建预设-闭环"));
 

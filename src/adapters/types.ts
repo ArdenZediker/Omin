@@ -67,6 +67,8 @@ export interface Message {
   selectedKnowledgeCollection?: { id: string; name: string };
   /** 用户本轮显式选择的专家角色，用于在历史消息中显示所选上下文 */
   selectedExpert?: { id: string; name: string };
+  /** 用户显式选择的专家团，供历史消息展示和运行恢复。 */
+  selectedExpertTeam?: { id: string; name: string };
   /** 用户本轮使用的技能/工具模式，用于将命令上下文与普通正文区分 */
   selectedMode?: { kind: "skill" | "tool"; command: string; name: string };
   /** role === "tool" 时：对应当前轮次 assistant.toolCalls 里某次调用的 id */

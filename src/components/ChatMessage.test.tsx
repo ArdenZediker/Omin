@@ -532,6 +532,23 @@ describe("ChatMessage", () => {
     expect(row!.textContent).toContain("Knowledge Search");
     expect(row!.textContent).toContain("命中 3 条知识片段");
   });
+
+  it("steps 与独立 reasoning 并存时，过程面板同时展示两者", () => {
+    const message: Message = {
+      role: "project",
+      content: "已根据知识库回答。",
+      reasoning: "我先核对知识库返回的文件清单。",
+      steps: [
+        { type: "action", label: "检索", title: "Knowledge Search", icon: "Search", detail: "读取了 1 个文件" },
+      ],
+    };
+
+    const { container } = render(<ChatMessage message={message} index={8} />);
+    fireEvent.click(container.querySelector(".message-process__toggle")!);
+
+    expect(screen.getByText("我先核对知识库返回的文件清单。")).toBeTruthy();
+    expect(screen.getByText("Knowledge Search")).toBeTruthy();
+  });
 });
 
 describe("ChatMessage · 流式展开与结束自动折叠（单一滚动容器）", () => {
