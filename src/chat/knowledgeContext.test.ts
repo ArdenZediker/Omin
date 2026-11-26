@@ -181,8 +181,70 @@ describe("知识库上下文装配", () => {
       knowledgeCollectionId: collectionId,
     });
 
-    expect(result?.sources).toEqual([]);
+    expect(result?.sources).toHaveLength(0);
     expect(result?.block).toContain("没有找到达到相关度门槛的片段");
     expect(result?.block).toContain("不要改读工作区文件来替代");
+  });
+
+  it("普通问答不继承隐性知识库时不会发起全库检索", async () => {
+    const result = await buildKnowledgeContextBlock({
+      model: "test-model",
+      messages: [{ role: "user", content: "这份材料主要用来做什么" }],
+    });
+
+    expect(result).toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(embedKnowledgeText).not.toHaveBeenCalled();
+  });
+
+  it("上传附件时不继承项目绑定的知识库", async () => {
+    const result = await buildKnowledgeContextBlock({
+      model: "test-model",
+      messages: [{
+        role: "user",
+        content: "对比两个文件讲了些什么",
+        attachments: [{
+          path: "C:/attachments/a.docx",
+          name: "a.docx",
+          size: 1000,
+        }],
+      }],
+      knowledgeCollectionId: collectionId,
+    });
+
+    expect(result).toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(embedKnowledgeText).not.toHaveBeenCalled();
+  });
+
+  it("上传附件且显式选择知识库时仍然只检索所选库", async () => {
+    vi.mocked(embedKnowledgeText).mockResolvedValue(null);
+    vi.mocked(invoke).mockImplementation(async (command: string, payload?: unknown) => {
+      if (command === "load_knowledge_library_command") {
+        return library;
+      }
+      if (command === "search_knowledge_chunks_command") {
+        expect((payload as { input: { collectionId?: string } }).input.collectionId).toBe(collectionId);
+        return [] satisfies SearchKnowledgeChunkResult[];
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    const result = await buildKnowledgeContextBlock({
+      model: "test-model",
+      messages: [{
+        role: "user",
+        content: "对比两个文件讲了些什么",
+        selectedKnowledgeCollection: { id: collectionId, name: "新知识库" },
+        attachments: [{
+          path: "C:/attachments/a.docx",
+          name: "a.docx",
+          size: 1000,
+        }],
+      }],
+    });
+
+    expect(result?.block).toContain("没有找到达到相关度门槛的片段");
+    expect(result?.block).toContain("仍应单独分析附件");
   });
 });

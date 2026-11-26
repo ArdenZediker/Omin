@@ -9,6 +9,9 @@ import type { ProjectMemoryRecord, Project, SessionSummaryRecord, ChatStep } fro
 import { validateTaskOutput } from "./taskValidation";
 import { runAgentHostTurn } from "../app/agentHostRuntime";
 import { buildAgentHostContext } from "./agentHostContext";
+import { parseOmniStructuredOutput } from "./structuredOutput";
+import { formatExpertTeamReports, runExpertTeamRound, type TeamMemberResult } from "./expertTeamRuntime";
+import type { ExpertTeam } from "../plugins/expertTeams";
 
 function createTaskId() {
   return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -199,7 +202,7 @@ export async function executeTask(options: {
                 signal,
               });
               for (const step of hostContext.steps) onModelToolStep(step);
-              return runAgentHostTurn({
+              const hostResult = await runAgentHostTurn({
                 ...agentHost,
                 history: messages.slice(0, latestUserIndex),
                 prompt: agentHost.prompt ?? latestUser?.content ?? "",
@@ -214,6 +217,12 @@ export async function executeTask(options: {
                 onReasoning: onModelReasoning,
                 onToolStep: onModelToolStep,
               });
+              const steps = [...hostContext.steps, ...(hostResult.steps ?? [])];
+              return {
+                ...hostResult,
+                ...parseOmniStructuredOutput(hostResult.content),
+                ...(steps.length ? { steps } : {}),
+              };
             })()
           : await executeChatTurn({
               model,
@@ -326,6 +335,9 @@ export async function executeInputTask(options: {
   knowledgeCollectionId?: string | null;
   selectedKnowledgeCollection?: { id: string; name: string } | null;
   selectedExpert?: { id: string; name: string } | null;
+  selectedExpertTeam?: ExpertTeam | null;
+  sessionId?: string;
+  runTeamMembers?: (team: NonNullable<Parameters<typeof runExpertTeamRound>[0]["team"]>, task: string) => Promise<TeamMemberResult[]>;
   selectedMode?: { kind: "skill" | "tool"; command: string; name: string } | null;
   onPrepareConversation?: (messages: Message[]) => void;
   executeTool: (command: ResolvedLocalSlashCommand) => Promise<{ ok: boolean; error?: string; outputText?: string; data?: unknown; artifact?: import("./artifacts").ArtifactSpec } | void>;
@@ -359,6 +371,7 @@ export async function executeInputTask(options: {
     knowledgeCollectionId,
     selectedKnowledgeCollection,
     selectedExpert,
+    selectedExpertTeam,
     selectedMode,
     onPrepareConversation,
     executeTool,
@@ -379,6 +392,7 @@ export async function executeInputTask(options: {
       attachments,
       selectedKnowledgeCollection: selectedKnowledgeCollection ?? undefined,
       selectedExpert: selectedExpert ?? undefined,
+      selectedExpertTeam: selectedExpertTeam ? { id: selectedExpertTeam.id, name: selectedExpertTeam.name } : undefined,
       selectedMode: selectedMode ?? undefined,
     },
   ];
@@ -454,6 +468,19 @@ export async function executeInputTask(options: {
     onPrepareConversation?.(preparedMessages);
   }
 
+  let teamContext = "";
+  if (selectedExpertTeam) {
+    if (!options.runTeamMembers) throw new Error("专家团运行器尚未就绪");
+    const run = await runExpertTeamRound({
+      team: selectedExpertTeam,
+      sessionId: options.sessionId ?? "unsaved-session",
+      task: input,
+      signal,
+      runMembers: (task) => options.runTeamMembers!(selectedExpertTeam, task),
+    });
+    teamContext = formatExpertTeamReports(selectedExpertTeam, run.reports);
+  }
+
   const plan = createTaskPlan({
     intent: "chat",
     model,
@@ -465,7 +492,7 @@ export async function executeInputTask(options: {
     model,
     messages: preparedMessages,
     signal,
-    systemPrompt: [systemPrompt, hiddenContext?.trim()].filter(Boolean).join("\n\n") || undefined,
+    systemPrompt: [systemPrompt, hiddenContext?.trim(), teamContext].filter(Boolean).join("\n\n") || undefined,
     project,
     relatedContext,
     enabledToolNames,

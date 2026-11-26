@@ -4,12 +4,22 @@ import type { PluginManifest } from "../plugins/types";
 import { executeInputTask, executeTask } from "./taskExecutor";
 import { executeChatTurn } from "./engine";
 import { pluginRegistry } from "../plugins/registry";
+import { runAgentHostTurn } from "../app/agentHostRuntime";
+import { buildAgentHostContext } from "./agentHostContext";
 
 vi.mock("./engine", () => ({
   executeChatTurn: vi.fn(async () => ({ content: "ok" })),
 }));
+vi.mock("../app/agentHostRuntime", () => ({
+  runAgentHostTurn: vi.fn(async () => ({ content: "ok" })),
+}));
+vi.mock("./agentHostContext", () => ({
+  buildAgentHostContext: vi.fn(async () => ({ system: "", knowledgeContext: null, steps: [] })),
+}));
 
 const mockedTurn = vi.mocked(executeChatTurn);
+const mockedAgentHostTurn = vi.mocked(runAgentHostTurn);
+const mockedAgentHostContext = vi.mocked(buildAgentHostContext);
 
 function makeProject(allowedSkillIds: string[]): Project {
   return {
@@ -231,6 +241,68 @@ describe("真实任务阶段的失败和取消", () => {
     const result = await executeInputTask({ input: "/read_file a.txt", currentMessages: [], model: "test", signal: controller.signal, executeTool });
     expect(result.status).toBe("aborted");
     expect(executeTool).not.toHaveBeenCalled();
+  });
+});
+
+describe("executeTask Agent Host 过程步骤", () => {
+  it("最终结果保留知识库上下文阶段的检索动作，并与 Host 工具步骤合并", async () => {
+    const knowledgeSearch = {
+      type: "action" as const,
+      label: "检索",
+      title: "Knowledge Search",
+      icon: "Search",
+      detail: "读取了「新知识库」文件目录，共 1 个文件",
+    };
+    const hostToolStep = {
+      type: "tool_call" as const,
+      name: "read_file",
+      arguments: "{}",
+      result: "读取完成",
+    };
+    mockedAgentHostContext.mockResolvedValueOnce({
+      system: "",
+      knowledgeContext: null,
+      steps: [knowledgeSearch],
+    });
+    mockedAgentHostTurn.mockResolvedValueOnce({
+      content: "知识库中有一个文件。",
+      steps: [hostToolStep],
+    } as Awaited<ReturnType<typeof runAgentHostTurn>>);
+
+    const result = await executeTask({
+      model: "gpt-test",
+      messages: [{ role: "user", content: "知识库有什么内容" }],
+      agentHost: { omniSessionId: "session-1", cwd: "D:/workspace" },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.finalResult?.steps).toEqual([knowledgeSearch, hostToolStep]);
+  });
+
+  it("Agent Host 结果剥离隐藏结构块，并保留解析出的摘要和记忆", async () => {
+    mockedAgentHostTurn.mockResolvedValueOnce({
+      content: [
+        "这是回答正文。",
+        "<omni_memory>[{\"content\":\"用户偏好中文回复\"}]</omni_memory>",
+        "<omni_summary>{\"title\":\"能力介绍\",\"summary\":\"用户询问助手能力\"}</omni_summary>",
+      ].join("\n\n"),
+    } as Awaited<ReturnType<typeof runAgentHostTurn>>);
+
+    const result = await executeTask({
+      model: "gpt-test",
+      messages: [{ role: "user", content: "你是谁" }],
+      agentHost: { omniSessionId: "session-structured", cwd: "D:/workspace" },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.finalResult?.content).toBe("这是回答正文。");
+    expect(result.finalResult?.suggestedSummary).toEqual({
+      title: "能力介绍",
+      summary: "用户询问助手能力",
+    });
+    expect(result.finalResult?.suggestedMemories).toEqual([
+      { content: "用户偏好中文回复", reason: null },
+    ]);
   });
 });
 

@@ -35,10 +35,6 @@ export function isKnowledgeContentQuery(value: string) {
   return KNOWLEDGE_CONTENT_QUERY_PATTERN.test(query);
 }
 
-function extractLatestUserMessage(messages: Message[]) {
-  return [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
-}
-
 function clipText(text: string, maxChars: number) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
   if (normalized.length <= maxChars) {
@@ -152,7 +148,7 @@ function buildKnowledgeMissBlock(query: string, collectionName: string, reason: 
     "【本地知识库检索状态】",
     `用户明确选择了知识库「${collectionName}」，但${reason}。`,
     `本次查询：${query}`,
-    "不要改读工作区文件来替代用户选中的知识库；除非用户明确要求读取工作区文件。",
+    "不要改读工作区文件来替代用户选中的知识库。此消息若还附有用户上传的附件，仍应单独分析附件，并说明没有取得知识库材料。",
     "请如实说明本次没有从所选知识库取得可用内容，并提示用户检查文件是否已导入、处理完成或需要重建向量索引。",
   ].join("\n");
 }
@@ -173,13 +169,17 @@ export async function buildKnowledgeContextBlock(options: {
     throw new DOMException("Request aborted", "AbortError");
   }
 
-  const query = normalizeQuery(options.knowledgeQuery ?? extractLatestUserMessage(options.messages));
-  if (!query) {
+  const latestUser = [...options.messages].reverse().find((message) => message.role === "user");
+  const explicitCollectionId = latestUser?.selectedKnowledgeCollection?.id.trim() || null;
+  const hasAttachments = Boolean(latestUser?.attachments?.length || latestUser?.images?.length);
+  // An attachment-only turn must not inherit project RAG. Never search across all collections.
+  const selectedCollectionId = explicitCollectionId ?? (hasAttachments ? null : options.knowledgeCollectionId?.trim() || null);
+  const query = normalizeQuery(options.knowledgeQuery ?? latestUser?.content);
+  if (!selectedCollectionId || !query) {
     return null;
   }
 
-  const selectedCollectionId = options.knowledgeCollectionId?.trim() || null;
-  let selectedCollectionName = "所选知识库";
+  let selectedCollectionName = latestUser?.selectedKnowledgeCollection?.name || "所选知识库";
   let selectedRetrievalMode: string | null = null;
   let selectedLibraryPromise: Promise<KnowledgeLibraryPayload> | null = null;
 
@@ -191,7 +191,6 @@ export async function buildKnowledgeContextBlock(options: {
   };
 
   const rememberSelectedCollection = (library: KnowledgeLibraryPayload) => {
-    if (!selectedCollectionId) return null;
     const collection = library.collections.find((item) => item.id === selectedCollectionId) ?? null;
     if (collection) {
       selectedCollectionName = collection.name || selectedCollectionName;
@@ -200,7 +199,7 @@ export async function buildKnowledgeContextBlock(options: {
     return collection;
   };
 
-  if (selectedCollectionId && isKnowledgeInventoryQuery(query)) {
+  if (isKnowledgeInventoryQuery(query)) {
     try {
       const library = await loadSelectedLibrary();
       const collection = rememberSelectedCollection(library);
@@ -241,7 +240,7 @@ export async function buildKnowledgeContextBlock(options: {
     }
   }
 
-  if (selectedCollectionId && isKnowledgeContentQuery(query)) {
+  if (isKnowledgeContentQuery(query)) {
     try {
       const library = await loadSelectedLibrary();
       const collection = rememberSelectedCollection(library);
@@ -326,17 +325,15 @@ export async function buildKnowledgeContextBlock(options: {
   const input: {
     query: string;
     limit: number;
-    collectionId?: string;
+    collectionId: string;
     queryEmbedding?: number[];
     queryEmbeddingModelKey?: string;
   } = {
     query,
     limit,
+    collectionId: selectedCollectionId,
   };
 
-  if (options.knowledgeCollectionId?.trim()) {
-    input.collectionId = options.knowledgeCollectionId.trim();
-  }
   if (queryEmbedding && queryEmbedding.length > 0) {
     input.queryEmbedding = queryEmbedding;
   }
@@ -361,7 +358,7 @@ export async function buildKnowledgeContextBlock(options: {
     throw new DOMException("Request aborted", "AbortError");
   }
 
-  if (selectedCollectionId && !selectedRetrievalMode) {
+  if (!selectedRetrievalMode) {
     try {
       rememberSelectedCollection(await loadSelectedLibrary());
     } catch {
