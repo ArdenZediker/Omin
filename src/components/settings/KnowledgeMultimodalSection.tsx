@@ -254,7 +254,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig, pro
                   key={model.id}
                   className={`omni-knowledge-model-card rounded-lg border px-3 py-3 transition-colors ${
                     isDefaultModel
-                      ? "border-violet-300 bg-violet-50 shadow-[inset_3px_0_0_rgba(124,58,237,0.68)]"
+                      ? "border-violet-300 bg-violet-50"
                       : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50"
                   }`}
                 >

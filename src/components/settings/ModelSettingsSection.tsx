@@ -307,7 +307,7 @@ export default function ModelSettingsSection({
                   aria-pressed={isCurrentMainModel}
                   className={`flex w-full items-center gap-2 rounded-[8px] border px-3 py-2 text-left text-xs transition-colors ${
                     isCurrentMainModel
-                      ? "border-violet-300 bg-violet-50 text-violet-950 shadow-[inset_3px_0_0_rgba(124,58,237,0.68)]"
+                      ? "border-violet-300 bg-violet-50 text-violet-950"
                       : "border-slate-200 bg-slate-50 hover:border-violet-200 hover:bg-violet-50"
                   }`}
                   type="button"
