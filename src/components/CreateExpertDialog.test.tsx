@@ -17,6 +17,15 @@ function fillExpertForm(name = "周报专家") {
 }
 
 describe("CreateExpertDialog", () => {
+  it("焦点位于关闭按钮时仍可用 Escape 关闭", () => {
+    const onClose = vi.fn();
+    render(<CreateExpertDialog open onClose={onClose} />);
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "关闭" }), { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("完整 DSH 专家定义必填；创建后注册为统一 expert 插件", () => {
     const onCreated = vi.fn();
     const before = pluginRegistry.list({ kind: "expert" }).length;

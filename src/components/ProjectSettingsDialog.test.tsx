@@ -38,17 +38,18 @@ const makeProject = (overrides: Partial<Project> = {}): Project => ({
 
 const renderDialog = (overrides: Partial<Project> = {}) => {
   const onUpdate = vi.fn();
+  const onClose = vi.fn();
   render(
     <PromptDialogProvider>
       <ProjectSettingsDialog
         open
         project={makeProject(overrides)}
-        onClose={vi.fn()}
+        onClose={onClose}
         onUpdate={onUpdate}
       />
     </PromptDialogProvider>,
   );
-  return { onUpdate };
+  return { onClose, onUpdate };
 };
 
 const instructionField = () => screen.getByLabelText("指令") as HTMLTextAreaElement;
@@ -81,6 +82,14 @@ describe("ProjectSettingsDialog「另存为预设」", () => {
         if (id) pluginRegistry.uninstall(id);
       }
     });
+  });
+
+  it("焦点位于关闭按钮时仍可用 Escape 关闭", () => {
+    const { onClose } = renderDialog();
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "关闭" }), { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("指令为空时按钮禁用", () => {

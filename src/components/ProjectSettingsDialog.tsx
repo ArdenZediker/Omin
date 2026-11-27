@@ -170,7 +170,7 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
     );
   };
 
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.stopPropagation();
       onClose();
@@ -197,7 +197,13 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
   return (
     <>
       <div className="omni-dialog-backdrop" onClick={onClose} />
-      <div className="omni-dialog omni-dialog--create-project" role="dialog" aria-modal="true" aria-labelledby="project-settings-title">
+      <div
+        className="omni-dialog omni-dialog--create-project"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="project-settings-title"
+        onKeyDown={handleKeyDown}
+      >
         <div className="omni-dialog__header">
           <h2 id="project-settings-title">项目设置</h2>
           <button type="button" className="omni-dialog__close" onClick={onClose} aria-label="关闭">
@@ -212,7 +218,6 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
               autoFocus
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              onKeyDown={handleKeyDown}
               placeholder="请输入项目名称"
               maxLength={15}
             />
@@ -258,7 +263,6 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
               id="project-settings-instruction"
               value={instruction}
               onChange={(event) => setInstruction(event.target.value)}
-              onKeyDown={handleKeyDown}
               placeholder="项目背景信息与规范：项目目标、团队习惯、风格偏好、输出约束等"
               rows={5}
             />

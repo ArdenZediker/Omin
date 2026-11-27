@@ -268,3 +268,14 @@ describe("CreateProjectDialog 专家行说明", () => {
     expect(screen.getByText(`（${hint}）`)).toBeTruthy();
   });
 });
+
+describe("CreateProjectDialog 键盘关闭", () => {
+  it("焦点位于关闭按钮时仍可用 Escape 关闭", () => {
+    const onClose = vi.fn();
+    render(<CreateProjectDialog open onClose={onClose} onCreate={vi.fn()} />);
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "关闭" }), { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});

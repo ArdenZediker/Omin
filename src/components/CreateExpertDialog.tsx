@@ -121,7 +121,7 @@ export default function CreateExpertDialog({
   const tags = splitTags(tagsText);
   const canSubmit = Boolean(name.trim() && description.trim() && tags.length > 0 && profileIsComplete(profile));
 
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.stopPropagation();
       onClose();
@@ -174,14 +174,20 @@ export default function CreateExpertDialog({
   ) => (
     <label className="omni-dialog__field">
       <span className="omni-dialog__label">{label}</span>
-      <textarea value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder} rows={rows} />
+      <textarea value={value} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} rows={rows} />
     </label>
   );
 
   return (
     <>
       <div className="omni-dialog-backdrop" onClick={onClose} />
-      <div className="omni-dialog omni-dialog--create-project omni-dialog--create-expert" role="dialog" aria-modal="true" aria-labelledby="create-expert-title">
+      <div
+        className="omni-dialog omni-dialog--create-project omni-dialog--create-expert"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-expert-title"
+        onKeyDown={handleKeyDown}
+      >
         <div className="omni-dialog__header">
           <div>
             <h2 id="create-expert-title">{isEditing ? "编辑专家" : copying ? "复制专家" : "创建专家"}</h2>
@@ -192,10 +198,10 @@ export default function CreateExpertDialog({
 
         <div className="omni-dialog__body">
           <div className="omni-dialog__section-heading"><strong>基本信息</strong><span>用于目录展示和专家匹配</span></div>
-          <label className="omni-dialog__field"><span className="omni-dialog__label">专家名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} onKeyDown={handleKeyDown} placeholder="如：周报分析顾问" maxLength={40} /></label>
-          <label className="omni-dialog__field"><span className="omni-dialog__label">专家描述</span><input value={description} onChange={(event) => setDescription(event.target.value)} onKeyDown={handleKeyDown} placeholder="说明专家解决什么问题、适用于什么场景" maxLength={160} /></label>
+          <label className="omni-dialog__field"><span className="omni-dialog__label">专家名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="如：周报分析顾问" maxLength={40} /></label>
+          <label className="omni-dialog__field"><span className="omni-dialog__label">专家描述</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="说明专家解决什么问题、适用于什么场景" maxLength={160} /></label>
           <label className="omni-dialog__field"><span className="omni-dialog__label">分类</span><select value={category} onChange={(event) => setCategory(event.target.value)}>{EXPERT_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label className="omni-dialog__field"><span className="omni-dialog__label">标签</span><input value={tagsText} onChange={(event) => setTagsText(event.target.value)} onKeyDown={handleKeyDown} placeholder="用顿号或逗号分隔，例如：复盘、改进、团队协作" /></label>
+          <label className="omni-dialog__field"><span className="omni-dialog__label">标签</span><input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="用顿号或逗号分隔，例如：复盘、改进、团队协作" /></label>
 
           <div className="omni-dialog__section-heading"><strong>专家定义</strong><span>这四项会原样进入 DSH 专家档案</span></div>
           {field("角色定位", role, setRole, "这个专家是谁，擅长解决什么类型的问题？", 4)}
@@ -206,8 +212,8 @@ export default function CreateExpertDialog({
           <div className="omni-dialog__section-heading"><strong>使用示例</strong><span>至少提供两个真实提问，帮助用户直接召唤专家</span></div>
           {examples.map((example, index) => (
             <div className="omni-dialog__example-fields" key={index}>
-              <input value={example.title} onChange={(event) => setExamples((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, title: event.target.value } : item))} onKeyDown={handleKeyDown} placeholder={`示例${index + 1}标题`} />
-              <textarea value={example.prompt} onChange={(event) => setExamples((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, prompt: event.target.value } : item))} onKeyDown={handleKeyDown} placeholder="用户会怎样向这个专家提问？" rows={3} />
+              <input value={example.title} onChange={(event) => setExamples((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, title: event.target.value } : item))} placeholder={`示例${index + 1}标题`} />
+              <textarea value={example.prompt} onChange={(event) => setExamples((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, prompt: event.target.value } : item))} placeholder="用户会怎样向这个专家提问？" rows={3} />
             </div>
           ))}
 
