@@ -322,18 +322,20 @@
 
 .omni-confirm-dialog__actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   margin-top: 0;
-  padding: 0 24px 22px;
+  padding: 0 22px 20px;
 }
 
 .omni-confirm-dialog__button {
-  min-width: 88px;
-  height: 36px;
+  min-width: 84px;
+  min-height: 36px;
+  height: auto;
   border: 1px solid var(--omni-panel-border);
-  border-radius: 10px;
-  padding: 0 14px;
+  border-radius: var(--omni-control-radius);
+  padding: 0 12px;
   background: var(--omni-panel-bg);
   color: var(--omni-app-text);
   font: inherit;
@@ -546,8 +548,7 @@
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(2px);
+  background: var(--omni-overlay-scrim);
 }
 
 .omni-dialog {
@@ -884,12 +885,14 @@ button.omni-dialog__plugin-chip:hover {
 }
 
 .omni-dialog__button {
-  padding: 8px 18px;
-  border-radius: 10px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--omni-control-radius);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
 .omni-dialog__button--secondary {
@@ -903,12 +906,12 @@ button.omni-dialog__plugin-chip:hover {
 }
 
 .omni-dialog__button--primary {
-  background: #3b82f6;
+  background: var(--omni-accent);
   color: #fff;
 }
 
 .omni-dialog__button--primary:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--omni-accent-strong);
 }
 
 .omni-dialog__button--primary:disabled {

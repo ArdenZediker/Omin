@@ -62,7 +62,7 @@ export type PluginManifest = {
   category?: string;
   /** 工具在 Marketplace 中的功能分组（如会话、文件、Git、导出等），仅 kind === "tool" 时使用 */
   group?: string;
-  /** emoji 或 lucide icon name */
+  /** Optional image URL; other values fall back to the shared icon for this plugin kind. */
   icon?: string;
   /** 来源页（如 SkillHub 技能详情页），用于「在来源查看」 */
   sourceUrl?: string;

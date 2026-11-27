@@ -758,7 +758,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
             }`}
           >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-sky-100 text-sky-700">
+            <span className="omni-settings-nav-icon">
               <Settings size={13} strokeWidth={1.8} />
             </span>
             基本设置
@@ -772,7 +772,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
             }`}
           >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+            <span className="omni-settings-nav-icon">
               <PawPrint size={13} strokeWidth={1.8} />
             </span>
             宠物
@@ -786,7 +786,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
             }`}
           >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-pink-100 text-pink-700">
+            <span className="omni-settings-nav-icon">
               <Paintbrush size={13} strokeWidth={1.8} />
             </span>
             个性化
@@ -800,7 +800,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
             }`}
           >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-violet-100 text-violet-700">
+            <span className="omni-settings-nav-icon">
               <Cuboid size={13} strokeWidth={1.8} />
             </span>
             模型配置
@@ -814,7 +814,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                 : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
             }`}
           >
-            <span className="omni-settings-nav-icon flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
+            <span className="omni-settings-nav-icon">
               <Database size={13} strokeWidth={1.8} />
             </span>
             数据存储

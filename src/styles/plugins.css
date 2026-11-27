@@ -5,8 +5,7 @@
   position: fixed;
   inset: 0;
   z-index: 130;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(3px);
+  background: var(--omni-overlay-scrim);
 }
 
 .plugin-marketplace {
@@ -680,15 +679,15 @@
 }
 
 .plugin-card__icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--omni-panel-bg);
+  width: 34px;
+  height: 34px;
+  border-radius: var(--omni-control-radius);
+  background: var(--omni-soft-bg);
   border: 1px solid var(--omni-panel-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3b82f6;
+  color: var(--omni-accent);
   overflow: hidden;
 }
 
@@ -702,15 +701,6 @@
   border-radius: 6px;
   object-fit: contain;
   display: block;
-}
-
-/* manifest.icon 为单字符 emoji（SKILL.md icon: 🔍） */
-.plugin-card__icon-emoji {
-  font-size: 20px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .plugin-card__main {
@@ -899,23 +889,25 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 12px;
-  border-radius: 10px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--omni-control-radius);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   border: 1px solid transparent;
   cursor: pointer;
   line-height: 1.2;
   white-space: nowrap;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
 .plugin-card__button--primary {
-  background: #3b82f6;
+  background: var(--omni-accent);
   color: #fff;
 }
 
 .plugin-card__button--primary:hover {
-  background: #2563eb;
+  background: var(--omni-accent-strong);
 }
 
 .plugin-card__button--secondary {
@@ -1431,8 +1423,7 @@
 .skillhub-detail__overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.36);
-  backdrop-filter: blur(2px);
+  background: var(--omni-overlay-scrim);
   z-index: 50;
   display: flex;
   justify-content: flex-end;
@@ -1806,8 +1797,7 @@
   position: fixed;
   inset: 0;
   z-index: 140;
-  background: rgba(0, 0, 0, 0.48);
-  backdrop-filter: blur(2px);
+  background: var(--omni-overlay-scrim);
 }
 
 .expert-team-manager {
@@ -2432,9 +2422,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: var(--omni-overlay-scrim);
   padding: 24px;
 }
 

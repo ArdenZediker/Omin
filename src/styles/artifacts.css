@@ -425,18 +425,18 @@
 .artifacts-panel__preview-actions {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex: 0 0 auto;
 }
 
 .artifacts-panel__preview-actions button {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--omni-control-radius);
   background: transparent;
   color: var(--omni-app-muted);
   cursor: pointer;

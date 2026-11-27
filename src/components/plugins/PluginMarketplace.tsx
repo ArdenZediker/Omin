@@ -149,11 +149,7 @@ const TOOL_GROUP_ORDER = [
   "插件安装",
 ];
 
-/** 渲染一个 PluginManifest 的图标：
- * - `manifest.icon` 是 URL（http/https/data/blob/file 或 web 根路径）→ `<img>`
- * - 单个非 ASCII 字符（emoji） → 原样文本
- * - 其余（Lucide 名称或缺失）→ 按 `kind` 兜底
- */
+/** Render plugin artwork when supplied, otherwise use the shared Lucide family. */
 function renderPluginIcon(manifest: PluginManifest) {
   const iconValue = manifest.icon?.trim();
   if (iconValue) {
@@ -170,17 +166,9 @@ function renderPluginIcon(manifest: PluginManifest) {
         />
       );
     }
-    // 单字符 emoji（不全是 ASCII 字母/数字/下划线/点）
-    if (iconValue.length <= 2 && /[^\x00-\x7F]/.test(iconValue)) {
-      return (
-        <span className="plugin-card__icon-emoji" aria-hidden>
-          {iconValue}
-        </span>
-      );
-    }
   }
   const Icon = ICON_MAP[manifest.kind] ?? Puzzle;
-  return <Icon size={22} strokeWidth={1.7} />;
+  return <Icon size={20} strokeWidth={1.8} aria-hidden="true" />;
 }
 
 /** 通用插件详情抽屉。复用 .skillhub-detail* 样式（从右滑入、半透明遮罩、Esc 关闭），
