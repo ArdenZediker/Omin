@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Check, ShieldAlert, ShieldCheck } from "lucide-react";
 import {
@@ -9,6 +9,7 @@ import {
   type RiskLevel,
 } from "../chat/confirmationGate";
 import { canGrantSessionPermission } from "../chat/permissionMode";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 
 type PendingEntry = ConfirmationRequest & { id: string };
 
@@ -27,6 +28,9 @@ const RISK_META: Record<RiskLevel, { label: string; tone: string }> = {
  */
 export function ConfirmationDialog() {
   const [pending, setPending] = useState<PendingEntry | null>(() => getPendingConfirmation());
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useDialogFocus(dialogRef, Boolean(pending));
 
   useEffect(() => subscribeConfirmation(setPending), []);
 
@@ -57,11 +61,13 @@ export function ConfirmationDialog() {
       role="presentation"
     >
       <div
+        ref={dialogRef}
         className={`omni-confirm-dialog confirm-dialog confirm-dialog--${risk.tone}`}
         onClick={(event) => event.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
+        tabIndex={-1}
       >
         <div className="confirm-dialog__header">
           <span className="confirm-dialog__icon" aria-hidden="true">
@@ -132,7 +138,7 @@ export function ConfirmationDialog() {
             type="button"
             className={`omni-confirm-dialog__button ${isSevere ? "omni-confirm-dialog__button--danger" : "omni-confirm-dialog__button--primary"}`}
             onClick={() => resolveConfirmation(pending.id, true)}
-            autoFocus
+            data-dialog-initial-focus
           >
             <Check size={14} strokeWidth={1.8} />
             <span>{pending.confirmLabel ?? "确认执行"}</span>

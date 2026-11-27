@@ -661,20 +661,23 @@
   }
 }
 
-.omni-dialog__close {
+.omni-dialog__close,
+.chat-history-panel__group-dialog-close {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   border: none;
+  padding: 0;
   background: transparent;
   color: var(--omni-app-muted);
   cursor: pointer;
 }
 
-.omni-dialog__close:hover {
+.omni-dialog__close:hover,
+.chat-history-panel__group-dialog-close:hover {
   background: var(--omni-soft-bg);
   color: var(--omni-app-text);
 }

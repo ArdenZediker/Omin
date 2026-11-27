@@ -2,6 +2,7 @@
 import type { HTMLInputTypeAttribute, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, X } from "lucide-react";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 
 export type PromptField = {
   label: string;
@@ -44,6 +45,9 @@ export function PromptDialogProvider({ children }: { children: ReactNode }) {
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const resolveRef = useRef<((value: string[] | null) => void) | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useDialogFocus(dialogRef, Boolean(request));
 
   const closePrompt = useCallback((result: string[] | null) => {
     const resolve = resolveRef.current;
@@ -141,11 +145,13 @@ export function PromptDialogProvider({ children }: { children: ReactNode }) {
   const promptDialog = request ? (
     <div className="omni-confirm-overlay" onMouseDown={handleCancel}>
       <div
+        ref={dialogRef}
         className="omni-confirm-dialog omni-prompt-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="omni-prompt-dialog-title"
         aria-describedby={request.options.description ? "omni-prompt-dialog-description" : undefined}
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
@@ -184,6 +190,7 @@ export function PromptDialogProvider({ children }: { children: ReactNode }) {
                     inputRefs.current[index] = element;
                   }}
                   id={inputId}
+                  data-dialog-initial-focus={field.autoFocus ? "true" : undefined}
                   type={field.type ?? "text"}
                   value={request.values[index] ?? ""}
                   placeholder={field.placeholder}

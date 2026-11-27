@@ -14,6 +14,7 @@ import { pluginRegistry } from "../plugins/registry";
 import OmniSelect, { type OmniSelectOption } from "./ui/OmniSelect";
 import PluginToggleRow from "./ui/PluginToggleRow";
 import McpConnectorRow from "./ui/McpConnectorRow";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 
 export type CreateProjectDialogProps = {
   open: boolean;
@@ -43,6 +44,9 @@ export default function CreateProjectDialog({
   const [allowedSkillIds, setAllowedSkillIds] = useState<string[]>([]);
   // 项目级连接器白名单。**空 = 不限制**（放行全部已信任连接器），勾了才收窄 —— 见 McpConnectorRow。
   const [connectorIds, setConnectorIds] = useState<string[]>([]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useDialogFocus(dialogRef, open);
 
   useEffect(() => {
     if (open) {
@@ -195,10 +199,12 @@ export default function CreateProjectDialog({
     <>
       <div className="omni-dialog-backdrop" onClick={onClose} />
       <div
+        ref={dialogRef}
         className="omni-dialog omni-dialog--create-project"
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-project-title"
+        tabIndex={-1}
         onKeyDown={handleKeyDown}
       >
         <div className="omni-dialog__header">
@@ -212,7 +218,7 @@ export default function CreateProjectDialog({
           <label className="omni-dialog__field">
             <span className="omni-dialog__label">项目名称</span>
             <input
-              autoFocus
+              data-dialog-initial-focus
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="请输入项目名称"

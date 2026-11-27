@@ -1318,21 +1318,6 @@
   right: 10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: var(--omni-app-muted);
-  cursor: pointer;
-}
-
-.chat-history-panel__group-dialog-close:hover {
-  background: var(--omni-soft-bg);
-  color: var(--omni-app-text);
 }
 
 .chat-history-panel__group-dialog-footer {

@@ -1,5 +1,7 @@
+import { useRef } from "react";
 import { Check, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
 import { DEFAULT_PROJECT_GROUP_LABEL } from "../mainChatViewUtils";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 
 type ProjectGroupManagerDialogProps = {
   /** 自定义分组名列表（不含系统默认分组）。 */
@@ -42,13 +44,18 @@ export default function ProjectGroupManagerDialog({
   onDeleteGroup,
   onClose,
 }: ProjectGroupManagerDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, true);
+
   return (
     <div className="omni-confirm-overlay" onClick={onClose} role="presentation">
       <div
+        ref={dialogRef}
         className="omni-confirm-dialog chat-history-panel__group-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="chat-history-group-dialog-title"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
@@ -66,7 +73,7 @@ export default function ProjectGroupManagerDialog({
             onClick={onClose}
             aria-label="关闭"
           >
-            <X size={16} strokeWidth={2} aria-hidden="true" />
+            <X size={18} strokeWidth={1.8} aria-hidden="true" />
           </button>
         </div>
         <div className="chat-history-panel__group-dialog-body">

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { X, Bot, Wand2, Cable, Plug, Check } from "lucide-react";
 import { TOOL_MANIFESTS } from "../config/manifests/tools";
 import { pluginRegistry } from "../plugins/registry";
 import { canonicalizeExpertManifest, legacyExpertProfile, compileExpertTemplatePrompt } from "../plugins/expertProfiles";
 import type { ExpertProfile, PluginManifest } from "../plugins/types";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 
 export type CreateExpertDialogProps = {
   open: boolean;
@@ -68,6 +69,9 @@ export default function CreateExpertDialog({
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [selectedMcpConnectorIds, setSelectedMcpConnectorIds] = useState<string[]>([]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useDialogFocus(dialogRef, open);
 
   const isEditing = Boolean(editing);
 
@@ -182,10 +186,12 @@ export default function CreateExpertDialog({
     <>
       <div className="omni-dialog-backdrop" onClick={onClose} />
       <div
+        ref={dialogRef}
         className="omni-dialog omni-dialog--create-project omni-dialog--create-expert"
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-expert-title"
+        tabIndex={-1}
         onKeyDown={handleKeyDown}
       >
         <div className="omni-dialog__header">
@@ -198,7 +204,7 @@ export default function CreateExpertDialog({
 
         <div className="omni-dialog__body">
           <div className="omni-dialog__section-heading"><strong>基本信息</strong><span>用于目录展示和专家匹配</span></div>
-          <label className="omni-dialog__field"><span className="omni-dialog__label">专家名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="如：周报分析顾问" maxLength={40} /></label>
+          <label className="omni-dialog__field"><span className="omni-dialog__label">专家名称</span><input data-dialog-initial-focus value={name} onChange={(event) => setName(event.target.value)} placeholder="如：周报分析顾问" maxLength={40} /></label>
           <label className="omni-dialog__field"><span className="omni-dialog__label">专家描述</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="说明专家解决什么问题、适用于什么场景" maxLength={160} /></label>
           <label className="omni-dialog__field"><span className="omni-dialog__label">分类</span><select value={category} onChange={(event) => setCategory(event.target.value)}>{EXPERT_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           <label className="omni-dialog__field"><span className="omni-dialog__label">标签</span><input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="用顿号或逗号分隔，例如：复盘、改进、团队协作" /></label>

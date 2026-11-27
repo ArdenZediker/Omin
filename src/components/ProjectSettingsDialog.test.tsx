@@ -149,7 +149,9 @@ describe("ProjectSettingsDialog「另存为预设」", () => {
     const before = pluginRegistry.listAgentPresets().length;
 
     renderDialog({ systemPrompt: "这段指令不应该被存下来。" });
-    fireEvent.click(saveButton());
+    const trigger = saveButton();
+    trigger.focus();
+    fireEvent.click(trigger);
     await screen.findByLabelText("专家名称");
     // 必须限定在提示弹窗内取「取消」：项目设置自己的 footer 里也有一个「取消」
     fireEvent.click(
@@ -161,6 +163,7 @@ describe("ProjectSettingsDialog「另存为预设」", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText("专家名称")).toBeNull();
     });
+    expect(document.activeElement).toBe(trigger);
     expect(pluginRegistry.listAgentPresets()).toHaveLength(before);
   });
 });

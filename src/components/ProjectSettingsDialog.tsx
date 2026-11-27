@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { X, Bot, FolderOpen, Wand2, BookmarkPlus } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -9,6 +9,7 @@ import { usePromptDialog } from "./PromptDialog";
 import OmniSelect, { type OmniSelectOption } from "./ui/OmniSelect";
 import PluginToggleRow from "./ui/PluginToggleRow";
 import McpConnectorRow from "./ui/McpConnectorRow";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 
 export type ProjectSettingsDialogProps = {
   open: boolean;
@@ -48,6 +49,9 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
   /** 单行反馈区（套用预设 / 另存为预设共用一行，避免弹 toast）。 */
   const [notice, setNotice] = useState("");
   const { openPrompt } = usePromptDialog();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useDialogFocus(dialogRef, open && Boolean(project));
 
   useEffect(() => {
     if (open && project) {
@@ -198,10 +202,12 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
     <>
       <div className="omni-dialog-backdrop" onClick={onClose} />
       <div
+        ref={dialogRef}
         className="omni-dialog omni-dialog--create-project"
         role="dialog"
         aria-modal="true"
         aria-labelledby="project-settings-title"
+        tabIndex={-1}
         onKeyDown={handleKeyDown}
       >
         <div className="omni-dialog__header">
@@ -215,7 +221,7 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
           <label className="omni-dialog__field">
             <span className="omni-dialog__label">项目名称</span>
             <input
-              autoFocus
+              data-dialog-initial-focus
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="请输入项目名称"
