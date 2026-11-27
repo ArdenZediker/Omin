@@ -848,7 +848,7 @@
 .compact-menu__item {
   width: 100%;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--omni-control-radius);
   display: flex;
   align-items: center;
   justify-content: space-between;

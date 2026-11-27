@@ -96,7 +96,7 @@ export default function TitleBar({
           title={minimizeBehavior === "compact" ? "收起到悬浮球" : "最小化到任务栏"}
           type="button"
         >
-          <Minus className="omni-window-controls__icon" strokeWidth={1.7} />
+          <Minus className="omni-window-controls__icon" strokeWidth={1.8} />
         </button>
         <button
           onClick={handleToggleMaximize}
@@ -106,9 +106,9 @@ export default function TitleBar({
           type="button"
         >
           {isMaximized ? (
-            <Minimize2 className="omni-window-controls__icon" strokeWidth={1.7} />
+            <Minimize2 className="omni-window-controls__icon" strokeWidth={1.8} />
           ) : (
-            <Maximize2 className="omni-window-controls__icon" strokeWidth={1.7} />
+            <Maximize2 className="omni-window-controls__icon" strokeWidth={1.8} />
           )}
         </button>
         <button
@@ -118,7 +118,7 @@ export default function TitleBar({
           title={closeTitle ?? (onClose ? "关闭窗口" : minimizeBehavior === "compact" ? "收起到悬浮球" : "最小化到任务栏")}
           type="button"
         >
-          <X className="omni-window-controls__icon" strokeWidth={1.7} />
+          <X className="omni-window-controls__icon" strokeWidth={1.8} />
         </button>
       </div>
     </div>

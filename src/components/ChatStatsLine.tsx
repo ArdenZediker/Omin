@@ -68,7 +68,7 @@ export default function ChatStatsLine({
               <RefreshCw
                 className={`chat-stats-line__icon${isLoading ? " chat-stats-line__icon--spinning" : ""}`}
                 size={14}
-                strokeWidth={1.7}
+                strokeWidth={1.8}
                 aria-hidden="true"
               />
               <span>{countText}</span>

@@ -456,7 +456,7 @@
   width: 100%;
   min-height: 34px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--omni-control-radius);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1349,7 +1349,7 @@
   width: 100%;
   min-height: 34px !important;
   border: 1px solid var(--omni-panel-border) !important;
-  border-radius: 9px !important;
+  border-radius: var(--omni-control-radius) !important;
   justify-content: center !important;
   background: var(--omni-panel-bg) !important;
   color: var(--omni-app-text) !important;
@@ -1359,7 +1359,7 @@
   width: 100%;
   min-height: 36px;
   border: 1px solid var(--omni-panel-border);
-  border-radius: 9px;
+  border-radius: var(--omni-control-radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2366,7 +2366,7 @@
   min-height: 36px;
   padding: 7px 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--omni-control-radius);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3768,7 +3768,7 @@
   min-height: 27px;
   padding: 4px 8px;
   border: 1px solid color-mix(in srgb, var(--omni-message-user-text) 18%, var(--omni-message-user-bg));
-  border-radius: 9px;
+  border-radius: var(--omni-control-radius);
   background: color-mix(in srgb, var(--omni-panel-bg) 70%, var(--omni-message-user-bg));
   color: inherit;
   font-size: 11px;

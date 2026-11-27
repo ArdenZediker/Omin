@@ -1207,7 +1207,7 @@ export default function ChatInput({
                       <LoaderCircle
                         className="chat-composer__status-spinner"
                         size={13}
-                        strokeWidth={1.9}
+                        strokeWidth={2}
                       />
                       <span>已追加: {followUp.content}</span>
                     </div>

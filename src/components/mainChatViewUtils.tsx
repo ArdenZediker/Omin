@@ -12,7 +12,7 @@ export function SessionAvatarIcon(props: { size?: number; color?: string }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke={color}
-      strokeWidth={1.9}
+      strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -94,7 +94,7 @@ export function renderProjectAvatar(project: Project | null) {
     return (
       <FolderOpen
         size={24}
-        strokeWidth={1.9}
+        strokeWidth={1.8}
         className="chat-history-panel__project-folder-icon"
       />
     );
@@ -103,7 +103,7 @@ export function renderProjectAvatar(project: Project | null) {
   return (
     <Bot
       size={20}
-      strokeWidth={1.9}
+      strokeWidth={1.8}
       className="chat-history-panel__project-folder-icon"
     />
   );

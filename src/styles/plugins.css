@@ -652,7 +652,7 @@
   display: inline-flex;
   align-items: center;
   padding: 1px 7px;
-  border-radius: 9px;
+  border-radius: 999px;
   background: var(--omni-soft-bg);
   border: 1px solid var(--omni-panel-border);
   color: var(--omni-app-muted);
@@ -1741,7 +1741,7 @@
   display: inline-flex;
   padding: 3px;
   gap: 2px;
-  border-radius: 9px;
+  border-radius: var(--omni-control-radius);
   background: var(--omni-input-bg);
   border: 1px solid var(--omni-panel-border);
 }

@@ -1867,7 +1867,7 @@ export default function MainChatView({
                                         >
                                           <FolderOpen
                                             size={13}
-                                            strokeWidth={1.9}
+                                            strokeWidth={2}
                                           />
                                           <span>打开文件夹</span>
                                         </button>
@@ -1918,7 +1918,7 @@ export default function MainChatView({
                                             >
                                               <Trash2
                                                 size={13}
-                                                strokeWidth={1.9}
+                                                strokeWidth={2}
                                               />
                                               <span>从列表中移除</span>
                                             </button>
@@ -2227,12 +2227,12 @@ export default function MainChatView({
                   {isProjectPanelVisible ? (
                     <PanelLeftClose
                       className="main-chat-toolbar__icon"
-                      strokeWidth={1.7}
+                      strokeWidth={1.8}
                     />
                   ) : (
                     <PanelLeftOpen
                       className="main-chat-toolbar__icon"
-                      strokeWidth={1.7}
+                      strokeWidth={1.8}
                     />
                   )}
                 </button>
@@ -2273,7 +2273,7 @@ export default function MainChatView({
                 >
                   <Trash2
                     className="main-chat-toolbar__icon"
-                    strokeWidth={1.7}
+                    strokeWidth={1.8}
                   />
                 </button>
               )}
@@ -2287,7 +2287,7 @@ export default function MainChatView({
                 >
                   <Share2
                     className="main-chat-toolbar__icon"
-                    strokeWidth={1.7}
+                    strokeWidth={1.8}
                   />
                 </button>
               )}
@@ -2311,12 +2311,12 @@ export default function MainChatView({
                   {isTopicPanelVisible ? (
                     <PanelRightClose
                       className="main-chat-toolbar__icon"
-                      strokeWidth={1.7}
+                      strokeWidth={1.8}
                     />
                   ) : (
                     <PanelRightOpen
                       className="main-chat-toolbar__icon"
-                      strokeWidth={1.7}
+                      strokeWidth={1.8}
                     />
                   )}
                 </button>
@@ -2670,7 +2670,7 @@ export default function MainChatView({
                           >
                             <MessageSquare
                               size={13}
-                              strokeWidth={1.9}
+                              strokeWidth={2}
                               className="chat-topic-panel__item-icon"
                             />
                             <span className="chat-topic-panel__item-copy">

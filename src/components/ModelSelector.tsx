@@ -149,7 +149,7 @@ export default function ModelSelector({ currentModel, label, title, onModelChang
                       {formatContextWindow(model.maxTokens)}
                     </span>
 
-                    {model.supportsVision && <Eye className="model-selector__vision" aria-label="支持视觉" strokeWidth={1.5} />}
+                    {model.supportsVision && <Eye className="model-selector__vision" aria-label="支持视觉" strokeWidth={1.8} />}
                   </button>
                 );
               })}

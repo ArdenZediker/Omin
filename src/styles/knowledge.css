@@ -560,7 +560,7 @@
 .omni-knowledge-doc-menu__danger {
   width: 100%;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--omni-control-radius);
   display: inline-flex;
   align-items: center;
   gap: 8px;

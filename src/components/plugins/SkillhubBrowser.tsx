@@ -382,7 +382,7 @@ const SkillCard = memo(function SkillCard({
                 size={14}
                 className="plugin-card__verified"
                 aria-label="官方认证"
-                strokeWidth={2.4}
+                strokeWidth={2}
               />
             )}
             <span className="plugin-card__badge">{meta.category}</span>

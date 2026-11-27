@@ -400,7 +400,7 @@
   width: 26px;
   height: 26px;
   margin-top: 1px;
-  border-radius: 9px;
+  border-radius: var(--omni-control-radius);
   background: rgba(245, 158, 11, 0.16);
   color: #b45309;
 }

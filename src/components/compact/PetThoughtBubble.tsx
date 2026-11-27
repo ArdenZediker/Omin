@@ -179,7 +179,7 @@ export default function PetThoughtBubble({
                 <CheckCircle2
                   className="pet-thought-bubble__badge pet-thought-bubble__badge--complete"
                   size={16}
-                  strokeWidth={2.2}
+                  strokeWidth={2}
                   aria-hidden="true"
                   focusable="false"
                 />
@@ -188,7 +188,7 @@ export default function PetThoughtBubble({
                 <CircleAlert
                   className="pet-thought-bubble__badge pet-thought-bubble__badge--error"
                   size={16}
-                  strokeWidth={2.2}
+                  strokeWidth={2}
                   aria-hidden="true"
                   focusable="false"
                 />
