@@ -295,7 +295,15 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig, pro
 
       {isModelFormOpen && editingModel ? (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-[var(--omni-overlay-scrim)] px-6">
-          <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+          <div
+            className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                closeModelForm();
+              }
+            }}
+          >
             <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900">

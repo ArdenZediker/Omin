@@ -339,7 +339,15 @@ export default function ModelSettingsSection({
 
       {isModelFormOpen && (
         <div className="omni-model-section-modal absolute inset-0 z-20 flex items-center justify-center bg-[var(--omni-overlay-scrim)] px-6">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+            <div
+              className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  onCloseModelForm();
+                }
+              }}
+            >
             <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-3.5">
               <div className="min-w-0">
                 <h3 className="text-sm font-semibold text-slate-900">{editingModel ? "编辑模型" : "新增模型"}</h3>
