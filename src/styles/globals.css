@@ -2598,6 +2598,36 @@ body:has(.compact-menu-window),
   background-color: var(--omni-panel-bg) !important;
 }
 
+:root[data-omni-theme="dark"] .omni-settings-root .bg-slate-100 {
+  background-color: var(--omni-app-surface-3) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-settings-root [class*="bg-amber-50"] {
+  background: rgba(252, 211, 77, 0.14) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-settings-root [class*="ring-amber-200"] {
+  --tw-ring-color: rgba(252, 211, 77, 0.32) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-settings-root [class*="text-amber-800"] {
+  color: #fcd34d !important;
+}
+
+:root[data-omni-theme="dark"] .omni-settings-root button[class*="bg-amber-600"],
+:root[data-omni-theme="dark"] .omni-settings-root button[class*="bg-amber-600"]:hover {
+  background: var(--omni-accent) !important;
+  color: #ffffff !important;
+}
+
+:root[data-omni-theme="dark"] .omni-settings-root button[class*="hover:bg-slate-50"]:hover {
+  background: var(--omni-app-surface-3) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-settings-root button[class*="hover:bg-violet-200"]:hover {
+  background: rgba(167, 139, 250, 0.28) !important;
+}
+
 :root[data-omni-theme="dark"] .omni-settings-root button[class*="bg-violet-600"],
 :root[data-omni-theme="dark"] .omni-settings-root span[class*="bg-violet-600"],
 :root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-600"],
