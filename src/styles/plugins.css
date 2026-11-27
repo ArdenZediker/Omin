@@ -2569,7 +2569,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 22px 24px 16px;
+  padding: 18px 20px 14px;
   border-bottom: 1px solid var(--omni-border, rgba(0, 0, 0, 0.08));
 }
 
@@ -2583,28 +2583,10 @@
   color: var(--omni-app-muted, #6b7280);
 }
 
-.omni-tools-dialog__close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--omni-app-muted, #6b7280);
-  cursor: pointer;
-}
-
-.omni-tools-dialog__close:hover {
-  background: var(--omni-app-surface-2, rgba(0, 0, 0, 0.04));
-  color: var(--omni-app-text, #111);
-}
-
 .omni-tools-dialog__body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 24px;
+  padding: 12px 20px;
 }
 
 .omni-tools-dialog__list {
@@ -2658,7 +2640,7 @@
 }
 
 .omni-tools-dialog__actions {
-  padding: 16px 24px 22px;
+  padding: 14px 20px 18px;
   border-top: 1px solid var(--omni-border, rgba(0, 0, 0, 0.08));
   justify-content: flex-end;
 }
@@ -2667,11 +2649,6 @@
 :root[data-omni-theme="dark"] .omni-tools-dialog__item {
   background: rgba(255, 255, 255, 0.03);
   border-color: rgba(255, 255, 255, 0.08);
-}
-
-:root[data-omni-theme="dark"] .omni-tools-dialog__close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f3f4f6;
 }
 
 /* 三页共享的渲染层级：App.css 最后加载本文件，这里用未分层规则覆盖各页

@@ -464,3 +464,50 @@ describe("PluginMarketplace 自建预设的删除入口", () => {
     });
   });
 });
+
+describe("PluginMarketplace 批量卸载确认弹窗焦点", () => {
+  it("锁定弹窗焦点，并在取消后返回卸载入口", async () => {
+    pluginRegistry.load();
+    const id = "test-marketplace-dialog-focus";
+    pluginRegistry.install(
+      {
+        id,
+        name: "弹窗焦点测试技能",
+        description: "用于验证批量卸载确认弹窗的键盘焦点",
+        version: "1.0.0",
+        kind: "skill",
+      },
+      { type: "local", path: "user" },
+    );
+
+    const { unmount } = render(
+      <PluginMarketplace
+        mainView
+        embedded
+        source="local"
+        onSourceChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "批量管理" }));
+    const uninstallButton = await screen.findByTitle("卸载所有非内置技能");
+    uninstallButton.focus();
+    fireEvent.click(uninstallButton);
+
+    const dialog = await screen.findByRole("alertdialog", { name: "确认批量卸载" });
+    const cancelButton = dialog.querySelector<HTMLButtonElement>("[data-dialog-initial-focus]")!;
+    const confirmButton = dialog.querySelector<HTMLButtonElement>(".omni-confirm-dialog__button--danger")!;
+    expect(cancelButton).toHaveTextContent("取消");
+    expect(document.activeElement).toBe(cancelButton);
+
+    fireEvent.keyDown(confirmButton, { key: "Tab" });
+    expect(document.activeElement).toBe(cancelButton);
+
+    fireEvent.keyDown(cancelButton, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(document.activeElement).toBe(uninstallButton);
+
+    unmount();
+    pluginRegistry.uninstall(id);
+  });
+});

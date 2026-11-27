@@ -1258,9 +1258,9 @@
 }
 
 .chat-history-panel__group-manager-actions button {
-  width: 24px !important;
-  min-width: 24px !important;
-  min-height: 24px !important;
+  width: var(--omni-icon-button-size-compact) !important;
+  min-width: var(--omni-icon-button-size-compact) !important;
+  min-height: var(--omni-icon-button-size-compact) !important;
   border: 0 !important;
   border-radius: 8px !important;
   display: inline-flex !important;
@@ -1292,7 +1292,7 @@
 .chat-history-panel__group-dialog {
   width: min(430px, calc(100vw - 32px));
   padding: 0;
-  border-radius: 12px;
+  border-radius: var(--omni-dialog-radius);
   overflow: hidden;
 }
 

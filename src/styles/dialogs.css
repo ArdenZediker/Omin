@@ -218,10 +218,10 @@
 .omni-confirm-dialog {
   width: min(380px, calc(100vw - 32px));
   border: 1px solid var(--omni-panel-border);
-  border-radius: 18px;
+  border-radius: var(--omni-dialog-radius);
   padding: 18px;
   background: var(--omni-panel-bg);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--omni-dialog-shadow);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -331,7 +331,7 @@
 
 .omni-confirm-dialog__button {
   min-width: 84px;
-  min-height: 36px;
+  min-height: var(--omni-dialog-action-height);
   height: auto;
   border: 1px solid var(--omni-panel-border);
   border-radius: var(--omni-control-radius);
@@ -559,10 +559,10 @@
   transform: translate(-50%, -50%);
   width: min(520px, calc(100vw - 32px));
   max-height: min(720px, calc(100vh - 40px));
-  border-radius: var(--omni-radius-lg);
+  border-radius: var(--omni-dialog-radius);
   background: var(--omni-panel-bg);
   border: 1px solid var(--omni-panel-border);
-  box-shadow: var(--omni-surface-shadow);
+  box-shadow: var(--omni-dialog-shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -663,13 +663,14 @@
 
 .omni-dialog__close,
 .chat-history-panel__group-dialog-close,
-.skillhub-detail__close {
+.skillhub-detail__close,
+.omni-tools-dialog__close {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: var(--omni-dialog-close-size);
+  height: var(--omni-dialog-close-size);
   border-radius: 8px;
   border: none;
   padding: 0;
@@ -680,7 +681,8 @@
 
 .omni-dialog__close:hover,
 .chat-history-panel__group-dialog-close:hover,
-.skillhub-detail__close:hover {
+.skillhub-detail__close:hover,
+.omni-tools-dialog__close:hover {
   background: var(--omni-soft-bg);
   color: var(--omni-app-text);
 }
@@ -891,7 +893,7 @@ button.omni-dialog__plugin-chip:hover {
 }
 
 .omni-dialog__button {
-  min-height: 36px;
+  min-height: var(--omni-dialog-action-height);
   padding: 0 12px;
   border-radius: var(--omni-control-radius);
   font-size: 13px;

@@ -13,6 +13,12 @@
   --omni-radius-lg: 14px;
   --omni-radius-md: 10px;
   --omni-control-radius: 8px;
+  --omni-icon-stroke: 1.8;
+  --omni-icon-button-size-compact: 32px;
+  --omni-dialog-radius: var(--omni-radius-lg);
+  --omni-dialog-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+  --omni-dialog-action-height: 36px;
+  --omni-dialog-close-size: 44px;
   --omni-surface-shadow: 0 12px 32px rgba(15, 23, 42, 0.1);
   --omni-focus-ring: color-mix(in srgb, var(--omni-accent, #1f6feb) 72%, white);
   --omni-overlay-scrim: rgba(15, 23, 42, 0.42);
@@ -156,6 +162,7 @@ body:has(.compact-menu-window),
   --omni-skill: #bc8cff;
   --omni-skill-bg: rgba(188, 140, 255, 0.15);
   --omni-overlay-scrim: rgba(1, 4, 9, 0.68);
+  --omni-dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 }
 
 :root[data-omni-theme="dark"] ::selection {
@@ -368,6 +375,11 @@ body:has(.compact-menu-window),
 
 :where(button, [role="button"]):disabled {
   cursor: not-allowed;
+}
+
+:where(button, [role="button"]) > svg.lucide {
+  flex: 0 0 auto;
+  stroke-width: var(--omni-icon-stroke);
 }
 
 @media (prefers-reduced-motion: reduce) {

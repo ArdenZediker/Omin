@@ -709,6 +709,8 @@ export default function PluginMarketplace({
     danger: boolean;
     onConfirm: () => void;
   } | null>(null);
+  const confirmDialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(confirmDialogRef, Boolean(confirmDialog));
   // MCP 工具列表弹窗：点击已连接连接器的「X 工具」徽标查看暴露的工具。
   const [toolsDialog, setToolsDialog] = useState<{
     connectorId: string;
@@ -717,6 +719,8 @@ export default function PluginMarketplace({
     loading: boolean;
     error?: string;
   } | null>(null);
+  const toolsDialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(toolsDialogRef, Boolean(toolsDialog));
   // 离开「我的技能」时清理批量状态，避免回到「我的技能」时残留选择
   useEffect(() => {
     if (!showMySkills && (batchMode || selectedIds.size > 0)) {
@@ -900,26 +904,6 @@ export default function PluginMarketplace({
     // 只在 showMySkills 首次切到 true 时跑一次（migratedIdsRef 防重）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showMySkills]);
-
-  // Esc 关闭 confirm dialog（仅 confirm 打开时挂监听）。
-  useEffect(() => {
-    if (!confirmDialog) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setConfirmDialog(null);
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDialog]);
-
-  // Esc 关闭 MCP 工具列表弹窗（仅打开时挂监听）。
-  useEffect(() => {
-    if (!toolsDialog) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setToolsDialog(null);
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [toolsDialog]);
 
   const handleInstall = useCallback((manifest: PluginManifest) => {
     pluginRegistry.install(manifest, {
@@ -2400,7 +2384,7 @@ export default function PluginMarketplace({
         />
 
         {/* 危险操作二次确认 dialog（参考 .omni-confirm-overlay / .omni-confirm-dialog
-          共享样式）。打开时 Esc 关闭 + 自动聚焦「取消」按钮（不是「确认」——
+          共享样式）。打开时 Esc 关闭 + 聚焦「取消」按钮（不是「确认」——
           因为危险操作的「确认」红色按钮如果默认 focus，Enter 会直接破坏数据
           而无取消机会；让 focus 落在「取消」反而要求用户主动选择「确认」
           才能继续破坏操作，是 UX 安全设计）。 */}
@@ -2411,12 +2395,21 @@ export default function PluginMarketplace({
             onClick={() => setConfirmDialog(null)}
           >
             <div
+              ref={confirmDialogRef}
               className="omni-confirm-dialog"
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="plugin-marketplace-confirm-title"
               aria-describedby="plugin-marketplace-confirm-message"
+              tabIndex={-1}
               onClick={(e) => e.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setConfirmDialog(null);
+                }
+              }}
             >
               <div
                 className="omni-confirm-dialog__title"
@@ -2435,7 +2428,7 @@ export default function PluginMarketplace({
                   type="button"
                   className="omni-confirm-dialog__button"
                   onClick={() => setConfirmDialog(null)}
-                  autoFocus
+                  data-dialog-initial-focus
                 >
                   取消
                 </button>
@@ -2467,11 +2460,20 @@ export default function PluginMarketplace({
             onClick={() => setToolsDialog(null)}
           >
             <div
+              ref={toolsDialogRef}
               className="omni-confirm-dialog omni-tools-dialog"
               role="dialog"
               aria-modal="true"
               aria-labelledby="plugin-marketplace-tools-title"
+              tabIndex={-1}
               onClick={(e) => e.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setToolsDialog(null);
+                }
+              }}
             >
               <div className="omni-tools-dialog__header">
                 <div>
