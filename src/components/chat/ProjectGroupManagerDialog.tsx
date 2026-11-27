@@ -43,13 +43,23 @@ export default function ProjectGroupManagerDialog({
   onClose,
 }: ProjectGroupManagerDialogProps) {
   return (
-    <div className="omni-confirm-overlay" onClick={onClose}>
+    <div className="omni-confirm-overlay" onClick={onClose} role="presentation">
       <div
         className="omni-confirm-dialog chat-history-panel__group-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chat-history-group-dialog-title"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+          }
+        }}
       >
         <div className="chat-history-panel__group-dialog-header">
-          <div className="chat-history-panel__group-dialog-title">分组管理</div>
+          <div className="chat-history-panel__group-dialog-title" id="chat-history-group-dialog-title">分组管理</div>
           <button
             type="button"
             className="chat-history-panel__group-dialog-close"
