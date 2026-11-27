@@ -3,9 +3,11 @@ import {
   BookOpen,
   Bot,
   Check,
+  ChevronRight,
   Command,
   ListChecks,
   LoaderCircle,
+  Paperclip,
   Plus,
   Send,
   Square,
@@ -180,6 +182,7 @@ export default function ChatInput({
   const [selectedKnowledgeCollection, setSelectedKnowledgeCollection] = useState<KnowledgeCollection | null>(null);
   const [selectedExpert, setSelectedExpert] = useState<PluginManifest | null>(null);
   const [selectedExpertTeam, setSelectedExpertTeam] = useState<ExpertTeam | null>(null);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [openToolbarPicker, setOpenToolbarPicker] = useState<"knowledge" | "expert" | "team" | null>(null);
   const [selectedKnowledgeIndex, setSelectedKnowledgeIndex] = useState(0);
   const [dismissedMentionInput, setDismissedMentionInput] = useState("");
@@ -227,17 +230,22 @@ export default function ChatInput({
   }, [commandNotice]);
 
   useEffect(() => {
-    if (!openToolbarPicker) {
+    if (!isAddMenuOpen) {
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
       if (!toolbarPickerRef.current?.contains(event.target as Node)) {
+        setIsAddMenuOpen(false);
         setOpenToolbarPicker(null);
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setOpenToolbarPicker(null);
+        if (openToolbarPicker) {
+          setOpenToolbarPicker(null);
+        } else {
+          setIsAddMenuOpen(false);
+        }
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
@@ -246,7 +254,7 @@ export default function ChatInput({
       document.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [openToolbarPicker]);
+  }, [isAddMenuOpen, openToolbarPicker]);
 
   const syncTextareaHeight = () => {
     const textarea = textareaRef.current;
@@ -1378,145 +1386,185 @@ export default function ChatInput({
         <div className="chat-composer__footer">
           <div className="chat-composer__footer-row">
             <div className="chat-composer__footer-tools">
-              <button
-                type="button"
-                className="chat-composer__tool-button chat-composer__tool-button--add"
-                title="上传图片或文件（随消息让模型读取）"
-                aria-label="上传图片或文件"
-                onClick={() => void handleAddFiles()}
-              >
-                <Plus size={20} strokeWidth={1.7} />
-              </button>
-              <PermissionModeSelector openSignal={permissionOpenSignal} />
-              <div className="chat-composer__pickers" ref={toolbarPickerRef}>
+              <div className="chat-composer__add-menu" ref={toolbarPickerRef}>
                 <button
                   type="button"
-                  className={`chat-composer__tool-button chat-composer__tool-button--labeled${selectedExpert ? " chat-composer__tool-button--active" : ""}`}
-                  title="召唤专家"
-                  aria-label="召唤专家"
-                  aria-expanded={openToolbarPicker === "expert"}
-                  onClick={() => setOpenToolbarPicker((current) => current === "expert" ? null : "expert")}
+                  className={`chat-composer__tool-button chat-composer__tool-button--add${isAddMenuOpen ? " chat-composer__tool-button--active" : ""}`}
+                  title="添加文件或选择对话方式"
+                  aria-label="添加"
+                  aria-expanded={isAddMenuOpen}
+                  onClick={() => {
+                    if (isAddMenuOpen) {
+                      setIsAddMenuOpen(false);
+                      setOpenToolbarPicker(null);
+                    } else {
+                      setIsAddMenuOpen(true);
+                    }
+                  }}
                 >
-                  <Bot size={17} strokeWidth={1.8} />
+                  <Plus size={20} strokeWidth={1.7} />
                 </button>
-                {openToolbarPicker === "expert" && (
-                  <div className="chat-composer__picker chat-composer__picker--choice" aria-label="选择专家">
-                    <div className="chat-composer__picker-heading">召唤专家</div>
-                    {experts.map((expert) => (
+                {isAddMenuOpen && (
+                  <div className="chat-composer__add-panel" role="group" aria-label="添加与选择">
+                    <div className="chat-composer__add-panel-main">
                       <button
-                        key={expert.id}
                         type="button"
-                        className={`chat-composer__picker-option${(selectedExpert?.id ?? boundExpert?.id) === expert.id ? " chat-composer__picker-option--selected" : ""}`}
-                        disabled={Boolean(!onSummonExpert && boundExpert && boundExpert.id !== expert.id)}
+                        className="chat-composer__add-menu-item"
+                        aria-label="上传图片或文件"
                         onClick={() => {
+                          setIsAddMenuOpen(false);
                           setOpenToolbarPicker(null);
-                          if (onSummonExpert) {
-                            onSummonExpert(expert);
-                          } else {
-                            setSelectedExpert(expert);
-                            setSelectedExpertTeam(null);
+                          void handleAddFiles();
+                        }}
+                      >
+                        <Paperclip size={17} strokeWidth={1.8} />
+                        <span>添加文件</span>
+                      </button>
+                      <div className="chat-composer__add-menu-divider" />
+                      <button
+                        type="button"
+                        className={`chat-composer__add-menu-item${openToolbarPicker === "expert" ? " chat-composer__add-menu-item--active" : ""}`}
+                        aria-label="召唤专家"
+                        aria-expanded={openToolbarPicker === "expert"}
+                        onMouseEnter={() => setOpenToolbarPicker("expert")}
+                        onFocus={() => setOpenToolbarPicker("expert")}
+                        onClick={() => setOpenToolbarPicker("expert")}
+                      >
+                        <Bot size={17} strokeWidth={1.8} />
+                        <span>专家</span>
+                        <ChevronRight size={15} className="chat-composer__add-menu-chevron" />
+                      </button>
+                      <button
+                        type="button"
+                        className={`chat-composer__add-menu-item${openToolbarPicker === "team" ? " chat-composer__add-menu-item--active" : ""}`}
+                        title={boundExpert ? "当前会话已绑定专家，专家团请在新对话中使用" : undefined}
+                        aria-label="选择专家团"
+                        aria-expanded={openToolbarPicker === "team"}
+                        disabled={Boolean(boundExpert)}
+                        onMouseEnter={() => setOpenToolbarPicker("team")}
+                        onFocus={() => setOpenToolbarPicker("team")}
+                        onClick={() => setOpenToolbarPicker("team")}
+                      >
+                        <UsersRound size={17} strokeWidth={1.8} />
+                        <span>专家团</span>
+                        <ChevronRight size={15} className="chat-composer__add-menu-chevron" />
+                      </button>
+                      <button
+                        type="button"
+                        className={`chat-composer__add-menu-item${openToolbarPicker === "knowledge" ? " chat-composer__add-menu-item--active" : ""}`}
+                        aria-label="选择知识库"
+                        aria-expanded={openToolbarPicker === "knowledge"}
+                        onMouseEnter={() => setOpenToolbarPicker("knowledge")}
+                        onFocus={() => setOpenToolbarPicker("knowledge")}
+                        onClick={() => setOpenToolbarPicker("knowledge")}
+                      >
+                        <BookOpen size={17} strokeWidth={1.8} />
+                        <span>知识库</span>
+                        <ChevronRight size={15} className="chat-composer__add-menu-chevron" />
+                      </button>
+                    </div>
+                    {openToolbarPicker === "expert" && (
+                      <div className="chat-composer__picker chat-composer__picker--choice" role="group" aria-label="选择专家">
+                        <div className="chat-composer__picker-heading">召唤专家</div>
+                        {experts.map((expert) => (
+                          <button
+                            key={expert.id}
+                            type="button"
+                            className={`chat-composer__picker-option${(selectedExpert?.id ?? boundExpert?.id) === expert.id ? " chat-composer__picker-option--selected" : ""}`}
+                            disabled={Boolean(!onSummonExpert && boundExpert && boundExpert.id !== expert.id)}
+                            onClick={() => {
+                              setOpenToolbarPicker(null);
+                              setIsAddMenuOpen(false);
+                              if (onSummonExpert) {
+                                onSummonExpert(expert);
+                              } else {
+                                setSelectedExpert(expert);
+                                setSelectedExpertTeam(null);
+                                textareaRef.current?.focus();
+                              }
+                            }}
+                          >
+                            <span className="chat-composer__picker-option-copy">
+                              <strong>{expert.name}</strong>
+                              <small>{onSummonExpert ? "召唤会新建绑定此专家的对话" : expert.description}</small>
+                            </span>
+                            {(selectedExpert?.id ?? boundExpert?.id) === expert.id && <Check size={15} />}
+                          </button>
+                        ))}
+                        {experts.length === 0 && <div className="chat-composer__picker-empty">暂无可用专家</div>}
+                      </div>
+                    )}
+                    {openToolbarPicker === "team" && (
+                      <div className="chat-composer__picker chat-composer__picker--choice" role="group" aria-label="选择专家团">
+                        <div className="chat-composer__picker-heading">本轮协作专家团</div>
+                        {expertTeams.map((team) => (
+                          <button
+                            key={team.id}
+                            type="button"
+                            className={`chat-composer__picker-option${selectedExpertTeam?.id === team.id ? " chat-composer__picker-option--selected" : ""}`}
+                            onClick={() => {
+                              setSelectedExpertTeam(team);
+                              setSelectedExpert(null);
+                              setOpenToolbarPicker(null);
+                              setIsAddMenuOpen(false);
+                              textareaRef.current?.focus();
+                            }}
+                          >
+                            <span className="chat-composer__picker-option-copy">
+                              <strong>{team.name}</strong>
+                              <small>{team.members.length} 位成员{team.description ? ` · ${team.description}` : ""}</small>
+                            </span>
+                            {selectedExpertTeam?.id === team.id && <Check size={15} />}
+                          </button>
+                        ))}
+                        {expertTeams.length === 0 && <div className="chat-composer__picker-empty">请先在扩展中心创建专家并配置专家团</div>}
+                      </div>
+                    )}
+                    {openToolbarPicker === "knowledge" && (
+                      <div className="chat-composer__picker chat-composer__picker--choice" role="group" aria-label="选择知识库">
+                        <div className="chat-composer__picker-heading">本轮检索范围</div>
+                        <button
+                          type="button"
+                          className={`chat-composer__picker-option${selectedKnowledgeCollection ? "" : " chat-composer__picker-option--selected"}`}
+                          onClick={() => {
+                            setSelectedKnowledgeCollection(null);
+                            setOpenToolbarPicker(null);
+                            setIsAddMenuOpen(false);
                             textareaRef.current?.focus();
-                          }
-                        }}
-                      >
-                        <span className="chat-composer__picker-option-copy">
-                          <strong>{expert.name}</strong>
-                          <small>
-                            {onSummonExpert ? "召唤会新建绑定此专家的对话" : expert.description}
-                          </small>
-                        </span>
-                        {(selectedExpert?.id ?? boundExpert?.id) === expert.id && <Check size={15} />}
-                      </button>
-                    ))}
-                    {experts.length === 0 && <div className="chat-composer__picker-empty">暂无可用专家</div>}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className={`chat-composer__tool-button chat-composer__tool-button--labeled${selectedExpertTeam ? " chat-composer__tool-button--active" : ""}`}
-                  title={boundExpert ? "当前会话已绑定专家，专家团请在新对话中使用" : "选择本轮专家团"}
-                  aria-label="选择专家团"
-                  aria-expanded={openToolbarPicker === "team"}
-                  disabled={Boolean(boundExpert)}
-                  onClick={() => setOpenToolbarPicker((current) => current === "team" ? null : "team")}
-                >
-                  <UsersRound size={17} strokeWidth={1.8} />
-                </button>
-                {openToolbarPicker === "team" && (
-                  <div className="chat-composer__picker chat-composer__picker--choice" aria-label="选择专家团">
-                    <div className="chat-composer__picker-heading">本轮协作专家团</div>
-                    {expertTeams.map((team) => (
-                      <button
-                        key={team.id}
-                        type="button"
-                        className={`chat-composer__picker-option${selectedExpertTeam?.id === team.id ? " chat-composer__picker-option--selected" : ""}`}
-                        onClick={() => {
-                          setSelectedExpertTeam(team);
-                          setSelectedExpert(null);
-                          setOpenToolbarPicker(null);
-                          textareaRef.current?.focus();
-                        }}
-                      >
-                        <span className="chat-composer__picker-option-copy">
-                          <strong>{team.name}</strong>
-                          <small>{team.members.length} 位成员{team.description ? ` · ${team.description}` : ""}</small>
-                        </span>
-                        {selectedExpertTeam?.id === team.id && <Check size={15} />}
-                      </button>
-                    ))}
-                    {expertTeams.length === 0 && <div className="chat-composer__picker-empty">请先在扩展中心创建专家并配置专家团</div>}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className={`chat-composer__tool-button chat-composer__tool-button--labeled${selectedKnowledgeCollection ? " chat-composer__tool-button--active" : ""}`}
-                  title="指定本轮检索的知识库"
-                  aria-label="选择知识库"
-                  aria-expanded={openToolbarPicker === "knowledge"}
-                  onClick={() => setOpenToolbarPicker((current) => current === "knowledge" ? null : "knowledge")}
-                >
-                  <BookOpen size={18} strokeWidth={1.8} />
-                </button>
-                {openToolbarPicker === "knowledge" && (
-                  <div className="chat-composer__picker chat-composer__picker--choice" aria-label="选择知识库">
-                    <div className="chat-composer__picker-heading">本轮检索范围</div>
-                    <button
-                      type="button"
-                      className={`chat-composer__picker-option${selectedKnowledgeCollection ? "" : " chat-composer__picker-option--selected"}`}
-                      onClick={() => {
-                        setSelectedKnowledgeCollection(null);
-                        setOpenToolbarPicker(null);
-                        textareaRef.current?.focus();
-                      }}
-                    >
-                      <span className="chat-composer__picker-option-copy">
-                        <strong>不指定知识库</strong>
-                        <small>不限定到某一个知识库</small>
-                      </span>
-                      {!selectedKnowledgeCollection && <Check size={15} />}
-                    </button>
-                    {knowledgeCollections.map((collection) => (
-                      <button
-                        key={collection.id}
-                        type="button"
-                        className={`chat-composer__picker-option${selectedKnowledgeCollection?.id === collection.id ? " chat-composer__picker-option--selected" : ""}`}
-                        onClick={() => {
-                          setSelectedKnowledgeCollection(collection);
-                          setOpenToolbarPicker(null);
-                          textareaRef.current?.focus();
-                        }}
-                      >
-                        <span className="chat-composer__picker-option-copy">
-                          <strong>{collection.name}</strong>
-                          {collection.description && <small>{collection.description}</small>}
-                        </span>
-                        {selectedKnowledgeCollection?.id === collection.id && <Check size={15} />}
-                      </button>
-                    ))}
-                    {knowledgeCollections.length === 0 && <div className="chat-composer__picker-empty">暂无可用知识库</div>}
+                          }}
+                        >
+                          <span className="chat-composer__picker-option-copy">
+                            <strong>不指定知识库</strong>
+                            <small>不限定到某一个知识库</small>
+                          </span>
+                          {!selectedKnowledgeCollection && <Check size={15} />}
+                        </button>
+                        {knowledgeCollections.map((collection) => (
+                          <button
+                            key={collection.id}
+                            type="button"
+                            className={`chat-composer__picker-option${selectedKnowledgeCollection?.id === collection.id ? " chat-composer__picker-option--selected" : ""}`}
+                            onClick={() => {
+                              setSelectedKnowledgeCollection(collection);
+                              setOpenToolbarPicker(null);
+                              setIsAddMenuOpen(false);
+                              textareaRef.current?.focus();
+                            }}
+                          >
+                            <span className="chat-composer__picker-option-copy">
+                              <strong>{collection.name}</strong>
+                              {collection.description && <small>{collection.description}</small>}
+                            </span>
+                            {selectedKnowledgeCollection?.id === collection.id && <Check size={15} />}
+                          </button>
+                        ))}
+                        {knowledgeCollections.length === 0 && <div className="chat-composer__picker-empty">暂无可用知识库</div>}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+              <PermissionModeSelector openSignal={permissionOpenSignal} />
             </div>
             <div className="chat-composer__footer-actions">
               {typeof currentModel === "string" && (

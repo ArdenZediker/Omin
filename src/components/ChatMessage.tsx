@@ -100,12 +100,22 @@ export default function ChatMessage({
   // 提交时随 onSubmitEdit 回传，覆盖原消息的 images / attachments。
   const [editImages, setEditImages] = useState<ChatImage[]>(message.images ?? []);
   const [editAttachments, setEditAttachments] = useState<ChatAttachment[]>(message.attachments ?? []);
-  const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const knowledgeSources = message.knowledgeContext?.sources ?? [];
   const documentInventory = message.knowledgeContext?.documentInventory;
-  const visibleKnowledgeSources = sourcesExpanded ? knowledgeSources : knowledgeSources.slice(0, 3);
-  const hiddenKnowledgeSourceCount = Math.max(0, knowledgeSources.length - visibleKnowledgeSources.length);
+  const knowledgeSourceGroups = useMemo(() => {
+    const groups = new Map<string, typeof knowledgeSources>();
+    for (const source of knowledgeSources) {
+      const key = source.documentId || `${source.sourceName}:${source.sourcePath ?? ""}`;
+      const group = groups.get(key);
+      if (group) {
+        group.push(source);
+      } else {
+        groups.set(key, [source]);
+      }
+    }
+    return Array.from(groups, ([id, sources]) => ({ id, name: sources[0]?.sourceName ?? "知识文档", sources }));
+  }, [knowledgeSources]);
   const artifactSectionRef = useRef<HTMLDivElement>(null);
   const artifactCount = message.artifacts?.length ?? 0;
   /** 所有「产出/修改文件」的工具步骤，用于「查看所有变更」弹层。
@@ -463,46 +473,57 @@ export default function ChatMessage({
             {renderMarkdown(message.content)}
           </div>
           {knowledgeSources.length || documentInventory ? (
-            <div className="message-knowledge-sources">
-              <div className="message-knowledge-sources__header">
-                <span>{documentInventory ? `知识库文件 · ${documentInventory.collectionName}` : "知识来源"}</span>
-                <span>{documentInventory ? `${documentInventory.documents.length} 个文件` : `${knowledgeSources.length} 条命中`}</span>
-              </div>
-              {documentInventory ? (
-                documentInventory.documents.length > 0 ? (
-                  <div className="message-knowledge-inventory" role="list">
-                    {documentInventory.documents.map((document) => (
-                      <div className="message-knowledge-inventory__item" role="listitem" key={document.id}>
-                        <span className="message-knowledge-inventory__name">{document.name}</span>
-                        <span className="message-knowledge-inventory__meta">
-                          {document.processingStatus && document.processingStatus !== "searchable"
-                            ? document.processingStatus
-                            : `${document.chunkCount} 个片段`}
-                        </span>
-                      </div>
+            <section className="message-knowledge-sources">
+              <details className="message-knowledge-sources__disclosure">
+                <summary className="message-knowledge-sources__summary">
+                  <BookOpen size={15} aria-hidden="true" />
+                  <span className="message-knowledge-sources__summary-title">
+                    {documentInventory ? `知识库文件 · ${documentInventory.collectionName}` : "知识来源"}
+                  </span>
+                  <span className="message-knowledge-sources__summary-count">
+                    {documentInventory
+                      ? `${documentInventory.documents.length} 个文件`
+                      : `${knowledgeSources.length} 个片段 · ${knowledgeSourceGroups.length} 份文档`}
+                  </span>
+                  <ChevronDown className="message-knowledge-sources__chevron" size={15} aria-hidden="true" />
+                </summary>
+                {documentInventory ? (
+                  documentInventory.documents.length > 0 ? (
+                    <div className="message-knowledge-inventory" role="list">
+                      {documentInventory.documents.map((document) => (
+                        <div className="message-knowledge-inventory__item" role="listitem" key={document.id}>
+                          <span className="message-knowledge-inventory__name">{document.name}</span>
+                          <span className="message-knowledge-inventory__meta">
+                            {document.processingStatus && document.processingStatus !== "searchable"
+                              ? document.processingStatus
+                              : `${document.chunkCount} 个片段`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="message-knowledge-inventory__empty">该知识库当前没有已导入的文件</div>
+                  )
+                ) : (
+                  <div className="message-knowledge-sources__groups">
+                    {knowledgeSourceGroups.map((group) => (
+                      <details className="message-knowledge-source-group" key={group.id}>
+                        <summary className="message-knowledge-source-group__summary">
+                          <span className="message-knowledge-source-group__name" title={group.name}>{group.name}</span>
+                          <span className="message-knowledge-source-group__count">{group.sources.length} 个片段</span>
+                          <ChevronDown className="message-knowledge-source-group__chevron" size={14} aria-hidden="true" />
+                        </summary>
+                        <div className="message-knowledge-sources__list">
+                          {group.sources.map((source, index) => (
+                            <KnowledgeSourceCard key={`${source.documentId}-${source.chunkId}-${index}`} source={source} />
+                          ))}
+                        </div>
+                      </details>
                     ))}
                   </div>
-                ) : (
-                  <div className="message-knowledge-inventory__empty">该知识库当前没有已导入的文件</div>
-                )
-              ) : (
-                <div className="message-knowledge-sources__list">
-                  {visibleKnowledgeSources.map((source, index) => (
-                    <KnowledgeSourceCard key={`${source.documentId}-${source.chunkId}-${index}`} source={source} />
-                  ))}
-                </div>
-              )}
-              {hiddenKnowledgeSourceCount > 0 && (
-                <button type="button" className="message-knowledge-sources__toggle" onClick={() => setSourcesExpanded(true)}>
-                  查看全部 {knowledgeSources.length} 条来源
-                </button>
-              )}
-              {sourcesExpanded && knowledgeSources.length > 3 && (
-                <button type="button" className="message-knowledge-sources__toggle" onClick={() => setSourcesExpanded(false)}>
-                  收起来源
-                </button>
-              )}
-            </div>
+                )}
+              </details>
+            </section>
           ) : null}
           {message.artifacts && message.artifacts.length > 0 ? (
             <div ref={artifactSectionRef}>

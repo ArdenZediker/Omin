@@ -465,10 +465,30 @@ describe("ChatInput", () => {
   it("allows choosing the knowledge collection directly from the composer toolbar", () => {
     renderChatInput();
 
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
     fireEvent.click(screen.getByRole("button", { name: "选择知识库" }));
     fireEvent.click(screen.getByRole("button", { name: /产品知识库/ }));
 
     expect(screen.getByTitle("取消本次知识库选择")).toHaveTextContent("@ 产品知识库");
+  });
+
+  it("把附件、专家、专家团和知识库入口集中在加号菜单中，Escape 分层关闭", () => {
+    renderChatInput();
+
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    expect(screen.getByRole("button", { name: "上传图片或文件" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "召唤专家" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "选择专家团" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "选择知识库" })).toBeInTheDocument();
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "选择知识库" }));
+    expect(screen.getByRole("group", { name: "选择知识库" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("group", { name: "选择知识库" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "添加" })).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "添加" })).toHaveAttribute("aria-expanded", "false");
   });
 
   it("从输入框召唤专家时交给宿主新建绑定会话", () => {
@@ -491,6 +511,7 @@ describe("ChatInput", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
     fireEvent.click(screen.getByRole("button", { name: "召唤专家" }));
     expect(screen.queryByText("默认助手")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /评审专家/ }));
@@ -509,6 +530,7 @@ describe("ChatInput", () => {
       updatedAt: 1,
     };
     render(<ChatInput expertTeams={[team]} onSend={onSend} isLoading={false} onStop={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
     fireEvent.click(screen.getByRole("button", { name: "选择专家团" }));
     fireEvent.click(screen.getByRole("button", { name: /发布评审团/ }));
     expect(screen.getByTitle("取消本次专家团")).toHaveTextContent("专家团: 发布评审团");

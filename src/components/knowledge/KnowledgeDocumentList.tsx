@@ -9,6 +9,7 @@ type KnowledgeDocumentListProps = {
   thumbnailDataUrlById: Map<string, string | undefined>;
   onOpenDocument: (documentId: string) => void;
   onOpenDocumentMenu: (documentId: string) => void;
+  onContextMenu: (event: React.MouseEvent<HTMLElement>) => void;
   onCloseDocumentMenu: () => void;
   onDeleteDocument: (documentId: string) => void;
 };
@@ -21,11 +22,12 @@ export default function KnowledgeDocumentList({
   thumbnailDataUrlById,
   onOpenDocument,
   onOpenDocumentMenu,
+  onContextMenu,
   onCloseDocumentMenu,
   onDeleteDocument,
 }: KnowledgeDocumentListProps) {
   return (
-    <section className="no-drag flex min-h-0 min-w-0 flex-1 flex-col">
+    <section className="no-drag flex min-h-0 min-w-0 flex-1 flex-col" onContextMenu={onContextMenu}>
       <div className="flex min-h-0 flex-1 overflow-y-auto pt-3">
         <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(168px,1fr))] content-start gap-3">
           {documents.map((document) => {

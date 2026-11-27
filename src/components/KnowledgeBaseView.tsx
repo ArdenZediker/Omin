@@ -11,6 +11,8 @@ import {
   MessageSquare,
   Mic,
   X,
+  CircleAlert,
+  CircleCheck,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -115,6 +117,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
   const [chunkSearchQuery, setChunkSearchQuery] = useState("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
+  const [isUploadMenuFromContext, setIsUploadMenuFromContext] = useState(false);
   const [isCollectionMenuOpen, setIsCollectionMenuOpen] = useState<string | null>(null);
   const [isDocumentMenuOpen, setIsDocumentMenuOpen] = useState<string | null>(null);
   const [createCollectionError, setCreateCollectionError] = useState<string | null>(null);
@@ -472,8 +475,17 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
       }
       setIsUploadMenuOpen(false);
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsUploadMenuOpen(false);
+      }
+    };
     window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [isUploadMenuOpen]);
 
   useEffect(() => {
@@ -946,6 +958,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
   }, []);
 
   const toggleUploadMenu = useCallback(() => {
+    setIsUploadMenuFromContext(false);
     setIsUploadMenuOpen((current) => {
       if (!current) {
         updateUploadMenuPosition();
@@ -955,15 +968,36 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
     });
   }, [updateUploadMenuPosition]);
 
+  const handleDocumentListContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    if (event.defaultPrevented || (event.target as HTMLElement).closest("button, input, textarea, a, [role='button']")) {
+      return;
+    }
+
+    event.preventDefault();
+    const menuWidth = 176;
+    const menuHeight = 104;
+    const top = Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8));
+    const right = Math.max(8, Math.min(window.innerWidth - event.clientX, window.innerWidth - menuWidth - 8));
+    setUploadMenuPosition({ top, right });
+    setIsUploadMenuFromContext(true);
+    setIsUploadMenuOpen(true);
+  }, []);
+
   useEffect(() => {
     if (!isUploadMenuOpen) {
       return;
     }
-    updateUploadMenuPosition();
-    const handleResize = () => updateUploadMenuPosition();
+    if (!isUploadMenuFromContext) {
+      updateUploadMenuPosition();
+    }
+    const handleResize = () => {
+      if (!isUploadMenuFromContext) {
+        updateUploadMenuPosition();
+      }
+    };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [isUploadMenuOpen, updateUploadMenuPosition]);
+  }, [isUploadMenuOpen, isUploadMenuFromContext, updateUploadMenuPosition]);
 
   function openCollectionSettings(collection: KnowledgeCollection) {
     setKnowledgeMultimodalConfig(loadKnowledgeMultimodalConfig());
@@ -1511,23 +1545,18 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
           </header>
 
           {uploadNotice ? (
-            <div className="no-drag px-4 pt-3 md:px-6">
+            <div className="no-drag omni-knowledge-upload-notice">
               <div
-                className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
-                  uploadNotice.tone === "error"
-                    ? "border-rose-200 bg-rose-50 text-rose-700"
-                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                }`}
+                className={`omni-knowledge-upload-notice__card omni-knowledge-upload-notice__card--${uploadNotice.tone}`}
+                role={uploadNotice.tone === "error" ? "alert" : "status"}
+                aria-live={uploadNotice.tone === "error" ? "assertive" : "polite"}
               >
-                <div className="min-w-0 flex-1 leading-6">{uploadNotice.message}</div>
-                <button
-                  type="button"
-                  onClick={() => setUploadNotice(null)}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-none border border-current/15 bg-[var(--omni-panel-bg)]/60 text-current hover:bg-[var(--omni-panel-bg)]"
-                  title="关闭提示"
-                >
-                  <X size={14} strokeWidth={2} />
-                </button>
+                {uploadNotice.tone === "error" ? (
+                  <CircleAlert size={17} strokeWidth={2} className="omni-knowledge-upload-notice__icon" aria-hidden="true" />
+                ) : (
+                  <CircleCheck size={17} strokeWidth={2} className="omni-knowledge-upload-notice__icon" aria-hidden="true" />
+                )}
+                <div className="omni-knowledge-upload-notice__message">{uploadNotice.message}</div>
               </div>
             </div>
           ) : null}
@@ -1633,6 +1662,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                     thumbnailDataUrlById={listThumbnailDataUrlById}
                     onOpenDocument={openDocument}
                     onOpenDocumentMenu={openDocumentMenu}
+                    onContextMenu={handleDocumentListContextMenu}
                     onCloseDocumentMenu={() => setIsDocumentMenuOpen(null)}
                     onDeleteDocument={(documentId) => void deleteDocument(documentId)}
                   />

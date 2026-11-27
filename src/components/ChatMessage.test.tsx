@@ -95,6 +95,82 @@ describe("ChatMessage", () => {
     expect(screen.getByText("processing")).toBeInTheDocument();
   });
 
+  it("知识来源默认收起，展开后按文档分组显示片段", () => {
+    const { container } = render(
+      <ChatMessage
+        message={{
+          role: "project",
+          content: "根据资料整理如下。",
+          knowledgeContext: {
+            query: "申请流程",
+            block: "知识检索结果",
+            sources: [
+              {
+                chunkId: "chunk-1",
+                documentId: "doc-1",
+                sourceName: "申请流程.docx",
+                sourcePath: "资料/申请流程.docx",
+                collectionName: "制度库",
+                chunkIndex: 0,
+                score: 0.92,
+                excerpt: "第一个命中片段内容",
+                tags: [],
+                favorite: false,
+                accessCount: 0,
+              },
+              {
+                chunkId: "chunk-2",
+                documentId: "doc-1",
+                sourceName: "申请流程.docx",
+                sourcePath: "资料/申请流程.docx",
+                collectionName: "制度库",
+                chunkIndex: 1,
+                score: 0.88,
+                excerpt: "第二个命中片段内容",
+                tags: [],
+                favorite: false,
+                accessCount: 0,
+              },
+              {
+                chunkId: "chunk-3",
+                documentId: "doc-2",
+                sourceName: "附件清单.pdf",
+                sourcePath: "资料/附件清单.pdf",
+                collectionName: "制度库",
+                chunkIndex: 0,
+                score: 0.81,
+                excerpt: "第三个命中片段内容",
+                tags: [],
+                favorite: false,
+                accessCount: 0,
+              },
+            ],
+          },
+        }}
+        index={0}
+      />,
+    );
+
+    expect(screen.getByText("3 个片段 · 2 份文档")).toBeInTheDocument();
+    expect(container.querySelector(".message-knowledge-source-group[open]")).toBeNull();
+
+    const disclosure = container.querySelector(".message-knowledge-sources__disclosure") as HTMLDetailsElement;
+    fireEvent.click(disclosure.querySelector("summary")!);
+    expect(disclosure.open).toBe(true);
+    const documentGroups = container.querySelectorAll(".message-knowledge-source-group");
+    expect(documentGroups).toHaveLength(2);
+    expect(documentGroups[0].querySelector("summary")?.textContent).toContain("申请流程.docx");
+    expect(documentGroups[0].querySelector("summary")?.textContent).toContain("2 个片段");
+    expect(documentGroups[1].querySelector("summary")?.textContent).toContain("附件清单.pdf");
+
+    const documentGroup = documentGroups[0] as HTMLDetailsElement;
+    fireEvent.click(documentGroup.querySelector("summary")!);
+    expect(documentGroup.open).toBe(true);
+    expect(screen.getByText("第一个命中片段内容")).toBeInTheDocument();
+    expect(screen.getByText("第二个命中片段内容")).toBeInTheDocument();
+    expect(documentGroup.querySelectorAll(".knowledge-citation__button")).toHaveLength(2);
+  });
+
   it("用户消息把附件和截图独立放在正文上方", () => {
     const { container } = render(
       <ChatMessage
