@@ -1171,10 +1171,26 @@
 }
 
 .skillhub-browser__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   margin-top: 24px;
+  padding: 32px 20px;
+  border: 1px dashed color-mix(in srgb, var(--omni-panel-border) 82%, transparent);
+  border-radius: var(--omni-radius-lg);
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--omni-app-muted);
+}
+
+.skillhub-browser__empty::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-app-muted) 38%, transparent);
 }
 
 .skillhub-browser__api {

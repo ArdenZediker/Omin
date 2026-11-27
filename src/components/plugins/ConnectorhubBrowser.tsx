@@ -451,7 +451,7 @@ export default function ConnectorhubBrowser() {
       )}
       {!loading && !error && filtered.length === 0 && (
         <div className="skillhub-browser__empty">
-          未找到远程技能
+          暂时没有找到匹配的远程技能
         </div>
       )}
 
@@ -461,7 +461,6 @@ export default function ConnectorhubBrowser() {
             ? "plugin-marketplace__grid plugin-marketplace__grid--list"
             : "plugin-marketplace__grid"
         }
-        style={{ marginTop: 14 }}
       >
         {filtered.map((s) => (
           <ConnectorCard

@@ -390,9 +390,10 @@
 
 .omni-knowledge-empty-state__action {
   border-color: var(--omni-panel-border);
+  border-radius: var(--omni-control-radius);
   background: var(--omni-panel-bg);
   color: var(--omni-app-text);
-  box-shadow: var(--omni-surface-shadow);
+  box-shadow: none;
 }
 
 .omni-knowledge-empty-state__action:hover {

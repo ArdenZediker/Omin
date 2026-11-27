@@ -369,7 +369,7 @@ const SkillCard = memo(function SkillCard({
       <div className="plugin-card__header">
         <div className="plugin-card__icon">
           {skill.iconUrl ? (
-            <img src={skill.iconUrl} alt="" style={{ width: 22, height: 22, borderRadius: 6 }} loading="lazy" />
+            <img src={skill.iconUrl} alt="" className="plugin-card__icon-img" loading="lazy" />
           ) : (
             <Bot size={18} />
           )}
@@ -873,7 +873,7 @@ export default function SkillhubBrowser() {
         </div>
       )}
       {!loading && !error && skills.length === 0 && (
-        <div className="skillhub-browser__empty">未找到技能</div>
+        <div className="skillhub-browser__empty">暂时没有找到匹配的技能</div>
       )}
 
       <div
@@ -883,7 +883,6 @@ export default function SkillhubBrowser() {
             ? "plugin-marketplace__grid plugin-marketplace__grid--list"
             : "plugin-marketplace__grid"
         }
-        style={{ marginTop: 14 }}
       >
         {skills.map((s) => {
           const key = skillUniqueKey(s);

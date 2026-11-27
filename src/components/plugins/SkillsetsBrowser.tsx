@@ -633,7 +633,7 @@ export default function SkillsetsBrowser() {
         </div>
       )}
       {!loading && !error && filtered.length === 0 && (
-        <div className="skillhub-browser__empty">未找到专家团</div>
+        <div className="skillhub-browser__empty">暂时没有找到匹配的专家团</div>
       )}
 
       <div
@@ -642,7 +642,6 @@ export default function SkillsetsBrowser() {
             ? "plugin-marketplace__grid plugin-marketplace__grid--list"
             : "plugin-marketplace__grid"
         }
-        style={{ marginTop: 14 }}
       >
         {filtered.map((s) => (
           <SkillsetCard

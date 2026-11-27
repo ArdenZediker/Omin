@@ -2612,7 +2612,6 @@ export default function MainChatView({
                 setSidePanelTab("changes");
               }}
             >
-              <GitBranch size={11} strokeWidth={2} />
               <span>变更</span>
             </button>
             <button
@@ -2620,7 +2619,6 @@ export default function MainChatView({
               className={`chat-topic-panel__tab ${sidePanelTab === "history" ? "chat-topic-panel__tab--active" : ""}`}
               onClick={() => setSidePanelTab("history")}
             >
-              <Clock size={11} strokeWidth={2} />
               <span>历史提问</span>
             </button>
           </div>

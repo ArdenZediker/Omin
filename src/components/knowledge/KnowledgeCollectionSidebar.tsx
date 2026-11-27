@@ -32,22 +32,6 @@ type KnowledgeCollectionSidebarProps = {
   onDeleteCollection: (collectionId: string) => void;
 };
 
-function getCategoryIconColor(categoryId: string) {
-  if (categoryId === "all") {
-    return "#2563eb";
-  }
-  if (categoryId === "docs") {
-    return "#3b82f6";
-  }
-  if (categoryId === "images") {
-    return "#f59e0b";
-  }
-  if (categoryId === "audio") {
-    return "#10b981";
-  }
-  return "#8b5cf6";
-}
-
 function KnowledgeCollectionIcon({ className }: { className?: string }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" className={className}>
@@ -109,7 +93,6 @@ export default function KnowledgeCollectionSidebar({
           {categories.map((category) => {
             const Icon = category.icon;
             const isActive = category.id === activeCategoryId;
-            const categoryIconColor = getCategoryIconColor(category.id);
 
             return (
               <button
@@ -128,7 +111,7 @@ export default function KnowledgeCollectionSidebar({
                     isActive ? "text-[var(--omni-app-text)]" : "text-[var(--omni-app-muted)]"
                   }`}
                 >
-                  <Icon size={13} strokeWidth={1.8} stroke={categoryIconColor} color={categoryIconColor} />
+                  <Icon size={13} strokeWidth={1.8} aria-hidden="true" />
                 </span>
                 <span className="flex-1">{category.title}</span>
                 <span className="text-[11px] text-[var(--omni-app-muted)]">{category.count}</span>
@@ -168,7 +151,7 @@ export default function KnowledgeCollectionSidebar({
                     className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-left"
                     title={collection.name}
                   >
-                    <KnowledgeCollectionIcon className="h-4 w-4 shrink-0 text-blue-500" />
+                    <KnowledgeCollectionIcon className="h-4 w-4 shrink-0 text-[var(--omni-app-muted)]" />
                     <span className="flex-1 truncate">{collection.name}</span>
                   </button>
 
