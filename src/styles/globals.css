@@ -86,6 +86,7 @@ body:has(.compact-menu-window),
   --omni-app-success-bg: rgba(99, 153, 34, 0.12);
   --omni-bg: #ffffff;
   --omni-border: rgba(0, 0, 0, 0.08);
+  --omni-danger: #cf222e;
   --omni-danger-soft: rgba(220, 38, 38, 0.08);
   --omni-link: #2563eb;
   --omni-diff-added: #1a7f37;
@@ -137,6 +138,7 @@ body:has(.compact-menu-window),
   --omni-app-success-bg: rgba(63, 185, 80, 0.15);
   --omni-bg: #0d1117;
   --omni-border: #30363d;
+  --omni-danger: #f85149;
   --omni-danger-soft: rgba(248, 81, 73, 0.15);
   --omni-link: #58a6ff;
   --omni-diff-added: #3fb950;
