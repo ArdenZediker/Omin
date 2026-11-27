@@ -661,11 +661,11 @@
   letter-spacing: 0.02em;
 }
 
-/* 官方认证图标（SkillHub verified：蓝色） */
+/* 官方认证图标（SkillHub verified：跟随主题 accent） */
 .plugin-card__verified {
   flex-shrink: 0;
-  color: #3b82f6;
-  fill: #dbeafe;
+  color: var(--omni-accent, #1f6feb);
+  fill: color-mix(in srgb, var(--omni-accent, #1f6feb) 18%, transparent);
 }
 
 .plugin-card {
@@ -1104,7 +1104,7 @@
 
 /* disabled 时 :hover 仍会命中，这里显式压掉变色，避免看起来还能点 */
 .plugin-card__button--primary:disabled:hover {
-  background: #3b82f6;
+  background: var(--omni-accent, #1f6feb);
 }
 
 .plugin-card__button--trust:disabled:hover {
@@ -1234,12 +1234,12 @@
 
 .plugin-card--clickable:hover {
   transform: translateY(-2px);
-  border-color: var(--omni-accent, #64748b);
+  border-color: var(--omni-accent, #1f6feb);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
 
 .plugin-card--clickable:focus-visible {
-  outline: 2px solid var(--omni-accent, #64748b);
+  outline: 2px solid var(--omni-accent, #1f6feb);
   outline-offset: 2px;
 }
 
@@ -1264,12 +1264,12 @@
   align-self: center;
 }
 .plugin-marketplace__batch-btn:hover {
-  border-color: var(--omni-accent, #64748b);
+  border-color: var(--omni-accent, #1f6feb);
   color: var(--omni-app-fg, #0f172a);
 }
 .plugin-marketplace__batch-btn--active {
-  background: var(--omni-accent-soft, #dbeafe);
-  border-color: var(--omni-accent, #3b82f6);
+  background: var(--omni-accent-soft, rgba(31, 111, 235, 0.15));
+  border-color: var(--omni-accent, #1f6feb);
   color: var(--omni-accent-strong, #1d4ed8);
 }
 
@@ -1277,16 +1277,16 @@
   cursor: pointer;
 }
 .plugin-card--batch:hover {
-  border-color: var(--omni-accent, #3b82f6);
+  border-color: var(--omni-accent, #1f6feb);
 }
 .plugin-card--batch-selected {
-  border-color: var(--omni-accent, #3b82f6);
-  background: var(--omni-accent-soft, #f0f7ff);
-  box-shadow: 0 0 0 1px var(--omni-accent, #3b82f6) inset;
+  border-color: var(--omni-accent, #1f6feb);
+  background: var(--omni-accent-soft, rgba(31, 111, 235, 0.15));
+  box-shadow: 0 0 0 1px var(--omni-accent, #1f6feb) inset;
 }
 .plugin-card--batch-selected .plugin-card__batch-checkbox {
-  background: var(--omni-accent, #3b82f6);
-  border-color: var(--omni-accent, #3b82f6);
+  background: var(--omni-accent, #1f6feb);
+  border-color: var(--omni-accent, #1f6feb);
   color: #fff;
 }
 .plugin-card__batch-checkbox {
@@ -1303,8 +1303,8 @@
   flex-shrink: 0;
 }
 .plugin-card__batch-checkbox--checked {
-  background: var(--omni-accent, #3b82f6);
-  border-color: var(--omni-accent, #3b82f6);
+  background: var(--omni-accent, #1f6feb);
+  border-color: var(--omni-accent, #1f6feb);
   color: #fff;
 }
 
@@ -1386,7 +1386,7 @@
   color: var(--omni-app-fg, #0f172a);
 }
 .plugin-marketplace__batch-top-btn:hover {
-  border-color: var(--omni-accent, #64748b);
+  border-color: var(--omni-accent, #1f6feb);
   background: rgba(100, 116, 139, 0.06);
 }
 .plugin-marketplace__batch-top-btn:disabled {
@@ -1395,12 +1395,12 @@
   background: transparent;
 }
 .plugin-marketplace__batch-top-btn--primary {
-  background: var(--omni-accent-soft, rgba(100, 116, 139, 0.12));
-  border-color: var(--omni-accent, #64748b);
+  background: var(--omni-accent-soft, rgba(31, 111, 235, 0.15));
+  border-color: var(--omni-accent, #1f6feb);
   color: var(--omni-accent-strong, #1d4ed8);
 }
 .plugin-marketplace__batch-top-btn--primary:hover {
-  background: var(--omni-accent, #64748b);
+  background: var(--omni-accent, #1f6feb);
   color: #fff;
 }
 .plugin-marketplace__batch-top-btn--danger {
@@ -1516,7 +1516,7 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(100, 116, 139, 0.18);
-  color: var(--omni-accent, #64748b);
+  color: var(--omni-accent, #1f6feb);
   font-weight: 500;
 }
 
@@ -1714,8 +1714,8 @@
 .plugin-card__config-field input:focus,
 .plugin-card__config-field select:focus,
 .plugin-card__config-field textarea:focus {
-  border-color: var(--omni-accent, #6366f1);
-  box-shadow: 0 0 0 3px var(--omni-accent-soft, rgba(99, 102, 241, 0.15));
+  border-color: var(--omni-accent, #1f6feb);
+  box-shadow: 0 0 0 3px var(--omni-accent-soft, rgba(31, 111, 235, 0.15));
 }
 
 .plugin-card__config-section {
@@ -2226,9 +2226,9 @@
   gap: 6px;
   padding: 7px 16px;
   border-radius: var(--omni-control-radius);
-  border: 1px solid color-mix(in srgb, var(--omni-accent, #7c3aed) 46%, var(--omni-panel-border));
-  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 14%, var(--omni-panel-bg));
-  color: color-mix(in srgb, var(--omni-accent, #7c3aed) 86%, var(--omni-app-text));
+  border: 1px solid color-mix(in srgb, var(--omni-accent, #1f6feb) 46%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent, #1f6feb) 14%, var(--omni-panel-bg));
+  color: color-mix(in srgb, var(--omni-accent, #1f6feb) 86%, var(--omni-app-text));
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -2236,8 +2236,8 @@
 }
 
 .plugin-marketplace__create-expert:hover {
-  border-color: color-mix(in srgb, var(--omni-accent, #7c3aed) 62%, var(--omni-panel-border));
-  background: color-mix(in srgb, var(--omni-accent, #7c3aed) 20%, var(--omni-panel-bg));
+  border-color: color-mix(in srgb, var(--omni-accent, #1f6feb) 62%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent, #1f6feb) 20%, var(--omni-panel-bg));
 }
 
 .plugin-marketplace__create-expert:active {
@@ -2251,7 +2251,7 @@
 }
 
 .plugin-marketplace__create-expert--secondary:hover {
-  border-color: color-mix(in srgb, var(--omni-accent, #7c3aed) 36%, var(--omni-panel-border));
+  border-color: color-mix(in srgb, var(--omni-accent, #1f6feb) 36%, var(--omni-panel-border));
   background: var(--omni-soft-bg);
   color: var(--omni-app-text);
 }
@@ -2294,7 +2294,7 @@
 .plugin-marketplace__create-menu-popover button > svg {
   flex: none;
   margin-top: 2px;
-  color: var(--omni-accent, #7c3aed);
+  color: var(--omni-accent, #1f6feb);
 }
 
 .plugin-marketplace__create-menu-popover button > span {
@@ -2452,7 +2452,7 @@
   padding: 22px 24px 24px;
   border-radius: 16px;
   background: var(--omni-panel-bg, #ffffff);
-  border: 1px solid var(--omni-panel-border, #e2e8f0);
+  border: 1px solid var(--omni-panel-border, #e5e6eb);
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
 }
 
@@ -2476,7 +2476,7 @@
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--omni-app-muted, #64748b);
+  color: var(--omni-app-muted, #646a73);
   cursor: pointer;
 }
 .omni-mcp-create-modal__close:hover {
@@ -2487,7 +2487,7 @@
   margin: 0;
   font-size: 12.5px;
   line-height: 1.6;
-  color: var(--omni-app-muted, #64748b);
+  color: var(--omni-app-muted, #646a73);
 }
 .omni-mcp-create-modal__hint code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2505,7 +2505,7 @@
   gap: 12px;
   padding-top: 8px;
   margin-top: 4px;
-  border-top: 1px dashed var(--omni-panel-border, #e2e8f0);
+  border-top: 1px dashed var(--omni-panel-border, #e5e6eb);
 }
 
 .omni-mcp-create-field {
@@ -2524,7 +2524,7 @@
   padding: 8px 10px;
   font-size: 13px;
   border-radius: 8px;
-  border: 1px solid var(--omni-panel-border, #e2e8f0);
+  border: 1px solid var(--omni-panel-border, #e5e6eb);
   background: var(--omni-input-bg, #ffffff);
   color: var(--omni-app-text, #0f172a);
   outline: none;
@@ -2533,8 +2533,8 @@
 }
 .omni-mcp-create-field input:focus,
 .omni-mcp-create-field textarea:focus {
-  border-color: var(--omni-accent, #3b82f6);
-  box-shadow: 0 0 0 3px var(--omni-accent-soft, #dbeafe);
+  border-color: var(--omni-accent, #1f6feb);
+  box-shadow: 0 0 0 3px var(--omni-accent-soft, rgba(31, 111, 235, 0.15));
 }
 .omni-mcp-create-json {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -2573,7 +2573,7 @@
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: var(--omni-accent, #3b82f6);
+  background: var(--omni-accent, #1f6feb);
   border: 1px solid transparent;
   cursor: pointer;
   flex-shrink: 0;
@@ -2581,7 +2581,7 @@
 }
 
 .plugin-marketplace__add-mcp-btn:hover {
-  background: color-mix(in srgb, var(--omni-accent, #3b82f6) 88%, #000);
+  background: color-mix(in srgb, var(--omni-accent, #1f6feb) 88%, #000);
 }
 
 /* === MCP 工具列表弹窗 === */
