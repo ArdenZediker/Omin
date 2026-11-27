@@ -95,7 +95,7 @@ export default function ProjectGroupManagerDialog({
                         />
                       </div>
                       <div className="chat-history-panel__group-manager-actions">
-                        <button type="button" onClick={() => onRenameGroup(groupName)}>
+                        <button type="button" aria-label={`确认重命名 ${groupName}`} title={`确认重命名 ${groupName}`} onClick={() => onRenameGroup(groupName)}>
                           <Check size={14} strokeWidth={1.8} />
                         </button>
                       </div>
@@ -111,6 +111,8 @@ export default function ProjectGroupManagerDialog({
                       <div className="chat-history-panel__group-manager-actions">
                         <button
                           type="button"
+                          aria-label={`重命名 ${groupName}`}
+                          title={`重命名 ${groupName}`}
                           onClick={() => {
                             onEditingGroupNameChange(groupName);
                             onEditingDraftChange(groupName);
@@ -118,7 +120,7 @@ export default function ProjectGroupManagerDialog({
                         >
                           <Pencil size={14} strokeWidth={1.8} />
                         </button>
-                        <button type="button" onClick={() => onDeleteGroup(groupName)}>
+                        <button type="button" aria-label={`删除 ${groupName}`} title={`删除 ${groupName}`} onClick={() => onDeleteGroup(groupName)}>
                           <Trash2 size={14} strokeWidth={1.8} />
                         </button>
                       </div>

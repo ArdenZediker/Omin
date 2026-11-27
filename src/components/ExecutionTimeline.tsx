@@ -367,7 +367,7 @@ function ActionStep({
 /** action step 携带的产物引用：点击在右侧产物面板打开 */
 function ArtifactMiniRow({ artifactId, title }: { artifactId: string; title: string }) {
   return (
-    <button type="button" className="exec-artifact" onClick={() => requestOpenArtifactInPanel(artifactId)}>
+    <button type="button" className="exec-artifact" aria-label={`在产物面板打开 ${title}`} onClick={() => requestOpenArtifactInPanel(artifactId)}>
       <PackagePlus size={13} strokeWidth={2} className="exec-artifact__icon" />
       <span className="exec-artifact__title">{title}</span>
       <span className="exec-artifact__open">在产物面板打开</span>

@@ -394,7 +394,7 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
         </div>
         <div className="artifacts-panel__header-actions">
           {artifacts.length > 0 ? (
-            <button type="button" className="artifacts-panel__clear" title="清空当前项目全部产物" onClick={handleClearAll}>
+            <button type="button" className="artifacts-panel__clear" aria-label="清空当前项目全部产物" title="清空当前项目全部产物" onClick={handleClearAll}>
               <Trash2 size={13} strokeWidth={2} />
               <span>清空</span>
             </button>
