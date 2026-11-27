@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "../../app/storageApi";
 import { fitCodexPetToBounds } from "../../app/pets/codexPetSizing";
@@ -74,12 +75,12 @@ export default function CodexPetSection({
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm omni-settings-card">
-      <button type="button" onClick={() => setExpanded((value) => !value)} className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left">
+      <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left">
         <div>
           <div className="text-sm font-medium text-slate-900">宠物</div>
           <div className="mt-1 text-sm text-slate-500">{activePackage ? `已选择 ${activePackage.displayName}` : "未选择宠物"}</div>
         </div>
-        <div className="pt-0.5 text-slate-400">{expanded ? "⌃" : "⌄"}</div>
+        <div className="pt-0.5 text-slate-400">{expanded ? <ChevronUp aria-hidden="true" size={16} strokeWidth={1.8} /> : <ChevronDown aria-hidden="true" size={16} strokeWidth={1.8} />}</div>
       </button>
 
       {expanded && (
@@ -173,7 +174,7 @@ export default function CodexPetSection({
                   <div className="shrink-0">
                     <span
                       className={`omni-pet-select-badge inline-flex rounded-full px-3 py-1.5 text-sm ${
-                        isActive ? "bg-slate-100 text-slate-400" : "bg-slate-100 text-slate-700"
+                        isActive ? "omni-pet-select-badge--active bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-700"
                       }`}
                     >
                       {isActive ? "已选" : "选择"}

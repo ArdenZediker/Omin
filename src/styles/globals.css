@@ -875,6 +875,18 @@ body:has(.compact-menu-window),
   color: var(--omni-app-text) !important;
 }
 
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"],
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"] {
+  background: color-mix(in srgb, var(--omni-accent) 16%, var(--omni-panel-bg)) !important;
+  color: var(--omni-app-text) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"][class*="border-violet-300"],
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"][class*="border-violet-300"] {
+  border-color: color-mix(in srgb, var(--omni-accent) 55%, var(--omni-panel-border)) !important;
+  box-shadow: inset 3px 0 0 var(--omni-accent) !important;
+}
+
 /* 编辑模型弹窗：底栏固定在滚动区之外，需要自带面板底色才不会透出滚动内容；
    区块分隔线同理，浅色的 slate-100 在深色卡片上会变成刺眼的亮线。 */
 :root[data-omni-theme="dark"] .omni-model-section-modal .omni-model-modal-footer {
@@ -2313,7 +2325,7 @@ body:has(.compact-menu-window),
 }
 
 .omni-theme-config__hex--invalid {
-  border-color: #f85149;
+  border-color: var(--omni-danger, #f85149);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2751,6 +2763,16 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="dark"] .omni-pet-list-item:hover .omni-pet-select-badge {
   color: var(--omni-app-text) !important;
+}
+
+.omni-pet-select-badge--active {
+  background: color-mix(in srgb, var(--omni-accent) 14%, transparent);
+  color: var(--omni-accent);
+}
+
+:root[data-omni-theme="dark"] .omni-pet-select-badge--active {
+  background: color-mix(in srgb, var(--omni-accent) 18%, transparent) !important;
+  color: var(--omni-accent) !important;
 }
 
 .omni-knowledge-collection-settings__body {
