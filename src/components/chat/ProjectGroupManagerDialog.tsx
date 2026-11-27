@@ -1,4 +1,4 @@
-import { Check, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
 import { DEFAULT_PROJECT_GROUP_LABEL } from "../mainChatViewUtils";
 
 type ProjectGroupManagerDialogProps = {
@@ -55,7 +55,7 @@ export default function ProjectGroupManagerDialog({
             className="chat-history-panel__group-dialog-close"
             onClick={onClose}
           >
-            <span aria-hidden="true">×</span>
+            <X size={16} strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
         <div className="chat-history-panel__group-dialog-body">
