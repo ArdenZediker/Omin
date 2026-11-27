@@ -47,7 +47,7 @@ export default function McpConnectorRow({ selectedIds, onToggle }: McpConnectorR
       selectedIds={selectedIds}
       onToggle={onToggle}
       emptyText="暂无已安装的 MCP 连接器（可在扩展中心「连接器」中添加并确认信任）"
-      idleIcon={<Cable size={12} strokeWidth={1.8} />}
+      idleIcon={<Cable size={12} strokeWidth={2} />}
     />
   );
 }

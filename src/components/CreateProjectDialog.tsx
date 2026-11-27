@@ -295,7 +295,7 @@ export default function CreateProjectDialog({
             selectedIds={boundExpertIds}
             onToggle={toggleBoundExpert}
             emptyText="暂无专家（可在扩展中心「专家 → 我的专家」里创建）"
-            idleIcon={<Bot size={12} strokeWidth={1.8} />}
+            idleIcon={<Bot size={12} strokeWidth={2} />}
           />
 
           <PluginToggleRow
@@ -306,7 +306,7 @@ export default function CreateProjectDialog({
             selectedIds={allowedSkillIds}
             onToggle={toggleAllowedSkill}
             emptyText="暂无内置技能"
-            idleIcon={<Wand2 size={12} strokeWidth={1.8} />}
+            idleIcon={<Wand2 size={12} strokeWidth={2} />}
           />
 
           <p className="omni-dialog__hint">切换专家预设会覆盖「指令」中已编辑的内容</p>

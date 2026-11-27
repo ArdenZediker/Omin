@@ -602,7 +602,7 @@ export default function CompactWindow({
                 aria-label={arePetThoughtsCollapsed ? `Expand ${petThoughtCount} thought bubbles` : "Collapse thought bubbles"}
                 title={arePetThoughtsCollapsed ? `${petThoughtCount} topics` : "Collapse thought bubbles"}
               >
-                {arePetThoughtsCollapsed ? petThoughtCount : <ChevronDown size={16} strokeWidth={2.25} aria-hidden="true" focusable="false" />}
+                {arePetThoughtsCollapsed ? petThoughtCount : <ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" focusable="false" />}
               </button>
             ) : null}
 

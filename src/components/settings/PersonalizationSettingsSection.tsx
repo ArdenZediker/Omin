@@ -219,7 +219,7 @@ export default function PersonalizationSettingsSection() {
                   <button
                     type="button"
                     onClick={() => startEditing(card.key)}
-                    className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
+                    className="shrink-0 rounded-[8px] border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
                   >
                     编辑
                   </button>
@@ -295,7 +295,7 @@ export default function PersonalizationSettingsSection() {
                 <button
                   type="button"
                   onClick={cancelEditing}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-[8px] border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                 >
                   取消
                 </button>

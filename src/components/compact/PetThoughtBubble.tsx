@@ -157,7 +157,7 @@ export default function PetThoughtBubble({
               aria-label="关闭气泡"
               title="关闭"
             >
-              <X size={11} strokeWidth={2.2} aria-hidden="true" focusable="false" />
+              <X size={11} strokeWidth={2} aria-hidden="true" focusable="false" />
             </button>
             <button
               type="button"
@@ -166,7 +166,7 @@ export default function PetThoughtBubble({
               aria-label={isExpanded ? "收起回复" : "展开回复"}
               title={isExpanded ? "收起" : "展开"}
             >
-              <ChevronRight size={14} strokeWidth={2.1} aria-hidden="true" focusable="false" />
+              <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" focusable="false" />
             </button>
             <span className="pet-thought-bubble__action-slot">
               {isThinking ? (

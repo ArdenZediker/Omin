@@ -305,7 +305,7 @@ export default function ModelSettingsSection({
                   key={model.id}
                   onClick={() => onOpenEditModelForm(model)}
                   aria-pressed={isCurrentMainModel}
-                  className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-[8px] border px-3 py-2 text-left text-xs transition-colors ${
                     isCurrentMainModel
                       ? "border-violet-300 bg-violet-50 text-violet-950 shadow-[inset_3px_0_0_rgba(124,58,237,0.68)]"
                       : "border-slate-200 bg-slate-50 hover:border-violet-200 hover:bg-violet-50"
@@ -373,19 +373,19 @@ export default function ModelSettingsSection({
                     value={modelEndpointId}
                     onChange={(e) => onSetModelEndpointId(e.target.value)}
                     placeholder="my-gateway"
-                    className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                   />
                 </Field>
               )}
               <Field label="接口名称">
-                <input value={endpointName} onChange={(e) => onSetEndpointName(e.target.value)} className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm" />
+                <input value={endpointName} onChange={(e) => onSetEndpointName(e.target.value)} className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm" />
               </Field>
               <Field label="接口地址">
                 <input
                   value={baseUrl}
                   onChange={(e) => onSetBaseUrl(e.target.value)}
                   placeholder="留空使用官方默认端点"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </Field>
               <Field label="接口协议" hint="决定请求体、鉴权头和流式解析方式">
@@ -408,7 +408,7 @@ export default function ModelSettingsSection({
                   onFocus={() => apiKey === "********" && onSetApiKey("")}
                   onChange={(e) => onSetApiKey(e.target.value)}
                   placeholder="Ollama 或免鉴权本地接口可留空"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </Field>
               <SectionLabel hint="模型标识与内置能力">模型</SectionLabel>
@@ -417,12 +417,12 @@ export default function ModelSettingsSection({
                   <input
                     value={modelId}
                     onChange={(e) => onSetModelId(e.target.value)}
-                    className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 px-3 text-sm"
+                    className="h-9 min-w-0 flex-1 rounded-[8px] border border-slate-300 px-3 text-sm"
                   />
                   <button
                     onClick={onDiscoverModels}
                     disabled={discoveringModels || !modelEndpointId.trim() || !endpointName.trim()}
-                    className="h-9 shrink-0 rounded-md border border-slate-300 px-3 text-xs text-slate-600 disabled:opacity-40"
+                    className="h-9 shrink-0 rounded-[8px] border border-slate-300 px-3 text-xs text-slate-600 disabled:opacity-40"
                     type="button"
                   >
                     {discoveringModels ? "发现中..." : "发现模型"}
@@ -454,7 +454,7 @@ export default function ModelSettingsSection({
                 </Field>
               )}
               <Field label="显示名称">
-                <input value={modelName} onChange={(e) => onSetModelName(e.target.value)} className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm" />
+                <input value={modelName} onChange={(e) => onSetModelName(e.target.value)} className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm" />
               </Field>
               <SectionLabel hint="来自模型/接口的真实能力，用于预算、工具和推理请求">模型适配</SectionLabel>
               <div className="grid grid-cols-2 gap-3">
@@ -466,7 +466,7 @@ export default function ModelSettingsSection({
                     value={modelContextWindow ?? ""}
                     onChange={(e) => onSetModelContextWindow(parsePositiveInteger(e.target.value))}
                     placeholder="未知"
-                    className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                   />
                   <span className="mt-1 block text-[11px] leading-4 text-slate-400">输入与历史压缩的总预算</span>
                 </label>
@@ -478,7 +478,7 @@ export default function ModelSettingsSection({
                     value={modelMaxOutput ?? ""}
                     onChange={(e) => onSetModelMaxOutput(parsePositiveInteger(e.target.value))}
                     placeholder="缺省按上下文推算"
-                    className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                   />
                   <span className="mt-1 block text-[11px] leading-4 text-slate-400">接口允许的单次生成上限</span>
                 </label>
@@ -558,7 +558,7 @@ export default function ModelSettingsSection({
                     step="0.1"
                     value={modelPrefs.temperature}
                     onChange={(e) => onSetModelPrefs({ ...modelPrefs, temperature: Number(e.target.value) })}
-                    className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                   />
                   <span className="mt-1 block text-[11px] leading-4 text-slate-400">越大越随机，常用 0～1</span>
                 </label>
@@ -568,7 +568,7 @@ export default function ModelSettingsSection({
                     type="number"
                     value={modelPrefs.maxOutputTokens}
                     onChange={(e) => onSetModelPrefs({ ...modelPrefs, maxOutputTokens: Number(e.target.value) })}
-                    className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                   />
                   <span className="mt-1 block text-[11px] leading-4 text-slate-400">单次回复生成上限，非上下文长度</span>
                 </label>

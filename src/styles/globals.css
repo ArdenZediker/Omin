@@ -1681,7 +1681,7 @@ body:has(.compact-menu-window),
   width: 34px;
   height: 34px;
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--omni-control-radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2268,7 +2268,7 @@ body:has(.compact-menu-window),
   justify-content: center;
   flex: 0 0 auto;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   color: var(--omni-app-muted, #8b949e);
   cursor: pointer;
   transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
@@ -2302,7 +2302,7 @@ body:has(.compact-menu-window),
   width: 90px;
   height: 36px;
   border: 1px solid var(--omni-panel-border, #30363d);
-  border-radius: 18px;
+  border-radius: var(--omni-control-radius);
   background: var(--omni-input-bg, #0d1117);
   color: var(--omni-app-text, #e6edf3);
   font: 600 12px/1 var(--omni-font-mono, ui-monospace, monospace);

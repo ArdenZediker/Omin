@@ -73,7 +73,7 @@ const ConnectorCard = memo(function ConnectorCard({
           </p>
           {isInstalled && (
             <p className="connectorhub-browser__hint">
-              <Info size={12} strokeWidth={1.8} />
+              <Info size={12} strokeWidth={2} />
               已安装 — 已在「我的技能」中，启用后即可在对话中使用
             </p>
           )}

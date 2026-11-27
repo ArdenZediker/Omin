@@ -319,14 +319,14 @@ export default function StorageSettingsSection({
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    className="rounded-[8px] border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     onClick={handlePickOutputRoot}
                   >
                     选择目录…
                   </button>
                   <button
                     type="button"
-                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    className="rounded-[8px] border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     onClick={() => {
                       setOutputRootSetting("");
                       setOutputRoot("");
@@ -371,7 +371,7 @@ export default function StorageSettingsSection({
                 onUpdateBasicSettings({ defaultWorkspacePath: e.target.value })
               }
               placeholder="未设置时任务会话不绑定工作目录"
-              className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+              className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
             />
             <button
               type="button"
@@ -387,7 +387,7 @@ export default function StorageSettingsSection({
                   });
                 }
               }}
-              className="h-9 shrink-0 rounded-md border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+              className="h-9 shrink-0 rounded-[8px] border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
             >
               选择目录
             </button>
@@ -466,7 +466,7 @@ export default function StorageSettingsSection({
           </button>
           <button
             type="button"
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-[8px] border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             onClick={handlePickRoot}
             disabled={busy !== null || needsRestart}
           >
@@ -474,7 +474,7 @@ export default function StorageSettingsSection({
           </button>
           <button
             type="button"
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-[8px] border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             onClick={handleReset}
             disabled={busy !== null || needsRestart}
           >
@@ -524,13 +524,13 @@ export default function StorageSettingsSection({
               value={exportSecret}
               onChange={(e) => setExportSecret(e.target.value)}
               placeholder="可选，留空则不加密"
-              className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+              className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
             />
           </div>
           <div className="flex items-center gap-2 pl-[136px]">
             <button
               type="button"
-              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-[8px] border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               onClick={handleExport}
               disabled={busy !== null}
             >
@@ -559,7 +559,7 @@ export default function StorageSettingsSection({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="shrink-0 rounded-[8px] border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                 onClick={handlePickImportSource}
               >
                 选择文件…
@@ -576,7 +576,7 @@ export default function StorageSettingsSection({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="shrink-0 rounded-[8px] border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                 onClick={handlePickImportTarget}
               >
                 选择目录…
@@ -595,7 +595,7 @@ export default function StorageSettingsSection({
               value={importSecret}
               onChange={(e) => setImportSecret(e.target.value)}
               placeholder="加密备份需要填写"
-              className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+              className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
             />
           </div>
           <div className="flex items-center gap-2 pl-[136px]">

@@ -266,7 +266,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
                   value={editingModel.baseUrl}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, baseUrl: event.target.value } : current))}
                   placeholder="https://api.siliconflow.cn/v1"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </label>
 
@@ -276,7 +276,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
                   value={editingModel.name}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, name: event.target.value } : current))}
                   placeholder="默认向量模型"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </label>
 
@@ -286,7 +286,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
                   value={editingModel.model}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, model: event.target.value } : current))}
                   placeholder="text-embedding-3-small"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </label>
 
@@ -297,7 +297,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
                   value={editingModel.apiKey}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, apiKey: event.target.value } : current))}
                   placeholder="该模型单独使用的 API Key"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </label>
 

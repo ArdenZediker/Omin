@@ -845,7 +845,7 @@
   width: 22px;
   height: 22px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--omni-control-radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -881,7 +881,7 @@
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--omni-control-radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1776,7 +1776,7 @@
 .chat-stats-line__trigger {
   min-height: 22px;
   padding: 1px 6px;
-  border-radius: 7px;
+  border-radius: var(--omni-control-radius);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1822,7 +1822,7 @@
   height: 20px;
   padding: 0;
   gap: 5px;
-  border-radius: 5px;
+  border-radius: var(--omni-control-radius);
   font-size: inherit;
   font-weight: inherit;
 }
@@ -2243,7 +2243,7 @@
   align-items: center;
   gap: 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--omni-control-radius);
   padding: 0 8px;
   background: transparent;
   color: var(--omni-app-text);
@@ -2325,7 +2325,7 @@
 .chat-composer__add-panel .chat-composer__picker--choice .chat-composer__picker-option {
   min-height: 38px;
   padding: 6px 8px;
-  border-radius: 7px;
+  border-radius: var(--omni-control-radius);
 }
 
 .chat-composer__add-panel .chat-composer__picker--choice .chat-composer__picker-option-copy strong {
@@ -3378,7 +3378,7 @@
   min-width: 16px;
   height: 14px;
   padding: 0 4px;
-  border-radius: 7px;
+  border-radius: var(--omni-control-radius);
   background: var(--omni-danger, #e5484d);
   color: #ffffff;
   font-size: 9px;
@@ -5103,7 +5103,7 @@ span.exec-web-item__title:hover {
   gap: 10px;
   width: 100%;
   padding: 9px 10px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: transparent;
   border: 1px solid transparent;
   color: var(--omni-app-text);

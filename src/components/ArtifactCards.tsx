@@ -164,7 +164,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
             disabled={pathState === "missing"}
             onClick={handleOpen}
           >
-            <FolderOpen size={14} strokeWidth={1.9} />
+            <FolderOpen size={14} strokeWidth={1.8} />
           </button>
           <button
             type="button"
@@ -174,7 +174,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
             disabled={pathState === "missing"}
             onClick={handleReveal}
           >
-            <FolderSearch size={14} strokeWidth={1.9} />
+            <FolderSearch size={14} strokeWidth={1.8} />
           </button>
         </span>
       ) : webUrl ? (
@@ -186,7 +186,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
             aria-label="在浏览器打开"
             onClick={handleOpenUrl}
           >
-            <ExternalLink size={14} strokeWidth={1.9} />
+            <ExternalLink size={14} strokeWidth={1.8} />
           </button>
           {canCopy ? (
             <button
@@ -196,7 +196,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
               aria-label={copied ? "已复制" : "复制内容"}
               onClick={handleCopy}
             >
-              {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.9} />}
+              {copied ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
             </button>
           ) : null}
         </span>
@@ -208,7 +208,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
           aria-label={copied ? "已复制" : "复制内容"}
           onClick={handleCopy}
         >
-          {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.9} />}
+          {copied ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
         </button>
       ) : null}
     </div>

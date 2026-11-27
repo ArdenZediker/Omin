@@ -10,7 +10,7 @@
   min-height: 36px;
   padding: 0 9px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   display: inline-flex;
   align-items: center;
   gap: 7px;

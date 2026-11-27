@@ -92,7 +92,7 @@ export default function KnowledgeDocumentList({
                         onDeleteDocument(document.id);
                       }}
                     >
-                      <Trash2 size={14} strokeWidth={1.9} />
+                      <Trash2 size={14} strokeWidth={1.8} />
                       删除
                     </button>
                   </div>

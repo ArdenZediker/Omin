@@ -73,7 +73,7 @@ export default function KnowledgeDocumentDetailHeader({
           className="omni-knowledge-detail-back no-drag"
           title="返回列表"
         >
-          <ArrowLeft size={16} strokeWidth={2} />
+          <ArrowLeft size={16} strokeWidth={1.8} />
         </button>
         <div className="min-w-0">
           <div className="truncate text-base font-semibold text-[var(--omni-app-text)]">
@@ -111,7 +111,7 @@ export default function KnowledgeDocumentDetailHeader({
               title={option.label}
               aria-pressed={isActive}
             >
-              <Icon size={14} strokeWidth={2} />
+              <Icon size={14} strokeWidth={1.8} />
               <span>{option.label}</span>
             </button>
           );
@@ -127,7 +127,7 @@ export default function KnowledgeDocumentDetailHeader({
         title="处理信息"
         aria-pressed={activeView === "processing"}
       >
-        <Settings size={14} strokeWidth={2} />
+        <Settings size={14} strokeWidth={1.8} />
         <span>处理信息</span>
       </button>
 

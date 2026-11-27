@@ -105,7 +105,7 @@ export default function ChatStatsLine({
           triggerLabel={`Token 用量：${tokenText}`}
           triggerContent={(
             <>
-              <Database size={14} strokeWidth={1.7} aria-hidden="true" />
+              <Database size={14} strokeWidth={1.8} aria-hidden="true" />
               <span>{tokenText}</span>
             </>
           )}

@@ -46,7 +46,7 @@ export default function ChangesPanel({ changes, onClose, onRevert }: ChangesPane
               title="关闭变更面板"
               aria-label="关闭变更面板"
             >
-              <X size={14} strokeWidth={2} />
+              <X size={14} strokeWidth={1.8} />
             </button>
           ) : null}
         </div>

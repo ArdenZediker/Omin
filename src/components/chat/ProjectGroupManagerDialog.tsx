@@ -63,7 +63,7 @@ export default function ProjectGroupManagerDialog({
             <div className="chat-history-panel__group-manager-item chat-history-panel__group-manager-item--default">
               <div className="chat-history-panel__group-manager-row">
                 <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
-                  <GripVertical size={14} strokeWidth={1.9} />
+                  <GripVertical size={14} strokeWidth={1.8} />
                 </span>
                 <span>{DEFAULT_PROJECT_GROUP_LABEL}</span>
               </div>
@@ -78,7 +78,7 @@ export default function ProjectGroupManagerDialog({
                     <>
                       <div className="chat-history-panel__group-manager-row">
                         <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
-                          <GripVertical size={14} strokeWidth={1.9} />
+                          <GripVertical size={14} strokeWidth={1.8} />
                         </span>
                         <input
                           className="chat-history-panel__group-manager-inline-input"
@@ -95,7 +95,7 @@ export default function ProjectGroupManagerDialog({
                       </div>
                       <div className="chat-history-panel__group-manager-actions">
                         <button type="button" onClick={() => onRenameGroup(groupName)}>
-                          <Check size={14} strokeWidth={2} />
+                          <Check size={14} strokeWidth={1.8} />
                         </button>
                       </div>
                     </>
@@ -103,7 +103,7 @@ export default function ProjectGroupManagerDialog({
                     <>
                       <div className="chat-history-panel__group-manager-row">
                         <span className="chat-history-panel__group-manager-handle" aria-hidden="true">
-                          <GripVertical size={14} strokeWidth={1.9} />
+                          <GripVertical size={14} strokeWidth={1.8} />
                         </span>
                         <span>{groupName}</span>
                       </div>
@@ -115,10 +115,10 @@ export default function ProjectGroupManagerDialog({
                             onEditingDraftChange(groupName);
                           }}
                         >
-                          <Pencil size={14} strokeWidth={1.9} />
+                          <Pencil size={14} strokeWidth={1.8} />
                         </button>
                         <button type="button" onClick={() => onDeleteGroup(groupName)}>
-                          <Trash2 size={14} strokeWidth={1.9} />
+                          <Trash2 size={14} strokeWidth={1.8} />
                         </button>
                       </div>
                     </>
@@ -149,7 +149,7 @@ export default function ProjectGroupManagerDialog({
                   onCreateModeChange(false);
                 }}
               >
-                <Check size={14} strokeWidth={2} />
+                <Check size={14} strokeWidth={1.8} />
                 <span>确认添加</span>
               </button>
             </div>
@@ -159,7 +159,7 @@ export default function ProjectGroupManagerDialog({
               className="chat-history-panel__group-add-button"
               onClick={() => onCreateModeChange(true)}
             >
-              <Plus size={14} strokeWidth={1.9} />
+              <Plus size={14} strokeWidth={1.8} />
               <span>添加新分组</span>
             </button>
           )}

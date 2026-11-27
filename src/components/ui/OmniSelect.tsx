@@ -196,7 +196,7 @@ export default function OmniSelect({
         <span className={`omni-select__value${selectedOption ? "" : " omni-select__value--placeholder"}`}>
           {selectedOption?.label ?? placeholder}
         </span>
-        <ChevronDown className="omni-select__chevron" size={15} strokeWidth={2} aria-hidden="true" />
+        <ChevronDown className="omni-select__chevron" size={15} strokeWidth={1.8} aria-hidden="true" />
       </button>
 
       {isOpen && menuPosition
@@ -236,7 +236,7 @@ export default function OmniSelect({
                         <span className="omni-select__option-description">{option.description}</span>
                       ) : null}
                     </span>
-                    {isSelected ? <Check size={14} strokeWidth={2.2} aria-hidden="true" /> : null}
+                    {isSelected ? <Check size={14} strokeWidth={1.8} aria-hidden="true" /> : null}
                   </button>
                 );
               })}

@@ -306,7 +306,7 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
             selectedIds={boundExpertIds}
             onToggle={toggleBoundExpert}
             emptyText="暂无专家（可在扩展中心「专家 → 我的专家」里创建）"
-            idleIcon={<Bot size={12} strokeWidth={1.8} />}
+            idleIcon={<Bot size={12} strokeWidth={2} />}
           />
 
           {/* 候选只列**内置技能**（用户自装技能绕过这个白名单，列出来勾了也不生效）。
@@ -321,7 +321,7 @@ export default function ProjectSettingsDialog({ open, project, onClose, onUpdate
             selectedIds={allowedSkillIds}
             onToggle={toggleAllowedSkill}
             emptyText="暂无内置技能"
-            idleIcon={<Wand2 size={12} strokeWidth={1.8} />}
+            idleIcon={<Wand2 size={12} strokeWidth={2} />}
           />
         </div>
 

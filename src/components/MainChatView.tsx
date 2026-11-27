@@ -1399,7 +1399,7 @@ export default function MainChatView({
           className="main-chat-nav__brand no-drag"
           title="Omni"
         >
-          <Bot size={20} strokeWidth={1.9} />
+          <Bot size={20} strokeWidth={1.8} />
         </button>
         <div className="main-chat-nav__items">
           <button
@@ -1408,7 +1408,7 @@ export default function MainChatView({
             title="聊天"
             onClick={closeMarketplace}
           >
-            <MessageSquare size={18} strokeWidth={1.9} />
+            <MessageSquare size={18} strokeWidth={1.8} />
           </button>
           <button
             type="button"
@@ -1422,7 +1422,7 @@ export default function MainChatView({
               });
             }}
           >
-            <Sparkles size={18} strokeWidth={1.9} />
+            <Sparkles size={18} strokeWidth={1.8} />
           </button>
           <button
             type="button"
@@ -1430,7 +1430,7 @@ export default function MainChatView({
             title="知识"
             onClick={onOpenKnowledge}
           >
-            <FolderOpen size={18} strokeWidth={1.9} />
+            <FolderOpen size={18} strokeWidth={1.8} />
           </button>
         </div>
         <button
@@ -1439,7 +1439,7 @@ export default function MainChatView({
           title="设置"
           onClick={onSettingsOpen}
         >
-          <Settings size={18} strokeWidth={1.9} />
+          <Settings size={18} strokeWidth={1.8} />
         </button>
       </aside>
 
@@ -1486,7 +1486,7 @@ export default function MainChatView({
         ) : (
           <>
             <div className="chat-history-panel__project-search">
-              <Search size={14} strokeWidth={1.9} />
+              <Search size={14} strokeWidth={1.8} />
               <input
                 value={projectSearchQuery}
                 onChange={(event) => setProjectSearchQuery(event.target.value)}
@@ -1524,7 +1524,7 @@ export default function MainChatView({
                     title="新建任务"
                     aria-label="新建任务"
                   >
-                    <Plus size={14} strokeWidth={1.9} />
+                    <Plus size={14} strokeWidth={1.8} />
                   </button>
                 </div>
                 {!taskSectionCollapsed && (
@@ -1581,7 +1581,7 @@ export default function MainChatView({
                               onDeleteChat(session);
                             }}
                           >
-                            <Trash2 size={12} strokeWidth={1.9} />
+                            <Trash2 size={12} strokeWidth={2} />
                           </button>
                         </div>
                       ))
@@ -1637,7 +1637,7 @@ export default function MainChatView({
                               void handleCreateProject();
                             }}
                           >
-                            <Plus size={14} strokeWidth={1.9} />
+                            <Plus size={14} strokeWidth={1.8} />
                             <span>新建空间</span>
                           </button>
                           <button
@@ -1647,7 +1647,7 @@ export default function MainChatView({
                               setProjectGroupManagerOpen(true);
                             }}
                           >
-                            <FolderOpen size={14} strokeWidth={1.9} />
+                            <FolderOpen size={14} strokeWidth={1.8} />
                             <span>分组管理</span>
                           </button>
                         </div>
@@ -1660,7 +1660,7 @@ export default function MainChatView({
                       title="新建空间"
                       aria-label="新建空间"
                     >
-                      <Plus size={14} strokeWidth={1.9} />
+                      <Plus size={14} strokeWidth={1.8} />
                     </button>
                   </div>
                 </div>
@@ -1774,9 +1774,9 @@ export default function MainChatView({
                                 }}
                               >
                                 {isExpanded ? (
-                                  <ChevronDown size={13} strokeWidth={1.8} />
+                                  <ChevronDown size={13} strokeWidth={2} />
                                 ) : (
-                                  <ChevronRight size={13} strokeWidth={1.8} />
+                                  <ChevronRight size={13} strokeWidth={2} />
                                 )}
                               </span>
                               <span
@@ -1805,7 +1805,7 @@ export default function MainChatView({
                                     );
                                   }}
                                 >
-                                  <MoreHorizontal size={13} strokeWidth={1.9} />
+                                  <MoreHorizontal size={13} strokeWidth={2} />
                                 </button>
                                 {openProjectCardMenuId === project.id && (
                                   <div className="chat-history-panel__project-dropdown">
@@ -1887,7 +1887,7 @@ export default function MainChatView({
                                             );
                                           }}
                                         >
-                                          <Pencil size={13} strokeWidth={1.9} />
+                                          <Pencil size={13} strokeWidth={2} />
                                           <span>重命名</span>
                                         </button>
                                         <button
@@ -1898,7 +1898,7 @@ export default function MainChatView({
                                             setProjectSettingsId(project.id);
                                           }}
                                         >
-                                          <Settings2 size={13} strokeWidth={1.9} />
+                                          <Settings2 size={13} strokeWidth={2} />
                                           <span>项目设置</span>
                                         </button>
                                         {project.id !== DEFAULT_PROJECT_ID && (
@@ -1990,7 +1990,7 @@ export default function MainChatView({
                                           onDeleteChat(session);
                                         }}
                                       >
-                                        <Trash2 size={12} strokeWidth={1.9} />
+                                        <Trash2 size={12} strokeWidth={2} />
                                       </button>
                                     </div>
                                   ))
@@ -2428,7 +2428,7 @@ export default function MainChatView({
                       {!isEmptyGuideCompact && (
                         <>
                           <div className="empty-chat-state__subhead">
-                            <Sparkles size={14} strokeWidth={1.9} />
+                            <Sparkles size={14} strokeWidth={1.8} />
                             <span>推荐起步方式</span>
                           </div>
                           <div className="empty-chat-state__cards">
@@ -2509,7 +2509,7 @@ export default function MainChatView({
                     title="滚动到底部"
                     onClick={scrollMessagesToBottom}
                   >
-                    <ArrowDown size={17} strokeWidth={2.2} />
+                    <ArrowDown size={17} strokeWidth={1.8} />
                   </button>
                 )}
 
@@ -2576,10 +2576,10 @@ export default function MainChatView({
             <div className="chat-topic-panel__title">
               {(() => {
                 if (sidePanelTab === "history")
-                  return <Clock size={14} strokeWidth={2} />;
+                  return <Clock size={14} strokeWidth={1.8} />;
                 if (sidePanelTab === "changes")
-                  return <GitBranch size={14} strokeWidth={2} />;
-                return <Package size={14} strokeWidth={2} />;
+                  return <GitBranch size={14} strokeWidth={1.8} />;
+                return <Package size={14} strokeWidth={1.8} />;
               })()}
               <span>
                 {sidePanelTab === "history"

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { showCompactWindow } from "../app/window";
@@ -759,7 +759,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             }`}
           >
             <span className="omni-settings-nav-icon">
-              <Settings size={13} strokeWidth={1.8} />
+              <Settings size={13} strokeWidth={2} />
             </span>
             基本设置
           </button>
@@ -773,7 +773,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             }`}
           >
             <span className="omni-settings-nav-icon">
-              <PawPrint size={13} strokeWidth={1.8} />
+              <PawPrint size={13} strokeWidth={2} />
             </span>
             宠物
           </button>
@@ -787,7 +787,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             }`}
           >
             <span className="omni-settings-nav-icon">
-              <Paintbrush size={13} strokeWidth={1.8} />
+              <Paintbrush size={13} strokeWidth={2} />
             </span>
             个性化
           </button>
@@ -801,7 +801,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             }`}
           >
             <span className="omni-settings-nav-icon">
-              <Cuboid size={13} strokeWidth={1.8} />
+              <Cuboid size={13} strokeWidth={2} />
             </span>
             模型配置
           </button>
@@ -815,7 +815,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             }`}
           >
             <span className="omni-settings-nav-icon">
-              <Database size={13} strokeWidth={1.8} />
+              <Database size={13} strokeWidth={2} />
             </span>
             数据存储
           </button>

@@ -453,7 +453,7 @@
   height: 24px;
   padding: 0 8px;
   border: 1px solid rgba(59, 130, 246, 0.74);
-  border-radius: 7px;
+  border-radius: var(--omni-control-radius);
   background: #ffffff;
   /* 背景写死白色，不要继承主题变量：深色主题下 --omni-app-text 是白色，
      会导致白底 + 白字，输入内容完全看不见。 */
@@ -471,7 +471,7 @@
   height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--omni-control-radius);
   background: #16a34a;
   color: #ffffff;
   font-size: 11px;

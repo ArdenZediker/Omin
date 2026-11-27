@@ -1352,7 +1352,7 @@ export default function PluginMarketplace({
                   className={`plugin-card__batch-checkbox ${isSelected ? "plugin-card__batch-checkbox--checked" : ""}`}
                   aria-hidden="true"
                 >
-                  {isSelected ? <Check size={14} strokeWidth={2.2} /> : null}
+                  {isSelected ? <Check size={14} strokeWidth={1.8} /> : null}
                 </span>
               ) : (
                 renderPluginIcon(manifest)
@@ -1438,7 +1438,7 @@ export default function PluginMarketplace({
                         : `选中 ${manifest.name}`
                     }
                   >
-                    {isSelected ? <Check size={14} strokeWidth={2} /> : null}
+                    {isSelected ? <Check size={14} strokeWidth={1.8} /> : null}
                     <span>{isSelected ? "已选中" : "选择"}</span>
                   </button>
                 )
@@ -1562,7 +1562,7 @@ export default function PluginMarketplace({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="plugin-card__trust-head">
-                    <ShieldAlert size={15} strokeWidth={1.9} />
+                    <ShieldAlert size={15} strokeWidth={1.8} />
                     <span>信任「{manifest.name}」？</span>
                   </div>
                   <p className="plugin-card__trust-warn">
@@ -1575,7 +1575,7 @@ export default function PluginMarketplace({
                   {info.type === "stdio" ? (
                     <>
                       <div className="plugin-card__trust-cmd">
-                        <Terminal size={12} strokeWidth={1.8} />
+                        <Terminal size={12} strokeWidth={2} />
                         <code>
                           {info.command}
                           {info.args.length > 0
@@ -1595,7 +1595,7 @@ export default function PluginMarketplace({
                   ) : info.type === "http" ? (
                     <>
                       <div className="plugin-card__trust-cmd">
-                        <Globe size={12} strokeWidth={1.8} />
+                        <Globe size={12} strokeWidth={2} />
                         <code>{info.url}</code>
                       </div>
                       {info.headerKeys.length > 0 && (
@@ -1633,7 +1633,7 @@ export default function PluginMarketplace({
               className="plugin-card__mcp-error"
               onClick={(e) => e.stopPropagation()}
             >
-              <AlertTriangle size={13} strokeWidth={1.8} />
+              <AlertTriangle size={13} strokeWidth={2} />
               <span>{mcpError.message}</span>
             </div>
           )}
@@ -2032,7 +2032,7 @@ export default function PluginMarketplace({
                         onClick={onAddMcp}
                         title="新增自定义 MCP 连接器"
                       >
-                        <Plus size={14} strokeWidth={2} />
+                        <Plus size={14} strokeWidth={1.8} />
                         <span>新增 MCP</span>
                       </button>
                     )}
@@ -2222,7 +2222,7 @@ export default function PluginMarketplace({
                     aria-expanded={expertCreateMenuOpen}
                     onClick={() => setExpertCreateMenuOpen((open) => !open)}
                   >
-                    <Plus size={14} strokeWidth={2} />
+                    <Plus size={14} strokeWidth={1.8} />
                     <span>制作专家</span>
                     <ChevronDown size={13} strokeWidth={2} />
                   </button>
@@ -2312,7 +2312,7 @@ export default function PluginMarketplace({
                       }
                     }}
                   >
-                    {onDraftExpert ? <Sparkles size={14} strokeWidth={1.8} /> : <Plus size={14} strokeWidth={2} />}
+                    {onDraftExpert ? <Sparkles size={14} strokeWidth={1.8} /> : <Plus size={14} strokeWidth={1.8} />}
                     <span>{onDraftExpert ? "制作专家" : "创建专家"}</span>
                   </button>
                 </div>

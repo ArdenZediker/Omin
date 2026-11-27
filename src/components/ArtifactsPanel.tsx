@@ -401,7 +401,7 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
           ) : null}
           {onClose ? (
             <button type="button" className="artifacts-panel__close" title="关闭产物面板" aria-label="关闭产物面板" onClick={onClose}>
-              <X size={15} strokeWidth={2} />
+              <X size={15} strokeWidth={1.8} />
             </button>
           ) : null}
         </div>
@@ -464,10 +464,10 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
               {activeArtifact.path ? (
                 <>
                   <button type="button" title="打开文件" aria-label="打开文件" onClick={() => void handleOpenArtifact(activeArtifact)}>
-                    <FolderOpen size={14} strokeWidth={1.9} />
+                    <FolderOpen size={14} strokeWidth={1.8} />
                   </button>
                   <button type="button" title="在文件夹中显示" aria-label="在文件夹中显示" onClick={() => void handleRevealArtifact(activeArtifact)}>
-                    <FolderSearch size={14} strokeWidth={1.9} />
+                    <FolderSearch size={14} strokeWidth={1.8} />
                   </button>
                   <button
                     type="button"
@@ -475,23 +475,23 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
                     aria-label={pathCopied ? "路径已复制" : "复制路径"}
                     onClick={() => handleCopyPath(activeArtifact)}
                   >
-                    {pathCopied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.9} />}
+                    {pathCopied ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
                   </button>
                 </>
               ) : null}
               {activeArtifact.url ? (
                 <button type="button" title="在浏览器打开" aria-label="在浏览器打开" onClick={() => void handleOpenUrl(activeArtifact)}>
-                  <ExternalLink size={14} strokeWidth={1.9} />
+                  <ExternalLink size={14} strokeWidth={1.8} />
                 </button>
               ) : null}
               {activeArtifact.content ? (
                 <button type="button" title={copied ? "已复制" : "复制内容"} aria-label={copied ? "已复制" : "复制内容"} onClick={() => handleCopy(activeArtifact)}>
-                  {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.9} />}
+                  {copied ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
                 </button>
               ) : null}
               {activeArtifact.sessionId ? (
                 <button type="button" title="定位到来源会话" aria-label="定位到来源会话" onClick={() => onJumpToSession(activeArtifact.sessionId as string)}>
-                  <MessageSquare size={14} strokeWidth={1.9} />
+                  <MessageSquare size={14} strokeWidth={1.8} />
                 </button>
               ) : null}
               <button
@@ -501,7 +501,7 @@ export default function ArtifactsPanel({ projectId, sessionId, onClose, onJumpTo
                 aria-label="删除该产物"
                 onClick={() => handleDelete(activeArtifact)}
               >
-                <Trash2 size={14} strokeWidth={1.9} />
+                <Trash2 size={14} strokeWidth={1.8} />
               </button>
             </div>
           </div>

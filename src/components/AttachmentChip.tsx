@@ -107,7 +107,7 @@ export default function AttachmentChip({
       onMouseEnter={() => canPreview && setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <Icon size={14} strokeWidth={1.9} className="attachment-chip__icon" />
+      <Icon size={14} strokeWidth={1.8} className="attachment-chip__icon" />
       <span className="attachment-chip__name">{fileName}</span>
       {sizeLabel ? <span className="attachment-chip__size">{sizeLabel}</span> : null}
       {removable && (
@@ -120,7 +120,7 @@ export default function AttachmentChip({
             onRemove?.();
           }}
         >
-          <X size={12} strokeWidth={2.2} />
+          <X size={12} strokeWidth={2} />
         </button>
       )}
       {canPreview && hovered &&

@@ -357,7 +357,7 @@ export default function ChatMessage({
           </div>
           <div className="message-edit-box__footer">
             <div className="message-edit-box__hint" title="提交后从此条往下所有消息与产物都会保留，仅删除其后的对话回合">
-              <AlertCircle size={13} strokeWidth={1.9} />
+              <AlertCircle size={13} strokeWidth={2} />
               <span>编辑后将从此处重新开始对话，已有产物不会被删除</span>
             </div>
             <div className="message-edit-box__actions">
@@ -380,7 +380,7 @@ export default function ChatMessage({
           {userSegments.some((segment) => segment.kind !== "text") && (
             <div className="message-user-attachments">
               <span className="message-user-media-label">
-                <Paperclip size={13} strokeWidth={1.9} />
+                <Paperclip size={13} strokeWidth={2} />
                 <span>附件</span>
               </span>
               {userSegments.map((segment, segmentIndex) => {
@@ -419,7 +419,7 @@ export default function ChatMessage({
                   className="message-user-context message-user-context--knowledge"
                   title={`本轮使用知识库：${message.selectedKnowledgeCollection.name}`}
                 >
-                  <BookOpen className="message-user-context__icon" size={14} strokeWidth={1.9} />
+                  <BookOpen className="message-user-context__icon" size={14} strokeWidth={1.8} />
                   <span className="message-user-context__label">知识库</span>
                   <span className="message-user-context__name">{message.selectedKnowledgeCollection.name}</span>
                 </div>
@@ -429,14 +429,14 @@ export default function ChatMessage({
                   className="message-user-context message-user-context--expert"
                   title={`本轮使用专家：${message.selectedExpert.name}`}
                 >
-                  <Bot className="message-user-context__icon" size={14} strokeWidth={1.9} />
+                  <Bot className="message-user-context__icon" size={14} strokeWidth={1.8} />
                   <span className="message-user-context__label">专家</span>
                   <span className="message-user-context__name">{message.selectedExpert.name}</span>
                 </div>
               )}
               {message.selectedExpertTeam && (
                 <span className="message-user-context__item message-user-context__item--expert" title={`本轮协作专家团：${message.selectedExpertTeam.name}`}>
-                  <UsersRound size={13} strokeWidth={1.8} />
+                  <UsersRound size={13} strokeWidth={2} />
                   <span className="message-user-context__name">{message.selectedExpertTeam.name}</span>
                 </span>
               )}

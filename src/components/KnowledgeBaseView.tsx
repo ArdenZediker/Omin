@@ -1330,11 +1330,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
       <div className="omni-knowledge-layout flex min-h-0 flex-1">
         <aside className="main-chat-nav">
           <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
-            <Bot size={20} strokeWidth={1.9} className="text-sky-500" />
+            <Bot size={20} strokeWidth={1.8} className="text-sky-500" />
           </button>
           <div className="main-chat-nav__items">
             <button type="button" className="main-chat-nav__item no-drag" title="聊天" onClick={onBackToChat}>
-              <MessageSquare size={18} strokeWidth={1.9} />
+              <MessageSquare size={18} strokeWidth={1.8} />
             </button>
             <button
               type="button"
@@ -1342,14 +1342,14 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
               title="项目"
               onClick={() => onOpenMarketplace?.()}
             >
-              <Sparkles size={18} strokeWidth={1.9} />
+              <Sparkles size={18} strokeWidth={1.8} />
             </button>
             <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="知识库">
-              <FolderOpen size={18} strokeWidth={1.9} />
+              <FolderOpen size={18} strokeWidth={1.8} />
             </button>
           </div>
           <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" onClick={onSettingsOpen}>
-            <Settings size={18} strokeWidth={1.9} />
+            <Settings size={18} strokeWidth={1.8} />
           </button>
         </aside>
 
@@ -1432,7 +1432,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                       className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                       title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
                     >
-                      {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
+                      {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={1.8} /> : <PanelLeftClose size={16} strokeWidth={1.8} />}
                     </button>
                     <div className="min-w-0">
                       <div className="truncate text-base font-semibold text-[var(--omni-app-text)]">{activeCollectionName}</div>
@@ -1472,7 +1472,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                         title="搜索文档"
                         aria-pressed={isSearchToolbarOpen || Boolean(searchQuery)}
                       >
-                        <Search size={17} strokeWidth={1.9} />
+                        <Search size={17} strokeWidth={1.8} />
                       </button>
 
                       <div className="no-drag relative">
@@ -1484,7 +1484,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                           className={`omni-knowledge-toolbar-button ${isUploadMenuOpen ? "omni-knowledge-toolbar-button--active" : ""}`}
                           title="上传"
                         >
-                          <SquarePlus size={17} strokeWidth={1.9} />
+                          <SquarePlus size={17} strokeWidth={1.8} />
                         </button>
 
                         {isUploadMenuOpen && uploadMenuPosition
@@ -1533,7 +1533,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                         }`}
                         title={isTaskCenterPanelOpen ? "收起工作台" : "展开工作台"}
                       >
-                        {isTaskCenterPanelOpen ? <PanelRightClose size={17} strokeWidth={1.9} /> : <PanelRightOpen size={17} strokeWidth={1.9} />}
+                        {isTaskCenterPanelOpen ? <PanelRightClose size={17} strokeWidth={1.8} /> : <PanelRightOpen size={17} strokeWidth={1.8} />}
                       </button>
                     </div>
 
@@ -1552,9 +1552,9 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                 aria-live={uploadNotice.tone === "error" ? "assertive" : "polite"}
               >
                 {uploadNotice.tone === "error" ? (
-                  <CircleAlert size={17} strokeWidth={2} className="omni-knowledge-upload-notice__icon" aria-hidden="true" />
+                  <CircleAlert size={17} strokeWidth={1.8} className="omni-knowledge-upload-notice__icon" aria-hidden="true" />
                 ) : (
-                  <CircleCheck size={17} strokeWidth={2} className="omni-knowledge-upload-notice__icon" aria-hidden="true" />
+                  <CircleCheck size={17} strokeWidth={1.8} className="omni-knowledge-upload-notice__icon" aria-hidden="true" />
                 )}
                 <div className="omni-knowledge-upload-notice__message">{uploadNotice.message}</div>
               </div>
@@ -1692,7 +1692,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                           className="omni-knowledge-empty-state__action mt-8 inline-flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium shadow-sm"
                           onClick={createCollection}
                         >
-                          <Plus size={16} strokeWidth={2} />
+                          <Plus size={16} strokeWidth={1.8} />
                           新建知识库
                         </button>
                       </div>
@@ -1745,7 +1745,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                 title="关闭"
               >
-                <X size={16} strokeWidth={2} />
+                <X size={16} strokeWidth={1.8} />
               </button>
             </div>
 
@@ -1798,7 +1798,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                   <div className="omni-knowledge-collection-settings__capability-card">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
-                        <LucideFileImage size={16} strokeWidth={1.9} className="text-amber-600" />
+                        <LucideFileImage size={16} strokeWidth={1.8} className="text-amber-600" />
                         <strong className="text-sm text-[var(--omni-app-text)]">图片分析</strong>
                       </div>
                       <label className="omni-knowledge-collection-settings__switch">
@@ -1849,7 +1849,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                   <div className="omni-knowledge-collection-settings__capability-card">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
-                        <Mic size={16} strokeWidth={1.9} className="text-sky-600" />
+                        <Mic size={16} strokeWidth={1.8} className="text-sky-600" />
                         <strong className="text-sm text-[var(--omni-app-text)]">音频分析</strong>
                       </div>
                       <label className="omni-knowledge-collection-settings__switch">
@@ -1900,7 +1900,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
 
                 <div className="mt-4 rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-soft-bg)] px-4 py-3 text-sm text-[var(--omni-app-muted)]">
                   <div className="flex items-center gap-2 font-medium text-[var(--omni-app-text)]">
-                    <Sparkles size={15} strokeWidth={1.9} className="text-amber-600" />
+                    <Sparkles size={15} strokeWidth={1.8} className="text-amber-600" />
                     <span>当前入库策略</span>
                   </div>
                   <div className="mt-2 leading-6">

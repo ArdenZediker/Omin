@@ -216,7 +216,7 @@ export default function CreateExpertDialog({
           <PluginChips icon={<Wand2 size={16} strokeWidth={1.8} />} title="绑定技能" hint="可多选" options={skillOptions} selected={selectedSkillIds} setSelected={setSelectedSkillIds} />
           <PluginChips icon={<Plug size={16} strokeWidth={1.8} />} title="绑定 MCP" hint="可多选；绑定后使用连接器暴露的工具" options={mcpOptions} selected={selectedMcpConnectorIds} setSelected={setSelectedMcpConnectorIds} empty="暂无已安装的 MCP 连接器" />
 
-          <p className="omni-dialog__hint"><Bot size={12} strokeWidth={1.8} /> 保存后会生成统一的 DSH ExpertProfile，并由系统编译运行时角色提示词。</p>
+          <p className="omni-dialog__hint"><Bot size={12} strokeWidth={2} /> 保存后会生成统一的 DSH ExpertProfile，并由系统编译运行时角色提示词。</p>
         </div>
         <div className="omni-dialog__footer">
           <button type="button" className="omni-dialog__button omni-dialog__button--secondary" onClick={onClose}>取消</button>

@@ -343,7 +343,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig, pro
                   value={editingModel.baseUrl}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, baseUrl: event.target.value } : current))}
                   placeholder="https://api.openai.com/v1"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </label>
 
@@ -353,7 +353,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig, pro
                   value={editingModel.name}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, name: event.target.value } : current))}
                   placeholder="知识库图片分析模型"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </label>
 
@@ -363,7 +363,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig, pro
                   value={editingModel.model}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, model: event.target.value } : current))}
                   placeholder={editingModel.capability === "audio" ? "gpt-4o-mini-transcribe" : "gpt-4.1-mini"}
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </label>
 
@@ -374,7 +374,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig, pro
                   value={editingModel.apiKey}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, apiKey: event.target.value } : current))}
                   placeholder="该模型专用 API Key"
-                  className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
                 />
               </label>
 
@@ -386,7 +386,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig, pro
                       <button
                         type="button"
                         onClick={() => toggleDefaultModel("image", editingStoredModel.id)}
-                        className={`rounded-md border px-3 py-2 text-xs ${
+                        className={`rounded-[8px] border px-3 py-2 text-xs ${
                           isEditingImageDefault
                             ? "border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-200"
                             : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -399,7 +399,7 @@ export default function KnowledgeMultimodalSection({ config, onChangeConfig, pro
                       <button
                         type="button"
                         onClick={() => toggleDefaultModel("audio", editingStoredModel.id)}
-                        className={`rounded-md border px-3 py-2 text-xs ${
+                        className={`rounded-[8px] border px-3 py-2 text-xs ${
                           isEditingAudioDefault
                             ? "border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-200"
                             : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"

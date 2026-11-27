@@ -73,7 +73,7 @@ export default function KnowledgeCollectionSidebar({
           title="展开侧栏"
           aria-label="展开侧栏"
         >
-          <PanelLeftOpen size={16} strokeWidth={2} />
+          <PanelLeftOpen size={16} strokeWidth={1.8} />
         </button>
       </aside>
     );
@@ -111,7 +111,7 @@ export default function KnowledgeCollectionSidebar({
                     isActive ? "text-[var(--omni-app-text)]" : "text-[var(--omni-app-muted)]"
                   }`}
                 >
-                  <Icon size={13} strokeWidth={1.8} aria-hidden="true" />
+                  <Icon size={13} strokeWidth={2} aria-hidden="true" />
                 </span>
                 <span className="flex-1">{category.title}</span>
                 <span className="text-[11px] text-[var(--omni-app-muted)]">{category.count}</span>
@@ -129,7 +129,7 @@ export default function KnowledgeCollectionSidebar({
               title="新建知识库"
               onClick={onCreateCollection}
             >
-              <Plus size={14} strokeWidth={2} />
+              <Plus size={14} strokeWidth={1.8} />
             </button>
           </div>
 
@@ -165,7 +165,7 @@ export default function KnowledgeCollectionSidebar({
                       className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                       title="更多操作"
                     >
-                      <EllipsisVertical size={14} strokeWidth={2} />
+                      <EllipsisVertical size={14} strokeWidth={1.8} />
                     </button>
 
                     {openCollectionMenuId === collection.id ? (
@@ -203,7 +203,7 @@ export default function KnowledgeCollectionSidebar({
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-4 py-2.5 text-sm font-medium text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
           onClick={onCreateCollection}
         >
-          <Plus size={14} strokeWidth={2} />
+          <Plus size={14} strokeWidth={1.8} />
           新建知识库
         </button>
       </div>

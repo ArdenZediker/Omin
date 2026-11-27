@@ -425,7 +425,7 @@ export default function OpenWorkspaceMenu({
           setIsOpen(true);
         }}
       >
-        <ChevronDown size={13} strokeWidth={1.8} aria-hidden="true" />
+        <ChevronDown size={13} strokeWidth={2} aria-hidden="true" />
       </button>
 
       {isOpen && (

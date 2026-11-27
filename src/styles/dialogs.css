@@ -15,7 +15,7 @@
   justify-content: space-between;
   gap: 10px;
   border: 1px solid var(--omni-panel-border);
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   padding: 0 10px 0 12px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 98%, #ffffff 2%), var(--omni-panel-bg)),

@@ -65,7 +65,7 @@ export function ConfirmationDialog() {
       >
         <div className="confirm-dialog__header">
           <span className="confirm-dialog__icon" aria-hidden="true">
-            {isSevere ? <ShieldAlert size={16} strokeWidth={2} /> : <AlertTriangle size={16} strokeWidth={2} />}
+            {isSevere ? <ShieldAlert size={16} strokeWidth={1.8} /> : <AlertTriangle size={16} strokeWidth={1.8} />}
           </span>
           <div className="confirm-dialog__heading">
             <h3 className="omni-confirm-dialog__title" id="confirm-dialog-title">
@@ -124,7 +124,7 @@ export function ConfirmationDialog() {
               onClick={() => resolveConfirmation(pending.id, true, true)}
               title={`本次使用期间，「${pending.source}」类操作不再逐一询问（重启应用后恢复）`}
             >
-              <ShieldCheck size={14} strokeWidth={2.2} />
+              <ShieldCheck size={14} strokeWidth={1.8} />
               <span>本次会话不再询问</span>
             </button>
           ) : null}
@@ -134,7 +134,7 @@ export function ConfirmationDialog() {
             onClick={() => resolveConfirmation(pending.id, true)}
             autoFocus
           >
-            <Check size={14} strokeWidth={2.2} />
+            <Check size={14} strokeWidth={1.8} />
             <span>{pending.confirmLabel ?? "确认执行"}</span>
           </button>
         </div>

@@ -461,7 +461,7 @@ export default function BasicSettingsSection({
                 max="1800"
                 value={basicSettings.mainWindowWidth}
                 onChange={(e) => onUpdateBasicSettings({ mainWindowWidth: Number(e.target.value) || 640 })}
-                className="h-9 w-28 rounded-md border border-slate-300 px-3 text-sm"
+                className="h-9 w-28 rounded-[8px] border border-slate-300 px-3 text-sm"
               />
               <span className="text-xs text-slate-500 omni-settings-muted">×</span>
               <input
@@ -470,7 +470,7 @@ export default function BasicSettingsSection({
                 max="1400"
                 value={basicSettings.mainWindowHeight}
                 onChange={(e) => onUpdateBasicSettings({ mainWindowHeight: Number(e.target.value) || 480 })}
-                className="h-9 w-28 rounded-md border border-slate-300 px-3 text-sm"
+                className="h-9 w-28 rounded-[8px] border border-slate-300 px-3 text-sm"
               />
               <span className="text-xs text-slate-500 omni-settings-muted">宽 × 高</span>
             </div>
@@ -493,7 +493,7 @@ export default function BasicSettingsSection({
             }}
             onBlur={onCancelShortcutCapture}
             aria-pressed={recordingShortcut === "openMainShortcut"}
-            className={`omni-shortcut-capture h-9 w-full rounded-md border px-3 text-left text-sm ${
+            className={`omni-shortcut-capture h-9 w-full rounded-[8px] border px-3 text-left text-sm ${
               recordingShortcut === "openMainShortcut"
                 ? "omni-shortcut-capture--active border-violet-500 text-violet-600 ring-2 ring-violet-500/20"
                 : "border-slate-300"
@@ -513,7 +513,7 @@ export default function BasicSettingsSection({
             }}
             onBlur={onCancelShortcutCapture}
             aria-pressed={recordingShortcut === "switchPreviousModelShortcut"}
-            className={`omni-shortcut-capture h-9 w-full rounded-md border px-3 text-left text-sm ${
+            className={`omni-shortcut-capture h-9 w-full rounded-[8px] border px-3 text-left text-sm ${
               recordingShortcut === "switchPreviousModelShortcut"
                 ? "omni-shortcut-capture--active border-violet-500 text-violet-600 ring-2 ring-violet-500/20"
                 : "border-slate-300"
@@ -553,13 +553,13 @@ export default function BasicSettingsSection({
                 setShellProbe(null);
               }}
               placeholder={IS_WINDOWS ? "留空自动探测（Git-Bash → cmd /C）" : "留空使用默认 bash/zsh"}
-              className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm"
+              className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
             />
             <button
               type="button"
               onClick={() => void probeShell()}
               disabled={!basicSettings.shellPath.trim() || shellProbe?.probing}
-              className="h-9 shrink-0 rounded-md border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-9 shrink-0 rounded-[8px] border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {shellProbe?.probing ? "检测中…" : "检测可用性"}
             </button>
@@ -578,7 +578,7 @@ export default function BasicSettingsSection({
                   onUpdateBasicSettings({ shellPath: picked.trim() });
                 }
               }}
-              className="h-9 shrink-0 rounded-md border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+              className="h-9 shrink-0 rounded-[8px] border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
             >
               选择文件
             </button>
@@ -595,7 +595,7 @@ export default function BasicSettingsSection({
                 onUpdateBasicSettings({ shellPath: example.path });
                 setShellProbe(null);
               }}
-              className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900"
+              className="rounded-[8px] border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900"
             >
               {example.label}
             </button>

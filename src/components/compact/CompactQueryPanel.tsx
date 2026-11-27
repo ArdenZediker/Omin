@@ -99,7 +99,7 @@ export default function CompactQueryPanel({
         onMouseDown={(event) => event.preventDefault()}
         onClick={onClose}
       >
-        <X size={16} strokeWidth={2} aria-hidden="true" />
+        <X size={16} strokeWidth={1.8} aria-hidden="true" />
       </button>
       <input
         type="text"

@@ -148,7 +148,7 @@ export default function KnowledgeTaskCenterPanel({
                 ]}
               />
               <button type="button" className="chat-topic-panel__inline-action" onClick={onToggleTaskSettings}>
-                {isTaskSettingsOpen ? <ChevronUp size={14} strokeWidth={2} /> : <ChevronDown size={14} strokeWidth={2} />}
+                {isTaskSettingsOpen ? <ChevronUp size={14} strokeWidth={1.8} /> : <ChevronDown size={14} strokeWidth={1.8} />}
                 <span>{isTaskSettingsOpen ? "收起调度设置" : "调度设置"}</span>
               </button>
             </div>
@@ -160,7 +160,7 @@ export default function KnowledgeTaskCenterPanel({
                 onClick={() => onReprocessFailedItems(scope)}
                 className="chat-topic-panel__inline-action"
               >
-                <RotateCcw size={14} strokeWidth={2} />
+                <RotateCcw size={14} strokeWidth={1.8} />
                 <span>重新处理失败项</span>
               </button>
             </div>

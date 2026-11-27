@@ -1214,7 +1214,7 @@ export default function ChatInput({
                   ))}
                   {isCompacting && (
                     <div className="chat-composer__status-chip chat-composer__status-chip--pending">
-                      <LoaderCircle className="chat-composer__status-spinner" size={13} strokeWidth={1.9} />
+                      <LoaderCircle className="chat-composer__status-spinner" size={13} strokeWidth={2} />
                       <span>正在压缩较早的对话…</span>
                     </div>
                   )}
@@ -1230,7 +1230,7 @@ export default function ChatInput({
                           setCommandNotice(nextPhase === "active" ? "目标已恢复" : "目标已暂停");
                         }}
                       >
-                        <Target size={13} strokeWidth={1.9} />
+                        <Target size={13} strokeWidth={2} />
                         <span>
                           目标{builtinSessionState.goal.phase === "paused" ? "（已暂停）" : ""}: {builtinSessionState.goal.objective}
                         </span>
@@ -1256,7 +1256,7 @@ export default function ChatInput({
                       title="退出计划模式"
                       onClick={togglePlanMode}
                     >
-                      <ListChecks size={13} strokeWidth={1.9} />
+                      <ListChecks size={13} strokeWidth={2} />
                       <span>计划模式</span>
                       <X size={12} strokeWidth={2} />
                     </button>
@@ -1281,7 +1281,7 @@ export default function ChatInput({
                       }}
                       title="清除当前模式"
                     >
-                      <Bot size={13} strokeWidth={1.9} />
+                      <Bot size={13} strokeWidth={2} />
                       <span>{activeModeTypeLabel}: {activeModeLabel}</span>
                       <X size={12} strokeWidth={2} />
                     </button>
@@ -1297,7 +1297,7 @@ export default function ChatInput({
                       }}
                       title="取消本次知识库选择"
                     >
-                      <BookOpen size={13} strokeWidth={1.9} />
+                      <BookOpen size={13} strokeWidth={2} />
                       <span>@ {selectedKnowledgeCollection.name}</span>
                       <X size={12} strokeWidth={2} />
                     </button>
@@ -1313,7 +1313,7 @@ export default function ChatInput({
                       }}
                       title="取消本次专家对话（恢复默认角色）"
                     >
-                      <Bot size={13} strokeWidth={1.9} />
+                      <Bot size={13} strokeWidth={2} />
                       <span>专家: {selectedExpert.name}</span>
                       <X size={12} strokeWidth={2} />
                     </button>
@@ -1328,7 +1328,7 @@ export default function ChatInput({
                       }}
                       title="取消本次专家团"
                     >
-                      <UsersRound size={13} strokeWidth={1.9} />
+                      <UsersRound size={13} strokeWidth={2} />
                       <span>专家团: {selectedExpertTeam.name}</span>
                       <X size={12} strokeWidth={2} />
                     </button>
@@ -1402,7 +1402,7 @@ export default function ChatInput({
                     }
                   }}
                 >
-                  <Plus size={20} strokeWidth={1.7} />
+                  <Plus size={20} strokeWidth={1.8} />
                 </button>
                 {isAddMenuOpen && (
                   <div className="chat-composer__add-panel" role="group" aria-label="添加与选择">
@@ -1584,7 +1584,7 @@ export default function ChatInput({
                   title="停止生成"
                   type="button"
                 >
-                  <Square className="chat-composer__submit-icon" size={18} strokeWidth={2} fill="currentColor" />
+                  <Square className="chat-composer__submit-icon" size={18} strokeWidth={1.8} fill="currentColor" />
                 </button>
               ) : (
                 <button
@@ -1594,7 +1594,7 @@ export default function ChatInput({
                   title={sendDisabledTitle}
                   type="button"
                 >
-                  <Send className="chat-composer__submit-icon" size={18} strokeWidth={2} />
+                  <Send className="chat-composer__submit-icon" size={18} strokeWidth={1.8} />
                 </button>
               )}
             </div>
@@ -1653,7 +1653,7 @@ export default function ChatInput({
                       onMouseEnter={() => setSelectedSuggestionIndex(index)}
                     >
                       <span className="chat-composer__suggestion-icon" aria-hidden="true">
-                        <Command className="chat-composer__suggestion-command-icon" size={15} strokeWidth={1.9} />
+                        <Command className="chat-composer__suggestion-command-icon" size={15} strokeWidth={1.8} />
                       </span>
                       <span
                         className={`chat-composer__suggestion-copy${
@@ -1701,7 +1701,7 @@ export default function ChatInput({
                     onMouseEnter={() => setSelectedKnowledgeIndex(index)}
                   >
                     <span className="chat-composer__suggestion-icon" aria-hidden="true">
-                      {isExpert ? <Bot size={15} strokeWidth={1.9} /> : <BookOpen size={15} strokeWidth={1.9} />}
+                      {isExpert ? <Bot size={15} strokeWidth={1.8} /> : <BookOpen size={15} strokeWidth={1.8} />}
                     </span>
                     <span className="chat-composer__suggestion-copy chat-composer__suggestion-copy--knowledge">
                       <span className="chat-composer__suggestion-command">{title}</span>

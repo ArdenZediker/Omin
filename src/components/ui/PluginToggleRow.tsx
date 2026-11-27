@@ -80,7 +80,7 @@ export default function PluginToggleRow({
                 {active ? (
                   <Check size={12} strokeWidth={2} />
                 ) : (
-                  (idleIcon ?? <Puzzle size={12} strokeWidth={1.8} />)
+                  (idleIcon ?? <Puzzle size={12} strokeWidth={2} />)
                 )}
                 <span>{option.name}</span>
               </button>

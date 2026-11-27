@@ -334,7 +334,7 @@ function ActionStep({
               aria-label="在文件夹中显示"
               onClick={() => void revealArtifactPath(file.path)}
             >
-              <FolderSearch size={14} strokeWidth={2} />
+              <FolderSearch size={14} strokeWidth={1.8} />
             </button>
           </div>
         ) : null}
