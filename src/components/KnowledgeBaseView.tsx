@@ -1566,6 +1566,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
             accept={KNOWLEDGE_UPLOAD_ACCEPT}
             multiple
             className="knowledge-upload-input"
+            aria-label="上传文件"
             onChange={(event) => {
               const files = event.currentTarget.files;
               if (files) {
@@ -1580,6 +1581,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
             accept={KNOWLEDGE_UPLOAD_ACCEPT}
             multiple
             className="knowledge-upload-input"
+            aria-label="上传文件夹"
             {...({ webkitdirectory: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
             onChange={(event) => {
               const files = event.currentTarget.files;
