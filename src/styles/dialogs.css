@@ -347,6 +347,7 @@
   gap: 6px;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
 .omni-confirm-dialog__button > span {
@@ -355,6 +356,17 @@
 
 .omni-confirm-dialog__button:hover {
   background: var(--omni-soft-bg);
+}
+
+.omni-confirm-dialog__button:active:not(:disabled),
+.omni-dialog__button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.omni-confirm-dialog__button:disabled,
+.omni-dialog__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .omni-confirm-dialog__button--danger {
@@ -566,6 +578,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overscroll-behavior: contain;
   color: var(--omni-app-text);
 }
 
@@ -890,6 +903,7 @@ button.omni-dialog__plugin-chip:hover {
   gap: 10px;
   padding: 14px 20px 18px;
   border-top: 1px solid var(--omni-panel-border);
+  flex: 0 0 auto;
 }
 
 .omni-dialog__button {

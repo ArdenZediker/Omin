@@ -67,6 +67,7 @@ export function ConfirmationDialog() {
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-summary"
         tabIndex={-1}
       >
         <div className="confirm-dialog__header">
@@ -82,7 +83,9 @@ export function ConfirmationDialog() {
         </div>
 
         <div className="confirm-dialog__body">
-          <p className="confirm-dialog__summary">{pending.summary}</p>
+          <p className="confirm-dialog__summary" id="confirm-dialog-summary">
+            {pending.summary}
+          </p>
 
           {pending.details.length > 0 && (
             <div className="confirm-dialog__section">
@@ -120,6 +123,7 @@ export function ConfirmationDialog() {
             type="button"
             className="omni-confirm-dialog__button"
             onClick={() => resolveConfirmation(pending.id, false)}
+            data-dialog-initial-focus
           >
             <span>取消</span>
           </button>
@@ -138,7 +142,6 @@ export function ConfirmationDialog() {
             type="button"
             className={`omni-confirm-dialog__button ${isSevere ? "omni-confirm-dialog__button--danger" : "omni-confirm-dialog__button--primary"}`}
             onClick={() => resolveConfirmation(pending.id, true)}
-            data-dialog-initial-focus
           >
             <Check size={14} strokeWidth={1.8} />
             <span>{pending.confirmLabel ?? "确认执行"}</span>

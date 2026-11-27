@@ -6,12 +6,10 @@
 
 .omni-knowledge-assets-view {
   gap: 18px;
-  border-radius: 24px;
-  border: 1px solid rgb(226 232 240);
-  background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 24%),
-    linear-gradient(180deg, rgba(248, 251, 255, 0.96), rgba(241, 245, 249, 0.96));
-  padding: 18px;
+  border-radius: var(--omni-dialog-radius);
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  padding: 16px;
 }
 
 .omni-knowledge-assets-view__header {
@@ -24,25 +22,25 @@
 .omni-knowledge-assets-view__title {
   font-size: 15px;
   font-weight: 700;
-  color: rgb(15 23 42);
+  color: var(--omni-app-text);
 }
 
 .omni-knowledge-assets-view__subtitle {
   margin-top: 6px;
   font-size: 12px;
   line-height: 1.6;
-  color: rgb(100 116 139);
+  color: var(--omni-app-muted);
 }
 
 .omni-knowledge-assets-view__count {
   flex-shrink: 0;
   border-radius: 999px;
-  border: 1px solid rgb(203 213 225);
-  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg);
   padding: 6px 10px;
   font-size: 11px;
   font-weight: 600;
-  color: rgb(71 85 105);
+  color: var(--omni-app-muted);
 }
 
 .omni-knowledge-assets-layout {
@@ -67,9 +65,9 @@
   grid-template-columns: 88px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
-  border-radius: 20px;
-  border: 1px solid rgb(219 228 239);
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: var(--omni-radius-lg);
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-card-bg);
   padding: 10px;
   text-align: left;
   transition:
@@ -80,24 +78,24 @@
 }
 
 .omni-knowledge-asset-card:hover {
-  background: rgb(255 255 255);
-  border-color: rgb(191 219 254);
+  background: var(--omni-soft-bg);
+  border-color: color-mix(in srgb, var(--omni-accent) 42%, var(--omni-panel-border));
   transform: translateY(-1px);
 }
 
 .omni-knowledge-asset-card--active {
-  border-color: rgba(37, 99, 235, 0.42);
+  border-color: color-mix(in srgb, var(--omni-accent) 54%, var(--omni-panel-border));
   box-shadow:
     inset 0 0 0 1px rgba(37, 99, 235, 0.24),
     0 10px 24px rgba(37, 99, 235, 0.08);
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.98));
+  background: color-mix(in srgb, var(--omni-accent) 9%, var(--omni-card-bg));
 }
 
 .omni-knowledge-asset-card__thumb {
   height: 76px;
   overflow: hidden;
-  border-radius: 14px;
-  background: rgb(241 245 249);
+  border-radius: var(--omni-control-radius);
+  background: var(--omni-soft-bg);
 }
 
 .omni-knowledge-asset-card__thumb-empty {
@@ -108,20 +106,20 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: rgb(100 116 139);
+  color: var(--omni-app-muted);
   font-size: 11px;
 }
 
 .omni-knowledge-asset-card__name {
   font-size: 13px;
   font-weight: 600;
-  color: rgb(15 23 42);
+  color: var(--omni-app-text);
 }
 
 .omni-knowledge-asset-card__meta {
   margin-top: 4px;
   font-size: 11px;
-  color: rgb(100 116 139);
+  color: var(--omni-app-muted);
 }
 
 .omni-knowledge-asset-card__preview {
@@ -132,15 +130,15 @@
   -webkit-line-clamp: 2;
   font-size: 12px;
   line-height: 1.55;
-  color: rgb(71 85 105);
+  color: color-mix(in srgb, var(--omni-app-text) 78%, transparent);
 }
 
 .omni-knowledge-assets-detail {
   min-height: 0;
   overflow-y: auto;
-  border-radius: 24px;
-  border: 1px solid rgb(219 228 239);
-  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--omni-dialog-radius);
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-card-bg);
   padding: 16px;
 }
 
@@ -152,13 +150,13 @@
 .omni-knowledge-assets-workspace__title {
   font-size: 15px;
   font-weight: 700;
-  color: rgb(15 23 42);
+  color: var(--omni-app-text);
 }
 
 .omni-knowledge-assets-workspace__subtitle {
   margin-top: 6px;
   font-size: 12px;
-  color: rgb(100 116 139);
+  color: var(--omni-app-muted);
 }
 
 .omni-knowledge-assets-detail__preview {
@@ -166,11 +164,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 24px;
-  border: 1px solid rgb(226 232 240);
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 245, 249, 0.94));
+  border-radius: var(--omni-radius-lg);
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg);
   padding: 20px;
 }
 
@@ -182,7 +178,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: rgb(100 116 139);
+  color: var(--omni-app-muted);
   font-size: 13px;
   text-align: center;
 }
@@ -195,22 +191,22 @@
 
 .omni-knowledge-assets-meta-card,
 .omni-knowledge-assets-reading-card {
-  border-radius: 18px;
-  border: 1px solid rgb(226 232 240);
-  background: rgb(248 250 252);
+  border-radius: var(--omni-radius-md);
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg);
   padding: 14px 16px;
 }
 
 .omni-knowledge-assets-meta-card__label {
   font-size: 11px;
-  color: rgb(100 116 139);
+  color: var(--omni-app-muted);
 }
 
 .omni-knowledge-assets-meta-card__value {
   margin-top: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: rgb(15 23 42);
+  color: var(--omni-app-text);
 }
 
 .omni-knowledge-assets-reading-grid {
@@ -223,7 +219,7 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: rgb(37 99 235);
+  color: var(--omni-accent);
 }
 
 .omni-knowledge-assets-reading-card__content {
@@ -231,7 +227,7 @@
   white-space: pre-wrap;
   font-size: 13px;
   line-height: 1.75;
-  color: rgb(51 65 85);
+  color: color-mix(in srgb, var(--omni-app-text) 82%, transparent);
 }
 
 @media (max-width: 1100px) {
@@ -587,11 +583,10 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 84%, transparent);
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--omni-panel-bg) 96%, #ffffff 4%);
-  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.22);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--omni-dialog-radius);
+  background: var(--omni-panel-bg);
+  box-shadow: var(--omni-dialog-shadow);
+  overscroll-behavior: contain;
 }
 
 .omni-knowledge-collection-settings__header {
@@ -605,8 +600,8 @@
 
 .omni-knowledge-collection-settings__section {
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 72%, transparent);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--omni-panel-bg) 92%, #f8fafc 8%);
+  border-radius: var(--omni-radius-md);
+  background: var(--omni-card-bg);
   padding: 18px;
 }
 
@@ -645,15 +640,15 @@
   width: 100%;
   min-height: 42px;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 72%, transparent);
-  border-radius: 12px;
-  background: #fff;
+  border-radius: var(--omni-control-radius);
+  background: var(--omni-input-bg);
   padding: 0 12px;
 }
 
 .omni-knowledge-collection-settings__capability-card {
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 72%, transparent);
-  border-radius: 16px;
-  background: #fff;
+  border-radius: var(--omni-radius-md);
+  background: var(--omni-card-bg);
   padding: 16px;
 }
 
@@ -778,10 +773,7 @@
    这里只覆写暗色取值，基类保持原样 —— 浅色模式零变化。 */
 :root[data-omni-theme="dark"] .omni-knowledge-assets-view {
   border-color: color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.1), transparent 26%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
-    var(--omni-panel-bg);
+  background: var(--omni-panel-bg);
 }
 
 :root[data-omni-theme="dark"] .omni-knowledge-assets-view__title,
@@ -827,11 +819,7 @@
   box-shadow:
     inset 0 0 0 1px rgba(96, 165, 250, 0.26),
     0 10px 24px rgba(0, 0, 0, 0.4);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, #3b82f6 16%, transparent),
-    rgba(255, 255, 255, 0.04)
-  );
+  background: color-mix(in srgb, var(--omni-accent) 16%, var(--omni-card-bg));
 }
 
 :root[data-omni-theme="dark"] .omni-knowledge-asset-card__thumb {
@@ -845,9 +833,7 @@
 
 :root[data-omni-theme="dark"] .omni-knowledge-assets-detail__preview {
   border-color: color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 26%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  background: var(--omni-soft-bg);
 }
 
 :root[data-omni-theme="dark"] .omni-knowledge-assets-meta-card,

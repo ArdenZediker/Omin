@@ -3076,6 +3076,8 @@ body:has(.compact-menu-window),
 .omni-dialog__body {
   padding: 16px 20px 8px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: color-mix(in srgb, var(--omni-app-muted) 32%, transparent) transparent;
   display: flex;
   flex-direction: column;
   gap: 14px;

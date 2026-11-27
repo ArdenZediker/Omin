@@ -2285,6 +2285,7 @@ export default function MainChatView({
                 <button
                   className="main-chat-toolbar__icon-button"
                   title="分享会话"
+                  aria-label="分享会话"
                   type="button"
                   onClick={() => void handleShareActiveSession()}
                   disabled={!activeSession}
