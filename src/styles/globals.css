@@ -2573,6 +2573,20 @@ body:has(.compact-menu-window),
   background-color: var(--omni-panel-bg) !important;
 }
 
+:root[data-omni-theme="dark"] .omni-settings-root button[class*="bg-violet-600"],
+:root[data-omni-theme="dark"] .omni-settings-root span[class*="bg-violet-600"],
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-600"],
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-600"] {
+  background: var(--omni-accent) !important;
+  color: #ffffff !important;
+}
+
+:root[data-omni-theme="dark"] .omni-settings-root button[class*="bg-violet-600"]:hover:not(:disabled),
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-600"]:hover:not(:disabled),
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-600"]:hover:not(:disabled) {
+  background: var(--omni-accent-strong) !important;
+}
+
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-950,
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-900,
 :root[data-omni-theme="dark"] .omni-settings-root .text-slate-800,
@@ -2683,6 +2697,7 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root .shadow-sm,
+:root[data-omni-theme="dark"] .omni-settings-root .shadow-xl,
 :root[data-omni-theme="dark"] .omni-settings-root .shadow-2xl,
 :root[data-omni-theme="dark"] .omni-settings-root .shadow-lg {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.48) !important;
