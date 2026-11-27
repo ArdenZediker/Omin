@@ -2506,6 +2506,18 @@
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
 }
 
+/* 窄窗口：输入栏底部空间不足时，权限按钮只保留图标，避免与模型选择器重叠换行。 */
+@media (max-width: 560px) {
+  .permission-mode-selector__trigger {
+    gap: 0;
+    padding: 0 8px;
+  }
+
+  .permission-mode-selector__trigger > span {
+    display: none;
+  }
+}
+
 /* 上下文用量浮层 */
 .context-usage__trigger {
   height: 28px;
