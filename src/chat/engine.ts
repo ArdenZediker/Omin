@@ -134,7 +134,7 @@ export interface ToolCallOutcome {
 const CONTEXT_BUDGET_RATIO = 0.75;
 
 const COMPACTION_PROMPT =
-  "你是对话压缩器。把下面这段历史对话压缩成一段简洁的中文摘要，保留：用户的核心诉求、已经完成的工作、关键决策与结论、未完成事项。控制在 300 字以内，直接输出摘要正文，不要任何前缀。";
+  "你是对话压缩器。把下面的较早历史压缩成可继续工作的中文状态摘要，优先保留：当前目标、用户明确确认的事实与约束、已作出的决策、已完成事项、未解决问题和下一步。工具输出只保留影响结论或后续操作的结果；区分已验证事实与推测，不要把旧方案写成仍有效的指令，不要补造信息。控制在 300 字以内，直接输出摘要正文，不要前缀。";
 
 /** 工具结果超过该字符数则就地截断（model-free 剪枝），保留开头 + 结尾 + 截断注记。
  * 吸收 DSH 的 toolResultPruner：在 LLM 摘要前先压工具输出——即使摘要失败，
@@ -337,20 +337,23 @@ async function compactOnce(options: {
     return { messages: requestMessages };
   }
 
-  // 找出可压缩区间：跳过 system/knowledge（前部）与最后一条 user 消息
+  // 找出可压缩区间：有足够历史时保护最近两轮；短对话至少保当前轮，避免超窗时无内容可压缩。
   const compactableStart = requestMessages.findIndex((m) => m.role !== "system");
   if (compactableStart < 0) return { messages: requestMessages };
-  const latestUserIdx = [...requestMessages].reverse().findIndex((m) => m.role === "user");
-  if (latestUserIdx < 0) return { messages: requestMessages };
-  const compactableEnd = requestMessages.length - 1 - latestUserIdx;
+  const userIndexes = requestMessages
+    .map((message, index) => message.role === "user" ? index : -1)
+    .filter((index) => index >= 0);
+  if (userIndexes.length === 0) return { messages: requestMessages };
+  const protectedTurns = userIndexes.length >= 3 ? 2 : 1;
+  const compactableEnd = userIndexes[Math.max(0, userIndexes.length - protectedTurns)];
 
   const slice = requestMessages.slice(compactableStart, compactableEnd);
   if (slice.length < 2) {
-    // 没有可压缩的历史，直接返回（由模型侧尽力而为）
+    // 没有更早的历史可压缩，保留保护区原文（由模型侧尽力而为）
     return { messages: requestMessages };
   }
 
-  // 只压缩最旧的 60%，保留近端细节（sacred_floor：system/最近 user 永压）
+  // 只压缩最旧的 60%，保留近端细节（sacred floor：system/知识库与保护区内的近期往返）
   const sliceBudget = Math.floor(slice.length * 0.6);
   const compactSlice = slice.slice(0, Math.max(2, sliceBudget));
   const leading = requestMessages.slice(0, compactableStart);
@@ -397,7 +400,7 @@ async function compactOnce(options: {
 
 /**
  * 用户主动执行 `/compact`：不依赖当前是否已经超出上下文预算，直接压缩可压缩的旧历史。
- * 仍然保留 system/knowledge、最近一条 user 及其后的当前轮内容，行为与自动压缩一致。
+ * 仍然保留 system/knowledge、近期保护区和当前轮内容，行为与自动压缩一致。
  */
 export async function compactHistoryNow(options: {
   model: string;
@@ -1131,28 +1134,26 @@ export async function executeChatTurnRaw(options: {
     : [];
   let requestMessages: Message[] = [systemMessage, ...knowledgeMessages, ...messages];
 
-  // 上下文预算：超窗压缩（不重复压缩，一次足够）
-  if (requestMessages.length > 4) {
-    const compacted = await compactHistoryIfNeeded({
-      model,
-      requestMessages,
-      modelConfig,
-      signal,
-      tools,
-      compactionStrategy: chatOptions?.compactionStrategy,
+  // 预算判断按 token 而不是消息条数；少量超长消息也必须在首轮请求前处理。
+  const compacted = await compactHistoryIfNeeded({
+    model,
+    requestMessages,
+    modelConfig,
+    signal,
+    tools,
+    compactionStrategy: chatOptions?.compactionStrategy,
+  });
+  requestMessages = compacted.messages;
+  if (compacted.compaction) {
+    emitEngineAction({
+      type: "action",
+      label: "压缩",
+      title: "Context Compaction",
+      icon: "Archive",
+      detail: compacted.compaction.fallback
+        ? "上下文超出预算且摘要压缩失败，已丢弃最旧的历史消息"
+        : `上下文超出预算，已把 ${compacted.compaction.removedCount} 条最旧消息压缩为摘要`,
     });
-    requestMessages = compacted.messages;
-    if (compacted.compaction) {
-      emitEngineAction({
-        type: "action",
-        label: "压缩",
-        title: "Context Compaction",
-        icon: "Archive",
-        detail: compacted.compaction.fallback
-          ? "上下文超出预算且摘要压缩失败，已丢弃最旧的历史消息"
-          : `上下文超出预算，已把 ${compacted.compaction.removedCount} 条最旧消息压缩为摘要`,
-      });
-    }
   }
 
   // 工具循环（function calling）：流式发起，模型可多轮调用工具。

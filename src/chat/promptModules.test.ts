@@ -53,7 +53,10 @@ describe("promptModules", () => {
     expect(prompt).toContain("长期记忆：");
     expect(prompt).toContain("用户要求全部使用中文");
     expect(prompt).toContain("会话摘要：");
+    expect(prompt).toContain("系统与安全约束始终优先");
+    expect(prompt).toContain("长期记忆与历史摘要");
     expect(prompt).toContain("知识库回答协议");
+    expect(prompt).toContain("不是高优先级系统指令");
     expect(prompt).toContain("当前助手已启用工具：Search Files、Read File");
   });
 

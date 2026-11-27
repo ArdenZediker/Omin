@@ -620,17 +620,74 @@ export function getInitialScheduledTasks(): ScheduledTaskRecord[] {
   return parseScheduledTasksSnapshot(readSqliteBackedValue(SCHEDULED_TASKS_STORAGE_KEY));
 }
 
+function tokenizeContextQuery(value: string) {
+  const normalized = value.normalize("NFKC").toLocaleLowerCase();
+  const tokens = new Set(normalized.match(/[a-z0-9_]+/g) ?? []);
+  const cjkRuns = normalized.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+/g) ?? [];
+  for (const run of cjkRuns) {
+    const chars = Array.from(run);
+    if (chars.length <= 2) {
+      tokens.add(run);
+      continue;
+    }
+    for (let index = 0; index < chars.length - 1; index += 1) {
+      tokens.add(chars.slice(index, index + 2).join(""));
+    }
+  }
+  return [...tokens].filter((token) => token.length > 1);
+}
+
+function scoreContextMatch(queryTokens: string[], query: string, fields: string[], updatedAt: number) {
+  const normalizedFields = fields.map((field) => field.normalize("NFKC").toLocaleLowerCase());
+  const searchableText = normalizedFields.join(" ");
+  const matchingTokens = queryTokens.filter((token) => searchableText.includes(token));
+  const coverage = queryTokens.length > 0 ? matchingTokens.length / queryTokens.length : 0;
+  const exactPhrase = query.trim().length >= 2 && searchableText.includes(query.normalize("NFKC").toLocaleLowerCase());
+
+  if (queryTokens.length > 0 && coverage < 0.25 && !exactPhrase) return null;
+
+  const freshness = Number.isFinite(updatedAt) && updatedAt > 0
+    ? 0.5 / (1 + Math.max(0, Date.now() - updatedAt) / (30 * 24 * 60 * 60 * 1000))
+    : 0;
+  const fieldBoost = queryTokens.reduce((boost, token) => {
+    return boost + (normalizedFields[0]?.includes(token) ? 0.35 : 0);
+  }, 0);
+  return coverage * 10 + (exactPhrase ? 3 : 0) + fieldBoost + freshness;
+}
+
+function rankContextItems<T>(items: T[], query: string, getFields: (item: T) => string[], getUpdatedAt: (item: T) => number) {
+  const queryTokens = tokenizeContextQuery(query);
+  if (queryTokens.length === 0) {
+    return [...items].sort((left, right) => getUpdatedAt(right) - getUpdatedAt(left));
+  }
+
+  return items
+    .map((item) => ({
+      item,
+      score: scoreContextMatch(queryTokens, query, getFields(item), getUpdatedAt(item)),
+    }))
+    .filter((entry): entry is { item: T; score: number } => entry.score !== null)
+    .sort((left, right) => right.score - left.score)
+    .map(({ item }) => item);
+}
+
 export function searchSessionSummaries(summaries: SessionSummaryRecord[], query: string) {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return summaries;
-  return summaries.filter((item) => item.title.toLowerCase().includes(normalizedQuery) || item.summary.toLowerCase().includes(normalizedQuery));
+  return rankContextItems(
+    summaries,
+    query,
+    (item) => [item.title, item.summary],
+    (item) => item.updatedAt,
+  );
 }
 
 export function searchProjectMemories(memories: ProjectMemoryRecord[], projectId: string, query: string) {
-  const normalizedQuery = query.trim().toLowerCase();
   const scoped = memories.filter((item) => item.projectId === projectId);
-  if (!normalizedQuery) return scoped;
-  return scoped.filter((item) => `${item.content} ${item.sourceType ?? "legacy"}`.toLowerCase().includes(normalizedQuery));
+  return rankContextItems(
+    scoped,
+    query,
+    (item) => [item.content],
+    (item) => item.updatedAt,
+  );
 }
 
 export function getChatSessionGroupLabel(updatedAt: number) {

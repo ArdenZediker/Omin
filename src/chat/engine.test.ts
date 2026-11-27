@@ -143,6 +143,41 @@ describe("executeChatTurn", () => {
     expect(result.contextSample?.conversationTokens).toBeGreaterThan(0);
   });
 
+  it("消息条数不超过四条但 token 超预算时仍会先压缩", async () => {
+    setupRegistry();
+    const tinyModel: ModelConfig = {
+      id: "tiny",
+      name: "Tiny",
+      provider: "openai",
+      maxTokens: 100,
+      supportsVision: false,
+      supportsStreaming: false,
+      toolCalling: true,
+    };
+    vi.spyOn(modelRegistry, "getModelConfig").mockReturnValue(tinyModel);
+    const requests: string[] = [];
+    vi.spyOn(modelRegistry, "chat").mockImplementation(async (request) => {
+      const firstContent = request.messages?.[0]?.content ?? "";
+      requests.push(firstContent);
+      if (firstContent.includes("对话压缩器")) {
+        return { content: "旧需求已完成，当前继续处理后续问题。", model: "tiny" } as ChatResponse;
+      }
+      return { content: "完成", model: "tiny" } as ChatResponse;
+    });
+
+    await executeChatTurn({
+      model: "tiny",
+      messages: [
+        { role: "user", content: "旧需求".repeat(200) },
+        { role: "assistant", content: "旧答复".repeat(200) },
+        { role: "user", content: "继续" },
+      ],
+    });
+
+    expect(requests[0]).toContain("对话压缩器");
+    expect(requests).toHaveLength(2);
+  });
+
   it("工具轮次间上下文再次超预算时触发步间压缩（触发双保险）", async () => {
     setupRegistry();
     // 用 tiny 窗口（预算 75）让压缩容易触发；改写 getModelConfig 返回 tinyModel
@@ -713,6 +748,36 @@ describe("compactHistoryNow（手动 /compact）", () => {
   };
 
   beforeEach(() => vi.restoreAllMocks());
+
+  it("摘要压缩时保留最近两轮用户往返的原文", async () => {
+    vi.spyOn(modelRegistry, "chat").mockResolvedValue({
+      content: "早期讨论已完成，确定了问题背景和初步方案，后续转向具体实现。",
+      model: "manual-compact",
+    } as ChatResponse);
+    const requestMessages: Message[] = [
+      { role: "system", content: "系统约束" },
+      { role: "user", content: "第一轮旧需求" },
+      { role: "assistant", content: "第一轮旧答复" },
+      { role: "user", content: "第二轮旧追问" },
+      { role: "assistant", content: "第二轮旧答复" },
+      { role: "user", content: "最近第二轮问题" },
+      { role: "assistant", content: "最近第二轮答复，包含任务进度" },
+      { role: "user", content: "当前问题" },
+      { role: "assistant", content: "当前任务状态" },
+    ];
+
+    const result = await compactHistoryNow({
+      model: "manual-compact",
+      requestMessages,
+      modelConfig,
+    });
+
+    expect(result.messages[0]).toEqual(requestMessages[0]);
+    expect(result.messages.some((message) => message.content.startsWith("【历史对话摘要】"))).toBe(true);
+    for (const recentMessage of requestMessages.slice(5)) {
+      expect(result.messages).toContainEqual(recentMessage);
+    }
+  });
 
   it("即使尚未超出上下文预算，也主动压缩较早历史并保留最近输入", async () => {
     const messages: Message[] = [

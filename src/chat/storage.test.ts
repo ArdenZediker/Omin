@@ -9,6 +9,8 @@ import {
   parseChatSessionsSnapshot,
   parseProjectsSnapshot,
   parseSessionSummariesSnapshot,
+  searchProjectMemories,
+  searchSessionSummaries,
   serializeChatSessionsSnapshot,
   serializeProjectsSnapshot,
   stripPendingPlaceholder,
@@ -128,6 +130,28 @@ describe("无项目会话摘要快照", () => {
 
     expect(parsed.map((item) => item.sessionId)).toEqual(["standalone", "project-session"]);
     expect(parsed[0].projectId).toBeUndefined();
+  });
+});
+
+describe("历史上下文相关性排序", () => {
+  it("优先返回语义词项高度匹配的摘要，并排除较新但无关的内容", () => {
+    const summaries = searchSessionSummaries([
+      { sessionId: "unrelated", projectId: "p1", title: "今天天气", summary: "讨论天气和出行", updatedAt: 300 },
+      { sessionId: "partial", projectId: "p1", title: "菜单交互", summary: "悬浮球菜单定位问题", updatedAt: 200 },
+      { sessionId: "exact", projectId: "p1", title: "悬浮球菜单闪烁", summary: "排查悬浮球菜单闪烁原因", updatedAt: 100 },
+    ], "悬浮球菜单闪烁");
+
+    expect(summaries.map((item) => item.sessionId)).toEqual(["exact", "partial"]);
+  });
+
+  it("项目记忆只在所属项目内召回，并优先选择匹配内容", () => {
+    const memories = searchProjectMemories([
+      { id: "other-project", projectId: "p2", content: "Omni 使用 Rust", sourceType: "manual", createdAt: 1, updatedAt: 300 },
+      { id: "unrelated", projectId: "p1", content: "主题偏好为明亮", sourceType: "auto", createdAt: 1, updatedAt: 300 },
+      { id: "relevant", projectId: "p1", content: "悬浮球菜单固定窗口位置，避免边缘闪烁", sourceType: "manual", createdAt: 1, updatedAt: 100 },
+    ], "p1", "悬浮球菜单边缘闪烁");
+
+    expect(memories.map((item) => item.id)).toEqual(["relevant"]);
   });
 });
 

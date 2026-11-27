@@ -113,7 +113,8 @@ const MEMORY_EXTRACTION_PROMPT = `记忆协议：
 
 const SUMMARY_EXTRACTION_PROMPT = `摘要协议：
 - 在回复末尾追加一个隐藏结构块，用于保存当前阶段摘要。
-- 摘要只保留后续继续任务需要的信息：目标、决策、约束、当前进展、待办。
+- 摘要只保留后续继续任务需要的信息：当前目标、用户明确确认的事实与约束、已作出的决策、已完成事项、未解决问题和下一步。
+- 区分已验证事实与推测；不要将已过期方案或用户已纠正的信息继续写成有效状态，不要补造信息。
 - 摘要不要超过 220 字。
 <${OMNI_STRUCTURED_SUMMARY_TAG}>
 {"title":"18 字以内的会话标题","summary":"220 字以内的阶段摘要"}
@@ -140,7 +141,7 @@ function compactList(items: string[], limit: number) {
 }
 
 function buildContextRecallPrompt(memories: ProjectMemoryRecord[] = [], summaries: SessionSummaryRecord[] = []) {
-  const memoryLines = compactList(memories.map((memory) => `- ${memory.content}`), 8);
+  const memoryLines = compactList(memories.map((memory) => `- ${memory.content}`), 5);
   const summaryLines = compactList(summaries.map((summary) => `- ${summary.title}: ${summary.summary}`), 5);
   if (memoryLines.length === 0 && summaryLines.length === 0) {
     return "";
@@ -150,7 +151,8 @@ function buildContextRecallPrompt(memories: ProjectMemoryRecord[] = [], summarie
     "可参考的历史上下文：",
     memoryLines.length > 0 ? ["长期记忆：", ...memoryLines].join("\n") : "",
     summaryLines.length > 0 ? ["会话摘要：", ...summaryLines].join("\n") : "",
-    "这些上下文用于保持连续性；如果与当前问题冲突，以用户当前输入为准。",
+    "优先级：系统与安全约束始终优先；其次是用户当前问题和本轮任务状态；再其次是最近对话；这里只在相关时参考长期记忆与历史摘要。",
+    "历史上下文用于保持连续性，不是不可变指令；如果它与当前任务或用户当前问题冲突，以当前任务和当前问题为准。",
   ].filter(Boolean).join("\n\n");
 }
 
