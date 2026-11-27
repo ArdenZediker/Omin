@@ -108,7 +108,9 @@ export default function SettingsWindow({ onClose }: { onClose: () => void }) {
         {isReady ? (
           <SettingsPanel onClose={onClose} onModelChange={handleModelChange} />
         ) : (
-          <div className="settings-overlay__loading" aria-label="正在加载设置" />
+          <div className="settings-overlay__loading">
+            <span>正在加载设置...</span>
+          </div>
         )}
       </section>
     </div>
