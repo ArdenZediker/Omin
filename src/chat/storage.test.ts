@@ -8,6 +8,7 @@ import {
   isPendingProjectPlaceholder,
   parseChatSessionsSnapshot,
   parseProjectsSnapshot,
+  parseSessionSummariesSnapshot,
   serializeChatSessionsSnapshot,
   serializeProjectsSnapshot,
   stripPendingPlaceholder,
@@ -114,6 +115,19 @@ describe("空 assistant 占位消息的清理", () => {
     const raw = serializeChatSessionsSnapshot([sessionWith([userMessage, replyWithUsage])]);
     const [session] = parseChatSessionsSnapshot(raw);
     expect(session.messages[1].turnUsage).toEqual(replyWithUsage.turnUsage);
+  });
+});
+
+describe("无项目会话摘要快照", () => {
+  it("接受没有 projectId 的会话摘要，同时兼容旧项目摘要", () => {
+    const parsed = parseSessionSummariesSnapshot(JSON.stringify([
+      { sessionId: "standalone", title: "独立会话", summary: "可继续的上下文", updatedAt: 1 },
+      { sessionId: "project-session", projectId: "project-a", title: "项目会话", summary: "旧格式", updatedAt: 2 },
+      { sessionId: "invalid", projectId: 42, title: "无效", summary: "丢弃", updatedAt: 3 },
+    ]));
+
+    expect(parsed.map((item) => item.sessionId)).toEqual(["standalone", "project-session"]);
+    expect(parsed[0].projectId).toBeUndefined();
   });
 });
 

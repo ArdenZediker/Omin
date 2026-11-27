@@ -1,5 +1,5 @@
 import type { ChatToolCall, ChatToolParam, ChatImage, Message } from "../adapters/types";
-import { executeChatTurn } from "./engine";
+import { executeChatTurnRaw } from "./engine";
 import { runTaskPlan } from "./taskRunner";
 import type { ResolvedLocalSlashCommand } from "./skills";
 import { resolveLocalSlashCommand } from "./skills";
@@ -9,7 +9,7 @@ import type { ProjectMemoryRecord, Project, SessionSummaryRecord, ChatStep } fro
 import { validateTaskOutput } from "./taskValidation";
 import { runAgentHostTurn } from "../app/agentHostRuntime";
 import { buildAgentHostContext } from "./agentHostContext";
-import { parseOmniStructuredOutput } from "./structuredOutput";
+import { normalizeChatExecutionResult } from "./structuredOutput";
 import { formatExpertTeamReports, runExpertTeamRound, type TeamMemberResult } from "./expertTeamRuntime";
 import type { ExpertTeam } from "../plugins/expertTeams";
 
@@ -220,11 +220,10 @@ export async function executeTask(options: {
               const steps = [...hostContext.steps, ...(hostResult.steps ?? [])];
               return {
                 ...hostResult,
-                ...parseOmniStructuredOutput(hostResult.content),
                 ...(steps.length ? { steps } : {}),
               };
             })()
-          : await executeChatTurn({
+          : await executeChatTurnRaw({
               model,
               messages,
               signal,
@@ -237,14 +236,14 @@ export async function executeTask(options: {
               onToolStep: onModelToolStep,
               knowledgeCollectionId,
               enableKnowledgeContext: intent === "chat",
-              enableMemoryExtraction: intent === "chat",
+              enableMemoryExtraction: intent === "chat" && Boolean(project && project.memoryScope !== "off"),
               enableSummaryExtraction: intent === "chat",
               enableToolProtocol: intent !== "chat",
               tools: options.tools,
               executeToolCall: options.executeToolCall,
               enabledSkillIds: options.enabledSkillIds,
             });
-        api.setFinalResult(finalResult);
+        api.setFinalResult(normalizeChatExecutionResult(finalResult));
         api.appendTrace("模型回复生成完成");
         return;
       }

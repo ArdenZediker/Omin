@@ -98,4 +98,30 @@ describe("buildAgentHostContext", () => {
     expect(result.system).toContain("LONG TERM RULE");
     expect(result.system).toContain("KNOWLEDGE BLOCK");
   });
+
+  it.each([
+    ["未绑定项目", null],
+    ["项目记忆已关闭", { ...project, memoryScope: "off" as const }],
+  ])("%s 时不启用项目记忆提取，但仍生成会话摘要", async (_label, selectedProject) => {
+    vi.mocked(invoke).mockResolvedValue("");
+    vi.mocked(loadPersonaConfig).mockResolvedValue({
+      style: "efficient",
+      customInstruction: "",
+      userName: "",
+      assistantName: "Omni",
+      personaDescription: "",
+      longTermMemory: "",
+      agentsMd: "",
+    });
+    vi.mocked(buildKnowledgeContextBlock).mockResolvedValue(null);
+
+    const result = await buildAgentHostContext({
+      model: "test-model",
+      messages: [{ role: "user", content: "question" }],
+      project: selectedProject,
+    });
+
+    expect(result.system).not.toContain("<omni_memory>");
+    expect(result.system).toContain("<omni_summary>");
+  });
 });

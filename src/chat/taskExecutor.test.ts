@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Project } from "./types";
 import type { PluginManifest } from "../plugins/types";
 import { executeInputTask, executeTask } from "./taskExecutor";
-import { executeChatTurn } from "./engine";
+import { executeChatTurnRaw } from "./engine";
 import { pluginRegistry } from "../plugins/registry";
 import { runAgentHostTurn } from "../app/agentHostRuntime";
 import { buildAgentHostContext } from "./agentHostContext";
 
 vi.mock("./engine", () => ({
-  executeChatTurn: vi.fn(async () => ({ content: "ok" })),
+  executeChatTurnRaw: vi.fn(async () => ({ content: "ok" })),
 }));
 vi.mock("../app/agentHostRuntime", () => ({
   runAgentHostTurn: vi.fn(async () => ({ content: "ok" })),
@@ -17,7 +17,7 @@ vi.mock("./agentHostContext", () => ({
   buildAgentHostContext: vi.fn(async () => ({ system: "", knowledgeContext: null, steps: [] })),
 }));
 
-const mockedTurn = vi.mocked(executeChatTurn);
+const mockedTurn = vi.mocked(executeChatTurnRaw);
 const mockedAgentHostTurn = vi.mocked(runAgentHostTurn);
 const mockedAgentHostContext = vi.mocked(buildAgentHostContext);
 
@@ -217,7 +217,7 @@ describe("真实任务阶段的失败和取消", () => {
   });
 
   it("空模型输出不能通过结果校验", async () => {
-    mockedTurn.mockResolvedValueOnce({ content: "  " } as Awaited<ReturnType<typeof executeChatTurn>>);
+    mockedTurn.mockResolvedValueOnce({ content: "  " } as Awaited<ReturnType<typeof executeChatTurnRaw>>);
     const result = await executeTask({ model: "test", messages: [] });
     expect(result.status).toBe("failed");
     expect(result.error).toContain("空");
@@ -227,7 +227,7 @@ describe("真实任务阶段的失败和取消", () => {
   it("失败工具保留输出但不标记整轮成功", async () => {
     mockedTurn.mockResolvedValueOnce({ content: "文件读取失败", steps: [
       { type: "tool_call", name: "read_file", arguments: "{}", result: "拒绝访问", isError: true },
-    ] } as Awaited<ReturnType<typeof executeChatTurn>>);
+    ] } as Awaited<ReturnType<typeof executeChatTurnRaw>>);
     const result = await executeTask({ model: "test", messages: [] });
     expect(result.status).toBe("failed");
     expect(result.finalResult?.content).toBe("文件读取失败");
@@ -303,6 +303,30 @@ describe("executeTask Agent Host 过程步骤", () => {
     expect(result.finalResult?.suggestedMemories).toEqual([
       { content: "用户偏好中文回复", reason: null },
     ]);
+  });
+
+  it("常规模型结果经过与 Agent Host 相同的结构化结果归一化", async () => {
+    mockedTurn.mockResolvedValueOnce({
+      content: [
+        "普通模型正文。",
+        "<omni_summary>{\"title\":\"标题\",\"summary\":\"后续工作摘要\"}</omni_summary>",
+      ].join("\n"),
+      model: "gpt-test",
+      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+      estimated: false,
+      costUsd: 0,
+    });
+
+    const result = await executeTask({
+      model: "gpt-test",
+      messages: [{ role: "user", content: "继续" }],
+    });
+
+    expect(result.finalResult?.content).toBe("普通模型正文。");
+    expect(result.finalResult?.suggestedSummary).toEqual({
+      title: "标题",
+      summary: "后续工作摘要",
+    });
   });
 });
 

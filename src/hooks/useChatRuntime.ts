@@ -114,7 +114,7 @@ type UseChatRuntimeArgs = {
   availableModels: ModelConfig[];
   messages: Message[];
   applyUsageToSession: (sessionId: string, result: ChatExecutionResult, conversationMessages: Message[]) => void;
-  commitProjectMemory: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
+  commitConversationContext: (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => void;
   // 返回完整 ChatSession（含 title）：附件快照需要用 title 生成与镜像一致的会话目录名。
   createSessionFromMessages: (conversationMessages: Message[], projectId?: string, expertBinding?: ChatSession["expertBinding"]) => ChatSession;
   bindChatSessionExpert: (sessionId: string, expertBinding: NonNullable<ChatSession["expertBinding"]>) => void;
@@ -146,7 +146,7 @@ export function useChatRuntime({
   availableModels,
   messages,
   applyUsageToSession,
-  commitProjectMemory,
+  commitConversationContext,
   createSessionFromMessages,
   bindChatSessionExpert,
   currentModel,
@@ -878,7 +878,7 @@ export function useChatRuntime({
         ]);
         if (sessionId) {
           applyUsageToSession(sessionId, taskResult.finalResult, conversationMessages);
-          commitProjectMemory(sessionId, conversationMessages, taskResult.finalResult);
+          commitConversationContext(sessionId, conversationMessages, taskResult.finalResult);
         }
         return;
       }
@@ -891,7 +891,7 @@ export function useChatRuntime({
         setError(taskResult.error || "任务执行失败");
       }
     },
-    [applyUsageToSession, commitProjectMemory, setConversationMessagesForSession]
+    [applyUsageToSession, commitConversationContext, setConversationMessagesForSession]
   );
 
   const applyProjectReplyToTaskResult = useCallback((taskResult: TaskExecutionResult, projectReply: string): TaskExecutionResult => {
@@ -1865,6 +1865,7 @@ export function useChatRuntime({
           attachments,
           currentMessages: scopedCurrentMessages,
           model: executionModel,
+          project: activeProject,
           onPrepareConversation: (preparedMessages) => {
             conversationMessagesForTask = preparedMessages;
             if (!sessionId) {

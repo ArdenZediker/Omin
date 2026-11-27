@@ -66,22 +66,6 @@ function buildSessionSummary(messages: Message[], projectReply: string) {
   return summary.length > 220 ? `${summary.slice(0, 217)}...` : summary;
 }
 
-function extractProjectMemories(messages: Message[]) {
-  const memorySignals = ["记住", "偏好", "习惯", "以后", "默认", "总是", "不要", "优先", "我希望", "请用"];
-  const userMessages = messages
-    .filter((message) => message.role === "user")
-    .map((message) => message.content.trim())
-    .filter(Boolean);
-
-  const candidates = userMessages
-    .flatMap((content) => content.split(/[\n。；;]+/))
-    .map((item) => item.trim())
-    .filter((item) => item.length >= 6 && item.length <= 120)
-    .filter((item) => memorySignals.some((signal) => item.includes(signal)));
-
-  return [...new Set(candidates)].slice(0, 3);
-}
-
 type UseChatSessionsOptions = {
   persist: boolean;
   /**
@@ -997,7 +981,9 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
     (query: string) => {
       if (!activeProject) {
         return {
-          summaries: [],
+          summaries: searchSessionSummaries(sessionSummaries, query)
+            .filter((item) => item.sessionId === activeChatId)
+            .slice(0, 5),
           memories: [],
         };
       }
@@ -1041,12 +1027,9 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
     [activeProject, activeProjectId, activeChatId, projectMemories, sessionSummaries]
   );
 
-  const commitProjectMemory = useCallback(
+  const commitConversationContext = useCallback(
     (sessionId: string, conversationMessages: Message[], result: ChatExecutionResult) => {
       const project = projects.find((item) => item.id === activeProjectId) ?? activeProject;
-      if (!project) {
-        return;
-      }
 
       const now = Date.now();
 
@@ -1059,7 +1042,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
             const next = [...current];
             next[existingIndex] = {
               ...next[existingIndex],
-              projectId: project.id,
+              projectId: project?.id ?? null,
               title: nextTitle,
               summary,
               updatedAt: now,
@@ -1070,7 +1053,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
           return [
             {
               sessionId,
-              projectId: project.id,
+              projectId: project?.id ?? null,
               title: nextTitle,
               summary,
               updatedAt: now,
@@ -1080,13 +1063,16 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
         });
       }
 
-      const modelMemoryItems = (result.suggestedMemories ?? []).map((memory) => memory.content);
-      const memoryItems = modelMemoryItems.length > 0 ? modelMemoryItems : extractProjectMemories(conversationMessages);
-      if (memoryItems.length > 0) {
+      const memoryItems = project && project.memoryScope !== "off"
+        ? (result.suggestedMemories ?? []).map((memory) => memory.content)
+        : [];
+      if (project && memoryItems.length > 0) {
         setProjectMemories((current) => {
-          const existingKeys = new Set(current.filter((item) => item.projectId === project.id).map((item) => item.content));
+          const existingKeys = new Set(current
+            .filter((item) => item.projectId === project.id)
+            .map((item) => item.content.trim().toLocaleLowerCase()));
           const additions = memoryItems
-            .filter((content) => !existingKeys.has(content))
+            .filter((content) => !existingKeys.has(content.trim().toLocaleLowerCase()))
             .map((content) => ({
               id: createMemoryId(),
               projectId: project.id,
@@ -1118,7 +1104,7 @@ export function useChatSessions({ persist, role = "owner" }: UseChatSessionsOpti
     projectSessions,
     projects,
     chatSessions,
-    commitProjectMemory,
+    commitConversationContext,
     createCustomProjectProfile,
     createSessionFromMessages,
     deleteChatSession,

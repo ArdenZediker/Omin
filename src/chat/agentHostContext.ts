@@ -88,7 +88,7 @@ export async function buildAgentHostContext(
     knowledgeContext,
     enabledToolNames: options.enabledToolNames,
     enabledToolDescriptions: options.enabledToolDescriptions,
-    includeMemoryExtraction: true,
+    includeMemoryExtraction: Boolean(options.project && options.project.memoryScope !== "off"),
     includeSummaryExtraction: true,
     includeToolProtocol: false,
     persona,

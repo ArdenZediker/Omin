@@ -270,19 +270,31 @@ export function createPreviewThrottler(intervalMs: number, update: () => void) {
  */
 export function createStructuredOutputFilter() {
   let visibleText = "";
+  let pendingText = "";
   let hasEnteredStructuredBlock = false;
   return {
     append(chunk: string): string {
       if (hasEnteredStructuredBlock) {
         return visibleText;
       }
-      const combined = visibleText + chunk;
+      const combined = pendingText + chunk;
       const structuredStart = combined.search(/<omni_(memory|summary)>/i);
       if (structuredStart >= 0) {
-        visibleText = combined.slice(0, structuredStart).trimEnd();
+        visibleText = `${visibleText}${combined.slice(0, structuredStart)}`.trimEnd();
+        pendingText = "";
         hasEnteredStructuredBlock = true;
       } else {
-        visibleText = combined;
+        const candidates = ["<omni_memory>", "<omni_summary>"];
+        const lowerCombined = combined.toLowerCase();
+        const heldLength = Math.max(0, ...candidates.flatMap((candidate) => {
+          const maxLength = Math.min(candidate.length - 1, combined.length);
+          for (let length = maxLength; length > 0; length -= 1) {
+            if (lowerCombined.endsWith(candidate.slice(0, length))) return [length];
+          }
+          return [0];
+        }));
+        visibleText += combined.slice(0, combined.length - heldLength);
+        pendingText = combined.slice(combined.length - heldLength);
       }
       return visibleText;
     },

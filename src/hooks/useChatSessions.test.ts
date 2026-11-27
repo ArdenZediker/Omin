@@ -98,4 +98,61 @@ describe("useChatSessions", () => {
     expect(result.current.chatSessions.find((session) => session.id === sessionId)).toBeUndefined();
     expect(result.current.chatSessions).toHaveLength(0);
   });
+
+  it("没有项目时仍保存会话摘要，并且不创建项目记忆", () => {
+    const { result } = renderHook(() => useChatSessions({ persist: false }));
+    let sessionId = "";
+
+    act(() => {
+      sessionId = result.current.createSessionFromMessages([{ role: "user", content: "继续这个话题" }]).id;
+      result.current.setProjects([]);
+    });
+    act(() => {
+      result.current.commitConversationContext(sessionId, [
+        { role: "user", content: "继续这个话题" },
+        { role: "project", content: "这是回答" },
+      ], {
+        content: "这是回答",
+        suggestedSummary: { title: "话题进展", summary: "已讨论到回答内容" },
+        suggestedMemories: [{ content: "用户偏好中文", reason: "稳定偏好" }],
+      } as never);
+    });
+
+    expect(result.current.getRelatedContextForProject("已讨论到回答内容").summaries).toContainEqual(expect.objectContaining({
+      sessionId,
+      projectId: null,
+      title: "话题进展",
+      summary: "已讨论到回答内容",
+    }));
+  });
+
+  it("项目记忆范围关闭时仍更新会话摘要，但不写入自动记忆", () => {
+    const { result } = renderHook(() => useChatSessions({ persist: false }));
+    let sessionId = "";
+    act(() => {
+      sessionId = result.current.createSessionFromMessages([{ role: "user", content: "继续项目工作" }]).id;
+    });
+    const project = result.current.projects[0];
+
+    act(() => {
+      result.current.setProjects([{ ...project, memoryScope: "off" }]);
+    });
+    act(() => {
+      result.current.commitConversationContext(sessionId, [
+        { role: "user", content: "继续项目工作" },
+        { role: "project", content: "回答" },
+      ], {
+        content: "回答",
+        suggestedSummary: { summary: "项目会话摘要" },
+        suggestedMemories: [{ content: "项目内部约定", reason: null }],
+      } as never);
+    });
+
+    act(() => {
+      result.current.setProjects([{ ...project, memoryScope: "session" }]);
+    });
+    const context = result.current.getRelatedContextForProject("项目会话摘要");
+    expect(context.summaries).toContainEqual(expect.objectContaining({ summary: "项目会话摘要" }));
+    expect(result.current.getProjectMemories(project.id)).toHaveLength(0);
+  });
 });

@@ -123,7 +123,7 @@ export type Project = {
 
 export type SessionSummaryRecord = {
   sessionId: string;
-  projectId: string;
+  projectId?: string | null;
   title: string;
   summary: string;
   updatedAt: number;

@@ -550,7 +550,11 @@ export function parseProjectMemoriesSnapshot(raw: string | null | undefined): Pr
 export function parseSessionSummariesSnapshot(raw: string | null | undefined): SessionSummaryRecord[] {
   try {
     const parsed = raw ? (JSON.parse(raw) as SessionSummaryRecord[]) : [];
-    return parsed.filter((item) => typeof item?.sessionId === "string" && typeof item?.projectId === "string" && typeof item?.summary === "string");
+    return parsed.filter((item) =>
+      typeof item?.sessionId === "string"
+      && (item?.projectId == null || typeof item.projectId === "string")
+      && typeof item?.summary === "string"
+    );
   } catch {
     return [];
   }

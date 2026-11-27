@@ -3,14 +3,14 @@ import { runTaskPlan } from "./taskRunner";
 import type { TaskPlan } from "./taskTypes";
 import { executeTask } from "./taskExecutor";
 
-vi.mock("./engine", () => ({ executeChatTurn: vi.fn(async () => ({
+vi.mock("./engine", () => ({ executeChatTurnRaw: vi.fn(async () => ({
   content: "部分输出",
   model: "test",
   usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
   estimated: true,
   costUsd: 0,
 })) }));
-import { executeChatTurn } from "./engine";
+import { executeChatTurnRaw } from "./engine";
 import { vi } from "vitest";
 
 describe("runTaskPlan", () => {
@@ -27,7 +27,7 @@ describe("runTaskPlan", () => {
   });
 
   it("校验阶段失败会将任务标失败，并保留模型的部分输出", async () => {
-    vi.mocked(executeChatTurn).mockResolvedValueOnce({
+    vi.mocked(executeChatTurnRaw).mockResolvedValueOnce({
       content: "部分输出", model: "test", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, estimated: true, costUsd: 0,
       steps: [{ type: "tool_call", name: "read_file", arguments: "{}", result: "权限拒绝", isError: true }],
     });

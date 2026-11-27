@@ -1,4 +1,4 @@
-import type { SuggestedProjectMemory, SuggestedSessionSummary } from "./types";
+import type { ChatExecutionResult, SuggestedProjectMemory, SuggestedSessionSummary } from "./types";
 import { OMNI_STRUCTURED_MEMORY_TAG, OMNI_STRUCTURED_SUMMARY_TAG } from "./promptModules";
 
 type ParsedStructuredOutput = {
@@ -85,5 +85,17 @@ export function parseOmniStructuredOutput(content: string): ParsedStructuredOutp
     content: stripTagBlocks(content),
     suggestedMemories: parseSuggestedMemories(memoryBlock),
     suggestedSummary: parseSuggestedSummary(summaryBlock),
+  };
+}
+
+export function normalizeChatExecutionResult(result: ChatExecutionResult): ChatExecutionResult {
+  const parsed = parseOmniStructuredOutput(result.content);
+  return {
+    ...result,
+    content: parsed.content,
+    suggestedMemories: parsed.suggestedMemories.length > 0
+      ? parsed.suggestedMemories
+      : result.suggestedMemories ?? [],
+    suggestedSummary: parsed.suggestedSummary ?? result.suggestedSummary ?? null,
   };
 }

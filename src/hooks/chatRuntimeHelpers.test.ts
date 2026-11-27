@@ -115,6 +115,16 @@ describe("createStructuredOutputFilter", () => {
     expect(filter.getVisibleText()).toBe("正文");
   });
 
+  it("结构标签前缀被拆成多个 chunk 时不会提前闪到可见文本", () => {
+    const filter = createStructuredOutputFilter();
+    filter.append("回答正文<omni_");
+    expect(filter.getVisibleText()).toBe("回答正文");
+    filter.append("memory");
+    expect(filter.getVisibleText()).toBe("回答正文");
+    filter.append(">[]</omni_memory>");
+    expect(filter.getVisibleText()).toBe("回答正文");
+  });
+
   it("进入结构化块后追加的后续 chunk 不再污染可见文本", () => {
     const filter = createStructuredOutputFilter();
     filter.append("前文");

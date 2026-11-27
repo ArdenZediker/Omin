@@ -20,7 +20,7 @@ import type { ChatExecutionResult } from "./types";
 import { buildKnowledgeContextBlock } from "./knowledgeContext";
 import { buildOmniSystemPrompt } from "./promptModules";
 import { assembleSkillCatalog, buildEnabledSkillPrompts } from "./skillCatalog";
-import { parseOmniStructuredOutput } from "./structuredOutput";
+import { normalizeChatExecutionResult } from "./structuredOutput";
 import { getModelPricing } from "../adapters/modelCatalog";
 import type { ProjectMemoryRecord, Project, SessionSummaryRecord } from "./types";
 import {
@@ -982,7 +982,8 @@ async function runToolLoop(options: {
   };
 }
 
-export async function executeChatTurn(options: {
+/** Low-level model turn; taskExecutor normalizes its structured metadata with every other runtime. */
+export async function executeChatTurnRaw(options: {
   model: string;
   messages: Message[];
   signal?: AbortSignal;
@@ -1026,7 +1027,7 @@ export async function executeChatTurn(options: {
     knowledgeQuery,
     knowledgeCollectionId,
     enableKnowledgeContext = true,
-    enableMemoryExtraction = true,
+    enableMemoryExtraction = Boolean(project && project.memoryScope !== "off"),
     enableSummaryExtraction = true,
     enableToolProtocol = false,
     enabledSkillIds,
@@ -1174,10 +1175,9 @@ export async function executeChatTurn(options: {
     if (signal?.aborted) {
       throw new DOMException("Request aborted", "AbortError");
     }
-    const parsed = parseOmniStructuredOutput(toolResult.content);
     const finalSteps: ChatStep[] = [...engineActions, ...toolResult.steps];
     return {
-      content: parsed.content,
+      content: toolResult.content,
       model: toolResult.model,
       usage: {
         promptTokens: toolResult.usage.promptTokens,
@@ -1191,8 +1191,6 @@ export async function executeChatTurn(options: {
       costUsd: estimateCost(model, toolResult.usage.promptTokens, toolResult.usage.completionTokens),
       contextSample: toolResult.usage.contextSample,
       knowledgeContext: knowledgeContext ?? null,
-      suggestedMemories: parsed.suggestedMemories,
-      suggestedSummary: parsed.suggestedSummary,
       reasoning: toolResult.reasoning || undefined,
       toolRounds: toolResult.toolRounds,
       toolCallResults: toolResult.toolCallResults.length ? toolResult.toolCallResults : undefined,
@@ -1260,13 +1258,13 @@ export async function executeChatTurn(options: {
       : Math.max(0, firstChunkAt - generationStartedAt);
     const ttftSamples = firstChunkAt === null ? 0 : 1;
 
-    const parsed = parseOmniStructuredOutput(streamedContent || response.content);
+    const content = streamedContent || response.content;
     const estimated = {
       promptTokens: estimateRequestTokens(requestMessages),
-      completionTokens: estimateTokens(parsed.content),
+      completionTokens: estimateTokens(content),
     };
     return {
-      content: parsed.content,
+      content,
       model: response.model,
       usage: {
         promptTokens: response.usage?.promptTokens ?? estimated.promptTokens,
@@ -1285,8 +1283,6 @@ export async function executeChatTurn(options: {
         response.usage,
       ),
       knowledgeContext: knowledgeContext ?? null,
-      suggestedMemories: parsed.suggestedMemories,
-      suggestedSummary: parsed.suggestedSummary,
       reasoning: reasoning || undefined,
       steps: engineActions.length ? engineActions : undefined,
       generationDurationMs,
@@ -1313,12 +1309,11 @@ export async function executeChatTurn(options: {
     throw new DOMException("Request aborted", "AbortError");
   }
 
-  const parsed = parseOmniStructuredOutput(response.content);
   const estimatedPromptTokens = estimateRequestTokens(requestMessages);
   const promptTokens = response.usage?.promptTokens ?? estimatedPromptTokens;
-  const completionTokens = response.usage?.completionTokens ?? estimateTokens(parsed.content);
+  const completionTokens = response.usage?.completionTokens ?? estimateTokens(response.content);
   return {
-    content: parsed.content,
+    content: response.content,
     model: response.model,
     usage: {
       promptTokens,
@@ -1337,8 +1332,6 @@ export async function executeChatTurn(options: {
       response.usage,
     ),
     knowledgeContext: knowledgeContext ?? null,
-    suggestedMemories: parsed.suggestedMemories,
-    suggestedSummary: parsed.suggestedSummary,
     reasoning: response.reasoning || undefined,
     steps: engineActions.length ? engineActions : undefined,
     generationDurationMs,
@@ -1346,4 +1339,8 @@ export async function executeChatTurn(options: {
     ttftDurationMs: 0,
     ttftSamples: 0,
   };
+}
+
+export async function executeChatTurn(options: Parameters<typeof executeChatTurnRaw>[0]): Promise<ChatExecutionResult> {
+  return normalizeChatExecutionResult(await executeChatTurnRaw(options));
 }
