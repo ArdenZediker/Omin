@@ -17,7 +17,6 @@ import {
   Clock,
   Compass,
   FolderOpen,
-  GitBranch,
   LayoutTemplate,
   MessageSquare,
   MoreHorizontal,
@@ -2577,25 +2576,6 @@ export default function MainChatView({
 
       <aside className="chat-topic-panel">
         <div className="chat-topic-panel__body">
-          <div className="chat-topic-panel__toolbar">
-            <div className="chat-topic-panel__title">
-              {(() => {
-                if (sidePanelTab === "history")
-                  return <Clock size={14} strokeWidth={1.8} />;
-                if (sidePanelTab === "changes")
-                  return <GitBranch size={14} strokeWidth={1.8} />;
-                return <Package size={14} strokeWidth={1.8} />;
-              })()}
-              <span>
-                {sidePanelTab === "history"
-                  ? "历史提问"
-                  : sidePanelTab === "changes"
-                    ? "变更"
-                    : "产物"}
-              </span>
-            </div>
-          </div>
-
           <div className="chat-topic-panel__tabs">
             <button
               type="button"
