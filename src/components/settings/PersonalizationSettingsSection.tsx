@@ -277,7 +277,7 @@ export default function PersonalizationSettingsSection() {
       </div>
 
       {editingCard && (
-        <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-[var(--omni-overlay-scrim)] p-4">
           <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-xl omni-settings-card">
             <h3 className="text-sm font-medium text-slate-900 omni-settings-title">{editingCard.title}</h3>
             <p className="mt-1 text-xs text-slate-500 omni-settings-muted">编辑后点击确认保存，内容会写入对应的 persona md 文件并注入系统提示词。</p>

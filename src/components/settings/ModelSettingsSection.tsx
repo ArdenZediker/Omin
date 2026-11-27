@@ -338,7 +338,7 @@ export default function ModelSettingsSection({
       </section>
 
       {isModelFormOpen && (
-        <div className="omni-model-section-modal absolute inset-0 z-20 flex items-center justify-center bg-slate-950/25 px-6">
+        <div className="omni-model-section-modal absolute inset-0 z-20 flex items-center justify-center bg-[var(--omni-overlay-scrim)] px-6">
           <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-3.5">
               <div className="min-w-0">

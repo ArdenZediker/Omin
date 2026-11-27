@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { X } from "lucide-react";
 import {
   getKnowledgeEmbeddingProviderOptions,
   normalizeKnowledgeEmbeddingConfig,
@@ -235,14 +236,14 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
       </div>
 
       {isModelFormOpen && editingModel ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/25 px-6">
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-[var(--omni-overlay-scrim)] px-6">
           <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
             <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900">{normalizedConfig.models.some((model) => model.id === editingModel.id) ? "编辑模型" : "新增模型"}</h3>
               </div>
-              <button onClick={closeModelForm} className="text-slate-400 hover:text-slate-700" type="button">
-                ×
+              <button onClick={closeModelForm} aria-label="关闭" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:text-slate-700" type="button">
+                <X size={16} strokeWidth={1.8} />
               </button>
             </div>
 
