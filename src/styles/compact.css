@@ -988,7 +988,7 @@
   margin-top: 6px;
   justify-content: flex-start;
   gap: 7px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   font-weight: 700;
   min-height: 32px;
   -webkit-font-smoothing: antialiased;

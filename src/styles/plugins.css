@@ -97,7 +97,7 @@
   height: 100%;
   padding: 0;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: transparent;
   color: var(--omni-app-muted);
   cursor: pointer;
@@ -198,7 +198,7 @@
   padding: 0 12px;
   justify-content: flex-start;
   border: 1px solid var(--omni-frame-border);
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: var(--omni-panel-bg);
   opacity: 1;
   overflow: visible;
@@ -745,7 +745,7 @@
 .plugin-card__badge {
   flex-shrink: 0;
   padding: 2px 7px;
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--omni-panel-bg);
   border: 1px solid var(--omni-panel-border);
   font-size: 10px;
@@ -826,7 +826,7 @@
 
 .plugin-card__tag {
   padding: 3px 8px;
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--omni-panel-bg);
   border: 1px solid var(--omni-panel-border);
   font-size: 10px;
@@ -1003,7 +1003,7 @@
   margin-top: 6px;
   padding: 12px;
   border: 1px solid rgba(245, 158, 11, 0.36);
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: rgba(245, 158, 11, 0.07);
 }
 
@@ -1195,7 +1195,7 @@
 
 .skillhub-browser__api {
   padding: 2px 7px;
-  border-radius: 10px;
+  border-radius: 999px;
   background: rgba(245, 158, 11, 0.15);
   border: 1px solid rgba(245, 158, 11, 0.4);
   color: #f59e0b;
@@ -1325,7 +1325,7 @@
   margin-bottom: 12px;
   background: var(--omni-panel-bg, #ffffff);
   border: 1px solid var(--omni-panel-border);
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   flex-wrap: wrap;
 }
@@ -1478,7 +1478,7 @@
   flex-shrink: 0;
   width: 48px;
   height: 48px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: var(--omni-card-bg, rgba(255, 255, 255, 0.04));
   display: flex;
   align-items: center;
@@ -2225,7 +2225,7 @@
   justify-content: center;
   gap: 6px;
   padding: 7px 16px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   border: 1px solid color-mix(in srgb, var(--omni-accent, #7c3aed) 46%, var(--omni-panel-border));
   background: color-mix(in srgb, var(--omni-accent, #7c3aed) 14%, var(--omni-panel-bg));
   color: color-mix(in srgb, var(--omni-accent, #7c3aed) 86%, var(--omni-app-text));
@@ -2280,7 +2280,7 @@
   width: 100%;
   padding: 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: transparent;
   color: var(--omni-app-text);
   text-align: left;
@@ -2569,7 +2569,7 @@
   justify-content: center;
   gap: 6px;
   padding: 8px 14px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   font-size: 13px;
   font-weight: 600;
   color: #fff;

@@ -180,7 +180,7 @@
 
 .omni-select--compact .omni-select__trigger {
   min-height: 34px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   padding: 0 9px;
 }
 
@@ -620,7 +620,7 @@
   gap: 8px;
   padding: 12px;
   border: 1px solid var(--omni-panel-border);
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: color-mix(in srgb, var(--omni-panel-bg) 88%, var(--omni-soft-bg));
 }
 
@@ -713,7 +713,7 @@
 .omni-dialog__field select {
   width: 100%;
   border: 1px solid var(--omni-panel-border);
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   padding: 10px 12px;
   font-size: 13px;
   background: var(--omni-soft-bg);
@@ -758,7 +758,7 @@
   flex-shrink: 0;
   padding: 0 14px;
   border: 1px solid var(--omni-panel-border);
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: var(--omni-button-bg);
   color: var(--omni-button-text);
   font-size: 12px;

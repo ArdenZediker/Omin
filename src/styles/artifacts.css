@@ -16,7 +16,7 @@
   gap: 8px;
   max-width: 280px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   border: 1px solid var(--omni-panel-border);
   background: color-mix(in srgb, var(--omni-panel-bg) 82%, transparent);
   transition: border-color 140ms ease, opacity 140ms ease;

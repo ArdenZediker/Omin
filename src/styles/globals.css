@@ -498,7 +498,7 @@ body:has(.compact-menu-window),
 .model-selector__option {
   width: 100%;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   display: flex;
   align-items: center;
   gap: 9px;
@@ -672,7 +672,7 @@ body:has(.compact-menu-window),
 .chat-recall-banner__action {
   flex: 0 0 auto;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   padding: 6px 10px;
   background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
   color: var(--omni-app-text);
@@ -1463,7 +1463,7 @@ body:has(.compact-menu-window),
   min-width: 56px;
   padding: 0 14px;
   border: 0;
-  border-radius: 17px;
+  border-radius: var(--omni-control-radius);
   background: #5865e8;
   color: #fff;
   font-size: 12px;
@@ -1562,7 +1562,7 @@ body:has(.compact-menu-window),
   border: 1px solid rgba(209, 213, 219, 0.85);
   background: rgba(255, 255, 255, 0.78);
   color: #4b5563;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   padding: 7px 10px;
   font-size: 12px;
   cursor: pointer;
@@ -1575,7 +1575,7 @@ body:has(.compact-menu-window),
   border: 1px solid rgba(209, 213, 219, 0.85);
   background: rgba(255, 255, 255, 0.72);
   color: #374151;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   padding: 7px 10px;
   font-size: 12px;
   outline: none;

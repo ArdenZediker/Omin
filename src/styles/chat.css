@@ -928,7 +928,7 @@
   align-items: center;
   gap: 8px;
   padding: 7px 8px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: transparent;
   color: var(--omni-app-text);
   font-size: 13px;
@@ -992,7 +992,7 @@
   margin: 0 12px 8px;
   padding: 9px 12px;
   border: 1px solid color-mix(in srgb, #b45309 28%, var(--omni-panel-border));
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: color-mix(in srgb, #f59e0b 8%, var(--omni-panel-bg));
   color: var(--omni-app-text);
   font-size: 12px;
@@ -1082,7 +1082,7 @@
   align-items: center;
   gap: 4px;
   padding: 7px 8px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   background: transparent;
   cursor: pointer;
   transition: background 0.12s ease;
@@ -1493,7 +1493,7 @@
   width: 100%;
   min-height: 34px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -2023,7 +2023,7 @@
 .chat-composer__suggestion {
   width: 100%;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
@@ -3518,7 +3518,7 @@
 
 .chat-topic-panel__empty {
   min-height: 34px;
-  border-radius: 10px;
+  border-radius: var(--omni-control-radius);
   display: flex;
   align-items: center;
   padding: 0 9px;
