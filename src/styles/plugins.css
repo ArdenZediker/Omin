@@ -1520,26 +1520,6 @@
   font-weight: 500;
 }
 
-.skillhub-detail__close {
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--omni-app-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease;
-}
-
-.skillhub-detail__close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--omni-app-text);
-}
-
 .skillhub-detail__description {
   margin: 0;
   font-size: 13px;

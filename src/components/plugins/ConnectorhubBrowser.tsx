@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   Download,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 import {
   listConnectorhubSkills,
   installConnectorhubSkill,
@@ -149,6 +150,9 @@ function ConnectorDetailDrawer({
   onInstall,
   onUninstall,
 }: ConnectorDetailDrawerProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, Boolean(skill));
+
   // Esc 关闭
   useEffect(() => {
     if (!skill) return;
@@ -170,11 +174,13 @@ function ConnectorDetailDrawer({
       role="presentation"
     >
       <aside
+        ref={dialogRef}
         className="skillhub-detail"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`${skill.displayName} 详情`}
+        tabIndex={-1}
       >
         <header className="skillhub-detail__header">
           <div className="skillhub-detail__identity">
@@ -196,7 +202,7 @@ function ConnectorDetailDrawer({
             title="关闭 (Esc)"
             aria-label="关闭详情"
           >
-            <X size={18} />
+            <X size={18} strokeWidth={1.8} />
           </button>
         </header>
 

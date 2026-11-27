@@ -9,7 +9,7 @@
  * 已装的不重复装）；详情抽屉里额外保留「仅装本体」与「补装引用技能」，供只想装
  * 编排包、或事后按需补子技能的人用。
  */
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   Download,
@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 import {
   listSkillhubSkillsets,
   getSkillhubSkillset,
@@ -208,6 +209,9 @@ function SkillsetDetailDrawer({
   onUninstall,
   onInstallChildren,
 }: SkillsetDetailDrawerProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, Boolean(detail));
+
   useEffect(() => {
     if (!detail) return;
     function onKey(e: KeyboardEvent) {
@@ -224,11 +228,13 @@ function SkillsetDetailDrawer({
   return (
     <div className="skillhub-detail__overlay" onClick={onClose} role="presentation">
       <aside
+        ref={dialogRef}
         className="skillhub-detail"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`${set.displayName} 详情`}
+        tabIndex={-1}
       >
         <header className="skillhub-detail__header">
           <div className="skillhub-detail__identity">
@@ -254,7 +260,7 @@ function SkillsetDetailDrawer({
             title="关闭 (Esc)"
             aria-label="关闭详情"
           >
-            <X size={18} />
+            <X size={18} strokeWidth={1.8} />
           </button>
         </header>
 

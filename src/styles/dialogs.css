@@ -662,7 +662,9 @@
 }
 
 .omni-dialog__close,
-.chat-history-panel__group-dialog-close {
+.chat-history-panel__group-dialog-close,
+.skillhub-detail__close {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -677,7 +679,8 @@
 }
 
 .omni-dialog__close:hover,
-.chat-history-panel__group-dialog-close:hover {
+.chat-history-panel__group-dialog-close:hover,
+.skillhub-detail__close:hover {
   background: var(--omni-soft-bg);
   color: var(--omni-app-text);
 }

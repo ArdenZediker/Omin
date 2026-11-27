@@ -34,6 +34,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { pluginRegistry } from "../../plugins/registry";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 import {
   ensureMcpConnector,
   disconnectMcpConnector,
@@ -201,6 +202,9 @@ function PluginDetailDrawer({
   onEditExpert?: (manifest: PluginManifest) => void;
   onSummonExpert?: (manifest: PluginManifest) => void;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, Boolean(manifest));
+
   useEffect(() => {
     if (!manifest) return;
     function onKey(e: KeyboardEvent) {
@@ -224,11 +228,13 @@ function PluginDetailDrawer({
       role="presentation"
     >
       <aside
+        ref={dialogRef}
         className="skillhub-detail"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`${manifest.name} 详情`}
+        tabIndex={-1}
       >
         <header className="skillhub-detail__header">
           <div className="skillhub-detail__identity">
@@ -261,7 +267,7 @@ function PluginDetailDrawer({
             title="关闭 (Esc)"
             aria-label="关闭详情"
           >
-            <X size={18} />
+            <X size={18} strokeWidth={1.8} />
           </button>
         </header>
 

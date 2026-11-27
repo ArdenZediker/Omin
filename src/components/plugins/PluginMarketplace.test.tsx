@@ -440,10 +440,19 @@ describe("PluginMarketplace 自建预设的删除入口", () => {
     renderPresets();
 
     // 内置预设：抽屉里没有删除
-    fireEvent.click(await screen.findByRole("button", { name: `${builtin!.name} 详情` }));
-    await screen.findByRole("dialog", { name: `${builtin!.name} 详情` });
+    const trigger = await screen.findByRole("button", { name: `${builtin!.name} 详情` });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: `${builtin!.name} 详情` });
+    const closeButton = screen.getByLabelText("关闭详情");
+    expect(document.activeElement).toBe(closeButton);
+    const actions = dialog.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+    actions[actions.length - 1].focus();
+    fireEvent.keyDown(actions[actions.length - 1], { key: "Tab" });
+    expect(document.activeElement).toBe(closeButton);
     expect(screen.queryByText("删除")).toBeNull();
-    fireEvent.click(screen.getByLabelText("关闭详情"));
+    fireEvent.click(closeButton);
+    expect(document.activeElement).toBe(trigger);
 
     // 自建预设：有删除，且点了真的从注册表消失
     fireEvent.click(await screen.findByRole("button", { name: `${saved.manifest.name} 详情` }));

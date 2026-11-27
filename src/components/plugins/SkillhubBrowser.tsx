@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { pluginRegistry } from "../../plugins/registry";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 import {
   listSkillhubSkills,
   listSkillhubSkillCategories,
@@ -124,6 +125,9 @@ function SkillDetailDrawer({
   isInstalling,
   onInstall,
 }: SkillDetailDrawerProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, Boolean(skill));
+
   // Esc 关闭
   useEffect(() => {
     if (!skill) return;
@@ -150,11 +154,13 @@ function SkillDetailDrawer({
       role="presentation"
     >
       <aside
+        ref={dialogRef}
         className="skillhub-detail"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`${skill.name} 详情`}
+        tabIndex={-1}
       >
         <header className="skillhub-detail__header">
           <div className="skillhub-detail__identity">
@@ -187,7 +193,7 @@ function SkillDetailDrawer({
             title="关闭 (Esc)"
             aria-label="关闭详情"
           >
-            <X size={18} />
+            <X size={18} strokeWidth={1.8} />
           </button>
         </header>
 
