@@ -95,6 +95,16 @@ body:has(.compact-menu-window),
   --omni-skill-bg: rgba(130, 80, 223, 0.12);
 }
 
+:root[data-omni-theme="light"] ::selection {
+  background: rgba(31, 111, 235, 0.22);
+  color: inherit;
+}
+
+:root[data-omni-theme="light"] input,
+:root[data-omni-theme="light"] textarea {
+  caret-color: #1f2329;
+}
+
 :root[data-omni-theme="dark"] {
   color-scheme: dark;
   /* Codex GitHub Dark：canvas / layer-1 / layer-2 / border。 */
@@ -146,6 +156,16 @@ body:has(.compact-menu-window),
   --omni-skill: #bc8cff;
   --omni-skill-bg: rgba(188, 140, 255, 0.15);
   --omni-overlay-scrim: rgba(1, 4, 9, 0.68);
+}
+
+:root[data-omni-theme="dark"] ::selection {
+  background: rgba(31, 111, 235, 0.38);
+  color: inherit;
+}
+
+:root[data-omni-theme="dark"] input,
+:root[data-omni-theme="dark"] textarea {
+  caret-color: #e6edf3;
 }
 
 .hide-scrollbar {
