@@ -772,6 +772,19 @@ body:has(.compact-menu-window),
   border-color: var(--omni-app-text) !important;
 }
 
+:root[data-omni-theme="dark"] .omni-knowledge-root {
+  background: var(--omni-panel-bg) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-knowledge-root mark {
+  background: rgba(252, 211, 77, 0.24) !important;
+  color: #fde68a !important;
+}
+
+:root[data-omni-theme="dark"] .omni-knowledge-root [class*="hover:bg-rose-500/10"]:hover {
+  background: rgba(244, 63, 94, 0.14) !important;
+}
+
 /* Dark mode: harmonize the model-config section surfaces/text with the theme. */
 :root[data-omni-theme="dark"] .omni-model-section-sidebar,
 :root[data-omni-theme="dark"] .omni-model-section-header,
@@ -2677,6 +2690,10 @@ body:has(.compact-menu-window),
   background: var(--omni-accent) !important;
 }
 
+:root[data-omni-theme="dark"] .omni-settings-root span[class*="bg-slate-900"] {
+  background: var(--omni-accent) !important;
+}
+
 :root[data-omni-theme="dark"] .omni-settings-root button[class*="bg-slate-900"]:hover,
 :root[data-omni-theme="dark"] .omni-settings-root button[class*="hover:bg-slate-800"]:hover {
   background: var(--omni-accent-strong) !important;
@@ -2689,6 +2706,10 @@ body:has(.compact-menu-window),
 :root[data-omni-theme="dark"] .omni-settings-root button[class*="hover:bg-slate-100"]:hover,
 :root[data-omni-theme="dark"] .omni-settings-root button[class*="hover:bg-slate-200"]:hover {
   background: var(--omni-app-surface-3) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-settings-root button[class*="hover:bg-white/70"]:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root button[class*="hover:bg-violet-50"]:hover {
