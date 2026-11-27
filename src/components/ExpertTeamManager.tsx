@@ -82,7 +82,6 @@ export default function ExpertTeamManager({ open, onClose }: { open: boolean; on
       <section className="omni-dialog expert-team-manager" role="dialog" aria-modal="true" aria-labelledby="expert-team-manager-title">
         <header className="expert-team-manager__header">
           <div>
-            <div className="expert-team-manager__eyebrow"><UsersRound size={15} /> 团队配置</div>
             <h2 id="expert-team-manager-title">专家团</h2>
           </div>
           <button type="button" className="omni-dialog__close" onClick={onClose} aria-label="关闭"><X size={18} /></button>

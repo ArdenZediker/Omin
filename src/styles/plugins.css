@@ -1835,17 +1835,9 @@
 }
 
 .expert-team-manager__header h2 {
-  margin: 5px 0 0;
+  margin: 0;
   font-size: 18px;
   font-weight: 650;
-}
-
-.expert-team-manager__eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--omni-app-muted);
-  font-size: 12px;
 }
 
 .expert-team-manager__body {

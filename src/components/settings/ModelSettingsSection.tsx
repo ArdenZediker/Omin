@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { ReasoningEffort } from "../../adapters/types";
 import type { CustomModelConfig, DiscoveredModel, ModelProtocol, UnsupportedParam } from "../../adapters/types";
 import {
@@ -351,7 +351,7 @@ export default function ModelSettingsSection({
                 className="shrink-0 rounded-md px-2 py-1 text-base leading-none text-slate-400 hover:text-slate-700"
                 type="button"
               >
-                ×
+                <X size={18} strokeWidth={1.8} />
               </button>
             </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 py-4 [scrollbar-gutter:stable]">
