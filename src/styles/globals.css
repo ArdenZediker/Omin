@@ -881,6 +881,31 @@ body:has(.compact-menu-window),
   color: var(--omni-app-text) !important;
 }
 
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"][class*="text-violet-950"],
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"][class*="text-violet-900"],
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"][class*="text-violet-950"],
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"][class*="text-violet-900"] {
+  color: var(--omni-app-text) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"] span[class*="text-violet-500"],
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"] span[class*="text-violet-600"],
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"] span[class*="text-violet-500"],
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"] span[class*="text-violet-600"] {
+  color: color-mix(in srgb, var(--omni-accent-strong) 72%, var(--omni-app-text)) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"] span[class*="bg-violet-100"],
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"] span[class*="bg-violet-100"] {
+  background: color-mix(in srgb, var(--omni-accent) 18%, transparent) !important;
+  color: color-mix(in srgb, var(--omni-accent-strong) 76%, #ffffff) !important;
+}
+
+:root[data-omni-theme="dark"] .omni-model-section-card button[class*="hover:bg-violet-50"]:hover,
+:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="hover:bg-violet-50"]:hover {
+  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-panel-bg)) !important;
+}
+
 :root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"][class*="border-violet-300"],
 :root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"][class*="border-violet-300"] {
   border-color: color-mix(in srgb, var(--omni-accent) 55%, var(--omni-panel-border)) !important;
