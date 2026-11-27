@@ -604,7 +604,7 @@ export default function BasicSettingsSection({
         <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
           「运行 Shell 命令」工具使用的 Shell。留空时 Windows 自动探测 Git-Bash（未命中回落 cmd），macOS/Linux 优先使用用户默认 Shell；
           指定后按可执行名匹配参数（bash/zsh → -lc，cmd → /C，pwsh → -Command，wsl → --，busybox → sh -c，其余 → -c），
-          可指向 Git-Bash、WSL、MSYS2、Cygwin 或任意自定义 Shell。⚠️ 切换自定义 Shell 不会关闭命令安全校验，
+          可指向 Git-Bash、WSL、MSYS2、Cygwin 或任意自定义 Shell。注意：切换自定义 Shell 不会关闭命令安全校验，
           高危命令依旧被拦截、修改类操作依旧需要确认。
         </p>
         {shellProbe && !shellProbe.probing && (
@@ -612,7 +612,7 @@ export default function BasicSettingsSection({
             className={`pl-[136px] text-xs ${shellProbe.ok ? "text-emerald-600" : "text-red-600"}`}
             role="status"
           >
-            {shellProbe.ok ? "✅ 检测成功：" : "❌ 检测失败："}
+            {shellProbe.ok ? "检测成功：" : "检测失败："}
             {shellProbe.output || (shellProbe.ok ? "可用" : "未知错误")}
           </p>
         )}
