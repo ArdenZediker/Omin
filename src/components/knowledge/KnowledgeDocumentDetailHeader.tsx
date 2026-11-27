@@ -72,6 +72,7 @@ export default function KnowledgeDocumentDetailHeader({
           onClick={onBackToList}
           className="omni-knowledge-detail-back no-drag"
           title="返回列表"
+          aria-label="返回列表"
         >
           <ArrowLeft size={16} strokeWidth={1.8} />
         </button>

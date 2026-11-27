@@ -1329,11 +1329,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
     <div className="omni-knowledge-root flex h-full min-h-0 flex-col bg-white text-[var(--omni-app-text)]">
       <div className="omni-knowledge-layout flex min-h-0 flex-1">
         <aside className="main-chat-nav">
-          <button type="button" className="main-chat-nav__brand no-drag" title="Omni">
+          <button type="button" className="main-chat-nav__brand no-drag" title="Omni" aria-label="Omni">
             <Bot size={20} strokeWidth={1.8} className="text-sky-500" />
           </button>
           <div className="main-chat-nav__items">
-            <button type="button" className="main-chat-nav__item no-drag" title="聊天" onClick={onBackToChat}>
+            <button type="button" className="main-chat-nav__item no-drag" title="聊天" aria-label="聊天" onClick={onBackToChat}>
               <MessageSquare size={18} strokeWidth={1.8} />
             </button>
             <button
@@ -1344,11 +1344,11 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
             >
               <Sparkles size={18} strokeWidth={1.8} />
             </button>
-            <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="知识库">
+            <button type="button" className="main-chat-nav__item main-chat-nav__item--active no-drag" title="知识库" aria-label="知识库">
               <FolderOpen size={18} strokeWidth={1.8} />
             </button>
           </div>
-          <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" onClick={onSettingsOpen}>
+          <button type="button" className="main-chat-nav__item main-chat-nav__item--bottom no-drag" title="设置" aria-label="设置" onClick={onSettingsOpen}>
             <Settings size={18} strokeWidth={1.8} />
           </button>
         </aside>
@@ -1746,6 +1746,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                 onClick={closeCollectionSettings}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                 title="关闭"
+              aria-label="关闭"
               >
                 <X size={16} strokeWidth={1.8} />
               </button>

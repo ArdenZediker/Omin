@@ -127,6 +127,7 @@ export default function KnowledgeCollectionSidebar({
               type="button"
               className="no-drag rounded-lg p-1 text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
               title="新建知识库"
+              aria-label="新建知识库"
               onClick={onCreateCollection}
             >
               <Plus size={14} strokeWidth={1.8} />

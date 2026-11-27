@@ -1582,6 +1582,7 @@ export default function ChatInput({
                   onClick={onStop}
                   className="chat-composer__submit chat-composer__submit--stop"
                   title="停止生成"
+                  aria-label="停止生成"
                   type="button"
                 >
                   <Square className="chat-composer__submit-icon" size={18} strokeWidth={1.8} fill="currentColor" />

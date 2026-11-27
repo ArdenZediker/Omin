@@ -54,6 +54,7 @@ export default function ProjectGroupManagerDialog({
             type="button"
             className="chat-history-panel__group-dialog-close"
             onClick={onClose}
+            aria-label="关闭"
           >
             <X size={16} strokeWidth={2} aria-hidden="true" />
           </button>

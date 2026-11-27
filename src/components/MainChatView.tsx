@@ -1398,6 +1398,7 @@ export default function MainChatView({
           type="button"
           className="main-chat-nav__brand no-drag"
           title="Omni"
+          aria-label="Omni"
         >
           <Bot size={20} strokeWidth={1.8} />
         </button>
@@ -1406,6 +1407,7 @@ export default function MainChatView({
             type="button"
             className={`main-chat-nav__item no-drag ${!showPluginMarketplace ? "main-chat-nav__item--active" : ""}`}
             title="聊天"
+            aria-label="聊天"
             onClick={closeMarketplace}
           >
             <MessageSquare size={18} strokeWidth={1.8} />
@@ -1428,6 +1430,7 @@ export default function MainChatView({
             type="button"
             className="main-chat-nav__item no-drag"
             title="知识"
+            aria-label="知识"
             onClick={onOpenKnowledge}
           >
             <FolderOpen size={18} strokeWidth={1.8} />
@@ -1437,6 +1440,7 @@ export default function MainChatView({
           type="button"
           className="main-chat-nav__item main-chat-nav__item--bottom no-drag"
           title="设置"
+          aria-label="设置"
           onClick={onSettingsOpen}
         >
           <Settings size={18} strokeWidth={1.8} />
@@ -2269,6 +2273,7 @@ export default function MainChatView({
                   onClick={onClearChat}
                   className="main-chat-toolbar__icon-button"
                   title="清空对话"
+                  aria-label="清空对话"
                   type="button"
                 >
                   <Trash2
