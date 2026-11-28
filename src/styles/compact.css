@@ -122,7 +122,7 @@
 }
 
 .pet-thought-bubble {
-  --pet-thought-border: rgba(203, 213, 225, 0.9);
+  --pet-thought-border: color-mix(in srgb, var(--omni-panel-border) 82%, transparent);
   --pet-thought-line-height: 15.84px;
   width: var(--pet-thought-inline-width, 250px);
   min-width: var(--pet-thought-inline-width, 250px);
@@ -131,8 +131,8 @@
   left: 50%;
   padding: 8px 10px 9px;
   border-radius: 14px;
-  background: #ffffff;
-  border: 1px solid rgba(203, 213, 225, 0.82);
+  background: var(--omni-panel-bg);
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 82%, transparent);
   box-shadow:
     0 10px 22px rgba(71, 85, 105, 0.08),
     0 2px 5px rgba(71, 85, 105, 0.07);
@@ -178,7 +178,7 @@
   display: none;
   width: 11px;
   height: 11px;
-  background: #ffffff;
+  background: var(--omni-panel-bg);
 }
 
 .pet-thought-bubble--top::after {
@@ -346,8 +346,8 @@
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: rgba(248, 250, 252, 0.92);
-  color: #64748b;
+  background: color-mix(in srgb, var(--omni-soft-bg) 92%, transparent);
+  color: var(--omni-app-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -370,8 +370,8 @@
 }
 
 .pet-thought-bubble__hover-button:hover {
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
 }
 
 .pet-thought-bubble__hover-button--close {
@@ -431,8 +431,8 @@
 }
 
 .pet-thought-bubble__reply-trigger:hover {
-  background: #f8fafc;
-  border-color: rgba(100, 116, 139, 0.48);
+  background: var(--omni-soft-bg);
+  border-color: var(--omni-divider-strong);
 }
 
 .pet-thought-bubble__reply-trigger:disabled {
@@ -452,19 +452,17 @@
   min-width: 0;
   height: 24px;
   padding: 0 8px;
-  border: 1px solid rgba(59, 130, 246, 0.74);
+  border: 1px solid color-mix(in srgb, var(--omni-accent) 74%, transparent);
   border-radius: var(--omni-control-radius);
-  background: #ffffff;
-  /* 背景写死白色，不要继承主题变量：深色主题下 --omni-app-text 是白色，
-     会导致白底 + 白字，输入内容完全看不见。 */
-  color: #1f2937;
+  background: var(--omni-input-bg);
+  color: var(--omni-app-text);
   font-size: 12px;
   outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--omni-accent) 10%, transparent);
 }
 
 .pet-thought-bubble__reply-input::placeholder {
-  color: #6b7280;
+  color: var(--omni-app-muted);
 }
 
 .pet-thought-bubble__reply-submit {
@@ -472,15 +470,15 @@
   padding: 0 8px;
   border: 0;
   border-radius: var(--omni-control-radius);
-  background: #16a34a;
-  color: #ffffff;
+  background: var(--omni-app-success);
+  color: var(--omni-panel-bg);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .pet-thought-bubble__reply-submit:not(:disabled):hover {
-  background: #15803d;
+  background: color-mix(in srgb, var(--omni-app-success) 86%, #000000);
 }
 
 .pet-thought-bubble__reply-submit:disabled {
@@ -494,7 +492,7 @@
   width: 16px;
   height: 16px;
   margin-top: 0;
-  color: #94a3b8;
+  color: var(--omni-app-muted);
   filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.08));
   opacity: 1;
   transform: scale(1);
@@ -528,19 +526,19 @@
   box-sizing: border-box;
   border-radius: inherit;
   border: 2px solid transparent;
-  border-top-color: rgba(100, 116, 139, 0.95);
-  border-right-color: rgba(100, 116, 139, 0.72);
+  border-top-color: color-mix(in srgb, var(--omni-app-muted) 95%, transparent);
+  border-right-color: color-mix(in srgb, var(--omni-app-muted) 72%, transparent);
   animation: petThoughtBadgeSpin 0.78s linear infinite;
   transform-origin: center;
   will-change: transform;
 }
 
 .pet-thought-bubble__badge--complete {
-  color: #16a34a;
+  color: var(--omni-app-success);
 }
 
 .pet-thought-bubble__badge--error {
-  color: #ef4444;
+  color: var(--omni-danger);
 }
 
 .pet-thought-bubble__action-slot {
@@ -648,15 +646,15 @@
 }
 
 .pet-thought-bubble--thinking {
-  --pet-thought-border: rgba(96, 165, 250, 0.28);
+  --pet-thought-border: color-mix(in srgb, var(--omni-accent) 28%, transparent);
 }
 
 .pet-thought-bubble--complete {
-  --pet-thought-border: rgba(34, 197, 94, 0.22);
+  --pet-thought-border: color-mix(in srgb, var(--omni-app-success) 22%, transparent);
 }
 
 .pet-thought-bubble--error {
-  --pet-thought-border: rgba(239, 68, 68, 0.22);
+  --pet-thought-border: color-mix(in srgb, var(--omni-danger) 22%, transparent);
 }
 
 .compact-bar__actions--pet {
@@ -835,7 +833,7 @@
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: rgba(51, 65, 85, 0.72);
+  color: color-mix(in srgb, var(--omni-app-muted) 90%, transparent);
 }
 
 .compact-menu__item {
@@ -901,7 +899,7 @@
 
 .compact-menu__group-label {
   padding: 1px 3px 2px;
-  color: rgba(71, 85, 105, 0.68);
+  color: color-mix(in srgb, var(--omni-app-muted) 88%, transparent);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -917,8 +915,8 @@
 
 .compact-menu__item:hover,
 .compact-menu__item--active {
-  background: rgba(99, 102, 241, 0.12);
-  color: #312e81;
+  background: color-mix(in srgb, var(--omni-accent) 12%, transparent);
+  color: var(--omni-accent-strong);
 }
 
 .compact-menu__item--branch {
@@ -936,7 +934,7 @@
 .compact-menu__check {
   width: 13px;
   height: 13px;
-  border: 1px solid rgba(71, 85, 105, 0.42);
+  border: 1px solid color-mix(in srgb, var(--omni-app-muted) 42%, transparent);
   border-radius: 4px;
   display: inline-flex;
   align-items: center;
@@ -955,26 +953,26 @@
 }
 
 .compact-menu__check--checked {
-  border-color: rgba(37, 99, 235, 0.65);
-  background: rgba(37, 99, 235, 0.12);
+  border-color: color-mix(in srgb, var(--omni-accent) 65%, transparent);
+  background: color-mix(in srgb, var(--omni-accent) 12%, transparent);
 }
 
 .compact-menu__divider {
   height: 1px;
   margin: 5px 3px;
-  background: rgba(148, 163, 184, 0.32);
+  background: color-mix(in srgb, var(--omni-panel-border) 55%, transparent);
 }
 
 .compact-menu__meta {
   font-size: 9px;
-  color: rgba(71, 85, 105, 0.68);
+  color: color-mix(in srgb, var(--omni-app-muted) 88%, transparent);
 }
 
 .compact-menu__arrow-icon {
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
-  color: rgba(71, 85, 105, 0.7);
+  color: color-mix(in srgb, var(--omni-app-muted) 90%, transparent);
 }
 
 .compact-menu__item--settings {
@@ -1072,12 +1070,12 @@
 
 :root[data-omni-theme] .compact-menu__item--settings {
   background: var(--omni-accent);
-  color: #ffffff;
+  color: var(--omni-panel-bg);
 }
 
 :root[data-omni-theme] .compact-menu__item--settings:hover {
   background: var(--omni-accent-strong);
-  color: #ffffff;
+  color: var(--omni-panel-bg);
 }
 
 :root[data-omni-theme] .compact-menu__check {
@@ -1145,7 +1143,7 @@
 :root[data-omni-theme] .compact-ask-popover__send,
 :root[data-omni-theme] .pet-thought-bubble__reply-submit {
   background: var(--omni-accent);
-  color: #ffffff;
+  color: var(--omni-panel-bg);
 }
 
 :root[data-omni-theme] .compact-ask-popover__send:hover,
@@ -1185,7 +1183,7 @@
 :root[data-omni-theme] .pet-thought-compact-toggle--collapsed {
   background: var(--omni-app-success);
   border-color: var(--omni-app-success);
-  color: #ffffff;
+  color: var(--omni-panel-bg);
 }
 
 :root[data-omni-theme] :where(
