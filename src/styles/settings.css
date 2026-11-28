@@ -56,6 +56,192 @@
   border-bottom: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent) !important;
 }
 
+/* Settings is a dense operate surface: keep every section on the same surface,
+ * control, and focus vocabulary even where the component still uses utility classes. */
+.omni-settings-root {
+  color: var(--omni-app-text);
+}
+
+.omni-settings-root :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  box-sizing: border-box;
+  border-color: var(--omni-panel-border);
+  border-radius: var(--omni-control-radius);
+  background: var(--omni-input-bg);
+  color: var(--omni-app-text);
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.omni-settings-root :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea)::placeholder {
+  color: var(--omni-app-muted);
+  opacity: 0.78;
+}
+
+.omni-settings-root :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus {
+  border-color: color-mix(in srgb, var(--omni-accent) 68%, var(--omni-panel-border));
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--omni-accent) 16%, transparent);
+}
+
+.omni-settings-root :where(button, [role="button"], input, select, textarea):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--omni-accent) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.omni-settings-root :where(button, [role="button"]):disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.omni-settings-root .omni-settings-nav--active {
+  background: var(--omni-card-bg) !important;
+  color: var(--omni-app-text) !important;
+  box-shadow: inset 0 0 0 1px var(--omni-panel-border), 0 1px 2px color-mix(in srgb, var(--omni-app-text) 6%, transparent) !important;
+}
+
+.omni-settings-root .omni-settings-nav:hover:not(.omni-settings-nav--active) {
+  background: color-mix(in srgb, var(--omni-card-bg) 72%, var(--omni-accent) 4%) !important;
+  color: var(--omni-app-text) !important;
+}
+
+.omni-settings-root .omni-settings-card,
+.omni-settings-root .omni-model-section-card,
+.omni-settings-root .omni-model-section-sidebar,
+.omni-settings-root .omni-model-section-header {
+  border: 1px solid var(--omni-panel-border) !important;
+  border-radius: var(--omni-radius-lg) !important;
+  background: var(--omni-card-bg) !important;
+  box-shadow: none !important;
+  color: var(--omni-app-text);
+}
+
+.omni-settings-root .omni-settings-card {
+  overflow: hidden;
+}
+
+.omni-settings-root .omni-model-section-card {
+  padding: 16px;
+}
+
+.omni-settings-root .omni-model-section-sidebar {
+  background: var(--omni-app-surface-2) !important;
+}
+
+.omni-settings-root .omni-model-section-header {
+  padding: 14px 16px;
+}
+
+.omni-settings-root .omni-model-section-modal > div {
+  border: 1px solid var(--omni-panel-border) !important;
+  border-radius: var(--omni-dialog-radius) !important;
+  background: var(--omni-panel-bg) !important;
+  box-shadow: var(--omni-dialog-shadow) !important;
+  color: var(--omni-app-text);
+}
+
+.omni-settings-root .omni-model-section-modal .omni-model-modal-footer {
+  background: var(--omni-panel-bg) !important;
+  border-color: var(--omni-panel-border) !important;
+}
+
+.omni-settings-root .omni-model-add-button {
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--omni-accent) 76%, transparent) !important;
+  border-radius: var(--omni-control-radius) !important;
+  background: var(--omni-accent) !important;
+  color: #ffffff !important;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.omni-settings-root .omni-model-add-button:hover:not(:disabled) {
+  background: var(--omni-accent-strong) !important;
+  border-color: var(--omni-accent-strong) !important;
+}
+
+.omni-settings-root .omni-model-add-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.omni-settings-root .omni-pet-actions,
+.omni-settings-root .omni-pet-custom-section,
+.omni-settings-root .omni-pet-list {
+  border-color: var(--omni-panel-border) !important;
+}
+
+.omni-settings-root .omni-pet-action-button {
+  min-height: 34px;
+  border: 1px solid var(--omni-panel-border);
+  border-radius: var(--omni-control-radius) !important;
+  background: var(--omni-button-bg) !important;
+  color: var(--omni-button-text) !important;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.omni-settings-root .omni-pet-action-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--omni-accent) 42%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 7%, var(--omni-button-bg)) !important;
+  color: var(--omni-app-text) !important;
+}
+
+.omni-settings-root .omni-pet-action-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.omni-settings-root .omni-pet-format-hint {
+  border-color: var(--omni-panel-border) !important;
+  border-radius: var(--omni-control-radius) !important;
+  background: var(--omni-app-surface-2) !important;
+  color: var(--omni-app-muted) !important;
+}
+
+.omni-settings-root .omni-pet-format-hint [class*="text-slate-700"],
+.omni-settings-root .omni-pet-format-hint [class*="text-slate-600"] {
+  color: var(--omni-app-text) !important;
+}
+
+.omni-settings-root .omni-pet-format-hint code,
+.omni-settings-root .omni-pet-code {
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg) !important;
+  color: var(--omni-app-text) !important;
+}
+
+.omni-settings-root .omni-pet-list-item {
+  border-color: var(--omni-panel-border) !important;
+  color: var(--omni-app-text);
+}
+
+.omni-settings-root .omni-pet-list-item:hover,
+.omni-settings-root .omni-pet-list-item:focus-visible {
+  background: color-mix(in srgb, var(--omni-accent) 5%, var(--omni-card-bg)) !important;
+}
+
+.omni-settings-root .omni-pet-list-item > div:first-child {
+  border-color: var(--omni-panel-border) !important;
+  background: var(--omni-app-surface-2) !important;
+}
+
+.omni-settings-root .omni-pet-name,
+.omni-settings-root .omni-pet-custom-section [class*="font-medium"] {
+  color: var(--omni-app-text) !important;
+}
+
+.omni-settings-root .omni-pet-description,
+.omni-settings-root .omni-pet-custom-section,
+.omni-settings-root .omni-pet-custom-section [class*="text-slate-400"] {
+  color: var(--omni-app-muted) !important;
+}
+
+.omni-settings-root .omni-pet-select-badge:not(.omni-pet-select-badge--active) {
+  background: var(--omni-soft-bg) !important;
+  color: var(--omni-app-muted) !important;
+}
+
+.omni-settings-root .omni-settings-card :where(.border-slate-100, .border-slate-200, .border-slate-300),
+.omni-settings-root .omni-model-section-card :where(.border-slate-100, .border-slate-200, .border-slate-300),
+.omni-settings-root .omni-model-section-modal :where(.border-slate-100, .border-slate-200, .border-slate-300) {
+  border-color: var(--omni-panel-border) !important;
+}
+
 .settings-overlay {
   position: absolute;
   inset: 0;
