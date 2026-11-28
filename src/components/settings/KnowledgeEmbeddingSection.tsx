@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import {
   getKnowledgeEmbeddingProviderOptions,
@@ -9,6 +9,7 @@ import {
 } from "../../chat/knowledgeEmbedding";
 import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 
 type Props = {
   config: KnowledgeEmbeddingConfig;
@@ -78,6 +79,8 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
   const normalizedConfig = useMemo(() => normalizeKnowledgeEmbeddingConfig(config), [config]);
   const [isModelFormOpen, setIsModelFormOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<EditingModelState | null>(null);
+  const modelDialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(modelDialogRef, isModelFormOpen);
 
   const getProviderBaseUrl = (provider: string) =>
     providerSelectOptions.find((item) => item.id === provider)?.baseUrl || PROVIDER_BASE_URLS[provider] || PROVIDER_BASE_URLS.openai;
@@ -149,67 +152,62 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
   };
 
   return (
-    <section className="omni-knowledge-embedding-section flex min-h-0 flex-1 flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <section className="omni-knowledge-embedding-section flex min-h-0 flex-1 flex-col gap-4 rounded-xl border p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-900">向量模型</h3>
+          <h3 className="omni-knowledge-model-heading text-sm font-semibold">向量模型</h3>
         </div>
-        <span className={`omni-knowledge-status-badge inline-flex items-center rounded-full px-2 py-1 text-[11px] ${normalizedConfig.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
+        <span className="omni-knowledge-status-badge" data-state={normalizedConfig.enabled ? "enabled" : "disabled"}>
           {normalizedConfig.enabled ? "已启用" : "已关闭"}
         </span>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-slate-700">
+      <label className="omni-knowledge-model-toggle flex items-center gap-2 text-sm">
         <OmniSwitch checked={normalizedConfig.enabled} onChange={(checked) => updateConfig({ enabled: checked })} ariaLabel="启用知识库向量化" />
         <span>启用知识库向量化</span>
       </label>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="omni-knowledge-model-list flex min-h-0 flex-1 flex-col gap-3 rounded-xl border p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">模型列表</div>
-            <div className="text-xs text-slate-500">只展示列表，新增和编辑都通过弹窗完成。</div>
+            <div className="omni-knowledge-model-list__title">模型列表</div>
+            <div className="omni-knowledge-model-list__hint">只展示列表，新增和编辑都通过弹窗完成。</div>
           </div>
           <button
             type="button"
             onClick={openNewModel}
-            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+            className="omni-knowledge-button omni-knowledge-button--secondary"
           >
             添加模型
           </button>
         </div>
 
-        <div className="max-h-[360px] space-y-2 overflow-y-auto overscroll-contain border-t border-slate-100 pt-3 pr-1 [scrollbar-gutter:stable]">
+        <div className="omni-knowledge-model-list__items max-h-[360px] space-y-2 overflow-y-auto overscroll-contain pt-3 pr-1 [scrollbar-gutter:stable]">
           {normalizedConfig.models.length > 0 ? (
             normalizedConfig.models.map((model) => {
               const isActive = model.id === normalizedConfig.activeModelId;
               return (
                 <div
                   key={model.id}
-                  className={`omni-knowledge-model-card rounded-lg border px-3 py-3 transition-colors ${
-                    isActive
-                      ? "border-violet-300 bg-violet-50"
-                      : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50"
-                  }`}
+                  className="omni-knowledge-model-card rounded-lg border px-3 py-3 transition-colors"
+                  data-active={isActive}
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <button type="button" onClick={() => openEditModel(model)} className="min-w-0 flex-1 text-left">
+                    <button type="button" onClick={() => openEditModel(model)} className="omni-knowledge-model-card__edit min-w-0 flex-1 text-left">
                       <div className="flex min-w-0 items-center gap-2">
-                        <span className={`truncate text-sm font-medium ${isActive ? "text-violet-950" : "text-slate-900"}`}>
-                          {model.name}
-                        </span>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${isActive ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-500"}`}>
+                        <span className="omni-knowledge-model-card__name truncate text-sm font-medium">{model.name}</span>
+                        <span className="omni-knowledge-chip omni-knowledge-chip--provider shrink-0">
                           {getProviderLabel(model.provider)}
                         </span>
                       </div>
-                      <div className={`mt-2 truncate text-xs ${isActive ? "text-violet-500" : "text-slate-400"}`}>
-                        <span className={`font-medium ${isActive ? "text-violet-600" : "text-slate-500"}`}>模型 ID：</span>
+                      <div className="omni-knowledge-model-card__meta mt-2 truncate text-xs">
+                        <span className="font-medium">模型 ID：</span>
                         {model.model}
                       </div>
                     </button>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                      {isActive ? <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-700">当前使用</span> : null}
-                      {!model.apiKey.trim() ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">缺少 Key</span> : null}
+                      {isActive ? <span className="omni-knowledge-chip omni-knowledge-chip--selected">当前使用</span> : null}
+                      {!model.apiKey.trim() ? <span className="omni-knowledge-chip omni-knowledge-chip--warning">缺少 Key</span> : null}
                       {!isActive ? (
                         <button
                           type="button"
@@ -217,7 +215,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
                             event.stopPropagation();
                             updateConfig({ activeModelId: model.id });
                           }}
-                          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                          className="omni-knowledge-button omni-knowledge-button--secondary"
                         >
                           设为当前
                         </button>
@@ -228,7 +226,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
               );
             })
           ) : (
-            <div className="omni-knowledge-empty-state rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-xs text-slate-400">
+            <div className="omni-knowledge-empty-state rounded-lg border border-dashed px-4 py-8 text-center text-xs">
               还没有模型，点击“添加模型”先建一个。
             </div>
           )}
@@ -236,9 +234,14 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
       </div>
 
       {isModelFormOpen && editingModel ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-[var(--omni-overlay-scrim)] px-6">
+        <div className="omni-knowledge-model-modal-backdrop">
           <div
-            className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl"
+            ref={modelDialogRef}
+            className="omni-knowledge-model-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="knowledge-embedding-model-dialog-title"
+            tabIndex={-1}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.stopPropagation();
@@ -246,18 +249,18 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
               }
             }}
           >
-            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="omni-knowledge-model-dialog__header">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">{normalizedConfig.models.some((model) => model.id === editingModel.id) ? "编辑模型" : "新增模型"}</h3>
+                <h3 id="knowledge-embedding-model-dialog-title" className="omni-knowledge-model-dialog__title">{normalizedConfig.models.some((model) => model.id === editingModel.id) ? "编辑模型" : "新增模型"}</h3>
               </div>
-              <button onClick={closeModelForm} aria-label="关闭" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:text-slate-700" type="button">
+              <button onClick={closeModelForm} aria-label="关闭" className="omni-knowledge-model-dialog__close" type="button">
                 <X size={16} strokeWidth={1.8} />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <label className="grid grid-cols-[120px_1fr] gap-4">
-                <span className="pt-2 text-right text-sm text-slate-700">供应商</span>
+            <div className="omni-knowledge-model-dialog__body">
+              <label className="omni-knowledge-model-field">
+                <span className="omni-knowledge-model-field__label">供应商</span>
                 <OmniSelect
                   value={editingModel.provider}
                   onChange={(value) => {
@@ -269,58 +272,58 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
                 />
               </label>
 
-              <label className="grid grid-cols-[120px_1fr] gap-4">
-                <span className="pt-2 text-right text-sm text-slate-700">Base URL</span>
+              <label className="omni-knowledge-model-field">
+                <span className="omni-knowledge-model-field__label">Base URL</span>
                 <input
                   value={editingModel.baseUrl}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, baseUrl: event.target.value } : current))}
                   placeholder="https://api.siliconflow.cn/v1"
-                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                  className="omni-knowledge-model-input"
                 />
               </label>
 
-              <label className="grid grid-cols-[120px_1fr] gap-4">
-                <span className="pt-2 text-right text-sm text-slate-700">显示名称</span>
+              <label className="omni-knowledge-model-field">
+                <span className="omni-knowledge-model-field__label">显示名称</span>
                 <input
                   value={editingModel.name}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, name: event.target.value } : current))}
                   placeholder="默认向量模型"
-                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                  className="omni-knowledge-model-input"
                 />
               </label>
 
-              <label className="grid grid-cols-[120px_1fr] gap-4">
-                <span className="pt-2 text-right text-sm text-slate-700">真实模型 ID</span>
+              <label className="omni-knowledge-model-field">
+                <span className="omni-knowledge-model-field__label">真实模型 ID</span>
                 <input
                   value={editingModel.model}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, model: event.target.value } : current))}
                   placeholder="text-embedding-3-small"
-                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                  className="omni-knowledge-model-input"
                 />
               </label>
 
-              <label className="grid grid-cols-[120px_1fr] gap-4">
-                <span className="pt-2 text-right text-sm text-slate-700">API Key</span>
+              <label className="omni-knowledge-model-field">
+                <span className="omni-knowledge-model-field__label">API Key</span>
                 <input
                   type="password"
                   value={editingModel.apiKey}
                   onChange={(event) => setEditingModel((current) => (current ? { ...current, apiKey: event.target.value } : current))}
                   placeholder="该模型单独使用的 API Key"
-                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                  className="omni-knowledge-model-input"
                 />
               </label>
 
-              <div className="grid grid-cols-[120px_1fr] gap-4">
+              <div className="omni-knowledge-model-dialog__footer-row">
                 <span />
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={saveEditingModel}
-                    className="rounded-md bg-slate-900 px-4 py-2 text-xs font-medium text-white"
+                    className="omni-knowledge-button omni-knowledge-button--primary"
                   >
                     保存
                   </button>
-                  <button type="button" onClick={closeModelForm} className="rounded-md border border-slate-200 px-4 py-2 text-xs text-slate-600">
+                  <button type="button" onClick={closeModelForm} className="omni-knowledge-button omni-knowledge-button--secondary">
                     取消
                   </button>
                   <button
@@ -329,7 +332,7 @@ export default function KnowledgeEmbeddingSection({ config, onChangeConfig, prov
                       removeModel(editingModel.id);
                       closeModelForm();
                     }}
-                    className="rounded-md border border-rose-200 px-4 py-2 text-xs text-rose-600"
+                    className="omni-knowledge-button omni-knowledge-button--danger"
                   >
                     删除
                   </button>

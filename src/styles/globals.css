@@ -1038,178 +1038,298 @@ body:has(.compact-menu-window),
   border-color: var(--omni-panel-border) !important;
 }
 
-/* Dark mode: harmonize knowledge embedding/multimodal model sections.
-   These sections reuse light Tailwind surfaces that become unreadable in
-   dark mode (light bg + light text). */
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section,
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section {
-  background: var(--omni-panel-bg) !important;
-  border-color: var(--omni-panel-border) !important;
+/* Knowledge model settings use explicit theme classes so light and dark modes
+   share one component contract instead of brittle Tailwind-class rewrites. */
+.omni-knowledge-embedding-section,
+.omni-knowledge-multimodal-section {
+  border-color: var(--omni-panel-border);
+  background: color-mix(in srgb, var(--omni-soft-bg) 72%, var(--omni-panel-bg));
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-white"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-slate-50"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-white"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-slate-50"] {
-  background: var(--omni-panel-bg) !important;
+.omni-knowledge-model-heading {
+  color: var(--omni-app-text);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="border-slate-200"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="border-slate-300"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="border-slate-200"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="border-slate-300"] {
-  border-color: var(--omni-panel-border) !important;
+.omni-knowledge-model-description {
+  color: var(--omni-app-muted);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-slate-900"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-slate-800"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-slate-700"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-slate-900"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-slate-800"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-slate-700"] {
-  color: var(--omni-app-text) !important;
+.omni-knowledge-status-badge {
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-muted);
+  font-weight: 600;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-slate-600"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-slate-500"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-slate-400"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-slate-600"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-slate-500"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-slate-400"] {
-  color: var(--omni-app-muted) !important;
+.omni-knowledge-status-badge[data-state="enabled"],
+.omni-knowledge-status-badge[data-state="configured"] {
+  border-color: color-mix(in srgb, var(--omni-app-success) 34%, transparent);
+  background: color-mix(in srgb, var(--omni-app-success) 12%, var(--omni-panel-bg));
+  color: var(--omni-app-success);
 }
 
-/* Status badges: the top-right "已关闭 / 未配置模型" etc. */
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section .omni-knowledge-status-badge,
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section .omni-knowledge-status-badge {
-  background: var(--omni-soft-bg) !important;
-  color: var(--omni-app-text) !important;
+.omni-knowledge-model-toggle {
+  color: var(--omni-app-text);
 }
 
-/* Inner semantic badges (current use, missing key, capability, default, etc). */
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-violet-100"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-violet-100"] {
-  background: rgba(167, 139, 250, 0.16) !important;
+.omni-knowledge-model-default,
+.omni-knowledge-model-list {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-panel-bg);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-sky-100"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-sky-100"] {
-  background: rgba(125, 211, 252, 0.16) !important;
+.omni-knowledge-model-list__title {
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-emerald-100"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-emerald-100"] {
-  background: rgba(110, 231, 183, 0.16) !important;
+.omni-knowledge-model-list__hint {
+  color: var(--omni-app-muted);
+  font-size: 12px;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-amber-100"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-amber-100"] {
-  background: rgba(252, 211, 77, 0.16) !important;
+.omni-knowledge-model-list__items {
+  border-top: 1px solid var(--omni-panel-border);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-blue-100"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-blue-100"] {
-  background: rgba(147, 197, 253, 0.16) !important;
+.omni-knowledge-model-card {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-soft-bg);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-rose-50"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-rose-50"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="bg-red-50"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="bg-red-50"] {
-  background: rgba(244, 63, 94, 0.12) !important;
+.omni-knowledge-model-card:hover {
+  border-color: color-mix(in srgb, var(--omni-accent) 32%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 5%, var(--omni-soft-bg));
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-violet-950"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-violet-700"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-violet-600"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-violet-500"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-violet-950"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-violet-700"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-violet-600"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-violet-500"] {
-  color: #d8b4fe !important;
+.omni-knowledge-model-card[data-active="true"] {
+  border-color: color-mix(in srgb, var(--omni-accent) 42%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-panel-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omni-accent) 16%, transparent);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-emerald-700"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-emerald-700"] {
-  color: #6ee7b7 !important;
+.omni-knowledge-model-card__edit {
+  border: 0;
+  border-radius: var(--omni-control-radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-sky-700"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-sky-700"] {
-  color: #7dd3fc !important;
+.omni-knowledge-model-card__edit:focus-visible,
+.omni-knowledge-button:focus-visible,
+.omni-knowledge-model-dialog__close:focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-amber-700"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-amber-700"] {
-  color: #fcd34d !important;
+.omni-knowledge-model-card__name {
+  color: var(--omni-app-text);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-blue-700"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-blue-700"] {
-  color: #93c5fd !important;
+.omni-knowledge-model-card__meta {
+  color: var(--omni-app-muted);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-rose-600"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-rose-600"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section [class*="text-red-600"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section [class*="text-red-600"] {
-  color: #fda4af !important;
+.omni-knowledge-chip {
+  border: 1px solid var(--omni-panel-border);
+  border-radius: 999px;
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 8px;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section input,
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section input {
-  background: var(--omni-soft-bg) !important;
-  border-color: var(--omni-panel-border) !important;
-  color: var(--omni-app-text) !important;
+.omni-knowledge-chip--capability {
+  color: var(--omni-app-text);
+  font-weight: 600;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section button[class*="bg-white"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section button[class*="bg-white"] {
-  background: var(--omni-soft-bg) !important;
-  color: var(--omni-app-text) !important;
-  border-color: var(--omni-panel-border) !important;
+.omni-knowledge-chip--selected {
+  border-color: color-mix(in srgb, var(--omni-accent) 28%, transparent);
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-accent-strong, var(--omni-accent));
+  font-weight: 600;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section button[class*="bg-slate-900"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section button[class*="bg-slate-900"],
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section button[class*="bg-violet-600"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section button[class*="bg-violet-600"] {
-  background: var(--omni-accent) !important;
-  color: #ffffff !important;
+.omni-knowledge-chip--warning {
+  border-color: color-mix(in srgb, var(--omni-warning) 32%, transparent);
+  background: color-mix(in srgb, var(--omni-warning) 12%, var(--omni-panel-bg));
+  color: var(--omni-warning);
+  font-weight: 600;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section button[class*="hover:bg-slate-50"]:hover,
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section button[class*="hover:bg-slate-50"]:hover,
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section button[class*="hover:bg-slate-100"]:hover,
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section button[class*="hover:bg-slate-100"]:hover {
-  background: var(--omni-panel-border) !important;
+.omni-knowledge-button {
+  align-items: center;
+  border-radius: var(--omni-control-radius);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 500;
+  min-height: 32px;
+  padding: 0 12px;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
-/* Active/default model cards. */
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section .omni-knowledge-model-card[class*="bg-violet-50"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section .omni-knowledge-model-card[class*="bg-violet-50"] {
-  background: color-mix(in srgb, var(--omni-accent) 16%, var(--omni-panel-bg)) !important;
-  border-color: color-mix(in srgb, var(--omni-accent) 55%, var(--omni-panel-border)) !important;
-  box-shadow: inset 3px 0 0 var(--omni-accent) !important;
+.omni-knowledge-button--secondary {
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section .omni-knowledge-model-card:hover,
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section .omni-knowledge-model-card:hover {
-  border-color: color-mix(in srgb, var(--omni-accent) 45%, var(--omni-panel-border)) !important;
-  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-panel-bg)) !important;
+.omni-knowledge-button--secondary:hover {
+  border-color: color-mix(in srgb, var(--omni-accent) 30%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 6%, var(--omni-soft-bg));
 }
 
-/* Modal overlay inside these sections. */
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section > div[class*="fixed"],
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section > div[class*="fixed"] {
-  background: rgba(0, 0, 0, 0.6) !important;
+.omni-knowledge-button--primary {
+  border: 1px solid var(--omni-accent);
+  background: var(--omni-accent);
+  color: #ffffff;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-embedding-section > div[class*="fixed"] > div,
-:root[data-omni-theme="dark"] .omni-knowledge-multimodal-section > div[class*="fixed"] > div {
-  background: var(--omni-panel-bg) !important;
-  border-color: var(--omni-panel-border) !important;
+.omni-knowledge-button--primary:hover {
+  background: var(--omni-accent-strong, var(--omni-accent));
+}
+
+.omni-knowledge-button--selected {
+  border: 1px solid color-mix(in srgb, var(--omni-accent) 34%, transparent);
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-accent-strong, var(--omni-accent));
+  font-weight: 600;
+}
+
+.omni-knowledge-button--danger {
+  border: 1px solid color-mix(in srgb, var(--omni-danger) 30%, transparent);
+  background: color-mix(in srgb, var(--omni-danger) 9%, var(--omni-panel-bg));
+  color: var(--omni-danger);
+}
+
+.omni-knowledge-button--danger:hover {
+  background: color-mix(in srgb, var(--omni-danger) 16%, var(--omni-panel-bg));
+}
+
+.omni-knowledge-model-modal-backdrop {
+  align-items: center;
+  background: var(--omni-overlay-scrim);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 20;
+}
+
+.omni-knowledge-model-dialog {
+  background: var(--omni-panel-bg);
+  border: 1px solid var(--omni-panel-border);
+  border-radius: var(--omni-dialog-radius);
+  box-shadow: var(--omni-dialog-shadow);
+  color: var(--omni-app-text);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  width: min(560px, 100%);
+}
+
+.omni-knowledge-model-dialog__header {
+  align-items: center;
+  border-bottom: 1px solid var(--omni-panel-border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+}
+
+.omni-knowledge-model-dialog__title {
+  color: var(--omni-app-text);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.omni-knowledge-model-dialog__hint {
+  color: var(--omni-app-muted);
+}
+
+.omni-knowledge-model-dialog__close {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--omni-control-radius);
+  color: var(--omni-app-muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.omni-knowledge-model-dialog__close:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.omni-knowledge-model-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+}
+
+.omni-knowledge-model-field,
+.omni-knowledge-model-dialog__footer-row {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+
+.omni-knowledge-model-field__label {
+  color: var(--omni-app-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.omni-knowledge-model-input {
+  background: var(--omni-input-bg, var(--omni-panel-bg));
+  border: 1px solid var(--omni-panel-border);
+  border-radius: var(--omni-control-radius);
+  color: var(--omni-app-text);
+  font: inherit;
+  font-size: 13px;
+  height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.omni-knowledge-model-input:focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 1px;
+}
+
+@media (max-width: 640px) {
+  .omni-knowledge-model-field,
+  .omni-knowledge-model-dialog__footer-row {
+    grid-template-columns: 1fr;
+  }
+
+  .omni-knowledge-model-field__label {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omni-knowledge-button,
+  .omni-knowledge-model-card {
+    transition: none;
+  }
 }
 
 .omni-knowledge-topic-shell .chat-topic-panel__body::before {
