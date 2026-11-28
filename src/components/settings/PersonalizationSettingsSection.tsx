@@ -279,7 +279,7 @@ export default function PersonalizationSettingsSection() {
       {editingCard && (
         <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-[var(--omni-overlay-scrim)] p-4">
             <div
-              className="omni-settings-card omni-model-dialog w-full max-w-lg rounded-xl p-5 shadow-xl"
+              className="omni-settings-card omni-model-dialog w-full max-w-lg rounded-xl p-5"
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.stopPropagation();

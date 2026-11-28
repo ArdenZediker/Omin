@@ -341,7 +341,7 @@ export default function ModelSettingsSection({
         <div className="omni-model-section-modal absolute inset-0 z-20 flex items-center justify-center bg-[var(--omni-overlay-scrim)] px-6">
             <div
               ref={modelDialogRef}
-              className="omni-model-dialog flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl shadow-2xl"
+              className="omni-model-dialog flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl"
               role="dialog"
               aria-modal="true"
               aria-labelledby="omni-chat-model-dialog-title"
