@@ -1008,3 +1008,210 @@ button.omni-dialog__plugin-chip:hover {
 .omni-error-boundary__button:hover {
   filter: brightness(1.08);
 }
+
+/* Dialogs and selects share one quiet surface system. Keep this block last
+   so older component-specific rules cannot reintroduce gradients or halos. */
+:root[data-omni-theme] .omni-select__trigger {
+  background: var(--omni-input-bg);
+  border-color: var(--omni-panel-border);
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .omni-select__trigger:hover,
+:root[data-omni-theme] .omni-select[data-open="true"] .omni-select__trigger {
+  background: color-mix(in srgb, var(--omni-accent) 5%, var(--omni-input-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 42%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .omni-select__trigger:focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
+  border-color: var(--omni-accent);
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .omni-select__menu {
+  border-color: var(--omni-panel-border);
+  border-radius: var(--omni-radius-md);
+  background: var(--omni-panel-bg);
+  box-shadow: var(--omni-dialog-shadow);
+}
+
+:root[data-omni-theme] .omni-select__option:hover,
+:root[data-omni-theme] .omni-select__option--active {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-panel-bg));
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .omni-select__option--selected {
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .omni-confirm-dialog,
+:root[data-omni-theme] .omni-dialog,
+:root[data-omni-theme] .confirm-dialog {
+  background: var(--omni-panel-bg);
+  border-color: var(--omni-panel-border);
+  box-shadow: var(--omni-dialog-shadow);
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .omni-dialog-backdrop {
+  background: var(--omni-overlay-scrim);
+}
+
+:root[data-omni-theme] :where(
+    .omni-prompt-dialog__input,
+    .omni-dialog__field input,
+    .omni-dialog__field textarea,
+    .omni-dialog__field select,
+    .omni-dialog__example-fields input,
+    .omni-dialog__example-fields textarea
+  ) {
+  background: var(--omni-input-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-app-text);
+  box-shadow: none;
+}
+
+:root[data-omni-theme] :where(
+    .omni-prompt-dialog__input,
+    .omni-dialog__field input,
+    .omni-dialog__field textarea,
+    .omni-dialog__field select,
+    .omni-dialog__example-fields input,
+    .omni-dialog__example-fields textarea
+  )::placeholder {
+  color: var(--omni-app-muted);
+}
+
+:root[data-omni-theme] :where(
+    .omni-prompt-dialog__input,
+    .omni-dialog__field input,
+    .omni-dialog__field textarea,
+    .omni-dialog__field select,
+    .omni-dialog__example-fields input,
+    .omni-dialog__example-fields textarea
+  ):focus {
+  border-color: var(--omni-accent);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--omni-accent) 20%, transparent);
+}
+
+:root[data-omni-theme] .omni-dialog__close,
+:root[data-omni-theme] .chat-history-panel__group-dialog-close,
+:root[data-omni-theme] .skillhub-detail__close,
+:root[data-omni-theme] .omni-tools-dialog__close {
+  color: var(--omni-app-muted);
+}
+
+:root[data-omni-theme] .omni-dialog__close:hover,
+:root[data-omni-theme] .chat-history-panel__group-dialog-close:hover,
+:root[data-omni-theme] .skillhub-detail__close:hover,
+:root[data-omni-theme] .omni-tools-dialog__close:hover {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-button-bg));
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .omni-confirm-dialog__button,
+:root[data-omni-theme] .omni-dialog__button {
+  border-color: var(--omni-panel-border);
+  border-radius: var(--omni-control-radius);
+}
+
+:root[data-omni-theme] .omni-confirm-dialog__button:hover:not(:disabled),
+:root[data-omni-theme] .omni-dialog__button--secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-button-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 34%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .omni-confirm-dialog__button--primary,
+:root[data-omni-theme] .omni-dialog__button--primary {
+  background: var(--omni-accent);
+  border-color: var(--omni-accent);
+  color: #ffffff;
+}
+
+:root[data-omni-theme] .omni-confirm-dialog__button--primary:hover:not(:disabled),
+:root[data-omni-theme] .omni-dialog__button--primary:hover:not(:disabled) {
+  background: var(--omni-accent-strong);
+  border-color: var(--omni-accent-strong);
+}
+
+:root[data-omni-theme] .omni-confirm-dialog__button--danger {
+  background: var(--omni-danger);
+  border-color: var(--omni-danger);
+  color: #ffffff;
+}
+
+:root[data-omni-theme] .omni-confirm-dialog__button--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--omni-danger) 86%, #000000);
+  border-color: color-mix(in srgb, var(--omni-danger) 86%, #000000);
+}
+
+:root[data-omni-theme] .confirm-dialog__icon,
+:root[data-omni-theme] .confirm-dialog__badge,
+:root[data-omni-theme] .confirm-dialog__warning {
+  border-color: color-mix(in srgb, var(--omni-accent) 28%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .confirm-dialog--irreversible .confirm-dialog__icon,
+:root[data-omni-theme] .confirm-dialog__badge--irreversible {
+  background: color-mix(in srgb, var(--omni-danger) 12%, var(--omni-panel-bg));
+  color: var(--omni-danger);
+}
+
+:root[data-omni-theme] .confirm-dialog__badge--destructive {
+  background: color-mix(in srgb, #f59e0b 12%, var(--omni-panel-bg));
+  color: color-mix(in srgb, #f59e0b 84%, var(--omni-app-text));
+}
+
+:root[data-omni-theme] .confirm-dialog__badge--write {
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-accent-strong);
+}
+
+:root[data-omni-theme] .confirm-dialog__badge--read {
+  background: var(--omni-app-success-bg);
+  color: var(--omni-app-success);
+}
+
+:root[data-omni-theme] .omni-error-boundary__card {
+  background: var(--omni-panel-bg);
+  border-color: var(--omni-panel-border);
+  border-radius: var(--omni-radius-lg);
+  box-shadow: var(--omni-dialog-shadow);
+}
+
+:root[data-omni-theme] .omni-error-boundary__detail {
+  background: color-mix(in srgb, var(--omni-danger) 10%, var(--omni-panel-bg));
+  border: 1px solid color-mix(in srgb, var(--omni-danger) 30%, var(--omni-panel-border));
+  color: var(--omni-danger);
+}
+
+:root[data-omni-theme] .omni-error-boundary__button {
+  background: var(--omni-accent);
+  border-radius: var(--omni-control-radius);
+  color: #ffffff;
+}
+
+:root[data-omni-theme] .omni-error-boundary__button:hover {
+  background: var(--omni-accent-strong);
+  filter: none;
+}
+
+:root[data-omni-theme] :where(
+    .omni-select__trigger,
+    .omni-select__option,
+    .omni-confirm-dialog__button,
+    .omni-dialog__button,
+    .omni-dialog__close,
+    .chat-history-panel__group-dialog-close,
+    .skillhub-detail__close,
+    .omni-tools-dialog__close,
+    .omni-error-boundary__button
+  ):focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
+}

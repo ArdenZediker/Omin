@@ -2538,8 +2538,8 @@
   line-height: 1.45;
   color: var(--omni-danger, #dc2626);
   background: var(--omni-danger-soft, rgba(220, 38, 38, 0.08));
-  border-left: 3px solid var(--omni-danger, #dc2626);
-  border-radius: 0 8px 8px 0;
+  border: 1px solid color-mix(in srgb, var(--omni-danger, #dc2626) 34%, var(--omni-panel-border));
+  border-radius: var(--omni-control-radius);
 }
 
 .omni-mcp-create-actions {
@@ -2776,4 +2776,184 @@
 .main-chat-workspace,
 .main-chat-stage > .plugin-marketplace.plugin-marketplace--main-view {
   border-radius: var(--omni-radius-xl) !important;
+}
+
+/* Plugin surfaces share the same quiet operate-system as chat and settings.
+   Keep metadata compact, but reserve pills for true status/tag values. */
+:root[data-omni-theme] .plugin-marketplace {
+  background: var(--omni-app-surface-1, var(--omni-panel-bg));
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .plugin-marketplace__close,
+:root[data-omni-theme] .plugin-marketplace__icon-btn,
+:root[data-omni-theme] .plugin-marketplace__search-toggle,
+:root[data-omni-theme] .plugin-marketplace__search-close,
+:root[data-omni-theme] .plugin-marketplace__search-clear {
+  color: var(--omni-app-muted);
+}
+
+:root[data-omni-theme] .plugin-marketplace__close:hover,
+:root[data-omni-theme] .plugin-marketplace__icon-btn:hover,
+:root[data-omni-theme] .plugin-marketplace__search-toggle:hover,
+:root[data-omni-theme] .plugin-marketplace__search-close:hover,
+:root[data-omni-theme] .plugin-marketplace__search-clear:hover {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-button-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 34%, var(--omni-panel-border));
+  color: var(--omni-app-text);
+  transform: none;
+}
+
+:root[data-omni-theme] .plugin-marketplace__icon-btn--active,
+:root[data-omni-theme] .plugin-marketplace__sort-tab--active,
+:root[data-omni-theme] .plugin-marketplace__kind-tab--active {
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 42%, var(--omni-panel-border));
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .plugin-marketplace__source-tab--active,
+:root[data-omni-theme] .plugin-marketplace__category-tab--active,
+:root[data-omni-theme] .plugin-marketplace__filter-item--active {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-panel-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 28%, var(--omni-panel-border));
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .plugin-marketplace__sort-tab,
+:root[data-omni-theme] .plugin-marketplace__kind-tab,
+:root[data-omni-theme] .plugin-marketplace__category-tab,
+:root[data-omni-theme] .plugin-marketplace__source-tab,
+:root[data-omni-theme] .plugin-marketplace__batch-btn,
+:root[data-omni-theme] .plugin-marketplace__batch-top-btn {
+  border-radius: var(--omni-control-radius);
+}
+
+:root[data-omni-theme] .plugin-marketplace__batch-btn--active,
+:root[data-omni-theme] .plugin-marketplace__batch-top-btn--primary {
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 48%, var(--omni-panel-border));
+  color: var(--omni-accent-strong);
+}
+
+:root[data-omni-theme] .plugin-marketplace__batch-top-bar {
+  background: var(--omni-card-bg);
+  border-color: var(--omni-panel-border);
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .plugin-marketplace__batch-top-btn--danger {
+  color: var(--omni-danger);
+  border-color: color-mix(in srgb, var(--omni-danger) 42%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-danger) 8%, var(--omni-panel-bg));
+}
+
+:root[data-omni-theme] .plugin-marketplace__batch-top-btn--danger:hover {
+  color: var(--omni-danger);
+  border-color: var(--omni-danger);
+  background: color-mix(in srgb, var(--omni-danger) 14%, var(--omni-panel-bg));
+}
+
+:root[data-omni-theme] .plugin-card {
+  border-radius: var(--omni-radius-md);
+  background: var(--omni-card-bg);
+  box-shadow: none;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+:root[data-omni-theme] .plugin-card--clickable:hover,
+:root[data-omni-theme] .plugin-card--batch:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--omni-accent) 44%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 3%, var(--omni-card-bg));
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .plugin-card--batch-selected {
+  border-color: color-mix(in srgb, var(--omni-accent) 62%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 9%, var(--omni-card-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omni-accent) 24%, transparent);
+}
+
+:root[data-omni-theme] .plugin-card__icon {
+  background: var(--omni-app-surface-2);
+  border-color: var(--omni-panel-border);
+}
+
+:root[data-omni-theme] .plugin-card__button--secondary,
+:root[data-omni-theme] .plugin-card__button--installed {
+  background: var(--omni-button-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-button-text);
+}
+
+:root[data-omni-theme] .plugin-card__button--secondary:hover {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-button-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 34%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .plugin-card__connected {
+  background: var(--omni-app-success-bg);
+  border-color: color-mix(in srgb, var(--omni-app-success) 42%, var(--omni-panel-border));
+  color: var(--omni-app-success);
+}
+
+:root[data-omni-theme] .plugin-card__connected-dot {
+  background: var(--omni-app-success);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--omni-app-success) 18%, transparent);
+}
+
+:root[data-omni-theme] .plugin-card__trust-prompt {
+  background: color-mix(in srgb, #f59e0b 8%, var(--omni-card-bg));
+  border-color: color-mix(in srgb, #f59e0b 38%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .plugin-card__config,
+:root[data-omni-theme] .plugin-card__trust-cmd,
+:root[data-omni-theme] .skillhub-detail__meta-item {
+  background: var(--omni-app-surface-2);
+  border-color: var(--omni-panel-border);
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .skillhub-detail__source,
+:root[data-omni-theme] .skillhub-detail__tag,
+:root[data-omni-theme] .plugin-card__badge,
+:root[data-omni-theme] .plugin-card__source-tag,
+:root[data-omni-theme] .skillhub-browser__api {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-card-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 24%, var(--omni-panel-border));
+  color: var(--omni-app-muted);
+}
+
+:root[data-omni-theme] .skillhub-detail__tag--label {
+  background: var(--omni-app-surface-2);
+}
+
+:root[data-omni-theme] :where(
+    .plugin-marketplace button,
+    .plugin-marketplace input,
+    .plugin-marketplace select,
+    .plugin-marketplace textarea,
+    .expert-team-manager button,
+    .expert-team-manager input,
+    .expert-team-manager select,
+    .expert-team-manager textarea
+  ):focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
+}
+
+:root[data-omni-theme] :where(
+    .plugin-marketplace button,
+    .plugin-marketplace input,
+    .plugin-marketplace select,
+    .plugin-marketplace textarea,
+    .expert-team-manager button,
+    .expert-team-manager input,
+    .expert-team-manager select,
+    .expert-team-manager textarea
+  ):disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }

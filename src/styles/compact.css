@@ -994,3 +994,268 @@
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
 }
+
+/* Floating surfaces use the same semantic tokens as the main window. Keep
+   this block last because globals.css contains older theme-specific overrides. */
+:root[data-omni-theme] .compact-bar {
+  background: var(--omni-panel-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-app-text);
+  box-shadow: var(--omni-surface-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-omni-theme] .compact-button,
+:root[data-omni-theme] .compact-button--quick-ask,
+:root[data-omni-theme] .compact-bar__actions--pet .compact-button--quick-ask {
+  background: var(--omni-button-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-button-text);
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .compact-button:hover,
+:root[data-omni-theme] .compact-button--quick-ask:hover,
+:root[data-omni-theme] .compact-bar__actions--pet .compact-button--quick-ask:hover {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-button-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 34%, var(--omni-panel-border));
+  color: var(--omni-app-text);
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .compact-button--brand {
+  background: var(--omni-panel-bg);
+  border-color: color-mix(in srgb, var(--omni-accent) 35%, var(--omni-panel-border));
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .compact-button--brand:hover {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-panel-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 52%, var(--omni-panel-border));
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .compact-ask-popover,
+:root[data-omni-theme] .compact-query,
+:root[data-omni-theme] .compact-reply,
+:root[data-omni-theme] .compact-menu,
+:root[data-omni-theme] .compact-submenu,
+:root[data-omni-theme] .pet-thought-bubble {
+  background: var(--omni-panel-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-app-text);
+  box-shadow: var(--omni-surface-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-omni-theme] .compact-menu,
+:root[data-omni-theme] .compact-submenu {
+  border-radius: var(--omni-radius-md);
+}
+
+:root[data-omni-theme] .compact-menu__label,
+:root[data-omni-theme] .compact-menu__group-label,
+:root[data-omni-theme] .compact-menu__meta,
+:root[data-omni-theme] .compact-menu__arrow-icon,
+:root[data-omni-theme] .compact-query__hint {
+  color: var(--omni-app-muted);
+}
+
+:root[data-omni-theme] .compact-menu__item {
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .compact-menu__item:hover,
+:root[data-omni-theme] .compact-menu__item--active {
+  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-panel-bg));
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .compact-menu__item:active {
+  background: color-mix(in srgb, var(--omni-accent) 16%, var(--omni-panel-bg));
+}
+
+:root[data-omni-theme] .compact-menu__item--settings {
+  background: var(--omni-accent);
+  color: #ffffff;
+}
+
+:root[data-omni-theme] .compact-menu__item--settings:hover {
+  background: var(--omni-accent-strong);
+  color: #ffffff;
+}
+
+:root[data-omni-theme] .compact-menu__check {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+  color: var(--omni-accent-strong);
+}
+
+:root[data-omni-theme] .compact-menu__check--checked {
+  border-color: color-mix(in srgb, var(--omni-accent) 64%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 14%, var(--omni-soft-bg));
+}
+
+:root[data-omni-theme] .compact-menu__divider {
+  background: var(--omni-panel-border);
+}
+
+:root[data-omni-theme] .compact-ask-popover__close,
+:root[data-omni-theme] .pet-thought-bubble__hover-button {
+  color: var(--omni-app-muted);
+}
+
+:root[data-omni-theme] .compact-ask-popover__close:hover,
+:root[data-omni-theme] .pet-thought-bubble__hover-button:hover {
+  background: color-mix(in srgb, var(--omni-app-text) 8%, transparent);
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .compact-ask-popover__input,
+:root[data-omni-theme] .compact-query__input,
+:root[data-omni-theme] .pet-thought-bubble__reply-input {
+  background: var(--omni-input-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-app-text);
+  box-shadow: none;
+}
+
+:root[data-omni-theme] .compact-ask-popover__input::placeholder,
+:root[data-omni-theme] .compact-query__input::placeholder,
+:root[data-omni-theme] .pet-thought-bubble__reply-input::placeholder {
+  color: var(--omni-app-muted);
+}
+
+:root[data-omni-theme] .compact-ask-popover__input:focus,
+:root[data-omni-theme] .compact-query__input:focus,
+:root[data-omni-theme] .pet-thought-bubble__reply-input:focus {
+  border-color: var(--omni-accent);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--omni-accent) 20%, transparent);
+}
+
+:root[data-omni-theme] .compact-query__preset,
+:root[data-omni-theme] .pet-thought-bubble__reply-trigger {
+  background: var(--omni-button-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-button-text);
+}
+
+:root[data-omni-theme] .compact-query__preset:hover,
+:root[data-omni-theme] .pet-thought-bubble__reply-trigger:hover {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-button-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 34%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .compact-ask-popover__send,
+:root[data-omni-theme] .pet-thought-bubble__reply-submit {
+  background: var(--omni-accent);
+  color: #ffffff;
+}
+
+:root[data-omni-theme] .compact-ask-popover__send:hover,
+:root[data-omni-theme] .pet-thought-bubble__reply-submit:not(:disabled):hover {
+  background: var(--omni-accent-strong);
+}
+
+:root[data-omni-theme] .pet-thought-bubble__preview {
+  color: var(--omni-app-muted);
+}
+
+:root[data-omni-theme] .pet-thought-bubble--thinking {
+  --pet-thought-border: color-mix(in srgb, var(--omni-accent) 36%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .pet-thought-bubble--complete {
+  --pet-thought-border: color-mix(in srgb, var(--omni-app-success) 34%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .pet-thought-bubble--error {
+  --pet-thought-border: color-mix(in srgb, var(--omni-danger) 34%, var(--omni-panel-border));
+}
+
+:root[data-omni-theme] .pet-thought-compact-toggle {
+  background: var(--omni-button-bg);
+  border-color: var(--omni-panel-border);
+  color: var(--omni-app-muted);
+  box-shadow: var(--omni-surface-shadow);
+}
+
+:root[data-omni-theme] .pet-thought-compact-toggle:hover {
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-button-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 34%, var(--omni-panel-border));
+  color: var(--omni-app-text);
+}
+
+:root[data-omni-theme] .pet-thought-compact-toggle--collapsed {
+  background: var(--omni-app-success);
+  border-color: var(--omni-app-success);
+  color: #ffffff;
+}
+
+:root[data-omni-theme] :where(
+    .compact-button,
+    .compact-ask-popover__close,
+    .compact-ask-popover__send,
+    .compact-query__preset,
+    .compact-menu__item,
+    .pet-thought-bubble__hover-button,
+    .pet-thought-bubble__reply-trigger,
+    .pet-thought-bubble__reply-submit,
+    .pet-thought-compact-toggle
+  ):focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
+}
+
+:root[data-omni-theme] :where(
+    .compact-button,
+    .compact-ask-popover__close,
+    .compact-ask-popover__send,
+    .compact-query__preset,
+    .compact-menu__item,
+    .pet-thought-bubble__hover-button,
+    .pet-thought-bubble__reply-trigger,
+    .pet-thought-bubble__reply-submit,
+    .pet-thought-compact-toggle
+  ):disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+:root[data-omni-theme] .compact-submenu,
+:root[data-omni-theme] .pet-thought-bubble__preview {
+  scrollbar-color: color-mix(in srgb, var(--omni-app-muted) 50%, transparent) transparent;
+}
+
+:root[data-omni-theme] .compact-submenu::-webkit-scrollbar,
+:root[data-omni-theme] .pet-thought-bubble__preview::-webkit-scrollbar {
+  width: 8px;
+}
+
+:root[data-omni-theme] .compact-submenu::-webkit-scrollbar-thumb,
+:root[data-omni-theme] .pet-thought-bubble__preview::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--omni-app-muted) 42%, transparent);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-omni-theme] .pet-thought-bubble,
+  :root[data-omni-theme] .compact-submenu,
+  :root[data-omni-theme] .compact-query,
+  :root[data-omni-theme] .compact-ask-popover,
+  :root[data-omni-theme] .compact-menu,
+  :root[data-omni-theme] .pet-thought-compact-toggle,
+  :root[data-omni-theme] .compact-button {
+    animation: none;
+    transition-duration: 0.01ms;
+  }
+
+  :root[data-omni-theme] .pet-thought-bubble__badge--thinking::after {
+    animation: none;
+  }
+}
