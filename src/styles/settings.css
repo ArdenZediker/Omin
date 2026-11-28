@@ -98,6 +98,10 @@
   box-shadow: inset 0 0 0 1px var(--omni-panel-border), 0 1px 2px color-mix(in srgb, var(--omni-app-text) 6%, transparent) !important;
 }
 
+.omni-settings-nav--inactive {
+  color: var(--omni-app-muted);
+}
+
 .omni-settings-root .omni-settings-nav:hover:not(.omni-settings-nav--active) {
   background: color-mix(in srgb, var(--omni-card-bg) 72%, var(--omni-accent) 4%) !important;
   color: var(--omni-app-text) !important;

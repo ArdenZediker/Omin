@@ -745,17 +745,17 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
   }, []);
 
   return (
-    <div className="omni-settings-root relative flex h-full w-full min-w-0 min-h-0 flex-1 overflow-hidden bg-white text-slate-900">
-      <aside className="omni-settings-sidebar w-36 shrink-0 border-r border-slate-200 bg-slate-50 py-3">
-        <div className="omni-settings-muted px-3 pb-3 text-xs font-semibold text-slate-500">设置</div>
+    <div className="omni-settings-root relative flex h-full w-full min-w-0 min-h-0 flex-1 overflow-hidden">
+      <aside className="omni-settings-sidebar w-36 shrink-0 border-r py-3">
+        <div className="omni-settings-muted px-3 pb-3 text-xs font-semibold">设置</div>
         <div className="space-y-1 px-2">
           <button
             type="button"
             onClick={() => setSection("basic")}
             className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
               section === "basic"
-                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
+                ? "omni-settings-nav--active"
+                : "omni-settings-nav--inactive"
             }`}
           >
             <span className="omni-settings-nav-icon">
@@ -768,8 +768,8 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             onClick={() => setSection("pets")}
             className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
               section === "pets"
-                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
+                ? "omni-settings-nav--active"
+                : "omni-settings-nav--inactive"
             }`}
           >
             <span className="omni-settings-nav-icon">
@@ -782,8 +782,8 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             onClick={() => setSection("personalization")}
             className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
               section === "personalization"
-                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
+                ? "omni-settings-nav--active"
+                : "omni-settings-nav--inactive"
             }`}
           >
             <span className="omni-settings-nav-icon">
@@ -796,8 +796,8 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             onClick={() => setSection("models")}
             className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
               section === "models"
-                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
+                ? "omni-settings-nav--active"
+                : "omni-settings-nav--inactive"
             }`}
           >
             <span className="omni-settings-nav-icon">
@@ -810,8 +810,8 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
             onClick={() => setSection("storage")}
             className={`omni-settings-nav flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
               section === "storage"
-                ? "omni-settings-nav--active bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                : "text-slate-500 hover:bg-white/70 hover:text-slate-800"
+                ? "omni-settings-nav--active"
+                : "omni-settings-nav--inactive"
             }`}
           >
             <span className="omni-settings-nav-icon">
@@ -822,10 +822,10 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
         </div>
       </aside>
 
-      <section className="omni-settings-main flex min-w-0 flex-1 flex-col bg-white">
-        <header className="omni-settings-header flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-5">
+      <section className="omni-settings-main flex min-w-0 flex-1 flex-col">
+        <header className="omni-settings-header omni-model-section-divider flex h-12 shrink-0 items-center justify-between border-b px-5">
           <div className="min-w-0 flex-1 pr-3">
-            <h2 className="omni-settings-title text-sm font-semibold text-slate-950">
+            <h2 className="omni-settings-title text-sm font-semibold">
               {section === "basic"
                 ? "基本设置"
                 : section === "pets"
@@ -836,7 +836,7 @@ export default function SettingsPanel({ onClose, onModelChange }: SettingsPanelP
                     ? "数据存储"
                     : "模型配置"}
             </h2>
-            <p className="omni-settings-muted text-[11px] text-slate-500">
+            <p className="omni-settings-muted text-[11px]">
               {section === "basic"
                 ? "管理 Omni 的通用基础选项。"
                 : section === "pets"
