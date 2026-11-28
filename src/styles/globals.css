@@ -287,7 +287,7 @@ body:has(.compact-menu-window),
 
 .omni-switch[data-checked="true"] .omni-switch__track {
   border-color: color-mix(in srgb, var(--omni-accent, #1f6feb) 58%, transparent);
-  background: linear-gradient(135deg, var(--omni-accent, #1f6feb), var(--omni-accent-strong, #388bfd));
+  background: var(--omni-accent, #1f6feb);
   box-shadow:
     0 7px 18px rgba(31, 111, 235, 0.22),
     inset 0 1px 1px rgba(255, 255, 255, 0.18);
@@ -993,7 +993,7 @@ body:has(.compact-menu-window),
 
 .omni-model-section-icon--active {
   background: var(--omni-accent);
-  color: #ffffff;
+  color: var(--omni-panel-bg);
 }
 
 .omni-model-section-icon--inactive {
@@ -1208,7 +1208,7 @@ body:has(.compact-menu-window),
 .omni-knowledge-button--primary {
   border: 1px solid var(--omni-accent);
   background: var(--omni-accent);
-  color: #ffffff;
+  color: var(--omni-panel-bg);
 }
 
 .omni-knowledge-button--primary:hover {
@@ -1534,18 +1534,18 @@ body:has(.compact-menu-window),
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.9);
-  color: #253046;
+  background: color-mix(in srgb, var(--omni-panel-bg) 90%, transparent);
+  color: var(--omni-app-text);
   cursor: pointer;
-  border: 1px solid rgba(203, 213, 225, 0.64);
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 64%, transparent);
   box-shadow: none;
   transition: box-shadow 140ms ease, background 140ms ease, border-color 140ms ease, filter 140ms ease;
 }
 
 .compact-button:hover {
   filter: none;
-  background: rgba(248, 250, 252, 0.98);
-  border-color: rgba(148, 163, 184, 0.7);
+  background: color-mix(in srgb, var(--omni-soft-bg) 98%, transparent);
+  border-color: color-mix(in srgb, var(--omni-divider-strong) 70%, transparent);
 }
 
 .compact-button--brand {
@@ -1553,14 +1553,14 @@ body:has(.compact-menu-window),
   background: color-mix(in srgb, var(--omni-panel-bg) 96%, var(--omni-accent) 4%);
   border-color: color-mix(in srgb, var(--omni-accent) 35%, var(--omni-panel-border));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 1px 0 color-mix(in srgb, var(--omni-panel-border) 40%, transparent),
     0 2px 5px rgba(64, 90, 180, 0.08);
 }
 
 .compact-button--brand:hover {
   background: color-mix(in srgb, var(--omni-panel-bg) 94%, var(--omni-accent) 6%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 1px 0 color-mix(in srgb, var(--omni-panel-border) 40%, transparent),
     0 3px 7px rgba(64, 90, 180, 0.1);
 }
 
@@ -1750,15 +1750,15 @@ body:has(.compact-menu-window),
   padding: 0 14px;
   border: 0;
   border-radius: var(--omni-control-radius);
-  background: #5865e8;
-  color: #fff;
+  background: var(--omni-accent);
+  color: var(--omni-panel-bg);
   font-size: 12px;
   font-weight: 600;
   transition: background 140ms ease, transform 140ms ease;
 }
 
 .compact-ask-popover__send:hover {
-  background: #4854d6;
+  background: var(--omni-accent-strong);
 }
 
 .compact-ask-popover__send:active {
@@ -1766,7 +1766,7 @@ body:has(.compact-menu-window),
 }
 
 .compact-ask-popover__send:focus-visible {
-  outline: 2px solid rgba(88, 101, 232, 0.8);
+  outline: 2px solid color-mix(in srgb, var(--omni-accent) 80%, transparent);
   outline-offset: 2px;
 }
 
@@ -1786,11 +1786,11 @@ body:has(.compact-menu-window),
   min-width: 220px;
   padding: 8px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(209, 213, 219, 0.8);
+  background: color-mix(in srgb, var(--omni-panel-bg) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 80%, transparent);
   box-shadow:
     0 10px 24px rgba(15, 23, 42, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    inset 0 1px 0 color-mix(in srgb, var(--omni-panel-border) 40%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   z-index: 18;
@@ -1845,9 +1845,9 @@ body:has(.compact-menu-window),
 }
 
 .compact-query__preset {
-  border: 1px solid rgba(209, 213, 219, 0.85);
-  background: rgba(255, 255, 255, 0.78);
-  color: #4b5563;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 85%, transparent);
+  background: color-mix(in srgb, var(--omni-panel-bg) 78%, transparent);
+  color: var(--omni-app-muted);
   border-radius: var(--omni-control-radius);
   padding: 7px 10px;
   font-size: 12px;
@@ -1858,9 +1858,9 @@ body:has(.compact-menu-window),
 .compact-query__input {
   flex: 1;
   min-width: 0;
-  border: 1px solid rgba(209, 213, 219, 0.85);
-  background: rgba(255, 255, 255, 0.72);
-  color: #374151;
+  border: 1px solid color-mix(in srgb, var(--omni-panel-border) 85%, transparent);
+  background: color-mix(in srgb, var(--omni-input-bg) 72%, transparent);
+  color: var(--omni-app-text);
   border-radius: var(--omni-control-radius);
   padding: 7px 10px;
   font-size: 12px;
@@ -1868,13 +1868,13 @@ body:has(.compact-menu-window),
 }
 
 .compact-query__input:focus {
-  border-color: rgba(99, 102, 241, 0.55);
+  border-color: color-mix(in srgb, var(--omni-accent) 55%, transparent);
 }
 
 .compact-query__hint {
   margin-top: 6px;
   font-size: 10px;
-  color: rgba(107, 114, 128, 0.92);
+  color: color-mix(in srgb, var(--omni-app-muted) 92%, transparent);
 }
 
 .compact-button__quick-ask {
@@ -1984,8 +1984,8 @@ body:has(.compact-menu-window),
 }
 
 .omni-window-controls__button--close:hover {
-  background: color-mix(in srgb, #ef4444 10%, transparent);
-  color: #ef4444;
+  background: color-mix(in srgb, var(--omni-danger) 10%, transparent);
+  color: var(--omni-danger);
 }
 
 .omni-window-controls__icon {
@@ -2161,8 +2161,8 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .pet-thought-bubble {
-  --pet-thought-border: #30363d;
-  background: rgba(22, 27, 34, 0.97);
+  --pet-thought-border: var(--omni-panel-border);
+  background: color-mix(in srgb, var(--omni-panel-bg) 97%, transparent);
   box-shadow:
     0 14px 30px rgba(0, 0, 0, 0.38),
     0 2px 4px rgba(0, 0, 0, 0.14);
@@ -2183,18 +2183,18 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .compact-menu__meta, :root[data-omni-theme="dark"] .compact-menu__label, :root[data-omni-theme="dark"] .compact-query__hint {
-  color: #8b949e;
+  color: var(--omni-app-muted);
 }
 
 :root[data-omni-theme="dark"] .compact-menu__item:hover,
 :root[data-omni-theme="dark"] .compact-menu__item--active {
   background: rgba(255, 255, 255, 0.1);
-  color: #e6edf3;
+  color: var(--omni-app-text);
 }
 
 :root[data-omni-theme="dark"] .compact-menu__item--settings {
   background: var(--omni-accent);
-  color: #ffffff;
+  color: var(--omni-panel-bg);
 }
 
 :root[data-omni-theme="dark"] .compact-menu__item--settings:hover {
@@ -2203,7 +2203,7 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="light"] .compact-menu__item--settings {
   background: rgba(0, 0, 0, 0.88);
-  color: #ffffff;
+  color: var(--omni-panel-bg);
 }
 
 :root[data-omni-theme="light"] .compact-menu__item--settings:hover {
@@ -2222,49 +2222,49 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .compact-ask-popover__send {
-  background: #737ff2;
-  color: #101322;
+  background: var(--omni-accent);
+  color: var(--omni-panel-bg);
 }
 
 :root[data-omni-theme="dark"] .compact-ask-popover__send:hover {
-  background: #8993fa;
+  background: var(--omni-accent-strong);
 }
 
 /* 在宠物/角色查询面板里，输入框可能受浏览器默认样式或 compact-bar 上下文影响，
    用更高特异性的规则强制保证文字和背景对比度，避免打进去的字和背景融为一体。 */
 :root[data-omni-theme="dark"] .compact-query--pet .compact-query__input,
 :root[data-omni-theme="dark"] .compact-bar--character .compact-query__input {
-  background: rgba(40, 40, 40, 0.92);
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--omni-input-bg) 92%, transparent);
+  color: var(--omni-app-text);
+  border-color: var(--omni-panel-border);
 }
 
 :root[data-omni-theme="dark"] .compact-query--pet .compact-query__input::placeholder,
 :root[data-omni-theme="dark"] .compact-bar--character .compact-query__input::placeholder {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--omni-app-muted);
 }
 
 :root[data-omni-theme="dark"] .compact-query--pet .compact-query__input:focus,
 :root[data-omni-theme="dark"] .compact-bar--character .compact-query__input:focus {
-  border-color: rgba(129, 140, 248, 0.7);
+  border-color: color-mix(in srgb, var(--omni-accent) 70%, transparent);
 }
 
 :root[data-omni-theme="light"] .compact-query__input {
-  color: #1f2937;
-  background: rgba(255, 255, 255, 0.96);
-  border-color: rgba(209, 213, 219, 0.85);
+  color: var(--omni-app-text);
+  background: color-mix(in srgb, var(--omni-input-bg) 96%, transparent);
+  border-color: var(--omni-panel-border);
 }
 
 :root[data-omni-theme="light"] .compact-query--pet .compact-query__input,
 :root[data-omni-theme="light"] .compact-bar--character .compact-query__input {
-  background: rgba(255, 255, 255, 0.96);
-  color: #1f2937;
-  border-color: rgba(209, 213, 219, 0.85);
+  background: color-mix(in srgb, var(--omni-input-bg) 96%, transparent);
+  color: var(--omni-app-text);
+  border-color: var(--omni-panel-border);
 }
 
 :root[data-omni-theme="light"] .compact-query--pet .compact-query__input::placeholder,
 :root[data-omni-theme="light"] .compact-bar--character .compact-query__input::placeholder {
-  color: #9ca3af;
+  color: var(--omni-app-muted);
 }
 
 :root[data-omni-theme="light"] .compact-bar,
@@ -2279,8 +2279,8 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="light"] .compact-ask-popover__send {
-  background: #5865e8;
-  color: #fff;
+  background: var(--omni-accent);
+  color: var(--omni-panel-bg);
 }
 
 /* Theme surfaces style .compact-bar later in this file; keep the replaced
@@ -2322,23 +2322,23 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="light"] .drag-region span,
 :root[data-omni-theme="light"] .drag-region svg {
-  color: #646a73 !important;
+  color: var(--omni-app-muted) !important;
 }
 
 :root[data-omni-theme="light"] .app-shell > .border-b,
 :root[data-omni-theme="light"] .app-shell > .border-t {
-  border-color: #e5e6eb !important;
+  border-color: var(--omni-panel-border) !important;
 }
 
 :root[data-omni-theme="light"] .app-shell .bg-white\/5,
 :root[data-omni-theme="light"] .app-shell .hover\:bg-white\/10:hover {
-  background-color: #ffffff !important;
+  background-color: var(--omni-panel-bg) !important;
 }
 
 :root[data-omni-theme="light"] .app-shell .text-white\/90,
 :root[data-omni-theme="light"] .app-shell .text-white\/80,
 :root[data-omni-theme="light"] .app-shell .text-white\/70 {
-  color: #1f2329 !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="light"] .app-shell .text-white\/50,
@@ -2346,22 +2346,22 @@ body:has(.compact-menu-window),
 :root[data-omni-theme="light"] .app-shell .text-white\/30,
 :root[data-omni-theme="light"] .app-shell .text-white\/25,
 :root[data-omni-theme="light"] .app-shell .text-white\/15 {
-  color: #646a73 !important;
+  color: var(--omni-app-muted) !important;
 }
 
 :root[data-omni-theme="light"] textarea:not(.chat-composer__textarea) {
-  background: #ffffff !important;
-  border-color: #dcdfe6 !important;
-  color: #1f2329 !important;
+  background: var(--omni-input-bg) !important;
+  border-color: var(--omni-panel-border) !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="light"] textarea:not(.chat-composer__textarea)::placeholder {
-  color: #9aa0a6 !important;
+  color: var(--omni-app-muted) !important;
 }
 
 :root[data-omni-theme="light"] .omni-settings-root {
   background: var(--omni-app-bg) !important;
-  color: #1f2329 !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="light"] .omni-knowledge-layout {
@@ -2382,12 +2382,12 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="light"] .omni-settings-title {
-  color: #1f2329 !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="light"] .omni-settings-muted,
 :root[data-omni-theme="light"] .omni-settings-label {
-  color: #646a73 !important;
+  color: var(--omni-app-muted) !important;
 }
 
 /* 主题模式选择器：三张紧凑预览卡，和设置页其它选择控件保持同一密度。 */
@@ -2770,19 +2770,19 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="light"] .omni-settings-root input,
 :root[data-omni-theme="light"] .omni-settings-root select {
-  background: #ffffff !important;
-  border-color: #dcdfe6 !important;
-  color: #1f2329 !important;
+  background: var(--omni-input-bg) !important;
+  border-color: var(--omni-panel-border) !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="light"] .omni-settings-nav--active {
-  background: #eef0f3 !important;
+  background: var(--omni-app-surface-3) !important;
   border-color: transparent !important;
   box-shadow: none !important;
 }
 
 :root[data-omni-theme="light"] .omni-settings-nav:hover {
-  background: #eef0f3 !important;
+  background: var(--omni-app-surface-3) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-card {
@@ -2954,7 +2954,7 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="dark"] .omni-pet-action-button:hover {
   background: var(--omni-app-surface-3) !important;
-  color: #ffffff !important;
+  color: var(--omni-app-text) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-pet-format-hint,
