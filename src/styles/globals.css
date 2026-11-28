@@ -3190,3 +3190,37 @@ body:has(.compact-menu-window),
   width: 100%;
   height: 100%;
 }
+
+/* Shared controls use solid theme surfaces; depth comes from the existing border or dialog shadow. */
+.model-selector__dropdown {
+  border-radius: var(--omni-control-radius);
+  background: var(--omni-panel-bg);
+  box-shadow: var(--omni-dialog-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.model-selector__option:focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: -2px;
+}
+
+.omni-switch__track {
+  background: color-mix(in srgb, var(--omni-app-muted) 24%, var(--omni-panel-bg));
+  box-shadow: none;
+}
+
+.omni-switch__thumb {
+  background: var(--omni-panel-bg);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--omni-app-text) 24%, transparent);
+}
+
+.omni-switch[data-checked="true"] .omni-switch__track {
+  border-color: var(--omni-accent);
+  background: var(--omni-accent);
+  box-shadow: none;
+}
+
+.omni-switch[data-checked="true"] .omni-switch__thumb {
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--omni-app-text) 24%, transparent);
+}
