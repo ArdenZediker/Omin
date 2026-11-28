@@ -360,6 +360,10 @@
   background: var(--omni-app-bg) !important;
 }
 
+.omni-knowledge-root {
+  background: var(--omni-app-bg);
+}
+
 .omni-knowledge-sidebar {
   flex: 0 0 var(--project-panel-width);
   width: var(--project-panel-width);

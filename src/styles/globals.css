@@ -868,19 +868,6 @@ body:has(.compact-menu-window),
   border-color: var(--omni-app-text) !important;
 }
 
-:root[data-omni-theme="dark"] .omni-knowledge-root {
-  background: var(--omni-panel-bg) !important;
-}
-
-:root[data-omni-theme="dark"] .omni-knowledge-root mark {
-  background: rgba(252, 211, 77, 0.24) !important;
-  color: #fde68a !important;
-}
-
-:root[data-omni-theme="dark"] .omni-knowledge-root [class*="hover:bg-rose-500/10"]:hover {
-  background: rgba(244, 63, 94, 0.14) !important;
-}
-
 /* Model settings share one semantic contract so light and dark themes use the
    same tokens instead of Tailwind-class rewrites in dark-only patches. */
 .omni-model-heading {
@@ -2401,7 +2388,6 @@ body:has(.compact-menu-window),
   color: #1f2329 !important;
 }
 
-:root[data-omni-theme="light"] .omni-knowledge-root,
 :root[data-omni-theme="light"] .omni-knowledge-layout {
   background: var(--omni-app-bg) !important;
 }

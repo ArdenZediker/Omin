@@ -1326,7 +1326,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
   );
 
   return (
-    <div className="omni-knowledge-root flex h-full min-h-0 flex-col bg-white text-[var(--omni-app-text)]">
+    <div className="omni-knowledge-root flex h-full min-h-0 flex-col text-[var(--omni-app-text)]">
       <div className="omni-knowledge-layout flex min-h-0 flex-1">
         <aside className="main-chat-nav">
           <button type="button" className="main-chat-nav__brand no-drag" title="Omni" aria-label="Omni">
