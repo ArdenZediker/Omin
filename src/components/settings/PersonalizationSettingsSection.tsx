@@ -161,19 +161,19 @@ export default function PersonalizationSettingsSection() {
 
   if (!isLoaded) {
     return (
-      <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
-        <div className="h-20 animate-pulse rounded-lg bg-slate-100" />
+      <section className="omni-settings-card space-y-5 rounded-xl border p-5">
+        <div className="omni-persona-skeleton h-20 animate-pulse rounded-lg" />
       </section>
     );
   }
 
   return (
     <section className="space-y-5">
-      <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
+      <div className="omni-settings-card space-y-5 rounded-xl border p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-medium text-slate-900 omni-settings-title">基本风格和语调</h3>
-            <p className="mt-1 text-xs text-slate-500 omni-settings-muted">设置 Omni 回复你的风格和语调。这不会影响 Omni 的功能。</p>
+            <h3 className="omni-settings-title text-sm font-medium">基本风格和语调</h3>
+            <p className="omni-settings-muted mt-1 text-xs">设置 Omni 回复你的风格和语调。这不会影响 Omni 的功能。</p>
           </div>
           <OmniSelect
             value={config.style}
@@ -189,13 +189,13 @@ export default function PersonalizationSettingsSection() {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
+      <div className="omni-settings-card space-y-4 rounded-xl border p-5">
         <div>
-          <h3 className="text-sm font-medium text-slate-900 omni-settings-title">本地长期记忆文件</h3>
-          <p className="mt-1 text-xs text-slate-500 omni-settings-muted">
+          <h3 className="omni-settings-title text-sm font-medium">本地长期记忆文件</h3>
+          <p className="omni-settings-muted mt-1 text-xs">
             以下内容保存在数据目录的 persona 文件夹（多个 .md 文件），每次对话都会注入，你可直接编辑。
           </p>
-          <p className="mt-1 text-xs text-slate-500 omni-settings-muted">
+          <p className="omni-settings-muted mt-1 text-xs">
             Omni 不会在后台静默改写它们：只有当你在对话里明确说出「以后都…」这类长期要求时，它才会主动提议写入，并在写入前弹窗征求你同意。
           </p>
         </div>
@@ -207,19 +207,19 @@ export default function PersonalizationSettingsSection() {
             return (
               <div
                 key={card.key}
-                className="group rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                className="omni-persona-memory-card group rounded-lg border p-3.5 transition-colors"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <h4 className="text-sm font-medium text-slate-900 omni-settings-title">{card.title}</h4>
-                    <p className="mt-1 text-xs text-slate-500 omni-settings-muted">
+                    <h4 className="omni-settings-title text-sm font-medium">{card.title}</h4>
+                    <p className="omni-settings-muted mt-1 text-xs">
                       {preview ?? card.emptyText}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => startEditing(card.key)}
-                    className="shrink-0 rounded-[8px] border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
+                    className="omni-knowledge-button omni-knowledge-button--secondary shrink-0 px-2.5 py-1 text-xs font-medium"
                   >
                     编辑
                   </button>
@@ -230,10 +230,10 @@ export default function PersonalizationSettingsSection() {
         </div>
       </div>
 
-      <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
-        <div className="border-b border-slate-100 pb-3">
-          <h3 className="text-sm font-medium text-slate-900 omni-settings-title">自定义指令</h3>
-          <p className="mt-1 text-xs text-slate-500 omni-settings-muted">告诉 Omni 你希望它始终遵循的规则和偏好，这会直接影响所有对话。</p>
+      <div className="omni-settings-card space-y-5 rounded-xl border p-5">
+        <div className="omni-model-section-divider border-b pb-3">
+          <h3 className="omni-settings-title text-sm font-medium">自定义指令</h3>
+          <p className="omni-settings-muted mt-1 text-xs">告诉 Omni 你希望它始终遵循的规则和偏好，这会直接影响所有对话。</p>
         </div>
 
         <div className="space-y-2">
@@ -243,19 +243,19 @@ export default function PersonalizationSettingsSection() {
             onBlur={handleCustomInstructionBlur}
             placeholder='例如："每次回答我之前都说 ok，再接后续内容"'
             rows={6}
-            className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            className="omni-persona-textarea w-full resize-y rounded-lg px-3 py-2.5 text-sm"
           />
-          <div className="flex items-center justify-between text-xs text-slate-500 omni-settings-muted">
+          <div className="omni-settings-muted flex items-center justify-between text-xs">
             <span>这些指令会应用于你的所有对话</span>
             <span>{customInstruction.length}/{CUSTOM_INSTRUCTION_LIMIT}</span>
           </div>
         </div>
       </div>
 
-      <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm omni-settings-card">
-        <div className="border-b border-slate-100 pb-3">
-          <h3 className="text-sm font-medium text-slate-900 omni-settings-title">AGENTS.md 指令文件</h3>
-          <p className="mt-1 text-xs text-slate-500 omni-settings-muted">
+      <div className="omni-settings-card space-y-5 rounded-xl border p-5">
+        <div className="omni-model-section-divider border-b pb-3">
+          <h3 className="omni-settings-title text-sm font-medium">AGENTS.md 指令文件</h3>
+          <p className="omni-settings-muted mt-1 text-xs">
             仿 codex / deepseek-harness 的指令文件约定：一段自由格式的行为约定，人和 AI 都可直接编辑，会注入系统提示词。存在 AGENTS.override.md 时以它优先。
           </p>
         </div>
@@ -267,9 +267,9 @@ export default function PersonalizationSettingsSection() {
             onBlur={handleAgentsMdBlur}
             placeholder='例如："你是一名注重可维护性的前端工程师；回答时优先给出可运行的最小改动，并说明取舍。"'
             rows={8}
-            className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            className="omni-persona-textarea w-full resize-y rounded-lg px-3 py-2.5 text-sm"
           />
-          <div className="flex items-center justify-between text-xs text-slate-500 omni-settings-muted">
+          <div className="omni-settings-muted flex items-center justify-between text-xs">
             <span>自由格式，会写入 persona/AGENTS.md 并注入系统提示词</span>
             <span>{agentsMd.length}/{AGENTS_MD_LIMIT}</span>
           </div>
@@ -279,7 +279,7 @@ export default function PersonalizationSettingsSection() {
       {editingCard && (
         <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-[var(--omni-overlay-scrim)] p-4">
             <div
-              className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-xl omni-settings-card"
+              className="omni-settings-card omni-model-dialog w-full max-w-lg rounded-xl p-5 shadow-xl"
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.stopPropagation();
@@ -287,30 +287,30 @@ export default function PersonalizationSettingsSection() {
                 }
               }}
             >
-            <h3 className="text-sm font-medium text-slate-900 omni-settings-title">{editingCard.title}</h3>
-            <p className="mt-1 text-xs text-slate-500 omni-settings-muted">编辑后点击确认保存，内容会写入对应的 persona md 文件并注入系统提示词。</p>
+            <h3 className="omni-settings-title text-sm font-medium">{editingCard.title}</h3>
+            <p className="omni-settings-muted mt-1 text-xs">编辑后点击确认保存，内容会写入对应的 persona md 文件并注入系统提示词。</p>
             <textarea
               autoFocus
               value={draftValue}
               onChange={(event) => setDraftValue(event.target.value.slice(0, MEMORY_FIELD_LIMIT))}
               placeholder={editingCard.placeholder}
               rows={8}
-              className="mt-4 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              className="omni-persona-textarea mt-4 w-full resize-y rounded-lg px-3 py-2.5 text-sm"
             />
             <div className="mt-2 flex items-center justify-between">
-              <span className="text-xs text-slate-500 omni-settings-muted">{draftValue.length}/{MEMORY_FIELD_LIMIT}</span>
+              <span className="omni-settings-muted text-xs">{draftValue.length}/{MEMORY_FIELD_LIMIT}</span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={cancelEditing}
-                  className="rounded-[8px] border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className="omni-knowledge-button omni-knowledge-button--secondary px-3 py-1.5 text-xs font-medium"
                 >
                   取消
                 </button>
                 <button
                   type="button"
                   onClick={confirmEditing}
-                  className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700"
+                  className="omni-knowledge-button omni-knowledge-button--primary px-3 py-1.5 text-xs font-medium"
                 >
                   确认
                 </button>
