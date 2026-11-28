@@ -139,3 +139,54 @@
 .permission-mode-selector__checkbox:checked + .permission-mode-selector__track .permission-mode-selector__thumb {
   transform: translateX(16px);
 }
+
+/* Permission is a protected control, but it should still read as part of the composer. */
+.permission-mode-selector__trigger:focus-visible,
+.permission-mode-selector__row:focus-within {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
+}
+
+.permission-mode-selector__panel {
+  border-radius: var(--omni-dialog-radius);
+  background: var(--omni-panel-bg);
+  box-shadow: var(--omni-dialog-shadow);
+}
+
+.permission-mode-selector__badge {
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-accent);
+}
+
+.permission-mode-selector__row {
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--omni-app-text) 5%, var(--omni-panel-bg));
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.permission-mode-selector__row:hover {
+  border-color: var(--omni-panel-border);
+  background: color-mix(in srgb, var(--omni-app-text) 8%, var(--omni-panel-bg));
+}
+
+.permission-mode-selector__track {
+  background: color-mix(in srgb, var(--omni-app-muted) 30%, var(--omni-panel-bg));
+}
+
+.permission-mode-selector__checkbox:checked + .permission-mode-selector__track {
+  background: var(--omni-accent);
+}
+
+.permission-mode-selector__thumb {
+  background: var(--omni-panel-bg);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--omni-app-text) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .permission-mode-selector__trigger,
+  .permission-mode-selector__row,
+  .permission-mode-selector__track,
+  .permission-mode-selector__thumb {
+    transition: none;
+  }
+}

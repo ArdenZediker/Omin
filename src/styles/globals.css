@@ -90,6 +90,8 @@ body:has(.compact-menu-window),
   --omni-accent-strong: #1d4ed8;
   --omni-app-success: #3b6d11;
   --omni-app-success-bg: rgba(99, 153, 34, 0.12);
+  --omni-warning: #9a6700;
+  --omni-warning-bg: rgba(154, 103, 0, 0.1);
   --omni-bg: #ffffff;
   --omni-border: rgba(0, 0, 0, 0.08);
   --omni-danger: #cf222e;
@@ -152,6 +154,8 @@ body:has(.compact-menu-window),
   --omni-app-fg: #e6edf3;
   --omni-app-success: #3fb950;
   --omni-app-success-bg: rgba(63, 185, 80, 0.15);
+  --omni-warning: #d29922;
+  --omni-warning-bg: rgba(210, 153, 34, 0.15);
   --omni-bg: #0d1117;
   --omni-border: #30363d;
   --omni-danger: #f85149;

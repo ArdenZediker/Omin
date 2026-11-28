@@ -585,3 +585,76 @@
   padding: 4px 8px;
   text-align: left;
 }
+
+/* Keep artifacts visually subordinate to the chat while preserving clear states. */
+.artifact-card {
+  background: var(--omni-panel-bg);
+}
+
+.artifact-card__error {
+  color: var(--omni-danger);
+}
+
+.artifacts-panel {
+  border: 1px solid var(--omni-panel-border);
+  border-radius: var(--omni-radius-lg);
+  background: var(--omni-panel-bg);
+  box-shadow: none;
+}
+
+.artifacts-panel__header,
+.artifacts-panel__preview-head,
+.artifacts-panel__preview-toolbar,
+.artifacts-panel__tabs,
+.artifacts-panel__overview-summary {
+  border-color: var(--omni-panel-border);
+}
+
+.artifacts-panel__clear,
+.artifacts-panel__close,
+.artifacts-panel__preview-actions button {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.artifacts-panel__tab {
+  border-color: transparent;
+}
+
+.artifacts-panel__tab--active {
+  border-color: color-mix(in srgb, var(--omni-accent) 38%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-app-text);
+}
+
+.artifacts-panel__tab:focus-visible,
+.artifacts-panel__tab-close:focus-visible,
+.artifacts-panel__clear:focus-visible,
+.artifacts-panel__close:focus-visible,
+.artifacts-panel__item-main:focus-visible,
+.artifacts-panel__item-action:focus-visible,
+.artifacts-panel__view-toggle button:focus-visible,
+.artifacts-panel__preview-actions button:focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
+}
+
+.artifacts-panel__overview-stat {
+  background: color-mix(in srgb, var(--omni-app-text) 5%, var(--omni-panel-bg));
+  border-color: var(--omni-panel-border);
+}
+
+.artifacts-panel__view-toggle {
+  border-color: var(--omni-panel-border);
+}
+
+.artifacts-panel__view-toggle button.active {
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifacts-panel__item-action--danger {
+    transition: none;
+  }
+}

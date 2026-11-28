@@ -3780,18 +3780,18 @@
 }
 
 .message-user-context--knowledge {
-  background: color-mix(in srgb, #818cf8 30%, transparent);
-  border-color: color-mix(in srgb, #c7d2fe 52%, transparent);
+  background: color-mix(in srgb, var(--omni-accent) 13%, var(--omni-message-user-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 34%, var(--omni-message-user-border));
 }
 
 .message-user-context--expert {
-  background: color-mix(in srgb, #2dd4bf 25%, transparent);
-  border-color: color-mix(in srgb, #99f6e4 50%, transparent);
+  background: color-mix(in srgb, var(--omni-skill) 12%, var(--omni-message-user-bg));
+  border-color: color-mix(in srgb, var(--omni-skill) 34%, var(--omni-message-user-border));
 }
 
 .message-user-context--mode {
-  background: color-mix(in srgb, #fbbf24 24%, transparent);
-  border-color: color-mix(in srgb, #fde68a 52%, transparent);
+  background: color-mix(in srgb, var(--omni-warning) 12%, var(--omni-message-user-bg));
+  border-color: color-mix(in srgb, var(--omni-warning) 34%, var(--omni-message-user-border));
 }
 
 .message-user-context__icon {
@@ -3820,7 +3820,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  background: color-mix(in srgb, #ffffff 24%, transparent);
+  background: color-mix(in srgb, var(--omni-message-user-text) 14%, transparent);
   font-weight: 800;
   line-height: 1;
 }
@@ -3847,14 +3847,14 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: rgba(100, 106, 115, 0.9);
+  color: var(--omni-message-muted);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
 
 .message-action-button:hover {
-  background: rgba(100, 106, 115, 0.12);
-  color: rgba(31, 35, 41, 0.92);
+  background: color-mix(in srgb, var(--omni-message-muted) 12%, transparent);
+  color: var(--omni-message-text);
 }
 
 .message-action-button svg {
@@ -3885,6 +3885,21 @@
   white-space: nowrap;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
+}
+
+.message-action-button:focus-visible,
+.message-turn-usage__trigger:focus-visible,
+.message-process__toggle:focus-visible,
+.exec-seg__toggle:focus-visible,
+.exec-card__head--btn:focus-visible,
+.exec-more-toggle:focus-visible,
+.exec-search-match__loc:focus-visible,
+.exec-action__file:focus-visible,
+.exec-action__file-action:focus-visible,
+.exec-web-item__title:focus-visible,
+.exec-artifact:focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
 }
 
 .message-turn-usage__trigger:hover,
@@ -4524,7 +4539,7 @@
   margin-top: 4px;
   border: 1px solid var(--omni-panel-border, #e5e7eb);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--omni-panel-bg, #f6f7f9) 72%, transparent);
+  background: var(--omni-panel-bg);
   overflow: hidden;
 }
 
@@ -4556,18 +4571,18 @@
 }
 
 .exec-card__badge--terminal {
-  background: color-mix(in srgb, #378add 14%, transparent);
-  color: #2563eb;
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-accent);
 }
 
 .exec-card__badge--diff {
-  background: color-mix(in srgb, #ef9f27 16%, transparent);
-  color: #b45309;
+  background: var(--omni-warning-bg);
+  color: var(--omni-warning);
 }
 
 .exec-card__badge--web {
-  background: color-mix(in srgb, #1d9e75 14%, transparent);
-  color: #0f6e56;
+  background: var(--omni-app-success-bg);
+  color: var(--omni-app-success);
 }
 
 .exec-card__cmd {
@@ -4590,11 +4605,11 @@
 }
 
 .exec-card__status--ok {
-  color: #16a34a;
+  color: var(--omni-app-success);
 }
 
 .exec-card__status--fail {
-  color: rgba(220, 80, 80, 0.95);
+  color: var(--omni-danger);
 }
 
 .exec-card__stats {
@@ -4607,11 +4622,11 @@
 }
 
 .exec-card__stat-add {
-  color: #16a34a;
+  color: var(--omni-diff-added);
 }
 
 .exec-card__stat-del {
-  color: rgba(220, 80, 80, 0.92);
+  color: var(--omni-diff-removed);
 }
 
 /* 卡片内输出不再自设 max-height：高度由内容决定（terminal 卡的超长输出改由
@@ -4666,13 +4681,13 @@
 }
 
 .exec-diff-line--add {
-  background: color-mix(in srgb, #22c55e 13%, transparent);
-  color: #15803d;
+  background: color-mix(in srgb, var(--omni-diff-added) 14%, transparent);
+  color: var(--omni-diff-added);
 }
 
 .exec-diff-line--del {
-  background: color-mix(in srgb, #f87171 13%, transparent);
-  color: rgba(185, 45, 45, 0.95);
+  background: color-mix(in srgb, var(--omni-diff-removed) 14%, transparent);
+  color: var(--omni-diff-removed);
 }
 
 .exec-diff-line--hunk {
@@ -4854,8 +4869,8 @@ span.exec-web-item__title:hover {
   flex-shrink: 0;
   padding: 1px 7px;
   border-radius: 6px;
-  background: color-mix(in srgb, #22c55e 16%, transparent);
-  color: #16a34a;
+  background: var(--omni-app-success-bg);
+  color: var(--omni-app-success);
   font-size: 10px;
   font-weight: 600;
 }
@@ -4871,12 +4886,12 @@ span.exec-web-item__title:hover {
 }
 
 .exec-action--error {
-  color: rgba(220, 80, 80, 0.95);
+  color: var(--omni-danger);
 }
 
 .exec-action--error .exec-action__verb,
 .exec-action--error .exec-action__result {
-  color: rgba(220, 80, 80, 0.92);
+  color: var(--omni-danger);
 }
 
 /* 工具执行中（running 过渡态）：spinner 旋转 + 行轻微呼吸提示 */
@@ -5813,5 +5828,124 @@ span.exec-web-item__title:hover {
 
   .chat-composer__model {
     max-width: min(104px, 30vw);
+  }
+}
+
+/* Shared workspace surface language: quiet layers, stable controls, semantic states. */
+.main-chat-nav,
+.main-chat-toolbar {
+  background: var(--omni-app-surface-3);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.main-chat-nav {
+  box-shadow: none;
+}
+
+.main-chat-toolbar {
+  box-shadow: none;
+}
+
+.main-chat-nav__brand:hover,
+.main-chat-nav__item:hover {
+  transform: none;
+}
+
+.main-chat-nav__item:hover,
+.main-chat-nav__item--active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omni-panel-border) 72%, transparent);
+}
+
+.main-chat-toolbar__project-mark {
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  border-color: color-mix(in srgb, var(--omni-accent) 32%, var(--omni-panel-border));
+  box-shadow: none;
+}
+
+.chat-composer__panel {
+  border-radius: var(--omni-radius-lg);
+  background: var(--omni-panel-bg);
+  box-shadow: none;
+}
+
+.chat-composer__submit:not(:disabled):hover {
+  transform: none;
+}
+
+.stats-detail-popover__panel {
+  box-shadow: var(--omni-dialog-shadow);
+}
+
+.chat-topic-panel__task {
+  background: var(--omni-panel-bg);
+  box-shadow: none;
+}
+
+.context-usage__segment--system,
+.context-usage__swatch--system {
+  background: color-mix(in srgb, var(--omni-app-muted) 78%, var(--omni-panel-bg));
+}
+
+.context-usage__segment--tools,
+.context-usage__swatch--tools {
+  background: color-mix(in srgb, var(--omni-skill) 82%, var(--omni-panel-bg));
+}
+
+.context-usage__segment--messages,
+.context-usage__swatch--messages {
+  background: var(--omni-accent);
+}
+
+.changes-panel,
+.changes-panel__diff {
+  background: var(--omni-app-surface-1);
+}
+
+.changes-panel__diff-head {
+  background: var(--omni-app-surface-2);
+}
+
+.changes-panel__tab-count {
+  border: 1px solid color-mix(in srgb, var(--omni-accent) 34%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 12%, var(--omni-panel-bg));
+  color: var(--omni-accent);
+}
+
+.changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line {
+  background: color-mix(in srgb, var(--omni-diff-added) 14%, transparent);
+  color: color-mix(in srgb, var(--omni-diff-added) 88%, var(--omni-app-text));
+}
+
+.changes-panel__hunk-table tr.changes-panel__line--add .changes-panel__line-prefix {
+  color: var(--omni-diff-added);
+}
+
+.changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line {
+  background: color-mix(in srgb, var(--omni-diff-removed) 14%, transparent);
+  color: color-mix(in srgb, var(--omni-diff-removed) 88%, var(--omni-app-text));
+}
+
+.changes-panel__hunk-table tr.changes-panel__line--del .changes-panel__line-prefix {
+  color: var(--omni-diff-removed);
+}
+
+.main-chat-nav__brand:focus-visible,
+.main-chat-nav__item:focus-visible,
+.main-chat-toolbar__icon-button:focus-visible,
+.chat-composer__tool-button:focus-visible,
+.chat-composer__submit:focus-visible,
+.stats-detail-popover__trigger:focus-visible {
+  outline: 2px solid var(--omni-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-chat-nav__brand,
+  .main-chat-nav__item,
+  .main-chat-toolbar__icon-button,
+  .chat-composer__submit,
+  .stats-detail-popover__trigger {
+    transition: none;
   }
 }
