@@ -55,7 +55,7 @@
   align-items: center;
   gap: 4px;
   font-size: 10px;
-  color: #f87171;
+  color: var(--omni-danger);
   max-width: 190px;
   white-space: nowrap;
   overflow: hidden;
