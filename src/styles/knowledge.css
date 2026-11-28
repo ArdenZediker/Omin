@@ -1092,3 +1092,170 @@
   background: color-mix(in srgb, #f59e0b 18%, transparent);
   color: #fbbf24;
 }
+
+/* Knowledge is an operate surface: navigation rows carry state, while cards
+ * frame content. Avoid turning every row into a separate floating tile. */
+.omni-knowledge-root :where(button, [role="button"], input, select, textarea):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--omni-accent) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.omni-knowledge-sidebar__category,
+.omni-knowledge-sidebar__collection {
+  border-color: transparent !important;
+  border-radius: var(--omni-control-radius) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.omni-knowledge-sidebar__category:hover,
+.omni-knowledge-sidebar__collection:hover {
+  background: color-mix(in srgb, var(--omni-accent) 6%, var(--omni-panel-bg)) !important;
+  color: var(--omni-app-text) !important;
+}
+
+.omni-knowledge-sidebar__category--active,
+.omni-knowledge-sidebar__collection--active {
+  border-color: color-mix(in srgb, var(--omni-accent) 30%, var(--omni-panel-border)) !important;
+  background: color-mix(in srgb, var(--omni-accent) 9%, var(--omni-panel-bg)) !important;
+  color: var(--omni-app-text) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omni-accent) 18%, transparent) !important;
+}
+
+.omni-knowledge-sidebar__create-button {
+  min-height: 36px;
+  border-radius: var(--omni-control-radius) !important;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.omni-knowledge-sidebar__create-button:hover {
+  border-color: color-mix(in srgb, var(--omni-accent) 38%, var(--omni-panel-border));
+}
+
+.omni-knowledge-sidebar__create-button:active {
+  transform: translateY(1px);
+}
+
+.omni-knowledge-sidebar__menu,
+.omni-knowledge-upload-menu,
+.omni-knowledge-doc-menu {
+  border-radius: var(--omni-control-radius) !important;
+  background: var(--omni-panel-bg) !important;
+  box-shadow: var(--omni-dialog-shadow) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.omni-knowledge-sidebar__menu button,
+.omni-knowledge-upload-menu button,
+.omni-knowledge-doc-menu button {
+  min-height: 34px;
+}
+
+.omni-knowledge-content-panel {
+  box-shadow: none;
+}
+
+.omni-knowledge-file-badge {
+  border: 1px solid color-mix(in srgb, var(--omni-accent) 24%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-soft-bg));
+  color: var(--omni-accent-strong, var(--omni-accent));
+  letter-spacing: 0.06em;
+}
+
+.omni-knowledge-document-card {
+  border-radius: var(--omni-radius-md) !important;
+  background: var(--omni-card-bg) !important;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.omni-knowledge-document-card:hover {
+  border-color: color-mix(in srgb, var(--omni-accent) 38%, var(--omni-panel-border)) !important;
+  background: color-mix(in srgb, var(--omni-accent) 4%, var(--omni-card-bg)) !important;
+}
+
+.omni-knowledge-document-card:has(button:focus-visible) {
+  border-color: color-mix(in srgb, var(--omni-accent) 54%, var(--omni-panel-border)) !important;
+}
+
+.omni-knowledge-document-status {
+  border-radius: var(--omni-control-radius) !important;
+}
+
+.omni-knowledge-content-panel .rounded-none {
+  border-radius: var(--omni-control-radius) !important;
+}
+
+.omni-knowledge-detail-tabs,
+.omni-knowledge-detail-actions {
+  height: 36px;
+  padding: 3px;
+  border-radius: var(--omni-control-radius);
+  background: var(--omni-panel-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.omni-knowledge-detail-tab,
+.omni-knowledge-detail-actions__button {
+  height: 30px;
+  border-radius: 6px;
+}
+
+.omni-knowledge-detail-pill {
+  height: 36px;
+  border-radius: var(--omni-control-radius);
+  background: var(--omni-panel-bg);
+}
+
+.omni-knowledge-task-panel {
+  flex-basis: 320px !important;
+  width: 320px !important;
+  min-width: 320px !important;
+  border-radius: var(--omni-radius-lg);
+}
+
+.omni-knowledge-task-panel .chat-topic-panel__section,
+.omni-knowledge-task-panel .chat-topic-panel__task,
+.omni-knowledge-task-panel .chat-topic-panel__inline-action {
+  border-radius: var(--omni-control-radius);
+}
+
+.omni-knowledge-task-panel .chat-topic-panel__inline-action {
+  min-height: 32px;
+}
+
+@media (max-width: 860px) {
+  .omni-knowledge-task-panel {
+    flex-basis: 292px !important;
+    width: 292px !important;
+    min-width: 292px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .omni-knowledge-layout {
+    gap: 8px;
+    padding: 3px;
+  }
+
+  .omni-knowledge-sidebar {
+    flex-basis: 208px;
+    width: 208px;
+    min-width: 208px;
+  }
+
+  .omni-knowledge-title-actions {
+    gap: 4px;
+  }
+
+  .omni-knowledge-toolbar-actions {
+    gap: 2px;
+  }
+
+  .omni-knowledge-task-panel {
+    flex-basis: 264px !important;
+    width: 264px !important;
+    min-width: 264px !important;
+  }
+}

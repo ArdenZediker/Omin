@@ -36,7 +36,7 @@ export default function KnowledgeDocumentList({
             const fileBadge = thumbnailDataUrl ? (
               <img src={thumbnailDataUrl} alt={document.sourceName} className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[10px] font-semibold text-white">
+              <div className="omni-knowledge-file-badge flex h-full w-full items-center justify-center text-[10px] font-semibold">
                 {document.sourceName.slice(0, 2).toUpperCase()}
               </div>
             );
@@ -44,7 +44,7 @@ export default function KnowledgeDocumentList({
             return (
               <div
                 key={document.id}
-                className={`group relative flex h-[170px] min-w-0 flex-col rounded-lg border p-2 text-left transition ${
+                className={`omni-knowledge-document-card group relative flex h-[170px] min-w-0 flex-col rounded-lg border p-2 text-left transition ${
                   isActive
                     ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
                     : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
@@ -68,7 +68,7 @@ export default function KnowledgeDocumentList({
                       </div>
                     ) : null}
                     <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                      <span className="shrink-0 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2 py-0.5 text-[11px] font-medium text-[var(--omni-app-muted)]">
+                      <span className="omni-knowledge-document-status shrink-0 rounded-none border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-2 py-0.5 text-[11px] font-medium text-[var(--omni-app-muted)]">
                         {getProcessingStatusLabel(document.processingStatus)}
                       </span>
                       <span className="shrink-0 rounded-full border border-[var(--omni-panel-border)] px-2 py-0.5 text-[10px] text-[var(--omni-app-muted)]">

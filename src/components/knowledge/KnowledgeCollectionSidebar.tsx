@@ -1,4 +1,4 @@
-import { EllipsisVertical, PanelLeftOpen, Plus } from "lucide-react";
+import { BookOpen, EllipsisVertical, PanelLeftOpen, Plus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { KnowledgeCollection } from "../../chat/knowledgeTypes";
 
@@ -33,14 +33,7 @@ type KnowledgeCollectionSidebarProps = {
 };
 
 function KnowledgeCollectionIcon({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" className={className}>
-      <path d="M4.25 2.5h6.2L12.25 4.3v9.2H4.25z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
-      <path d="M10.45 2.5V4.25h1.8" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
-      <path d="M5.1 6.35h5.1" stroke="currentColor" strokeWidth="1.05" strokeLinecap="round" />
-      <path d="M5.1 8.45h3.8" stroke="currentColor" strokeWidth="1.05" strokeLinecap="round" />
-    </svg>
-  );
+  return <BookOpen aria-hidden="true" className={className} size={16} strokeWidth={1.8} />;
 }
 
 export default function KnowledgeCollectionSidebar({
@@ -99,7 +92,7 @@ export default function KnowledgeCollectionSidebar({
                 key={category.id}
                 type="button"
                 onClick={() => onSelectCategory(category.id)}
-                className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition ${
+                className={`omni-knowledge-sidebar__category ${isActive ? "omni-knowledge-sidebar__category--active" : ""} flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition ${
                   isActive
                     ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
                     : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
@@ -140,7 +133,7 @@ export default function KnowledgeCollectionSidebar({
               return (
                 <div
                   key={collection.id}
-                  className={`flex items-center gap-1 rounded-xl border px-1 py-0.5 text-sm transition ${
+                  className={`omni-knowledge-sidebar__collection ${isActive ? "omni-knowledge-sidebar__collection--active" : ""} flex items-center gap-1 rounded-xl border px-1 py-0.5 text-sm transition ${
                     isActive
                       ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
                       : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
@@ -165,13 +158,14 @@ export default function KnowledgeCollectionSidebar({
                       }}
                       className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                       title="更多操作"
+                      aria-label={`更多操作：${collection.name}`}
                     >
                       <EllipsisVertical size={14} strokeWidth={1.8} />
                     </button>
 
                     {openCollectionMenuId === collection.id ? (
                       <div
-                        className="absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] py-1 shadow-lg"
+                        className="omni-knowledge-sidebar__menu absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] py-1 shadow-lg"
                         onPointerDown={(event) => event.stopPropagation()}
                       >
                         <button
@@ -201,7 +195,7 @@ export default function KnowledgeCollectionSidebar({
       <div className="mt-auto border-t border-[var(--omni-panel-border)] p-3">
         <button
           type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-4 py-2.5 text-sm font-medium text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
+          className="omni-knowledge-sidebar__create-button flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] px-4 py-2.5 text-sm font-medium text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
           onClick={onCreateCollection}
         >
           <Plus size={14} strokeWidth={1.8} />

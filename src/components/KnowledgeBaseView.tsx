@@ -1431,6 +1431,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                       onClick={() => setIsSidebarCollapsed((current) => !current)}
                       className="no-drag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-none text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                       title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+                      aria-label={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
                     >
                       {isSidebarCollapsed ? <PanelLeftOpen size={16} strokeWidth={1.8} /> : <PanelLeftClose size={16} strokeWidth={1.8} />}
                     </button>
@@ -1470,6 +1471,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                           isSearchToolbarOpen || searchQuery ? "omni-knowledge-toolbar-button--active" : ""
                         }`}
                         title="搜索文档"
+                        aria-label="搜索文档"
                         aria-pressed={isSearchToolbarOpen || Boolean(searchQuery)}
                       >
                         <Search size={17} strokeWidth={1.8} />
@@ -1483,6 +1485,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                           onClick={toggleUploadMenu}
                           className={`omni-knowledge-toolbar-button ${isUploadMenuOpen ? "omni-knowledge-toolbar-button--active" : ""}`}
                           title="上传"
+                          aria-label="上传"
                         >
                           <SquarePlus size={17} strokeWidth={1.8} />
                         </button>
@@ -1532,6 +1535,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                           isTaskCenterPanelOpen ? "omni-knowledge-toolbar-button--active" : ""
                         }`}
                         title={isTaskCenterPanelOpen ? "收起工作台" : "展开工作台"}
+                        aria-label={isTaskCenterPanelOpen ? "收起工作台" : "展开工作台"}
                       >
                         {isTaskCenterPanelOpen ? <PanelRightClose size={17} strokeWidth={1.8} /> : <PanelRightOpen size={17} strokeWidth={1.8} />}
                       </button>
