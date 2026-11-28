@@ -68,9 +68,7 @@
   padding: 14px 10px 12px;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
   border-radius: var(--omni-radius-xl);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-app-surface-3) 92%, transparent), color-mix(in srgb, var(--omni-app-surface-3) 86%, transparent)),
-    var(--omni-app-surface-3);
+  background: var(--omni-app-surface-3);
   box-shadow: var(--omni-surface-shadow);
   backdrop-filter: blur(14px) saturate(1.03);
   -webkit-backdrop-filter: blur(14px) saturate(1.03);
@@ -193,9 +191,7 @@
   flex-shrink: 0;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
   border-radius: var(--omni-radius-lg);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 92%, transparent), color-mix(in srgb, var(--omni-panel-bg) 86%, transparent)),
-    var(--omni-panel-bg);
+  background: var(--omni-panel-bg);
   /* 收紧阴影范围：Y 4 + blur 12 = 16px，向下投射。
    * 普通聊天模式下提供 toolbar ↔ chat 内容分隔感。
    * mainView（扩展中心）模式下 toolbar 自身底部 1px border 承担分隔
@@ -250,11 +246,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.95), rgba(214, 228, 255, 0.78) 44%, rgba(92, 135, 255, 0.12) 100%),
-    #edf4ff;
-  border: 1px solid rgba(191, 219, 254, 0.72);
-  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.12);
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-panel-bg));
+  border: 1px solid color-mix(in srgb, var(--omni-accent) 22%, var(--omni-panel-border));
+  box-shadow: none;
 }
 
 .main-chat-toolbar__project-mark img {
@@ -586,8 +580,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 96%, transparent), color-mix(in srgb, var(--omni-soft-bg) 92%, transparent));
+  background: var(--omni-panel-bg);
   color: var(--omni-app-muted);
   box-shadow: 0 10px 24px rgba(148, 163, 184, 0.18);
   transform: translateX(-50%);
@@ -597,9 +590,7 @@
 
 .main-chat-scroll-bottom:hover {
   color: color-mix(in srgb, var(--omni-primary) 82%, var(--omni-app-text));
-  background:
-    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--omni-primary) 18%, transparent), transparent 58%),
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-panel-bg) 98%, transparent), color-mix(in srgb, var(--omni-primary) 9%, var(--omni-soft-bg)));
+  background: color-mix(in srgb, var(--omni-primary) 9%, var(--omni-soft-bg));
   box-shadow: 0 14px 30px color-mix(in srgb, var(--omni-primary) 18%, transparent);
   transform: translateX(-50%) translateY(-1px);
 }
@@ -621,9 +612,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-app-surface-3) 92%, transparent), color-mix(in srgb, var(--omni-app-surface-3) 86%, transparent)),
-    var(--omni-app-surface-3);
+  background: var(--omni-app-surface-3);
   padding: 12px 10px 10px;
   overflow: visible;
   border: 1px solid color-mix(in srgb, var(--omni-panel-border) 88%, transparent);
@@ -661,10 +650,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.96), rgba(214, 228, 255, 0.84) 46%, rgba(92, 135, 255, 0.18) 100%),
-    #edf4ff;
-  border: 1px solid rgba(191, 219, 254, 0.82);
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-panel-bg));
+  border: 1px solid color-mix(in srgb, var(--omni-accent) 22%, var(--omni-panel-border));
 }
 
 .chat-history-panel__brand-mark img {
@@ -3472,9 +3459,7 @@
   border-radius: var(--omni-radius-lg);
   overflow: hidden;
   box-shadow: var(--omni-surface-shadow);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--omni-app-surface-3) 92%, transparent), color-mix(in srgb, var(--omni-app-surface-3) 86%, transparent)),
-    var(--omni-app-surface-3) !important;
+  background: var(--omni-app-surface-3) !important;
   min-height: 64px;
   max-height: none;
   height: auto;
@@ -5683,7 +5668,7 @@ span.exec-web-item__title:hover {
 
 :root[data-omni-theme="dark"] .chat-history-panel__brand-mark {
   border-color: var(--omni-panel-border);
-  background: linear-gradient(180deg, var(--omni-app-surface-3), var(--omni-panel-bg));
+  background: var(--omni-app-surface-3);
 }
 
 :root[data-omni-theme="dark"] .chat-history-panel__project-search {
