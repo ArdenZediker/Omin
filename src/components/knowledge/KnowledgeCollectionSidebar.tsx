@@ -94,7 +94,7 @@ export default function KnowledgeCollectionSidebar({
                 onClick={() => onSelectCategory(category.id)}
                 className={`omni-knowledge-sidebar__category ${isActive ? "omni-knowledge-sidebar__category--active" : ""} flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition ${
                   isActive
-                    ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
+                    ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)]"
                     : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                 }`}
                 title={category.title}
@@ -135,7 +135,7 @@ export default function KnowledgeCollectionSidebar({
                   key={collection.id}
                   className={`omni-knowledge-sidebar__collection ${isActive ? "omni-knowledge-sidebar__collection--active" : ""} flex items-center gap-1 rounded-xl border px-1 py-0.5 text-sm transition ${
                     isActive
-                      ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
+                    ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)]"
                       : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-muted)] hover:bg-[var(--omni-soft-bg)] hover:text-[var(--omni-app-text)]"
                   }`}
                 >
@@ -165,7 +165,7 @@ export default function KnowledgeCollectionSidebar({
 
                     {openCollectionMenuId === collection.id ? (
                       <div
-                        className="omni-knowledge-sidebar__menu absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] py-1 shadow-lg"
+                        className="omni-knowledge-sidebar__menu absolute right-0 top-8 z-20 w-32 overflow-hidden rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] py-1"
                         onPointerDown={(event) => event.stopPropagation()}
                       >
                         <button

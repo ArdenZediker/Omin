@@ -46,7 +46,7 @@ export default function KnowledgeDocumentList({
                 key={document.id}
                 className={`omni-knowledge-document-card group relative flex h-[170px] min-w-0 flex-col rounded-lg border p-2 text-left transition ${
                   isActive
-                    ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] shadow-sm"
+                    ? "border-[var(--omni-app-text)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)]"
                     : "border-[var(--omni-panel-border)] bg-[var(--omni-panel-bg)] text-[var(--omni-app-text)] hover:bg-[var(--omni-soft-bg)]"
                 }`}
                 onContextMenu={(event) => {

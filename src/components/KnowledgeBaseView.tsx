@@ -1695,7 +1695,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                         ) : null}
                         <button
                           type="button"
-                          className="omni-knowledge-empty-state__action mt-8 inline-flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium shadow-sm"
+                          className="omni-knowledge-empty-state__action mt-8 inline-flex items-center gap-2 rounded-xl border px-5 py-3 text-sm font-medium"
                           onClick={createCollection}
                         >
                           <Plus size={16} strokeWidth={1.8} />
