@@ -10,7 +10,7 @@
 
 | 优势 | 说明 |
 |---|---|
-| 🏠 **本地优先** | 单文件 SQLite 全量存储，无后端、无账号、断网可用（仅调用模型 API 需联网）。数据始终在你手里。 |
+| 🏠 **本地优先** | 数据保存在本机 SQLite、会话 JSONL 与文件目录；无 Omni 自有后端或账号依赖。断网时可使用本地功能，调用在线模型仍需联网。 |
 | 🔌 **不绑任何模型** | OpenAI / Claude / Gemini / DeepSeek / Ollama（本地）平权切换，适配器层自动抹平厂商差异，换模型无需改业务代码。 |
 | 🤖 **会真做事** | 25 个内置工具（文件 / 代码 / Git / 命令 / Office 导出 / 网页 / 编排）对模型自主开放，调用过程全程可见、可读行号定位。 |
 | 🧠 **对思考模型友好** | 长首包自动续跑（不再因“长时间思考无首包”被误杀）；按模型派生的 reasoning 回传策略，DeepSeek-R1 / o 系 / Kimi 等正确工作。 |
@@ -221,7 +221,7 @@
 | 渲染增强 | react-markdown + remark-gfm、`@file-viewer`（PDF/Office 内嵌预览）、pdfjs-dist、mammoth、lucide-react、`@lobehub/icons-static-svg`（模型图标）、`@fontsource-variable/noto-sans-sc` |
 | 原生层 | **Rust**：rusqlite（bundled）、reqwest + tokio、`ignore` + `globset` + `regex`、portable-pty（持久 shell）、`zip` / `quick-xml` / `lopdf` / `image`、serde |
 | 数据 | **SQLite** |
-| 测试 | Vitest（前端，63 个文件 / 700+ 用例）· Cargo test（Rust，136 个用例）· TypeScript 严格模式 |
+| 测试 | Vitest（前端，当前 114 个文件 / 1084 个用例）· `cargo test --lib`（Rust；最新验证记录见 [docs/HANDOVER.md](docs/HANDOVER.md)）· TypeScript 严格模式 |
 
 ---
 
@@ -267,7 +267,10 @@ omni/
 - Node.js 20+
 - pnpm 10+
 - Rust stable
-- Windows 需装好 Tauri 依赖的 MSVC 工具链
+- Windows：需安装 Tauri 所需的 MSVC C++ 工具链；开发与 Windows 安装包已验证
+- macOS：GitHub Actions 可构建 Apple Silicon 与 Intel 的 DMG；当前 CI 检查不等同于 Mac 实机 UI 验收
+
+macOS 实机交互仍需按 [docs/manual-smoke-checklist.md](docs/manual-smoke-checklist.md) 验收。公开分发前还需配置 Apple Developer ID 签名与公证；Windows 安装包目前也未做代码签名。平台验证状态以 [docs/HANDOVER.md](docs/HANDOVER.md) 为准。
 
 ### 安装
 
