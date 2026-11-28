@@ -276,7 +276,7 @@ body:has(.compact-menu-window),
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--omni-panel-bg);
   box-shadow:
     0 2px 6px rgba(15, 23, 42, 0.22),
     0 0 0 1px rgba(15, 23, 42, 0.04);
@@ -2897,7 +2897,7 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .omni-switch[data-checked="true"] .omni-switch__thumb {
-  background: #f0f6fc;
+  background: var(--omni-message-strong);
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root option {
