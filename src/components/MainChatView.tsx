@@ -1399,7 +1399,7 @@ export default function MainChatView({
           title="Omni"
           aria-label="Omni"
         >
-          <Bot size={20} strokeWidth={1.8} />
+          <Bot size={20} strokeWidth={1.8} className="omni-knowledge-brand-icon" />
         </button>
         <div className="main-chat-nav__items">
           <button

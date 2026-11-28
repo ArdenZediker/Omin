@@ -656,7 +656,7 @@
   padding: 16px;
 }
 
-.omni-knowledge-brand-icon {
+.main-chat-nav__brand .omni-knowledge-brand-icon {
   color: var(--omni-accent);
 }
 
