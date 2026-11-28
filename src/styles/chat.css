@@ -1363,8 +1363,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #fff8eb, #fff1da);
-  border: 1px solid rgba(251, 191, 36, 0.18);
+  background: var(--omni-soft-bg);
+  border: 1px solid var(--omni-panel-border);
   flex: 0 0 auto;
   align-self: center;
 }
@@ -1374,7 +1374,7 @@
   height: 22px;
   border-radius: 50%;
   border: none;
-  background: linear-gradient(180deg, #fdf2ff, #f4ecff);
+  background: var(--omni-soft-bg);
 }
 
 .chat-history-panel__project-image {
@@ -1391,7 +1391,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #eef2f7;
+  background: var(--omni-soft-bg);
   border: none;
   border-radius: 50%;
   flex: 0 0 auto;
@@ -1408,12 +1408,12 @@
 .chat-history-panel__space-head .chat-history-panel__project-folder-icon {
   width: 14px;
   height: 14px;
-  color: #475569;
+  color: var(--omni-app-muted);
 }
 
 .chat-history-panel__project-icon--custom {
-  background: linear-gradient(180deg, #fdf2ff, #f4ecff);
-  border-color: rgba(168, 85, 247, 0.18);
+  background: var(--omni-soft-bg);
+  border-color: var(--omni-panel-border);
 }
 
 .chat-history-panel__project-menu {

@@ -113,14 +113,14 @@ export function getSessionAvatarStyle(
   id: string
 ): { backgroundColor: string; color: string } {
   const colors = [
-    { bg: "#fff4e1", fg: "#e68a00" },
-    { bg: "#f3e8ff", fg: "#a855f7" },
-    { bg: "#fff9c4", fg: "#d4a017" },
-    { bg: "#ffe4e6", fg: "#f472b6" },
-    { bg: "#e0f2fe", fg: "#38bdf8" },
-    { bg: "#dcfce7", fg: "#4ade80" },
-    { bg: "#ffedd5", fg: "#fb923c" },
-    { bg: "#fce7f3", fg: "#f9a8d4" },
+    { bg: "var(--omni-accent-soft, rgba(31, 111, 235, 0.15))", fg: "var(--omni-accent-strong, #1d4ed8)" },
+    { bg: "var(--omni-skill-bg, rgba(130, 80, 223, 0.12))", fg: "var(--omni-skill, #8250df)" },
+    { bg: "var(--omni-warning-bg, rgba(154, 103, 0, 0.1))", fg: "var(--omni-warning, #9a6700)" },
+    { bg: "var(--omni-danger-soft, rgba(220, 38, 38, 0.08))", fg: "var(--omni-danger, #cf222e)" },
+    { bg: "var(--omni-app-success-bg, rgba(99, 153, 34, 0.12))", fg: "var(--omni-app-success, #3b6d11)" },
+    { bg: "color-mix(in srgb, var(--omni-link, #2563eb) 12%, transparent)", fg: "var(--omni-link, #2563eb)" },
+    { bg: "color-mix(in srgb, var(--omni-accent, #1f6feb) 9%, transparent)", fg: "var(--omni-primary, #1f6feb)" },
+    { bg: "color-mix(in srgb, var(--omni-app-success, #3b6d11) 10%, transparent)", fg: "var(--omni-app-success, #3b6d11)" },
   ];
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
