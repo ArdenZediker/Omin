@@ -12,12 +12,12 @@ interface ModelSelectorProps {
   openSignal?: number;
 }
 
-const PROVIDER_COLORS: Record<string, string> = {
-  openai: "from-green-400 to-emerald-600",
-  claude: "from-orange-400 to-amber-600",
-  gemini: "from-blue-400 to-cyan-600",
-  ollama: "from-purple-400 to-violet-600",
-  deepseek: "from-indigo-400 to-blue-600",
+const PROVIDER_STATUS_CLASSES: Record<string, string> = {
+  openai: "model-selector__status-dot--openai",
+  claude: "model-selector__status-dot--claude",
+  gemini: "model-selector__status-dot--gemini",
+  ollama: "model-selector__status-dot--ollama",
+  deepseek: "model-selector__status-dot--deepseek",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -37,6 +37,18 @@ function getModelConnectionStatus(modelId: string) {
   } catch {
     return undefined;
   }
+}
+
+function getStatusDotClass(status: boolean | undefined, provider: string) {
+  if (status === true) return "model-selector__status-dot--connected";
+  if (status === false) return "model-selector__status-dot--disconnected";
+  return PROVIDER_STATUS_CLASSES[provider] || "model-selector__status-dot--unknown";
+}
+
+function getStatusLabel(status: boolean | undefined, provider: string) {
+  if (status === true) return "已连接";
+  if (status === false) return "连接失败";
+  return `${PROVIDER_LABELS[provider] || provider} 模型`;
 }
 
 function formatContextWindow(tokens: number) {
@@ -84,16 +96,18 @@ export default function ModelSelector({ currentModel, label, title, onModelChang
 
   return (
     <div className="model-selector" ref={dropdownRef}>
-      <button onClick={() => setIsOpen(!isOpen)} className="model-selector__trigger" type="button" title={title}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="model-selector__trigger"
+        type="button"
+        title={title}
+        aria-expanded={isOpen}
+      >
         {currentConfig && (
-          <div
-            className={`w-2 h-2 rounded-full ${
-              currentStatus === true
-                ? "bg-emerald-400"
-                : currentStatus === false
-                  ? "bg-red-400"
-                  : `bg-gradient-to-br ${PROVIDER_COLORS[currentConfig.provider] || "from-gray-400 to-gray-600"}`
-            }`}
+          <span
+            className={`model-selector__status-dot ${getStatusDotClass(currentStatus, currentConfig.provider)}`}
+            role="img"
+            aria-label={`模型状态：${getStatusLabel(currentStatus, currentConfig.provider)}`}
           />
         )}
         <span>{label ? `${label}：${currentConfig?.name || "未选择模型"}` : currentConfig?.name || "未选择模型"}</span>
@@ -119,17 +133,14 @@ export default function ModelSelector({ currentModel, label, title, onModelChang
                     }}
                     className={`model-selector__option ${model.id === currentModel ? "model-selector__option--active" : ""}`}
                     type="button"
+                    aria-pressed={model.id === currentModel}
                   >
-                    <div
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        connectionStatus === true
-                          ? "bg-emerald-400"
-                          : connectionStatus === false
-                            ? "bg-red-400"
-                            : `bg-gradient-to-br ${PROVIDER_COLORS[provider] || "from-gray-400 to-gray-600"}`
-                      }`}
+                    <span
+                      className={`model-selector__status-dot model-selector__status-dot--small ${getStatusDotClass(connectionStatus, provider)}`}
+                      role="img"
+                      aria-label={`模型状态：${getStatusLabel(connectionStatus, provider)}`}
                     />
-                    <span>{model.name}</span>
+                    <span className="model-selector__model-name">{model.name}</span>
 
                     {isCustom && <span className="model-selector__badge">Custom</span>}
 
