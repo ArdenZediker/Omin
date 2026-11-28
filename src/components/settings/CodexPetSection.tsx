@@ -74,61 +74,61 @@ export default function CodexPetSection({
   }, []);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm omni-settings-card">
+    <section className="omni-settings-card overflow-hidden rounded-2xl border">
       <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left">
         <div>
-          <div className="text-sm font-medium text-slate-900">宠物</div>
-          <div className="mt-1 text-sm text-slate-500">{activePackage ? `已选择 ${activePackage.displayName}` : "未选择宠物"}</div>
+          <div className="omni-settings-title text-sm font-medium">宠物</div>
+          <div className="omni-settings-muted mt-1 text-sm">{activePackage ? `已选择 ${activePackage.displayName}` : "未选择宠物"}</div>
         </div>
-        <div className="pt-0.5 text-slate-400">{expanded ? <ChevronUp aria-hidden="true" size={16} strokeWidth={1.8} /> : <ChevronDown aria-hidden="true" size={16} strokeWidth={1.8} />}</div>
+        <div className="omni-settings-muted pt-0.5">{expanded ? <ChevronUp aria-hidden="true" size={16} strokeWidth={1.8} /> : <ChevronDown aria-hidden="true" size={16} strokeWidth={1.8} />}</div>
       </button>
 
       {expanded && (
         <>
-          <div className="border-t border-slate-100 px-5 py-3 omni-pet-actions">
+          <div className="omni-pet-actions omni-model-section-divider border-t px-5 py-3">
             <div className="flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => void handleImportPet()}
                 disabled={isImporting}
                 title={petFormatHint}
-                className="omni-pet-action-button rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-200"
+                className="omni-pet-action-button rounded-full px-4 py-2 text-sm"
               >
                 {isImporting ? "导入中..." : "导入宠物"}
               </button>
               <button
                 type="button"
                 onClick={() => void onRefreshPets()}
-                className="omni-pet-action-button rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-200"
+                className="omni-pet-action-button rounded-full px-4 py-2 text-sm"
               >
                 刷新
               </button>
               <button
                 type="button"
                 onClick={() => void onEnableDesktopPet()}
-                className="omni-pet-action-button rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-200"
+                className="omni-pet-action-button rounded-full px-4 py-2 text-sm"
               >
                 {isDesktopPetAwake ? "收起宠物" : "唤醒宠物"}
               </button>
             </div>
-            <div className="omni-pet-format-hint mt-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
-              <div className="font-medium text-slate-700">宠物包格式</div>
+            <div className="omni-pet-format-hint omni-model-section-divider mt-2 rounded-xl border px-3 py-2 text-xs leading-5">
+              <div className="omni-settings-title font-medium">宠物包格式</div>
               <div className="mt-0.5">
-                选择一个宠物包文件夹，需包含 <code className="rounded bg-white px-1 text-slate-600 omni-pet-code">pet.json</code> 和贴图文件，
+                选择一个宠物包文件夹，需包含 <code className="omni-pet-code rounded px-1">pet.json</code> 和贴图文件，
                 可使用 Codex 同款宠物文件。
-                <code className="ml-1 rounded bg-white px-1 text-slate-600 omni-pet-code">pet.json</code> 字段：
-                <code className="ml-1 rounded bg-white px-1 text-slate-600 omni-pet-code">id</code>、
-                <code className="ml-1 rounded bg-white px-1 text-slate-600 omni-pet-code">displayName</code>、
-                <code className="ml-1 rounded bg-white px-1 text-slate-600 omni-pet-code">description</code>、
-                <code className="ml-1 rounded bg-white px-1 text-slate-600 omni-pet-code">spritesheetPath</code>。
+                <code className="omni-pet-code ml-1 rounded px-1">pet.json</code> 字段：
+                <code className="omni-pet-code ml-1 rounded px-1">id</code>、
+                <code className="omni-pet-code ml-1 rounded px-1">displayName</code>、
+                <code className="omni-pet-code ml-1 rounded px-1">description</code>、
+                <code className="omni-pet-code ml-1 rounded px-1">spritesheetPath</code>。
               </div>
             </div>
             {importStatus ? (
               <div
                 className={`omni-pet-import-status mt-3 rounded-lg border px-3 py-2 text-xs ${
                   importStatus.tone === "error"
-                    ? "border-rose-200 bg-rose-50 text-rose-700"
-                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    ? "omni-model-warning-box omni-model-warning-text"
+                    : "omni-pet-import-status--success"
                 }`}
               >
                 {importStatus.message}
@@ -136,23 +136,23 @@ export default function CodexPetSection({
             ) : null}
           </div>
 
-          <div className="omni-pet-custom-section border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+          <div className="omni-pet-custom-section omni-model-section-divider border-t px-5 py-3 text-xs">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <div className="font-medium text-slate-700">自定义宠物</div>
+                <div className="omni-settings-title font-medium">自定义宠物</div>
                 <div className="mt-0.5 truncate">{projectPetsRoot || "当前项目宠物目录"}</div>
               </div>
               <button
                 type="button"
                 onClick={() => void handleOpenFolder()}
-                className="shrink-0 text-slate-400 text-xs hover:text-slate-600"
+                className="omni-settings-muted shrink-0 text-xs hover:text-[var(--omni-app-text)]"
               >
                 打开文件夹 ↗
               </button>
             </div>
           </div>
 
-          <div className="omni-pet-list max-h-[360px] overflow-y-auto overscroll-contain border-t border-slate-100 pr-1 [scrollbar-gutter:stable]">
+          <div className="omni-pet-list omni-model-section-divider max-h-[360px] overflow-y-auto overscroll-contain border-t pr-1 [scrollbar-gutter:stable]">
             {packages.map((pet) => {
               const isActive = pet.id === state.activePetId;
               return (
@@ -160,21 +160,21 @@ export default function CodexPetSection({
                   key={pet.id}
                   type="button"
                   onClick={() => onSelectPet(pet.id)}
-                  className="omni-pet-list-item flex w-full items-center gap-3 border-b border-slate-100 px-5 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50"
+                  className="omni-pet-list-item omni-model-section-divider flex w-full items-center gap-3 border-b px-5 py-3 text-left transition-colors last:border-b-0"
                 >
-                  <div className="flex h-[54px] w-[54px] shrink-0 items-end justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                  <div className="omni-pet-preview flex h-[54px] w-[54px] shrink-0 items-end justify-center overflow-hidden rounded-xl border">
                     <DesktopPet width={previewSize.width} height={previewSize.height} state="idle" packageData={pet} />
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className="omni-pet-name text-[15px] font-medium text-slate-900">{pet.displayName}</div>
-                    <div className="omni-pet-description mt-0.5 text-sm text-slate-500">{pet.description}</div>
+                    <div className="omni-pet-name text-[15px] font-medium">{pet.displayName}</div>
+                    <div className="omni-pet-description mt-0.5 text-sm">{pet.description}</div>
                   </div>
 
                   <div className="shrink-0">
                     <span
                       className={`omni-pet-select-badge inline-flex rounded-full px-3 py-1.5 text-sm ${
-                        isActive ? "omni-pet-select-badge--active bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-700"
+                        isActive ? "omni-pet-select-badge--active" : "omni-pet-select-badge"
                       }`}
                     >
                       {isActive ? "已选" : "选择"}

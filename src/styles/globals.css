@@ -1082,6 +1082,17 @@ body:has(.compact-menu-window),
   outline-offset: 1px;
 }
 
+.omni-pet-import-status--success {
+  border: 1px solid color-mix(in srgb, var(--omni-app-success) 32%, transparent);
+  background: color-mix(in srgb, var(--omni-app-success) 12%, var(--omni-panel-bg));
+  color: var(--omni-app-success);
+}
+
+.omni-pet-preview {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+}
+
 /* Knowledge model settings use explicit theme classes so light and dark modes
    share one component contract instead of brittle Tailwind-class rewrites. */
 .omni-knowledge-embedding-section,
