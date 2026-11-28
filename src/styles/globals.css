@@ -2807,8 +2807,7 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="light"] .omni-settings-root input,
-:root[data-omni-theme="light"] .omni-settings-root select,
-:root[data-omni-theme="light"] .omni-shortcut-capture {
+:root[data-omni-theme="light"] .omni-settings-root select {
   background: #ffffff !important;
   border-color: #dcdfe6 !important;
   color: #1f2329 !important;
@@ -3195,14 +3194,15 @@ body:has(.compact-menu-window),
 
 :root[data-omni-theme="dark"] .omni-shortcut-capture {
   background: var(--omni-input-bg);
+  border-color: var(--omni-panel-border);
   color: var(--omni-app-text);
 }
 
 :root[data-omni-theme="dark"] .omni-shortcut-capture--active {
-  border-color: rgba(255, 255, 255, 0.34) !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: var(--omni-app-text) !important;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08) !important;
+  border-color: var(--omni-accent) !important;
+  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-input-bg)) !important;
+  color: var(--omni-accent-strong, var(--omni-accent)) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--omni-accent) 20%, transparent) !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root .shadow-sm,

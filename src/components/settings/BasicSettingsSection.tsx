@@ -63,7 +63,7 @@ type Props = {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="omni-settings-form-row grid grid-cols-[120px_1fr] gap-4">
-      <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">{label}</label>
+      <label className="omni-settings-label pt-2 text-right text-sm">{label}</label>
       {children}
     </div>
   );
@@ -72,7 +72,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function Actions({ label, children }: { label?: string; children: ReactNode }) {
   return (
     <div className="omni-settings-form-row grid grid-cols-[120px_1fr] gap-4">
-      <span className="pt-1 text-right text-sm text-slate-700">{label}</span>
+      <span className="omni-settings-label pt-1 text-right text-sm">{label}</span>
       <div className="flex items-center gap-3">{children}</div>
     </div>
   );
@@ -416,7 +416,7 @@ export default function BasicSettingsSection({
         <div className="omni-settings-group__heading"><h3 id="basic-window-heading" className="omni-settings-title">悬浮与窗口</h3></div>
         <Actions label="开机自启">
           <OmniSwitch checked={basicSettings.autoLaunch} onChange={(checked) => onUpdateBasicSettings({ autoLaunch: checked })} ariaLabel="开机自启" />
-          <span className="text-xs text-slate-500 omni-settings-muted">已保存开关，接入系统自启插件后生效。</span>
+          <span className="omni-settings-muted text-xs">已保存开关，接入系统自启插件后生效。</span>
         </Actions>
         <Field label="最小化方式">
           <OmniSelect
@@ -442,11 +442,11 @@ export default function BasicSettingsSection({
         </Field>
         <Actions label="悬浮球">
           <OmniSwitch checked={basicSettings.showCompactBall} onChange={(checked) => onUpdateBasicSettings({ showCompactBall: checked })} ariaLabel="显示悬浮球" />
-          <span className="text-xs text-slate-500 omni-settings-muted">控制主窗口隐藏后是否显示悬浮球。</span>
+          <span className="omni-settings-muted text-xs">控制主窗口隐藏后是否显示悬浮球。</span>
         </Actions>
         <Actions label="鼠标随航">
           <OmniSwitch checked={basicSettings.followCursorScreen} onChange={(checked) => onUpdateBasicSettings({ followCursorScreen: checked })} ariaLabel="鼠标随航" />
-          <span className="text-xs text-slate-500 omni-settings-muted">鼠标跨屏时悬浮球会切换到所在屏幕，并尽量保留原来的相对位置。</span>
+          <span className="omni-settings-muted text-xs">鼠标跨屏时悬浮球会切换到所在屏幕，并尽量保留原来的相对位置。</span>
         </Actions>
       </section>
 
@@ -461,21 +461,21 @@ export default function BasicSettingsSection({
                 max="1800"
                 value={basicSettings.mainWindowWidth}
                 onChange={(e) => onUpdateBasicSettings({ mainWindowWidth: Number(e.target.value) || 640 })}
-                className="h-9 w-28 rounded-[8px] border border-slate-300 px-3 text-sm"
+                className="omni-knowledge-model-input h-9 w-28 rounded-[8px] px-3 text-sm"
               />
-              <span className="text-xs text-slate-500 omni-settings-muted">×</span>
+              <span className="omni-settings-muted text-xs">×</span>
               <input
                 type="number"
                 min="480"
                 max="1400"
                 value={basicSettings.mainWindowHeight}
                 onChange={(e) => onUpdateBasicSettings({ mainWindowHeight: Number(e.target.value) || 480 })}
-                className="h-9 w-28 rounded-[8px] border border-slate-300 px-3 text-sm"
+                className="omni-knowledge-model-input h-9 w-28 rounded-[8px] px-3 text-sm"
               />
-              <span className="text-xs text-slate-500 omni-settings-muted">宽 × 高</span>
+              <span className="omni-settings-muted text-xs">宽 × 高</span>
             </div>
           </Field>
-          <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
+          <p className="omni-settings-muted pl-[136px] text-xs">
             影响聊天/知识库主界面的默认窗口大小，不影响设置窗口、悬浮球和桌宠窗口。
           </p>
         </div>
@@ -495,12 +495,12 @@ export default function BasicSettingsSection({
             aria-pressed={recordingShortcut === "openMainShortcut"}
             className={`omni-shortcut-capture h-9 w-full rounded-[8px] border px-3 text-left text-sm ${
               recordingShortcut === "openMainShortcut"
-                ? "omni-shortcut-capture--active border-violet-500 text-violet-600 ring-2 ring-violet-500/20"
-                : "border-slate-300"
+                ? "omni-shortcut-capture--active"
+                : ""
             }`}
           >
             <span>{recordingShortcut === "openMainShortcut" ? "请按快捷键..." : basicSettings.openMainShortcut}</span>
-            {recordingShortcut === "openMainShortcut" && <span className="ml-2 rounded bg-violet-600 px-1.5 py-0.5 text-[10px] text-white">录入中</span>}
+            {recordingShortcut === "openMainShortcut" && <span className="omni-knowledge-chip omni-knowledge-chip--selected ml-2 rounded px-1.5 py-0.5 text-[10px]">录入中</span>}
           </button>
         </Field>
         <Field label="切换上个模型">
@@ -515,24 +515,24 @@ export default function BasicSettingsSection({
             aria-pressed={recordingShortcut === "switchPreviousModelShortcut"}
             className={`omni-shortcut-capture h-9 w-full rounded-[8px] border px-3 text-left text-sm ${
               recordingShortcut === "switchPreviousModelShortcut"
-                ? "omni-shortcut-capture--active border-violet-500 text-violet-600 ring-2 ring-violet-500/20"
-                : "border-slate-300"
+                ? "omni-shortcut-capture--active"
+                : ""
             }`}
           >
             <span>{recordingShortcut === "switchPreviousModelShortcut" ? "请按快捷键..." : basicSettings.switchPreviousModelShortcut}</span>
             {recordingShortcut === "switchPreviousModelShortcut" && (
-              <span className="ml-2 rounded bg-violet-600 px-1.5 py-0.5 text-[10px] text-white">录入中</span>
+              <span className="omni-knowledge-chip omni-knowledge-chip--selected ml-2 rounded px-1.5 py-0.5 text-[10px]">录入中</span>
             )}
           </button>
         </Field>
-        <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
+        <p className="omni-settings-muted pl-[136px] text-xs">
           「打开主界面」是系统级全局快捷键，应用未聚焦时同样可用；若组合键已被其它程序占用，会自动回落到「仅窗口聚焦时生效」并在下方提示。
           点击快捷键框后直接按键设置，Backspace / Delete / Esc 清空。
         </p>
         {openMainShortcutNotice ? (
           <p
             className={`pl-[136px] text-xs ${
-              openMainShortcutNotice.kind === "error" ? "text-red-600" : "text-emerald-600"
+              openMainShortcutNotice.kind === "error" ? "omni-model-danger-text" : "omni-model-success-text"
             }`}
           >
             {openMainShortcutNotice.text}
@@ -543,7 +543,7 @@ export default function BasicSettingsSection({
       <section className="omni-settings-group" aria-labelledby="basic-command-heading">
         <div className="omni-settings-group__heading"><h3 id="basic-command-heading" className="omni-settings-title">命令执行</h3></div>
         <div className="omni-settings-form-row grid grid-cols-[120px_1fr] gap-4">
-          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">Shell 路径</label>
+          <label className="omni-settings-label pt-2 text-right text-sm">Shell 路径</label>
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -553,13 +553,13 @@ export default function BasicSettingsSection({
                 setShellProbe(null);
               }}
               placeholder={IS_WINDOWS ? "留空自动探测（Git-Bash → cmd /C）" : "留空使用默认 bash/zsh"}
-              className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+              className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm"
             />
             <button
               type="button"
               onClick={() => void probeShell()}
               disabled={!basicSettings.shellPath.trim() || shellProbe?.probing}
-              className="h-9 shrink-0 rounded-[8px] border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="omni-knowledge-button omni-knowledge-button--secondary h-9 shrink-0 px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               {shellProbe?.probing ? "检测中…" : "检测可用性"}
             </button>
@@ -578,14 +578,14 @@ export default function BasicSettingsSection({
                   onUpdateBasicSettings({ shellPath: picked.trim() });
                 }
               }}
-              className="h-9 shrink-0 rounded-[8px] border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+              className="omni-knowledge-button omni-knowledge-button--secondary h-9 shrink-0 px-3 text-sm"
             >
               选择文件
             </button>
           </div>
         </div>
         <div className="pl-[136px] flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-slate-500 omni-settings-muted">常见示例：</span>
+          <span className="omni-settings-muted text-[11px]">常见示例：</span>
           {SHELL_EXAMPLES.map((example) => (
             <button
               key={example.label}
@@ -595,13 +595,13 @@ export default function BasicSettingsSection({
                 onUpdateBasicSettings({ shellPath: example.path });
                 setShellProbe(null);
               }}
-              className="rounded-[8px] border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900"
+              className="omni-knowledge-chip omni-knowledge-chip--capability rounded-[8px] px-2 py-0.5 text-[11px] transition-colors"
             >
               {example.label}
             </button>
           ))}
         </div>
-        <p className="pl-[136px] text-xs text-slate-500 omni-settings-muted">
+        <p className="omni-settings-muted pl-[136px] text-xs">
           「运行 Shell 命令」工具使用的 Shell。留空时 Windows 自动探测 Git-Bash（未命中回落 cmd），macOS/Linux 优先使用用户默认 Shell；
           指定后按可执行名匹配参数（bash/zsh → -lc，cmd → /C，pwsh → -Command，wsl → --，busybox → sh -c，其余 → -c），
           可指向 Git-Bash、WSL、MSYS2、Cygwin 或任意自定义 Shell。注意：切换自定义 Shell 不会关闭命令安全校验，
@@ -609,7 +609,7 @@ export default function BasicSettingsSection({
         </p>
         {shellProbe && !shellProbe.probing && (
           <p
-            className={`pl-[136px] text-xs ${shellProbe.ok ? "text-emerald-600" : "text-red-600"}`}
+            className={`omni-${shellProbe.ok ? "model-success" : "model-danger"}-text pl-[136px] text-xs`}
             role="status"
           >
             {shellProbe.ok ? "检测成功：" : "检测失败："}
@@ -617,7 +617,7 @@ export default function BasicSettingsSection({
           </p>
         )}
         <div className="omni-settings-form-row grid grid-cols-[120px_1fr] gap-4">
-          <label className="pt-2 text-right text-sm text-slate-700 omni-settings-label">文件权限（沙箱）</label>
+          <label className="omni-settings-label pt-2 text-right text-sm">文件权限（沙箱）</label>
           <div className="flex flex-col gap-1.5">
             <OmniSelect
               value={basicSettings.sandboxMode}
@@ -645,7 +645,7 @@ export default function BasicSettingsSection({
                 },
               ]}
             />
-            <p className="text-xs text-slate-500 omni-settings-muted">
+            <p className="omni-settings-muted text-xs">
               {IS_WINDOWS
                 ? "只读和工作区写入使用 Windows WRITE_RESTRICTED Token、能力 SID、目录 ACL 与 Low Integrity。受限模式会关闭持久 PTY，改为一次性执行；沙箱不可用时拒绝执行。"
                 : HAS_OS_FILE_SANDBOX && IS_MACOS_PLATFORM
@@ -658,7 +658,7 @@ export default function BasicSettingsSection({
 
       <section className="omni-settings-group" aria-labelledby="basic-subagent-heading">
         <div className="omni-settings-group__heading"><h3 id="basic-subagent-heading" className="omni-settings-title">子 Agent 模型</h3></div>
-        <p className="text-xs text-slate-500 omni-settings-muted">
+        <p className="omni-settings-muted text-xs">
           通过 agent 工具派出的子 Agent 可走「能力强 / 轻量」两档模型。未设置时回落到本轮主运行模型；轻量档未设置再回落能力强档。通用只读调研默认走轻量档，专家委派默认走能力强档，也可用 tier 参数显式覆盖。
         </p>
         <Field label="能力强模型">
@@ -685,16 +685,16 @@ export default function BasicSettingsSection({
         </Field>
         <Field label="专家委派">
           <div className="flex flex-col gap-1.5">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
+            <label className="omni-settings-title flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={basicSettings.allowAnyExpertDelegation === true}
                 onChange={(e) => onUpdateBasicSettings({ allowAnyExpertDelegation: e.target.checked })}
-                className="h-4 w-4 rounded border-slate-300"
+                className="omni-model-code h-4 w-4 rounded"
               />
               允许模型指派任意已启用专家
             </label>
-            <p className="text-xs text-slate-500 omni-settings-muted">
+            <p className="omni-settings-muted text-xs">
               默认关闭。专家与技能/MCP 的口径不同：技能和 MCP「安装 + 开启」即对模型直接可用，
               而专家是「本项目可指派的工作角色」，只有项目设置里绑定过的专家才会进入模型的可委派名册，
               未绑定的专家即使已安装并开启也不会被模型自动指派。打开后放宽为任意已启用专家都可委派。
