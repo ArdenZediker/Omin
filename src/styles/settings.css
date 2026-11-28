@@ -237,8 +237,7 @@
 }
 
 .omni-settings-root .omni-settings-card :where(.border-slate-100, .border-slate-200, .border-slate-300),
-.omni-settings-root .omni-model-section-card :where(.border-slate-100, .border-slate-200, .border-slate-300),
-.omni-settings-root .omni-model-section-modal :where(.border-slate-100, .border-slate-200, .border-slate-300) {
+.omni-settings-root .omni-model-section-card {
   border-color: var(--omni-panel-border) !important;
 }
 

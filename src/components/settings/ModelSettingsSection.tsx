@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, X } from "lucide-react";
 import { ReasoningEffort } from "../../adapters/types";
 import type { CustomModelConfig, DiscoveredModel, ModelProtocol, UnsupportedParam } from "../../adapters/types";
@@ -12,6 +12,7 @@ import {
 import type { ChatUsagePreferences } from "../../chat/types";
 import OmniSelect from "../ui/OmniSelect";
 import OmniSwitch from "../ui/OmniSwitch";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 
 type Endpoint = { id: string; name: string; baseUrl: string; protocol: ModelProtocol };
 
@@ -84,11 +85,11 @@ type Props = {
 
 function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
-    <div className="grid grid-cols-[84px_minmax(0,1fr)] items-start gap-x-4">
-      <label className="pt-2 text-right text-[13px] leading-5 text-slate-600">{label}</label>
+    <div className="omni-model-field grid grid-cols-[84px_minmax(0,1fr)] items-start gap-x-4">
+      <label className="omni-model-field__label pt-2 text-right text-[13px] leading-5">{label}</label>
       <div className="min-w-0">
         {children}
-        {hint ? <p className="mt-1.5 text-[11px] leading-4 text-slate-400">{hint}</p> : null}
+        {hint ? <p className="omni-model-hint mt-1.5 text-[11px] leading-4">{hint}</p> : null}
       </div>
     </div>
   );
@@ -97,9 +98,9 @@ function Field({ label, children, hint }: { label: string; children: ReactNode; 
 /** 区块小标题：左侧分组名，右侧一句用途提示。 */
 function SectionLabel({ children, hint }: { children: ReactNode; hint?: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-4">
-      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{children}</span>
-      {hint ? <span className="text-right text-[11px] leading-4 text-slate-400">{hint}</span> : null}
+    <div className="omni-model-section-divider flex items-baseline justify-between gap-3 pt-4">
+      <span className="omni-model-section-label shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em]">{children}</span>
+      {hint ? <span className="omni-model-hint text-right text-[11px] leading-4">{hint}</span> : null}
     </div>
   );
 }
@@ -121,17 +122,17 @@ function CollapsibleSection({
   children: ReactNode;
 }) {
   return (
-    <div className="border-t border-slate-100 pt-3">
+    <div className="omni-model-section-divider pt-3">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="omni-collapsible-header -mx-1 flex w-full items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-slate-50"
+        className="omni-model-collapsible-header omni-collapsible-header -mx-1 flex w-full items-center gap-2 rounded-md px-1 py-1 text-left"
       >
-        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
-        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">{title}</span>
+        <ChevronDown className={`omni-model-hint h-3.5 w-3.5 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <span className="omni-model-section-label shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em]">{title}</span>
         {badge}
-        {hint ? <span className="ml-auto text-right text-[11px] leading-4 text-slate-400">{hint}</span> : null}
+        {hint ? <span className="omni-model-hint ml-auto text-right text-[11px] leading-4">{hint}</span> : null}
       </button>
       {open ? <div className="mt-2 space-y-2">{children}</div> : null}
     </div>
@@ -160,12 +161,12 @@ function ToggleRow({
     <div className="flex items-center justify-between gap-4 py-2">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13px] text-slate-700">{title}</span>
+          <span className="omni-model-text text-[13px]">{title}</span>
           {param ? (
-            <code className="rounded-md border border-slate-200 px-1.5 py-px font-mono text-[10px] leading-4 text-slate-500">{param}</code>
+            <code className="omni-model-code rounded-md px-1.5 py-px font-mono text-[10px] leading-4">{param}</code>
           ) : null}
         </div>
-        {description ? <p className="mt-0.5 text-[11px] leading-4 text-slate-400">{description}</p> : null}
+        {description ? <p className="omni-model-hint mt-0.5 text-[11px] leading-4">{description}</p> : null}
       </div>
       <OmniSwitch checked={checked} onChange={onChange} disabled={disabled} ariaLabel={ariaLabel} />
     </div>
@@ -229,6 +230,8 @@ export default function ModelSettingsSection({
   onModelChange,
 }: Props) {
   const selectedMainModel = availableModels.find((model) => model.id === currentModel) ?? null;
+  const modelDialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(modelDialogRef, isModelFormOpen);
   const parsePositiveInteger = (value: string) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
@@ -253,9 +256,9 @@ export default function ModelSettingsSection({
   return (
     <>
       <section className="omni-model-section-card min-w-0 space-y-4">
-        <div className="border-b border-slate-100 pb-2">
-          <h3 className="text-sm font-medium text-slate-900">主模型</h3>
-          <p className="mt-0.5 text-xs text-slate-500">主模型用于普通聊天和未单独指定模型的项目；项目设置里的默认模型会优先覆盖它。</p>
+        <div className="omni-model-section-divider border-b pb-2">
+          <h3 className="omni-model-heading text-sm font-medium">主模型</h3>
+          <p className="omni-model-hint mt-0.5 text-xs">主模型用于普通聊天和未单独指定模型的项目；项目设置里的默认模型会优先覆盖它。</p>
         </div>
         <Field label="当前主模型">
           <div className="space-y-2">
@@ -271,7 +274,7 @@ export default function ModelSettingsSection({
                   : availableModels.map((model) => ({ value: model.id, label: model.name }))
               }
             />
-            <p className="omni-settings-muted text-[11px] text-slate-500">
+            <p className="omni-model-hint omni-settings-muted text-[11px]">
               {selectedMainModel
                 ? `${selectedMainModel.provider} / ${selectedMainModel.requestModelId || selectedMainModel.id}`
                 : "暂无可用主模型，请先新增模型并测试通过。"}
@@ -283,16 +286,16 @@ export default function ModelSettingsSection({
       <section className="omni-model-section-card min-w-0 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">模型列表</div>
-            <div className="mt-0.5 text-xs text-slate-500">点击模型可编辑接口、请求参数与参数兼容。</div>
+            <div className="omni-model-section-label text-xs font-medium uppercase tracking-[0.16em]">模型列表</div>
+            <div className="omni-model-hint mt-0.5 text-xs">点击模型可编辑接口、请求参数与参数兼容。</div>
           </div>
-          <button onClick={onOpenNewModelForm} className="omni-model-add-button shrink-0 rounded-md bg-slate-900 px-4 py-2 text-xs text-white" type="button">
+          <button onClick={onOpenNewModelForm} className="omni-model-add-button shrink-0 px-4 py-2 text-xs" type="button">
             新增模型
           </button>
         </div>
-        <div className="max-h-[360px] space-y-2 overflow-y-auto overscroll-contain border-t border-slate-100 pt-3 pr-1 [scrollbar-gutter:stable]">
+        <div className="omni-model-section-divider max-h-[360px] space-y-2 overflow-y-auto overscroll-contain border-t pt-3 pr-1 [scrollbar-gutter:stable]">
           {endpointModels.length === 0 ? (
-            <div className="rounded-md border border-dashed border-slate-300 px-4 py-8 text-center text-xs text-slate-400">
+            <div className="omni-model-empty rounded-md border border-dashed px-4 py-8 text-center text-xs">
               暂无自定义模型，点击右上角新增。
             </div>
           ) : (
@@ -305,27 +308,24 @@ export default function ModelSettingsSection({
                   key={model.id}
                   onClick={() => onOpenEditModelForm(model)}
                   aria-pressed={isCurrentMainModel}
-                  className={`flex w-full items-center gap-2 rounded-[8px] border px-3 py-2 text-left text-xs transition-colors ${
-                    isCurrentMainModel
-                      ? "border-violet-300 bg-violet-50 text-violet-950"
-                      : "border-slate-200 bg-slate-50 hover:border-violet-200 hover:bg-violet-50"
-                  }`}
+                  className={`omni-knowledge-model-card omni-model-card flex w-full items-center gap-2 rounded-[8px] border px-3 py-2 text-left text-xs transition-colors`}
+                  data-active={isCurrentMainModel}
                   type="button"
                 >
-                  <span className={`font-medium ${isCurrentMainModel ? "text-violet-950" : "text-slate-800"}`}>{model.name}</span>
-                  <span className={isCurrentMainModel ? "text-violet-500" : "text-slate-400"}>{model.requestModelId || model.id}</span>
+                  <span className="omni-knowledge-model-card__name font-medium">{model.name}</span>
+                  <span className="omni-knowledge-model-card__meta">{model.requestModelId || model.id}</span>
                   {isCurrentMainModel && (
-                    <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">当前主模型</span>
+                    <span className="omni-knowledge-chip omni-knowledge-chip--selected px-1.5 py-0.5 text-[10px]">当前主模型</span>
                   )}
-                  <span className={`ml-auto ${isCurrentMainModel ? "text-violet-500" : "text-slate-400"}`}>{model.endpointName}</span>
-                  {model.supportsVision && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700">视觉</span>}
-                  {model.supportsStreaming && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700">流式</span>}
-                  {model.toolCalling && <span className="rounded bg-cyan-100 px-1.5 py-0.5 text-[10px] text-cyan-700">工具</span>}
-                  {model.thinking && <span className="rounded bg-fuchsia-100 px-1.5 py-0.5 text-[10px] text-fuchsia-700">思考</span>}
+                  <span className="omni-knowledge-model-card__meta ml-auto">{model.endpointName}</span>
+                  {model.supportsVision && <span className="omni-knowledge-chip omni-knowledge-chip--capability rounded px-1.5 py-0.5 text-[10px]">视觉</span>}
+                  {model.supportsStreaming && <span className="omni-knowledge-chip omni-knowledge-chip--capability rounded px-1.5 py-0.5 text-[10px]">流式</span>}
+                  {model.toolCalling && <span className="omni-knowledge-chip omni-knowledge-chip--capability rounded px-1.5 py-0.5 text-[10px]">工具</span>}
+                  {model.thinking && <span className="omni-knowledge-chip omni-knowledge-chip--capability rounded px-1.5 py-0.5 text-[10px]">思考</span>}
                   {skipped && (
                     <span
                       title={`下发时跳过：${skipped.names.join("、")}`}
-                      className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700"
+                      className="omni-knowledge-chip omni-knowledge-chip--warning rounded px-1.5 py-0.5 text-[10px]"
                     >
                       已调参 {skipped.count}
                     </span>
@@ -340,7 +340,12 @@ export default function ModelSettingsSection({
       {isModelFormOpen && (
         <div className="omni-model-section-modal absolute inset-0 z-20 flex items-center justify-center bg-[var(--omni-overlay-scrim)] px-6">
             <div
-              className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+              ref={modelDialogRef}
+              className="omni-model-dialog flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="omni-chat-model-dialog-title"
+              tabIndex={-1}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.stopPropagation();
@@ -348,15 +353,15 @@ export default function ModelSettingsSection({
                 }
               }}
             >
-            <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-3.5">
+            <div className="omni-model-section-divider flex items-center justify-between gap-4 border-b px-5 py-3.5">
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-slate-900">{editingModel ? "编辑模型" : "新增模型"}</h3>
-                <p className="mt-0.5 truncate text-xs text-slate-500">{modelName.trim() || modelId.trim() || "配置接口与请求参数后保存"}</p>
+                <h3 id="omni-chat-model-dialog-title" className="omni-model-heading text-sm font-semibold">{editingModel ? "编辑模型" : "新增模型"}</h3>
+                <p className="omni-model-hint mt-0.5 truncate text-xs">{modelName.trim() || modelId.trim() || "配置接口与请求参数后保存"}</p>
               </div>
               <button
                 onClick={onCloseModelForm}
                 aria-label="关闭"
-                className="shrink-0 rounded-md px-2 py-1 text-base leading-none text-slate-400 hover:text-slate-700"
+                className="omni-knowledge-model-dialog__close shrink-0 rounded-md px-2 py-1 text-base leading-none"
                 type="button"
               >
                 <X size={18} strokeWidth={1.8} />
@@ -381,19 +386,19 @@ export default function ModelSettingsSection({
                     value={modelEndpointId}
                     onChange={(e) => onSetModelEndpointId(e.target.value)}
                     placeholder="my-gateway"
-                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                    className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm"
                   />
                 </Field>
               )}
               <Field label="接口名称">
-                <input value={endpointName} onChange={(e) => onSetEndpointName(e.target.value)} className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm" />
+                <input value={endpointName} onChange={(e) => onSetEndpointName(e.target.value)} className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm" />
               </Field>
               <Field label="接口地址">
                 <input
                   value={baseUrl}
                   onChange={(e) => onSetBaseUrl(e.target.value)}
                   placeholder="留空使用官方默认端点"
-                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                  className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm"
                 />
               </Field>
               <Field label="接口协议" hint="决定请求体、鉴权头和流式解析方式">
@@ -416,7 +421,7 @@ export default function ModelSettingsSection({
                   onFocus={() => apiKey === "********" && onSetApiKey("")}
                   onChange={(e) => onSetApiKey(e.target.value)}
                   placeholder="Ollama 或免鉴权本地接口可留空"
-                  className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                  className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm"
                 />
               </Field>
               <SectionLabel hint="模型标识与内置能力">模型</SectionLabel>
@@ -425,12 +430,12 @@ export default function ModelSettingsSection({
                   <input
                     value={modelId}
                     onChange={(e) => onSetModelId(e.target.value)}
-                    className="h-9 min-w-0 flex-1 rounded-[8px] border border-slate-300 px-3 text-sm"
+                    className="omni-knowledge-model-input h-9 min-w-0 flex-1 rounded-[8px] px-3 text-sm"
                   />
                   <button
                     onClick={onDiscoverModels}
                     disabled={discoveringModels || !modelEndpointId.trim() || !endpointName.trim()}
-                    className="h-9 shrink-0 rounded-[8px] border border-slate-300 px-3 text-xs text-slate-600 disabled:opacity-40"
+                    className="omni-knowledge-button omni-knowledge-button--secondary h-9 shrink-0 rounded-[8px] px-3 text-xs disabled:opacity-40"
                     type="button"
                   >
                     {discoveringModels ? "发现中..." : "发现模型"}
@@ -439,59 +444,59 @@ export default function ModelSettingsSection({
               </Field>
               {modelDiscoveryError && (
                 <Field label="">
-                  <p className="text-[11px] leading-4 text-amber-700">{modelDiscoveryError}</p>
+                  <p className="omni-model-warning-text text-[11px] leading-4">{modelDiscoveryError}</p>
                 </Field>
               )}
               {discoveredModels.length > 0 && (
                 <Field label="发现结果" hint={`${discoveredModels.length} 个可用模型，点击后回填模型 ID 与端点能力`}>
-                  <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-1.5">
+                  <div className="omni-model-discovered-list max-h-32 space-y-1 overflow-y-auto rounded-md p-1.5">
                     {discoveredModels.map((model) => (
                       <button
                         key={model.id}
                         onClick={() => onSelectDiscoveredModel(model)}
-                        className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-violet-50 ${
-                          model.id === modelId ? "bg-violet-50 text-violet-900" : "text-slate-700"
+                        className={`omni-model-discovered-option flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs ${
+                          model.id === modelId ? "omni-model-discovered-option--active" : ""
                         }`}
                         type="button"
                       >
                         <span className="min-w-0 flex-1 truncate font-medium">{model.name}</span>
-                        <span className="max-w-[55%] truncate font-mono text-[10px] text-slate-400">{model.id}</span>
+                        <span className="omni-knowledge-model-card__meta max-w-[55%] truncate font-mono text-[10px]">{model.id}</span>
                       </button>
                     ))}
                   </div>
                 </Field>
               )}
               <Field label="显示名称">
-                <input value={modelName} onChange={(e) => onSetModelName(e.target.value)} className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm" />
+                <input value={modelName} onChange={(e) => onSetModelName(e.target.value)} className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm" />
               </Field>
               <SectionLabel hint="来自模型/接口的真实能力，用于预算、工具和推理请求">模型适配</SectionLabel>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="mb-1 block text-[11px] text-slate-500">上下文窗口</span>
+                  <span className="omni-knowledge-model-card__meta mb-1 block text-[11px]">上下文窗口</span>
                   <input
                     type="number"
                     min="1"
                     value={modelContextWindow ?? ""}
                     onChange={(e) => onSetModelContextWindow(parsePositiveInteger(e.target.value))}
                     placeholder="未知"
-                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                    className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm"
                   />
-                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">输入与历史压缩的总预算</span>
+                  <span className="omni-model-hint mt-1 block text-[11px] leading-4">输入与历史压缩的总预算</span>
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[11px] text-slate-500">模型最大输出</span>
+                  <span className="omni-knowledge-model-card__meta mb-1 block text-[11px]">模型最大输出</span>
                   <input
                     type="number"
                     min="1"
                     value={modelMaxOutput ?? ""}
                     onChange={(e) => onSetModelMaxOutput(parsePositiveInteger(e.target.value))}
                     placeholder="缺省按上下文推算"
-                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                    className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm"
                   />
-                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">接口允许的单次生成上限</span>
+                  <span className="omni-model-hint mt-1 block text-[11px] leading-4">接口允许的单次生成上限</span>
                 </label>
               </div>
-              <div className="divide-y divide-slate-100 rounded-md border border-slate-200 px-3.5">
+              <div className="omni-model-toggles divide-y rounded-md border px-3.5">
                 <ToggleRow
                   title="工具调用"
                   description="允许模型发起 function calling；关闭后不会向该模型暴露工具"
@@ -527,7 +532,7 @@ export default function ModelSettingsSection({
                 </Field>
               )}
               <SectionLabel hint="成对的两道开关需同时开启才生效">使用偏好</SectionLabel>
-              <div className="divide-y divide-slate-100 rounded-md border border-slate-200 px-3.5">
+              <div className="omni-model-toggles divide-y rounded-md border px-3.5">
                 <ToggleRow
                   title="视觉输入"
                   description="该模型具备读图能力"
@@ -560,28 +565,28 @@ export default function ModelSettingsSection({
               <SectionLabel hint="仅作用于当前模型，与其他模型互不影响">请求参数</SectionLabel>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="mb-1 block text-[11px] text-slate-500">采样温度</span>
+                  <span className="omni-knowledge-model-card__meta mb-1 block text-[11px]">采样温度</span>
                   <input
                     type="number"
                     step="0.1"
                     value={modelPrefs.temperature}
                     onChange={(e) => onSetModelPrefs({ ...modelPrefs, temperature: Number(e.target.value) })}
-                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                    className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm"
                   />
-                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">越大越随机，常用 0～1</span>
+                  <span className="omni-model-hint mt-1 block text-[11px] leading-4">越大越随机，常用 0～1</span>
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[11px] text-slate-500">最大输出 Token</span>
+                  <span className="omni-knowledge-model-card__meta mb-1 block text-[11px]">最大输出 Token</span>
                   <input
                     type="number"
                     value={modelPrefs.maxOutputTokens}
                     onChange={(e) => onSetModelPrefs({ ...modelPrefs, maxOutputTokens: Number(e.target.value) })}
-                    className="h-9 w-full rounded-[8px] border border-slate-300 px-3 text-sm"
+                    className="omni-knowledge-model-input h-9 w-full rounded-[8px] px-3 text-sm"
                   />
-                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">单次回复生成上限，非上下文长度</span>
+                  <span className="omni-model-hint mt-1 block text-[11px] leading-4">单次回复生成上限，非上下文长度</span>
                 </label>
               </div>
-              <div className="divide-y divide-slate-100 rounded-md border border-slate-200 px-3.5">
+              <div className="omni-model-toggles divide-y rounded-md border px-3.5">
                 <ToggleRow
                   title="省算力压缩"
                   description="上下文溢出时跳过 LLM 摘要，直接丢弃最旧历史"
@@ -591,8 +596,8 @@ export default function ModelSettingsSection({
                 />
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] leading-4 text-slate-400">未单独设置过的模型沿用默认值。</span>
-                <button onClick={onResetModelPrefs} className="shrink-0 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600" type="button">
+                <span className="omni-model-hint text-[11px] leading-4">未单独设置过的模型沿用默认值。</span>
+                <button onClick={onResetModelPrefs} className="omni-knowledge-button omni-knowledge-button--secondary shrink-0 px-3" type="button">
                   重置为默认
                 </button>
               </div>
@@ -605,7 +610,7 @@ export default function ModelSettingsSection({
                   skippedParams ? (
                     <span
                       title={`下发时跳过：${skippedParams.names.join("、")}`}
-                      className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700"
+                      className="omni-knowledge-chip omni-knowledge-chip--warning rounded px-1.5 py-0.5 text-[10px]"
                     >
                       已调参 {skippedParams.count}
                     </span>
@@ -613,18 +618,18 @@ export default function ModelSettingsSection({
                 }
               >
                 {learnedOnlyParams.length > 0 ? (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-                    <p className="text-[11px] leading-4 text-amber-800">
+                  <div className="omni-model-warning-box rounded-md px-3 py-2">
+                    <p className="omni-model-warning-text text-[11px] leading-4">
                       Omni 已根据服务端反馈自动跳过下列参数；下面的开关是「手动声明」入口，因此它们不会显示为开启。
                     </p>
                     <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1.5">
                       {learnedOnlyParams.map((param) => (
                         <li key={param} className="flex items-center gap-1.5">
-                          <span className="text-[11px] text-amber-800">{unsupportedParamParts(param).title}</span>
+                          <span className="omni-model-warning-text text-[11px]">{unsupportedParamParts(param).title}</span>
                           <button
                             type="button"
                             onClick={() => forgetUnsupportedParam(compatModelId, param)}
-                            className="rounded border border-amber-300 px-1.5 py-px text-[10px] text-amber-800 hover:bg-amber-100"
+                            className="omni-knowledge-button omni-knowledge-chip--warning rounded px-1.5 py-px text-[10px]"
                           >
                             恢复下发
                           </button>
@@ -633,7 +638,7 @@ export default function ModelSettingsSection({
                     </ul>
                   </div>
                 ) : null}
-                <div className="divide-y divide-slate-100 rounded-md border border-slate-200 px-3.5">
+                <div className="omni-model-toggles divide-y rounded-md border px-3.5">
                   {ALL_UNSUPPORTED_PARAMS.map((param) => {
                     const { wire, title } = unsupportedParamParts(param);
                     return (
@@ -648,16 +653,16 @@ export default function ModelSettingsSection({
                     );
                   })}
                 </div>
-                <p className="text-[11px] leading-4 text-slate-400">
+                <p className="omni-model-hint text-[11px] leading-4">
                   标注该模型不接受的参数，避免 400 报错。服务端报「参数不被支持」时 Omni 也会自动跳过并记住，无需手动开启。
                 </p>
               </CollapsibleSection>
             </div>
-            <div className="omni-model-modal-footer flex flex-wrap items-center gap-2 border-t border-slate-100 px-5 py-3.5">
+            <div className="omni-model-modal-footer omni-model-section-divider flex flex-wrap items-center gap-2 border-t px-5 py-3.5">
               <button
                 onClick={onTestConnection}
                 disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim()}
-                className="rounded-md border border-slate-200 px-4 py-2 text-xs text-slate-600 disabled:opacity-40"
+                className="omni-knowledge-button omni-knowledge-button--secondary rounded-md px-4 disabled:opacity-40"
                 type="button"
               >
                 {testingConnection ? "测试中..." : "测试连接"}
@@ -665,21 +670,21 @@ export default function ModelSettingsSection({
               <button
                 onClick={onSaveModel}
                 disabled={testingConnection || !modelEndpointId.trim() || !endpointName.trim() || !modelId.trim()}
-                className="rounded-md bg-violet-600 px-4 py-2 text-xs font-medium text-white disabled:opacity-40"
+                className="omni-knowledge-button omni-knowledge-button--primary rounded-md px-4 disabled:opacity-40"
                 type="button"
               >
                 {testingConnection ? "检测中..." : "保存模型"}
               </button>
-              <button onClick={onCloseModelForm} className="rounded-md border border-slate-200 px-4 py-2 text-xs text-slate-600" type="button">
+              <button onClick={onCloseModelForm} className="omni-knowledge-button omni-knowledge-button--secondary rounded-md px-4" type="button">
                 取消
               </button>
               <div className="ml-auto flex items-center gap-3">
-                {testResult === true && <span className="text-xs text-emerald-600">连接成功</span>}
-                {testResult === false && <span className="text-xs text-red-600">连接失败</span>}
+                {testResult === true && <span className="omni-model-success-text text-xs">连接成功</span>}
+                {testResult === false && <span className="omni-model-danger-text text-xs">连接失败</span>}
                 {editingModel && (
                   <button
                     onClick={() => onRemoveModel(editingModel.endpointId, editingModel.id)}
-                    className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600"
+                    className="omni-knowledge-button omni-knowledge-button--danger rounded-md px-4"
                     type="button"
                   >
                     删除模型

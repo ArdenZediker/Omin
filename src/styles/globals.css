@@ -881,161 +881,174 @@ body:has(.compact-menu-window),
   background: rgba(244, 63, 94, 0.14) !important;
 }
 
-/* Dark mode: harmonize the model-config section surfaces/text with the theme. */
-:root[data-omni-theme="dark"] .omni-model-section-sidebar,
-:root[data-omni-theme="dark"] .omni-model-section-header,
-:root[data-omni-theme="dark"] .omni-model-section-card,
-:root[data-omni-theme="dark"] .omni-model-section-modal > div {
-  background: var(--omni-panel-bg) !important;
-  border-color: var(--omni-panel-border) !important;
+/* Model settings share one semantic contract so light and dark themes use the
+   same tokens instead of Tailwind-class rewrites in dark-only patches. */
+.omni-model-heading {
+  color: var(--omni-app-text);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-sidebar .omni-model-section-item {
-  background: transparent !important;
-  border-color: transparent !important;
+.omni-model-hint {
+  color: var(--omni-app-muted);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-sidebar .omni-model-section-item:hover {
-  background: var(--omni-soft-bg) !important;
+.omni-model-text {
+  color: var(--omni-app-text);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-sidebar .omni-model-section-item[class*="bg-white"] {
-  background: var(--omni-soft-bg) !important;
-  box-shadow: none !important;
+.omni-model-section-label {
+  color: var(--omni-app-muted);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-sidebar [class*="text-slate-950"],
-:root[data-omni-theme="dark"] .omni-model-section-sidebar [class*="text-slate-900"],
-:root[data-omni-theme="dark"] .omni-model-section-sidebar [class*="text-slate-800"],
-:root[data-omni-theme="dark"] .omni-model-section-sidebar [class*="text-slate-700"],
-:root[data-omni-theme="dark"] .omni-model-section-header [class*="text-slate-950"],
-:root[data-omni-theme="dark"] .omni-model-section-header [class*="text-slate-900"],
-:root[data-omni-theme="dark"] .omni-model-section-header [class*="text-slate-800"],
-:root[data-omni-theme="dark"] .omni-model-section-header [class*="text-slate-700"],
-:root[data-omni-theme="dark"] .omni-model-section-card [class*="text-slate-950"],
-:root[data-omni-theme="dark"] .omni-model-section-card [class*="text-slate-900"],
-:root[data-omni-theme="dark"] .omni-model-section-card [class*="text-slate-800"],
-:root[data-omni-theme="dark"] .omni-model-section-card [class*="text-slate-700"],
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="text-slate-950"],
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="text-slate-900"],
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="text-slate-800"],
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="text-slate-700"] {
-  color: var(--omni-app-text) !important;
+.omni-model-section-divider {
+  border-color: var(--omni-panel-border);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-sidebar [class*="text-slate-600"],
-:root[data-omni-theme="dark"] .omni-model-section-sidebar [class*="text-slate-500"],
-:root[data-omni-theme="dark"] .omni-model-section-sidebar [class*="text-slate-400"],
-:root[data-omni-theme="dark"] .omni-model-section-header [class*="text-slate-600"],
-:root[data-omni-theme="dark"] .omni-model-section-header [class*="text-slate-500"],
-:root[data-omni-theme="dark"] .omni-model-section-header [class*="text-slate-400"],
-:root[data-omni-theme="dark"] .omni-model-section-card [class*="text-slate-600"],
-:root[data-omni-theme="dark"] .omni-model-section-card [class*="text-slate-500"],
-:root[data-omni-theme="dark"] .omni-model-section-card [class*="text-slate-400"],
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="text-slate-600"],
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="text-slate-500"],
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="text-slate-400"] {
-  color: var(--omni-app-muted) !important;
+.omni-model-code {
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-muted);
 }
 
-/* Count badges: their bg-slate-100 background stays light in dark mode and
-   clashes with the light muted text, making the numbers unreadable. */
-:root[data-omni-theme="dark"] .omni-model-section-sidebar .omni-model-section-count,
-:root[data-omni-theme="dark"] .omni-model-section-header .omni-model-section-count {
-  background: var(--omni-soft-bg) !important;
-  color: var(--omni-app-text) !important;
+.omni-model-toggles {
+  border-color: var(--omni-panel-border);
 }
 
-/* Inactive sidebar icon containers also keep a light bg-slate-100 in dark
-   mode; make them consistent with the panel surface. */
-:root[data-omni-theme="dark"] .omni-model-section-sidebar .omni-model-section-item [class*="bg-slate-100"] {
-  background: var(--omni-soft-bg) !important;
+.omni-model-toggles > * + * {
+  border-color: var(--omni-panel-border);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-sidebar .omni-model-section-item [class*="text-slate-600"] {
-  color: var(--omni-app-text) !important;
+.omni-model-collapsible-header {
+  color: var(--omni-app-muted);
+  transition: background-color 140ms ease, color 140ms ease;
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-item .omni-model-section-icon {
-  background: var(--omni-soft-bg) !important;
-  color: var(--omni-app-text) !important;
+.omni-model-collapsible-header:hover {
+  background: color-mix(in srgb, var(--omni-accent) 6%, var(--omni-panel-bg));
+  color: var(--omni-app-text);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-sidebar [class*="bg-slate-900"],
-:root[data-omni-theme="dark"] .omni-model-section-card .rounded-md.bg-slate-900,
-:root[data-omni-theme="dark"] .omni-model-section-modal .rounded-md.bg-slate-900 {
-  background: var(--omni-app-text) !important;
+.omni-model-empty {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-muted);
 }
 
-:root[data-omni-theme="dark"] .omni-model-add-button {
-  background: var(--omni-accent) !important;
-  color: #ffffff !important;
+.omni-model-card {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-card .rounded-md.border.border-slate-200,
-:root[data-omni-theme="dark"] .omni-model-section-modal .rounded-md.border.border-slate-200,
-:root[data-omni-theme="dark"] .omni-model-section-card .rounded-md.border-dashed.border-slate-300,
-:root[data-omni-theme="dark"] .omni-model-section-card input,
-:root[data-omni-theme="dark"] .omni-model-section-card select,
-:root[data-omni-theme="dark"] .omni-model-section-modal input,
-:root[data-omni-theme="dark"] .omni-model-section-modal select {
-  background: color-mix(in srgb, var(--omni-panel-bg) 96%, transparent) !important;
-  border-color: var(--omni-panel-border) !important;
-  color: var(--omni-app-text) !important;
+.omni-model-card:hover {
+  border-color: color-mix(in srgb, var(--omni-accent) 32%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 5%, var(--omni-panel-bg));
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"],
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"] {
-  background: color-mix(in srgb, var(--omni-accent) 16%, var(--omni-panel-bg)) !important;
-  color: var(--omni-app-text) !important;
+.omni-model-card[data-active="true"] {
+  border-color: color-mix(in srgb, var(--omni-accent) 42%, var(--omni-panel-border));
+  background: color-mix(in srgb, var(--omni-accent) 8%, var(--omni-panel-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--omni-accent) 16%, transparent);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"][class*="text-violet-950"],
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"][class*="text-violet-900"],
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"][class*="text-violet-950"],
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"][class*="text-violet-900"] {
-  color: var(--omni-app-text) !important;
+.omni-model-discovered-list {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-soft-bg);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"] span[class*="text-violet-500"],
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"] span[class*="text-violet-600"],
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"] span[class*="text-violet-500"],
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"] span[class*="text-violet-600"] {
-  color: color-mix(in srgb, var(--omni-accent-strong) 72%, var(--omni-app-text)) !important;
+.omni-model-discovered-option {
+  color: var(--omni-app-text);
+  transition: background-color 140ms ease;
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"] span[class*="bg-violet-100"],
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"] span[class*="bg-violet-100"] {
-  background: color-mix(in srgb, var(--omni-accent) 18%, transparent) !important;
-  color: color-mix(in srgb, var(--omni-accent-strong) 76%, #ffffff) !important;
+.omni-model-discovered-option:hover,
+.omni-model-discovered-option--active {
+  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-soft-bg));
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="hover:bg-violet-50"]:hover,
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="hover:bg-violet-50"]:hover {
-  background: color-mix(in srgb, var(--omni-accent) 10%, var(--omni-panel-bg)) !important;
+.omni-model-discovered-option--active {
+  color: var(--omni-accent-strong, var(--omni-accent));
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-50"][class*="border-violet-300"],
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-50"][class*="border-violet-300"] {
-  border-color: color-mix(in srgb, var(--omni-accent) 55%, var(--omni-panel-border)) !important;
-  box-shadow: inset 3px 0 0 var(--omni-accent) !important;
+.omni-model-warning-box {
+  border: 1px solid color-mix(in srgb, var(--omni-warning) 32%, transparent);
+  background: color-mix(in srgb, var(--omni-warning) 12%, var(--omni-panel-bg));
 }
 
-/* 编辑模型弹窗：底栏固定在滚动区之外，需要自带面板底色才不会透出滚动内容；
-   区块分隔线同理，浅色的 slate-100 在深色卡片上会变成刺眼的亮线。 */
-:root[data-omni-theme="dark"] .omni-model-section-modal .omni-model-modal-footer {
-  background: var(--omni-panel-bg) !important;
-  border-color: var(--omni-panel-border) !important;
+.omni-model-warning-text {
+  color: var(--omni-warning);
 }
 
-/* 可收起分组的标题行：浅色 hover 底在暗色下会与浅色文字打架，换成主题面板色。 */
-:root[data-omni-theme="dark"] .omni-model-section-modal .omni-collapsible-header:hover {
-  background: var(--omni-panel-border) !important;
+.omni-model-success-text {
+  color: var(--omni-app-success);
 }
 
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="border-slate-100"],
-:root[data-omni-theme="dark"] .omni-model-section-modal [class*="divide-slate-100"] > * + * {
-  border-color: var(--omni-panel-border) !important;
+.omni-model-danger-text {
+  color: var(--omni-danger);
+}
+
+.omni-model-dialog {
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-panel-bg);
+  color: var(--omni-app-text);
+}
+
+.omni-model-dialog .omni-knowledge-model-input {
+  border-color: var(--omni-panel-border);
+  background: var(--omni-input-bg, var(--omni-panel-bg));
+  color: var(--omni-app-text);
+}
+
+.omni-model-dialog__close {
+  background: transparent;
+  color: var(--omni-app-muted);
+}
+
+.omni-model-dialog__close:hover {
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-text);
+}
+
+.omni-model-section-item {
+  color: var(--omni-app-muted);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.omni-model-section-item--active {
+  background: var(--omni-card-bg);
+  color: var(--omni-app-text);
+  box-shadow: inset 0 0 0 1px var(--omni-panel-border);
+}
+
+.omni-model-section-item--inactive:hover {
+  background: color-mix(in srgb, var(--omni-card-bg) 70%, transparent);
+  color: var(--omni-app-text);
+}
+
+.omni-model-section-icon {
+  color: var(--omni-app-muted);
+}
+
+.omni-model-section-icon--active {
+  background: var(--omni-accent);
+  color: #ffffff;
+}
+
+.omni-model-section-icon--inactive {
+  background: var(--omni-soft-bg);
+}
+
+.omni-model-section-count {
+  border: 1px solid var(--omni-panel-border);
+  background: var(--omni-soft-bg);
+  color: var(--omni-app-muted);
+}
+
+.omni-model-section-count--active {
+  color: var(--omni-app-text);
+}
+
+.omni-model-section-count--inactive:hover {
+  color: var(--omni-app-text);
 }
 
 /* Knowledge model settings use explicit theme classes so light and dark modes
@@ -3031,16 +3044,13 @@ body:has(.compact-menu-window),
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root button[class*="bg-violet-600"],
-:root[data-omni-theme="dark"] .omni-settings-root span[class*="bg-violet-600"],
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-600"],
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-600"] {
+:root[data-omni-theme="dark"] .omni-settings-root span[class*="bg-violet-600"] {
   background: var(--omni-accent) !important;
   color: #ffffff !important;
 }
 
 :root[data-omni-theme="dark"] .omni-settings-root button[class*="bg-violet-600"]:hover:not(:disabled),
-:root[data-omni-theme="dark"] .omni-model-section-card button[class*="bg-violet-600"]:hover:not(:disabled),
-:root[data-omni-theme="dark"] .omni-model-section-modal button[class*="bg-violet-600"]:hover:not(:disabled) {
+:root[data-omni-theme="dark"] .omni-settings-root span[class*="bg-violet-600"]:hover:not(:disabled) {
   background: var(--omni-accent-strong) !important;
 }
 
