@@ -33,7 +33,7 @@ export function renderHighlightedSearchText(text: string, query: string) {
     }
     if (normalizedTerms.has(part.toLowerCase())) {
       return (
-        <mark key={`match-${index}`} className="rounded bg-amber-100 px-0.5 text-slate-900">
+        <mark key={`match-${index}`} className="omni-knowledge-highlight rounded px-0.5">
           {part}
         </mark>
       );

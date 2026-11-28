@@ -177,7 +177,7 @@ export default function KnowledgeCollectionSidebar({
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center px-3 py-2 text-left text-sm text-rose-500 hover:bg-rose-500/10"
+                          className="omni-knowledge-sidebar__menu-danger flex w-full items-center px-3 py-2 text-left text-sm"
                           onClick={() => onDeleteCollection(collection.id)}
                         >
                           删除

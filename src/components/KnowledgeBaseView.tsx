@@ -1330,7 +1330,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
       <div className="omni-knowledge-layout flex min-h-0 flex-1">
         <aside className="main-chat-nav">
           <button type="button" className="main-chat-nav__brand no-drag" title="Omni" aria-label="Omni">
-            <Bot size={20} strokeWidth={1.8} className="text-sky-500" />
+            <Bot size={20} strokeWidth={1.8} className="omni-knowledge-brand-icon" />
           </button>
           <div className="main-chat-nav__items">
             <button type="button" className="main-chat-nav__item no-drag" title="聊天" aria-label="聊天" onClick={onBackToChat}>
@@ -1805,7 +1805,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                   <div className="omni-knowledge-collection-settings__capability-card">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
-                        <LucideFileImage size={16} strokeWidth={1.8} className="text-amber-600" />
+                        <LucideFileImage size={16} strokeWidth={1.8} className="omni-knowledge-capability-icon omni-knowledge-capability-icon--image" />
                         <strong className="text-sm text-[var(--omni-app-text)]">图片分析</strong>
                       </div>
                       <label className="omni-knowledge-collection-settings__switch">
@@ -1856,7 +1856,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
                   <div className="omni-knowledge-collection-settings__capability-card">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
-                        <Mic size={16} strokeWidth={1.8} className="text-sky-600" />
+                        <Mic size={16} strokeWidth={1.8} className="omni-knowledge-capability-icon omni-knowledge-capability-icon--audio" />
                         <strong className="text-sm text-[var(--omni-app-text)]">音频分析</strong>
                       </div>
                       <label className="omni-knowledge-collection-settings__switch">
@@ -1907,7 +1907,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
 
                 <div className="mt-4 rounded-xl border border-[var(--omni-panel-border)] bg-[var(--omni-soft-bg)] px-4 py-3 text-sm text-[var(--omni-app-muted)]">
                   <div className="flex items-center gap-2 font-medium text-[var(--omni-app-text)]">
-                    <Sparkles size={15} strokeWidth={1.8} className="text-amber-600" />
+                    <Sparkles size={15} strokeWidth={1.8} className="omni-knowledge-capability-icon omni-knowledge-capability-icon--image" />
                     <span>当前入库策略</span>
                   </div>
                   <div className="mt-2 leading-6">
@@ -1917,7 +1917,7 @@ export default function KnowledgeBaseView({ onSettingsOpen, onBackToChat, onOpen
               </section>
 
               {collectionSettingsError ? (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <div className="omni-model-warning-box omni-model-warning-text rounded-lg px-4 py-3 text-sm">
                   {collectionSettingsError}
                 </div>
               ) : null}

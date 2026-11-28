@@ -652,6 +652,22 @@
   padding: 16px;
 }
 
+.omni-knowledge-brand-icon {
+  color: var(--omni-accent);
+}
+
+.omni-knowledge-capability-icon {
+  color: var(--omni-app-muted);
+}
+
+.omni-knowledge-capability-icon--image {
+  color: var(--omni-warning);
+}
+
+.omni-knowledge-capability-icon--audio {
+  color: var(--omni-accent);
+}
+
 .omni-knowledge-collection-settings__footer {
   display: flex;
   align-items: center;
@@ -1150,6 +1166,20 @@
 .omni-knowledge-upload-menu button,
 .omni-knowledge-doc-menu button {
   min-height: 34px;
+}
+
+.omni-knowledge-sidebar__menu-danger {
+  color: var(--omni-danger);
+  transition: background-color 140ms ease;
+}
+
+.omni-knowledge-sidebar__menu-danger:hover {
+  background: color-mix(in srgb, var(--omni-danger) 12%, var(--omni-panel-bg));
+}
+
+.omni-knowledge-highlight {
+  background: color-mix(in srgb, var(--omni-warning) 22%, var(--omni-panel-bg));
+  color: var(--omni-app-text);
 }
 
 .omni-knowledge-content-panel {
